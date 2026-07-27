@@ -46,7 +46,8 @@ def op_catalog() -> list[dict]:
                 "params": [{"name": "x", "default": 0},
                            {"name": "y", "default": 0},
                            {"name": "z", "default": 0}]})
-    for name in ("fuse", "cut", "intersect"):
+    from document import COMBINERS
+    for name in COMBINERS:
         cat.append({"op": name, "kind": "combiner", "inputs": 2, "params": []})
     return cat
 
@@ -135,6 +136,17 @@ solid; the user will open it in a CAD feature tree and edit it):
 - revolve_profile is for genuinely curved/contoured sections only; where a
   section is a simple cylinder or ring, use disc/tube instead (their radius/
   thickness params are directly editable; buried profile points are not).
+
+SKETCH WORKFLOW (for shapes the primitives don't cover): make a "sketch"
+feature (a creator), then a "extrude"/"revolve"/"sweep" feature consuming it,
+or "loft" consuming two sketches. A sketch's params are
+{{"plane":"XY|XZ|YZ", "offset":mm, "entities":[...]}} where each entity is
+{{"kind":"rectangle","w":..,"h":..,"x":0,"y":0,"mode":"add"}} (kinds:
+rectangle w/h, circle r, ellipse rx/ry, slot length/height, regular_polygon
+radius/sides, polygon points[[x,y]...]; mode "add" or "subtract"; first must be
+add). extrude params {{"amount":mm,"both":false}}; revolve {{"axis":"Z",
+"angle":360}} (draw the profile on XZ at positive X to revolve about Z). Sketch
+features have no volume — only the extrude/revolve/loft result is a solid.
 """
 
 

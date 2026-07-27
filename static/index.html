@@ -228,6 +228,39 @@
     margin-bottom: 6px; cursor: pointer; }
   .libitem:hover { border-color: var(--accent); background: var(--panel2); }
   .libitem .meta { color: var(--dim); font-size: 11.5px; }
+  /* sketch editor */
+  #sketchDialog { min-width: 720px; max-width: 860px; }
+  #sketchWrap { display: flex; gap: 16px; }
+  #sketchSide { width: 260px; flex: none; }
+  .skpalette { margin-top: 10px; }
+  .skhead { color: var(--dim); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .08em; margin-bottom: 5px; }
+  .skpalette button { display: inline-block; width: calc(50% - 3px);
+    margin: 0 2px 4px 0; background: var(--panel2); border: 1px solid var(--line);
+    color: var(--text); border-radius: 6px; padding: 6px 4px; cursor: pointer;
+    font: inherit; font-size: 12px; text-align: left; }
+  .skpalette button:hover { border-color: var(--accent); }
+  .skents { margin-top: 10px; max-height: 200px; overflow-y: auto; }
+  .skent { background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 7px; padding: 6px 8px; margin-bottom: 5px; }
+  .skent .eh { display: flex; align-items: center; gap: 6px; }
+  .skent .eh b { flex: 1; font-size: 12px; }
+  .skent .ef { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .skent .ef label { display: flex; align-items: center; gap: 2px; margin: 0;
+    color: var(--dim); font-size: 11px; }
+  .skent .ef input { width: 46px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px;
+    font: inherit; font-size: 12px; }
+  .skent select { background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 4px; font: inherit;
+    font-size: 11px; }
+  .skent .del { background: none; border: none; color: var(--dim);
+    cursor: pointer; }
+  #sketchCanvasWrap { flex: 1; display: flex; flex-direction: column; }
+  #sketchCanvas { flex: 1; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 8px; min-height: 360px; }
+  .skhint { color: var(--dim); font-size: 11px; text-align: center;
+    padding-top: 5px; }
 </style>
 </head>
 <body>
@@ -335,6 +368,41 @@
   <h3>Design library</h3>
   <div id="libList"></div>
   <div class="row"><button onclick="libDialog.close()">Close</button></div>
+</dialog>
+
+<!-- ============ 2D sketch editor ============ -->
+<dialog id="sketchDialog">
+  <h3>Sketch — draw a 2D profile</h3>
+  <div id="sketchWrap">
+    <div id="sketchSide">
+      <label>Sketch name <input id="skName" value="sketch1"></label>
+      <label>Plane
+        <select id="skPlane">
+          <option value="XY">XY (top)</option>
+          <option value="XZ">XZ (front) — for revolve</option>
+          <option value="YZ">YZ (right)</option>
+        </select></label>
+      <label>Plane offset (mm) <input id="skOffset" value="0"></label>
+      <div class="skpalette">
+        <div class="skhead">Add shape</div>
+        <button data-shape="rectangle">▭ Rectangle</button>
+        <button data-shape="circle">● Circle</button>
+        <button data-shape="polygon">⬠ Polygon</button>
+        <button data-shape="slot">⬭ Slot</button>
+        <button data-shape="ellipse">⬯ Ellipse</button>
+        <button data-shape="regular_polygon">⬡ N-gon</button>
+      </div>
+      <div id="skEntities" class="skents"></div>
+    </div>
+    <div id="sketchCanvasWrap">
+      <svg id="sketchCanvas" viewBox="-60 -60 120 120"></svg>
+      <div class="skhint">grid = 10mm · green = added · red = cut</div>
+    </div>
+  </div>
+  <div class="row">
+    <button onclick="sketchDialog.close()">Cancel</button>
+    <button class="primary" id="skCreate">Create sketch</button>
+  </div>
 </dialog>
 
 <!-- ============ spec editor dialog ============ -->
@@ -461,6 +529,7 @@ const OP_ICONS = {
   rotate: '⟳', mirror: '⇋', scale: '⤢', linear_pattern: '⋯',
   fillet: '◠', chamfer: '◣', shell: '▢',
   fuse: '∪', cut: '−', intersect: '∩',
+  sketch: '✎', extrude: '⬆', revolve: '↻', loft: '⏢', sweep: '〜',
 };
 
 function renderDoc(doc) {
@@ -791,6 +860,145 @@ const dlg = document.getElementById('featDialog');
 const libDialog = document.getElementById('libDialog');
 window.libDialog = libDialog;
 const specDialog = document.getElementById('specDialog');
+const sketchDialog = document.getElementById('sketchDialog');
+
+/* ================= 2D sketch editor ================= */
+const SHAPE_FIELDS = {
+  rectangle: { w: 40, h: 20, x: 0, y: 0, rotation: 0 },
+  circle: { r: 15, x: 0, y: 0 },
+  ellipse: { rx: 20, ry: 10, x: 0, y: 0, rotation: 0 },
+  slot: { length: 30, height: 10, x: 0, y: 0, rotation: 0 },
+  regular_polygon: { radius: 20, sides: 6, x: 0, y: 0, rotation: 0 },
+  polygon: { points: [[0, 0], [30, 0], [15, 25]], x: 0, y: 0 },
+};
+let skEnts = [];
+
+function openSketchEditor() {
+  skEnts = [{ kind: 'rectangle', mode: 'add', ...SHAPE_FIELDS.rectangle }];
+  document.getElementById('skName').value =
+    'sketch' + ((lastDoc?.features.filter(f => f.op === 'sketch').length || 0) + 1);
+  document.getElementById('skOffset').value = '0';
+  renderSkEnts();
+  sketchDialog.showModal();
+}
+
+for (const b of document.querySelectorAll('.skpalette button')) {
+  b.onclick = () => {
+    const kind = b.dataset.shape;
+    skEnts.push({ kind, mode: skEnts.length ? 'add' : 'add',
+                  ...JSON.parse(JSON.stringify(SHAPE_FIELDS[kind])) });
+    renderSkEnts();
+  };
+}
+
+function renderSkEnts() {
+  const box = document.getElementById('skEntities');
+  box.innerHTML = '';
+  skEnts.forEach((e, i) => {
+    const card = document.createElement('div'); card.className = 'skent';
+    const head = document.createElement('div'); head.className = 'eh';
+    const mode = document.createElement('select');
+    mode.innerHTML = '<option value="add">add</option>' +
+                     '<option value="subtract">cut</option>';
+    mode.value = e.mode;
+    mode.disabled = i === 0;                 // first must be additive
+    mode.onchange = () => { e.mode = mode.value; drawSketch(); };
+    head.innerHTML = `<b>${OP_ICONS[e.kind] || ''} ${e.kind}</b>`;
+    const del = document.createElement('button'); del.className = 'del';
+    del.textContent = '✕'; del.disabled = skEnts.length === 1;
+    del.onclick = () => { skEnts.splice(i, 1); renderSkEnts(); };
+    head.append(mode, del);
+    card.appendChild(head);
+    const f = document.createElement('div'); f.className = 'ef';
+    for (const k of Object.keys(e)) {
+      if (k === 'kind' || k === 'mode' || k === 'points') continue;
+      const lab = document.createElement('label');
+      lab.innerHTML = `${k}`;
+      const inp = document.createElement('input'); inp.value = e[k];
+      inp.oninput = () => { e[k] = Number(inp.value) || 0; drawSketch(); };
+      lab.appendChild(inp); f.appendChild(lab);
+    }
+    if (e.points) {
+      const lab = document.createElement('label');
+      lab.innerHTML = 'points';
+      const inp = document.createElement('input'); inp.style.width = '150px';
+      inp.value = JSON.stringify(e.points);
+      inp.oninput = () => { try { e.points = JSON.parse(inp.value); drawSketch(); }
+                           catch {} };
+      lab.appendChild(inp); f.appendChild(lab);
+    }
+    card.appendChild(f);
+    box.appendChild(card);
+  });
+  drawSketch();
+}
+
+function drawSketch() {
+  const svg = document.getElementById('sketchCanvas');
+  // fit view to content
+  let ext = 60;
+  for (const e of skEnts) {
+    const reach = Math.abs(e.x || 0) + Math.abs(e.y || 0) +
+      (e.w || e.rx || e.r || e.radius || e.length || 30) + 10;
+    ext = Math.max(ext, reach);
+  }
+  svg.setAttribute('viewBox', `${-ext} ${-ext} ${2*ext} ${2*ext}`);
+  const grid = 10;
+  let out = '';
+  for (let g = -Math.ceil(ext/grid)*grid; g <= ext; g += grid) {
+    out += `<line x1="${g}" y1="${-ext}" x2="${g}" y2="${ext}" stroke="#20242e" stroke-width="0.5"/>`;
+    out += `<line x1="${-ext}" y1="${g}" x2="${ext}" y2="${g}" stroke="#20242e" stroke-width="0.5"/>`;
+  }
+  out += `<line x1="${-ext}" y1="0" x2="${ext}" y2="0" stroke="#3a4150" stroke-width="0.8"/>`;
+  out += `<line x1="0" y1="${-ext}" x2="0" y2="${ext}" stroke="#3a4150" stroke-width="0.8"/>`;
+  // NB: SVG y is down; we flip so +y is up, matching CAD
+  for (const e of skEnts) {
+    const col = e.mode === 'subtract' ? '#ff5d5d' : '#43c579';
+    const fill = e.mode === 'subtract' ? 'rgba(255,93,93,.10)' : 'rgba(67,197,121,.13)';
+    const x = e.x || 0, y = -(e.y || 0);
+    const st = `fill="${fill}" stroke="${col}" stroke-width="1"`;
+    if (e.kind === 'rectangle')
+      out += `<rect x="${x - e.w/2}" y="${y - e.h/2}" width="${e.w}" height="${e.h}" ${st} transform="rotate(${-(e.rotation||0)} ${x} ${y})"/>`;
+    else if (e.kind === 'circle')
+      out += `<circle cx="${x}" cy="${y}" r="${e.r}" ${st}/>`;
+    else if (e.kind === 'ellipse')
+      out += `<ellipse cx="${x}" cy="${y}" rx="${e.rx}" ry="${e.ry}" ${st} transform="rotate(${-(e.rotation||0)} ${x} ${y})"/>`;
+    else if (e.kind === 'slot') {
+      const r = e.height/2;
+      out += `<rect x="${x - e.length/2}" y="${y - r}" width="${e.length}" height="${e.height}" rx="${r}" ${st} transform="rotate(${-(e.rotation||0)} ${x} ${y})"/>`;
+    } else if (e.kind === 'regular_polygon') {
+      const pts = [];
+      for (let k = 0; k < e.sides; k++) {
+        const a = Math.PI/2 + k * 2*Math.PI/e.sides;
+        pts.push(`${x + e.radius*Math.cos(a)},${y - e.radius*Math.sin(a)}`);
+      }
+      out += `<polygon points="${pts.join(' ')}" ${st}/>`;
+    } else if (e.kind === 'polygon' && e.points) {
+      const pts = e.points.map(p => `${(e.x||0)+p[0]},${-((e.y||0)+p[1])}`).join(' ');
+      out += `<polygon points="${pts}" ${st}/>`;
+    }
+  }
+  svg.innerHTML = out;
+}
+
+document.getElementById('skCreate').onclick = async () => {
+  const entities = skEnts.map(e => {
+    const o = { kind: e.kind, mode: e.mode };
+    for (const k of Object.keys(e))
+      if (k !== 'kind' && k !== 'mode') o[k] = e[k];
+    return o;
+  });
+  sketchDialog.close();
+  await postJSON('/api/feature/add', {
+    id: document.getElementById('skName').value || 'sketch1',
+    op: 'sketch',
+    params: { plane: document.getElementById('skPlane').value,
+              offset: Number(document.getElementById('skOffset').value) || 0,
+              entities },
+    inputs: [] });
+  addMsg('bot', 'Sketch created. Now select it and use Extrude or Revolve ' +
+                'from the Sketch group to turn it into a solid.');
+};
 let OPS = [];
 async function openFeatDialog(preselect) {
   if (!OPS.length) OPS = await (await fetch('/api/ops')).json();
@@ -804,6 +1012,7 @@ async function openFeatDialog(preselect) {
 
 /* ---- the ribbon: every design tool visible, grouped like Fusion ---- */
 const RIBBON = [
+  ['Sketch', ['sketch', 'extrude', 'revolve', 'loft', 'sweep']],
   ['Create', ['plate', 'disc', 'ball', 'cone', 'tube', 'hex_plate',
               'polygon_plate', 'revolve_profile', 'curved_blade']],
   ['Modify', ['with_center_hole', 'with_bolt_circle', 'fillet', 'chamfer',
@@ -813,8 +1022,10 @@ const RIBBON = [
   ['Combine', ['fuse', 'cut', 'intersect']],
 ];
 const TOOL_NAMES = {
+  sketch: 'Sketch', extrude: 'Extrude', revolve: 'Revolve', loft: 'Loft',
+  sweep: 'Sweep',
   plate: 'Plate', disc: 'Disc', ball: 'Ball', cone: 'Cone', tube: 'Tube',
-  hex_plate: 'Hex', polygon_plate: 'Polygon', revolve_profile: 'Revolve',
+  hex_plate: 'Hex', polygon_plate: 'Polygon', revolve_profile: 'Turn profile',
   curved_blade: 'Blade', with_center_hole: 'Hole',
   with_bolt_circle: 'Bolt circle', fillet: 'Fillet', chamfer: 'Chamfer',
   shell: 'Shell', move: 'Move', rotate: 'Rotate', scale: 'Scale',
@@ -832,7 +1043,8 @@ function renderRibbon() {
       b.title = op;
       b.innerHTML = `<span class="rico">${OP_ICONS[op] || '□'}</span>` +
                     `<span>${TOOL_NAMES[op] || op}</span>`;
-      b.onclick = () => openFeatDialog(op);
+      // "sketch" opens the visual 2D editor; everything else the feature dialog
+      b.onclick = op === 'sketch' ? openSketchEditor : () => openFeatDialog(op);
       tools.appendChild(b);
     }
     const cap = document.createElement('div'); cap.className = 'rlabel';

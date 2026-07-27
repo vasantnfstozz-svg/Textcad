@@ -34,6 +34,7 @@ from build123d import Pos
 
 import blocks
 import inspector
+import sketch as sk
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +45,7 @@ import inspector
 CREATORS = {name: blocks.EXPORTS[name] for name in
             ("plate", "disc", "ball", "cone", "tube", "polygon_plate",
              "hex_plate", "revolve_profile", "curved_blade")}
+CREATORS["sketch"] = sk.make_sketch     # produces a 2D Sketch, not a solid
 
 # modifiers: exactly one upstream Part + numeric/string params
 MODIFIERS = {
@@ -57,6 +59,9 @@ MODIFIERS = {
     "fillet": blocks.fillet_edges,
     "chamfer": blocks.chamfer_edges,
     "shell": blocks.shell_out,
+    "extrude": sk.extrude_sketch,       # sketch -> solid
+    "revolve": sk.revolve_sketch,       # sketch -> solid
+    "sweep": sk.sweep_sketch,           # sketch + path -> solid
 }
 
 # combiners: pure topology ops on upstream Parts
@@ -78,7 +83,11 @@ def _intersect(parts):
         out = out & p
     return out
 
-COMBINERS = {"fuse": _fuse, "cut": _cut, "intersect": _intersect}
+def _loft(parts):      # blend 2+ sketches into a solid
+    return sk.loft_sketches(parts)
+
+COMBINERS = {"fuse": _fuse, "cut": _cut, "intersect": _intersect,
+             "loft": _loft}
 
 KNOWN_OPS = set(CREATORS) | set(MODIFIERS) | set(COMBINERS) | {"move"}
 
@@ -187,9 +196,15 @@ class Document:
                 continue
             try:
                 part = self._eval(f)
-                f.problems = inspector.health(part)
-                f.volume = round(part.volume, 2)
-                f.status = "ok" if not f.problems else "failed"
+                if sk.is_sketch(part):          # 2D result: check area, not solid
+                    area = getattr(part, "area", 0.0)
+                    f.problems = [] if area > 0 else ["sketch is empty"]
+                    f.volume = None
+                    f.status = "ok" if not f.problems else "failed"
+                else:
+                    f.problems = inspector.health(part)
+                    f.volume = round(part.volume, 2)
+                    f.status = "ok" if not f.problems else "failed"
                 self._parts[f.id] = part
             except Exception as e:
                 f.status, f.problems, f.volume = "failed", [repr(e)], None
@@ -254,16 +269,18 @@ class Document:
 
     # -- results --------------------------------------------------------------
     def result(self):
-        """The final solid — the last built, non-suppressed feature's output
-        (respects the rollback bar, which stops building partway)."""
+        """The final SOLID — the last built, non-suppressed, non-sketch feature
+        (respects the rollback bar, which stops building partway). Sketches are
+        skipped: the deliverable of a design is a solid, not a 2D profile."""
         seen_bar = self.rollback is None
         for f in reversed(self.features):
             if not seen_bar:
                 seen_bar = f.id == self.rollback
                 if not seen_bar:
                     continue
-            if not f.suppressed and self._parts.get(f.id) is not None:
-                return self._parts.get(f.id)
+            part = self._parts.get(f.id)
+            if not f.suppressed and part is not None and not sk.is_sketch(part):
+                return part
         return None
 
     def to_step(self, path: str) -> str:
