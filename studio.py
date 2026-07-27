@@ -289,6 +289,65 @@ def get_mesh():
     return Response(status_code=404)
 
 
+@app.get("/api/model")
+def get_model():
+    """Face-tagged mesh + edge polylines of the current result solid, so the
+    viewport can PICK individual faces and edges (E3). Each triangle carries the
+    id of the OCCT face it belongs to; faces/edges carry human-readable info."""
+    doc: Document = STATE["doc"]
+    part = doc.result()
+    if part is None:
+        return {"positions": [], "indices": [], "faceId": [],
+                "faces": [], "edges": []}
+    try:
+        bb = part.bounding_box()
+        tol = max((bb.size.X + bb.size.Y + bb.size.Z) / 900.0, 0.05)
+    except Exception:
+        tol = 0.2
+
+    positions, indices, face_ids, faces_meta = [], [], [], []
+    base = 0
+    for fi, face in enumerate(part.faces()):
+        try:
+            verts, tris = face.tessellate(tol)
+        except Exception:
+            continue
+        for v in verts:
+            positions += [round(v.X, 4), round(v.Y, 4), round(v.Z, 4)]
+            face_ids.append(fi)
+        for t in tris:
+            indices += [base + t[0], base + t[1], base + t[2]]
+        base += len(verts)
+        gt = str(face.geom_type).replace("GeomType.", "")
+        info = {"id": fi, "type": gt, "area": round(face.area, 2)}
+        try:
+            c = face.center()
+            info["center"] = [round(c.X, 2), round(c.Y, 2), round(c.Z, 2)]
+        except Exception:
+            pass
+        if gt == "CYLINDER":
+            try:
+                info["radius"] = round(face.radius, 2)
+            except Exception:
+                pass
+        faces_meta.append(info)
+
+    edges_meta = []
+    for ei, edge in enumerate(part.edges()):
+        gt = str(edge.geom_type).replace("GeomType.", "")
+        n = 2 if gt == "LINE" else 40
+        try:
+            pts = [edge @ (i / n) for i in range(n + 1)]
+            poly = [[round(p.X, 4), round(p.Y, 4), round(p.Z, 4)] for p in pts]
+            edges_meta.append({"id": ei, "type": gt,
+                               "length": round(edge.length, 2), "points": poly})
+        except Exception:
+            continue
+
+    return {"positions": positions, "indices": indices, "faceId": face_ids,
+            "faces": faces_meta, "edges": edges_meta}
+
+
 @app.get("/api/feature-mesh/{feature_id}.stl")
 def get_feature_mesh(feature_id: str):
     """Mesh of ONE feature's own solid — lets the UI highlight in 3D what a

@@ -166,6 +166,13 @@
     var(--line); color: var(--dim); border-radius: 6px; padding: 5px 10px;
     cursor: pointer; font: inherit; font-size: 12px; backdrop-filter: blur(4px); }
   #viewTools button:hover { color: var(--text); border-color: var(--accent); }
+  #viewTools button.on { color: var(--accent); border-color: var(--accent); }
+  #pickInfo { position: absolute; left: 10px; bottom: 10px; z-index: 6;
+    background: rgba(23,26,33,.92); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 12px; font-size: 12px; display: none;
+    backdrop-filter: blur(4px); max-width: 280px; }
+  #pickInfo b { color: var(--accent); }
+  #pickInfo .k { color: var(--dim); }
   #busy { position: absolute; inset: 0; display: none; flex-direction: column;
     gap: 10px; align-items: center; justify-content: center;
     background: rgba(10,12,15,.6); z-index: 10; backdrop-filter: blur(3px); }
@@ -318,12 +325,14 @@
   <div id="viewportPane">
     <div id="viewer"></div>
     <div id="viewTools">
+      <button id="vSelect" title="click faces/edges to inspect them">◉ Select</button>
       <button id="vFit">Fit</button>
       <button id="vTop">Top</button>
       <button id="vFront">Front</button>
       <button id="vIso">Iso</button>
     </div>
     <div id="busy"><div class="spinner"></div><span id="busyText">rebuilding…</span></div>
+    <div id="pickInfo"></div>
   </div>
 
   <div id="chatPane">
@@ -460,6 +469,8 @@ rim.position.set(-2, 2, -1); scene.add(rim);
 const grid = new THREE.GridHelper(400, 40, 0x2b303c, 0x1b1f28);
 grid.rotation.x = Math.PI / 2; scene.add(grid);
 let mesh = null, edges = null, fitRadius = 100, fitCenter = new THREE.Vector3();
+let MODEL = null;                       // {faceId[], faces[], edges[]} for picking
+const edgeLines = [];                   // per-edge THREE.Line objects
 
 function resize() {
   camera.aspect = pane.clientWidth / pane.clientHeight;
@@ -484,33 +495,142 @@ document.getElementById('vTop').onclick = () => setView('top');
 document.getElementById('vFront').onclick = () => setView('front');
 document.getElementById('vIso').onclick = () => setView('iso');
 
+function disposeModel() {
+  if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); mesh = null; }
+  if (edges) { scene.remove(edges); edges.geometry.dispose(); edges = null; }
+  for (const l of edgeLines) { scene.remove(l); l.geometry.dispose(); }
+  edgeLines.length = 0;
+  clearPickHighlight();
+}
+
 async function loadMesh(fit = false) {
-  clearHighlight();
+  clearHighlight(); clearPick();
   try {
-    const geo = await new STLLoader().loadAsync('/api/mesh.stl?t=' + Date.now());
+    const m = await (await fetch('/api/model?t=' + Date.now())).json();
+    disposeModel();
+    if (!m.positions || !m.positions.length) return;
+    MODEL = m;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position',
+      new THREE.Float32BufferAttribute(m.positions, 3));
+    geo.setAttribute('faceId',
+      new THREE.Float32BufferAttribute(m.faceId, 1));
+    geo.setIndex(m.indices);
     geo.computeVertexNormals();
-    if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); }
-    if (edges) { scene.remove(edges); edges.geometry.dispose(); }
     mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
       color: 0x5ba7f7, metalness: 0.25, roughness: 0.42 }));
-    edges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(geo, 25),
-      new THREE.LineBasicMaterial({ color: 0x0c2a4a, transparent: true,
-                                    opacity: 0.35 }));
-    scene.add(mesh); scene.add(edges);
+    scene.add(mesh);
+    // crisp CAD edges from the real OCCT topology
+    for (const e of m.edges) {
+      const g = new THREE.BufferGeometry().setFromPoints(
+        e.points.map(p => new THREE.Vector3(p[0], p[1], p[2])));
+      const line = new THREE.Line(g, new THREE.LineBasicMaterial({
+        color: 0x0c2a4a, transparent: true, opacity: 0.55 }));
+      line.userData.edgeId = e.id;
+      scene.add(line); edgeLines.push(line);
+    }
     geo.computeBoundingSphere();
-    fitRadius = geo.boundingSphere.radius;
+    fitRadius = geo.boundingSphere.radius || 100;
     fitCenter.copy(geo.boundingSphere.center);
     if (fit) {
       camera.near = fitRadius / 100; camera.far = fitRadius * 100;
       camera.updateProjectionMatrix(); setView('iso');
     }
-  } catch (e) { /* no mesh yet */ }
+  } catch (e) { /* no model yet */ }
 }
-function clearMesh() {
-  if (mesh) { scene.remove(mesh); mesh = null; }
-  if (edges) { scene.remove(edges); edges = null; }
-  clearHighlight(); selected = null;
+function clearMesh() { disposeModel(); MODEL = null; selected = null;
+                       clearHighlight(); }
+
+/* ---------------- face / edge picking (E3) ---------------- */
+let pickMode = false, pickHl = null;
+const raycaster = new THREE.Raycaster();
+
+function clearPickHighlight() {
+  if (pickHl) { scene.remove(pickHl); pickHl.geometry.dispose(); pickHl = null; }
+}
+function clearPick() {
+  clearPickHighlight();
+  document.getElementById('pickInfo').style.display = 'none';
+}
+
+document.getElementById('vSelect').onclick = e => {
+  pickMode = !pickMode;
+  e.target.classList.toggle('on', pickMode);
+  renderer.domElement.style.cursor = pickMode ? 'crosshair' : '';
+  if (!pickMode) clearPick();
+};
+
+let downXY = null;
+renderer.domElement.addEventListener('pointerdown', e => downXY = [e.clientX, e.clientY]);
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!pickMode || !downXY) return;
+  const moved = Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]);
+  downXY = null;
+  if (moved > 5) return;                       // that was an orbit-drag
+  pickAt(e);
+});
+
+function pickAt(e) {
+  if (!mesh || !MODEL) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  raycaster.params.Line.threshold = fitRadius / 60;
+
+  // edges first (they sit on the surface); then faces
+  const eHits = raycaster.intersectObjects(edgeLines, false);
+  const fHit = raycaster.intersectObject(mesh, false)[0];
+  if (eHits.length && (!fHit || eHits[0].distance <= fHit.distance + 1e-3)) {
+    selectEdge(eHits[0].object.userData.edgeId);
+  } else if (fHit) {
+    const fid = MODEL.faceId[fHit.face.a];
+    selectFace3D(fid);
+  }
+}
+
+function selectFace3D(fid) {
+  clearPickHighlight();
+  const m = MODEL, pos = m.positions, keep = [];
+  for (let t = 0; t < m.indices.length; t += 3) {
+    const a = m.indices[t];
+    if (m.faceId[a] === fid)
+      for (const vi of [m.indices[t], m.indices[t+1], m.indices[t+2]])
+        keep.push(pos[vi*3], pos[vi*3+1], pos[vi*3+2]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(keep, 3));
+  g.computeVertexNormals();
+  pickHl = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+    color: 0xffb85c, emissive: 0x8a5a1a, side: THREE.DoubleSide,
+    transparent: true, opacity: 0.75, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -3 }));
+  scene.add(pickHl);
+  const info = m.faces.find(f => f.id === fid) || {};
+  showPick(`<b>Face ${fid}</b> — ${info.type}`,
+    [['area', (info.area ?? '?') + ' mm²'],
+     info.radius != null ? ['radius', info.radius + ' mm'] : null,
+     info.center ? ['center', info.center.join(', ')] : null]);
+}
+
+function selectEdge(eid) {
+  clearPickHighlight();
+  const e = MODEL.edges.find(x => x.id === eid);
+  const g = new THREE.BufferGeometry().setFromPoints(
+    e.points.map(p => new THREE.Vector3(p[0], p[1], p[2])));
+  pickHl = new THREE.Line(g, new THREE.LineBasicMaterial({
+    color: 0xffb85c, linewidth: 3, depthTest: false }));
+  pickHl.renderOrder = 999;
+  scene.add(pickHl);
+  showPick(`<b>Edge ${eid}</b> — ${e.type}`, [['length', e.length + ' mm']]);
+}
+
+function showPick(title, rows) {
+  const el = document.getElementById('pickInfo');
+  el.innerHTML = title + rows.filter(Boolean)
+    .map(r => `<br><span class="k">${r[0]}:</span> ${r[1]}`).join('');
+  el.style.display = 'block';
 }
 
 /* ================= state + rendering ================= */
