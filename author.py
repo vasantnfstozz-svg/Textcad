@@ -103,7 +103,20 @@ RULES AND CONVENTIONS:
   size facts the request implies, so the part can be machine-verified.
 - spec "symmetry" is ONLY for discrete repeated features (N blades, N bolts),
   as an integer. Bodies of revolution are inherently round — omit symmetry.
-- Prefer few, well-parameterized features. Give features meaningful ids.
+DESIGN FOR EDITABILITY (critical — the tree IS the product, not just the
+solid; the user will open it in a CAD feature tree and edit it):
+- DECOMPOSE the part into its natural engineering features, one per node,
+  with meaningful ids: a water bottle is body + shoulder + neck + lip +
+  inner cavity (cut), NOT one giant profile. A bracket is base_plate +
+  ribs + each hole group. 5-12 features is typical; 1-2 features for a
+  non-trivial part is WRONG.
+- Every dimension the user might want to change (diameters, heights, wall
+  thickness, counts, angles) must appear as a NUMERIC param on some feature.
+  Hollow containers: build the outer solid, then CUT a scaled inner solid —
+  so wall thickness is controlled by the difference in their params.
+- revolve_profile is for genuinely curved/contoured sections only; where a
+  section is a simple cylinder or ring, use disc/tube instead (their radius/
+  thickness params are directly editable; buried profile points are not).
 """
 
 

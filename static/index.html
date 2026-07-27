@@ -64,40 +64,48 @@
     letter-spacing: .09em; text-transform: uppercase; color: var(--dim); }
   #tree { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
 
-  /* feature tree rows */
-  .node { border-radius: var(--radius); margin-bottom: 2px; }
-  .node.suppressed { opacity: .45; }
+  /* feature tree — Fusion-style browser: slim rows + guide lines, no boxes */
+  #tree { padding: 4px 6px 12px 4px; }
+  .node { position: relative; }
+  .node.suppressed > .nrow { opacity: .45; }
   .node.rolledback { opacity: .35; }
-  .rollbar { height: 3px; background: var(--stale); border-radius: 2px;
-             margin: 4px 6px 6px; box-shadow: 0 0 7px var(--stale); }
-  .nrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px;
-    border-radius: var(--radius); cursor: pointer; }
+  .rollbar { height: 2px; background: var(--stale); border-radius: 2px;
+             margin: 3px 10px 4px 24px; box-shadow: 0 0 7px var(--stale); }
+  .nrow { display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+    cursor: pointer; border-radius: 6px; height: 27px; }
   .nrow:hover { background: var(--panel2); }
-  .node.sel > .nrow { background: var(--accent2); }
-  .twisty { width: 12px; color: var(--dim); font-size: 10px; flex: none;
-    transition: transform .12s; }
-  .node.open .twisty { transform: rotate(90deg); }
-  .nico { width: 20px; height: 20px; flex: none; display: grid;
-    place-items: center; border-radius: 5px; font-size: 11px;
-    background: var(--panel3); }
-  .nname { font-weight: 600; overflow: hidden; text-overflow: ellipsis;
+  .node.sel > .nrow { background: var(--accent2);
+    box-shadow: inset 2px 0 0 var(--accent); }
+  .twisty { width: 16px; height: 16px; display: grid; place-items: center;
+    color: var(--dim); font-size: 9px; flex: none; border-radius: 4px;
+    transition: transform .12s; visibility: hidden; }
+  .node.haskids > .nrow .twisty { visibility: visible; }
+  .twisty:hover { background: var(--panel3); color: var(--text); }
+  .node.open > .nrow .twisty { transform: rotate(90deg); }
+  .nico { width: 18px; flex: none; text-align: center; font-size: 12px;
+    color: var(--accent); }
+  .nname { font-weight: 500; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap; }
   .nop { color: var(--dim); font-size: 11px; overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; }
   .nspacer { flex: 1; }
-  .nacts { display: none; gap: 2px; }
+  .nacts { display: none; gap: 1px; }
   .nrow:hover .nacts { display: flex; }
   .nact { background: none; border: none; color: var(--dim); cursor: pointer;
-    padding: 2px 4px; border-radius: 4px; font-size: 12px; }
+    padding: 1px 4px; border-radius: 4px; font-size: 12px; }
   .nact:hover { color: var(--text); background: var(--panel3); }
-  .ndot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .ndot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
   .ndot.ok { background: var(--ok); } .ndot.failed { background: var(--fail); }
   .ndot.stale { background: var(--stale); }
-  .nbody { display: none; padding: 2px 8px 8px 40px; }
+  /* children indented under a guide line, like Fusion's browser */
+  .nbody { display: none; margin-left: 13px; padding: 1px 0 4px 14px;
+    border-left: 1px solid var(--line); }
   .node.open .nbody { display: block; }
-  .prow { display: flex; align-items: center; gap: 8px; padding: 3px 0;
-    font-size: 12.5px; }
-  .pname { color: var(--dim); min-width: 108px; }
+  .prow { display: flex; align-items: center; gap: 8px; padding: 2px 0;
+    font-size: 12.5px; position: relative; }
+  .prow::before { content: ""; position: absolute; left: -14px; top: 50%;
+    width: 9px; height: 1px; background: var(--line); }
+  .pname { color: var(--dim); min-width: 104px; }
   .pval { color: var(--accent); cursor: pointer;
     border-bottom: 1px dashed transparent; }
   .pval:hover { border-bottom-color: var(--accent); }
@@ -105,7 +113,24 @@
     border: 1px solid var(--accent); border-radius: 4px; padding: 1px 6px;
     font: inherit; }
   .pro { color: var(--dim); }
-  .nproblems { padding: 4px 8px 8px 40px; color: var(--fail); font-size: 12px; }
+  .nproblems { margin-left: 27px; padding: 2px 0 6px; color: var(--fail);
+    font-size: 12px; }
+  /* editable profile-points table */
+  .pts { margin: 2px 0 4px; }
+  .pts .ptrow { display: flex; gap: 4px; align-items: center; padding: 1px 0; }
+  .pts input { width: 58px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px;
+    font: inherit; font-size: 12px; }
+  .pts input:focus { border-color: var(--accent); outline: none; }
+  .pts .ptbtn { background: none; border: none; color: var(--dim);
+    cursor: pointer; padding: 0 3px; font-size: 12px; }
+  .pts .ptbtn:hover { color: var(--text); }
+  .pts .apply { margin-top: 3px; background: var(--accent2);
+    border: 1px solid var(--line); color: var(--text); border-radius: 5px;
+    padding: 2px 10px; cursor: pointer; font: inherit; font-size: 12px; }
+  .pts .apply:hover { border-color: var(--accent); }
+  .pthead { color: var(--dim); font-size: 11px; display: flex; gap: 4px; }
+  .pthead span { width: 58px; }
   .specrow { margin-top: 10px; border-top: 1px solid var(--line);
     padding: 10px 8px 0; font-size: 12.5px; }
   .specrow .schip { display: inline-block; background: var(--panel3);
@@ -371,6 +396,7 @@ document.getElementById('vFront').onclick = () => setView('front');
 document.getElementById('vIso').onclick = () => setView('iso');
 
 async function loadMesh(fit = false) {
+  clearHighlight();
   try {
     const geo = await new STLLoader().loadAsync('/api/mesh.stl?t=' + Date.now());
     geo.computeVertexNormals();
@@ -395,6 +421,7 @@ async function loadMesh(fit = false) {
 function clearMesh() {
   if (mesh) { scene.remove(mesh); mesh = null; }
   if (edges) { scene.remove(edges); edges = null; }
+  clearHighlight(); selected = null;
 }
 
 /* ================= state + rendering ================= */
@@ -435,16 +462,22 @@ function renderDoc(doc) {
   let pastBar = false;
   for (const f of doc.features) {
     const node = document.createElement('div');
+    const hasKids = Object.keys(f.params).length > 0 || f.volume != null;
     node.className = 'node' + (openNodes.has(f.id) ? ' open' : '')
       + (f.suppressed ? ' suppressed' : '') + (selected === f.id ? ' sel' : '')
-      + (pastBar ? ' rolledback' : '');
+      + (pastBar ? ' rolledback' : '') + (hasKids ? ' haskids' : '');
     const row = document.createElement('div'); row.className = 'nrow';
     row.innerHTML = `
-      <span class="twisty">▶</span>
+      <span class="twisty" title="expand">▶</span>
       <span class="nico">${OP_ICONS[f.op] || '□'}</span>
       <span class="nname">${f.id}</span>
       <span class="nop">${f.op}${f.inputs.length ? ' ← ' + f.inputs.join(', ') : ''}</span>
       <span class="nspacer"></span>`;
+    row.querySelector('.twisty').onclick = e => {
+      e.stopPropagation();
+      openNodes.has(f.id) ? openNodes.delete(f.id) : openNodes.add(f.id);
+      renderDoc(lastDoc);
+    };
     const acts = document.createElement('span'); acts.className = 'nacts';
     const roll = document.createElement('button'); roll.className = 'nact';
     const isBar = doc.rollback === f.id;
@@ -467,11 +500,7 @@ function renderDoc(doc) {
     acts.append(roll, sup, del);
     const dot = document.createElement('span'); dot.className = 'ndot ' + f.status;
     row.append(acts, dot);
-    row.onclick = () => {
-      selected = f.id;
-      openNodes.has(f.id) ? openNodes.delete(f.id) : openNodes.add(f.id);
-      renderDoc(lastDoc);
-    };
+    row.onclick = () => selectFeature(f.id);
     node.appendChild(row);
 
     const body = document.createElement('div'); body.className = 'nbody';
@@ -482,11 +511,15 @@ function renderDoc(doc) {
       if (typeof v === 'number') {
         val.className = 'pval'; val.textContent = v; val.title = 'click to edit';
         val.onclick = e => { e.stopPropagation(); beginEdit(val, f.id, k, v); };
+        pr.appendChild(val); body.appendChild(pr);
+      } else if (Array.isArray(v) && v.length && Array.isArray(v[0])) {
+        body.appendChild(pr);                       // label row
+        body.appendChild(pointsTable(f.id, k, v));  // editable table below
       } else {
         val.className = 'pro';
-        val.textContent = Array.isArray(v) ? `[${v.length} points]` : v;
+        val.textContent = Array.isArray(v) ? JSON.stringify(v) : v;
+        pr.appendChild(val); body.appendChild(pr);
       }
-      pr.appendChild(val); body.appendChild(pr);
     }
     if (f.volume != null) {
       const pr = document.createElement('div'); pr.className = 'prow';
@@ -519,6 +552,62 @@ function renderDoc(doc) {
       doc.spec_problems.map(p => `<div class="sfail">! ${p}</div>`).join('');
     treeEl.appendChild(sr);
   }
+}
+
+function pointsTable(fid, param, pts) {
+  const box = document.createElement('div'); box.className = 'pts';
+  box.innerHTML = `<div class="pthead"><span>radius</span><span>z</span></div>`;
+  const rows = pts.map(p => [...p]);
+  const render = () => {
+    box.querySelectorAll('.ptrow, .apply').forEach(el => el.remove());
+    rows.forEach((p, i) => {
+      const r = document.createElement('div'); r.className = 'ptrow';
+      const ir = document.createElement('input'); ir.value = p[0];
+      const iz = document.createElement('input'); iz.value = p[1];
+      ir.oninput = () => rows[i][0] = Number(ir.value);
+      iz.oninput = () => rows[i][1] = Number(iz.value);
+      const del = document.createElement('button'); del.className = 'ptbtn';
+      del.textContent = '✕'; del.title = 'remove point';
+      del.onclick = () => { rows.splice(i, 1); render(); };
+      const add = document.createElement('button'); add.className = 'ptbtn';
+      add.textContent = '＋'; add.title = 'insert point after';
+      add.onclick = () => { rows.splice(i + 1, 0, [...rows[i]]); render(); };
+      r.append(ir, iz, add, del); box.appendChild(r);
+    });
+    const apply = document.createElement('button'); apply.className = 'apply';
+    apply.textContent = 'Apply profile';
+    apply.onclick = async () => {
+      await postJSON('/api/edit', { feature_id: fid, param,
+        value: rows.map(p => [Number(p[0]), Number(p[1])]) });
+      loadMesh();
+    };
+    box.appendChild(apply);
+  };
+  render();
+  return box;
+}
+
+/* ---- selection: tree node -> highlighted geometry in the viewport ---- */
+let hlMesh = null;
+function clearHighlight() {
+  if (hlMesh) { scene.remove(hlMesh); hlMesh.geometry.dispose(); hlMesh = null; }
+}
+async function selectFeature(fid) {
+  if (selected === fid) {          // click again = deselect
+    selected = null; clearHighlight(); renderDoc(lastDoc); return;
+  }
+  selected = fid; renderDoc(lastDoc);
+  clearHighlight();
+  try {
+    const geo = await new STLLoader()
+      .loadAsync('/api/feature-mesh/' + fid + '.stl?t=' + Date.now());
+    geo.computeVertexNormals();
+    if (selected !== fid) return;  // selection moved on while loading
+    hlMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      color: 0xffb85c, emissive: 0x8a5a1a, transparent: true, opacity: 0.6,
+      depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+    scene.add(hlMesh);
+  } catch (e) { /* feature not built (suppressed / rolled back) */ }
 }
 
 function beginEdit(el, fid, param, oldVal) {

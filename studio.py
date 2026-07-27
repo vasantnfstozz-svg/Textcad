@@ -285,6 +285,22 @@ def get_mesh():
     return Response(status_code=404)
 
 
+@app.get("/api/feature-mesh/{feature_id}.stl")
+def get_feature_mesh(feature_id: str):
+    """Mesh of ONE feature's own solid — lets the UI highlight in 3D what a
+    selected tree node actually contributes."""
+    doc: Document = STATE["doc"]
+    part = doc._parts.get(feature_id)
+    if part is None:
+        return Response(status_code=404)
+    path = ROOT / "_studio_feature.stl"
+    try:
+        b3d.export_stl(part, str(path))
+        return Response(path.read_bytes(), media_type="model/stl")
+    except Exception:
+        return Response(status_code=404)
+
+
 @app.post("/api/spec")
 def set_spec(req: SpecReq):
     """Edit the design's requirements — the legitimate way to change intent
