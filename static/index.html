@@ -55,6 +55,25 @@
   .tbtn:hover { background: var(--panel3); border-color: var(--line); }
   .tsep { width: 1px; height: 30px; background: var(--line); margin: 0 6px; }
 
+  /* ============ ribbon ============ */
+  #ribbon { display: flex; align-items: stretch; gap: 0; padding: 4px 10px 5px;
+    background: var(--panel); border-bottom: 1px solid var(--line);
+    overflow-x: auto; }
+  .rgroup { display: flex; flex-direction: column; padding: 0 10px;
+    border-right: 1px solid var(--line); }
+  .rgroup:first-child { padding-left: 0; }
+  .rtools { display: flex; gap: 2px; flex: 1; }
+  .rlabel { text-align: center; color: var(--dim); font-size: 9.5px;
+    letter-spacing: .12em; text-transform: uppercase; padding-top: 3px;
+    user-select: none; }
+  .rbtn { display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 1px; background: none;
+    border: 1px solid transparent; color: var(--text); border-radius: 7px;
+    padding: 3px 7px; cursor: pointer; font: inherit; font-size: 10px;
+    min-width: 46px; }
+  .rbtn .rico { font-size: 16px; line-height: 1.25; color: var(--accent); }
+  .rbtn:hover { background: var(--panel3); border-color: var(--line); }
+
   /* ============ main layout ============ */
   main { flex: 1; display: flex; min-height: 0; }
   #treePane { width: 320px; min-width: 240px; background: var(--panel);
@@ -247,12 +266,14 @@
   <button class="tbtn" id="tOpen"><span class="ico">📂</span>Open</button>
   <button class="tbtn" id="tSave"><span class="ico">💾</span>Save</button>
   <div class="tsep"></div>
-  <button class="tbtn" id="tAddFeat"><span class="ico">✚</span>Feature</button>
   <button class="tbtn" id="tUndo"><span class="ico">↶</span>Undo</button>
   <button class="tbtn" id="tSpec"><span class="ico">✓</span>Spec</button>
   <div class="tsep"></div>
   <button class="tbtn" id="tExport"><span class="ico">⬇</span>STEP</button>
 </div>
+
+<!-- ============ ribbon: every design tool visible, Fusion-style ============ -->
+<div id="ribbon"></div>
 
 <!-- ============ main ============ -->
 <main>
@@ -771,15 +792,55 @@ const libDialog = document.getElementById('libDialog');
 window.libDialog = libDialog;
 const specDialog = document.getElementById('specDialog');
 let OPS = [];
-async function actionAddFeat() {
+async function openFeatDialog(preselect) {
   if (!OPS.length) OPS = await (await fetch('/api/ops')).json();
   const sel = document.getElementById('featOp');
   sel.innerHTML = OPS.map(o =>
     `<option value="${o.op}">${OP_ICONS[o.op] || ''} ${o.op} — ${o.kind}</option>`).join('');
+  if (preselect) sel.value = preselect;
   sel.onchange = renderFeatForm; renderFeatForm();
   dlg.showModal();
 }
-document.getElementById('tAddFeat').onclick = actionAddFeat;
+
+/* ---- the ribbon: every design tool visible, grouped like Fusion ---- */
+const RIBBON = [
+  ['Create', ['plate', 'disc', 'ball', 'cone', 'tube', 'hex_plate',
+              'polygon_plate', 'revolve_profile', 'curved_blade']],
+  ['Modify', ['with_center_hole', 'with_bolt_circle', 'fillet', 'chamfer',
+              'shell']],
+  ['Transform', ['move', 'rotate', 'scale', 'mirror']],
+  ['Pattern', ['polar_pattern', 'linear_pattern']],
+  ['Combine', ['fuse', 'cut', 'intersect']],
+];
+const TOOL_NAMES = {
+  plate: 'Plate', disc: 'Disc', ball: 'Ball', cone: 'Cone', tube: 'Tube',
+  hex_plate: 'Hex', polygon_plate: 'Polygon', revolve_profile: 'Revolve',
+  curved_blade: 'Blade', with_center_hole: 'Hole',
+  with_bolt_circle: 'Bolt circle', fillet: 'Fillet', chamfer: 'Chamfer',
+  shell: 'Shell', move: 'Move', rotate: 'Rotate', scale: 'Scale',
+  mirror: 'Mirror', polar_pattern: 'Polar', linear_pattern: 'Linear',
+  fuse: 'Join', cut: 'Cut', intersect: 'Intersect',
+};
+function renderRibbon() {
+  const rb = document.getElementById('ribbon');
+  rb.innerHTML = '';
+  for (const [label, ops] of RIBBON) {
+    const g = document.createElement('div'); g.className = 'rgroup';
+    const tools = document.createElement('div'); tools.className = 'rtools';
+    for (const op of ops) {
+      const b = document.createElement('button'); b.className = 'rbtn';
+      b.title = op;
+      b.innerHTML = `<span class="rico">${OP_ICONS[op] || '□'}</span>` +
+                    `<span>${TOOL_NAMES[op] || op}</span>`;
+      b.onclick = () => openFeatDialog(op);
+      tools.appendChild(b);
+    }
+    const cap = document.createElement('div'); cap.className = 'rlabel';
+    cap.textContent = label;
+    g.append(tools, cap); rb.appendChild(g);
+  }
+}
+renderRibbon();
 
 function renderFeatForm() {
   const op = OPS.find(o => o.op === document.getElementById('featOp').value);
