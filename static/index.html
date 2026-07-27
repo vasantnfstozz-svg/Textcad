@@ -20,22 +20,15 @@
   #menubar { display: flex; align-items: center; gap: 2px; padding: 0 10px;
     height: 40px; background: var(--panel); border-bottom: 1px solid var(--line);
     user-select: none; }
-  #logo { font-size: 15px; font-weight: 700; margin-right: 14px; }
+  #logo { font-size: 15px; font-weight: 700; margin-right: 16px; }
   #logo b { color: var(--accent); }
-  .menu-root { position: relative; }
-  .menu-root > button { background: none; border: none; color: var(--text);
-    padding: 8px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
-  .menu-root > button:hover, .menu-root.open > button { background: var(--panel3); }
-  .menu-list { display: none; position: absolute; left: 0; top: 105%;
-    background: var(--panel2); border: 1px solid var(--line);
-    border-radius: var(--radius); min-width: 230px; z-index: 40;
-    padding: 5px; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
-  .menu-root.open .menu-list { display: block; }
-  .menu-list a { display: flex; justify-content: space-between; gap: 18px;
-    padding: 8px 12px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
-  .menu-list a:hover { background: var(--accent2); }
-  .menu-list a .hint { color: var(--dim); font-size: 11px; }
-  .menu-sep { height: 1px; background: var(--line); margin: 5px 4px; }
+  #tabstrip { display: flex; gap: 2px; align-items: flex-end; height: 100%; }
+  .tab { background: none; border: none; color: var(--dim); cursor: pointer;
+    font: inherit; font-size: 13px; padding: 0 15px; height: 100%;
+    border-bottom: 2px solid transparent; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent);
+    font-weight: 600; }
   #docTitle { margin-left: auto; margin-right: auto; color: var(--dim); }
   #docTitle b { color: var(--text); font-weight: 600; }
   #verifyBadge { padding: 3px 10px; border-radius: 20px; font-size: 12px;
@@ -43,17 +36,6 @@
   #verifyBadge.ok { background: rgba(67,197,121,.15); color: var(--ok); }
   #verifyBadge.fail { background: rgba(255,93,93,.15); color: var(--fail); }
   #verifyBadge.none { background: var(--panel3); color: var(--dim); }
-
-  /* ============ toolbar ============ */
-  #toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 10px;
-    background: var(--panel); border-bottom: 1px solid var(--line); }
-  .tbtn { display: flex; flex-direction: column; align-items: center; gap: 2px;
-    background: none; border: 1px solid transparent; color: var(--text);
-    border-radius: var(--radius); padding: 5px 11px; cursor: pointer;
-    font: inherit; font-size: 11px; min-width: 58px; }
-  .tbtn .ico { font-size: 17px; line-height: 1; }
-  .tbtn:hover { background: var(--panel3); border-color: var(--line); }
-  .tsep { width: 1px; height: 30px; background: var(--line); margin: 0 6px; }
 
   /* ============ ribbon ============ */
   #ribbon { display: flex; align-items: stretch; gap: 0; padding: 4px 10px 5px;
@@ -272,47 +254,15 @@
 </head>
 <body>
 
-<!-- ============ menu bar ============ -->
+<!-- ============ menu bar: app + tab strip ============ -->
 <div id="menubar">
-  <span id="logo">Text<b>CAD</b> Studio</span>
-
-  <div class="menu-root" id="fileMenu">
-    <button>File</button>
-    <div class="menu-list">
-      <a id="mNew">New design <span class="hint">blank tree</span></a>
-      <a id="mOpen">Open… <span class="hint">design library</span></a>
-      <a id="mSave">Save <span class="hint">to library</span></a>
-      <div class="menu-sep"></div>
-      <a id="mExport">Export STEP <span class="hint">machinable file</span></a>
-    </div>
-  </div>
-
-  <div class="menu-root" id="exMenu">
-    <button>Examples</button>
-    <div class="menu-list">
-      <a data-sample="flange">Flange <span class="hint">6-bolt, spec-verified</span></a>
-      <a data-sample="impeller">Impeller <span class="hint">7 curved blades</span></a>
-      <a data-sample="compressor">Compressor <span class="hint">meanline-designed, slow</span></a>
-    </div>
-  </div>
-
+  <span id="logo">Text<b>CAD</b></span>
+  <div id="tabstrip"></div>
   <span id="docTitle">—</span>
   <span id="verifyBadge" class="none">no design</span>
 </div>
 
-<!-- ============ toolbar ============ -->
-<div id="toolbar">
-  <button class="tbtn" id="tNew"><span class="ico">🗋</span>New</button>
-  <button class="tbtn" id="tOpen"><span class="ico">📂</span>Open</button>
-  <button class="tbtn" id="tSave"><span class="ico">💾</span>Save</button>
-  <div class="tsep"></div>
-  <button class="tbtn" id="tUndo"><span class="ico">↶</span>Undo</button>
-  <button class="tbtn" id="tSpec"><span class="ico">✓</span>Spec</button>
-  <div class="tsep"></div>
-  <button class="tbtn" id="tExport"><span class="ico">⬇</span>STEP</button>
-</div>
-
-<!-- ============ ribbon: every design tool visible, Fusion-style ============ -->
+<!-- ============ ribbon: tools for the ACTIVE tab only ============ -->
 <div id="ribbon"></div>
 
 <!-- ============ main ============ -->
@@ -397,6 +347,15 @@
       <div id="skFaceNote" style="display:none;color:var(--accent);
         font-size:11.5px;background:var(--accent2);padding:6px 8px;
         border-radius:6px;margin:4px 0"></div>
+      <div id="skFaceExtrude" style="display:none">
+        <label>Depth (mm) <input id="skDepth" value="10"></label>
+        <label>Operation
+          <select id="skOp">
+            <option value="join">Join — add a boss</option>
+            <option value="cut">Cut — make a pocket</option>
+            <option value="new">New separate body</option>
+          </select></label>
+      </div>
       <div class="skpalette">
         <div class="skhead">Add shape</div>
         <button data-shape="rectangle">▭ Rectangle</button>
@@ -884,23 +843,13 @@ document.getElementById('chatForm').onsubmit = async e => {
 };
 
 /* ================= file actions ================= */
-function closeMenus() {
-  document.querySelectorAll('.menu-root').forEach(m => m.classList.remove('open'));
-}
-document.querySelectorAll('.menu-root > button').forEach(b => {
-  b.onclick = e => { e.stopPropagation();
-    const m = b.parentElement, was = m.classList.contains('open');
-    closeMenus(); if (!was) m.classList.add('open'); };
-});
-document.body.addEventListener('click', closeMenus);
-
 async function actionNew() {
   const name = prompt('Name for the new design:', 'my-part');
   if (name === null) return;
   await postJSON('/api/new', { name });
   clearMesh();
-  addMsg('bot', `Blank design "${name}" created. Describe a part to design, ` +
-                `or use ✚ Feature to build manually.`);
+  addMsg('bot', `Blank design "${name}" created. Describe a part to design it, ` +
+                `or use the Create / Sketch tabs to build it by hand.`);
 }
 async function actionSave() {
   const res = await postJSON('/api/save', {}, 'saving…');
@@ -962,16 +911,6 @@ document.getElementById('specForm').onsubmit = async e => {
       + doc.spec_problems.join('; '));
 };
 
-document.getElementById('mNew').onclick = actionNew;
-document.getElementById('tNew').onclick = actionNew;
-document.getElementById('mSave').onclick = actionSave;
-document.getElementById('tSave').onclick = actionSave;
-document.getElementById('mOpen').onclick = actionOpen;
-document.getElementById('tOpen').onclick = actionOpen;
-document.getElementById('mExport').onclick = actionExport;
-document.getElementById('tExport').onclick = actionExport;
-document.getElementById('tUndo').onclick = actionUndo;
-document.getElementById('tSpec').onclick = actionSpec;
 window.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'z'
       && document.activeElement.tagName !== 'INPUT') {
@@ -979,14 +918,12 @@ window.addEventListener('keydown', e => {
   }
 });
 
-for (const a of document.querySelectorAll('[data-sample]')) {
-  a.onclick = async () => {
-    const doc = await postJSON('/api/sample/' + a.dataset.sample, {},
-      a.dataset.sample === 'compressor' ? 'building compressor (slow)…' : 'building…');
-    loadMesh(true);
-    addMsg('bot', `Loaded example "${doc.name}". Expand a feature and click a ` +
-                  `blue value to edit, or tell me what to change.`);
-  };
+async function loadSample(name) {
+  const doc = await postJSON('/api/sample/' + name, {},
+    name === 'compressor' ? 'building compressor (slow)…' : 'building…');
+  loadMesh(true);
+  addMsg('bot', `Loaded example "${doc.name}". Expand a feature and click a ` +
+                `blue value to edit, or tell me what to change.`);
 }
 
 /* ================= add-feature dialog ================= */
@@ -1021,6 +958,7 @@ function openSketchEditor() {
   document.getElementById('skOffset').value = '0';
   document.getElementById('skPlaneRow').style.display = '';
   document.getElementById('skFaceNote').style.display = 'none';
+  document.getElementById('skFaceExtrude').style.display = 'none';
   renderSkEnts();
   sketchDialog.showModal();
 }
@@ -1036,9 +974,10 @@ function openSketchOnFace(faceInfo) {
   document.getElementById('skName').value = _skName('sketch');
   document.getElementById('skPlaneRow').style.display = 'none';
   document.getElementById('skFaceNote').style.display = '';
+  document.getElementById('skFaceExtrude').style.display = '';
   document.getElementById('skFaceNote').textContent =
     `On face at (${faceInfo.center.join(', ')}) of "${skOnFace.inputId}". ` +
-    `Draw here, then Create — then Extrude to add or cut material.`;
+    `Draw, set depth + Join/Cut, then Create — it builds the boss/pocket in one step.`;
   renderSkEnts();
   sketchDialog.showModal();
 }
@@ -1152,13 +1091,27 @@ document.getElementById('skCreate').onclick = async () => {
   sketchDialog.close();
   const id = document.getElementById('skName').value || 'sketch1';
   if (skOnFace) {
+    // one guided action: sketch on face -> extrude -> join/cut with the body
+    const op = document.getElementById('skOp').value;
+    const depth = Number(document.getElementById('skDepth').value) || 10;
     await postJSON('/api/feature/add', {
       id, op: 'sketch_on_face',
       params: { face_center: skOnFace.center, face_normal: skOnFace.normal,
                 entities },
       inputs: [skOnFace.inputId] });
-    addMsg('bot', `Sketch "${id}" placed on the face. Select it, then Extrude ` +
-                  `(positive = boss, then Join; or Cut) to change the solid.`);
+    await postJSON('/api/feature/add', {
+      id: id + '_solid', op: 'extrude', params: { amount: depth },
+      inputs: [id] });
+    if (op !== 'new') {
+      await postJSON('/api/feature/add', {
+        id: id + (op === 'cut' ? '_pocket' : '_boss'),
+        op: op === 'cut' ? 'cut' : 'fuse',
+        inputs: [skOnFace.inputId, id + '_solid'] });
+    }
+    loadMesh();
+    addMsg('bot', op === 'cut' ? `Pocket cut into the face (depth ${depth}mm).`
+      : op === 'join' ? `Boss added on the face (height ${depth}mm).`
+      : `New body extruded from the face (${depth}mm).`);
   } else {
     await postJSON('/api/feature/add', {
       id, op: 'sketch',
@@ -1181,17 +1134,7 @@ async function openFeatDialog(preselect) {
   dlg.showModal();
 }
 
-/* ---- the ribbon: every design tool visible, grouped like Fusion ---- */
-const RIBBON = [
-  ['Sketch', ['sketch', 'extrude', 'revolve', 'loft', 'sweep']],
-  ['Create', ['plate', 'disc', 'ball', 'cone', 'tube', 'hex_plate',
-              'polygon_plate', 'revolve_profile', 'curved_blade']],
-  ['Modify', ['with_center_hole', 'with_bolt_circle', 'fillet', 'chamfer',
-              'shell']],
-  ['Transform', ['move', 'rotate', 'scale', 'mirror']],
-  ['Pattern', ['polar_pattern', 'linear_pattern']],
-  ['Combine', ['fuse', 'cut', 'intersect']],
-];
+/* ================= tabbed ribbon (Fusion-style) ================= */
 const TOOL_NAMES = {
   sketch: 'Sketch', extrude: 'Extrude', revolve: 'Revolve', loft: 'Loft',
   sweep: 'Sweep',
@@ -1203,19 +1146,84 @@ const TOOL_NAMES = {
   mirror: 'Mirror', polar_pattern: 'Polar', linear_pattern: 'Linear',
   fuse: 'Join', cut: 'Cut', intersect: 'Intersect',
 };
+
+// named (non-op) actions that live in the ribbon
+const ACTIONS = {
+  new:     { icon: '🗋', name: 'New',      fn: actionNew },
+  open:    { icon: '📂', name: 'Open',     fn: actionOpen },
+  save:    { icon: '💾', name: 'Save',     fn: actionSave },
+  export:  { icon: '⬇', name: 'Export STEP', fn: actionExport },
+  undo:    { icon: '↶', name: 'Undo',     fn: actionUndo },
+  spec:    { icon: '✓', name: 'Spec',     fn: actionSpec },
+  select:  { icon: '◉', name: 'Select',   fn: () => document.getElementById('vSelect').click() },
+  ex_flange:     { icon: '⚙', name: 'Flange',     fn: () => loadSample('flange') },
+  ex_impeller:   { icon: '🌀', name: 'Impeller',   fn: () => loadSample('impeller') },
+  ex_compressor: { icon: '💨', name: 'Compressor', fn: () => loadSample('compressor') },
+};
+
+// each tab -> list of [group-label, items]; an item is an op name or {a:action}
+const TABS = {
+  File: [
+    ['Design', [{a:'new'}, {a:'open'}, {a:'save'}, {a:'export'}]],
+    ['Examples', [{a:'ex_flange'}, {a:'ex_impeller'}, {a:'ex_compressor'}]],
+  ],
+  Create: [
+    ['Primitives', ['plate', 'disc', 'ball', 'cone', 'tube', 'hex_plate',
+                    'polygon_plate']],
+    ['From profile', ['revolve_profile', 'curved_blade']],
+  ],
+  Sketch: [
+    ['Sketch', ['sketch']],
+    ['From sketch', ['extrude', 'revolve', 'loft', 'sweep']],
+  ],
+  Modify: [
+    ['Features', ['with_center_hole', 'with_bolt_circle', 'fillet', 'chamfer',
+                  'shell']],
+    ['Transform', ['move', 'rotate', 'scale', 'mirror']],
+    ['Pattern', ['polar_pattern', 'linear_pattern']],
+    ['Combine', ['fuse', 'cut', 'intersect']],
+  ],
+  Inspect: [
+    ['Select', [{a:'select'}]],
+    ['Verify', [{a:'spec'}]],
+    ['History', [{a:'undo'}]],
+  ],
+};
+const TAB_ORDER = ['File', 'Create', 'Sketch', 'Modify', 'Inspect'];
+let activeTab = 'Create';
+
+function renderTabs() {
+  const strip = document.getElementById('tabstrip');
+  strip.innerHTML = '';
+  for (const name of TAB_ORDER) {
+    const b = document.createElement('button');
+    b.className = 'tab' + (name === activeTab ? ' active' : '');
+    b.textContent = name;
+    b.onclick = () => { activeTab = name; renderTabs(); renderRibbon(); };
+    strip.appendChild(b);
+  }
+}
+
 function renderRibbon() {
   const rb = document.getElementById('ribbon');
   rb.innerHTML = '';
-  for (const [label, ops] of RIBBON) {
+  for (const [label, items] of TABS[activeTab]) {
     const g = document.createElement('div'); g.className = 'rgroup';
     const tools = document.createElement('div'); tools.className = 'rtools';
-    for (const op of ops) {
+    for (const item of items) {
       const b = document.createElement('button'); b.className = 'rbtn';
-      b.title = op;
-      b.innerHTML = `<span class="rico">${OP_ICONS[op] || '□'}</span>` +
-                    `<span>${TOOL_NAMES[op] || op}</span>`;
-      // "sketch" opens the visual 2D editor; everything else the feature dialog
-      b.onclick = op === 'sketch' ? openSketchEditor : () => openFeatDialog(op);
+      if (typeof item === 'object') {                 // named action
+        const a = ACTIONS[item.a];
+        b.title = a.name;
+        b.innerHTML = `<span class="rico">${a.icon}</span><span>${a.name}</span>`;
+        b.onclick = a.fn;
+      } else {                                        // an op
+        b.title = item;
+        b.innerHTML = `<span class="rico">${OP_ICONS[item] || '□'}</span>` +
+                      `<span>${TOOL_NAMES[item] || item}</span>`;
+        b.onclick = item === 'sketch' ? openSketchEditor
+                                      : () => openFeatDialog(item);
+      }
       tools.appendChild(b);
     }
     const cap = document.createElement('div'); cap.className = 'rlabel';
@@ -1223,6 +1231,7 @@ function renderRibbon() {
     g.append(tools, cap); rb.appendChild(g);
   }
 }
+renderTabs();
 renderRibbon();
 
 function renderFeatForm() {
