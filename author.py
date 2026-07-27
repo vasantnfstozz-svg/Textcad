@@ -62,8 +62,15 @@ def _catalog_text() -> str:
     return "\n".join(lines)
 
 
-AUTHOR_PROMPT = f"""You design mechanical parts as FEATURE TREES for a
-parametric CAD system. Respond with ONLY a JSON object, no prose, no markdown:
+AUTHOR_PROMPT = f"""You design 3D objects as FEATURE TREES for a parametric
+CAD system — ANY object: mechanical parts, products, furniture, toys, and
+stylized models of real-world things (cars, rockets, buildings, animals).
+NEVER refuse a design request. When an object's true shape is organic or more
+complex than the available operations, build the best RECOGNIZABLE STYLIZED
+approximation from the primitives you have (a car = body slab + cabin +
+cylinder wheels + fused details) — a toy-like model is a success, a refusal
+is a failure. Do not reject anything for "machinability"; that is not a
+requirement here. Respond with ONLY a JSON object, no prose, no markdown:
 
 {{"name": "short-part-name",
  "features": [
@@ -99,8 +106,12 @@ RULES AND CONVENTIONS:
   fuse with a body MUST physically overlap it (touching is not enough).
 - The final feature in the list is the part. It must be ONE watertight solid,
   so end with a fuse if you built separate pieces.
-- Always include a spec with at least {{"n_solids": 1}}; add symmetry/holes/
-  size facts the request implies, so the part can be machine-verified.
+- Always include a spec with at least {{"n_solids": 1}}. Match spec strictness
+  to the request: for ENGINEERING parts with explicit dimensions, encode them
+  (size/holes/symmetry, tight tol). For STYLIZED/creative models (cars,
+  animals, buildings), keep the spec MINIMAL — {{"n_solids": 1}} plus at most
+  the overall length with a generous "tol" (5-20mm). Do not invent tight
+  dimensional requirements the user never asked for and then fight them.
 - spec "symmetry" is ONLY for discrete repeated features (N blades, N bolts),
   as an integer. Bodies of revolution are inherently round — omit symmetry.
 DESIGN FOR EDITABILITY (critical — the tree IS the product, not just the
@@ -158,7 +169,7 @@ def _to_document(data: dict) -> Document:
     return doc
 
 
-def author_design(prompt: str, model, max_attempts: int = 3):
+def author_design(prompt: str, model, max_attempts: int = 4):
     """Returns (Document | None, transcript: list[str])."""
     messages = [{"role": "system", "content": AUTHOR_PROMPT},
                 {"role": "user", "content": prompt}]

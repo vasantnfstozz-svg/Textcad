@@ -42,8 +42,8 @@ import inspector
 
 # creators: no geometric inputs, params only  (from the verified block library)
 CREATORS = {name: blocks.EXPORTS[name] for name in
-            ("plate", "disc", "tube", "polygon_plate", "hex_plate",
-             "revolve_profile", "curved_blade")}
+            ("plate", "disc", "ball", "cone", "tube", "polygon_plate",
+             "hex_plate", "revolve_profile", "curved_blade")}
 
 # modifiers: exactly one upstream Part + numeric params
 MODIFIERS = {

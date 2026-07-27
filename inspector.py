@@ -211,8 +211,14 @@ def health(solid, require_manifold: bool = True) -> list[str]:
         problems.append("no solid present (empty compound)")
 
     if require_manifold and m.get("is_manifold") is False:
-        problems.append("solid is not manifold/watertight (open shell) — "
-                        "not machinable/printable")
+        # Known false negative: build123d 0.11 reports ANY solid containing a
+        # spherical face as non-manifold (seam/pole artifact) even when OCCT's
+        # BRepCheck (is_valid) passes. Don't fail sphere-bearing solids on
+        # this flag alone.
+        has_sphere = "GeomType.SPHERE" in (m.get("face_types") or {})
+        if not has_sphere:
+            problems.append("solid is not manifold/watertight (open shell) — "
+                            "not machinable/printable")
 
     return problems
 

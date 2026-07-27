@@ -21,7 +21,7 @@ hole/pattern helpers (which cut tall cutters along Z) work regardless of scale.
 from __future__ import annotations
 import math
 from build123d import (
-    Box, Cylinder, Pos, PolarLocations, Locations,
+    Box, Cylinder, Sphere, Cone, Pos, PolarLocations, Locations,
     BuildSketch, RegularPolygon, BuildLine, Polyline, Spline, make_face,
     trace, extrude, revolve, Axis, Plane, Part,
 )
@@ -39,6 +39,20 @@ def plate(width: float, depth: float, thickness: float) -> Part:
 def disc(radius: float, thickness: float) -> Part:
     """A solid cylinder (disc) centered on the origin, axis along Z."""
     return Cylinder(radius=radius, height=thickness)
+
+
+def ball(radius: float) -> Part:
+    """A solid sphere centered on the origin. Great for domes (cut in half
+    with a box), rounded ends, knobs, and stylized organic shapes."""
+    return Sphere(radius=radius)
+
+
+def cone(bottom_radius: float, top_radius: float, height: float) -> Part:
+    """A (truncated) cone centered on the origin, axis along Z — spans
+    -height/2 to +height/2. top_radius=0 gives a sharp point. Use for tapers,
+    funnels, nose shapes, stylized bodies."""
+    return Cone(bottom_radius=bottom_radius, top_radius=top_radius,
+                height=height)
 
 
 def tube(outer_radius: float, inner_radius: float, height: float) -> Part:
@@ -169,6 +183,8 @@ def polar_pattern(feature: Part, count: int) -> Part:
 EXPORTS = {
     "plate": plate,
     "disc": disc,
+    "ball": ball,
+    "cone": cone,
     "tube": tube,
     "polygon_plate": polygon_plate,
     "hex_plate": hex_plate,
@@ -201,6 +217,8 @@ if __name__ == "__main__":
     cases = {
         "plate":        plate(40, 30, 5),
         "disc":         disc(20, 8),
+        "ball":         ball(15),
+        "cone":         cone(20, 8, 25),
         "tube":         tube(20, 12, 6),
         "polygon_plate": polygon_plate(5, 25, 8),
         "hex_plate":    hex_plate(across_flats=30, thickness=8),
