@@ -111,6 +111,7 @@ class Document:
     features: list[Feature] = field(default_factory=list)
     spec: dict = field(default_factory=dict)   # inspector.Spec fields, JSON-safe
     spec_problems: list = field(default_factory=list)
+    rollback: str | None = None    # SolidWorks-style bar: build only up to this id
     _parts: dict = field(default_factory=dict, repr=False)   # id -> Part cache
 
     # -- authoring ----------------------------------------------------------
@@ -159,10 +160,19 @@ class Document:
     # -- rebuild: deterministic, verified ------------------------------------
     def rebuild(self) -> bool:
         """Evaluate the tree through the verified blocks. Returns overall ok.
-        Never raises for geometry problems — they land in feature.problems."""
+        Never raises for geometry problems — they land in feature.problems.
+        If `rollback` names a feature, evaluation stops after it (features
+        beyond the bar are marked, not built) — like dragging the SolidWorks
+        rollback bar up the tree."""
         self._parts.clear()
         ok = True
+        past_bar = False
         for f in self.features:
+            if past_bar:
+                f.status, f.problems, f.volume = "stale", ["(after rollback bar)"], None
+                continue
+            if self.rollback is not None and f.id == self.rollback:
+                past_bar = True     # build this one, stop after
             if f.suppressed:
                 f.status, f.problems, f.volume = "ok", ["(suppressed)"], None
                 if f.inputs:
@@ -181,6 +191,9 @@ class Document:
                 ok = False
 
         self.spec_problems = []
+        if self.rollback is not None:
+            self.spec_problems = ["(spec not checked while rolled back)"]
+            return ok
         if ok and self.spec and self.result() is not None:
             try:
                 spec_obj = self._spec_obj()
@@ -234,9 +247,15 @@ class Document:
 
     # -- results --------------------------------------------------------------
     def result(self):
-        """The final solid = the last non-suppressed feature's output."""
+        """The final solid — the last built, non-suppressed feature's output
+        (respects the rollback bar, which stops building partway)."""
+        seen_bar = self.rollback is None
         for f in reversed(self.features):
-            if not f.suppressed:
+            if not seen_bar:
+                seen_bar = f.id == self.rollback
+                if not seen_bar:
+                    continue
+            if not f.suppressed and self._parts.get(f.id) is not None:
                 return self._parts.get(f.id)
         return None
 
@@ -269,27 +288,33 @@ class Document:
         return "\n".join(lines)
 
     # -- persistence: the recipe is the artifact ------------------------------
-    def save(self, path: str) -> str:
-        data = {
+    def to_data(self) -> dict:
+        """The document's intent (not its build status) as JSON-safe data."""
+        return {
             "name": self.name,
-            "spec": self.spec,
+            "spec": json.loads(json.dumps(self.spec)),
             "features": [{k: v for k, v in asdict(f).items()
                           if k in ("id", "op", "params", "inputs", "suppressed")}
                          for f in self.features],
         }
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2)
-        return path
 
     @classmethod
-    def load(cls, path: str) -> "Document":
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
+    def from_data(cls, data: dict) -> "Document":
         doc = cls(name=data["name"], spec=data.get("spec", {}))
         for f in data["features"]:
             doc.add(f["id"], f["op"], f.get("params"), f.get("inputs"))
             doc.features[-1].suppressed = f.get("suppressed", False)
         return doc
+
+    def save(self, path: str) -> str:
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(self.to_data(), fh, indent=2)
+        return path
+
+    @classmethod
+    def load(cls, path: str) -> "Document":
+        with open(path, encoding="utf-8") as fh:
+            return cls.from_data(json.load(fh))
 
 
 # ---------------------------------------------------------------------------

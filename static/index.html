@@ -67,6 +67,9 @@
   /* feature tree rows */
   .node { border-radius: var(--radius); margin-bottom: 2px; }
   .node.suppressed { opacity: .45; }
+  .node.rolledback { opacity: .35; }
+  .rollbar { height: 3px; background: var(--stale); border-radius: 2px;
+             margin: 4px 6px 6px; box-shadow: 0 0 7px var(--stale); }
   .nrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px;
     border-radius: var(--radius); cursor: pointer; }
   .nrow:hover { background: var(--panel2); }
@@ -220,7 +223,8 @@
   <button class="tbtn" id="tSave"><span class="ico">💾</span>Save</button>
   <div class="tsep"></div>
   <button class="tbtn" id="tAddFeat"><span class="ico">✚</span>Feature</button>
-  <button class="tbtn" id="tRebuild"><span class="ico">⟳</span>Rebuild</button>
+  <button class="tbtn" id="tUndo"><span class="ico">↶</span>Undo</button>
+  <button class="tbtn" id="tSpec"><span class="ico">✓</span>Spec</button>
   <div class="tsep"></div>
   <button class="tbtn" id="tExport"><span class="ico">⬇</span>STEP</button>
 </div>
@@ -285,6 +289,32 @@
   <h3>Design library</h3>
   <div id="libList"></div>
   <div class="row"><button onclick="libDialog.close()">Close</button></div>
+</dialog>
+
+<!-- ============ spec editor dialog ============ -->
+<dialog id="specDialog">
+  <form id="specForm" method="dialog">
+    <h3>Requirements (spec)</h3>
+    <p style="color:var(--dim);font-size:12px;margin-bottom:6px">
+      The spec is the design's contract — every rebuild is verified against it.
+      Leave a field empty to not check it.</p>
+    <label>solid bodies (n_solids) <input id="spN" placeholder="usually 1"></label>
+    <label>symmetry (integer, discrete features around Z)
+      <input id="spSym" placeholder="e.g. blade or bolt count"></label>
+    <label>tip radius — max radial reach, mm <input id="spTip"></label>
+    <label>bounding box X, Y, Z (mm — blank any axis)
+      <div style="display:flex;gap:6px">
+        <input id="spSX" placeholder="X"><input id="spSY" placeholder="Y">
+        <input id="spSZ" placeholder="Z">
+      </div></label>
+    <label>holes {"radius_mm": count} <input id="spHoles"
+      placeholder='e.g. {"4": 6}'></label>
+    <label>tolerance mm <input id="spTol" placeholder="0.5"></label>
+    <div class="row">
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button class="primary" value="ok">Apply &amp; re-verify</button>
+    </div>
+  </form>
 </dialog>
 
 <script type="importmap">
@@ -402,10 +432,12 @@ function renderDoc(doc) {
   else { badge.className = 'fail'; badge.textContent = '✗ check failed'; }
 
   treeEl.innerHTML = '';
+  let pastBar = false;
   for (const f of doc.features) {
     const node = document.createElement('div');
     node.className = 'node' + (openNodes.has(f.id) ? ' open' : '')
-      + (f.suppressed ? ' suppressed' : '') + (selected === f.id ? ' sel' : '');
+      + (f.suppressed ? ' suppressed' : '') + (selected === f.id ? ' sel' : '')
+      + (pastBar ? ' rolledback' : '');
     const row = document.createElement('div'); row.className = 'nrow';
     row.innerHTML = `
       <span class="twisty">▶</span>
@@ -414,6 +446,14 @@ function renderDoc(doc) {
       <span class="nop">${f.op}${f.inputs.length ? ' ← ' + f.inputs.join(', ') : ''}</span>
       <span class="nspacer"></span>`;
     const acts = document.createElement('span'); acts.className = 'nacts';
+    const roll = document.createElement('button'); roll.className = 'nact';
+    const isBar = doc.rollback === f.id;
+    roll.textContent = isBar ? '⤓' : '⤒';
+    roll.title = isBar ? 'release rollback bar (build everything)'
+                       : 'roll back to here (build only up to this feature)';
+    roll.onclick = e => { e.stopPropagation();
+      postJSON('/api/rollback', { feature_id: isBar ? null : f.id })
+        .then(() => loadMesh()); };
     const sup = document.createElement('button'); sup.className = 'nact';
     sup.textContent = f.suppressed ? '▶' : '⏸';
     sup.title = f.suppressed ? 'unsuppress' : 'suppress';
@@ -424,7 +464,7 @@ function renderDoc(doc) {
     del.textContent = '✕'; del.title = 'delete feature';
     del.onclick = e => { e.stopPropagation();
       postJSON('/api/feature/remove', { feature_id: f.id }).then(() => loadMesh()); };
-    acts.append(sup, del);
+    acts.append(roll, sup, del);
     const dot = document.createElement('span'); dot.className = 'ndot ' + f.status;
     row.append(acts, dot);
     row.onclick = () => {
@@ -461,6 +501,12 @@ function renderDoc(doc) {
       pd.textContent = probs.join(' • '); node.appendChild(pd);
     }
     treeEl.appendChild(node);
+    if (doc.rollback === f.id) {
+      const bar = document.createElement('div'); bar.className = 'rollbar';
+      bar.title = 'rollback bar — features below are not built';
+      treeEl.appendChild(bar);
+      pastBar = true;
+    }
   }
 
   if (doc.spec && Object.keys(doc.spec).length) {
@@ -564,13 +610,40 @@ async function actionExport() {
   const res = await r.json();
   addMsg('bot', res.error ? '⚠ ' + res.error : '⬇ Exported: ' + res.path);
 }
-async function actionRebuild() {
-  if (!lastDoc || !lastDoc.features.length) return;
-  const f = lastDoc.features[0];
-  const k = Object.keys(f.params).find(k => typeof f.params[k] === 'number');
-  if (k) { await postJSON('/api/edit',
-    { feature_id: f.id, param: k, value: f.params[k] }); loadMesh(); }
+async function actionUndo() {
+  const doc = await postJSON('/api/undo', {}, 'undoing…');
+  if (!doc.error) { loadMesh(true); addMsg('bot', '↶ Undone.'); }
 }
+
+function actionSpec() {
+  const s = (lastDoc && lastDoc.spec) || {};
+  const set = (id, v) => document.getElementById(id).value = v ?? '';
+  set('spN', s.n_solids); set('spSym', s.symmetry); set('spTip', s.tip_radius);
+  const size = s.size || [null, null, null];
+  set('spSX', size[0]); set('spSY', size[1]); set('spSZ', size[2]);
+  set('spHoles', s.holes ? JSON.stringify(s.holes) : '');
+  set('spTol', s.tol);
+  specDialog.showModal();
+}
+
+document.getElementById('specForm').onsubmit = async e => {
+  if (e.submitter && e.submitter.value === 'cancel') return;
+  e.preventDefault(); specDialog.close();
+  const num = id => { const v = document.getElementById(id).value.trim();
+                      return v === '' ? null : Number(v); };
+  const spec = { n_solids: num('spN'), symmetry: num('spSym'),
+                 tip_radius: num('spTip'), tol: num('spTol') };
+  const size = [num('spSX'), num('spSY'), num('spSZ')];
+  if (size.some(v => v !== null)) spec.size = size;
+  const holesRaw = document.getElementById('spHoles').value.trim();
+  if (holesRaw) { try { spec.holes = JSON.parse(holesRaw); }
+                  catch { addMsg('bot', '⚠ holes must be JSON like {"4": 6}'); } }
+  const doc = await postJSON('/api/spec', { spec }, 're-verifying…');
+  if (!doc.error) addMsg('bot', doc.ok
+    ? '✓ Spec updated — design verifies against the new requirements.'
+    : '✗ Spec updated — design does NOT meet it yet: '
+      + doc.spec_problems.join('; '));
+};
 
 document.getElementById('mNew').onclick = actionNew;
 document.getElementById('tNew').onclick = actionNew;
@@ -580,7 +653,14 @@ document.getElementById('mOpen').onclick = actionOpen;
 document.getElementById('tOpen').onclick = actionOpen;
 document.getElementById('mExport').onclick = actionExport;
 document.getElementById('tExport').onclick = actionExport;
-document.getElementById('tRebuild').onclick = actionRebuild;
+document.getElementById('tUndo').onclick = actionUndo;
+document.getElementById('tSpec').onclick = actionSpec;
+window.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z'
+      && document.activeElement.tagName !== 'INPUT') {
+    e.preventDefault(); actionUndo();
+  }
+});
 
 for (const a of document.querySelectorAll('[data-sample]')) {
   a.onclick = async () => {
@@ -596,6 +676,7 @@ for (const a of document.querySelectorAll('[data-sample]')) {
 const dlg = document.getElementById('featDialog');
 const libDialog = document.getElementById('libDialog');
 window.libDialog = libDialog;
+const specDialog = document.getElementById('specDialog');
 let OPS = [];
 async function actionAddFeat() {
   if (!OPS.length) OPS = await (await fetch('/api/ops')).json();

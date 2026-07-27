@@ -106,7 +106,18 @@ def sample_compressor() -> Document:
 SAMPLES = {"flange": sample_flange, "impeller": sample_impeller,
            "compressor": sample_compressor}
 
-STATE: dict = {"doc": None, "ok": False}
+STATE: dict = {"doc": None, "ok": False, "history": []}
+MAX_HISTORY = 25
+
+
+def _snapshot() -> None:
+    """Push the current design intent onto the undo stack. Call BEFORE any
+    mutation (edit/add/remove/suppress/spec/replace)."""
+    doc: Document = STATE.get("doc")
+    if doc is None:
+        return
+    STATE["history"].append(doc.to_data())
+    del STATE["history"][:-MAX_HISTORY]
 
 
 def _rebuild_and_mesh() -> None:
@@ -129,6 +140,8 @@ def _doc_json() -> dict:
         "name": doc.name,
         "ok": STATE["ok"],
         "rebuild_ms": STATE.get("rebuild_ms"),
+        "can_undo": len(STATE["history"]) > 0,
+        "rollback": doc.rollback,
         "spec": doc.spec,
         "spec_problems": doc.spec_problems,
         "features": [{
@@ -247,6 +260,14 @@ class SuppressReq(BaseModel):
     suppressed: bool
 
 
+class SpecReq(BaseModel):
+    spec: dict
+
+
+class RollbackReq(BaseModel):
+    feature_id: str | None = None
+
+
 @app.get("/")
 def index():
     return FileResponse(STATIC / "index.html")
@@ -262,6 +283,45 @@ def get_mesh():
     if MESH_PATH.exists():
         return Response(MESH_PATH.read_bytes(), media_type="model/stl")
     return Response(status_code=404)
+
+
+@app.post("/api/spec")
+def set_spec(req: SpecReq):
+    """Edit the design's requirements — the legitimate way to change intent
+    (e.g. actually wanting 9 blades) instead of fighting the verifier."""
+    doc: Document = STATE["doc"]
+    known = {"size", "volume", "holes", "n_solids", "symmetry", "tip_radius",
+             "com", "require_manifold", "tol", "vol_tol"}
+    _snapshot()
+    doc.spec = {k: v for k, v in req.spec.items()
+                if k in known and v is not None}
+    doc._mark_stale()
+    _rebuild_and_mesh()
+    return _doc_json()
+
+
+@app.post("/api/undo")
+def undo():
+    if not STATE["history"]:
+        return {"error": "nothing to undo", **_doc_json()}
+    data = STATE["history"].pop()
+    try:
+        STATE["doc"] = Document.from_data(data)
+    except ValueError as e:
+        return {"error": f"undo failed: {e}", **_doc_json()}
+    _rebuild_and_mesh()
+    return _doc_json()
+
+
+@app.post("/api/rollback")
+def rollback(req: RollbackReq):
+    """Drag the rollback bar: feature_id = build only up to there;
+    null = back to full build. A view, not an edit — no history entry."""
+    doc: Document = STATE["doc"]
+    doc.rollback = req.feature_id
+    doc._mark_stale()
+    _rebuild_and_mesh()
+    return _doc_json()
 
 
 @app.post("/api/save")
@@ -292,6 +352,7 @@ def open_design(file: str):
     path = DESIGNS / f"{file}.tcad.json"
     if not path.exists():
         return {"error": f"no saved design '{file}'"}
+    _snapshot()
     STATE["doc"] = Document.load(str(path))
     _rebuild_and_mesh()
     return _doc_json()
@@ -305,6 +366,7 @@ def get_ops():
 
 @app.post("/api/new")
 def new_design(req: NewReq):
+    _snapshot()
     STATE["doc"] = Document(name=req.name or "untitled")
     STATE["ok"] = False
     if MESH_PATH.exists():
@@ -315,9 +377,11 @@ def new_design(req: NewReq):
 @app.post("/api/feature/add")
 def add_feature(req: FeatureReq):
     doc: Document = STATE["doc"]
+    _snapshot()
     try:
         doc.add(req.id, req.op, req.params, req.inputs)
     except ValueError as e:
+        STATE["history"].pop()
         return {"error": str(e), **_doc_json()}
     _rebuild_and_mesh()
     return _doc_json()
@@ -326,9 +390,11 @@ def add_feature(req: FeatureReq):
 @app.post("/api/feature/remove")
 def remove_feature(req: RemoveReq):
     doc: Document = STATE["doc"]
+    _snapshot()
     try:
         doc.remove(req.feature_id)
     except (KeyError, ValueError) as e:
+        STATE["history"].pop()
         return {"error": str(e), **_doc_json()}
     _rebuild_and_mesh()
     return _doc_json()
@@ -337,9 +403,11 @@ def remove_feature(req: RemoveReq):
 @app.post("/api/feature/suppress")
 def suppress_feature(req: SuppressReq):
     doc: Document = STATE["doc"]
+    _snapshot()
     try:
         doc.get(req.feature_id).suppressed = req.suppressed
     except KeyError as e:
+        STATE["history"].pop()
         return {"error": str(e), **_doc_json()}
     doc._mark_stale()
     _rebuild_and_mesh()
@@ -350,6 +418,7 @@ def suppress_feature(req: SuppressReq):
 def load_sample(name: str):
     if name not in SAMPLES:
         return {"error": f"unknown sample '{name}'"}
+    _snapshot()
     STATE["doc"] = SAMPLES[name]()
     _rebuild_and_mesh()
     return _doc_json()
@@ -358,9 +427,11 @@ def load_sample(name: str):
 @app.post("/api/edit")
 def edit(req: EditReq):
     doc: Document = STATE["doc"]
+    _snapshot()
     try:
         doc.edit(req.feature_id, req.param, req.value)
     except (KeyError, ValueError) as e:
+        STATE["history"].pop()
         return {"error": str(e), **_doc_json()}
     _rebuild_and_mesh()
     return _doc_json()
@@ -380,6 +451,7 @@ def chat(req: ChatReq):
         if doc is None:
             return {"reply": "I couldn't produce a verified design:\n"
                              + "\n".join(transcript), **_doc_json()}
+        _snapshot()
         STATE["doc"] = doc
         _rebuild_and_mesh()
         n = len(doc.features)
@@ -392,9 +464,11 @@ def chat(req: ChatReq):
         if intent.get("action") != "edit":
             return {"reply": intent.get("text", "…"), **_doc_json()}
         doc: Document = STATE["doc"]
+        _snapshot()
         try:
             doc.edit(intent["feature_id"], intent["param"], intent["value"])
         except (KeyError, ValueError) as e:
+            STATE["history"].pop()
             intent = chat_intent(req.message, feedback=str(e))
             continue
         _rebuild_and_mesh()
