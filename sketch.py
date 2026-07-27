@@ -59,16 +59,8 @@ def _entity(e: dict):
     return s
 
 
-def make_sketch(plane: str = "XY", offset: float = 0.0,
-                entities: list | None = None):
-    """Compose entities into one Sketch placed on a principal plane.
-
-    plane: "XY", "XZ" or "YZ".  offset: shift the plane along its normal.
-    entities: list of {"kind":..., ...params, "mode":"add"|"subtract"}.
-    The first entity must be additive."""
-    entities = entities or []
-    if plane not in _PLANES:
-        raise ValueError('sketch: plane must be "XY", "XZ" or "YZ"')
+def _compose(entities: list):
+    """Combine entities (add/subtract) into a 2D sketch in local coords."""
     result = None
     for e in entities:
         shape = _entity(e)
@@ -81,10 +73,52 @@ def make_sketch(plane: str = "XY", offset: float = 0.0,
             result = result - shape if mode == "subtract" else result + shape
     if result is None:
         raise ValueError("sketch has no entities")
+    return result
+
+
+def make_sketch(plane: str = "XY", offset: float = 0.0,
+                entities: list | None = None):
+    """Compose entities into one Sketch placed on a principal plane.
+
+    plane: "XY", "XZ" or "YZ".  offset: shift the plane along its normal.
+    entities: list of {"kind":..., ...params, "mode":"add"|"subtract"}.
+    The first entity must be additive."""
+    if plane not in _PLANES:
+        raise ValueError('sketch: plane must be "XY", "XZ" or "YZ"')
     pl = _PLANES[plane]
     if offset:
         pl = pl.offset(float(offset))
-    return pl * result
+    return pl * _compose(entities or [])
+
+
+def sketch_on_face(solid, face_center: list, face_normal: list | None = None,
+                   entities: list | None = None):
+    """Draw a sketch ON a face of an existing solid (the Fusion workflow:
+    pick a face, sketch, extrude a boss/cut). The face is resolved by GEOMETRY
+    at every rebuild — the face whose center is nearest `face_center` (and whose
+    normal best matches `face_normal`) — so it survives parameter changes
+    instead of breaking like a stored face index would."""
+    faces = solid.faces()
+    if not faces:
+        raise ValueError("sketch_on_face: solid has no faces")
+    cx, cy, cz = (float(v) for v in face_center)
+
+    def score(f):
+        c = f.center()
+        d = (c.X - cx) ** 2 + (c.Y - cy) ** 2 + (c.Z - cz) ** 2
+        if face_normal:
+            try:
+                n = f.normal_at(f.center())
+                align = (n.X * face_normal[0] + n.Y * face_normal[1]
+                         + n.Z * face_normal[2])
+                d += (1.0 - align) * 25.0          # nudge toward same-facing
+            except Exception:
+                pass
+        return d
+
+    face = min(faces, key=score)
+    from build123d import Plane
+    return Plane(face) * _compose(entities or [])
 
 
 # ---------------------------------------------------------------------------

@@ -62,6 +62,7 @@ MODIFIERS = {
     "extrude": sk.extrude_sketch,       # sketch -> solid
     "revolve": sk.revolve_sketch,       # sketch -> solid
     "sweep": sk.sweep_sketch,           # sketch + path -> solid
+    "sketch_on_face": sk.sketch_on_face,  # solid -> sketch (on a picked face)
 }
 
 # combiners: pure topology ops on upstream Parts

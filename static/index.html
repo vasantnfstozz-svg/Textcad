@@ -385,13 +385,18 @@
   <div id="sketchWrap">
     <div id="sketchSide">
       <label>Sketch name <input id="skName" value="sketch1"></label>
-      <label>Plane
-        <select id="skPlane">
-          <option value="XY">XY (top)</option>
-          <option value="XZ">XZ (front) — for revolve</option>
-          <option value="YZ">YZ (right)</option>
-        </select></label>
-      <label>Plane offset (mm) <input id="skOffset" value="0"></label>
+      <div id="skPlaneRow">
+        <label>Plane
+          <select id="skPlane">
+            <option value="XY">XY (top)</option>
+            <option value="XZ">XZ (front) — for revolve</option>
+            <option value="YZ">YZ (right)</option>
+          </select></label>
+        <label>Plane offset (mm) <input id="skOffset" value="0"></label>
+      </div>
+      <div id="skFaceNote" style="display:none;color:var(--accent);
+        font-size:11.5px;background:var(--accent2);padding:6px 8px;
+        border-radius:6px;margin:4px 0"></div>
       <div class="skpalette">
         <div class="skhead">Add shape</div>
         <button data-shape="rectangle">▭ Rectangle</button>
@@ -612,6 +617,15 @@ function selectFace3D(fid) {
     [['area', (info.area ?? '?') + ' mm²'],
      info.radius != null ? ['radius', info.radius + ' mm'] : null,
      info.center ? ['center', info.center.join(', ')] : null]);
+  if (info.center) {                       // offer the sketch-on-face workflow
+    const btn = document.createElement('button');
+    btn.textContent = '✎ Sketch on this face';
+    btn.style.cssText = 'margin-top:7px;width:100%;background:var(--accent);' +
+      'color:#08111e;border:none;border-radius:6px;padding:6px;cursor:pointer;' +
+      'font:inherit;font-weight:700';
+    btn.onclick = () => openSketchOnFace(info);
+    document.getElementById('pickInfo').appendChild(btn);
+  }
 }
 
 function selectEdge(eid) {
@@ -992,12 +1006,39 @@ const SHAPE_FIELDS = {
   polygon: { points: [[0, 0], [30, 0], [15, 25]], x: 0, y: 0 },
 };
 let skEnts = [];
+let skOnFace = null;             // {center, normal, inputId} when sketching on a face
+
+function _skName(prefix) {
+  const n = (lastDoc?.features.filter(f => f.op === 'sketch'
+             || f.op === 'sketch_on_face').length || 0) + 1;
+  return prefix + n;
+}
 
 function openSketchEditor() {
+  skOnFace = null;
   skEnts = [{ kind: 'rectangle', mode: 'add', ...SHAPE_FIELDS.rectangle }];
-  document.getElementById('skName').value =
-    'sketch' + ((lastDoc?.features.filter(f => f.op === 'sketch').length || 0) + 1);
+  document.getElementById('skName').value = _skName('sketch');
   document.getElementById('skOffset').value = '0';
+  document.getElementById('skPlaneRow').style.display = '';
+  document.getElementById('skFaceNote').style.display = 'none';
+  renderSkEnts();
+  sketchDialog.showModal();
+}
+
+function openSketchOnFace(faceInfo) {
+  // input = the current solid tip (last feature that produced a solid)
+  const tip = [...(lastDoc?.features || [])].reverse()
+    .find(f => f.volume != null);
+  if (!tip) { addMsg('bot', '⚠ No solid to sketch on yet.'); return; }
+  skOnFace = { center: faceInfo.center, normal: faceInfo.normal || null,
+               inputId: tip.id };
+  skEnts = [{ kind: 'circle', mode: 'add', ...SHAPE_FIELDS.circle }];
+  document.getElementById('skName').value = _skName('sketch');
+  document.getElementById('skPlaneRow').style.display = 'none';
+  document.getElementById('skFaceNote').style.display = '';
+  document.getElementById('skFaceNote').textContent =
+    `On face at (${faceInfo.center.join(', ')}) of "${skOnFace.inputId}". ` +
+    `Draw here, then Create — then Extrude to add or cut material.`;
   renderSkEnts();
   sketchDialog.showModal();
 }
@@ -1109,15 +1150,25 @@ document.getElementById('skCreate').onclick = async () => {
     return o;
   });
   sketchDialog.close();
-  await postJSON('/api/feature/add', {
-    id: document.getElementById('skName').value || 'sketch1',
-    op: 'sketch',
-    params: { plane: document.getElementById('skPlane').value,
-              offset: Number(document.getElementById('skOffset').value) || 0,
-              entities },
-    inputs: [] });
-  addMsg('bot', 'Sketch created. Now select it and use Extrude or Revolve ' +
-                'from the Sketch group to turn it into a solid.');
+  const id = document.getElementById('skName').value || 'sketch1';
+  if (skOnFace) {
+    await postJSON('/api/feature/add', {
+      id, op: 'sketch_on_face',
+      params: { face_center: skOnFace.center, face_normal: skOnFace.normal,
+                entities },
+      inputs: [skOnFace.inputId] });
+    addMsg('bot', `Sketch "${id}" placed on the face. Select it, then Extrude ` +
+                  `(positive = boss, then Join; or Cut) to change the solid.`);
+  } else {
+    await postJSON('/api/feature/add', {
+      id, op: 'sketch',
+      params: { plane: document.getElementById('skPlane').value,
+                offset: Number(document.getElementById('skOffset').value) || 0,
+                entities },
+      inputs: [] });
+    addMsg('bot', 'Sketch created. Now select it and use Extrude or Revolve ' +
+                  'from the Sketch group to turn it into a solid.');
+  }
 };
 let OPS = [];
 async function openFeatDialog(preselect) {

@@ -323,6 +323,8 @@ def get_model():
         try:
             c = face.center()
             info["center"] = [round(c.X, 2), round(c.Y, 2), round(c.Z, 2)]
+            n = face.normal_at(c)
+            info["normal"] = [round(n.X, 3), round(n.Y, 3), round(n.Z, 3)]
         except Exception:
             pass
         if gt == "CYLINDER":
