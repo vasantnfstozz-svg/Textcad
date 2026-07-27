@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+*.step
+*.stl
+_studio_mesh.stl
+*.tcad.json
