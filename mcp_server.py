@@ -19,9 +19,19 @@ Register (Claude Desktop): %APPDATA%/Claude/claude_desktop_config.json ->
 """
 
 from __future__ import annotations
+import contextlib
+import sys
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+
+
+@contextlib.contextmanager
+def _quiet():
+    """build123d prints notices to stdout; over MCP, stdout IS the protocol.
+    Route any library chatter to stderr (which lands in the client's log)."""
+    with contextlib.redirect_stdout(sys.stderr):
+        yield
 
 import author
 import inspector
@@ -71,21 +81,22 @@ def build_design(tree: dict, export_name: str = "") -> dict:
     in TextCAD Studio) are written. Returns per-feature status, measured facts
     (volume, size, symmetry-relevant data), and file paths. Nothing is trusted;
     everything is measured."""
-    try:
-        doc = author._to_document(tree)
-    except (ValueError, KeyError) as e:
-        return {"verified": False, "rejected_before_build": str(e)}
-    ok = doc.rebuild()
-    rep = _report(doc, ok)
-    if ok:
-        name = export_name or doc.name or "design"
-        step = OUT / f"{name}.step"
-        doc.to_step(str(step))
-        recipe = OUT / f"{name}.tcad.json"
-        doc.save(str(recipe))
-        rep["step_path"] = str(step)
-        rep["recipe_path"] = str(recipe)
-    return rep
+    with _quiet():
+        try:
+            doc = author._to_document(tree)
+        except (ValueError, KeyError) as e:
+            return {"verified": False, "rejected_before_build": str(e)}
+        ok = doc.rebuild()
+        rep = _report(doc, ok)
+        if ok:
+            name = export_name or doc.name or "design"
+            step = OUT / f"{name}.step"
+            doc.to_step(str(step))
+            recipe = OUT / f"{name}.tcad.json"
+            doc.save(str(recipe))
+            rep["step_path"] = str(step)
+            rep["recipe_path"] = str(recipe)
+        return rep
 
 
 @mcp.tool()
@@ -100,16 +111,17 @@ def design_part(description: str) -> dict:
         return {"verified": False,
                 "error": "no OPENROUTER_API_KEY on this machine — author the "
                          "tree yourself and call build_design instead"}
-    doc, transcript = author.author_design(description, model)
-    if doc is None:
-        return {"verified": False, "transcript": transcript}
-    rep = _report(doc, True)
-    step = OUT / f"{doc.name}.step"
-    doc.to_step(str(step))
-    doc.save(str(OUT / f"{doc.name}.tcad.json"))
-    rep["step_path"] = str(step)
-    rep["transcript"] = transcript
-    return rep
+    with _quiet():
+        doc, transcript = author.author_design(description, model)
+        if doc is None:
+            return {"verified": False, "transcript": transcript}
+        rep = _report(doc, True)
+        step = OUT / f"{doc.name}.step"
+        doc.to_step(str(step))
+        doc.save(str(OUT / f"{doc.name}.tcad.json"))
+        rep["step_path"] = str(step)
+        rep["transcript"] = transcript
+        return rep
 
 
 @mcp.tool()
@@ -117,7 +129,8 @@ def measure_step(step_path: str) -> dict:
     """Measure an existing STEP file: volume, area, bounding box, center of
     mass, face/edge counts, cylindrical-hole radii, max radial reach,
     watertightness. Works on files from ANY CAD system, not just TextCAD."""
-    return inspector.measure(step_path)
+    with _quiet():
+        return inspector.measure(step_path)
 
 
 @mcp.tool()
@@ -128,13 +141,14 @@ def verify_step(step_path: str, spec: dict) -> dict:
     tip_radius (max radial reach, mm), com [x,y,z], require_manifold (bool),
     tol (mm), vol_tol (relative). Returns every mismatch; empty list means the
     part provably matches."""
-    try:
-        spec_obj = inspector.spec_from_dict(spec)
-    except Exception as e:
-        return {"error": f"malformed spec: {e!r}"}
-    fails = inspector.verify(step_path, spec_obj)
-    return {"matches_spec": not fails, "mismatches": fails,
-            "measured": inspector.measure(step_path)}
+    with _quiet():
+        try:
+            spec_obj = inspector.spec_from_dict(spec)
+        except Exception as e:
+            return {"error": f"malformed spec: {e!r}"}
+        fails = inspector.verify(step_path, spec_obj)
+        return {"matches_spec": not fails, "mismatches": fails,
+                "measured": inspector.measure(step_path)}
 
 
 @mcp.tool()
@@ -144,6 +158,12 @@ def design_compressor(mass_flow_kg_s: float, pressure_ratio: float,
     meanline physics (Euler work, Wiesner slip, velocity triangles), build the
     geometry, independently verify it (blade count symmetry, tip radius,
     watertight), and export STEP. Slow: the build takes 1-2 minutes."""
+    with _quiet():
+        return _design_compressor(mass_flow_kg_s, pressure_ratio, rpm,
+                                  backsweep_deg)
+
+
+def _design_compressor(mass_flow_kg_s, pressure_ratio, rpm, backsweep_deg):
     duty = meanline.Duty(mass_flow=mass_flow_kg_s,
                          pressure_ratio=pressure_ratio, rpm=rpm,
                          backsweep_deg=backsweep_deg)
