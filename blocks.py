@@ -24,7 +24,12 @@ from build123d import (
     Box, Cylinder, Sphere, Cone, Pos, PolarLocations, Locations,
     BuildSketch, RegularPolygon, BuildLine, Polyline, Spline, make_face,
     trace, extrude, revolve, Axis, Plane, Part,
+    mirror as _b3d_mirror, scale as _b3d_scale,
+    fillet as _b3d_fillet, chamfer as _b3d_chamfer, offset as _b3d_offset,
 )
+
+_AXES = {"X": Axis.X, "Y": Axis.Y, "Z": Axis.Z}
+_PLANES = {"XY": Plane.XY, "XZ": Plane.XZ, "YZ": Plane.YZ}
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +182,82 @@ def polar_pattern(feature: Part, count: int) -> Part:
 
 
 # ---------------------------------------------------------------------------
+# Transform / finishing operations (E1) — take a part, return a new part
+# ---------------------------------------------------------------------------
+
+def rotate(part: Part, axis: str = "Z", angle_deg: float = 90.0) -> Part:
+    """Rotate a part about the X, Y or Z axis (through the origin). The way to
+    lay a cylinder on its side: rotate(wheel, "X", 90)."""
+    if axis not in _AXES:
+        raise ValueError('rotate: axis must be "X", "Y" or "Z"')
+    return part.rotate(_AXES[axis], angle_deg)
+
+
+def mirror_copy(part: Part, plane: str = "YZ") -> Part:
+    """The MIRRORED COPY of a part about a principal plane ("XY", "XZ", "YZ").
+    Returns only the copy — fuse it with the original for a symmetric pair."""
+    if plane not in _PLANES:
+        raise ValueError('mirror: plane must be "XY", "XZ" or "YZ"')
+    return _b3d_mirror(part, about=_PLANES[plane])
+
+
+def scale_uniform(part: Part, factor: float) -> Part:
+    """Uniformly scale a part about the origin (2 = double size)."""
+    if factor <= 0:
+        raise ValueError("scale: factor must be positive")
+    return _b3d_scale(part, by=factor)
+
+
+def linear_pattern(feature: Part, count: int, dx: float = 0.0,
+                   dy: float = 0.0, dz: float = 0.0) -> Part:
+    """Union of `count` copies of a feature stepped by (dx, dy, dz) each time
+    (copy 0 stays in place). E.g. a row of 4 wheels: count=4, dx=30."""
+    if count < 1:
+        raise ValueError("linear_pattern: count must be >= 1")
+    parts = [Pos(i * dx, i * dy, i * dz) * feature for i in range(count)]
+    while len(parts) > 1:
+        parts = [parts[i] + parts[i + 1] if i + 1 < len(parts) else parts[i]
+                 for i in range(0, len(parts), 2)]
+    return parts[0]
+
+
+def _pick_edges(part: Part, which: str):
+    edges = part.edges()
+    if which == "all":
+        return edges
+    if which == "top":
+        return edges.group_by(Axis.Z)[-1]
+    if which == "bottom":
+        return edges.group_by(Axis.Z)[0]
+    raise ValueError('edges must be "all", "top" or "bottom"')
+
+
+def fillet_edges(part: Part, radius: float, edges: str = "all") -> Part:
+    """Round edges with a radius. `edges`: "all", "top" or "bottom". The radius
+    must be smaller than half the thickness of the adjacent material."""
+    return _b3d_fillet(_pick_edges(part, edges), radius=radius)
+
+
+def chamfer_edges(part: Part, length: float, edges: str = "all") -> Part:
+    """Cut a flat 45-degree bevel on edges. `edges`: "all", "top" or "bottom"."""
+    return _b3d_chamfer(_pick_edges(part, edges), length=length)
+
+
+def shell_out(part: Part, thickness: float, open_face: str = "top") -> Part:
+    """Hollow a part into walls of `thickness`. open_face "top"/"bottom" removes
+    that face (an open container, e.g. a cup); "none" keeps it fully closed."""
+    if thickness <= 0:
+        raise ValueError("shell: thickness must be positive")
+    if open_face == "none":
+        return _b3d_offset(part, amount=-thickness)
+    if open_face in ("top", "bottom"):
+        idx = -1 if open_face == "top" else 0
+        face = part.faces().sort_by(Axis.Z)[idx]
+        return _b3d_offset(part, amount=-thickness, openings=face)
+    raise ValueError('shell: open_face must be "top", "bottom" or "none"')
+
+
+# ---------------------------------------------------------------------------
 # Registry — the exact names exposed to the LLM's script namespace
 # ---------------------------------------------------------------------------
 
@@ -193,6 +274,13 @@ EXPORTS = {
     "with_center_hole": with_center_hole,
     "with_bolt_circle": with_bolt_circle,
     "polar_pattern": polar_pattern,
+    "rotate": rotate,
+    "mirror": mirror_copy,
+    "scale": scale_uniform,
+    "linear_pattern": linear_pattern,
+    "fillet": fillet_edges,
+    "chamfer": chamfer_edges,
+    "shell": shell_out,
 }
 
 

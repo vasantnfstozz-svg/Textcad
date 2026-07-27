@@ -45,11 +45,18 @@ CREATORS = {name: blocks.EXPORTS[name] for name in
             ("plate", "disc", "ball", "cone", "tube", "polygon_plate",
              "hex_plate", "revolve_profile", "curved_blade")}
 
-# modifiers: exactly one upstream Part + numeric params
+# modifiers: exactly one upstream Part + numeric/string params
 MODIFIERS = {
     "with_center_hole": blocks.with_center_hole,
     "with_bolt_circle": blocks.with_bolt_circle,
     "polar_pattern": blocks.polar_pattern,
+    "rotate": blocks.rotate,
+    "mirror": blocks.mirror_copy,
+    "scale": blocks.scale_uniform,
+    "linear_pattern": blocks.linear_pattern,
+    "fillet": blocks.fillet_edges,
+    "chamfer": blocks.chamfer_edges,
+    "shell": blocks.shell_out,
 }
 
 # combiners: pure topology ops on upstream Parts

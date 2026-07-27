@@ -437,6 +437,8 @@ const OP_ICONS = {
   polygon_plate: '⬡', hex_plate: '⬡',
   revolve_profile: '↻', curved_blade: '⤳', with_center_hole: '⊙',
   with_bolt_circle: '⁘', polar_pattern: '✳', move: '↗',
+  rotate: '⟳', mirror: '⇋', scale: '⤢', linear_pattern: '⋯',
+  fillet: '◠', chamfer: '◣', shell: '▢',
   fuse: '∪', cut: '−', intersect: '∩',
 };
 
@@ -509,7 +511,7 @@ function renderDoc(doc) {
       const pr = document.createElement('div'); pr.className = 'prow';
       pr.innerHTML = `<span class="pname">${k}</span>`;
       const val = document.createElement('span');
-      if (typeof v === 'number') {
+      if (typeof v === 'number' || typeof v === 'string') {
         val.className = 'pval'; val.textContent = v; val.title = 'click to edit';
         val.onclick = e => { e.stopPropagation(); beginEdit(val, f.id, k, v); };
         pr.appendChild(val); body.appendChild(pr);
@@ -615,9 +617,10 @@ function beginEdit(el, fid, param, oldVal) {
   const input = document.createElement('input');
   input.value = oldVal; el.replaceChildren(input); input.focus(); input.select();
   const done = async commit => {
-    if (commit && input.value !== '' && Number(input.value) !== oldVal) {
-      await postJSON('/api/edit',
-        { feature_id: fid, param, value: Number(input.value) });
+    const raw = input.value.trim();
+    const parsed = raw !== '' && !isNaN(Number(raw)) ? Number(raw) : raw;
+    if (commit && raw !== '' && parsed !== oldVal) {
+      await postJSON('/api/edit', { feature_id: fid, param, value: parsed });
       loadMesh();
     } else { el.textContent = oldVal; }
   };
@@ -799,7 +802,8 @@ document.getElementById('featForm').onsubmit = async e => {
   const params = {};
   for (const inp of document.querySelectorAll('#featParams input')) {
     const v = inp.value.trim(); if (!v) continue;
-    params[inp.dataset.param] = v.startsWith('[') ? JSON.parse(v) : Number(v);
+    params[inp.dataset.param] = v.startsWith('[') ? JSON.parse(v)
+      : (isNaN(Number(v)) ? v : Number(v));
   }
   const inputs = [...document.querySelectorAll('#featInputs input:checked')]
     .map(c => c.value);
