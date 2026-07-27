@@ -30,6 +30,8 @@ from document import Document
 ROOT = Path(__file__).parent
 STATIC = ROOT / "static"
 MESH_PATH = ROOT / "_studio_mesh.stl"
+DESIGNS = ROOT / "designs"
+DESIGNS.mkdir(exist_ok=True)
 
 app = FastAPI(title="TextCAD Studio")
 
@@ -108,8 +110,11 @@ STATE: dict = {"doc": None, "ok": False}
 
 
 def _rebuild_and_mesh() -> None:
+    import time
     doc: Document = STATE["doc"]
+    t0 = time.perf_counter()
     STATE["ok"] = doc.rebuild()
+    STATE["rebuild_ms"] = round((time.perf_counter() - t0) * 1000)
     part = doc.result()
     if part is not None:
         try:
@@ -123,11 +128,13 @@ def _doc_json() -> dict:
     return {
         "name": doc.name,
         "ok": STATE["ok"],
+        "rebuild_ms": STATE.get("rebuild_ms"),
         "spec": doc.spec,
         "spec_problems": doc.spec_problems,
         "features": [{
             "id": f.id, "op": f.op, "params": f.params, "inputs": f.inputs,
             "status": f.status, "problems": f.problems, "volume": f.volume,
+            "suppressed": f.suppressed,
         } for f in doc.features],
     }
 
@@ -255,6 +262,39 @@ def get_mesh():
     if MESH_PATH.exists():
         return Response(MESH_PATH.read_bytes(), media_type="model/stl")
     return Response(status_code=404)
+
+
+@app.post("/api/save")
+def save_design():
+    doc: Document = STATE["doc"]
+    safe = re.sub(r"[^\w\-]+", "-", doc.name).strip("-") or "untitled"
+    path = DESIGNS / f"{safe}.tcad.json"
+    doc.save(str(path))
+    return {"saved": safe, **_doc_json()}
+
+
+@app.get("/api/designs")
+def list_designs():
+    out = []
+    for p in sorted(DESIGNS.glob("*.tcad.json")):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            out.append({"file": p.stem.replace(".tcad", ""),
+                        "name": data.get("name", p.stem),
+                        "features": len(data.get("features", []))})
+        except Exception:
+            continue
+    return out
+
+
+@app.post("/api/open/{file}")
+def open_design(file: str):
+    path = DESIGNS / f"{file}.tcad.json"
+    if not path.exists():
+        return {"error": f"no saved design '{file}'"}
+    STATE["doc"] = Document.load(str(path))
+    _rebuild_and_mesh()
+    return _doc_json()
 
 
 @app.get("/api/ops")

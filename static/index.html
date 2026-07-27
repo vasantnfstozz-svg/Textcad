@@ -6,135 +6,268 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {
-    --bg: #14161a; --panel: #1c1f26; --panel2: #22262e; --line: #2e3340;
-    --text: #d7dce5; --dim: #8a93a5; --accent: #4da3ff; --ok: #3fbf6f;
-    --fail: #ff5d5d; --stale: #d9a23c;
+    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --panel3: #262b36;
+    --line: #2b303c; --text: #dde2ea; --dim: #8b94a7; --accent: #4da3ff;
+    --accent2: #2a3f5c; --ok: #43c579; --fail: #ff5d5d; --stale: #d9a23c;
+    --radius: 8px;
   }
   * { box-sizing: border-box; margin: 0; }
-  body {
-    background: var(--bg); color: var(--text); height: 100vh; display: flex;
-    flex-direction: column; font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
-  }
-  header {
-    display: flex; align-items: center; gap: 14px; padding: 10px 16px;
-    background: var(--panel); border-bottom: 1px solid var(--line);
-  }
-  header h1 { font-size: 16px; font-weight: 600; }
-  header h1 span { color: var(--accent); }
-  header .doc { color: var(--dim); }
-  header .spacer { flex: 1; }
-  button {
-    background: var(--panel2); color: var(--text); border: 1px solid var(--line);
-    border-radius: 6px; padding: 6px 12px; cursor: pointer; font: inherit;
-  }
-  button:hover { border-color: var(--accent); }
+  body { background: var(--bg); color: var(--text); height: 100vh;
+    display: flex; flex-direction: column; overflow: hidden;
+    font: 13px/1.45 "Segoe UI", system-ui, sans-serif; }
+
+  /* ============ menu bar ============ */
+  #menubar { display: flex; align-items: center; gap: 2px; padding: 0 10px;
+    height: 40px; background: var(--panel); border-bottom: 1px solid var(--line);
+    user-select: none; }
+  #logo { font-size: 15px; font-weight: 700; margin-right: 14px; }
+  #logo b { color: var(--accent); }
+  .menu-root { position: relative; }
+  .menu-root > button { background: none; border: none; color: var(--text);
+    padding: 8px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
+  .menu-root > button:hover, .menu-root.open > button { background: var(--panel3); }
+  .menu-list { display: none; position: absolute; left: 0; top: 105%;
+    background: var(--panel2); border: 1px solid var(--line);
+    border-radius: var(--radius); min-width: 230px; z-index: 40;
+    padding: 5px; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+  .menu-root.open .menu-list { display: block; }
+  .menu-list a { display: flex; justify-content: space-between; gap: 18px;
+    padding: 8px 12px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+  .menu-list a:hover { background: var(--accent2); }
+  .menu-list a .hint { color: var(--dim); font-size: 11px; }
+  .menu-sep { height: 1px; background: var(--line); margin: 5px 4px; }
+  #docTitle { margin-left: auto; margin-right: auto; color: var(--dim); }
+  #docTitle b { color: var(--text); font-weight: 600; }
+  #verifyBadge { padding: 3px 10px; border-radius: 20px; font-size: 12px;
+    font-weight: 600; }
+  #verifyBadge.ok { background: rgba(67,197,121,.15); color: var(--ok); }
+  #verifyBadge.fail { background: rgba(255,93,93,.15); color: var(--fail); }
+  #verifyBadge.none { background: var(--panel3); color: var(--dim); }
+
+  /* ============ toolbar ============ */
+  #toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+    background: var(--panel); border-bottom: 1px solid var(--line); }
+  .tbtn { display: flex; flex-direction: column; align-items: center; gap: 2px;
+    background: none; border: 1px solid transparent; color: var(--text);
+    border-radius: var(--radius); padding: 5px 11px; cursor: pointer;
+    font: inherit; font-size: 11px; min-width: 58px; }
+  .tbtn .ico { font-size: 17px; line-height: 1; }
+  .tbtn:hover { background: var(--panel3); border-color: var(--line); }
+  .tsep { width: 1px; height: 30px; background: var(--line); margin: 0 6px; }
+
+  /* ============ main layout ============ */
   main { flex: 1; display: flex; min-height: 0; }
-  /* chat */
-  #chatPane { width: 320px; display: flex; flex-direction: column;
-              background: var(--panel); border-right: 1px solid var(--line); }
-  #chatLog { flex: 1; overflow-y: auto; padding: 12px; display: flex;
-             flex-direction: column; gap: 8px; }
-  .msg { padding: 8px 11px; border-radius: 10px; max-width: 92%;
-         white-space: pre-wrap; word-break: break-word; }
-  .msg.user { background: #2a3f5c; align-self: flex-end; }
-  .msg.bot  { background: var(--panel2); align-self: flex-start; }
-  #chatForm { display: flex; gap: 8px; padding: 10px;
-              border-top: 1px solid var(--line); }
-  #chatInput { flex: 1; background: var(--panel2); border: 1px solid var(--line);
-               border-radius: 6px; color: var(--text); padding: 8px; font: inherit; }
-  /* tree */
-  #treePane { width: 360px; overflow-y: auto; background: var(--panel);
-              border-right: 1px solid var(--line); padding: 12px; }
-  #treePane h2, #chatPane h2 { font-size: 12px; text-transform: uppercase;
-    letter-spacing: .08em; color: var(--dim); padding: 10px 12px 0; }
-  #treePane h2 { padding: 0 0 8px; }
-  .feature { border: 1px solid var(--line); border-radius: 8px;
-             margin-bottom: 8px; background: var(--panel2); overflow: hidden; }
-  .fhead { display: flex; align-items: center; gap: 8px; padding: 7px 10px; }
-  .badge { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-  .badge.ok { background: var(--ok); } .badge.failed { background: var(--fail); }
-  .badge.stale { background: var(--stale); }
-  .fid { font-weight: 600; }
-  .fop { color: var(--dim); font-size: 12px; }
-  .params { padding: 2px 10px 8px 27px; }
-  .prow { display: flex; gap: 6px; align-items: center; padding: 2px 0; }
-  .pname { color: var(--dim); min-width: 110px; }
-  .pval { color: var(--accent); cursor: pointer; border-bottom: 1px dashed
-          transparent; }
+  #treePane { width: 320px; min-width: 240px; background: var(--panel);
+    border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+  .pane-title { display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px 8px; font-size: 11px; font-weight: 700;
+    letter-spacing: .09em; text-transform: uppercase; color: var(--dim); }
+  #tree { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
+
+  /* feature tree rows */
+  .node { border-radius: var(--radius); margin-bottom: 2px; }
+  .node.suppressed { opacity: .45; }
+  .nrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+    border-radius: var(--radius); cursor: pointer; }
+  .nrow:hover { background: var(--panel2); }
+  .node.sel > .nrow { background: var(--accent2); }
+  .twisty { width: 12px; color: var(--dim); font-size: 10px; flex: none;
+    transition: transform .12s; }
+  .node.open .twisty { transform: rotate(90deg); }
+  .nico { width: 20px; height: 20px; flex: none; display: grid;
+    place-items: center; border-radius: 5px; font-size: 11px;
+    background: var(--panel3); }
+  .nname { font-weight: 600; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+  .nop { color: var(--dim); font-size: 11px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .nspacer { flex: 1; }
+  .nacts { display: none; gap: 2px; }
+  .nrow:hover .nacts { display: flex; }
+  .nact { background: none; border: none; color: var(--dim); cursor: pointer;
+    padding: 2px 4px; border-radius: 4px; font-size: 12px; }
+  .nact:hover { color: var(--text); background: var(--panel3); }
+  .ndot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .ndot.ok { background: var(--ok); } .ndot.failed { background: var(--fail); }
+  .ndot.stale { background: var(--stale); }
+  .nbody { display: none; padding: 2px 8px 8px 40px; }
+  .node.open .nbody { display: block; }
+  .prow { display: flex; align-items: center; gap: 8px; padding: 3px 0;
+    font-size: 12.5px; }
+  .pname { color: var(--dim); min-width: 108px; }
+  .pval { color: var(--accent); cursor: pointer;
+    border-bottom: 1px dashed transparent; }
   .pval:hover { border-bottom-color: var(--accent); }
-  .pval input { width: 90px; background: var(--bg); color: var(--text);
-                border: 1px solid var(--accent); border-radius: 4px;
-                padding: 1px 5px; font: inherit; }
-  .problems { padding: 0 10px 8px 27px; color: var(--fail); font-size: 12px; }
-  .specbox { border-radius: 8px; padding: 8px 10px; margin-top: 10px;
-             border: 1px solid var(--line); }
-  .specbox.ok { border-color: var(--ok); } .specbox.fail { border-color: var(--fail); }
-  /* viewer */
-  #viewerPane { flex: 1; position: relative; }
+  .pval input { width: 88px; background: var(--bg); color: var(--text);
+    border: 1px solid var(--accent); border-radius: 4px; padding: 1px 6px;
+    font: inherit; }
+  .pro { color: var(--dim); }
+  .nproblems { padding: 4px 8px 8px 40px; color: var(--fail); font-size: 12px; }
+  .specrow { margin-top: 10px; border-top: 1px solid var(--line);
+    padding: 10px 8px 0; font-size: 12.5px; }
+  .specrow .schip { display: inline-block; background: var(--panel3);
+    border-radius: 5px; padding: 2px 8px; margin: 2px 3px 2px 0;
+    color: var(--dim); }
+  .specrow .sfail { color: var(--fail); padding-top: 4px; }
+
+  /* ============ viewport ============ */
+  #viewportPane { flex: 1; position: relative; min-width: 0; }
   #viewer { position: absolute; inset: 0; }
-  #busy { position: absolute; inset: 0; display: none; align-items: center;
-          justify-content: center; background: rgba(10,12,15,.55); z-index: 5;
-          font-size: 15px; color: var(--text); backdrop-filter: blur(2px); }
-  /* dropdown */
-  .dropdown { position: relative; }
-  .dropdown .menu { display: none; position: absolute; right: 0; top: 110%;
-    background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
-    min-width: 260px; z-index: 20; overflow: hidden; }
-  .dropdown:hover .menu, .dropdown:focus-within .menu { display: block; }
-  .dropdown .menu a { display: block; padding: 9px 13px; cursor: pointer; }
-  .dropdown .menu a:hover { background: #2a3f5c; }
-  /* node action buttons */
-  .fhead .spacer { flex: 1; }
-  .nbtn { background: none; border: none; color: var(--dim); cursor: pointer;
-          padding: 0 4px; font-size: 13px; }
-  .nbtn:hover { color: var(--text); }
-  .feature.suppressed { opacity: .45; }
-  /* add-feature dialog */
-  dialog { background: var(--panel); color: var(--text); border: 1px solid
-    var(--line); border-radius: 12px; padding: 18px 20px; min-width: 340px; }
-  dialog::backdrop { background: rgba(0,0,0,.55); }
-  dialog h3 { margin-bottom: 12px; }
-  dialog label { display: block; margin: 8px 0 2px; color: var(--dim);
-                 font-size: 12px; }
+  #viewTools { position: absolute; top: 10px; right: 10px; display: flex;
+    gap: 4px; z-index: 6; }
+  #viewTools button { background: rgba(23,26,33,.85); border: 1px solid
+    var(--line); color: var(--dim); border-radius: 6px; padding: 5px 10px;
+    cursor: pointer; font: inherit; font-size: 12px; backdrop-filter: blur(4px); }
+  #viewTools button:hover { color: var(--text); border-color: var(--accent); }
+  #busy { position: absolute; inset: 0; display: none; flex-direction: column;
+    gap: 10px; align-items: center; justify-content: center;
+    background: rgba(10,12,15,.6); z-index: 10; backdrop-filter: blur(3px); }
+  .spinner { width: 34px; height: 34px; border-radius: 50%;
+    border: 3px solid var(--line); border-top-color: var(--accent);
+    animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ============ assistant ============ */
+  #chatPane { width: 330px; min-width: 260px; background: var(--panel);
+    border-left: 1px solid var(--line); display: flex; flex-direction: column; }
+  #chatLog { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex;
+    flex-direction: column; gap: 8px; }
+  .msg { padding: 8px 12px; border-radius: 12px; max-width: 94%;
+    white-space: pre-wrap; word-break: break-word; font-size: 13px; }
+  .msg.user { background: var(--accent2); align-self: flex-end;
+    border-bottom-right-radius: 4px; }
+  .msg.bot { background: var(--panel2); align-self: flex-start;
+    border-bottom-left-radius: 4px; }
+  #chatForm { display: flex; gap: 8px; padding: 10px;
+    border-top: 1px solid var(--line); }
+  #chatInput { flex: 1; background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 20px; color: var(--text); padding: 9px 14px; font: inherit;
+    outline: none; }
+  #chatInput:focus { border-color: var(--accent); }
+  #chatSend { background: var(--accent); border: none; color: #08111e;
+    font-weight: 700; border-radius: 20px; padding: 0 16px; cursor: pointer; }
+
+  /* ============ status bar ============ */
+  #statusbar { display: flex; align-items: center; gap: 18px; height: 26px;
+    padding: 0 14px; background: var(--panel); border-top: 1px solid var(--line);
+    color: var(--dim); font-size: 11.5px; }
+  #statusbar b { color: var(--text); font-weight: 600; }
+
+  /* ============ dialogs ============ */
+  dialog { background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px;
+    min-width: 360px; max-width: 480px; }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  dialog h3 { margin-bottom: 14px; font-size: 15px; }
+  dialog label { display: block; margin: 9px 0 3px; color: var(--dim);
+    font-size: 12px; }
   dialog input, dialog select { width: 100%; background: var(--panel2);
     border: 1px solid var(--line); border-radius: 6px; color: var(--text);
-    padding: 7px 9px; font: inherit; }
+    padding: 8px 10px; font: inherit; outline: none; }
+  dialog input:focus, dialog select:focus { border-color: var(--accent); }
   dialog .checks { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0; }
-  dialog .checks label { display: flex; gap: 4px; align-items: center;
+  dialog .checks label { display: flex; gap: 5px; align-items: center;
     margin: 0; background: var(--panel2); border: 1px solid var(--line);
-    border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 13px;
-    color: var(--text); }
+    border-radius: 6px; padding: 5px 9px; cursor: pointer; color: var(--text); }
   dialog .row { display: flex; justify-content: flex-end; gap: 8px;
-                margin-top: 14px; }
+    margin-top: 16px; }
+  dialog .row button { background: var(--panel3); color: var(--text);
+    border: 1px solid var(--line); border-radius: 7px; padding: 8px 16px;
+    cursor: pointer; font: inherit; }
+  dialog .row button.primary { background: var(--accent); color: #08111e;
+    border: none; font-weight: 700; }
+  .libitem { display: flex; justify-content: space-between; align-items: center;
+    padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px;
+    margin-bottom: 6px; cursor: pointer; }
+  .libitem:hover { border-color: var(--accent); background: var(--panel2); }
+  .libitem .meta { color: var(--dim); font-size: 11.5px; }
 </style>
 </head>
 <body>
-<header>
-  <h1>Text<span>CAD</span> Studio</h1>
-  <span class="doc" id="docName">—</span>
-  <div class="spacer"></div>
-  <button id="newBtn">🗋 New</button>
-  <button id="addFeatBtn">＋ Add feature</button>
-  <div class="dropdown">
-    <button>📚 Examples ▾</button>
-    <div class="menu">
-      <a data-sample="flange">Flange (6-bolt)</a>
-      <a data-sample="impeller">Impeller (7 curved blades)</a>
-      <a data-sample="compressor" title="physics-designed by the meanline calculator; rebuilds take a while">Compressor — meanline designed</a>
+
+<!-- ============ menu bar ============ -->
+<div id="menubar">
+  <span id="logo">Text<b>CAD</b> Studio</span>
+
+  <div class="menu-root" id="fileMenu">
+    <button>File</button>
+    <div class="menu-list">
+      <a id="mNew">New design <span class="hint">blank tree</span></a>
+      <a id="mOpen">Open… <span class="hint">design library</span></a>
+      <a id="mSave">Save <span class="hint">to library</span></a>
+      <div class="menu-sep"></div>
+      <a id="mExport">Export STEP <span class="hint">machinable file</span></a>
     </div>
   </div>
-  <button id="exportBtn">Export STEP</button>
-</header>
 
+  <div class="menu-root" id="exMenu">
+    <button>Examples</button>
+    <div class="menu-list">
+      <a data-sample="flange">Flange <span class="hint">6-bolt, spec-verified</span></a>
+      <a data-sample="impeller">Impeller <span class="hint">7 curved blades</span></a>
+      <a data-sample="compressor">Compressor <span class="hint">meanline-designed, slow</span></a>
+    </div>
+  </div>
+
+  <span id="docTitle">—</span>
+  <span id="verifyBadge" class="none">no design</span>
+</div>
+
+<!-- ============ toolbar ============ -->
+<div id="toolbar">
+  <button class="tbtn" id="tNew"><span class="ico">🗋</span>New</button>
+  <button class="tbtn" id="tOpen"><span class="ico">📂</span>Open</button>
+  <button class="tbtn" id="tSave"><span class="ico">💾</span>Save</button>
+  <div class="tsep"></div>
+  <button class="tbtn" id="tAddFeat"><span class="ico">✚</span>Feature</button>
+  <button class="tbtn" id="tRebuild"><span class="ico">⟳</span>Rebuild</button>
+  <div class="tsep"></div>
+  <button class="tbtn" id="tExport"><span class="ico">⬇</span>STEP</button>
+</div>
+
+<!-- ============ main ============ -->
+<main>
+  <div id="treePane">
+    <div class="pane-title"><span>Feature tree</span><span id="featCount"></span></div>
+    <div id="tree"></div>
+  </div>
+
+  <div id="viewportPane">
+    <div id="viewer"></div>
+    <div id="viewTools">
+      <button id="vFit">Fit</button>
+      <button id="vTop">Top</button>
+      <button id="vFront">Front</button>
+      <button id="vIso">Iso</button>
+    </div>
+    <div id="busy"><div class="spinner"></div><span id="busyText">rebuilding…</span></div>
+  </div>
+
+  <div id="chatPane">
+    <div class="pane-title"><span>AI designer</span></div>
+    <div id="chatLog"></div>
+    <form id="chatForm">
+      <input id="chatInput" placeholder="Describe a part or a change…" autocomplete="off">
+      <button id="chatSend">➤</button>
+    </form>
+  </div>
+</main>
+
+<!-- ============ status bar ============ -->
+<div id="statusbar">
+  <span id="sDoc">—</span>
+  <span id="sFeatures"></span>
+  <span id="sVolume"></span>
+  <span id="sRebuild"></span>
+  <span style="margin-left:auto">verified pipeline: engine · inspector · blocks</span>
+</div>
+
+<!-- ============ add feature dialog ============ -->
 <dialog id="featDialog">
   <form id="featForm" method="dialog">
     <h3>Add feature</h3>
-    <label>Operation
-      <select id="featOp"></select>
-    </label>
-    <label>Name (id)
-      <input id="featId" required placeholder="e.g. bore2">
-    </label>
+    <label>Operation <select id="featOp"></select></label>
+    <label>Name (id) <input id="featId" required placeholder="e.g. bore2"></label>
     <div id="featParams"></div>
     <div id="featInputsWrap">
       <label>Inputs (upstream features)</label>
@@ -142,28 +275,17 @@
     </div>
     <div class="row">
       <button value="cancel" formnovalidate>Cancel</button>
-      <button id="featOk" value="ok">Add</button>
+      <button class="primary" value="ok">Add feature</button>
     </div>
   </form>
 </dialog>
-<main>
-  <div id="chatPane">
-    <h2>Chat</h2>
-    <div id="chatLog"></div>
-    <form id="chatForm">
-      <input id="chatInput" placeholder='e.g. "make the bore 12mm"' autocomplete="off">
-      <button>Send</button>
-    </form>
-  </div>
-  <div id="treePane">
-    <h2>Feature tree</h2>
-    <div id="tree"></div>
-  </div>
-  <div id="viewerPane">
-    <div id="viewer"></div>
-    <div id="busy">rebuilding…</div>
-  </div>
-</main>
+
+<!-- ============ design library dialog ============ -->
+<dialog id="libDialog">
+  <h3>Design library</h3>
+  <div id="libList"></div>
+  <div class="row"><button onclick="libDialog.close()">Close</button></div>
+</dialog>
 
 <script type="importmap">
 { "imports": {
@@ -176,113 +298,180 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
-/* ---------- 3D viewer ---------- */
+/* ================= 3D viewport ================= */
 const pane = document.getElementById('viewer');
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x14161a);
-const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 5000);
+scene.background = new THREE.Color(0x0f1115);
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 8000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
 pane.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
-scene.add(new THREE.HemisphereLight(0xffffff, 0x334, 1.0));
-const dir = new THREE.DirectionalLight(0xffffff, 1.4);
-dir.position.set(1, 1, 2); scene.add(dir);
-const grid = new THREE.GridHelper(300, 30, 0x2e3340, 0x22262e);
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x223, 0.9));
+const key = new THREE.DirectionalLight(0xffffff, 1.5);
+key.position.set(1, -1, 2); scene.add(key);
+const rim = new THREE.DirectionalLight(0x88bbff, 0.5);
+rim.position.set(-2, 2, -1); scene.add(rim);
+const grid = new THREE.GridHelper(400, 40, 0x2b303c, 0x1b1f28);
 grid.rotation.x = Math.PI / 2; scene.add(grid);
-let mesh = null;
+let mesh = null, edges = null, fitRadius = 100, fitCenter = new THREE.Vector3();
 
 function resize() {
-  const w = pane.clientWidth, h = pane.clientHeight;
-  camera.aspect = w / h; camera.updateProjectionMatrix();
-  renderer.setSize(w, h);
+  camera.aspect = pane.clientWidth / pane.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(pane.clientWidth, pane.clientHeight);
 }
 new ResizeObserver(resize).observe(pane);
-
-(function animate() { requestAnimationFrame(animate);
+(function animate(){ requestAnimationFrame(animate);
   controls.update(); renderer.render(scene, camera); })();
+
+function setView(dir) {
+  const d = fitRadius * 2.4, c = fitCenter;
+  const views = {
+    iso:   [c.x + d*0.7, c.y - d*0.7, c.z + d*0.55],
+    top:   [c.x, c.y, c.z + d],
+    front: [c.x, c.y - d, c.z + d*0.001],
+  };
+  camera.position.set(...views[dir]); controls.target.copy(c);
+}
+document.getElementById('vFit').onclick = () => setView('iso');
+document.getElementById('vTop').onclick = () => setView('top');
+document.getElementById('vFront').onclick = () => setView('front');
+document.getElementById('vIso').onclick = () => setView('iso');
 
 async function loadMesh(fit = false) {
   try {
     const geo = await new STLLoader().loadAsync('/api/mesh.stl?t=' + Date.now());
     geo.computeVertexNormals();
     if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); }
+    if (edges) { scene.remove(edges); edges.geometry.dispose(); }
     mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-      color: 0x4da3ff, metalness: 0.35, roughness: 0.45 }));
-    scene.add(mesh);
+      color: 0x5ba7f7, metalness: 0.25, roughness: 0.42 }));
+    edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geo, 25),
+      new THREE.LineBasicMaterial({ color: 0x0c2a4a, transparent: true,
+                                    opacity: 0.35 }));
+    scene.add(mesh); scene.add(edges);
+    geo.computeBoundingSphere();
+    fitRadius = geo.boundingSphere.radius;
+    fitCenter.copy(geo.boundingSphere.center);
     if (fit) {
-      geo.computeBoundingSphere();
-      const { center, radius } = geo.boundingSphere;
-      controls.target.copy(center);
-      camera.position.set(center.x + radius * 1.9, center.y - radius * 1.9,
-                          center.z + radius * 1.4);
-      camera.near = radius / 100; camera.far = radius * 100;
-      camera.updateProjectionMatrix();
+      camera.near = fitRadius / 100; camera.far = fitRadius * 100;
+      camera.updateProjectionMatrix(); setView('iso');
     }
   } catch (e) { /* no mesh yet */ }
 }
+function clearMesh() {
+  if (mesh) { scene.remove(mesh); mesh = null; }
+  if (edges) { scene.remove(edges); edges = null; }
+}
 
-/* ---------- feature tree ---------- */
+/* ================= state + rendering ================= */
 const treeEl = document.getElementById('tree');
 const busy = document.getElementById('busy');
+const busyText = document.getElementById('busyText');
 let lastDoc = null;
+const openNodes = new Set();
+let selected = null;
+
+const OP_ICONS = {
+  plate: '▭', disc: '●', tube: '◎', polygon_plate: '⬡', hex_plate: '⬡',
+  revolve_profile: '↻', curved_blade: '⤳', with_center_hole: '⊙',
+  with_bolt_circle: '⁘', polar_pattern: '✳', move: '↗',
+  fuse: '∪', cut: '−', intersect: '∩',
+};
 
 function renderDoc(doc) {
   lastDoc = doc;
-  document.getElementById('docName').textContent = doc.name;
+  document.getElementById('docTitle').innerHTML = `<b>${doc.name}</b>`;
+  document.getElementById('sDoc').innerHTML = `<b>${doc.name}</b>`;
+  document.getElementById('featCount').textContent =
+    doc.features.length ? doc.features.length + ' features' : '';
+  document.getElementById('sFeatures').textContent =
+    doc.features.length + ' features';
+  const last = doc.features.filter(f => !f.suppressed).at(-1);
+  document.getElementById('sVolume').textContent =
+    last && last.volume != null ? 'volume ' + last.volume + ' mm³' : '';
+  document.getElementById('sRebuild').textContent =
+    doc.rebuild_ms != null ? 'rebuild ' + doc.rebuild_ms + ' ms' : '';
+
+  const badge = document.getElementById('verifyBadge');
+  if (!doc.features.length) { badge.className = 'none'; badge.textContent = 'empty'; }
+  else if (doc.ok) { badge.className = 'ok'; badge.textContent = '✓ verified'; }
+  else { badge.className = 'fail'; badge.textContent = '✗ check failed'; }
+
   treeEl.innerHTML = '';
   for (const f of doc.features) {
-    const card = document.createElement('div'); card.className = 'feature';
-    if (f.suppressed) card.classList.add('suppressed');
-    const head = document.createElement('div'); head.className = 'fhead';
-    head.innerHTML = `<span class="badge ${f.status}"></span>
-      <span class="fid">${f.id}</span><span class="fop">${f.op}` +
-      (f.inputs.length ? ` ← ${f.inputs.join(', ')}` : '') + `</span>
-      <span class="spacer"></span>`;
-    const sup = document.createElement('button'); sup.className = 'nbtn';
+    const node = document.createElement('div');
+    node.className = 'node' + (openNodes.has(f.id) ? ' open' : '')
+      + (f.suppressed ? ' suppressed' : '') + (selected === f.id ? ' sel' : '');
+    const row = document.createElement('div'); row.className = 'nrow';
+    row.innerHTML = `
+      <span class="twisty">▶</span>
+      <span class="nico">${OP_ICONS[f.op] || '□'}</span>
+      <span class="nname">${f.id}</span>
+      <span class="nop">${f.op}${f.inputs.length ? ' ← ' + f.inputs.join(', ') : ''}</span>
+      <span class="nspacer"></span>`;
+    const acts = document.createElement('span'); acts.className = 'nacts';
+    const sup = document.createElement('button'); sup.className = 'nact';
     sup.textContent = f.suppressed ? '▶' : '⏸';
     sup.title = f.suppressed ? 'unsuppress' : 'suppress';
-    sup.onclick = () => postJSON('/api/feature/suppress',
-      { feature_id: f.id, suppressed: !f.suppressed });
-    const del = document.createElement('button'); del.className = 'nbtn';
+    sup.onclick = e => { e.stopPropagation();
+      postJSON('/api/feature/suppress',
+        { feature_id: f.id, suppressed: !f.suppressed }).then(() => loadMesh()); };
+    const del = document.createElement('button'); del.className = 'nact';
     del.textContent = '✕'; del.title = 'delete feature';
-    del.onclick = () => postJSON('/api/feature/remove', { feature_id: f.id });
-    head.append(sup, del);
-    card.appendChild(head);
-    const params = document.createElement('div'); params.className = 'params';
+    del.onclick = e => { e.stopPropagation();
+      postJSON('/api/feature/remove', { feature_id: f.id }).then(() => loadMesh()); };
+    acts.append(sup, del);
+    const dot = document.createElement('span'); dot.className = 'ndot ' + f.status;
+    row.append(acts, dot);
+    row.onclick = () => {
+      selected = f.id;
+      openNodes.has(f.id) ? openNodes.delete(f.id) : openNodes.add(f.id);
+      renderDoc(lastDoc);
+    };
+    node.appendChild(row);
+
+    const body = document.createElement('div'); body.className = 'nbody';
     for (const [k, v] of Object.entries(f.params)) {
-      const row = document.createElement('div'); row.className = 'prow';
-      const editable = typeof v === 'number';
-      row.innerHTML = `<span class="pname">${k}</span>`;
-      const val = document.createElement('span'); val.className = 'pval';
-      val.textContent = Array.isArray(v) ? `[${v.length} points]` : v;
-      if (editable) {
-        val.title = 'click to edit';
-        val.onclick = () => beginEdit(val, f.id, k, v);
-      } else { val.style.cursor = 'default'; val.style.color = 'var(--dim)'; }
-      row.appendChild(val); params.appendChild(row);
+      const pr = document.createElement('div'); pr.className = 'prow';
+      pr.innerHTML = `<span class="pname">${k}</span>`;
+      const val = document.createElement('span');
+      if (typeof v === 'number') {
+        val.className = 'pval'; val.textContent = v; val.title = 'click to edit';
+        val.onclick = e => { e.stopPropagation(); beginEdit(val, f.id, k, v); };
+      } else {
+        val.className = 'pro';
+        val.textContent = Array.isArray(v) ? `[${v.length} points]` : v;
+      }
+      pr.appendChild(val); body.appendChild(pr);
     }
     if (f.volume != null) {
-      const row = document.createElement('div'); row.className = 'prow';
-      row.innerHTML = `<span class="pname">volume</span>
-        <span style="color:var(--dim)">${f.volume} mm³</span>`;
-      params.appendChild(row);
+      const pr = document.createElement('div'); pr.className = 'prow';
+      pr.innerHTML = `<span class="pname">volume</span>
+                      <span class="pro">${f.volume} mm³</span>`;
+      body.appendChild(pr);
     }
-    card.appendChild(params);
+    node.appendChild(body);
     const probs = f.problems.filter(p => p !== '(suppressed)');
     if (probs.length) {
-      const pr = document.createElement('div'); pr.className = 'problems';
-      pr.textContent = probs.join(' • '); card.appendChild(pr);
+      const pd = document.createElement('div'); pd.className = 'nproblems';
+      pd.textContent = probs.join(' • '); node.appendChild(pd);
     }
-    treeEl.appendChild(card);
+    treeEl.appendChild(node);
   }
+
   if (doc.spec && Object.keys(doc.spec).length) {
-    const box = document.createElement('div');
-    box.className = 'specbox ' + (doc.spec_problems.length ? 'fail' : 'ok');
-    box.innerHTML = `<b>spec ${doc.spec_problems.length ? 'FAIL' : 'PASS'}</b> — ` +
-      Object.entries(doc.spec).filter(([,v]) => v != null)
-        .map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ') +
-      doc.spec_problems.map(p => `<div style="color:var(--fail)">! ${p}</div>`).join('');
-    treeEl.appendChild(box);
+    const sr = document.createElement('div'); sr.className = 'specrow';
+    sr.innerHTML = `<b style="color:${doc.spec_problems.length
+        ? 'var(--fail)' : 'var(--ok)'}">spec ${doc.spec_problems.length
+        ? 'FAIL' : 'PASS'}</b><br>` +
+      Object.entries(doc.spec).filter(([,v]) => v != null).map(([k, v]) =>
+        `<span class="schip">${k}: ${JSON.stringify(v)}</span>`).join('') +
+      doc.spec_problems.map(p => `<div class="sfail">! ${p}</div>`).join('');
+    treeEl.appendChild(sr);
   }
 }
 
@@ -291,15 +480,18 @@ function beginEdit(el, fid, param, oldVal) {
   input.value = oldVal; el.replaceChildren(input); input.focus(); input.select();
   const done = async commit => {
     if (commit && input.value !== '' && Number(input.value) !== oldVal) {
-      await postEdit(fid, param, Number(input.value));
+      await postJSON('/api/edit',
+        { feature_id: fid, param, value: Number(input.value) });
+      loadMesh();
     } else { el.textContent = oldVal; }
   };
-  input.onkeydown = e => { if (e.key === 'Enter') done(true);
+  input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); done(true); }
                            if (e.key === 'Escape') done(false); };
   input.onblur = () => done(false);
 }
 
-async function postJSON(url, body) {
+async function postJSON(url, body, busyMsg) {
+  busyText.textContent = busyMsg || 'rebuilding…';
   busy.style.display = 'flex';
   const r = await fetch(url, { method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -307,13 +499,11 @@ async function postJSON(url, body) {
   const doc = await r.json();
   busy.style.display = 'none';
   if (doc.error) addMsg('bot', '⚠ ' + doc.error);
-  renderDoc(doc); loadMesh();
+  if (doc.features) renderDoc(doc);
   return doc;
 }
-const postEdit = (fid, param, value) =>
-  postJSON('/api/edit', { feature_id: fid, param, value });
 
-/* ---------- chat ---------- */
+/* ================= chat ================= */
 const log = document.getElementById('chatLog');
 function addMsg(who, text) {
   const d = document.createElement('div'); d.className = 'msg ' + who;
@@ -324,59 +514,110 @@ document.getElementById('chatForm').onsubmit = async e => {
   const input = document.getElementById('chatInput');
   const text = input.value.trim(); if (!text) return;
   input.value = ''; addMsg('user', text);
-  busy.style.display = 'flex';
-  const r = await fetch('/api/chat', { method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ message: text }) });
-  const doc = await r.json();
-  busy.style.display = 'none';
-  addMsg('bot', doc.reply || '…'); renderDoc(doc); loadMesh();
+  const before = lastDoc ? lastDoc.name : null;
+  const doc = await postJSON('/api/chat', { message: text }, 'thinking…');
+  addMsg('bot', doc.reply || '…');
+  loadMesh(doc.name !== before);
 };
 
-/* ---------- header ---------- */
-for (const btn of document.querySelectorAll('[data-sample]')) {
-  btn.onclick = async () => {
-    const doc = await postJSON('/api/sample/' + btn.dataset.sample);
-    loadMesh(true);
-    addMsg('bot', `Loaded example "${doc.name}". Click any blue value in the ` +
-                  `tree, or tell me what to change.`);
-  };
+/* ================= file actions ================= */
+function closeMenus() {
+  document.querySelectorAll('.menu-root').forEach(m => m.classList.remove('open'));
 }
+document.querySelectorAll('.menu-root > button').forEach(b => {
+  b.onclick = e => { e.stopPropagation();
+    const m = b.parentElement, was = m.classList.contains('open');
+    closeMenus(); if (!was) m.classList.add('open'); };
+});
+document.body.addEventListener('click', closeMenus);
 
-document.getElementById('newBtn').onclick = async () => {
+async function actionNew() {
   const name = prompt('Name for the new design:', 'my-part');
   if (name === null) return;
   await postJSON('/api/new', { name });
-  if (mesh) { scene.remove(mesh); mesh = null; }
-  addMsg('bot', `Blank design "${name}" created. Describe the part you want ` +
-    `("design a pulley, 60mm...") or use ＋ Add feature to build manually.`);
-};
+  clearMesh();
+  addMsg('bot', `Blank design "${name}" created. Describe a part to design, ` +
+                `or use ✚ Feature to build manually.`);
+}
+async function actionSave() {
+  const res = await postJSON('/api/save', {}, 'saving…');
+  if (res.saved) addMsg('bot', `Saved "${res.saved}" to the design library.`);
+}
+async function actionOpen() {
+  const list = await (await fetch('/api/designs')).json();
+  const el = document.getElementById('libList');
+  el.innerHTML = list.length ? '' :
+    '<div style="color:var(--dim);padding:8px">No saved designs yet — use Save.</div>';
+  for (const d of list) {
+    const item = document.createElement('div'); item.className = 'libitem';
+    item.innerHTML = `<span><b>${d.name}</b></span>
+      <span class="meta">${d.features} features</span>`;
+    item.onclick = async () => { libDialog.close();
+      await postJSON('/api/open/' + d.file, {}, 'opening…');
+      loadMesh(true); };
+    el.appendChild(item);
+  }
+  libDialog.showModal();
+}
+async function actionExport() {
+  const r = await fetch('/api/export', { method: 'POST' });
+  const res = await r.json();
+  addMsg('bot', res.error ? '⚠ ' + res.error : '⬇ Exported: ' + res.path);
+}
+async function actionRebuild() {
+  if (!lastDoc || !lastDoc.features.length) return;
+  const f = lastDoc.features[0];
+  const k = Object.keys(f.params).find(k => typeof f.params[k] === 'number');
+  if (k) { await postJSON('/api/edit',
+    { feature_id: f.id, param: k, value: f.params[k] }); loadMesh(); }
+}
 
-/* ---------- add-feature dialog ---------- */
+document.getElementById('mNew').onclick = actionNew;
+document.getElementById('tNew').onclick = actionNew;
+document.getElementById('mSave').onclick = actionSave;
+document.getElementById('tSave').onclick = actionSave;
+document.getElementById('mOpen').onclick = actionOpen;
+document.getElementById('tOpen').onclick = actionOpen;
+document.getElementById('mExport').onclick = actionExport;
+document.getElementById('tExport').onclick = actionExport;
+document.getElementById('tRebuild').onclick = actionRebuild;
+
+for (const a of document.querySelectorAll('[data-sample]')) {
+  a.onclick = async () => {
+    const doc = await postJSON('/api/sample/' + a.dataset.sample, {},
+      a.dataset.sample === 'compressor' ? 'building compressor (slow)…' : 'building…');
+    loadMesh(true);
+    addMsg('bot', `Loaded example "${doc.name}". Expand a feature and click a ` +
+                  `blue value to edit, or tell me what to change.`);
+  };
+}
+
+/* ================= add-feature dialog ================= */
 const dlg = document.getElementById('featDialog');
+const libDialog = document.getElementById('libDialog');
+window.libDialog = libDialog;
 let OPS = [];
-document.getElementById('addFeatBtn').onclick = async () => {
+async function actionAddFeat() {
   if (!OPS.length) OPS = await (await fetch('/api/ops')).json();
   const sel = document.getElementById('featOp');
   sel.innerHTML = OPS.map(o =>
-    `<option value="${o.op}">${o.op} (${o.kind})</option>`).join('');
+    `<option value="${o.op}">${OP_ICONS[o.op] || ''} ${o.op} — ${o.kind}</option>`).join('');
   sel.onchange = renderFeatForm; renderFeatForm();
   dlg.showModal();
-};
+}
+document.getElementById('tAddFeat').onclick = actionAddFeat;
 
 function renderFeatForm() {
   const op = OPS.find(o => o.op === document.getElementById('featOp').value);
-  const pDiv = document.getElementById('featParams');
-  pDiv.innerHTML = op.params.map(p => `
+  document.getElementById('featParams').innerHTML = op.params.map(p => `
     <label>${p.name}
       <input data-param="${p.name}" value="${p.default ?? ''}"
         placeholder="${p.name === 'points' ? '[[r,z],[r,z],...]' : 'number'}">
     </label>`).join('');
-  const iDiv = document.getElementById('featInputs');
-  const doc = lastDoc || { features: [] };
   document.getElementById('featInputsWrap').style.display =
     op.inputs > 0 ? '' : 'none';
-  iDiv.innerHTML = doc.features.map(f =>
+  const doc = lastDoc || { features: [] };
+  document.getElementById('featInputs').innerHTML = doc.features.map(f =>
     `<label><input type="checkbox" value="${f.id}">${f.id}</label>`).join('') ||
     '<span style="color:var(--dim)">no features yet</span>';
 }
@@ -384,7 +625,6 @@ function renderFeatForm() {
 document.getElementById('featForm').onsubmit = async e => {
   if (e.submitter && e.submitter.value === 'cancel') return;
   e.preventDefault(); dlg.close();
-  const op = document.getElementById('featOp').value;
   const params = {};
   for (const inp of document.querySelectorAll('#featParams input')) {
     const v = inp.value.trim(); if (!v) continue;
@@ -392,22 +632,20 @@ document.getElementById('featForm').onsubmit = async e => {
   }
   const inputs = [...document.querySelectorAll('#featInputs input:checked')]
     .map(c => c.value);
-  const doc = await postJSON('/api/feature/add',
-    { id: document.getElementById('featId').value, op, params, inputs });
+  const doc = await postJSON('/api/feature/add', {
+    id: document.getElementById('featId').value,
+    op: document.getElementById('featOp').value, params, inputs });
   if (!doc.error) loadMesh(doc.features.length === 1);
-};
-document.getElementById('exportBtn').onclick = async () => {
-  const r = await fetch('/api/export', { method: 'POST' });
-  const res = await r.json();
-  addMsg('bot', res.error ? '⚠ ' + res.error : 'Exported: ' + res.path);
+  document.getElementById('featId').value = '';
 };
 
-/* ---------- boot ---------- */
+/* ================= boot ================= */
 const doc = await (await fetch('/api/doc')).json();
 renderDoc(doc); loadMesh(true);
-addMsg('bot', 'Welcome to TextCAD Studio. Every edit rebuilds through the ' +
-  'verified pipeline — the tree shows each feature\'s health and the spec ' +
-  'verdict. Try: "make the bore 12mm".');
+addMsg('bot', 'Welcome to TextCAD Studio.\n' +
+  '• Describe a part to design it from scratch\n' +
+  '• Ask for changes ("make the bore 12mm")\n' +
+  '• Or build manually with ✚ Feature — every path is verified.');
 </script>
 </body>
 </html>
