@@ -230,13 +230,7 @@ class Document:
         return out
 
     def _spec_obj(self) -> inspector.Spec:
-        d = dict(self.spec)
-        for key in ("size", "com"):
-            if d.get(key) is not None:
-                d[key] = tuple(d[key])
-        if d.get("holes"):
-            d["holes"] = {float(k): v for k, v in d["holes"].items()}
-        return inspector.Spec(**d)
+        return inspector.spec_from_dict(self.spec)
 
     # -- results --------------------------------------------------------------
     def result(self):

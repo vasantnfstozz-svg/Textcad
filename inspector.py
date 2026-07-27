@@ -62,6 +62,20 @@ class Spec:
     vol_tol: float = 0.02
 
 
+def spec_from_dict(d: dict) -> Spec:
+    """Build a Spec from JSON-safe data (tuples as lists, hole radii as string
+    keys). Shared by the document engine and the MCP server."""
+    import dataclasses
+    d = dict(d)
+    for key in ("size", "com"):
+        if d.get(key) is not None:
+            d[key] = tuple(d[key])
+    if d.get("holes"):
+        d["holes"] = {float(k): int(v) for k, v in d["holes"].items()}
+    known = {f.name for f in dataclasses.fields(Spec)}
+    return Spec(**{k: v for k, v in d.items() if k in known})
+
+
 # ---------------------------------------------------------------------------
 # Measurement — geometry-agnostic facts about a solid
 # ---------------------------------------------------------------------------

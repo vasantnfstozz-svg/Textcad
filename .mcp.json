@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "textcad": {
+      "command": "python",
+      "args": ["c:\\Users\\VasanSeenivasan\\Desktop\\textcad\\mcp_server.py"]
+    }
+  }
+}
