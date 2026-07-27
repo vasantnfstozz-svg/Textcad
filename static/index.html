@@ -639,6 +639,25 @@ document.getElementById('featForm').onsubmit = async e => {
   document.getElementById('featId').value = '';
 };
 
+/* ================= live watcher ================= */
+/* If a design arrives from outside (e.g. an AI over MCP), pop it up live. */
+function docSig(d) {
+  return d ? `${d.name}|${d.features.length}|${d.rebuild_ms}|${d.ok}` : '';
+}
+setInterval(async () => {
+  if (busy.style.display === 'flex') return;         // don't fight an edit
+  if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+  try {
+    const d = await (await fetch('/api/doc')).json();
+    if (docSig(d) !== docSig(lastDoc)) {
+      const newName = !lastDoc || d.name !== lastDoc.name;
+      renderDoc(d); loadMesh(newName);
+      if (newName) addMsg('bot', `📡 "${d.name}" just arrived (designed ` +
+                                 `externally, e.g. via MCP) — loaded it.`);
+    }
+  } catch (e) { /* server briefly busy */ }
+}, 3000);
+
 /* ================= boot ================= */
 const doc = await (await fetch('/api/doc')).json();
 renderDoc(doc); loadMesh(true);

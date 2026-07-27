@@ -45,6 +45,28 @@ OUT.mkdir(exist_ok=True)
 mcp = FastMCP("textcad")
 
 
+def _safe_name(name: str) -> str:
+    import re
+    return re.sub(r"[^\w\-]+", "-", name).strip("-") or "design"
+
+
+def _notify_studio(file_stem: str) -> None:
+    """If TextCAD Studio is running locally, ask it to open the new design so
+    it pops up live in the browser. Fire-and-forget; silent if Studio is off."""
+    import threading
+    import urllib.request
+
+    def ping():
+        try:
+            req = urllib.request.Request(
+                f"http://127.0.0.1:8123/api/open/{file_stem}", method="POST")
+            urllib.request.urlopen(req, timeout=300)
+        except Exception:
+            pass
+
+    threading.Thread(target=ping, daemon=True).start()
+
+
 def _report(doc: Document, ok: bool) -> dict:
     rep = {
         "verified": ok,
@@ -89,13 +111,14 @@ def build_design(tree: dict, export_name: str = "") -> dict:
         ok = doc.rebuild()
         rep = _report(doc, ok)
         if ok:
-            name = export_name or doc.name or "design"
+            name = _safe_name(export_name or doc.name)
             step = OUT / f"{name}.step"
             doc.to_step(str(step))
             recipe = OUT / f"{name}.tcad.json"
             doc.save(str(recipe))
             rep["step_path"] = str(step)
             rep["recipe_path"] = str(recipe)
+            _notify_studio(name)
         return rep
 
 
@@ -116,11 +139,13 @@ def design_part(description: str) -> dict:
         if doc is None:
             return {"verified": False, "transcript": transcript}
         rep = _report(doc, True)
-        step = OUT / f"{doc.name}.step"
+        name = _safe_name(doc.name)
+        step = OUT / f"{name}.step"
         doc.to_step(str(step))
-        doc.save(str(OUT / f"{doc.name}.tcad.json"))
+        doc.save(str(OUT / f"{name}.tcad.json"))
         rep["step_path"] = str(step)
         rep["transcript"] = transcript
+        _notify_studio(name)
         return rep
 
 
