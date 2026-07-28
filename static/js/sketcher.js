@@ -40,6 +40,10 @@ let pathSegs = [];        // committed segments
 let segMode = 'line';     // what the next segment is: 'line' | 'arc'
 let pendingVia = null;    // arc: the middle (via) point, waiting for the end
 
+// snapping (P4)
+let activeSnap = null;    // {x, y, label} — geometry point the cursor snapped to
+let axisLock = null;      // {axis:'h'|'v', ref:{x,y}} — inference guide line
+
 const dlg = () => document.getElementById('sketchDialog');
 const svg = () => document.getElementById('sketchCanvas');
 
@@ -119,6 +123,7 @@ export function initSketcher() {
 
 function setTool(kind) {
   tool = kind; clicks = []; ghost = null;
+  activeSnap = null; axisLock = null;
   pathStart = null; pathSegs = []; pendingVia = null; segMode = 'line';
   document.querySelectorAll('.skpalette button').forEach(b =>
     b.classList.toggle('active', b.dataset.shape === tool));
@@ -139,6 +144,73 @@ const snap = v => Math.round(v / SNAP) * SNAP;
 const snapPt = p => ({ x: snap(p.x), y: snap(p.y) });
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
+/* ---------------- smart snapping (P4) ---------------- */
+
+function collectSnapPoints() {
+  const pts = [{ x: 0, y: 0, label: 'origin' }];
+  skEnts.forEach(e => {
+    const cx = e.x || 0, cy = e.y || 0;
+    if (e.kind !== 'path') pts.push({ x: cx, y: cy, label: 'center' });
+    if (e.kind === 'circle' || e.kind === 'regular_polygon') {
+      const r = e.r ?? e.radius;
+      for (const [dx, dy] of [[r, 0], [-r, 0], [0, r], [0, -r]])
+        pts.push({ x: cx + dx, y: cy + dy, label: 'quadrant' });
+    }
+    if (e.kind === 'rectangle') {
+      const a = (e.rotation || 0) * Math.PI / 180;
+      for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+        const lx = sx * e.w / 2, ly = sy * e.h / 2;
+        pts.push({ x: cx + lx * Math.cos(a) - ly * Math.sin(a),
+                   y: cy + lx * Math.sin(a) + ly * Math.cos(a),
+                   label: 'corner' });
+      }
+    }
+    if (e.kind === 'slot') {
+      const a = (e.rotation || 0) * Math.PI / 180, h = e.length / 2;
+      pts.push({ x: cx + h * Math.cos(a), y: cy + h * Math.sin(a), label: 'end' });
+      pts.push({ x: cx - h * Math.cos(a), y: cy - h * Math.sin(a), label: 'end' });
+    }
+    if (e.kind === 'polygon' && e.points)
+      for (const p of e.points)
+        pts.push({ x: cx + p[0], y: cy + p[1], label: 'vertex' });
+    if (e.kind === 'path' && e.start) {
+      pts.push({ x: cx + e.start[0], y: cy + e.start[1], label: 'vertex' });
+      for (const s of e.segments || [])
+        pts.push({ x: cx + s.to[0], y: cy + s.to[1], label: 'vertex' });
+    }
+  });
+  return pts;
+}
+
+/* The reference point of the segment being drawn (for axis inference). */
+function refPoint() {
+  if (tool === 'path' && pathStart) return pendingVia || pathCursor();
+  if (tool && clicks.length) return clicks[clicks.length - 1];
+  return null;
+}
+
+/* Geometry snap > axis lock > grid snap. Sets activeSnap/axisLock for draw(). */
+function smartSnap(raw) {
+  activeSnap = null; axisLock = null;
+  const tol = view.ext / 40;
+  let best = null, bd = tol;
+  for (const sp of collectSnapPoints()) {
+    const d = dist(raw, sp);
+    if (d < bd) { best = sp; bd = d; }
+  }
+  if (best) { activeSnap = best; return { x: best.x, y: best.y }; }
+  const ref = refPoint();
+  const p = { x: snap(raw.x), y: snap(raw.y) };
+  if (ref) {
+    if (Math.abs(raw.x - ref.x) < tol) {
+      p.x = ref.x; axisLock = { axis: 'v', ref };
+    } else if (Math.abs(raw.y - ref.y) < tol) {
+      p.y = ref.y; axisLock = { axis: 'h', ref };
+    }
+  }
+  return p;
+}
+
 /* ---------------- pointer interaction ---------------- */
 
 let dragging = null;      // {idx, startX, startY, ex, ey} moving an entity
@@ -146,9 +218,8 @@ let panning = null;       // {px, py, cx, cy} moving the view
 
 function onDown(e) {
   if (e.button !== 0) return;
+  if (tool) { placeClick(smartSnap(worldPoint(e))); return; }
   const p = snapPt(worldPoint(e));
-
-  if (tool) { placeClick(p); return; }
 
   const hit = hitTest(worldPoint(e));
   if (hit >= 0) {
@@ -172,8 +243,9 @@ function onMove(e) {
   document.getElementById('skCoords').textContent =
     `x ${snap(p.x)}, y ${snap(p.y)}`;
 
-  if (tool === 'path' && pathStart) { ghost = pathGhost(snapPt(p)); draw(); return; }
-  if (tool && clicks.length) { ghost = buildGhost(snapPt(p)); draw(); return; }
+  if (tool === 'path' && pathStart) { ghost = pathGhost(smartSnap(p)); draw(); return; }
+  if (tool && clicks.length) { ghost = buildGhost(smartSnap(p)); draw(); return; }
+  if (tool) { smartSnap(p); draw(); }         // show snap markers pre-click too
   if (dragging) {
     const ent = skEnts[dragging.idx];
     ent.x = snap(dragging.ex + (p.x - dragging.startX));
@@ -489,7 +561,8 @@ function updateHint() {
     return;
   }
   if (!tool) el.textContent =
-    'Pick a shape, then click on the canvas to draw · drag shapes to move · wheel zooms';
+    'Pick a shape, then click to draw — clicks snap to centers/corners of ' +
+    'existing shapes · drag shapes to move · wheel zooms';
   else if (tool === 'polygon') el.textContent = clicks.length
     ? 'Click the next corner · double-click (or click the first point) to close'
     : 'Polygon: click each corner, double-click to close';
@@ -500,6 +573,39 @@ function updateHint() {
          ellipse: 'Ellipse: click the center',
          slot: 'Slot: click the start center',
          regular_polygon: 'N-gon: click the center' }[tool] || 'Click to place');
+}
+
+/* ---------------- on-canvas dimensions (P4) ---------------- */
+
+function fmt(v) { return Math.round(v * 10) / 10; }
+
+function dimText(x, y, text, fs) {
+  return `<text x="${x}" y="${-y}" font-size="${fs}" fill="#dde2ea"
+    text-anchor="middle" style="paint-order:stroke" stroke="#0f1115"
+    stroke-width="${fs / 5}" font-family="Segoe UI, sans-serif">${text}</text>`;
+}
+
+function dimensionSVG(e, fs) {
+  const x = e.x || 0, y = e.y || 0, off = fs * 1.2;
+  if (e.kind === 'circle') return dimText(x, y + off, `R ${fmt(e.r)}`, fs);
+  if (e.kind === 'regular_polygon')
+    return dimText(x, y + off, `R ${fmt(e.radius)} × ${e.sides}`, fs);
+  if (e.kind === 'rectangle')
+    return dimText(x, y + off, `${fmt(e.w)} × ${fmt(e.h)}`, fs);
+  if (e.kind === 'ellipse')
+    return dimText(x, y + off, `${fmt(e.rx)} × ${fmt(e.ry)}`, fs);
+  if (e.kind === 'slot')
+    return dimText(x, y + off, `L ${fmt(e.length)}  H ${fmt(e.height)}`, fs);
+  if (e.kind === 'path' && e.ghostOpen && e.segments?.length) {
+    // live length of the segment being drawn
+    const last = e.segments[e.segments.length - 1];
+    const from = e.segments.length > 1
+      ? e.segments[e.segments.length - 2].to : e.start;
+    const mx = (from[0] + last.to[0]) / 2, my = (from[1] + last.to[1]) / 2;
+    const len = Math.hypot(last.to[0] - from[0], last.to[1] - from[1]);
+    return dimText(mx, my + off, fmt(len), fs);
+  }
+  return '';
 }
 
 /* ---------------- rendering ---------------- */
@@ -577,6 +683,29 @@ function draw() {
     if (pendingVia)
       out += `<circle cx="${pendingVia.x}" cy="${-pendingVia.y}" r="${ext / 110}" fill="#d9a23c"/>`;
   }
+
+  // P4: snap marker, axis guide, live dimensions
+  const fs = ext / 26;
+  if (axisLock) {
+    const r = axisLock.ref;
+    const guide = axisLock.axis === 'v'
+      ? `<line x1="${r.x}" y1="${-cy - ext}" x2="${r.x}" y2="${-cy + ext}"`
+      : `<line x1="${cx - ext}" y1="${-r.y}" x2="${cx + ext}" y2="${-r.y}"`;
+    out += guide + ` stroke="#4da3ff" stroke-width="1" stroke-dasharray="4 4"
+      vector-effect="non-scaling-stroke" opacity="0.7"/>`;
+  }
+  if (activeSnap) {
+    const s = activeSnap, m = ext / 70;
+    out += `<path d="M ${s.x - m} ${-s.y} L ${s.x + m} ${-s.y}
+      M ${s.x} ${-s.y - m} L ${s.x} ${-s.y + m}" stroke="#ffb85c"
+      stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+    out += `<rect x="${s.x - m}" y="${-s.y - m}" width="${2 * m}" height="${2 * m}"
+      fill="none" stroke="#ffb85c" stroke-width="1"
+      vector-effect="non-scaling-stroke"/>`;
+    out += dimText(s.x, s.y - m * 2.2, s.label, fs * 0.85);
+  }
+  if (ghost) out += dimensionSVG(ghost, fs);
+  else if (selEnt >= 0 && skEnts[selEnt]) out += dimensionSVG(skEnts[selEnt], fs);
 
   el.innerHTML = out;
   const gridEl = document.getElementById('skGrid');
