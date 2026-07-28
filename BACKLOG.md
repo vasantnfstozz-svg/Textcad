@@ -85,6 +85,25 @@ See the Done section.
 
 ## Done
 
+### Feature: Settings panel + click-to-place primitives (2026-07-28)
+User ask: a settings section for units/drawing prefs, and replace the irritating
+Create-dialog with click-a-point-in-the-viewport placement + a small inline popup.
+- [x] **Settings** (`settings.js`, localStorage): length unit (mm/cm/inch, DISPLAY
+  only — mm stays the working unit), sketch grid size, snap increment. File tab →
+  Settings. Unit converts the status-bar volume, tree volume rows, and the
+  sketcher's grid/snap/coords/dimension readouts (`fmtLen`/`fmtVol`, bus
+  'settings-changed' re-renders). Buttons are explicit onclick (NOT native form
+  submit — number-input validation silently blocks a dialog-form submit).
+- [x] **Click-to-place** (`placement.js` + viewport `beginPlacement`): the 7 Create
+  primitives no longer open a modal — you click a point on the Z=0 ground
+  (raycast) and the shape is created there (its CENTER at the click), via creator
+  + a `move` when off-origin. A modeless popup (`#placePopup`) then live-edits
+  dims + x/y/z (debounced /api/feature/params); everything stays editable in the
+  tree. Esc cancels; hint overlay guides. revolve_profile/curved_blade keep the
+  dialog. 9 new tests (121 total; caught a bad cone default). main.js?v=11,
+  studio.css?v=3. Verified in browser: unit→cm converts volume readout, Disc
+  click places disc+move with the inline popup, live radius edit rebuilds.
+
 ### Feature: selected surface shown in the sketch editor (2026-07-28)
 User ask: "if I select a surface on a body from the Create section, I want to see
 the selected surface in the sketch tab." Now sketching on a picked face shows the

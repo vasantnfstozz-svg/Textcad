@@ -7,6 +7,8 @@ import { OP_ICONS, TOOL_NAMES } from './icons.js';
 import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport,
          actionUndo, actionSpec, loadSample } from './dialogs.js';
 import { openSketchEditor } from './sketcher.js';
+import { openSettings } from './settings.js';
+import { startPlacement, PLACEABLE } from './placement.js';
 
 // The Sketch tool: if a flat face is currently picked in the viewport, sketch
 // ON that face (Fusion-style: select a surface, then sketch on it). Otherwise
@@ -26,6 +28,7 @@ const ACTIONS = {
   spec:    { icon: '✓', name: 'Spec',        fn: actionSpec },
   select:  { icon: '◉', name: 'Select',
              fn: () => document.getElementById('vSelect').click() },
+  settings: { icon: '⚙', name: 'Settings', fn: openSettings },
   ex_flange:     { icon: '⚙', name: 'Flange',     fn: () => loadSample('flange') },
   ex_impeller:   { icon: '🌀', name: 'Impeller',   fn: () => loadSample('impeller') },
   ex_compressor: { icon: '💨', name: 'Compressor', fn: () => loadSample('compressor') },
@@ -36,6 +39,7 @@ const TABS = {
   File: [
     ['Design', [{ a: 'new' }, { a: 'open' }, { a: 'save' }, { a: 'export' }]],
     ['Examples', [{ a: 'ex_flange' }, { a: 'ex_impeller' }, { a: 'ex_compressor' }]],
+    ['Preferences', [{ a: 'settings' }]],
   ],
   Create: [
     ['Primitives', ['plate', 'disc', 'ball', 'cone', 'tube', 'hex_plate',
@@ -94,7 +98,8 @@ function renderRibbon() {
         b.innerHTML = `<span class="rico">${OP_ICONS[item] || '□'}</span>` +
                       `<span>${TOOL_NAMES[item] || item}</span>`;
         b.onclick = item === 'sketch' ? startSketch
-                                      : () => openFeatDialog(item);
+          : PLACEABLE.includes(item) ? () => startPlacement(item)
+          : () => openFeatDialog(item);
       }
       tools.appendChild(b);
     }

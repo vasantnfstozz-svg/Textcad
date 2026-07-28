@@ -7,6 +7,7 @@ import { postJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
 import { loadMesh, showFeatureOverlay, clearHighlight } from './viewport.js';
 import { openFeatDialog } from './dialogs.js';
+import { fmtVol } from './settings.js';
 
 const treeEl = () => document.getElementById('tree');
 
@@ -20,7 +21,7 @@ export function renderDoc(doc) {
     doc.features.length + ' features';
   const last = doc.features.filter(f => !f.suppressed).at(-1);
   document.getElementById('sVolume').textContent =
-    last && last.volume != null ? 'volume ' + last.volume + ' mm³' : '';
+    last && last.volume != null ? 'volume ' + fmtVol(last.volume) : '';
   document.getElementById('sRebuild').textContent =
     doc.rebuild_ms != null ? 'rebuild ' + doc.rebuild_ms + ' ms' : '';
 
@@ -64,6 +65,7 @@ export function renderDoc(doc) {
   renderSpecRow(doc, el);
 }
 bus.on('doc-updated', renderDoc);
+bus.on('settings-changed', () => { if (S.lastDoc) renderDoc(S.lastDoc); });
 
 function renderWarnings(doc, el) {
   if (!doc.warnings || !doc.warnings.length) return;
@@ -157,7 +159,7 @@ function buildBody(f) {
   if (f.volume != null) {
     const pr = document.createElement('div'); pr.className = 'prow';
     pr.innerHTML = `<span class="pname">volume</span>
-                    <span class="pro">${f.volume} mm³</span>`;
+                    <span class="pro">${fmtVol(f.volume)}</span>`;
     body.appendChild(pr);
   }
   return body;

@@ -13,6 +13,7 @@ import { postJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
 import { loadMesh } from './viewport.js';
 import { openFeatDialog } from './dialogs.js';
+import { SETTINGS, unitLabel, fmtLen } from './settings.js';
 
 /* ---------------- state ---------------- */
 
@@ -34,7 +35,6 @@ let clicks = [];          // world-space clicks collected for the current tool
 let ghost = null;         // preview entity while placing
 let selEnt = -1;          // selected entity index
 let view = { cx: 0, cy: 0, ext: 60 };   // world-space view (ext = half-width)
-const SNAP = 1;           // click snap in mm
 
 // path tool (chained lines + arcs)
 let pathStart = null;     // first point of the profile
@@ -218,7 +218,10 @@ function worldPoint(e) {
     .matrixTransform(el.getScreenCTM().inverse());
   return { x: pt.x, y: -pt.y };            // flip: world +y is up
 }
-const snap = v => Math.round(v / SNAP) * SNAP;
+const snap = v => {                       // snap increment from Settings (0 = off)
+  const s = SETTINGS.snapMm;
+  return s > 0 ? Math.round(v / s) * s : Math.round(v * 100) / 100;
+};
 const snapPt = p => ({ x: snap(p.x), y: snap(p.y) });
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -327,7 +330,7 @@ function onDown(e) {
 function onMove(e) {
   const p = worldPoint(e);
   document.getElementById('skCoords').textContent =
-    `x ${snap(p.x)}, y ${snap(p.y)}`;
+    `x ${fmtLen(snap(p.x), false)}, y ${fmtLen(snap(p.y), false)} ${unitLabel()}`;
 
   if (tool === 'path' && pathStart) { ghost = pathGhost(smartSnap(p)); draw(); return; }
   if (tool && clicks.length) { ghost = buildGhost(smartSnap(p)); draw(); return; }
@@ -717,7 +720,7 @@ function updateHint() {
 
 /* ---------------- on-canvas dimensions (P4) ---------------- */
 
-function fmt(v) { return Math.round(v * 10) / 10; }
+function fmt(v) { return fmtLen(v, false); }   // dimension labels in display unit
 
 function dimText(x, y, text, fs) {
   return `<text x="${x}" y="${-y}" font-size="${fs}" fill="#dde2ea"
@@ -799,7 +802,10 @@ function draw() {
   const { cx, cy, ext } = view;
   el.setAttribute('viewBox', `${cx - ext} ${-cy - ext} ${2 * ext} ${2 * ext}`);
 
-  const step = ext > 300 ? 50 : ext > 120 ? 20 : 10;
+  // grid step = the configured grid size, coarsened while zoomed out so lines
+  // never crowd (keep at least ~7px apart at the current zoom)
+  let step = Math.max(0.1, SETTINGS.gridMm);
+  while ((2 * ext) / step > 90) step *= 2;
   let out = '';
   const x0 = Math.floor((cx - ext) / step) * step;
   const y0 = Math.floor((-cy - ext) / step) * step;
@@ -863,7 +869,7 @@ function draw() {
 
   el.innerHTML = out;
   const gridEl = document.getElementById('skGrid');
-  if (gridEl) gridEl.textContent = `grid ${step}mm`;
+  if (gridEl) gridEl.textContent = `grid ${fmtLen(step, false)} ${unitLabel()}`;
 }
 
 /* ---------------- create the feature(s) ---------------- */

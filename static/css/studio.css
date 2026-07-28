@@ -215,6 +215,27 @@ dialog { background: var(--panel); color: var(--text);
   min-width: 360px; max-width: 480px; max-height: 92vh; overflow: auto; }
 dialog::backdrop { background: rgba(0,0,0,.6); }
 .punit { color: var(--dim); font-weight: 400; }
+
+/* click-to-place: viewport hint + modeless popup */
+#placeHint { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  background: var(--accent); color: #08111e; font-weight: 600; font-size: 12px;
+  padding: 6px 14px; border-radius: 7px; pointer-events: none; z-index: 5; }
+#placePopup { position: absolute; top: 12px; left: 12px; width: 232px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 11px 12px; z-index: 6; box-shadow: 0 8px 26px rgba(0,0,0,.5); }
+.pp-head { font-size: 13px; margin-bottom: 8px; }
+.pp-head .pp-id { color: var(--dim); font-size: 11px; margin-left: 4px; }
+.pp-sub { color: var(--dim); font-size: 11px; text-transform: uppercase;
+  letter-spacing: .07em; margin: 9px 0 4px; }
+.pp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 8px; }
+.pp-field { display: flex; flex-direction: column; gap: 2px; margin: 0;
+  color: var(--dim); font-size: 11px; }
+.pp-field input { width: 100%; background: var(--panel2); border: 1px solid var(--line);
+  border-radius: 5px; color: var(--text); padding: 4px 6px; font: inherit; }
+.pp-field input:focus { border-color: var(--accent); outline: none; }
+.pp-foot { display: flex; justify-content: flex-end; margin-top: 10px; }
+.pp-foot .primary { background: var(--accent); color: #08111e; border: none;
+  border-radius: 6px; padding: 6px 16px; font: inherit; font-weight: 700; cursor: pointer; }
 .opnote { margin-top: 10px; padding: 7px 9px; border-radius: 6px;
   background: var(--panel2); border: 1px solid var(--line); color: var(--dim);
   font-size: 11.5px; line-height: 1.45; }

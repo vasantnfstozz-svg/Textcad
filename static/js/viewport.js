@@ -18,7 +18,9 @@ let MODEL = null;                // /api/model payload (faceId, faces, edges)
 let fitRadius = 100;
 const fitCenter = new THREE.Vector3();
 let pickMode = false;
+let placeCb = null;              // when set, the next viewport click places a shape
 const raycaster = new THREE.Raycaster();
+const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);   // Z=0 workplane
 
 export function initViewport() {
   const pane = document.getElementById('viewer');
@@ -63,12 +65,48 @@ export function initViewport() {
   renderer.domElement.addEventListener('pointerdown',
     e => downXY = [e.clientX, e.clientY]);
   renderer.domElement.addEventListener('pointerup', e => {
-    if (!pickMode || !downXY) return;
+    if (!downXY) return;
     const moved = Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]);
     downXY = null;
     if (moved > 5) return;                 // that was an orbit-drag
-    pickAt(e);
+    if (placeCb) { placeGround(e); return; }
+    if (pickMode) pickAt(e);
   });
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && placeCb) cancelPlacement();
+  });
+}
+
+/* ---------------- click-to-place on the Z=0 ground plane ---------------- */
+
+export function beginPlacement(label, onPlace) {
+  placeCb = onPlace;
+  renderer.domElement.style.cursor = 'crosshair';
+  const h = document.getElementById('placeHint');
+  h.textContent = `Click a point on the ground to place the ${label} · Esc to cancel`;
+  h.style.display = 'block';
+}
+
+export function cancelPlacement() {
+  placeCb = null;
+  renderer.domElement.style.cursor = pickMode ? 'crosshair' : '';
+  document.getElementById('placeHint').style.display = 'none';
+}
+
+function placeGround(e) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new THREE.Vector3();
+  const cb = placeCb;
+  cancelPlacement();
+  if (raycaster.ray.intersectPlane(GROUND, hit)) {
+    cb(Math.round(hit.x * 100) / 100, Math.round(hit.y * 100) / 100);
+  } else {
+    cb(0, 0);                              // ray parallel to ground — fall back
+  }
 }
 
 export function setView(dir) {

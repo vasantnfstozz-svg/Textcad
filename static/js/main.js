@@ -12,7 +12,9 @@ import { initDialogs, actionUndo } from './dialogs.js';
 import { initSketcher } from './sketcher.js';
 import { initRibbon } from './ribbon.js';
 import { initSplitters } from './splitters.js';
+import { initSettings } from './settings.js';
 
+initSettings();          // load prefs before anything renders (fmtVol/fmtLen)
 initViewport();
 initChat();
 initDialogs();
