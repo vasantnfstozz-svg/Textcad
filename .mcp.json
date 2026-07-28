@@ -3,6 +3,10 @@
     "textcad": {
       "command": "C:\\Python314\\python.exe",
       "args": ["c:\\Users\\VasanSeenivasan\\Desktop\\textcad\\mcp_server.py"]
+    },
+    "playwright": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@playwright/mcp@latest"]
     }
   }
 }
