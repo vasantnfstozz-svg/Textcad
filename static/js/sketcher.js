@@ -1,7 +1,11 @@
-// sketcher.js — the visual 2D sketch editor: shape palette, entity list with
-// live SVG preview, and the two flows:
-//   * plane sketch  (Sketch tab)   -> creates a "sketch" feature
-//   * face sketch   (pick a face)  -> guided boss/pocket in one action
+// sketcher.js — the interactive 2D sketch editor (Fusion-style):
+//   * pick a tool in the palette, then CLICK ON THE CANVAS to draw
+//     (circle: click center, click radius; rectangle: two corners;
+//      polygon: click points, double-click to close)
+//   * no tool active = select / drag-move shapes, drag empty space to pan
+//   * mouse wheel zooms around the cursor; grid-snapped coordinates
+//   * Esc cancels the tool, Delete removes the selected shape
+// Two flows: plane sketch (Sketch tab) and face sketch (guided boss/pocket).
 
 import { S } from './state.js';
 import { bus } from './bus.js';
@@ -9,7 +13,9 @@ import { postJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
 import { loadMesh } from './viewport.js';
 
-const SHAPE_FIELDS = {
+/* ---------------- state ---------------- */
+
+const DEFAULT_FIELDS = {
   rectangle: { w: 40, h: 20, x: 0, y: 0, rotation: 0 },
   circle: { r: 15, x: 0, y: 0 },
   ellipse: { rx: 20, ry: 10, x: 0, y: 0, rotation: 0 },
@@ -18,10 +24,27 @@ const SHAPE_FIELDS = {
   polygon: { points: [[0, 0], [30, 0], [15, 25]], x: 0, y: 0 },
 };
 
-let skEnts = [];
+let skEnts = [];          // the sketch's entities
 let skOnFace = null;      // {center, normal, inputId} when sketching on a face
+let tool = null;          // active drawing tool (entity kind) or null = select
+let clicks = [];          // world-space clicks collected for the current tool
+let ghost = null;         // preview entity while placing
+let selEnt = -1;          // selected entity index
+let view = { cx: 0, cy: 0, ext: 60 };   // world-space view (ext = half-width)
+const SNAP = 1;           // click snap in mm
 
 const dlg = () => document.getElementById('sketchDialog');
+const svg = () => document.getElementById('sketchCanvas');
+
+/* ---------------- open / close ---------------- */
+
+function resetEditor() {
+  skEnts = []; tool = null; clicks = []; ghost = null; selEnt = -1;
+  view = { cx: 0, cy: 0, ext: 60 };
+  document.querySelectorAll('.skpalette button')
+    .forEach(b => b.classList.remove('active'));
+  renderEnts();
+}
 
 function nextName() {
   const n = (S.lastDoc?.features.filter(
@@ -31,14 +54,14 @@ function nextName() {
 
 export function openSketchEditor() {
   skOnFace = null;
-  skEnts = [{ kind: 'rectangle', mode: 'add', ...SHAPE_FIELDS.rectangle }];
+  resetEditor();
   document.getElementById('skName').value = nextName();
   document.getElementById('skOffset').value = '0';
   document.getElementById('skPlaneRow').style.display = '';
   document.getElementById('skFaceNote').style.display = 'none';
   document.getElementById('skFaceExtrude').style.display = 'none';
-  renderEnts();
   dlg().showModal();
+  draw();
 }
 
 export function openSketchOnFace(faceInfo) {
@@ -47,37 +70,246 @@ export function openSketchOnFace(faceInfo) {
   if (!tip) { bus.emit('msg', 'bot', '⚠ No solid to sketch on yet.'); return; }
   skOnFace = { center: faceInfo.center, normal: faceInfo.normal || null,
                inputId: tip.id };
-  skEnts = [{ kind: 'circle', mode: 'add', ...SHAPE_FIELDS.circle }];
+  resetEditor();
   document.getElementById('skName').value = nextName();
   document.getElementById('skPlaneRow').style.display = 'none';
   document.getElementById('skFaceNote').style.display = '';
   document.getElementById('skFaceExtrude').style.display = '';
   document.getElementById('skFaceNote').textContent =
     `On face at (${faceInfo.center.join(', ')}) of "${skOnFace.inputId}". ` +
-    `Draw, set depth + Join/Cut, then Create — it builds the boss/pocket in one step.`;
-  renderEnts();
+    `Pick a shape, click to draw, set depth + Join/Cut, then Create.`;
   dlg().showModal();
+  draw();
 }
 bus.on('sketch-on-face', openSketchOnFace);
 
+/* ---------------- init: palette, canvas, keyboard ---------------- */
+
 export function initSketcher() {
   for (const b of document.querySelectorAll('.skpalette button')) {
-    b.onclick = () => {
-      const kind = b.dataset.shape;
-      skEnts.push({ kind, mode: 'add',
-                    ...JSON.parse(JSON.stringify(SHAPE_FIELDS[kind])) });
-      renderEnts();
-    };
+    b.onclick = () => setTool(tool === b.dataset.shape ? null : b.dataset.shape);
   }
   document.getElementById('skCancel').onclick = () => dlg().close();
   document.getElementById('skCreate').onclick = create;
+
+  const c = svg();
+  c.addEventListener('pointerdown', onDown);
+  c.addEventListener('pointermove', onMove);
+  c.addEventListener('pointerup', onUp);
+  c.addEventListener('dblclick', onDblClick);
+  c.addEventListener('wheel', onWheel, { passive: false });
+
+  dlg().addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === 'Escape' && (tool || clicks.length)) {
+      e.preventDefault(); setTool(null);
+    }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selEnt >= 0) {
+      e.preventDefault(); skEnts.splice(selEnt, 1); selEnt = -1; renderEnts();
+    }
+  });
 }
 
-function renderEnts() {
+function setTool(kind) {
+  tool = kind; clicks = []; ghost = null;
+  document.querySelectorAll('.skpalette button').forEach(b =>
+    b.classList.toggle('active', b.dataset.shape === tool));
+  svg().style.cursor = tool ? 'crosshair' : 'default';
+  updateHint();
+  draw();
+}
+
+/* ---------------- coordinates ---------------- */
+
+function worldPoint(e) {
+  const el = svg();
+  const pt = new DOMPoint(e.clientX, e.clientY)
+    .matrixTransform(el.getScreenCTM().inverse());
+  return { x: pt.x, y: -pt.y };            // flip: world +y is up
+}
+const snap = v => Math.round(v / SNAP) * SNAP;
+const snapPt = p => ({ x: snap(p.x), y: snap(p.y) });
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+/* ---------------- pointer interaction ---------------- */
+
+let dragging = null;      // {idx, startX, startY, ex, ey} moving an entity
+let panning = null;       // {px, py, cx, cy} moving the view
+
+function onDown(e) {
+  if (e.button !== 0) return;
+  const p = snapPt(worldPoint(e));
+
+  if (tool) { placeClick(p); return; }
+
+  const hit = hitTest(worldPoint(e));
+  if (hit >= 0) {
+    selEnt = hit;
+    const ent = skEnts[hit];
+    dragging = { idx: hit, startX: p.x, startY: p.y,
+                 ex: ent.x || 0, ey: ent.y || 0 };
+    svg().setPointerCapture(e.pointerId);
+    renderCards(); draw();
+  } else {
+    selEnt = -1;
+    const raw = worldPoint(e);
+    panning = { px: raw.x, py: raw.y, cx: view.cx, cy: view.cy };
+    svg().setPointerCapture(e.pointerId);
+    renderCards(); draw();
+  }
+}
+
+function onMove(e) {
+  const p = worldPoint(e);
+  document.getElementById('skCoords').textContent =
+    `x ${snap(p.x)}, y ${snap(p.y)}`;
+
+  if (tool && clicks.length) { ghost = buildGhost(snapPt(p)); draw(); return; }
+  if (dragging) {
+    const ent = skEnts[dragging.idx];
+    ent.x = snap(dragging.ex + (p.x - dragging.startX));
+    ent.y = snap(dragging.ey + (p.y - dragging.startY));
+    draw(); return;
+  }
+  if (panning) {
+    view.cx = panning.cx - (p.x - panning.px);
+    view.cy = panning.cy - (p.y - panning.py);
+    draw();
+  }
+}
+
+function onUp(e) {
+  if (dragging) { renderCards(); }
+  dragging = null; panning = null;
+  try { svg().releasePointerCapture(e.pointerId); } catch {}
+}
+
+function onDblClick() {
+  if (tool === 'polygon' && clicks.length >= 3) finishPolygon();
+}
+
+function onWheel(e) {
+  e.preventDefault();
+  const p = worldPoint(e);
+  const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15;
+  const ext = Math.max(10, Math.min(2000, view.ext * factor));
+  const k = ext / view.ext;
+  view.cx = p.x - (p.x - view.cx) * k;
+  view.cy = p.y - (p.y - view.cy) * k;
+  view.ext = ext;
+  draw();
+}
+
+/* ---------------- click-to-place ---------------- */
+
+function placeClick(p) {
+  clicks.push(p);
+
+  if (tool === 'polygon') {
+    // click near the first point closes the shape
+    if (clicks.length >= 3 && dist(p, clicks[0]) < view.ext / 30) {
+      clicks.pop(); finishPolygon();
+    }
+    ghost = buildGhost(p); draw(); updateHint();
+    return;
+  }
+
+  if (clicks.length === 2) {
+    const ent = twoClickEntity(tool, clicks[0], clicks[1]);
+    if (ent) { skEnts.push(ent); selEnt = skEnts.length - 1; }
+    clicks = []; ghost = null;
+    renderEnts(); updateHint();
+  } else {
+    ghost = buildGhost(p); draw(); updateHint();
+  }
+}
+
+function twoClickEntity(kind, a, b) {
+  const d = Math.max(dist(a, b), 0.5);
+  if (kind === 'circle')
+    return { kind, mode: 'add', x: a.x, y: a.y, r: snap(d) || 1 };
+  if (kind === 'regular_polygon')
+    return { kind, mode: 'add', x: a.x, y: a.y, radius: snap(d) || 1,
+             sides: 6, rotation: 0 };
+  if (kind === 'rectangle')
+    return { kind, mode: 'add',
+             x: snap((a.x + b.x) / 2), y: snap((a.y + b.y) / 2),
+             w: Math.max(Math.abs(b.x - a.x), 1),
+             h: Math.max(Math.abs(b.y - a.y), 1), rotation: 0 };
+  if (kind === 'ellipse')
+    return { kind, mode: 'add', x: a.x, y: a.y,
+             rx: Math.max(Math.abs(b.x - a.x), 1),
+             ry: Math.max(Math.abs(b.y - a.y), 1), rotation: 0 };
+  if (kind === 'slot')
+    return { kind, mode: 'add',
+             x: snap((a.x + b.x) / 2), y: snap((a.y + b.y) / 2),
+             length: snap(d) || 1, height: 10,
+             rotation: Math.round(Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI) };
+  return null;
+}
+
+function finishPolygon() {
+  const pts = clicks.map(p => [p.x, p.y]);
+  skEnts.push({ kind: 'polygon', mode: 'add', x: 0, y: 0, points: pts });
+  selEnt = skEnts.length - 1;
+  clicks = []; ghost = null;
+  renderEnts(); updateHint();
+}
+
+function buildGhost(p) {
+  if (!clicks.length) return null;
+  if (tool === 'polygon')
+    return { kind: 'polygon', mode: 'add', x: 0, y: 0, ghostOpen: true,
+             points: [...clicks.map(q => [q.x, q.y]), [p.x, p.y]] };
+  return twoClickEntity(tool, clicks[0], p);
+}
+
+/* ---------------- hit testing ---------------- */
+
+function hitTest(p) {
+  for (let i = skEnts.length - 1; i >= 0; i--) {
+    const e = skEnts[i];
+    const lx = p.x - (e.x || 0), ly = p.y - (e.y || 0);
+    // un-rotate the point into the entity's local frame
+    const a = -(e.rotation || 0) * Math.PI / 180;
+    const rx = lx * Math.cos(a) - ly * Math.sin(a);
+    const ry = lx * Math.sin(a) + ly * Math.cos(a);
+    if (e.kind === 'circle' && Math.hypot(lx, ly) <= e.r) return i;
+    if (e.kind === 'regular_polygon' && Math.hypot(lx, ly) <= e.radius) return i;
+    if (e.kind === 'rectangle'
+        && Math.abs(rx) <= e.w / 2 && Math.abs(ry) <= e.h / 2) return i;
+    if (e.kind === 'ellipse'
+        && (rx / e.rx) ** 2 + (ry / e.ry) ** 2 <= 1) return i;
+    if (e.kind === 'slot'
+        && Math.abs(rx) <= e.length / 2 + e.height / 2
+        && Math.abs(ry) <= e.height / 2) return i;
+    if (e.kind === 'polygon' && e.points
+        && pointInPolygon(lx, ly, e.points)) return i;
+  }
+  return -1;
+}
+
+function pointInPolygon(x, y, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i][0], yi = pts[i][1], xj = pts[j][0], yj = pts[j][1];
+    if (((yi > y) !== (yj > y))
+        && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
+/* ---------------- entity cards (numeric editing) ---------------- */
+
+function renderEnts() { renderCards(); draw(); }
+
+function renderCards() {
   const box = document.getElementById('skEntities');
   box.innerHTML = '';
   skEnts.forEach((e, i) => {
-    const card = document.createElement('div'); card.className = 'skent';
+    const card = document.createElement('div');
+    card.className = 'skent' + (i === selEnt ? ' sel' : '');
+    card.onclick = () => { selEnt = i; renderCards(); draw(); };
     const head = document.createElement('div'); head.className = 'eh';
     head.innerHTML = `<b>${OP_ICONS[e.kind] || ''} ${e.kind}</b>`;
     const mode = document.createElement('select');
@@ -87,17 +319,20 @@ function renderEnts() {
     mode.disabled = i === 0;                 // first must be additive
     mode.onchange = () => { e.mode = mode.value; draw(); };
     const del = document.createElement('button'); del.className = 'del';
-    del.textContent = '✕'; del.disabled = skEnts.length === 1;
-    del.onclick = () => { skEnts.splice(i, 1); renderEnts(); };
+    del.textContent = '✕';
+    del.onclick = ev => { ev.stopPropagation();
+      skEnts.splice(i, 1); if (selEnt >= skEnts.length) selEnt = -1;
+      renderEnts(); };
     head.append(mode, del);
     card.appendChild(head);
 
     const f = document.createElement('div'); f.className = 'ef';
     for (const k of Object.keys(e)) {
-      if (k === 'kind' || k === 'mode' || k === 'points') continue;
+      if (['kind', 'mode', 'points', 'ghostOpen'].includes(k)) continue;
       const lab = document.createElement('label');
       lab.textContent = k;
       const inp = document.createElement('input'); inp.value = e[k];
+      inp.onclick = ev => ev.stopPropagation();
       inp.oninput = () => { e[k] = Number(inp.value) || 0; draw(); };
       lab.appendChild(inp); f.appendChild(lab);
     }
@@ -106,6 +341,7 @@ function renderEnts() {
       lab.textContent = 'points';
       const inp = document.createElement('input'); inp.style.width = '150px';
       inp.value = JSON.stringify(e.points);
+      inp.onclick = ev => ev.stopPropagation();
       inp.oninput = () => {
         try { e.points = JSON.parse(inp.value); draw(); } catch {}
       };
@@ -114,61 +350,104 @@ function renderEnts() {
     card.appendChild(f);
     box.appendChild(card);
   });
-  draw();
+}
+
+function updateHint() {
+  const el = document.getElementById('skHelp');
+  if (!tool) el.textContent =
+    'Pick a shape, then click on the canvas to draw · drag shapes to move · wheel zooms';
+  else if (tool === 'polygon') el.textContent = clicks.length
+    ? 'Click the next corner · double-click (or click the first point) to close'
+    : 'Polygon: click each corner, double-click to close';
+  else el.textContent = clicks.length
+    ? 'Now click to set the size'
+    : ({ circle: 'Circle: click the CENTER point',
+         rectangle: 'Rectangle: click the FIRST corner',
+         ellipse: 'Ellipse: click the center',
+         slot: 'Slot: click the start center',
+         regular_polygon: 'N-gon: click the center' }[tool] || 'Click to place');
+}
+
+/* ---------------- rendering ---------------- */
+
+function entitySVG(e, opts = {}) {
+  const col = e.mode === 'subtract' ? '#ff5d5d' : '#43c579';
+  const fill = opts.ghost ? 'none'
+    : e.mode === 'subtract' ? 'rgba(255,93,93,.10)' : 'rgba(67,197,121,.13)';
+  const sw = opts.sel ? 2 : 1;
+  const dash = opts.ghost ? ' stroke-dasharray="3 3"' : '';
+  const x = e.x || 0, y = -(e.y || 0);
+  const st = `fill="${fill}" stroke="${col}" stroke-width="${sw}"` +
+             ` vector-effect="non-scaling-stroke"${dash}`;
+  const rot = `transform="rotate(${-(e.rotation || 0)} ${x} ${y})"`;
+  if (e.kind === 'rectangle')
+    return `<rect x="${x - e.w / 2}" y="${y - e.h / 2}" width="${e.w}" height="${e.h}" ${st} ${rot}/>`;
+  if (e.kind === 'circle')
+    return `<circle cx="${x}" cy="${y}" r="${e.r}" ${st}/>`;
+  if (e.kind === 'ellipse')
+    return `<ellipse cx="${x}" cy="${y}" rx="${e.rx}" ry="${e.ry}" ${st} ${rot}/>`;
+  if (e.kind === 'slot') {
+    const r = e.height / 2;
+    return `<rect x="${x - e.length / 2}" y="${y - r}" width="${e.length}" height="${e.height}" rx="${r}" ${st} ${rot}/>`;
+  }
+  if (e.kind === 'regular_polygon') {
+    const pts = [];
+    for (let k = 0; k < e.sides; k++) {
+      const a = Math.PI / 2 + k * 2 * Math.PI / e.sides;
+      pts.push(`${x + e.radius * Math.cos(a)},${y - e.radius * Math.sin(a)}`);
+    }
+    return `<polygon points="${pts.join(' ')}" ${st} ${rot}/>`;
+  }
+  if (e.kind === 'polygon' && e.points) {
+    const pts = e.points.map(p =>
+      `${(e.x || 0) + p[0]},${-((e.y || 0) + p[1])}`).join(' ');
+    return e.ghostOpen
+      ? `<polyline points="${pts}" ${st}/>`
+      : `<polygon points="${pts}" ${st}/>`;
+  }
+  return '';
 }
 
 function draw() {
-  const svg = document.getElementById('sketchCanvas');
-  let ext = 60;
-  for (const e of skEnts) {
-    const reach = Math.abs(e.x || 0) + Math.abs(e.y || 0) +
-      (e.w || e.rx || e.r || e.radius || e.length || 30) + 10;
-    ext = Math.max(ext, reach);
-  }
-  svg.setAttribute('viewBox', `${-ext} ${-ext} ${2 * ext} ${2 * ext}`);
-  const grid = 10;
+  const el = svg();
+  const { cx, cy, ext } = view;
+  el.setAttribute('viewBox', `${cx - ext} ${-cy - ext} ${2 * ext} ${2 * ext}`);
+
+  const step = ext > 300 ? 50 : ext > 120 ? 20 : 10;
   let out = '';
-  for (let g = -Math.ceil(ext / grid) * grid; g <= ext; g += grid) {
-    out += `<line x1="${g}" y1="${-ext}" x2="${g}" y2="${ext}" stroke="#20242e" stroke-width="0.5"/>`;
-    out += `<line x1="${-ext}" y1="${g}" x2="${ext}" y2="${g}" stroke="#20242e" stroke-width="0.5"/>`;
-  }
-  out += `<line x1="${-ext}" y1="0" x2="${ext}" y2="0" stroke="#3a4150" stroke-width="0.8"/>`;
-  out += `<line x1="0" y1="${-ext}" x2="0" y2="${ext}" stroke="#3a4150" stroke-width="0.8"/>`;
-  // NB: SVG y is down; we flip so +y is up, matching CAD
-  for (const e of skEnts) {
-    const col = e.mode === 'subtract' ? '#ff5d5d' : '#43c579';
-    const fill = e.mode === 'subtract' ? 'rgba(255,93,93,.10)' : 'rgba(67,197,121,.13)';
-    const x = e.x || 0, y = -(e.y || 0);
-    const st = `fill="${fill}" stroke="${col}" stroke-width="1"`;
-    if (e.kind === 'rectangle')
-      out += `<rect x="${x - e.w / 2}" y="${y - e.h / 2}" width="${e.w}" height="${e.h}" ${st} transform="rotate(${-(e.rotation || 0)} ${x} ${y})"/>`;
-    else if (e.kind === 'circle')
-      out += `<circle cx="${x}" cy="${y}" r="${e.r}" ${st}/>`;
-    else if (e.kind === 'ellipse')
-      out += `<ellipse cx="${x}" cy="${y}" rx="${e.rx}" ry="${e.ry}" ${st} transform="rotate(${-(e.rotation || 0)} ${x} ${y})"/>`;
-    else if (e.kind === 'slot') {
-      const r = e.height / 2;
-      out += `<rect x="${x - e.length / 2}" y="${y - r}" width="${e.length}" height="${e.height}" rx="${r}" ${st} transform="rotate(${-(e.rotation || 0)} ${x} ${y})"/>`;
-    } else if (e.kind === 'regular_polygon') {
-      const pts = [];
-      for (let k = 0; k < e.sides; k++) {
-        const a = Math.PI / 2 + k * 2 * Math.PI / e.sides;
-        pts.push(`${x + e.radius * Math.cos(a)},${y - e.radius * Math.sin(a)}`);
-      }
-      out += `<polygon points="${pts.join(' ')}" ${st}/>`;
-    } else if (e.kind === 'polygon' && e.points) {
-      const pts = e.points.map(p => `${(e.x || 0) + p[0]},${-((e.y || 0) + p[1])}`).join(' ');
-      out += `<polygon points="${pts}" ${st}/>`;
-    }
-  }
-  svg.innerHTML = out;
+  const x0 = Math.floor((cx - ext) / step) * step;
+  const y0 = Math.floor((-cy - ext) / step) * step;
+  for (let g = x0; g <= cx + ext; g += step)
+    out += `<line x1="${g}" y1="${-cy - ext}" x2="${g}" y2="${-cy + ext}" stroke="#20242e" stroke-width="0.5" vector-effect="non-scaling-stroke"/>`;
+  for (let g = y0; g <= -cy + ext; g += step)
+    out += `<line x1="${cx - ext}" y1="${g}" x2="${cx + ext}" y2="${g}" stroke="#20242e" stroke-width="0.5" vector-effect="non-scaling-stroke"/>`;
+  out += `<line x1="${cx - ext}" y1="0" x2="${cx + ext}" y2="0" stroke="#3a4150" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+  out += `<line x1="0" y1="${-cy - ext}" x2="0" y2="${-cy + ext}" stroke="#3a4150" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+
+  skEnts.forEach((e, i) => out += entitySVG(e, { sel: i === selEnt }));
+  if (ghost) out += entitySVG(ghost, { ghost: true });
+  for (const c of clicks)
+    out += `<circle cx="${c.x}" cy="${-c.y}" r="${ext / 90}" fill="#4da3ff"/>`;
+
+  el.innerHTML = out;
+  const gridEl = document.getElementById('skGrid');
+  if (gridEl) gridEl.textContent = `grid ${step}mm`;
 }
 
+/* ---------------- create the feature(s) ---------------- */
+
 async function create() {
-  const entities = skEnts.map(e => {
+  const clean = skEnts.filter(e => !e.ghostOpen);
+  if (!clean.length) {
+    bus.emit('msg', 'bot', '⚠ The sketch is empty — pick a shape and click ' +
+      'on the canvas to draw first.');
+    return;
+  }
+  if (clean[0].mode === 'subtract') clean[0].mode = 'add';
+  const entities = clean.map(e => {
     const o = { kind: e.kind, mode: e.mode };
     for (const k of Object.keys(e))
-      if (k !== 'kind' && k !== 'mode') o[k] = e[k];
+      if (!['kind', 'mode', 'ghostOpen'].includes(k)) o[k] = e[k];
     return o;
   });
   dlg().close();

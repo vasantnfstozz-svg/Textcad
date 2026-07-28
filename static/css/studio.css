@@ -239,7 +239,7 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 .libitem .meta { color: var(--dim); font-size: 11.5px; }
 
 /* sketch editor */
-#sketchDialog { min-width: 720px; max-width: 860px; }
+#sketchDialog { min-width: 840px; max-width: 1000px; }
 #sketchWrap { display: flex; gap: 16px; }
 #sketchSide { width: 260px; flex: none; }
 .skpalette { margin-top: 10px; }
@@ -250,6 +250,11 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
   color: var(--text); border-radius: 6px; padding: 6px 4px; cursor: pointer;
   font: inherit; font-size: 12px; text-align: left; }
 .skpalette button:hover { border-color: var(--accent); }
+.skpalette button.active { border-color: var(--accent); color: var(--accent);
+  background: var(--accent2); font-weight: 600; }
+.skent.sel { border-color: var(--accent); }
+.skhelp { color: var(--accent); font-size: 12px; padding: 0 0 5px;
+  min-height: 18px; }
 .skents { margin-top: 10px; max-height: 200px; overflow-y: auto; }
 .skent { background: var(--panel2); border: 1px solid var(--line);
   border-radius: 7px; padding: 6px 8px; margin-bottom: 5px; }
@@ -268,7 +273,7 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
   cursor: pointer; }
 #sketchCanvasWrap { flex: 1; display: flex; flex-direction: column; }
 #sketchCanvas { flex: 1; background: var(--bg); border: 1px solid var(--line);
-  border-radius: 8px; min-height: 360px; }
+  border-radius: 8px; min-height: 430px; touch-action: none; }
 .skhint { color: var(--dim); font-size: 11px; text-align: center;
   padding-top: 5px; }
 #skFaceNote { color: var(--accent); font-size: 11.5px;
