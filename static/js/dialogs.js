@@ -68,7 +68,7 @@ export async function loadSample(name) {
 
 /* ---------------- Add Feature dialog ---------------- */
 
-export async function openFeatDialog(preselect) {
+export async function openFeatDialog(preselect, preInputs) {
   if (!S.OPS.length) S.OPS = await getJSON('/api/ops');
   const sel = document.getElementById('featOp');
   sel.innerHTML = S.OPS.map(o =>
@@ -76,6 +76,10 @@ export async function openFeatDialog(preselect) {
     .join('');
   if (preselect) sel.value = preselect;
   sel.onchange = renderFeatForm; renderFeatForm();
+  for (const id of preInputs || []) {
+    const cb = document.querySelector(`#featInputs input[value="${id}"]`);
+    if (cb) cb.checked = true;
+  }
   featDialog().showModal();
 }
 

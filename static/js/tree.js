@@ -6,6 +6,7 @@ import { S } from './state.js';
 import { postJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
 import { loadMesh, showFeatureOverlay, clearHighlight } from './viewport.js';
+import { openFeatDialog } from './dialogs.js';
 
 const treeEl = () => document.getElementById('tree');
 
@@ -72,6 +73,10 @@ function buildRow(doc, f) {
   };
 
   const acts = document.createElement('span'); acts.className = 'nacts';
+  if (f.op === 'sketch' || f.op === 'sketch_on_face') {
+    addAct(acts, '⬆', 'make solid — extrude / revolve this sketch',
+      () => openFeatDialog('extrude', [f.id]));
+  }
   const isBar = doc.rollback === f.id;
   addAct(acts, isBar ? '⤓' : '⤒',
     isBar ? 'release rollback bar (build everything)'

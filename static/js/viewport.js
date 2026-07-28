@@ -10,6 +10,7 @@ import { S } from './state.js';
 let scene, camera, renderer, controls;
 let mesh = null;                 // the body
 const edgeLines = [];            // crisp OCCT topology edges
+const sketchObjs = [];           // floating 2D sketch profiles (Fusion-style)
 let hlMesh = null;               // orange overlay for a tree-selected feature
 let pickHl = null;               // orange overlay for a picked face/edge
 let MODEL = null;                // /api/model payload (faceId, faces, edges)
@@ -83,7 +84,32 @@ function disposeModel() {
   if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); mesh = null; }
   for (const l of edgeLines) { scene.remove(l); l.geometry.dispose(); }
   edgeLines.length = 0;
+  for (const o of sketchObjs) { scene.remove(o); o.geometry.dispose(); }
+  sketchObjs.length = 0;
   clearPickHighlight();
+}
+
+function addSketches(sketches) {
+  for (const s of sketches || []) {
+    if (s.positions.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position',
+        new THREE.Float32BufferAttribute(s.positions, 3));
+      g.setIndex(s.indices);
+      g.computeVertexNormals();
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+        color: 0x43c579, transparent: true, opacity: 0.18,
+        side: THREE.DoubleSide, depthWrite: false }));
+      scene.add(m); sketchObjs.push(m);
+    }
+    for (const line of s.outlines || []) {
+      const g = new THREE.BufferGeometry().setFromPoints(
+        line.map(p => new THREE.Vector3(p[0], p[1], p[2])));
+      const l = new THREE.Line(g, new THREE.LineBasicMaterial({
+        color: 0x43c579 }));
+      scene.add(l); sketchObjs.push(l);
+    }
+  }
 }
 
 export async function loadMesh(fit = false) {
@@ -91,7 +117,12 @@ export async function loadMesh(fit = false) {
   try {
     const m = await (await fetch('/api/model?t=' + Date.now())).json();
     disposeModel();
-    if (!m.positions || !m.positions.length) { MODEL = null; return; }
+    addSketches(m.sketches);
+    if (!m.positions || !m.positions.length) {
+      MODEL = null;
+      if (fit && sketchObjs.length) fitToObjects(sketchObjs);
+      return;
+    }
     MODEL = m;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position',
@@ -121,6 +152,17 @@ export async function loadMesh(fit = false) {
 
 export function clearMesh() {
   disposeModel(); MODEL = null; S.selected = null; clearHighlight();
+}
+
+function fitToObjects(objs) {
+  const box = new THREE.Box3();
+  for (const o of objs) box.expandByObject(o);
+  if (box.isEmpty()) return;
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  fitRadius = sphere.radius || 100;
+  fitCenter.copy(sphere.center);
+  camera.near = fitRadius / 100; camera.far = fitRadius * 100;
+  camera.updateProjectionMatrix(); setView('iso');
 }
 
 /* ---------------- feature overlay (tree row click) ---------------- */

@@ -12,6 +12,7 @@ import { bus } from './bus.js';
 import { postJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
 import { loadMesh } from './viewport.js';
+import { openFeatDialog } from './dialogs.js';
 
 /* ---------------- state ---------------- */
 
@@ -477,13 +478,18 @@ async function create() {
       : op === 'join' ? `Boss added on the face (height ${depth}mm).`
       : `New body extruded from the face (${depth}mm).`);
   } else {
-    await postJSON('/api/feature/add', {
+    const doc = await postJSON('/api/feature/add', {
       id, op: 'sketch',
       params: { plane: document.getElementById('skPlane').value,
                 offset: Number(document.getElementById('skOffset').value) || 0,
                 entities },
       inputs: [] });
-    bus.emit('msg', 'bot', 'Sketch created. Now select it and use Extrude or ' +
-      'Revolve from the Sketch tab to turn it into a solid.');
+    loadMesh(true);          // the sketch now shows in the viewport (green)
+    if (!doc.error) {
+      bus.emit('msg', 'bot', `Sketch "${id}" created — you can see it in the ` +
+        `viewport. Set a depth to turn it into a solid, or Cancel to keep ` +
+        `sketching.`);
+      openFeatDialog('extrude', [id]);   // Fusion-style: finish sketch -> extrude
+    }
   }
 }

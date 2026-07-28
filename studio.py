@@ -32,6 +32,7 @@ from pydantic import BaseModel
 import build123d as b3d
 
 import author
+import sketch as sketchlib
 from document import Document
 from samples import SAMPLES, sample_flange, sample_impeller, sample_compressor  # noqa: F401 (re-export for tests)
 
@@ -320,15 +321,52 @@ def get_mesh():
     return Response(status_code=404)
 
 
+def _sketches_json(doc: Document) -> list[dict]:
+    """Unconsumed sketches, tessellated so the viewport can SHOW them as
+    floating 2D profiles (like Fusion). Consumed sketches (already extruded /
+    revolved / lofted) are hidden to keep the view clean."""
+    consumed = {i for f in doc.features for i in f.inputs}
+    out = []
+    for f in doc.features:
+        if f.suppressed or f.id in consumed:
+            continue
+        p = doc._parts.get(f.id)
+        if p is None or not sketchlib.is_sketch(p):
+            continue
+        positions, indices = [], []
+        base = 0
+        try:
+            for face in p.faces():
+                verts, tris = face.tessellate(0.3)
+                for v in verts:
+                    positions += [round(v.X, 4), round(v.Y, 4), round(v.Z, 4)]
+                for t in tris:
+                    indices += [base + t[0], base + t[1], base + t[2]]
+                base += len(verts)
+            outlines = []
+            for edge in p.edges():
+                gt = str(edge.geom_type).replace("GeomType.", "")
+                n = 2 if gt == "LINE" else 24
+                pts = [edge @ (i / n) for i in range(n + 1)]
+                outlines.append([[round(q.X, 4), round(q.Y, 4), round(q.Z, 4)]
+                                 for q in pts])
+        except Exception:
+            continue
+        out.append({"id": f.id, "positions": positions, "indices": indices,
+                    "outlines": outlines})
+    return out
+
+
 @app.get("/api/model")
 def get_model():
-    """Face-tagged mesh + edge polylines of the current result solid, so the
-    viewport can PICK individual faces and edges. Each triangle carries the id
-    of the OCCT face it belongs to; faces/edges carry human-readable info."""
-    part = _doc().result()
+    """Face-tagged mesh + edge polylines of the current result solid (for
+    face/edge picking) PLUS unconsumed sketches (shown as 2D profiles)."""
+    doc = _doc()
+    sketches = _sketches_json(doc)
+    part = doc.result()
     if part is None:
         return {"positions": [], "indices": [], "faceId": [],
-                "faces": [], "edges": []}
+                "faces": [], "edges": [], "sketches": sketches}
     try:
         bb = part.bounding_box()
         tol = max((bb.size.X + bb.size.Y + bb.size.Z) / 900.0, 0.05)
@@ -377,7 +415,7 @@ def get_model():
             continue
 
     return {"positions": positions, "indices": indices, "faceId": face_ids,
-            "faces": faces_meta, "edges": edges_meta}
+            "faces": faces_meta, "edges": edges_meta, "sketches": sketches}
 
 
 @app.get("/api/feature-mesh/{feature_id}.stl")
