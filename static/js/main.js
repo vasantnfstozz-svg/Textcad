@@ -11,12 +11,14 @@ import { initChat, addMsg } from './chat.js';
 import { initDialogs, actionUndo } from './dialogs.js';
 import { initSketcher } from './sketcher.js';
 import { initRibbon } from './ribbon.js';
+import { initSplitters } from './splitters.js';
 
 initViewport();
 initChat();
 initDialogs();
 initSketcher();
 initRibbon();
+initSplitters();
 
 /* keyboard shortcuts */
 window.addEventListener('keydown', e => {

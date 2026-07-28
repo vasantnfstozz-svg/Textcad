@@ -74,6 +74,12 @@ body { background: var(--bg); color: var(--text); height: 100vh;
 
 /* ============ main layout ============ */
 main { flex: 1; display: flex; min-height: 0; }
+.splitter { width: 5px; flex: none; cursor: col-resize; background: var(--bg);
+  position: relative; z-index: 8; touch-action: none; }
+.splitter::after { content: ""; position: absolute; inset: 0 1.5px;
+  background: var(--line); border-radius: 2px; opacity: 0; transition: opacity .12s; }
+.splitter:hover::after, .splitter.drag::after { opacity: 1;
+  background: var(--accent); }
 #treePane { width: 320px; min-width: 240px; background: var(--panel);
   border-right: 1px solid var(--line); display: flex; flex-direction: column; }
 .pane-title { display: flex; align-items: center; justify-content: space-between;
