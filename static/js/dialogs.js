@@ -83,20 +83,32 @@ export async function openFeatDialog(preselect, preInputs) {
   featDialog().showModal();
 }
 
+function paramField(p) {
+  const label = p.unit ? `${p.name} <span class="punit">(${p.unit})</span>` : p.name;
+  if (typeof p.default === 'boolean')
+    // real checkbox: sending the STRING "false" reads as true in Python and
+    // silently flipped flags like extrude's `both` (doubled every part)
+    return `<label style="flex-direction:row;align-items:center;gap:6px">${label}
+        <input type="checkbox" data-param="${p.name}" data-bool="1"
+          ${p.default ? 'checked' : ''} style="width:auto">
+      </label>`;
+  if (p.enum)                            // dropdown — no more guessing valid words
+    return `<label>${label}
+        <select data-param="${p.name}" data-enum="1">${p.enum.map(v =>
+          `<option value="${v}" ${v === p.default ? 'selected' : ''}>${v}</option>`
+        ).join('')}</select>
+      </label>`;
+  return `<label>${label}
+      <input data-param="${p.name}" value="${p.default ?? ''}"
+        placeholder="${p.name === 'points' ? '[[r,z],[r,z],...]' : (p.unit || 'number')}">
+    </label>`;
+}
+
 function renderFeatForm() {
   const op = S.OPS.find(o => o.op === document.getElementById('featOp').value);
-  document.getElementById('featParams').innerHTML = op.params.map(p =>
-    typeof p.default === 'boolean'
-      // real checkbox: sending the STRING "false" reads as true in Python and
-      // silently flipped flags like extrude's `both` (doubled every part)
-      ? `<label style="flex-direction:row;align-items:center;gap:6px">${p.name}
-          <input type="checkbox" data-param="${p.name}" data-bool="1"
-            ${p.default ? 'checked' : ''} style="width:auto">
-        </label>`
-      : `<label>${p.name}
-          <input data-param="${p.name}" value="${p.default ?? ''}"
-            placeholder="${p.name === 'points' ? '[[r,z],[r,z],...]' : 'number'}">
-        </label>`).join('');
+  document.getElementById('featParams').innerHTML =
+    op.params.map(paramField).join('') +
+    (op.note ? `<div class="opnote">ℹ ${op.note}</div>` : '');
   document.getElementById('featInputsWrap').style.display =
     op.inputs > 0 ? '' : 'none';
   const doc = S.lastDoc || { features: [] };
@@ -119,6 +131,8 @@ export function initDialogs() {
       params[inp.dataset.param] = v.startsWith('[') ? JSON.parse(v)
         : (isNaN(Number(v)) ? v : Number(v));
     }
+    for (const sel of document.querySelectorAll('#featParams select[data-enum]'))
+      params[sel.dataset.param] = sel.value;
     const inputs = [...document.querySelectorAll('#featInputs input:checked')]
       .map(c => c.value);
     const doc = await postJSON('/api/feature/add', {

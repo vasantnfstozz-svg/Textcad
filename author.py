@@ -28,6 +28,56 @@ from document import Document, CREATORS, MODIFIERS
 # The op catalog shown to the model (and to the UI's Add Feature dialog)
 # ---------------------------------------------------------------------------
 
+# Parameter metadata so the dialog can render dropdowns for enums, show units,
+# and state positioning conventions instead of bare snake_case + "number".
+_ENUMS = {
+    "axis": ["X", "Y", "Z"],
+    "plane": ["XY", "XZ", "YZ"],
+    "edges": ["all", "top", "bottom", "vertical", "horizontal"],
+    "open_face": ["top", "bottom", "none"],
+}
+_MM = {"radius", "bolt_radius", "thickness", "height", "width", "depth",
+       "length", "amount", "offset", "dx", "dy", "dz", "x", "y", "z",
+       "pitch_circle_dia", "rx", "ry", "inner_r", "outer_r", "tip_radius"}
+_DEG = {"angle", "angle_deg", "rotation", "inlet_angle", "exit_angle"}
+
+# op -> one-line convention note (anchoring, direction, operand meaning)
+OP_NOTES = {
+    "plate": "Centered on the origin in X, Y AND Z (spans ±thickness/2 in Z).",
+    "disc": "Centered on the origin; spans ±thickness/2 in Z. radius, not diameter.",
+    "tube": "Centered on the origin; spans ±height/2 in Z.",
+    "ball": "Centered on the origin.",
+    "cone": "Centered on the origin; spans ±height/2 in Z.",
+    "hex_plate": "Centered on the origin; spans ±thickness/2 in Z.",
+    "polygon_plate": "Centered on the origin.",
+    "move": "RELATIVE offset in mm from the part's current (origin-centered) position.",
+    "rotate": "Spins the part about the chosen axis THROUGH THE ORIGIN.",
+    "mirror": "Mirrors across a principal plane and RETURNS A COPY.",
+    "fillet": "vertical = the 4 upright corner edges (round a box's corners); "
+              "radius must be < half the adjacent wall thickness.",
+    "shell": "Hollows to walls of `thickness`; open_face removes that face.",
+    "extrude": "Pulls the sketch normal to its plane. both = symmetric (BOTH ways).",
+    "cut": "First input MINUS the rest (by tree order). Keep body first.",
+    "sketch": "offset shifts the plane along its normal (mm).",
+}
+
+
+def _annotate(op_name: str, params: list[dict]) -> list[dict]:
+    for p in params:
+        n = p["name"]
+        if n in _ENUMS:
+            p["enum"] = _ENUMS[n]
+        elif n in _MM:
+            p["unit"] = "mm"
+        elif n in _DEG:
+            p["unit"] = "deg"
+        elif n in ("count", "sides"):
+            p["unit"] = "count"
+        elif n == "factor":
+            p["unit"] = "×"
+    return params
+
+
 def op_catalog() -> list[dict]:
     """Machine-readable list of every legal operation and its parameters."""
     cat = []
@@ -35,20 +85,24 @@ def op_catalog() -> list[dict]:
         params = [{"name": p.name,
                    "default": (None if p.default is inspect._empty else p.default)}
                   for p in inspect.signature(fn).parameters.values()]
-        cat.append({"op": name, "kind": "creator", "inputs": 0, "params": params})
+        cat.append({"op": name, "kind": "creator", "inputs": 0,
+                    "params": _annotate(name, params), "note": OP_NOTES.get(name)})
     for name, fn in MODIFIERS.items():
         sig = list(inspect.signature(fn).parameters.values())[1:]  # skip part
         params = [{"name": p.name,
                    "default": (None if p.default is inspect._empty else p.default)}
                   for p in sig]
-        cat.append({"op": name, "kind": "modifier", "inputs": 1, "params": params})
+        cat.append({"op": name, "kind": "modifier", "inputs": 1,
+                    "params": _annotate(name, params), "note": OP_NOTES.get(name)})
     cat.append({"op": "move", "kind": "modifier", "inputs": 1,
-                "params": [{"name": "x", "default": 0},
+                "note": OP_NOTES.get("move"),
+                "params": _annotate("move", [{"name": "x", "default": 0},
                            {"name": "y", "default": 0},
-                           {"name": "z", "default": 0}]})
+                           {"name": "z", "default": 0}])})
     from document import COMBINERS
     for name in COMBINERS:
-        cat.append({"op": name, "kind": "combiner", "inputs": 2, "params": []})
+        cat.append({"op": name, "kind": "combiner", "inputs": 2, "params": [],
+                    "note": OP_NOTES.get(name)})
     return cat
 
 

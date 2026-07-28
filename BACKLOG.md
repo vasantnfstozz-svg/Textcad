@@ -27,42 +27,8 @@ See the Done section.
 
 ## P1 — blocks basic manual design
 
-- [ ] **Viewport renders only the LAST feature's body — positioning is blind.**
-  Worst single workflow problem, hit by 3 agents. Add a second body and the first
-  vanishes (status volume too); rotating/moving a part into place happens with the
-  reference body invisible; a cutter can't be judged against the part it will cut.
-  Fix: render ALL leaf bodies (tip solid opaque, other leaves ghosted/translucent),
-  and make result() vs displayed-set explicit in the status bar.
-- [ ] **Committed sketches cannot be edited — any mistake = delete features and
-  redraw from scratch.** No "edit sketch" action reopens the 2D editor; the tree
-  shows entities as read-only JSON. For a sketch-centric CAD tool this is the
-  biggest workflow gap. Fix: ✎ edit action on sketch rows → reopen #sketchDialog
-  loaded with entities → save rewrites params → rebuild.
-- [ ] **Fillet cannot target vertical edges — canonical "round the box corners"
-  is unreachable** (was already listed; dogfooding upgraded it to blocker with
-  evidence). edges accepts only all/top/bottom; "all" at r5 fails on 3mm shelled
-  walls. Agent had to redraw the footprint as rounded sketch by hand (2 rects + 4
-  circles — no rounded-rectangle entity, no sketch-corner-fillet either). Fix path:
-  picked-edge → fillet (needs stable edge refs) OR at least a "vertical" rule +
-  sketch corner-fillet tool + rounded-rect entity.
-- [ ] **Add-Feature dialogs are bare snake_case + free text: no units, no enums, no
-  conventions, radius/diameter chaos.** Hit by 4 agents. `bolt_radius` (radius) sits
-  next to `pitch_circle_dia` (diameter); enum params (fillet.edges, shell.open_face)
-  are text fields with placeholder "number" — valid values discoverable only by
-  failing; nothing states primitives are origin-CENTERED, move is a RELATIVE offset,
-  or which way plane offset / extrude go. Fix: per-op param metadata (label, unit,
-  enum choices → dropdowns, bool → checkbox, help line with anchoring convention),
-  consumed by dialog + tree + AI author docs.
-- [ ] **Fresh/empty server state: /api/doc 500s (KeyError: None), UI boots
-  half-dead, Add-feature silently no-ops.** All 5 agents hit it (they launch
-  uvicorn directly, so no __main__ seed doc exists — but any empty state must
-  behave). No welcome message, watcher spams 500s every 3s, clicking Add feature
-  does nothing with no error. Fix: /api/doc returns a clean empty response (or
-  auto-creates "untitled"), UI shows an onboarding empty state.
-- [ ] **Sketch dialog footer (Create button!) pushed off-screen once entities grow.**
-  At 1600×900 with 7 entities the Create/Cancel buttons sit below the viewport with
-  no visible scrollbar — the flow's primary action is invisible. Fix: dialog
-  max-height with internal scroll for the entity list + sticky footer.
+**6 of 7 P1 items FIXED 2026-07-28 — see Done. Remaining: sketch trim tool.**
+
 - [ ] **Sketch trim tool missing** (pre-existing). Needs curve-curve intersection;
   add/cut composition covers some cases but real 2D drafting needs trim.
 
@@ -118,6 +84,32 @@ See the Done section.
   design is robust.
 
 ## Done
+
+### P1 batch — dogfooding round 1 manual-design fixes (2026-07-28)
+6 of 7 P1 items, probe-first, 12 new regression tests (108 total green), verified
+through the real browser (12/12 Playwright checks; visual pass caught a CSS
+regression the DOM checks missed).
+- [x] **P1-a viewport showed only the last body** — `Document.leaf_solid_ids()`
+  lists every unconsumed solid; `/api/model` returns the non-result ones as
+  `bodies`; viewport renders them translucent grey (ghosts) so positioning a
+  second body before a fuse is no longer blind. Fit includes ghosts.
+- [x] **P1-b committed sketches uneditable** — ✎ edit action on sketch rows →
+  `editSketch()` reopens the 2D editor loaded with the entities → Save posts
+  `/api/feature/params` (new endpoint: set several params in ONE rebuild).
+- [x] **P1-c fillet/chamfer can't hit vertical edges** — added "vertical" (the 4
+  upright corner edges, via `edges().filter_by(Axis.Z)`) and "horizontal" rules
+  to `_pick_edges`. Canonical "round the box corners" now works.
+- [x] **P1-d bare dialogs** — `author.op_catalog()` now annotates params with
+  `enum` (→ dropdowns for axis/plane/edges/open_face), `unit` (mm/deg/count/×),
+  and a per-op `note` (origin-centered, relative move, etc.); dialog renders all
+  three. No more guessing valid enum words or radius-vs-diameter.
+- [x] **P1-e empty-server 500** — `_entry()` auto-creates an "untitled" doc when
+  no tab is open instead of KeyError:None. UI boots clean from empty state.
+- [x] **P1-f sketch dialog footer off-screen** — `#sketchDialog[open]` flex column,
+  max-height 92vh, scrolling side panel, sticky footer. **Regression caught in
+  visual verify:** first fix set `display:flex` UNSCOPED, overriding the UA
+  `display:none` for a CLOSED dialog → the editor showed permanently. Fixed by
+  gating on `[open]`; locked in by test_sketch_dialog_display_is_gated_by_open.
 
 ### P0 batch — dogfooding round 1 fixes (2026-07-28)
 All found by the 5-agent dogfooding session; fixed top-down with probe-first

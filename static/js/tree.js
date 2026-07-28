@@ -90,6 +90,10 @@ function buildRow(doc, f) {
   };
 
   const acts = document.createElement('span'); acts.className = 'nacts';
+  if (f.op === 'sketch') {
+    addAct(acts, '✎', 'edit this sketch (reopen the 2D editor)',
+      () => bus.emit('edit-sketch', f));
+  }
   if (f.op === 'sketch' || f.op === 'sketch_on_face') {
     addAct(acts, '⬆', 'make solid — extrude / revolve this sketch',
       () => openFeatDialog('extrude', [f.id]));

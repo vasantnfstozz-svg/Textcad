@@ -221,6 +221,9 @@ def linear_pattern(feature: Part, count: int, dx: float = 0.0,
     return parts[0]
 
 
+_EDGE_RULES = ("all", "top", "bottom", "vertical", "horizontal")
+
+
 def _pick_edges(part: Part, which: str):
     edges = part.edges()
     if which == "all":
@@ -229,17 +232,32 @@ def _pick_edges(part: Part, which: str):
         return edges.group_by(Axis.Z)[-1]
     if which == "bottom":
         return edges.group_by(Axis.Z)[0]
-    raise ValueError('edges must be "all", "top" or "bottom"')
+    if which == "vertical":
+        # edges parallel to Z — the 4 corner edges of a box (round-the-corners)
+        picked = edges.filter_by(Axis.Z)
+        if not picked:
+            raise ValueError('no "vertical" edges (none run parallel to Z)')
+        return picked
+    if which == "horizontal":
+        # edges lying flat (parallel to X or Y) — top+bottom rims
+        picked = edges.filter_by(Axis.X) + edges.filter_by(Axis.Y)
+        if not picked:
+            raise ValueError('no "horizontal" edges (none parallel to X or Y)')
+        return picked
+    raise ValueError(f'edges must be one of {", ".join(_EDGE_RULES)}')
 
 
 def fillet_edges(part: Part, radius: float, edges: str = "all") -> Part:
-    """Round edges with a radius. `edges`: "all", "top" or "bottom". The radius
-    must be smaller than half the thickness of the adjacent material."""
+    """Round edges with a radius. `edges`: "all", "top", "bottom", "vertical"
+    (the 4 upright corner edges — for rounding the corners of a box/enclosure)
+    or "horizontal" (the flat top+bottom rims). The radius must be smaller than
+    half the thickness of the adjacent material."""
     return _b3d_fillet(_pick_edges(part, edges), radius=radius)
 
 
 def chamfer_edges(part: Part, length: float, edges: str = "all") -> Part:
-    """Cut a flat 45-degree bevel on edges. `edges`: "all", "top" or "bottom"."""
+    """Cut a flat 45-degree bevel on edges. `edges`: "all", "top", "bottom",
+    "vertical" or "horizontal" (see fillet_edges)."""
     return _b3d_chamfer(_pick_edges(part, edges), length=length)
 
 

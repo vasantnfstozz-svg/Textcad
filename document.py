@@ -275,26 +275,42 @@ class Document:
     def _spec_obj(self) -> inspector.Spec:
         return inspector.spec_from_dict(self.spec)
 
-    def _check_dangling(self):
-        """Bodies that no downstream feature consumes and that are NOT the
-        displayed result are silently invisible — the classic trap is chaining
-        a modifier to the wrong upstream feature, which quietly drops the real
-        part from the viewport while every status stays green. Name them."""
-        self.warnings = []
-        rf = self._result_feature()
-        if rf is None:
-            return
+    def leaf_solid_ids(self) -> list[str]:
+        """Ids of every built SOLID body that no downstream feature consumes —
+        the bodies that should be VISIBLE in the viewport. Multiple leaves are
+        normal mid-build (a base plate and a wall before they are fused); the
+        old viewport showed only the last one, so positioning a second body was
+        blind. The last leaf is the result; the rest render as ghosts."""
         consumed = {dep for f in self.features for dep in f.inputs}
+        out = []
         for f in self.features:
-            if f.suppressed or f.id in consumed or f.id == rf.id:
+            if f.suppressed or f.id in consumed:
                 continue
             part = self._parts.get(f.id)
             if part is None or f.op in sk.SKETCH_PRODUCERS or sk.is_sketch(part):
                 continue    # sketches render separately; failed parts flag themselves
+            out.append(f.id)
+        return out
+
+    def _check_dangling(self):
+        """A leaf body that is NOT the displayed result can be a silent trap —
+        chaining a modifier to the wrong upstream feature quietly drops the real
+        part from the result while every status stays green. Name the strays.
+        (Two leaves mid-build, e.g. base + wall before a fuse, are legitimate
+        and now BOTH render — but until they are combined the earlier ones are
+        still 'not the result', so we flag them so the state is never silent.)"""
+        self.warnings = []
+        rf = self._result_feature()
+        if rf is None:
+            return
+        for fid in self.leaf_solid_ids():
+            if fid == rf.id:
+                continue
             self.warnings.append(
-                f"body '{f.id}' is NOT part of the displayed result "
-                f"('{rf.id}') — it is a dangling branch. Chained from the "
-                f"wrong feature? Fuse/cut it with the main body, or remove it.")
+                f"body '{fid}' is NOT part of the displayed result "
+                f"('{rf.id}') — it is a separate body. If that is intended "
+                f"(e.g. before a fuse/cut) ignore this; if you chained from the "
+                f"wrong feature, fuse/cut it with the main body or remove it.")
 
     # -- results --------------------------------------------------------------
     def _result_feature(self) -> Feature | None:

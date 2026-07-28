@@ -27,6 +27,7 @@ const DEFAULT_FIELDS = {
 
 let skEnts = [];          // the sketch's entities
 let skOnFace = null;      // {center, normal, inputId} when sketching on a face
+let skEditId = null;      // feature id when EDITING an existing committed sketch
 let tool = null;          // active drawing tool (entity kind) or null = select
 let clicks = [];          // world-space clicks collected for the current tool
 let ghost = null;         // preview entity while placing
@@ -64,8 +65,9 @@ function nextName() {
 }
 
 export function openSketchEditor() {
-  skOnFace = null;
+  skOnFace = null; skEditId = null;
   resetEditor();
+  document.getElementById('skCreate').textContent = 'Create';
   document.getElementById('skName').value = nextName();
   document.getElementById('skOffset').value = '0';
   document.getElementById('skPlaneRow').style.display = '';
@@ -75,13 +77,39 @@ export function openSketchEditor() {
   draw();
 }
 
+/* Reopen a committed sketch to edit its entities (the alternative to
+   delete-and-redraw). Loads the stored entities back onto the canvas. */
+export function editSketch(feature) {
+  skOnFace = null; skEditId = feature.id;
+  resetEditor();
+  skEnts = (feature.params.entities || []).map(e => ({ ...e }));
+  document.getElementById('skName').value = feature.id;
+  document.getElementById('skPlaneRow').style.display = '';
+  document.getElementById('skPlane').value = feature.params.plane || 'XY';
+  document.getElementById('skOffset').value = feature.params.offset ?? 0;
+  document.getElementById('skFaceNote').style.display = 'none';
+  document.getElementById('skFaceExtrude').style.display = 'none';
+  document.getElementById('skCreate').textContent = 'Save changes';
+  dlg().showModal();
+  // frame the existing geometry
+  const xs = skEnts.map(e => e.x || 0), ys = skEnts.map(e => e.y || 0);
+  if (xs.length) {
+    view = { cx: (Math.min(...xs) + Math.max(...xs)) / 2,
+             cy: (Math.min(...ys) + Math.max(...ys)) / 2, ext: 60 };
+  }
+  renderEnts();
+}
+bus.on('edit-sketch', editSketch);
+
 export function openSketchOnFace(faceInfo) {
   const tip = [...(S.lastDoc?.features || [])].reverse()
     .find(f => f.volume != null);
   if (!tip) { bus.emit('msg', 'bot', '⚠ No solid to sketch on yet.'); return; }
   skOnFace = { center: faceInfo.center, normal: faceInfo.normal || null,
                inputId: tip.id };
+  skEditId = null;
   resetEditor();
+  document.getElementById('skCreate').textContent = 'Create';
   document.getElementById('skName').value = nextName();
   document.getElementById('skPlaneRow').style.display = 'none';
   document.getElementById('skFaceNote').style.display = '';
@@ -804,6 +832,22 @@ async function create() {
   });
   dlg().close();
   const id = document.getElementById('skName').value || 'sketch1';
+
+  if (skEditId) {
+    // editing an existing sketch: replace its entities/plane/offset in place
+    const doc = await postJSON('/api/feature/params', {
+      feature_id: skEditId,
+      params: { plane: document.getElementById('skPlane').value,
+                offset: Number(document.getElementById('skOffset').value) || 0,
+                entities } }, 'updating sketch…');
+    loadMesh();
+    const f = (doc.features || []).find(x => x.id === skEditId);
+    bus.emit('msg', 'bot', doc.error || (f && f.status === 'failed')
+      ? `⚠ Sketch "${skEditId}" update problem: ${doc.error || f.problems.join('; ')}`
+      : `Sketch "${skEditId}" updated — downstream features rebuilt.`);
+    skEditId = null;
+    return;
+  }
 
   if (skOnFace) {
     // one guided action: sketch on face -> extrude -> join/cut with the body.

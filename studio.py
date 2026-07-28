@@ -66,6 +66,11 @@ def _new_tab(doc: Document) -> str:
 
 
 def _entry() -> dict:
+    # Degrade gracefully: if no tab is open (fresh import / all tabs closed),
+    # auto-create an empty "untitled" document instead of raising KeyError:None
+    # (which 500'd /api/doc and left the UI booting half-dead with no guidance).
+    if STATE["active"] is None or STATE["active"] not in STATE["docs"]:
+        _new_tab(Document(name="untitled"))
     return STATE["docs"][STATE["active"]]
 
 
@@ -209,6 +214,11 @@ class EditReq(BaseModel):
     feature_id: str
     param: str
     value: object
+
+
+class ParamsReq(BaseModel):
+    feature_id: str
+    params: dict           # set several params at once, one rebuild
 
 
 class ChatReq(BaseModel):
@@ -358,16 +368,50 @@ def _sketches_json(doc: Document) -> list[dict]:
     return out
 
 
+def _plain_mesh(part, tol: float) -> dict:
+    """Bare position/index mesh of a solid (no face tagging) — for ghost
+    bodies that are shown but not picked."""
+    positions, indices, base = [], [], 0
+    for face in part.faces():
+        try:
+            verts, tris = face.tessellate(tol)
+        except Exception:
+            continue
+        for v in verts:
+            positions += [round(v.X, 3), round(v.Y, 3), round(v.Z, 3)]
+        for t in tris:
+            indices += [base + t[0], base + t[1], base + t[2]]
+        base += len(verts)
+    return {"positions": positions, "indices": indices}
+
+
 @app.get("/api/model")
 def get_model():
     """Face-tagged mesh + edge polylines of the current result solid (for
-    face/edge picking) PLUS unconsumed sketches (shown as 2D profiles)."""
+    face/edge picking) PLUS unconsumed sketches (shown as 2D profiles) PLUS
+    any OTHER unconsumed solid bodies (rendered as ghosts, so positioning a
+    second body before a fuse is not blind)."""
     doc = _doc()
     sketches = _sketches_json(doc)
     part = doc.result()
+    # ghost bodies: leaf solids that are not the displayed result
+    result_id = doc._result_feature().id if doc._result_feature() else None
+    bodies = []
+    for fid in doc.leaf_solid_ids():
+        if fid == result_id:
+            continue
+        gp = doc._parts.get(fid)
+        if gp is None:
+            continue
+        try:
+            gbb = gp.bounding_box()
+            gtol = max((gbb.size.X + gbb.size.Y + gbb.size.Z) / 600.0, 0.1)
+            bodies.append({"id": fid, **_plain_mesh(gp, gtol)})
+        except Exception:
+            continue
     if part is None:
         return {"positions": [], "indices": [], "faceId": [],
-                "faces": [], "edges": [], "sketches": sketches}
+                "faces": [], "edges": [], "sketches": sketches, "bodies": bodies}
     try:
         bb = part.bounding_box()
         tol = max((bb.size.X + bb.size.Y + bb.size.Z) / 900.0, 0.05)
@@ -416,7 +460,8 @@ def get_model():
             continue
 
     return {"positions": positions, "indices": indices, "faceId": face_ids,
-            "faces": faces_meta, "edges": edges_meta, "sketches": sketches}
+            "faces": faces_meta, "edges": edges_meta, "sketches": sketches,
+            "bodies": bodies}
 
 
 @app.get("/api/feature-mesh/{feature_id}.stl")
@@ -443,6 +488,23 @@ def edit(req: EditReq):
     _snapshot()
     try:
         _doc().edit(req.feature_id, req.param, req.value)
+    except (KeyError, ValueError) as e:
+        _entry()["history"].pop()
+        return {"error": str(e), **_doc_json()}
+    _rebuild_and_mesh()
+    return _doc_json()
+
+
+@app.post("/api/feature/params")
+def edit_params(req: ParamsReq):
+    """Set several params of one feature in a single rebuild — used by the
+    sketch editor (reopen a committed sketch, redraw, save all entities)."""
+    _snapshot()
+    try:
+        f = _doc().get(req.feature_id)
+        for k, v in req.params.items():
+            f.params[k] = v
+        _doc()._mark_stale()
     except (KeyError, ValueError) as e:
         _entry()["history"].pop()
         return {"error": str(e), **_doc_json()}

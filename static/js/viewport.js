@@ -11,6 +11,7 @@ let scene, camera, renderer, controls;
 let mesh = null;                 // the body
 const edgeLines = [];            // crisp OCCT topology edges
 const sketchObjs = [];           // floating 2D sketch profiles (Fusion-style)
+const ghostObjs = [];            // other unconsumed solid bodies (translucent)
 let hlMesh = null;               // orange overlay for a tree-selected feature
 let pickHl = null;               // orange overlay for a picked face/edge
 let MODEL = null;                // /api/model payload (faceId, faces, edges)
@@ -86,7 +87,29 @@ function disposeModel() {
   edgeLines.length = 0;
   for (const o of sketchObjs) { scene.remove(o); o.geometry.dispose(); }
   sketchObjs.length = 0;
+  for (const o of ghostObjs) { scene.remove(o); o.geometry.dispose(); }
+  ghostObjs.length = 0;
   clearPickHighlight();
+}
+
+function addBodies(bodies) {
+  // other unconsumed solid bodies — shown translucent so positioning a second
+  // body (before it is fused/cut) is not blind. Not pickable.
+  for (const b of bodies || []) {
+    if (!b.positions || !b.positions.length) continue;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(b.positions, 3));
+    g.setIndex(b.indices);
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+      color: 0x8aa0b8, metalness: 0.1, roughness: 0.6, transparent: true,
+      opacity: 0.32, depthWrite: false }));
+    scene.add(m); ghostObjs.push(m);
+    const eg = new THREE.EdgesGeometry(g, 25);
+    const el = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({
+      color: 0x6b7f96, transparent: true, opacity: 0.5 }));
+    scene.add(el); ghostObjs.push(el);
+  }
 }
 
 function addSketches(sketches) {
@@ -118,9 +141,11 @@ export async function loadMesh(fit = false) {
     const m = await (await fetch('/api/model?t=' + Date.now())).json();
     disposeModel();
     addSketches(m.sketches);
+    addBodies(m.bodies);
     if (!m.positions || !m.positions.length) {
       MODEL = null;
-      if (fit && sketchObjs.length) fitToObjects(sketchObjs);
+      if (fit && (sketchObjs.length || ghostObjs.length))
+        fitToObjects([...sketchObjs, ...ghostObjs]);
       return;
     }
     MODEL = m;
@@ -144,8 +169,11 @@ export async function loadMesh(fit = false) {
     fitRadius = geo.boundingSphere.radius || 100;
     fitCenter.copy(geo.boundingSphere.center);
     if (fit) {
-      camera.near = fitRadius / 100; camera.far = fitRadius * 100;
-      camera.updateProjectionMatrix(); setView('iso');
+      if (ghostObjs.length) { fitToObjects([mesh, ...ghostObjs]); }
+      else {
+        camera.near = fitRadius / 100; camera.far = fitRadius * 100;
+        camera.updateProjectionMatrix(); setView('iso');
+      }
     }
   } catch (e) { /* no model yet */ }
 }
