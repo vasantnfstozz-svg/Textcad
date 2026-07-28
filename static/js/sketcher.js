@@ -97,11 +97,19 @@ bus.on('sketch-on-face', openSketchOnFace);
 /* ---------------- init: palette, canvas, keyboard ---------------- */
 
 export function initSketcher() {
-  for (const b of document.querySelectorAll('.skpalette button')) {
+  for (const b of document.querySelectorAll('.skpalette button[data-shape]')) {
     b.onclick = () => setTool(tool === b.dataset.shape ? null : b.dataset.shape);
   }
   document.getElementById('skCancel').onclick = () => dlg().close();
   document.getElementById('skCreate').onclick = create;
+  document.getElementById('skMirrorV').onclick = () => modifySel(e => mirrorEntity(e, 'v'));
+  document.getElementById('skMirrorH').onclick = () => modifySel(e => mirrorEntity(e, 'h'));
+  document.getElementById('skDup').onclick = () => modifySel(duplicateEntity);
+  document.getElementById('skOffset').onclick = () => {
+    const d = Number(prompt('Offset distance in mm (+ bigger / − smaller):', '5'));
+    if (!d) return;
+    modifySel(e => offsetEntity(e, d));
+  };
 
   const c = svg();
   c.addEventListener('pointerdown', onDown);
@@ -290,6 +298,60 @@ function onWheel(e) {
   view.cy = p.y - (p.y - view.cy) * k;
   view.ext = ext;
   draw();
+}
+
+/* ---------------- modify tools (P5): mirror / duplicate / offset ---------- */
+
+function modifySel(fn) {
+  if (selEnt < 0 || !skEnts[selEnt]) {
+    bus.emit('msg', 'bot', '⚠ Select a shape first (click it on the canvas).');
+    return;
+  }
+  const copy = fn(JSON.parse(JSON.stringify(skEnts[selEnt])));
+  if (!copy) return;
+  skEnts.push(copy);
+  selEnt = skEnts.length - 1;
+  renderEnts();
+}
+
+function mirrorEntity(e, dir) {
+  // dir 'v' = across the vertical Y axis (x -> -x); 'h' = across X (y -> -y)
+  const fx = dir === 'v' ? -1 : 1, fy = dir === 'h' ? -1 : 1;
+  e.x = (e.x || 0) * fx;
+  e.y = (e.y || 0) * fy;
+  if (e.rotation !== undefined)
+    e.rotation = dir === 'v' ? 180 - e.rotation : -e.rotation;
+  if (e.points) e.points = e.points.map(p => [p[0] * fx, p[1] * fy]);
+  if (e.start) e.start = [e.start[0] * fx, e.start[1] * fy];
+  if (e.segments) e.segments = e.segments.map(s => ({
+    ...s,
+    to: [s.to[0] * fx, s.to[1] * fy],
+    ...(s.via ? { via: [s.via[0] * fx, s.via[1] * fy] } : {}),
+  }));
+  return e;
+}
+
+function duplicateEntity(e) {
+  e.x = (e.x || 0) + 10;
+  e.y = (e.y || 0) + 10;
+  return e;
+}
+
+function offsetEntity(e, d) {
+  const grow = (v, amt) => Math.max(v + amt, 0.5);
+  if (e.kind === 'circle') { e.r = grow(e.r, d); return e; }
+  if (e.kind === 'regular_polygon') { e.radius = grow(e.radius, d); return e; }
+  if (e.kind === 'rectangle') {
+    e.w = grow(e.w, 2 * d); e.h = grow(e.h, 2 * d); return e;
+  }
+  if (e.kind === 'ellipse') {
+    e.rx = grow(e.rx, d); e.ry = grow(e.ry, d); return e;
+  }
+  if (e.kind === 'slot') { e.height = grow(e.height, 2 * d); return e; }
+  bus.emit('msg', 'bot',
+    '⚠ Offset works on circles, rectangles, ellipses, slots and N-gons — ' +
+    'not on polygons/paths yet.');
+  return null;
 }
 
 /* ---------------- arc / path geometry helpers ---------------- */
