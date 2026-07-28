@@ -7,8 +7,10 @@ import studio
 
 @pytest.fixture()
 def client():
-    studio.STATE["doc"] = studio.sample_flange()
-    studio.STATE["history"] = []
+    studio.STATE["docs"].clear()
+    studio.STATE["active"] = None
+    studio.STATE["seq"] = 0
+    studio._new_tab(studio.sample_flange())
     studio._rebuild_and_mesh()
     return TestClient(studio.app)
 

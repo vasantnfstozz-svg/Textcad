@@ -1,0 +1,270 @@
+/* TextCAD Studio — all styling. Layout: menubar (tabs) / ribbon / doctabs /
+   main (tree | viewport | chat) / statusbar. */
+
+:root {
+  --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --panel3: #262b36;
+  --line: #2b303c; --text: #dde2ea; --dim: #8b94a7; --accent: #4da3ff;
+  --accent2: #2a3f5c; --ok: #43c579; --fail: #ff5d5d; --stale: #d9a23c;
+  --radius: 8px;
+}
+* { box-sizing: border-box; margin: 0; }
+body { background: var(--bg); color: var(--text); height: 100vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  font: 13px/1.45 "Segoe UI", system-ui, sans-serif; }
+
+/* ============ menu bar: app + tool tabs ============ */
+#menubar { display: flex; align-items: center; gap: 2px; padding: 0 10px;
+  height: 40px; background: var(--panel); border-bottom: 1px solid var(--line);
+  user-select: none; }
+#logo { font-size: 15px; font-weight: 700; margin-right: 16px; }
+#logo b { color: var(--accent); }
+#tabstrip { display: flex; gap: 2px; align-items: flex-end; height: 100%; }
+.tab { background: none; border: none; color: var(--dim); cursor: pointer;
+  font: inherit; font-size: 13px; padding: 0 15px; height: 100%;
+  border-bottom: 2px solid transparent; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--text); border-bottom-color: var(--accent);
+  font-weight: 600; }
+#docTitle { margin-left: auto; margin-right: auto; color: var(--dim); }
+#docTitle b { color: var(--text); font-weight: 600; }
+#verifyBadge { padding: 3px 10px; border-radius: 20px; font-size: 12px;
+  font-weight: 600; }
+#verifyBadge.ok { background: rgba(67,197,121,.15); color: var(--ok); }
+#verifyBadge.fail { background: rgba(255,93,93,.15); color: var(--fail); }
+#verifyBadge.none { background: var(--panel3); color: var(--dim); }
+
+/* ============ ribbon (active tool tab's tools) ============ */
+#ribbon { display: flex; align-items: stretch; gap: 0; padding: 4px 10px 5px;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  overflow-x: auto; }
+.rgroup { display: flex; flex-direction: column; padding: 0 10px;
+  border-right: 1px solid var(--line); }
+.rgroup:first-child { padding-left: 0; }
+.rtools { display: flex; gap: 2px; flex: 1; }
+.rlabel { text-align: center; color: var(--dim); font-size: 9.5px;
+  letter-spacing: .12em; text-transform: uppercase; padding-top: 3px;
+  user-select: none; }
+.rbtn { display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 1px; background: none;
+  border: 1px solid transparent; color: var(--text); border-radius: 7px;
+  padding: 3px 7px; cursor: pointer; font: inherit; font-size: 10px;
+  min-width: 46px; }
+.rbtn .rico { font-size: 16px; line-height: 1.25; color: var(--accent); }
+.rbtn:hover { background: var(--panel3); border-color: var(--line); }
+
+/* ============ document tabs (open designs) ============ */
+#doctabs { display: flex; align-items: center; gap: 3px; padding: 4px 10px 0;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  overflow-x: auto; }
+.dtab { display: flex; align-items: center; gap: 7px; padding: 5px 8px 5px 12px;
+  background: var(--panel2); border: 1px solid var(--line); border-bottom: none;
+  border-radius: 8px 8px 0 0; cursor: pointer; max-width: 190px;
+  color: var(--dim); font-size: 12px; user-select: none; }
+.dtab .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.dtab .dot.ok { background: var(--ok); } .dtab .dot.bad { background: var(--fail); }
+.dtab span.nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dtab.active { background: var(--panel3); color: var(--text);
+  border-color: var(--accent); font-weight: 600; }
+.dtab .x { background: none; border: none; color: var(--dim); cursor: pointer;
+  padding: 0 2px; border-radius: 4px; font-size: 11px; }
+.dtab .x:hover { color: var(--fail); background: var(--panel); }
+#dtabNew { background: none; border: 1px dashed var(--line); color: var(--dim);
+  border-radius: 8px 8px 0 0; padding: 5px 11px; cursor: pointer; font: inherit; }
+#dtabNew:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ============ main layout ============ */
+main { flex: 1; display: flex; min-height: 0; }
+#treePane { width: 320px; min-width: 240px; background: var(--panel);
+  border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+.pane-title { display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px 8px; font-size: 11px; font-weight: 700;
+  letter-spacing: .09em; text-transform: uppercase; color: var(--dim); }
+#tree { flex: 1; overflow-y: auto; padding: 4px 6px 12px 4px; }
+
+/* feature tree — Fusion-style browser: slim rows + guide lines, no boxes */
+.node { position: relative; }
+.node.suppressed > .nrow { opacity: .45; }
+.node.rolledback { opacity: .35; }
+.rollbar { height: 2px; background: var(--stale); border-radius: 2px;
+           margin: 3px 10px 4px 24px; box-shadow: 0 0 7px var(--stale); }
+.nrow { display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+  cursor: pointer; border-radius: 6px; height: 27px; }
+.nrow:hover { background: var(--panel2); }
+.node.sel > .nrow { background: var(--accent2);
+  box-shadow: inset 2px 0 0 var(--accent); }
+.twisty { width: 16px; height: 16px; display: grid; place-items: center;
+  color: var(--dim); font-size: 9px; flex: none; border-radius: 4px;
+  transition: transform .12s; visibility: hidden; }
+.node.haskids > .nrow .twisty { visibility: visible; }
+.twisty:hover { background: var(--panel3); color: var(--text); }
+.node.open > .nrow .twisty { transform: rotate(90deg); }
+.nico { width: 18px; flex: none; text-align: center; font-size: 12px;
+  color: var(--accent); }
+.nname { font-weight: 500; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.nop { color: var(--dim); font-size: 11px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.nspacer { flex: 1; }
+.nacts { display: none; gap: 1px; }
+.nrow:hover .nacts { display: flex; }
+.nact { background: none; border: none; color: var(--dim); cursor: pointer;
+  padding: 1px 4px; border-radius: 4px; font-size: 12px; }
+.nact:hover { color: var(--text); background: var(--panel3); }
+.ndot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.ndot.ok { background: var(--ok); } .ndot.failed { background: var(--fail); }
+.ndot.stale { background: var(--stale); }
+.nbody { display: none; margin-left: 13px; padding: 1px 0 4px 14px;
+  border-left: 1px solid var(--line); }
+.node.open .nbody { display: block; }
+.prow { display: flex; align-items: center; gap: 8px; padding: 2px 0;
+  font-size: 12.5px; position: relative; }
+.prow::before { content: ""; position: absolute; left: -14px; top: 50%;
+  width: 9px; height: 1px; background: var(--line); }
+.pname { color: var(--dim); min-width: 104px; }
+.pval { color: var(--accent); cursor: pointer;
+  border-bottom: 1px dashed transparent; }
+.pval:hover { border-bottom-color: var(--accent); }
+.pval input { width: 88px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--accent); border-radius: 4px; padding: 1px 6px;
+  font: inherit; }
+.pro { color: var(--dim); }
+.nproblems { margin-left: 27px; padding: 2px 0 6px; color: var(--fail);
+  font-size: 12px; }
+/* editable profile-points table */
+.pts { margin: 2px 0 4px; }
+.pts .ptrow { display: flex; gap: 4px; align-items: center; padding: 1px 0; }
+.pts input { width: 58px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px;
+  font: inherit; font-size: 12px; }
+.pts input:focus { border-color: var(--accent); outline: none; }
+.pts .ptbtn { background: none; border: none; color: var(--dim);
+  cursor: pointer; padding: 0 3px; font-size: 12px; }
+.pts .ptbtn:hover { color: var(--text); }
+.pts .apply { margin-top: 3px; background: var(--accent2);
+  border: 1px solid var(--line); color: var(--text); border-radius: 5px;
+  padding: 2px 10px; cursor: pointer; font: inherit; font-size: 12px; }
+.pts .apply:hover { border-color: var(--accent); }
+.pthead { color: var(--dim); font-size: 11px; display: flex; gap: 4px; }
+.pthead span { width: 58px; }
+.specrow { margin-top: 10px; border-top: 1px solid var(--line);
+  padding: 10px 8px 0; font-size: 12.5px; }
+.specrow .schip { display: inline-block; background: var(--panel3);
+  border-radius: 5px; padding: 2px 8px; margin: 2px 3px 2px 0;
+  color: var(--dim); }
+.specrow .sfail { color: var(--fail); padding-top: 4px; }
+
+/* ============ viewport ============ */
+#viewportPane { flex: 1; position: relative; min-width: 0; }
+#viewer { position: absolute; inset: 0; }
+#viewTools { position: absolute; top: 10px; right: 10px; display: flex;
+  gap: 4px; z-index: 6; }
+#viewTools button { background: rgba(23,26,33,.85); border: 1px solid
+  var(--line); color: var(--dim); border-radius: 6px; padding: 5px 10px;
+  cursor: pointer; font: inherit; font-size: 12px; backdrop-filter: blur(4px); }
+#viewTools button:hover { color: var(--text); border-color: var(--accent); }
+#viewTools button.on { color: var(--accent); border-color: var(--accent); }
+#pickInfo { position: absolute; left: 10px; bottom: 10px; z-index: 6;
+  background: rgba(23,26,33,.92); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 12px; font-size: 12px; display: none;
+  backdrop-filter: blur(4px); max-width: 280px; }
+#pickInfo b { color: var(--accent); }
+#pickInfo .k { color: var(--dim); }
+#busy { position: absolute; inset: 0; display: none; flex-direction: column;
+  gap: 10px; align-items: center; justify-content: center;
+  background: rgba(10,12,15,.6); z-index: 10; backdrop-filter: blur(3px); }
+.spinner { width: 34px; height: 34px; border-radius: 50%;
+  border: 3px solid var(--line); border-top-color: var(--accent);
+  animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============ assistant ============ */
+#chatPane { width: 330px; min-width: 260px; background: var(--panel);
+  border-left: 1px solid var(--line); display: flex; flex-direction: column; }
+#chatLog { flex: 1; overflow-y: auto; padding: 10px 12px; display: flex;
+  flex-direction: column; gap: 8px; }
+.msg { padding: 8px 12px; border-radius: 12px; max-width: 94%;
+  white-space: pre-wrap; word-break: break-word; font-size: 13px; }
+.msg.user { background: var(--accent2); align-self: flex-end;
+  border-bottom-right-radius: 4px; }
+.msg.bot { background: var(--panel2); align-self: flex-start;
+  border-bottom-left-radius: 4px; }
+#chatForm { display: flex; gap: 8px; padding: 10px;
+  border-top: 1px solid var(--line); }
+#chatInput { flex: 1; background: var(--panel2); border: 1px solid var(--line);
+  border-radius: 20px; color: var(--text); padding: 9px 14px; font: inherit;
+  outline: none; }
+#chatInput:focus { border-color: var(--accent); }
+#chatSend { background: var(--accent); border: none; color: #08111e;
+  font-weight: 700; border-radius: 20px; padding: 0 16px; cursor: pointer; }
+
+/* ============ status bar ============ */
+#statusbar { display: flex; align-items: center; gap: 18px; height: 26px;
+  padding: 0 14px; background: var(--panel); border-top: 1px solid var(--line);
+  color: var(--dim); font-size: 11.5px; }
+#statusbar b { color: var(--text); font-weight: 600; }
+
+/* ============ dialogs ============ */
+dialog { background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px;
+  min-width: 360px; max-width: 480px; }
+dialog::backdrop { background: rgba(0,0,0,.6); }
+dialog h3 { margin-bottom: 14px; font-size: 15px; }
+dialog label { display: block; margin: 9px 0 3px; color: var(--dim);
+  font-size: 12px; }
+dialog input, dialog select { width: 100%; background: var(--panel2);
+  border: 1px solid var(--line); border-radius: 6px; color: var(--text);
+  padding: 8px 10px; font: inherit; outline: none; }
+dialog input:focus, dialog select:focus { border-color: var(--accent); }
+dialog .checks { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0; }
+dialog .checks label { display: flex; gap: 5px; align-items: center;
+  margin: 0; background: var(--panel2); border: 1px solid var(--line);
+  border-radius: 6px; padding: 5px 9px; cursor: pointer; color: var(--text); }
+dialog .row { display: flex; justify-content: flex-end; gap: 8px;
+  margin-top: 16px; }
+dialog .row button { background: var(--panel3); color: var(--text);
+  border: 1px solid var(--line); border-radius: 7px; padding: 8px 16px;
+  cursor: pointer; font: inherit; }
+dialog .row button.primary { background: var(--accent); color: #08111e;
+  border: none; font-weight: 700; }
+.libitem { display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px;
+  margin-bottom: 6px; cursor: pointer; }
+.libitem:hover { border-color: var(--accent); background: var(--panel2); }
+.libitem .meta { color: var(--dim); font-size: 11.5px; }
+
+/* sketch editor */
+#sketchDialog { min-width: 720px; max-width: 860px; }
+#sketchWrap { display: flex; gap: 16px; }
+#sketchSide { width: 260px; flex: none; }
+.skpalette { margin-top: 10px; }
+.skhead { color: var(--dim); font-size: 11px; text-transform: uppercase;
+  letter-spacing: .08em; margin-bottom: 5px; }
+.skpalette button { display: inline-block; width: calc(50% - 3px);
+  margin: 0 2px 4px 0; background: var(--panel2); border: 1px solid var(--line);
+  color: var(--text); border-radius: 6px; padding: 6px 4px; cursor: pointer;
+  font: inherit; font-size: 12px; text-align: left; }
+.skpalette button:hover { border-color: var(--accent); }
+.skents { margin-top: 10px; max-height: 200px; overflow-y: auto; }
+.skent { background: var(--panel2); border: 1px solid var(--line);
+  border-radius: 7px; padding: 6px 8px; margin-bottom: 5px; }
+.skent .eh { display: flex; align-items: center; gap: 6px; }
+.skent .eh b { flex: 1; font-size: 12px; }
+.skent .ef { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.skent .ef label { display: flex; align-items: center; gap: 2px; margin: 0;
+  color: var(--dim); font-size: 11px; }
+.skent .ef input { width: 46px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px;
+  font: inherit; font-size: 12px; }
+.skent select { background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 4px; font: inherit;
+  font-size: 11px; }
+.skent .del { background: none; border: none; color: var(--dim);
+  cursor: pointer; }
+#sketchCanvasWrap { flex: 1; display: flex; flex-direction: column; }
+#sketchCanvas { flex: 1; background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; min-height: 360px; }
+.skhint { color: var(--dim); font-size: 11px; text-align: center;
+  padding-top: 5px; }
+#skFaceNote { color: var(--accent); font-size: 11.5px;
+  background: var(--accent2); padding: 6px 8px; border-radius: 6px;
+  margin: 4px 0; }

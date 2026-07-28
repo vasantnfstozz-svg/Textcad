@@ -1,13 +1,20 @@
 """
-studio.py — TextCAD Studio: the local web app.
+studio.py — TextCAD Studio: the local web app (API layer).
 
 Run:  python studio.py   ->  opens http://127.0.0.1:8123 in your browser.
 
-Three panels: chat (talk to the designer), feature tree (click a parameter to
-edit it), 3D viewer. Every edit — spoken or clicked — flows through the SAME
-path: Document.edit() -> deterministic rebuild through verified blocks ->
-per-node health + spec verification. The LLM never regenerates a design during
-an edit; it only points at (feature, parameter, value). Nothing else can change.
+The UI lives in static/ (index.html + css/ + js/ modules). This file is the
+HTTP API only; the CAD brains live in the core modules (document, blocks,
+sketch, inspector, author, meanline, samples).
+
+MULTI-DOCUMENT: the server holds many open designs at once — one per UI tab.
+STATE["docs"] maps tab-id -> {doc, ok, rebuild_ms, history}; STATE["active"]
+names the tab every /api call operates on. New / Open / Examples / AI-create
+all open a NEW tab, so the previous design stays open to switch back to.
+
+Every edit — spoken or clicked — flows through the SAME path:
+Document.edit() -> deterministic rebuild through verified blocks -> per-node
+health + spec verification. The LLM never regenerates a design during an edit.
 """
 
 from __future__ import annotations
@@ -19,13 +26,14 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import build123d as b3d
 
-import meanline
 import author
 from document import Document
+from samples import SAMPLES, sample_flange, sample_impeller, sample_compressor  # noqa: F401 (re-export for tests)
 
 ROOT = Path(__file__).parent
 STATIC = ROOT / "static"
@@ -34,99 +42,51 @@ DESIGNS = ROOT / "designs"
 DESIGNS.mkdir(exist_ok=True)
 
 app = FastAPI(title="TextCAD Studio")
+app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
 
 # ---------------------------------------------------------------------------
-# Samples — demo-ready designs
+# Multi-document state: one entry per open tab
 # ---------------------------------------------------------------------------
 
-def sample_flange() -> Document:
-    doc = Document(name="flange-100")
-    doc.add("body", "disc", {"radius": 50, "thickness": 10})
-    doc.add("bore", "with_center_hole", {"radius": 15}, inputs=["body"])
-    doc.add("bolts", "with_bolt_circle",
-            {"count": 6, "bolt_radius": 4, "pitch_circle_dia": 76},
-            inputs=["bore"])
-    doc.spec = {"symmetry": 6, "n_solids": 1, "holes": {4.0: 6}, "tol": 0.5}
-    return doc
-
-
-def sample_impeller() -> Document:
-    """The 7-blade curved impeller as an editable feature tree."""
-    doc = Document(name="impeller-7")
-    doc.add("hub_body", "revolve_profile",
-            {"points": [[0, 0], [22, 0], [22, 3], [10, 28], [0, 28]]})
-    doc.add("hub", "with_center_hole", {"radius": 6}, inputs=["hub_body"])
-    doc.add("blade", "curved_blade",
-            {"inner_radius": 9, "outer_radius": 40, "inlet_angle_deg": 30,
-             "exit_angle_deg": 55, "height": 26, "thickness": 2.5})
-    doc.add("blades_raw", "polar_pattern", {"count": 7}, inputs=["blade"])
-    doc.add("shroud_cutter", "revolve_profile",
-            {"points": [[8, 26], [40, 10], [48, 10], [48, 60], [8, 60]]})
-    doc.add("blades", "cut", inputs=["blades_raw", "shroud_cutter"])
-    doc.add("impeller", "fuse", inputs=["hub", "blades"])
-    doc.spec = {"symmetry": 7, "n_solids": 1, "tip_radius": 40.0, "tol": 0.5}
-    return doc
-
-
-def sample_compressor() -> Document:
-    """Physics-designed compressor: meanline calc -> feature tree. Heavier to
-    rebuild (13 curved blades) — expect a minute or two per rebuild."""
-    d = meanline.design(meanline.Duty(mass_flow=0.5, pressure_ratio=3.0,
-                                      rpm=45000))
-    t, L = d.backplate_thk, d.axial_length
-    r_in = round(0.75 * d.inducer_hub_radius, 2)
-    thk = round(max(0.02 * d.tip_radius, 1.5), 2)
-    big = t + L + 50.0
-    doc = Document(name=f"compressor-PR3-{d.blade_count}blades")
-    doc.add("hub_body", "revolve_profile",
-            {"points": [[0, 0], [d.tip_radius, 0], [d.tip_radius, t],
-                        [d.inducer_hub_radius, t + L], [0, t + L]]})
-    doc.add("hub", "with_center_hole", {"radius": d.bore_radius},
-            inputs=["hub_body"])
-    doc.add("blade", "curved_blade",
-            {"inner_radius": r_in, "outer_radius": d.tip_radius,
-             "inlet_angle_deg": d.beta1_deg, "exit_angle_deg": d.beta2_deg,
-             "height": L, "thickness": thk})
-    doc.add("blade_up", "move", {"z": t}, inputs=["blade"])
-    doc.add("blades_raw", "polar_pattern", {"count": d.blade_count},
-            inputs=["blade_up"])
-    doc.add("shroud_cutter", "revolve_profile",
-            {"points": [[r_in - 2, t + L], [d.inducer_shroud_radius, t + L],
-                        [d.tip_radius, t + d.exit_width],
-                        [d.tip_radius + 15, t + d.exit_width],
-                        [d.tip_radius + 15, big], [r_in - 2, big]]})
-    doc.add("blades", "cut", inputs=["blades_raw", "shroud_cutter"])
-    doc.add("impeller", "fuse", inputs=["hub", "blades"])
-    doc.spec = {"symmetry": d.blade_count, "n_solids": 1,
-                "tip_radius": d.tip_radius, "tol": 1.0}
-    return doc
-
-
-SAMPLES = {"flange": sample_flange, "impeller": sample_impeller,
-           "compressor": sample_compressor}
-
-STATE: dict = {"doc": None, "ok": False, "history": []}
+STATE: dict = {"docs": {}, "active": None, "seq": 0}
 MAX_HISTORY = 25
+MAX_TABS = 12
+
+
+def _new_tab(doc: Document) -> str:
+    """Open a document in a new tab and make it active."""
+    STATE["seq"] += 1
+    tid = f"t{STATE['seq']}"
+    STATE["docs"][tid] = {"doc": doc, "ok": False, "rebuild_ms": None,
+                          "history": []}
+    STATE["active"] = tid
+    return tid
+
+
+def _entry() -> dict:
+    return STATE["docs"][STATE["active"]]
+
+
+def _doc() -> Document:
+    return _entry()["doc"]
 
 
 def _snapshot() -> None:
-    """Push the current design intent onto the undo stack. Call BEFORE any
-    mutation (edit/add/remove/suppress/spec/replace)."""
-    doc: Document = STATE.get("doc")
-    if doc is None:
-        return
-    STATE["history"].append(doc.to_data())
-    del STATE["history"][:-MAX_HISTORY]
+    """Push the active design's intent onto ITS undo stack. Call BEFORE any
+    mutation (edit/add/remove/suppress/spec)."""
+    e = _entry()
+    e["history"].append(e["doc"].to_data())
+    del e["history"][:-MAX_HISTORY]
 
 
 def _rebuild_and_mesh() -> None:
     import time
-    doc: Document = STATE["doc"]
+    e = _entry()
     t0 = time.perf_counter()
-    STATE["ok"] = doc.rebuild()
-    STATE["rebuild_ms"] = round((time.perf_counter() - t0) * 1000)
-    part = doc.result()
+    e["ok"] = e["doc"].rebuild()
+    e["rebuild_ms"] = round((time.perf_counter() - t0) * 1000)
+    part = e["doc"].result()
     if part is not None:
         try:
             b3d.export_stl(part, str(MESH_PATH))
@@ -134,16 +94,25 @@ def _rebuild_and_mesh() -> None:
             pass
 
 
+def _tabs_json() -> list[dict]:
+    return [{"id": tid, "name": e["doc"].name, "ok": e["ok"],
+             "active": tid == STATE["active"]}
+            for tid, e in STATE["docs"].items()]
+
+
 def _doc_json() -> dict:
-    doc: Document = STATE["doc"]
+    e = _entry()
+    doc = e["doc"]
     return {
         "name": doc.name,
-        "ok": STATE["ok"],
-        "rebuild_ms": STATE.get("rebuild_ms"),
-        "can_undo": len(STATE["history"]) > 0,
+        "ok": e["ok"],
+        "rebuild_ms": e["rebuild_ms"],
+        "can_undo": len(e["history"]) > 0,
         "rollback": doc.rollback,
         "spec": doc.spec,
         "spec_problems": doc.spec_problems,
+        "tabs": _tabs_json(),
+        "active_tab": STATE["active"],
         "features": [{
             "id": f.id, "op": f.op, "params": f.params, "inputs": f.inputs,
             "status": f.status, "problems": f.problems, "volume": f.volume,
@@ -231,7 +200,7 @@ def chat_intent(message: str, feedback: str | None = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# API
+# Request models
 # ---------------------------------------------------------------------------
 
 class EditReq(BaseModel):
@@ -272,6 +241,14 @@ class RollbackReq(BaseModel):
     feature_id: str | None = None
 
 
+class TabReq(BaseModel):
+    id: str
+
+
+# ---------------------------------------------------------------------------
+# Pages + document data
+# ---------------------------------------------------------------------------
+
 @app.get("/")
 def index():
     return FileResponse(STATIC / "index.html")
@@ -281,6 +258,60 @@ def index():
 def get_doc():
     return _doc_json()
 
+
+# ---------------------------------------------------------------------------
+# Document tabs
+# ---------------------------------------------------------------------------
+
+@app.get("/api/tabs")
+def get_tabs():
+    return {"tabs": _tabs_json(), "active_tab": STATE["active"]}
+
+
+@app.post("/api/tabs/switch")
+def switch_tab(req: TabReq):
+    if req.id not in STATE["docs"]:
+        return {"error": f"no tab '{req.id}'", **_doc_json()}
+    STATE["active"] = req.id
+    # geometry is cached inside the Document — no rebuild needed on switch
+    part = _doc().result()
+    if part is not None:
+        try:
+            b3d.export_stl(part, str(MESH_PATH))
+        except Exception:
+            pass
+    return _doc_json()
+
+
+@app.post("/api/tabs/close")
+def close_tab(req: TabReq):
+    if req.id not in STATE["docs"]:
+        return {"error": f"no tab '{req.id}'", **_doc_json()}
+    del STATE["docs"][req.id]
+    if not STATE["docs"]:                       # never zero tabs
+        _new_tab(Document(name="untitled"))
+        _rebuild_and_mesh()
+    elif STATE["active"] == req.id or STATE["active"] not in STATE["docs"]:
+        STATE["active"] = next(reversed(STATE["docs"]))
+    return _doc_json()
+
+
+@app.post("/api/new")
+def new_design(req: NewReq):
+    """New design = a NEW TAB; the current design stays open."""
+    if len(STATE["docs"]) >= MAX_TABS:
+        return {"error": f"too many open tabs (max {MAX_TABS}) — close some",
+                **_doc_json()}
+    _new_tab(Document(name=req.name or "untitled"))
+    _rebuild_and_mesh()
+    if MESH_PATH.exists():
+        MESH_PATH.unlink()
+    return _doc_json()
+
+
+# ---------------------------------------------------------------------------
+# Geometry for the viewport
+# ---------------------------------------------------------------------------
 
 @app.get("/api/mesh.stl")
 def get_mesh():
@@ -292,10 +323,9 @@ def get_mesh():
 @app.get("/api/model")
 def get_model():
     """Face-tagged mesh + edge polylines of the current result solid, so the
-    viewport can PICK individual faces and edges (E3). Each triangle carries the
-    id of the OCCT face it belongs to; faces/edges carry human-readable info."""
-    doc: Document = STATE["doc"]
-    part = doc.result()
+    viewport can PICK individual faces and edges. Each triangle carries the id
+    of the OCCT face it belongs to; faces/edges carry human-readable info."""
+    part = _doc().result()
     if part is None:
         return {"positions": [], "indices": [], "faceId": [],
                 "faces": [], "edges": []}
@@ -354,8 +384,7 @@ def get_model():
 def get_feature_mesh(feature_id: str):
     """Mesh of ONE feature's own solid — lets the UI highlight in 3D what a
     selected tree node actually contributes."""
-    doc: Document = STATE["doc"]
-    part = doc._parts.get(feature_id)
+    part = _doc()._parts.get(feature_id)
     if part is None:
         return Response(status_code=404)
     path = ROOT / "_studio_feature.stl"
@@ -366,14 +395,67 @@ def get_feature_mesh(feature_id: str):
         return Response(status_code=404)
 
 
+# ---------------------------------------------------------------------------
+# Editing the active design
+# ---------------------------------------------------------------------------
+
+@app.post("/api/edit")
+def edit(req: EditReq):
+    _snapshot()
+    try:
+        _doc().edit(req.feature_id, req.param, req.value)
+    except (KeyError, ValueError) as e:
+        _entry()["history"].pop()
+        return {"error": str(e), **_doc_json()}
+    _rebuild_and_mesh()
+    return _doc_json()
+
+
+@app.post("/api/feature/add")
+def add_feature(req: FeatureReq):
+    _snapshot()
+    try:
+        _doc().add(req.id, req.op, req.params, req.inputs)
+    except ValueError as e:
+        _entry()["history"].pop()
+        return {"error": str(e), **_doc_json()}
+    _rebuild_and_mesh()
+    return _doc_json()
+
+
+@app.post("/api/feature/remove")
+def remove_feature(req: RemoveReq):
+    _snapshot()
+    try:
+        _doc().remove(req.feature_id)
+    except (KeyError, ValueError) as e:
+        _entry()["history"].pop()
+        return {"error": str(e), **_doc_json()}
+    _rebuild_and_mesh()
+    return _doc_json()
+
+
+@app.post("/api/feature/suppress")
+def suppress_feature(req: SuppressReq):
+    _snapshot()
+    try:
+        _doc().get(req.feature_id).suppressed = req.suppressed
+    except KeyError as e:
+        _entry()["history"].pop()
+        return {"error": str(e), **_doc_json()}
+    _doc()._mark_stale()
+    _rebuild_and_mesh()
+    return _doc_json()
+
+
 @app.post("/api/spec")
 def set_spec(req: SpecReq):
     """Edit the design's requirements — the legitimate way to change intent
     (e.g. actually wanting 9 blades) instead of fighting the verifier."""
-    doc: Document = STATE["doc"]
     known = {"size", "volume", "holes", "n_solids", "symmetry", "tip_radius",
              "com", "require_manifold", "tol", "vol_tol"}
     _snapshot()
+    doc = _doc()
     doc.spec = {k: v for k, v in req.spec.items()
                 if k in known and v is not None}
     doc._mark_stale()
@@ -383,13 +465,14 @@ def set_spec(req: SpecReq):
 
 @app.post("/api/undo")
 def undo():
-    if not STATE["history"]:
+    e = _entry()
+    if not e["history"]:
         return {"error": "nothing to undo", **_doc_json()}
-    data = STATE["history"].pop()
+    data = e["history"].pop()
     try:
-        STATE["doc"] = Document.from_data(data)
-    except ValueError as e:
-        return {"error": f"undo failed: {e}", **_doc_json()}
+        e["doc"] = Document.from_data(data)
+    except ValueError as err:
+        return {"error": f"undo failed: {err}", **_doc_json()}
     _rebuild_and_mesh()
     return _doc_json()
 
@@ -398,16 +481,20 @@ def undo():
 def rollback(req: RollbackReq):
     """Drag the rollback bar: feature_id = build only up to there;
     null = back to full build. A view, not an edit — no history entry."""
-    doc: Document = STATE["doc"]
+    doc = _doc()
     doc.rollback = req.feature_id
     doc._mark_stale()
     _rebuild_and_mesh()
     return _doc_json()
 
 
+# ---------------------------------------------------------------------------
+# Library, samples, export
+# ---------------------------------------------------------------------------
+
 @app.post("/api/save")
 def save_design():
-    doc: Document = STATE["doc"]
+    doc = _doc()
     safe = re.sub(r"[^\w\-]+", "-", doc.name).strip("-") or "untitled"
     path = DESIGNS / f"{safe}.tcad.json"
     doc.save(str(path))
@@ -430,11 +517,21 @@ def list_designs():
 
 @app.post("/api/open/{file}")
 def open_design(file: str):
+    """Open from the library — in a NEW tab."""
     path = DESIGNS / f"{file}.tcad.json"
     if not path.exists():
         return {"error": f"no saved design '{file}'"}
-    _snapshot()
-    STATE["doc"] = Document.load(str(path))
+    _new_tab(Document.load(str(path)))
+    _rebuild_and_mesh()
+    return _doc_json()
+
+
+@app.post("/api/sample/{name}")
+def load_sample(name: str):
+    """Open an example — in a NEW tab."""
+    if name not in SAMPLES:
+        return {"error": f"unknown sample '{name}'"}
+    _new_tab(SAMPLES[name]())
     _rebuild_and_mesh()
     return _doc_json()
 
@@ -445,78 +542,20 @@ def get_ops():
     return author.op_catalog()
 
 
-@app.post("/api/new")
-def new_design(req: NewReq):
-    _snapshot()
-    STATE["doc"] = Document(name=req.name or "untitled")
-    STATE["ok"] = False
-    if MESH_PATH.exists():
-        MESH_PATH.unlink()
-    return _doc_json()
-
-
-@app.post("/api/feature/add")
-def add_feature(req: FeatureReq):
-    doc: Document = STATE["doc"]
-    _snapshot()
+@app.post("/api/export")
+def export_step():
+    doc = _doc()
+    path = str(ROOT / f"{doc.name}.step")
     try:
-        doc.add(req.id, req.op, req.params, req.inputs)
-    except ValueError as e:
-        STATE["history"].pop()
-        return {"error": str(e), **_doc_json()}
-    _rebuild_and_mesh()
-    return _doc_json()
+        doc.to_step(path)
+        return {"path": path}
+    except Exception as e:
+        return {"error": str(e)}
 
 
-@app.post("/api/feature/remove")
-def remove_feature(req: RemoveReq):
-    doc: Document = STATE["doc"]
-    _snapshot()
-    try:
-        doc.remove(req.feature_id)
-    except (KeyError, ValueError) as e:
-        STATE["history"].pop()
-        return {"error": str(e), **_doc_json()}
-    _rebuild_and_mesh()
-    return _doc_json()
-
-
-@app.post("/api/feature/suppress")
-def suppress_feature(req: SuppressReq):
-    doc: Document = STATE["doc"]
-    _snapshot()
-    try:
-        doc.get(req.feature_id).suppressed = req.suppressed
-    except KeyError as e:
-        STATE["history"].pop()
-        return {"error": str(e), **_doc_json()}
-    doc._mark_stale()
-    _rebuild_and_mesh()
-    return _doc_json()
-
-
-@app.post("/api/sample/{name}")
-def load_sample(name: str):
-    if name not in SAMPLES:
-        return {"error": f"unknown sample '{name}'"}
-    _snapshot()
-    STATE["doc"] = SAMPLES[name]()
-    _rebuild_and_mesh()
-    return _doc_json()
-
-
-@app.post("/api/edit")
-def edit(req: EditReq):
-    doc: Document = STATE["doc"]
-    _snapshot()
-    try:
-        doc.edit(req.feature_id, req.param, req.value)
-    except (KeyError, ValueError) as e:
-        STATE["history"].pop()
-        return {"error": str(e), **_doc_json()}
-    _rebuild_and_mesh()
-    return _doc_json()
-
+# ---------------------------------------------------------------------------
+# Chat
+# ---------------------------------------------------------------------------
 
 @app.post("/api/chat")
 def chat(req: ChatReq):
@@ -532,28 +571,26 @@ def chat(req: ChatReq):
         if doc is None:
             return {"reply": "I couldn't produce a verified design:\n"
                              + "\n".join(transcript), **_doc_json()}
-        _snapshot()
-        STATE["doc"] = doc
+        _new_tab(doc)                             # AI designs open in a new tab
         _rebuild_and_mesh()
         n = len(doc.features)
         return {"reply": f"Designed \"{doc.name}\" — {n} features, all "
-                         f"verified ({transcript[-1]}). It's now in the tree; "
+                         f"verified ({transcript[-1]}). Opened in a new tab; "
                          f"edit anything by clicking or asking.",
                 **_doc_json()}
 
     for _ in range(2):                       # one repair retry, same philosophy
         if intent.get("action") != "edit":
             return {"reply": intent.get("text", "…"), **_doc_json()}
-        doc: Document = STATE["doc"]
         _snapshot()
         try:
-            doc.edit(intent["feature_id"], intent["param"], intent["value"])
+            _doc().edit(intent["feature_id"], intent["param"], intent["value"])
         except (KeyError, ValueError) as e:
-            STATE["history"].pop()
+            _entry()["history"].pop()
             intent = chat_intent(req.message, feedback=str(e))
             continue
         _rebuild_and_mesh()
-        state = "PASS" if STATE["ok"] else "FAILED verification"
+        state = "PASS" if _entry()["ok"] else "FAILED verification"
         return {"reply": f"Set {intent['feature_id']}.{intent['param']} = "
                          f"{intent['value']} — rebuilt: {state}.",
                 **_doc_json()}
@@ -561,20 +598,9 @@ def chat(req: ChatReq):
                      "the value in the tree instead.", **_doc_json()}
 
 
-@app.post("/api/export")
-def export_step():
-    doc: Document = STATE["doc"]
-    path = str(ROOT / f"{doc.name}.step")
-    try:
-        doc.to_step(path)
-        return {"path": path}
-    except Exception as e:
-        return {"error": str(e)}
-
-
 if __name__ == "__main__":
     import uvicorn
-    STATE["doc"] = sample_flange()
+    _new_tab(sample_flange())
     _rebuild_and_mesh()
     url = "http://127.0.0.1:8123"
     print(f"TextCAD Studio -> {url}")

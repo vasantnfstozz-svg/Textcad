@@ -10,8 +10,10 @@ import meanline
 
 @pytest.fixture()
 def client():
-    studio.STATE["doc"] = studio.sample_flange()
-    studio.STATE["history"] = []
+    studio.STATE["docs"].clear()
+    studio.STATE["active"] = None
+    studio.STATE["seq"] = 0
+    studio._new_tab(studio.sample_flange())
     studio._rebuild_and_mesh()
     return TestClient(studio.app)
 
@@ -69,11 +71,59 @@ def test_save_open_roundtrip(client):
 
 
 def test_bad_edit_reports_error_and_no_history_leak(client):
-    before = len(studio.STATE["history"])
+    before = len(studio._entry()["history"])
     d = client.post("/api/edit", json={"feature_id": "nope",
                                        "param": "radius", "value": 1}).json()
     assert "error" in d
-    assert len(studio.STATE["history"]) == before
+    assert len(studio._entry()["history"]) == before
+
+
+# ---------------------------------------------------------- document tabs ----
+
+def test_new_design_opens_a_second_tab(client):
+    d = client.post("/api/new", json={"name": "part-2"}).json()
+    assert len(d["tabs"]) == 2
+    assert d["name"] == "part-2"
+    names = {t["name"] for t in d["tabs"]}
+    assert "flange-100" in names          # the old design is still open
+
+
+def test_switch_tab_restores_old_design_without_rebuild(client):
+    first = client.get("/api/doc").json()["active_tab"]
+    client.post("/api/new", json={"name": "part-2"})
+    d = client.post("/api/tabs/switch", json={"id": first}).json()
+    assert d["name"] == "flange-100"
+    assert d["ok"]                        # still built + verified
+    assert d["features"][0]["status"] == "ok"
+
+
+def test_examples_and_library_open_in_new_tabs(client):
+    client.post("/api/save")
+    d = client.post("/api/open/flange-100").json()
+    assert len(d["tabs"]) == 2            # library open -> new tab
+
+
+def test_close_tab_activates_neighbor_and_never_zero(client):
+    first = client.get("/api/doc").json()["active_tab"]
+    client.post("/api/new", json={"name": "part-2"})
+    d = client.post("/api/tabs/close",
+                    json={"id": client.get("/api/doc").json()["active_tab"]}).json()
+    assert d["active_tab"] == first and len(d["tabs"]) == 1
+    d = client.post("/api/tabs/close", json={"id": first}).json()
+    assert len(d["tabs"]) == 1            # a blank tab was created
+    assert d["name"] == "untitled"
+
+
+def test_undo_history_is_per_tab(client):
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 9})
+    client.post("/api/new", json={"name": "part-2"})
+    d = client.post("/api/undo").json()   # new tab has NOTHING to undo
+    assert "error" in d
+    first = [t["id"] for t in d["tabs"] if t["name"] == "flange-100"][0]
+    client.post("/api/tabs/switch", json={"id": first})
+    d = client.post("/api/undo").json()   # old tab's undo still works
+    assert d["features"][1]["params"]["radius"] == 15
 
 
 def test_ops_catalog(client):
