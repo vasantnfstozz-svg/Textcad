@@ -25,9 +25,15 @@ export function renderDoc(doc) {
     doc.rebuild_ms != null ? 'rebuild ' + doc.rebuild_ms + ' ms' : '';
 
   const badge = document.getElementById('verifyBadge');
+  const nWarn = (doc.warnings || []).length;
   if (!doc.features.length) { badge.className = 'none'; badge.textContent = 'empty'; }
-  else if (doc.ok) { badge.className = 'ok'; badge.textContent = '✓ verified'; }
-  else { badge.className = 'fail'; badge.textContent = '✗ check failed'; }
+  else if (doc.ok && nWarn) {
+    badge.className = 'ok';
+    badge.textContent = `✓ verified — ⚠ ${nWarn} stray bod${nWarn > 1 ? 'ies' : 'y'}`;
+    badge.title = doc.warnings.join('\n');
+  }
+  else if (doc.ok) { badge.className = 'ok'; badge.textContent = '✓ verified'; badge.title = ''; }
+  else { badge.className = 'fail'; badge.textContent = '✗ check failed'; badge.title = ''; }
 
   const el = treeEl();
   el.innerHTML = '';
@@ -54,9 +60,20 @@ export function renderDoc(doc) {
       pastBar = true;
     }
   }
+  renderWarnings(doc, el);
   renderSpecRow(doc, el);
 }
 bus.on('doc-updated', renderDoc);
+
+function renderWarnings(doc, el) {
+  if (!doc.warnings || !doc.warnings.length) return;
+  const w = document.createElement('div');
+  w.style.cssText = 'margin:8px 6px;padding:7px 9px;border:1px solid #8a6a2a;' +
+    'background:rgba(217,162,60,.08);color:#d9a23c;border-radius:6px;' +
+    'font-size:11.5px;line-height:1.45';
+  w.innerHTML = doc.warnings.map(t => `<div>⚠ ${t}</div>`).join('');
+  el.appendChild(w);
+}
 
 function buildRow(doc, f) {
   const row = document.createElement('div'); row.className = 'nrow';
@@ -110,7 +127,17 @@ function buildBody(f) {
     const pr = document.createElement('div'); pr.className = 'prow';
     pr.innerHTML = `<span class="pname">${k}</span>`;
     const val = document.createElement('span');
-    if (typeof v === 'number' || typeof v === 'string') {
+    if (typeof v === 'boolean') {          // real toggle — typing "false" into a
+      val.className = 'pval';              // text edit reads as truthy in Python
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.checked = v; cb.style.width = 'auto';
+      cb.onclick = e => e.stopPropagation();
+      cb.onchange = async () => {
+        await postJSON('/api/edit', { feature_id: f.id, param: k, value: cb.checked });
+        loadMesh();
+      };
+      val.appendChild(cb); pr.appendChild(val); body.appendChild(pr);
+    } else if (typeof v === 'number' || typeof v === 'string') {
       val.className = 'pval'; val.textContent = v; val.title = 'click to edit';
       val.onclick = e => { e.stopPropagation(); beginEdit(val, f.id, k, v); };
       pr.appendChild(val); body.appendChild(pr);

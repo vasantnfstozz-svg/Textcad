@@ -112,6 +112,7 @@ def _doc_json() -> dict:
         "rollback": doc.rollback,
         "spec": doc.spec,
         "spec_problems": doc.spec_problems,
+        "warnings": doc.warnings,
         "tabs": _tabs_json(),
         "active_tab": STATE["active"],
         "features": [{

@@ -128,6 +128,7 @@ class Document:
     features: list[Feature] = field(default_factory=list)
     spec: dict = field(default_factory=dict)   # inspector.Spec fields, JSON-safe
     spec_problems: list = field(default_factory=list)
+    warnings: list = field(default_factory=list)  # non-fatal honesty flags
     rollback: str | None = None    # SolidWorks-style bar: build only up to this id
     _parts: dict = field(default_factory=dict, repr=False)   # id -> Part cache
 
@@ -173,6 +174,7 @@ class Document:
             f.status = "stale"
         self._parts.clear()
         self.spec_problems = []
+        self.warnings = []
 
     # -- rebuild: deterministic, verified ------------------------------------
     def rebuild(self) -> bool:
@@ -197,7 +199,11 @@ class Document:
                 continue
             try:
                 part = self._eval(f)
-                if sk.is_sketch(part):          # 2D result: check area, not solid
+                # 2D result: check area, not solid health. Classified by OP as
+                # well as type — disjoint entities compose into a Compound that
+                # is not a Sketch instance, and solid-checking a 2D profile
+                # produced false "empty solid" failures on correct designs.
+                if f.op in sk.SKETCH_PRODUCERS or sk.is_sketch(part):
                     area = getattr(part, "area", 0.0)
                     f.problems = [] if area > 0 else ["sketch is empty"]
                     f.volume = None
@@ -213,6 +219,7 @@ class Document:
             if f.status == "failed":
                 ok = False
 
+        self._check_dangling()
         self.spec_problems = []
         if self.rollback is not None:
             self.spec_problems = ["(spec not checked while rolled back)"]
@@ -268,11 +275,30 @@ class Document:
     def _spec_obj(self) -> inspector.Spec:
         return inspector.spec_from_dict(self.spec)
 
+    def _check_dangling(self):
+        """Bodies that no downstream feature consumes and that are NOT the
+        displayed result are silently invisible — the classic trap is chaining
+        a modifier to the wrong upstream feature, which quietly drops the real
+        part from the viewport while every status stays green. Name them."""
+        self.warnings = []
+        rf = self._result_feature()
+        if rf is None:
+            return
+        consumed = {dep for f in self.features for dep in f.inputs}
+        for f in self.features:
+            if f.suppressed or f.id in consumed or f.id == rf.id:
+                continue
+            part = self._parts.get(f.id)
+            if part is None or f.op in sk.SKETCH_PRODUCERS or sk.is_sketch(part):
+                continue    # sketches render separately; failed parts flag themselves
+            self.warnings.append(
+                f"body '{f.id}' is NOT part of the displayed result "
+                f"('{rf.id}') — it is a dangling branch. Chained from the "
+                f"wrong feature? Fuse/cut it with the main body, or remove it.")
+
     # -- results --------------------------------------------------------------
-    def result(self):
-        """The final SOLID — the last built, non-suppressed, non-sketch feature
-        (respects the rollback bar, which stops building partway). Sketches are
-        skipped: the deliverable of a design is a solid, not a 2D profile."""
+    def _result_feature(self) -> Feature | None:
+        """The feature whose part result() returns (rollback-aware)."""
         seen_bar = self.rollback is None
         for f in reversed(self.features):
             if not seen_bar:
@@ -280,9 +306,18 @@ class Document:
                 if not seen_bar:
                     continue
             part = self._parts.get(f.id)
-            if not f.suppressed and part is not None and not sk.is_sketch(part):
-                return part
+            if (not f.suppressed and part is not None
+                    and f.op not in sk.SKETCH_PRODUCERS
+                    and not sk.is_sketch(part)):
+                return f
         return None
+
+    def result(self):
+        """The final SOLID — the last built, non-suppressed, non-sketch feature
+        (respects the rollback bar, which stops building partway). Sketches are
+        skipped: the deliverable of a design is a solid, not a 2D profile."""
+        f = self._result_feature()
+        return self._parts.get(f.id) if f else None
 
     def to_step(self, path: str) -> str:
         part = self.result()

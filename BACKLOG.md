@@ -21,44 +21,9 @@ UI around it produced 36 friction items, merged below. Screenshots in scratchpad
 
 ## P0 — silent wrong geometry / false verification / data loss
 
-- [ ] **Extrude `both` is silently always-on: string "false" is truthy.** Found
-  independently by 4 of 5 agents. The dialog renders booleans as text pre-filled
-  "false"; backend does `bool(both)` → every dialog-driven extrude goes BOTH ways,
-  silently doubling thickness (3mm gasket → 6mm; 8mm pegs → 16mm; 40mm box → 80mm).
-  Tree then SHOWS `both: false` while geometry contradicts it, and retyping "false"
-  is a no-op — only typing 0 fixes it. Fix: checkboxes for booleans in dialog AND
-  tree, backend rejects/properly-coerces string booleans, regression test. Audit ALL
-  ops for other string-coerced params while in there.
-- [ ] **Slot entity: canvas preview shows overall length, backend builds
-  center-to-center.** Click 20mm slot → readout "L 20" → solid comes out 28mm
-  (SlotCenterToCenter). Preview and geometry must agree (decide ONE convention,
-  fix canvas + backend + AI author docs together). Repro: sketch slot L20 H8,
-  extrude, measure top view.
-- [ ] **Wrong upstream input silently switches the displayed part while badge says
-  "verified".** Chaining a modifier to an early feature (e.g. bolt circle ← disc1
-  instead of ← bore) makes prior features a dangling dead branch: bore + holes
-  vanish from viewport/volume, every row stays green, badge stays ✓. Exported part
-  would be wrong. Fix: default-check the current tip, warn on dangling leaf
-  branches, and surface "N bodies not in result" in the spec box.
-- [ ] **Sketch features falsely FAIL verification and flip the whole doc to "check
-  failed".** A valid 2-circle sketch got status=failed ("non-positive volume (0) —
-  empty solid") — the solid-verifier ran on a 2D profile despite rebuild being
-  2D-aware; doc badge went permanently red even though the final solid was correct.
-  Poisons the one signal users are told to trust. Verify root cause (regression?)
-  and add a test: bare sketch → status ok.
-- [ ] **Sketch-on-face offered on CYLINDER faces → 3 failed features + a FALSE
-  success message in chat.** Pick panel labels the face CYLINDER yet still offers
-  "✎ Sketch on this face"; editor opens, user draws everything, Create commits
-  sketch_on_face+extrude+cut which all fail ("Planes can only be created from planar
-  faces") while chat announces "Pocket cut into the face". Cleanup = 3 hover-hidden
-  deletes in reverse dependency order. Fix: hide/disable the button on non-planar
-  faces with a hint; never emit success chat when features failed; add
-  "delete feature + dependents" action.
-- [ ] **Esc while drawing destroys the entire sketch.** The hint bar SAYS "Esc
-  cancel (tool)", but canvas clicks focus <body>, the dialog's key handler never
-  fires, and the browser's default closes the modal — all entities lost. Cost one
-  agent two full redraws. Fix: keydown listener at document level while dialog open;
-  Esc = cancel tool only; closing the dialog with entities present asks to confirm.
+**All 6 P0 items FIXED 2026-07-28 (commit pending) — 13 regression tests in
+tests/test_p0_fixes.py, verified through the real UI (12/12 Playwright checks).**
+See the Done section.
 
 ## P1 — blocks basic manual design
 
@@ -154,4 +119,28 @@ UI around it produced 36 friction items, merged below. Screenshots in scratchpad
 
 ## Done
 
-- (fixes move here with commit hash + date)
+### P0 batch — dogfooding round 1 fixes (2026-07-28)
+All found by the 5-agent dogfooding session; fixed top-down with probe-first
+discipline, 13 new regression tests (96 total green), and a 12-check Playwright
+UI verification pass.
+- [x] **P0-1 extrude `both` string-truthy** — `sketch._to_bool()` strict coercion
+  (rejects "maybe"/2); booleans now render as real checkboxes in the Add-Feature
+  dialog (dialogs.js) AND the feature tree (tree.js). `both="false"` → single-sided.
+- [x] **P0-2 slot overall vs center-to-center** — switched to `SlotOverall`; length
+  is now end-to-end exactly as the canvas draws it; validates length > height. Slot
+  hit-test in sketcher.js corrected to match. AI author prompt updated.
+- [x] **P0-3 dangling wrong-input branch** — `Document._check_dangling()` emits
+  `doc.warnings`; API exposes them; badge shows "✓ verified — ⚠ N stray bodies",
+  amber box names the exact body. Dialog now default-checks the current tip so the
+  common case chains correctly.
+- [x] **P0-4 false sketch verification failure** — root cause: DISJOINT entities
+  compose to a `Compound`, not a `Sketch`, so `is_sketch()` was false and the solid
+  verifier ran on a 2D profile. `sketch._as_sketch()` rewraps to a real Sketch;
+  rebuild classifies 2D by OP (`SKETCH_PRODUCERS`) not just type.
+- [x] **P0-5 sketch-on-face on curved faces** — `sketch_on_face` raises a clear
+  error on non-PLANE faces; viewport hides the "✎ Sketch on this face" button on
+  non-flat faces and shows guidance; on-face create is now step-checked (rolls back
+  partial features, no false "pocket cut" success message).
+- [x] **P0-6 Esc destroys the sketch** — intercept the dialog's `cancel` event
+  (Esc) → cancel the TOOL, never close; Cancel button confirms before discarding
+  a non-empty sketch.

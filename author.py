@@ -142,7 +142,8 @@ feature (a creator), then a "extrude"/"revolve"/"sweep" feature consuming it,
 or "loft" consuming two sketches. A sketch's params are
 {{"plane":"XY|XZ|YZ", "offset":mm, "entities":[...]}} where each entity is
 {{"kind":"rectangle","w":..,"h":..,"x":0,"y":0,"mode":"add"}} (kinds:
-rectangle w/h, circle r, ellipse rx/ry, slot length/height, regular_polygon
+rectangle w/h, circle r, ellipse rx/ry, slot length/height (length = OVERALL
+end-to-end, must exceed height), regular_polygon
 radius/sides, polygon points[[x,y]...], path {{"start":[x,y],"segments":[
 {{"type":"line","to":[x,y]}} or {{"type":"arc","via":[x,y],"to":[x,y]}}...]}}
 (auto-closes; use path for profiles mixing straight edges and arcs);

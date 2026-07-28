@@ -100,8 +100,20 @@ export function initSketcher() {
   for (const b of document.querySelectorAll('.skpalette button[data-shape]')) {
     b.onclick = () => setTool(tool === b.dataset.shape ? null : b.dataset.shape);
   }
-  document.getElementById('skCancel').onclick = () => dlg().close();
+  document.getElementById('skCancel').onclick = () => {
+    if (skEnts.length && !confirm(
+      `Discard this sketch (${skEnts.length} shape${skEnts.length > 1 ? 's' : ''})?`)) return;
+    dlg().close();
+  };
   document.getElementById('skCreate').onclick = create;
+
+  // Esc must NEVER close the dialog and destroy the sketch: the browser fires
+  // 'cancel' on Esc even when focus escaped to <body> (SVG isn't focusable),
+  // bypassing our keydown handler. Intercept it and cancel the TOOL instead.
+  dlg().addEventListener('cancel', e => {
+    e.preventDefault();
+    setTool(null);
+  });
   document.getElementById('skMirrorV').onclick = () => modifySel(e => mirrorEntity(e, 'v'));
   document.getElementById('skMirrorH').onclick = () => modifySel(e => mirrorEntity(e, 'h'));
   document.getElementById('skDup').onclick = () => modifySel(duplicateEntity);
@@ -522,7 +534,7 @@ function hitTest(p) {
     if (e.kind === 'ellipse'
         && (rx / e.rx) ** 2 + (ry / e.ry) ** 2 <= 1) return i;
     if (e.kind === 'slot'
-        && Math.abs(rx) <= e.length / 2 + e.height / 2
+        && Math.abs(rx) <= e.length / 2
         && Math.abs(ry) <= e.height / 2) return i;
     if (e.kind === 'polygon' && e.points
         && pointInPolygon(lx, ly, e.points)) return i;
@@ -794,24 +806,30 @@ async function create() {
   const id = document.getElementById('skName').value || 'sketch1';
 
   if (skOnFace) {
-    // one guided action: sketch on face -> extrude -> join/cut with the body
+    // one guided action: sketch on face -> extrude -> join/cut with the body.
+    // Each step is CHECKED — on failure the partial features are removed and
+    // the user gets the real error, never a false "pocket cut" success.
     const op = document.getElementById('skOp').value;
     const depth = Number(document.getElementById('skDepth').value) || 10;
-    await postJSON('/api/feature/add', {
-      id, op: 'sketch_on_face',
-      params: { face_center: skOnFace.center, face_normal: skOnFace.normal,
-                entities },
-      inputs: [skOnFace.inputId] });
-    await postJSON('/api/feature/add', {
-      id: id + '_solid', op: 'extrude', params: { amount: depth },
-      inputs: [id] });
-    if (op !== 'new') {
-      await postJSON('/api/feature/add', {
-        id: id + (op === 'cut' ? '_pocket' : '_boss'),
+    const added = [];
+    let problem =
+      await addChecked({ id, op: 'sketch_on_face',
+        params: { face_center: skOnFace.center, face_normal: skOnFace.normal,
+                  entities },
+        inputs: [skOnFace.inputId] }, added);
+    if (!problem) problem =
+      await addChecked({ id: id + '_solid', op: 'extrude',
+        params: { amount: depth }, inputs: [id] }, added);
+    if (!problem && op !== 'new') problem =
+      await addChecked({ id: id + (op === 'cut' ? '_pocket' : '_boss'),
         op: op === 'cut' ? 'cut' : 'fuse',
-        inputs: [skOnFace.inputId, id + '_solid'] });
-    }
+        inputs: [skOnFace.inputId, id + '_solid'] }, added);
     loadMesh();
+    if (problem) {
+      bus.emit('msg', 'bot', `⚠ ${op === 'cut' ? 'Pocket' : op === 'join'
+        ? 'Boss' : 'Extrude'} failed: ${problem} The partial features were removed.`);
+      return;
+    }
     bus.emit('msg', 'bot',
       op === 'cut' ? `Pocket cut into the face (depth ${depth}mm).`
       : op === 'join' ? `Boss added on the face (height ${depth}mm).`
@@ -824,11 +842,30 @@ async function create() {
                 entities },
       inputs: [] });
     loadMesh(true);          // the sketch now shows in the viewport (green)
-    if (!doc.error) {
+    const f = (doc.features || []).find(x => x.id === id);
+    if (doc.error || (f && f.status === 'failed')) {
+      bus.emit('msg', 'bot', `⚠ Sketch "${id}" has a problem: ` +
+        (doc.error || f.problems.join('; ')));
+    } else {
       bus.emit('msg', 'bot', `Sketch "${id}" created — you can see it in the ` +
         `viewport. Set a depth to turn it into a solid, or Cancel to keep ` +
         `sketching.`);
       openFeatDialog('extrude', [id]);   // Fusion-style: finish sketch -> extrude
     }
   }
+}
+
+/* Add one feature and verify it actually BUILT. On failure, remove every
+   feature added so far (reverse dependency order) and return the problem. */
+async function addChecked(payload, added) {
+  const doc = await postJSON('/api/feature/add', payload);
+  const f = (doc.features || []).find(x => x.id === payload.id);
+  const problem = doc.error
+    || (f && f.status === 'failed' ? (f.problems || []).join('; ') : null);
+  if (!problem) { added.push(payload.id); return null; }
+  if (!doc.error) added.push(payload.id);      // exists in the tree but failed
+  for (const fid of [...added].reverse()) {
+    await postJSON('/api/feature/remove', { feature_id: fid });
+  }
+  return problem;
 }

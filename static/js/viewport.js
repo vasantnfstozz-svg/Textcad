@@ -235,7 +235,7 @@ function selectFace(fid) {
     [['area', (info.area ?? '?') + ' mm²'],
      info.radius != null ? ['radius', info.radius + ' mm'] : null,
      info.center ? ['center', info.center.join(', ')] : null]);
-  if (info.center) {                 // offer the sketch-on-face workflow
+  if (info.center && info.type === 'PLANE') {   // sketching needs a FLAT face
     const btn = document.createElement('button');
     btn.textContent = '✎ Sketch on this face';
     btn.style.cssText = 'margin-top:7px;width:100%;background:var(--accent);' +
@@ -243,6 +243,12 @@ function selectFace(fid) {
       'font:inherit;font-weight:700';
     btn.onclick = () => bus.emit('sketch-on-face', info);
     document.getElementById('pickInfo').appendChild(btn);
+  } else if (info.center) {
+    const note = document.createElement('div');
+    note.style.cssText = 'margin-top:7px;color:var(--dim);font-size:11px;line-height:1.4';
+    note.textContent = `Sketching needs a FLAT face — this one is ${info.type}. ` +
+      'For a slot/pocket here: sketch on a plane at the right offset, extrude, then Cut.';
+    document.getElementById('pickInfo').appendChild(note);
   }
 }
 

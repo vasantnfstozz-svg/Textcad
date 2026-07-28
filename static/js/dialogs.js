@@ -76,25 +76,35 @@ export async function openFeatDialog(preselect, preInputs) {
     .join('');
   if (preselect) sel.value = preselect;
   sel.onchange = renderFeatForm; renderFeatForm();
-  for (const id of preInputs || []) {
-    const cb = document.querySelector(`#featInputs input[value="${id}"]`);
-    if (cb) cb.checked = true;
+  if (preInputs && preInputs.length) {   // explicit inputs replace the default
+    document.querySelectorAll('#featInputs input')
+      .forEach(cb => cb.checked = preInputs.includes(cb.value));
   }
   featDialog().showModal();
 }
 
 function renderFeatForm() {
   const op = S.OPS.find(o => o.op === document.getElementById('featOp').value);
-  document.getElementById('featParams').innerHTML = op.params.map(p => `
-    <label>${p.name}
-      <input data-param="${p.name}" value="${p.default ?? ''}"
-        placeholder="${p.name === 'points' ? '[[r,z],[r,z],...]' : 'number'}">
-    </label>`).join('');
+  document.getElementById('featParams').innerHTML = op.params.map(p =>
+    typeof p.default === 'boolean'
+      // real checkbox: sending the STRING "false" reads as true in Python and
+      // silently flipped flags like extrude's `both` (doubled every part)
+      ? `<label style="flex-direction:row;align-items:center;gap:6px">${p.name}
+          <input type="checkbox" data-param="${p.name}" data-bool="1"
+            ${p.default ? 'checked' : ''} style="width:auto">
+        </label>`
+      : `<label>${p.name}
+          <input data-param="${p.name}" value="${p.default ?? ''}"
+            placeholder="${p.name === 'points' ? '[[r,z],[r,z],...]' : 'number'}">
+        </label>`).join('');
   document.getElementById('featInputsWrap').style.display =
     op.inputs > 0 ? '' : 'none';
   const doc = S.lastDoc || { features: [] };
+  const tip = op.inputs > 0
+    ? [...doc.features].reverse().find(f => !f.suppressed) : null;
   document.getElementById('featInputs').innerHTML = doc.features.map(f =>
-    `<label><input type="checkbox" value="${f.id}">${f.id}</label>`).join('') ||
+    `<label><input type="checkbox" value="${f.id}"
+       ${tip && tip.id === f.id ? 'checked' : ''}>${f.id}</label>`).join('') ||
     '<span style="color:var(--dim)">no features yet</span>';
 }
 
@@ -104,6 +114,7 @@ export function initDialogs() {
     e.preventDefault(); featDialog().close();
     const params = {};
     for (const inp of document.querySelectorAll('#featParams input')) {
+      if (inp.dataset.bool) { params[inp.dataset.param] = inp.checked; continue; }
       const v = inp.value.trim(); if (!v) continue;
       params[inp.dataset.param] = v.startsWith('[') ? JSON.parse(v)
         : (isNaN(Number(v)) ? v : Number(v));

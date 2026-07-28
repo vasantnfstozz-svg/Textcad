@@ -18,7 +18,7 @@ here is confirmed against build123d 0.11.1.
 from __future__ import annotations
 import build123d as b3d
 from build123d import (
-    Rectangle, Circle, Ellipse, Polygon, SlotCenterToCenter, RegularPolygon,
+    Rectangle, Circle, Ellipse, Polygon, SlotOverall, RegularPolygon,
     Pos, Axis, Plane, BuildLine, BuildSketch, Spline, Polyline, Line,
     ThreePointArc, make_face,
     extrude as _extrude, revolve as _revolve, loft as _loft, sweep as _sweep,
@@ -26,6 +26,23 @@ from build123d import (
 
 _PLANES = {"XY": Plane.XY, "XZ": Plane.XZ, "YZ": Plane.YZ}
 _AXES = {"X": Axis.X, "Y": Axis.Y, "Z": Axis.Z}
+
+
+def _to_bool(v, name: str) -> bool:
+    """Strict boolean coercion. bool('false') is True in Python — a UI that
+    sends the STRING 'false' must not silently flip a flag (this exact trap
+    doubled every dialog-driven extrude before it was caught)."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)) and v in (0, 1):
+        return bool(v)
+    if isinstance(v, str):
+        s = v.strip().lower()
+        if s in ("true", "1", "yes"):
+            return True
+        if s in ("false", "0", "no", ""):
+            return False
+    raise ValueError(f"{name} must be true or false, got {v!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -44,7 +61,13 @@ def _entity(e: dict):
     elif k == "ellipse":
         s = Ellipse(float(e["rx"]), float(e["ry"]))
     elif k == "slot":
-        s = SlotCenterToCenter(float(e["length"]), float(e["height"]))
+        # length is the OVERALL end-to-end size — exactly what the sketcher
+        # canvas draws and dimensions (SlotCenterToCenter would add height).
+        length, height = float(e["length"]), float(e["height"])
+        if length <= height:
+            raise ValueError(f"slot length ({length}) must be greater than its "
+                             f"height ({height}) — length is end-to-end overall")
+        s = SlotOverall(length, height)
     elif k == "regular_polygon":
         s = RegularPolygon(float(e["radius"]), int(e["sides"]))
     elif k == "polygon":
@@ -108,6 +131,15 @@ def _path_face(e: dict):
     return sk.sketch
 
 
+def _as_sketch(shape):
+    """Normalize to a real Sketch. Combining DISJOINT entities (e.g. two
+    separate bolt-hole circles) returns a Compound, which downstream code
+    would then mistake for a (failed) solid — rewrap its faces instead."""
+    if isinstance(shape, b3d.Sketch):
+        return shape
+    return b3d.Sketch(shape.faces())
+
+
 def make_sketch(plane: str = "XY", offset: float = 0.0,
                 entities: list | None = None):
     """Compose entities into one Sketch placed on a principal plane.
@@ -120,7 +152,7 @@ def make_sketch(plane: str = "XY", offset: float = 0.0,
     pl = _PLANES[plane]
     if offset:
         pl = pl.offset(float(offset))
-    return pl * _compose(entities or [])
+    return _as_sketch(pl * _compose(entities or []))
 
 
 def sketch_on_face(solid, face_center: list, face_normal: list | None = None,
@@ -149,8 +181,14 @@ def sketch_on_face(solid, face_center: list, face_normal: list | None = None,
         return d
 
     face = min(faces, key=score)
+    if face.geom_type != b3d.GeomType.PLANE:
+        raise ValueError(
+            f"sketch_on_face: the picked face is {face.geom_type.name}, not flat "
+            f"— a sketch needs a PLANAR face. For a slot/pocket in a curved "
+            f"surface, sketch on a principal plane (offset to the surface) and "
+            f"extrude-cut through the body instead.")
     from build123d import Plane
-    return Plane(face) * _compose(entities or [])
+    return _as_sketch(Plane(face) * _compose(entities or []))
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +197,7 @@ def sketch_on_face(solid, face_center: list, face_normal: list | None = None,
 
 def extrude_sketch(sketch, amount: float, both: bool = False):
     """Pull a sketch straight, normal to its plane, into a solid."""
-    return _extrude(sketch, amount=float(amount), both=bool(both))
+    return _extrude(sketch, amount=float(amount), both=_to_bool(both, "both"))
 
 
 def revolve_sketch(sketch, axis: str = "Z", angle: float = 360.0):
@@ -182,6 +220,7 @@ def loft_sketches(sketches: list):
 def sweep_sketch(sketch, path_points: list, smooth: bool = False):
     """Drag a profile sketch along a path defined by 3D points [[x,y,z],...].
     smooth=True fits a spline through the points; otherwise straight segments."""
+    smooth = _to_bool(smooth, "smooth")
     pts = [(float(p[0]), float(p[1]), float(p[2])) for p in path_points]
     if len(pts) < 2:
         raise ValueError("sweep path needs >= 2 points")
@@ -195,7 +234,7 @@ def sweep_sketch(sketch, path_points: list, smooth: bool = False):
 
 # ops that produce a 2D sketch (not a solid) — the document engine checks these
 # for area, not solid health
-SKETCH_PRODUCERS = {"sketch"}
+SKETCH_PRODUCERS = {"sketch", "sketch_on_face"}
 
 
 def is_sketch(obj) -> bool:
