@@ -1,0 +1,20 @@
+# TextCAD dependencies — install with:  pip install -r requirements.txt
+# (Python 3.12+ recommended; developed on 3.14)
+
+# geometry kernel (build123d pulls in the OpenCASCADE bindings)
+build123d>=0.11
+
+# web app
+fastapi>=0.140
+uvicorn>=0.30
+
+# AI models (OpenRouter uses the openai client; anthropic for direct Claude)
+openai>=1.40
+anthropic>=0.34
+
+# MCP server (Claude Desktop / Claude Code integration)
+mcp>=1.0
+
+# development / tests
+pytest>=8.0
+httpx>=0.27
