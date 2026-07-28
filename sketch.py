@@ -19,7 +19,8 @@ from __future__ import annotations
 import build123d as b3d
 from build123d import (
     Rectangle, Circle, Ellipse, Polygon, SlotCenterToCenter, RegularPolygon,
-    Pos, Axis, Plane, BuildLine, Spline, Polyline,
+    Pos, Axis, Plane, BuildLine, BuildSketch, Spline, Polyline, Line,
+    ThreePointArc, make_face,
     extrude as _extrude, revolve as _revolve, loft as _loft, sweep as _sweep,
 )
 
@@ -51,6 +52,8 @@ def _entity(e: dict):
         if len(pts) < 3:
             raise ValueError("polygon entity needs >= 3 points")
         s = Polygon(*pts)
+    elif k == "path":
+        s = _path_face(e)
     else:
         raise ValueError(f"unknown sketch entity kind '{k}'")
     s = Pos(x, y) * s
@@ -74,6 +77,35 @@ def _compose(entities: list):
     if result is None:
         raise ValueError("sketch has no entities")
     return result
+
+
+def _path_face(e: dict):
+    """A closed profile chained from LINE and ARC segments — the free-drawing
+    tool. Format:
+        {"kind": "path", "start": [x, y], "segments": [
+            {"type": "line", "to": [x, y]},
+            {"type": "arc", "via": [x, y], "to": [x, y]},   # 3-point arc
+        ]}
+    The profile auto-closes with a straight line back to the start."""
+    segs = e.get("segments") or []
+    if not segs:
+        raise ValueError("path entity needs at least 1 segment")
+    start = tuple(float(v) for v in (e.get("start") or [0, 0]))
+    with BuildSketch() as sk:
+        with BuildLine():
+            cur = start
+            for s in segs:
+                to = tuple(float(v) for v in s["to"])
+                if s.get("type") == "arc":
+                    via = tuple(float(v) for v in s["via"])
+                    ThreePointArc(cur, via, to)
+                else:
+                    Line(cur, to)
+                cur = to
+            if abs(cur[0] - start[0]) > 1e-6 or abs(cur[1] - start[1]) > 1e-6:
+                Line(cur, start)                        # auto-close
+        make_face()
+    return sk.sketch
 
 
 def make_sketch(plane: str = "XY", offset: float = 0.0,

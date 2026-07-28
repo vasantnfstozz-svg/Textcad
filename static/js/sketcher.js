@@ -34,6 +34,12 @@ let selEnt = -1;          // selected entity index
 let view = { cx: 0, cy: 0, ext: 60 };   // world-space view (ext = half-width)
 const SNAP = 1;           // click snap in mm
 
+// path tool (chained lines + arcs)
+let pathStart = null;     // first point of the profile
+let pathSegs = [];        // committed segments
+let segMode = 'line';     // what the next segment is: 'line' | 'arc'
+let pendingVia = null;    // arc: the middle (via) point, waiting for the end
+
 const dlg = () => document.getElementById('sketchDialog');
 const svg = () => document.getElementById('sketchCanvas');
 
@@ -113,6 +119,7 @@ export function initSketcher() {
 
 function setTool(kind) {
   tool = kind; clicks = []; ghost = null;
+  pathStart = null; pathSegs = []; pendingVia = null; segMode = 'line';
   document.querySelectorAll('.skpalette button').forEach(b =>
     b.classList.toggle('active', b.dataset.shape === tool));
   svg().style.cursor = tool ? 'crosshair' : 'default';
@@ -165,6 +172,7 @@ function onMove(e) {
   document.getElementById('skCoords').textContent =
     `x ${snap(p.x)}, y ${snap(p.y)}`;
 
+  if (tool === 'path' && pathStart) { ghost = pathGhost(snapPt(p)); draw(); return; }
   if (tool && clicks.length) { ghost = buildGhost(snapPt(p)); draw(); return; }
   if (dragging) {
     const ent = skEnts[dragging.idx];
@@ -187,6 +195,17 @@ function onUp(e) {
 
 function onDblClick() {
   if (tool === 'polygon' && clicks.length >= 3) finishPolygon();
+  if (tool === 'path' && pathSegs.length >= 1) finishPath();
+}
+
+function pathGhost(p) {
+  const cur = pathCursor();
+  const segs = [...pathSegs];
+  if (pendingVia) segs.push({ type: 'arc', via: [pendingVia.x, pendingVia.y],
+                              to: [p.x, p.y] });
+  else segs.push({ type: 'line', to: [p.x, p.y] });
+  return { kind: 'path', mode: 'add', x: 0, y: 0, ghostOpen: true,
+           start: [pathStart.x, pathStart.y], segments: segs };
 }
 
 function onWheel(e) {
@@ -201,9 +220,60 @@ function onWheel(e) {
   draw();
 }
 
+/* ---------------- arc / path geometry helpers ---------------- */
+
+function circleFrom3(a, m, b) {
+  const d = 2 * (a.x * (m.y - b.y) + m.x * (b.y - a.y) + b.x * (a.y - m.y));
+  if (Math.abs(d) < 1e-9) return null;                 // collinear
+  const s = p => p.x * p.x + p.y * p.y;
+  return {
+    cx: (s(a) * (m.y - b.y) + s(m) * (b.y - a.y) + s(b) * (a.y - m.y)) / d,
+    cy: (s(a) * (b.x - m.x) + s(m) * (a.x - b.x) + s(b) * (m.x - a.x)) / d,
+  };
+}
+
+function sampleArc(a, m, b, n = 20) {
+  const c = circleFrom3(a, m, b);
+  if (!c) return [a, b];
+  const r = Math.hypot(a.x - c.cx, a.y - c.cy);
+  const ang = p => Math.atan2(p.y - c.cy, p.x - c.cx);
+  const a0 = ang(a), am = ang(m), a1 = ang(b);
+  const ccw = (from, to) => (to - from + 4 * Math.PI) % (2 * Math.PI);
+  const pts = [];
+  if (ccw(a0, am) <= ccw(a0, a1)) {                    // ccw passes the via pt
+    const sweep = ccw(a0, a1);
+    for (let i = 0; i <= n; i++) {
+      const t = a0 + sweep * i / n;
+      pts.push({ x: c.cx + r * Math.cos(t), y: c.cy + r * Math.sin(t) });
+    }
+  } else {
+    const sweep = 2 * Math.PI - ccw(a0, a1);
+    for (let i = 0; i <= n; i++) {
+      const t = a0 - sweep * i / n;
+      pts.push({ x: c.cx + r * Math.cos(t), y: c.cy + r * Math.sin(t) });
+    }
+  }
+  return pts;
+}
+
+function pathOutline(e) {
+  const ox = e.x || 0, oy = e.y || 0;
+  let cur = { x: e.start[0], y: e.start[1] };
+  const pts = [{ ...cur }];
+  for (const s of e.segments || []) {
+    const to = { x: s.to[0], y: s.to[1] };
+    if (s.type === 'arc' && s.via)
+      pts.push(...sampleArc(cur, { x: s.via[0], y: s.via[1] }, to).slice(1));
+    else pts.push(to);
+    cur = to;
+  }
+  return pts.map(p => ({ x: p.x + ox, y: p.y + oy }));
+}
+
 /* ---------------- click-to-place ---------------- */
 
 function placeClick(p) {
+  if (tool === 'path') { pathClick(p); return; }
   clicks.push(p);
 
   if (tool === 'polygon') {
@@ -249,6 +319,42 @@ function twoClickEntity(kind, a, b) {
   return null;
 }
 
+/* ---------------- the path tool (chained lines + arcs) ---------------- */
+
+function pathClick(p) {
+  if (!pathStart) { pathStart = p; updateHint(); draw(); return; }
+
+  // clicking near the start closes the profile
+  const closeR = view.ext / 30;
+  if (pathSegs.length >= 1 && !pendingVia
+      && dist(p, pathStart) < closeR) { finishPath(); return; }
+
+  if (segMode === 'arc') {
+    if (!pendingVia) { pendingVia = p; updateHint(); draw(); return; }
+    pathSegs.push({ type: 'arc', via: [pendingVia.x, pendingVia.y],
+                    to: [p.x, p.y] });
+    pendingVia = null;
+  } else {
+    pathSegs.push({ type: 'line', to: [p.x, p.y] });
+  }
+  updateHint(); draw();
+}
+
+function finishPath() {
+  if (!pathStart || pathSegs.length < 1) return;
+  skEnts.push({ kind: 'path', mode: 'add', x: 0, y: 0,
+                start: [pathStart.x, pathStart.y], segments: pathSegs });
+  selEnt = skEnts.length - 1;
+  pathStart = null; pathSegs = []; pendingVia = null;
+  renderEnts(); updateHint();
+}
+
+function pathCursor() {
+  if (!pathSegs.length) return pathStart;
+  const last = pathSegs[pathSegs.length - 1].to;
+  return { x: last[0], y: last[1] };
+}
+
 function finishPolygon() {
   const pts = clicks.map(p => [p.x, p.y]);
   skEnts.push({ kind: 'polygon', mode: 'add', x: 0, y: 0, points: pts });
@@ -286,6 +392,10 @@ function hitTest(p) {
         && Math.abs(ry) <= e.height / 2) return i;
     if (e.kind === 'polygon' && e.points
         && pointInPolygon(lx, ly, e.points)) return i;
+    if (e.kind === 'path' && e.start) {
+      const pts = pathOutline(e).map(q => [q.x, q.y]);
+      if (pointInPolygon(p.x, p.y, pts)) return i;
+    }
   }
   return -1;
 }
@@ -329,7 +439,8 @@ function renderCards() {
 
     const f = document.createElement('div'); f.className = 'ef';
     for (const k of Object.keys(e)) {
-      if (['kind', 'mode', 'points', 'ghostOpen'].includes(k)) continue;
+      if (['kind', 'mode', 'points', 'ghostOpen', 'start', 'segments']
+          .includes(k)) continue;
       const lab = document.createElement('label');
       lab.textContent = k;
       const inp = document.createElement('input'); inp.value = e[k];
@@ -337,14 +448,15 @@ function renderCards() {
       inp.oninput = () => { e[k] = Number(inp.value) || 0; draw(); };
       lab.appendChild(inp); f.appendChild(lab);
     }
-    if (e.points) {
+    for (const jsonKey of ['points', 'start', 'segments']) {
+      if (!e[jsonKey]) continue;
       const lab = document.createElement('label');
-      lab.textContent = 'points';
+      lab.textContent = jsonKey;
       const inp = document.createElement('input'); inp.style.width = '150px';
-      inp.value = JSON.stringify(e.points);
+      inp.value = JSON.stringify(e[jsonKey]);
       inp.onclick = ev => ev.stopPropagation();
       inp.oninput = () => {
-        try { e.points = JSON.parse(inp.value); draw(); } catch {}
+        try { e[jsonKey] = JSON.parse(inp.value); draw(); } catch {}
       };
       lab.appendChild(inp); f.appendChild(lab);
     }
@@ -355,6 +467,27 @@ function renderCards() {
 
 function updateHint() {
   const el = document.getElementById('skHelp');
+  if (tool === 'path') {
+    const msg = !pathStart ? 'Click the START point of your profile'
+      : pendingVia ? 'Arc: now click the END point'
+      : segMode === 'arc' ? 'Arc: click a point the arc passes THROUGH'
+      : 'Click the next point · click the start (or double-click) to close';
+    el.innerHTML = '';
+    const mk = (label, mode) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.style.cssText = 'margin-right:6px;padding:1px 10px;border-radius:5px;' +
+        'font:inherit;font-size:11.5px;cursor:pointer;border:1px solid ' +
+        (segMode === mode ? 'var(--accent)' : 'var(--line)') + ';background:' +
+        (segMode === mode ? 'var(--accent2)' : 'var(--panel2)') +
+        ';color:' + (segMode === mode ? 'var(--accent)' : 'var(--text)');
+      b.onclick = () => { segMode = mode; pendingVia = null; updateHint(); };
+      return b;
+    };
+    el.append(mk('— Line', 'line'), mk('◠ Arc', 'arc'),
+              document.createTextNode(' ' + msg));
+    return;
+  }
   if (!tool) el.textContent =
     'Pick a shape, then click on the canvas to draw · drag shapes to move · wheel zooms';
   else if (tool === 'polygon') el.textContent = clicks.length
@@ -406,6 +539,12 @@ function entitySVG(e, opts = {}) {
       ? `<polyline points="${pts}" ${st}/>`
       : `<polygon points="${pts}" ${st}/>`;
   }
+  if (e.kind === 'path' && e.start) {
+    const pts = pathOutline(e).map(q => `${q.x},${-q.y}`).join(' ');
+    return e.ghostOpen
+      ? `<polyline points="${pts}" ${st}/>`
+      : `<polygon points="${pts}" ${st}/>`;
+  }
   return '';
 }
 
@@ -429,6 +568,15 @@ function draw() {
   if (ghost) out += entitySVG(ghost, { ghost: true });
   for (const c of clicks)
     out += `<circle cx="${c.x}" cy="${-c.y}" r="${ext / 90}" fill="#4da3ff"/>`;
+  if (tool === 'path' && pathStart) {
+    out += `<circle cx="${pathStart.x}" cy="${-pathStart.y}" r="${ext / 60}"
+      fill="none" stroke="#4da3ff" stroke-width="1.5"
+      vector-effect="non-scaling-stroke"/>`;      // close target
+    for (const s of pathSegs)
+      out += `<circle cx="${s.to[0]}" cy="${-s.to[1]}" r="${ext / 110}" fill="#4da3ff"/>`;
+    if (pendingVia)
+      out += `<circle cx="${pendingVia.x}" cy="${-pendingVia.y}" r="${ext / 110}" fill="#d9a23c"/>`;
+  }
 
   el.innerHTML = out;
   const gridEl = document.getElementById('skGrid');

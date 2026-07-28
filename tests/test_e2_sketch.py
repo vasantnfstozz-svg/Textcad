@@ -24,6 +24,38 @@ def test_all_entity_kinds():
         assert s.area > 0
 
 
+def test_path_entity_lines_and_arcs():
+    """The free-drawing tool: chained lines + 3-point arcs, auto-closed."""
+    s = sk.make_sketch("XY", 0, [{
+        "kind": "path", "start": [0, 0],
+        "segments": [
+            {"type": "line", "to": [40, 0]},
+            {"type": "arc", "via": [50, 10], "to": [40, 20]},
+            {"type": "line", "to": [0, 20]},
+        ]}])
+    assert sk.is_sketch(s) and s.area > 40 * 20        # rect + arc bulge
+
+
+def test_path_in_document_extrudes():
+    doc = Document(name="bracket-path")
+    doc.add("prof", "sketch", {"plane": "XY", "entities": [{
+        "kind": "path", "start": [0, 0],
+        "segments": [
+            {"type": "line", "to": [30, 0]},
+            {"type": "arc", "via": [38, 10], "to": [30, 20]},
+            {"type": "line", "to": [0, 20]},
+        ]}]})
+    doc.add("solid", "extrude", {"amount": 6}, inputs=["prof"])
+    doc.spec = {"n_solids": 1}
+    assert doc.rebuild(), doc.tree()
+
+
+def test_path_requires_segments():
+    with pytest.raises(ValueError):
+        sk.make_sketch("XY", 0, [{"kind": "path", "start": [0, 0],
+                                  "segments": []}])
+
+
 def test_first_entity_cannot_subtract():
     with pytest.raises(ValueError):
         sk.make_sketch("XY", 0, [{"kind": "circle", "r": 5, "mode": "subtract"}])
