@@ -1,10 +1,20 @@
 // ribbon.js — the tool tabs (File / Create / Sketch / Modify / Inspect) and
 // the ribbon showing only the active tab's tools, Fusion-style.
 
+import { S } from './state.js';
+import { bus } from './bus.js';
 import { OP_ICONS, TOOL_NAMES } from './icons.js';
 import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport,
          actionUndo, actionSpec, loadSample } from './dialogs.js';
 import { openSketchEditor } from './sketcher.js';
+
+// The Sketch tool: if a flat face is currently picked in the viewport, sketch
+// ON that face (Fusion-style: select a surface, then sketch on it). Otherwise
+// open a blank plane sketch.
+function startSketch() {
+  if (S.pickedFace) bus.emit('sketch-on-face', S.pickedFace);
+  else openSketchEditor();
+}
 
 // named (non-op) actions that live in the ribbon
 const ACTIONS = {
@@ -83,7 +93,7 @@ function renderRibbon() {
         b.title = item;
         b.innerHTML = `<span class="rico">${OP_ICONS[item] || '□'}</span>` +
                       `<span>${TOOL_NAMES[item] || item}</span>`;
-        b.onclick = item === 'sketch' ? openSketchEditor
+        b.onclick = item === 'sketch' ? startSketch
                                       : () => openFeatDialog(item);
       }
       tools.appendChild(b);

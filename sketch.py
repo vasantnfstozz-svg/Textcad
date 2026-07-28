@@ -155,16 +155,14 @@ def make_sketch(plane: str = "XY", offset: float = 0.0,
     return _as_sketch(pl * _compose(entities or []))
 
 
-def sketch_on_face(solid, face_center: list, face_normal: list | None = None,
-                   entities: list | None = None):
-    """Draw a sketch ON a face of an existing solid (the Fusion workflow:
-    pick a face, sketch, extrude a boss/cut). The face is resolved by GEOMETRY
-    at every rebuild — the face whose center is nearest `face_center` (and whose
-    normal best matches `face_normal`) — so it survives parameter changes
-    instead of breaking like a stored face index would."""
+def resolve_face(solid, face_center: list, face_normal: list | None = None):
+    """Find the face of `solid` a user picked, by GEOMETRY (nearest center,
+    same-facing normal) — so a stored pick survives parameter changes instead
+    of breaking like a face index would. Shared by sketch_on_face and the
+    face-outline projection."""
     faces = solid.faces()
     if not faces:
-        raise ValueError("sketch_on_face: solid has no faces")
+        raise ValueError("solid has no faces")
     cx, cy, cz = (float(v) for v in face_center)
 
     def score(f):
@@ -180,7 +178,45 @@ def sketch_on_face(solid, face_center: list, face_normal: list | None = None,
                 pass
         return d
 
-    face = min(faces, key=score)
+    return min(faces, key=score)
+
+
+def face_outline_2d(solid, face_center: list, face_normal: list | None = None):
+    """Project a picked PLANAR face's boundary into its own plane's local 2D
+    coordinates — the outer wire plus any inner wires (holes). Returned in the
+    SAME frame the sketch entities are placed in, so the sketcher can show the
+    selected surface as reference geometry to draw against.
+
+    -> {"outer": [[x,y],...], "holes": [[[x,y],...],...], "planar": bool}
+    """
+    from build123d import Plane
+    face = resolve_face(solid, face_center, face_normal)
+    if face.geom_type != b3d.GeomType.PLANE:
+        return {"outer": [], "holes": [], "planar": False}
+    pl = Plane(face)
+
+    def project(wire):
+        poly = []
+        for e in wire.edges():
+            steps = 2 if e.geom_type == b3d.GeomType.LINE else 24
+            for i in range(steps + 1):
+                loc = pl.to_local_coords(e @ (i / steps))
+                poly.append([round(loc.X, 3), round(loc.Y, 3)])
+        return poly
+
+    outer = face.outer_wire()
+    holes = [project(w) for w in face.wires() if w.length != outer.length]
+    return {"outer": project(outer), "holes": holes, "planar": True}
+
+
+def sketch_on_face(solid, face_center: list, face_normal: list | None = None,
+                   entities: list | None = None):
+    """Draw a sketch ON a face of an existing solid (the Fusion workflow:
+    pick a face, sketch, extrude a boss/cut). The face is resolved by GEOMETRY
+    at every rebuild — the face whose center is nearest `face_center` (and whose
+    normal best matches `face_normal`) — so it survives parameter changes
+    instead of breaking like a stored face index would."""
+    face = resolve_face(solid, face_center, face_normal)
     if face.geom_type != b3d.GeomType.PLANE:
         raise ValueError(
             f"sketch_on_face: the picked face is {face.geom_type.name}, not flat "

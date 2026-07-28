@@ -5,4 +5,5 @@ export const S = {
   selected: null,         // selected feature id in the tree
   openNodes: new Set(),   // expanded tree nodes
   OPS: [],                // /api/ops catalog (cached)
+  pickedFace: null,       // last face picked in the viewport {center,normal,type,id}
 };

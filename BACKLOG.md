@@ -85,6 +85,23 @@ See the Done section.
 
 ## Done
 
+### Feature: selected surface shown in the sketch editor (2026-07-28)
+User ask: "if I select a surface on a body from the Create section, I want to see
+the selected surface in the sketch tab." Now sketching on a picked face shows the
+face's real boundary (outer + holes) as grey reference geometry in the 2D canvas.
+- [x] `sketch.resolve_face()` extracted (shared) + `sketch.face_outline_2d()`
+  projects the picked planar face's wires into its plane's local 2D (aligned with
+  where drawn entities land). Non-planar → planar:false.
+- [x] `POST /api/face-outline` resolves the face on the result solid, returns the
+  outline; degrades cleanly with no solid / curved face.
+- [x] Viewport stores the last-picked planar face (`S.pickedFace`); the Sketch
+  ribbon tool sketches ON it when one is picked (else blank plane). Cleared on
+  edge-pick / clear-pick.
+- [x] Sketcher renders the outline as a grey evenodd-filled surface with holes,
+  fits the view to it, and adds its corners + hole centers to the snap points.
+  5 new tests (113 total); verified in the browser (grey plate outline + bore
+  circle shown). main.js?v=10.
+
 ### P1 batch — dogfooding round 1 manual-design fixes (2026-07-28)
 6 of 7 P1 items, probe-first, 12 new regression tests (108 total green), verified
 through the real browser (12/12 Playwright checks; visual pass caught a CSS

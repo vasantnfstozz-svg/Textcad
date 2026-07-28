@@ -221,6 +221,11 @@ class ParamsReq(BaseModel):
     params: dict           # set several params at once, one rebuild
 
 
+class FaceReq(BaseModel):
+    face_center: list
+    face_normal: list | None = None
+
+
 class ChatReq(BaseModel):
     message: str
 
@@ -493,6 +498,21 @@ def edit(req: EditReq):
         return {"error": str(e), **_doc_json()}
     _rebuild_and_mesh()
     return _doc_json()
+
+
+@app.post("/api/face-outline")
+def face_outline(req: FaceReq):
+    """The picked face's boundary (outer + holes) projected into its plane's
+    local 2D — so the sketch editor can show the selected surface as reference
+    geometry. Resolves the face on the current RESULT solid by geometry."""
+    part = _doc().result()
+    if part is None:
+        return {"outer": [], "holes": [], "planar": False,
+                "error": "no solid to sketch on"}
+    try:
+        return sketchlib.face_outline_2d(part, req.face_center, req.face_normal)
+    except Exception as e:
+        return {"outer": [], "holes": [], "planar": False, "error": str(e)}
 
 
 @app.post("/api/feature/params")

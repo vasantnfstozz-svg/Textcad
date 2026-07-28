@@ -28,6 +28,7 @@ const DEFAULT_FIELDS = {
 let skEnts = [];          // the sketch's entities
 let skOnFace = null;      // {center, normal, inputId} when sketching on a face
 let skEditId = null;      // feature id when EDITING an existing committed sketch
+let faceRef = null;       // {outer:[[x,y]..], holes:[[[x,y]..]..]} reference outline
 let tool = null;          // active drawing tool (entity kind) or null = select
 let clicks = [];          // world-space clicks collected for the current tool
 let ghost = null;         // preview entity while placing
@@ -52,10 +53,22 @@ const svg = () => document.getElementById('sketchCanvas');
 
 function resetEditor() {
   skEnts = []; tool = null; clicks = []; ghost = null; selEnt = -1;
+  faceRef = null;
   view = { cx: 0, cy: 0, ext: 60 };
   document.querySelectorAll('.skpalette button')
     .forEach(b => b.classList.remove('active'));
   renderEnts();
+}
+
+/* Fit the view to a set of [x,y] points (with margin). */
+function fitToPoints(pts) {
+  if (!pts.length) return;
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+  const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const span = Math.max(Math.max(...xs) - Math.min(...xs),
+                        Math.max(...ys) - Math.min(...ys), 20);
+  view = { cx, cy, ext: span * 0.65 };
 }
 
 function nextName() {
@@ -115,12 +128,29 @@ export function openSketchOnFace(faceInfo) {
   document.getElementById('skFaceNote').style.display = '';
   document.getElementById('skFaceExtrude').style.display = '';
   document.getElementById('skFaceNote').textContent =
-    `On face at (${faceInfo.center.join(', ')}) of "${skOnFace.inputId}". ` +
+    `On the selected face of "${skOnFace.inputId}" (grey = the surface outline). ` +
     `Pick a shape, click to draw, set depth + Join/Cut, then Create.`;
   dlg().showModal();
   draw();
+  loadFaceRef(faceInfo);          // fetch + show the selected surface as reference
 }
 bus.on('sketch-on-face', openSketchOnFace);
+
+/* Fetch the picked face's boundary (in the sketch plane's 2D coords) and show
+   it as grey reference geometry, so the user draws against the real surface. */
+async function loadFaceRef(faceInfo) {
+  try {
+    const r = await fetch('/api/face-outline', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ face_center: faceInfo.center,
+                             face_normal: faceInfo.normal || null }) });
+    const data = await r.json();
+    if (!data.planar || !(data.outer || []).length) return;
+    faceRef = { outer: data.outer, holes: data.holes || [] };
+    if (!skEnts.length) fitToPoints(faceRef.outer);   // frame the surface
+    draw();
+  } catch (e) { /* reference is a nicety; ignore fetch errors */ }
+}
 
 /* ---------------- init: palette, canvas, keyboard ---------------- */
 
@@ -227,6 +257,14 @@ function collectSnapPoints() {
         pts.push({ x: cx + s.to[0], y: cy + s.to[1], label: 'vertex' });
     }
   });
+  if (faceRef) {                       // snap to the selected surface too
+    for (const p of faceRef.outer) pts.push({ x: p[0], y: p[1], label: 'edge' });
+    for (const h of faceRef.holes) {
+      const hx = h.reduce((s, p) => s + p[0], 0) / h.length;
+      const hy = h.reduce((s, p) => s + p[1], 0) / h.length;
+      pts.push({ x: hx, y: hy, label: 'hole center' });
+    }
+  }
   return pts;
 }
 
@@ -771,6 +809,20 @@ function draw() {
     out += `<line x1="${cx - ext}" y1="${g}" x2="${cx + ext}" y2="${g}" stroke="#20242e" stroke-width="0.5" vector-effect="non-scaling-stroke"/>`;
   out += `<line x1="${cx - ext}" y1="0" x2="${cx + ext}" y2="0" stroke="#3a4150" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
   out += `<line x1="0" y1="${-cy - ext}" x2="0" y2="${-cy + ext}" stroke="#3a4150" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+
+  // selected-surface reference (grey, non-editable): outer minus holes
+  if (faceRef && faceRef.outer.length) {
+    const ring = pts => pts.map(p => `${p[0]},${-p[1]}`).join(' ');
+    const path = ['M ' + faceRef.outer.map(p => `${p[0]} ${-p[1]}`).join(' L ') + ' Z'];
+    for (const h of faceRef.holes)
+      path.push('M ' + h.map(p => `${p[0]} ${-p[1]}`).join(' L ') + ' Z');
+    out += `<path d="${path.join(' ')}" fill="#5a6472" fill-rule="evenodd"
+      fill-opacity="0.22" stroke="#8a97a8" stroke-width="1.5"
+      vector-effect="non-scaling-stroke"/>`;
+    for (const h of faceRef.holes)
+      out += `<polygon points="${ring(h)}" fill="none" stroke="#8a97a8"
+        stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
+  }
 
   skEnts.forEach((e, i) => out += entitySVG(e, { sel: i === selEnt }));
   if (ghost) out += entitySVG(ghost, { ghost: true });

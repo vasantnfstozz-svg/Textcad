@@ -220,6 +220,7 @@ function clearPickHighlight() {
 }
 function clearPick() {
   clearPickHighlight();
+  S.pickedFace = null;
   document.getElementById('pickInfo').style.display = 'none';
 }
 
@@ -259,6 +260,8 @@ function selectFace(fid) {
     polygonOffset: true, polygonOffsetFactor: -3 }));
   scene.add(pickHl);
   const info = m.faces.find(f => f.id === fid) || {};
+  // remember the picked face so the Sketch tab can sketch on it (planar only)
+  S.pickedFace = (info.center && info.type === 'PLANE') ? info : null;
   showPick(`<b>Face ${fid}</b> — ${info.type}`,
     [['area', (info.area ?? '?') + ' mm²'],
      info.radius != null ? ['radius', info.radius + ' mm'] : null,
@@ -282,6 +285,7 @@ function selectFace(fid) {
 
 function selectEdge(eid) {
   clearPickHighlight();
+  S.pickedFace = null;                 // an edge pick is not a sketchable face
   const e = MODEL.edges.find(x => x.id === eid);
   const g = new THREE.BufferGeometry().setFromPoints(
     e.points.map(p => new THREE.Vector3(p[0], p[1], p[2])));
