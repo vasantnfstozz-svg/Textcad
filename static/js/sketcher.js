@@ -55,7 +55,7 @@ const svg = () => document.getElementById('sketchCanvas');
 function resetEditor() {
   skEnts = []; tool = null; clicks = []; ghost = null; selEnt = -1;
   faceRef = null;
-  view = { cx: 0, cy: 0, ext: 60 };
+  view = { cx: 0, cy: 0, ext: 90 };          // roomier default, Fusion-like
   document.querySelectorAll('.skpalette button')
     .forEach(b => b.classList.remove('active'));
   renderEnts();
@@ -832,21 +832,27 @@ function entitySVG(e, opts = {}) {
 function draw() {
   const el = svg();
   const { cx, cy, ext } = view;
-  el.setAttribute('viewBox', `${cx - ext} ${-cy - ext} ${2 * ext} ${2 * ext}`);
+  // viewBox matches the canvas's REAL aspect ratio so the grid fills the whole
+  // (wide) canvas edge-to-edge like Fusion — a square viewBox letterboxed it,
+  // leaving the grid stuck in a small central square with dark empty sides.
+  const rect = el.getBoundingClientRect();
+  const aspect = rect.height > 0 ? rect.width / rect.height : 1;
+  const ex = ext * aspect, ey = ext;              // half-extents (x wider on wide canvas)
+  el.setAttribute('viewBox', `${cx - ex} ${-cy - ey} ${2 * ex} ${2 * ey}`);
 
   // grid step = the configured grid size, coarsened while zoomed out so lines
   // never crowd (keep at least ~7px apart at the current zoom)
   let step = Math.max(0.1, SETTINGS.gridMm);
-  while ((2 * ext) / step > 90) step *= 2;
+  while ((2 * ey) / step > 90) step *= 2;
   let out = '';
-  const x0 = Math.floor((cx - ext) / step) * step;
-  const y0 = Math.floor((-cy - ext) / step) * step;
-  for (let g = x0; g <= cx + ext; g += step)
-    out += `<line x1="${g}" y1="${-cy - ext}" x2="${g}" y2="${-cy + ext}" stroke="#20242e" stroke-width="0.5" vector-effect="non-scaling-stroke"/>`;
-  for (let g = y0; g <= -cy + ext; g += step)
-    out += `<line x1="${cx - ext}" y1="${g}" x2="${cx + ext}" y2="${g}" stroke="#20242e" stroke-width="0.5" vector-effect="non-scaling-stroke"/>`;
-  out += `<line x1="${cx - ext}" y1="0" x2="${cx + ext}" y2="0" stroke="#3a4150" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
-  out += `<line x1="0" y1="${-cy - ext}" x2="0" y2="${-cy + ext}" stroke="#3a4150" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+  const x0 = Math.floor((cx - ex) / step) * step;
+  const y0 = Math.floor((-cy - ey) / step) * step;
+  for (let g = x0; g <= cx + ex; g += step)
+    out += `<line x1="${g}" y1="${-cy - ey}" x2="${g}" y2="${-cy + ey}" stroke="#20242e" stroke-width="0.5" vector-effect="non-scaling-stroke"/>`;
+  for (let g = y0; g <= -cy + ey; g += step)
+    out += `<line x1="${cx - ex}" y1="${g}" x2="${cx + ex}" y2="${g}" stroke="#20242e" stroke-width="0.5" vector-effect="non-scaling-stroke"/>`;
+  out += `<line x1="${cx - ex}" y1="0" x2="${cx + ex}" y2="0" stroke="#3a4150" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+  out += `<line x1="0" y1="${-cy - ey}" x2="0" y2="${-cy + ey}" stroke="#3a4150" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
 
   // selected-surface reference (grey, non-editable): outer minus holes
   if (faceRef && faceRef.outer.length) {
@@ -881,8 +887,8 @@ function draw() {
   if (axisLock) {
     const r = axisLock.ref;
     const guide = axisLock.axis === 'v'
-      ? `<line x1="${r.x}" y1="${-cy - ext}" x2="${r.x}" y2="${-cy + ext}"`
-      : `<line x1="${cx - ext}" y1="${-r.y}" x2="${cx + ext}" y2="${-r.y}"`;
+      ? `<line x1="${r.x}" y1="${-cy - ey}" x2="${r.x}" y2="${-cy + ey}"`
+      : `<line x1="${cx - ex}" y1="${-r.y}" x2="${cx + ex}" y2="${-r.y}"`;
     out += guide + ` stroke="#4da3ff" stroke-width="1" stroke-dasharray="4 4"
       vector-effect="non-scaling-stroke" opacity="0.7"/>`;
   }

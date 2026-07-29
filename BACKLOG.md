@@ -113,6 +113,13 @@ Sketch. Doing CREATE only for now; MODIFY/CONSTRAINTS later.
   planes in the picker; sketch-on-face unified with the plane layout (green tab,
   CREATE tools on top, inline dims, face reference outline, slim side strip with
   only Depth + Join/Cut). Verified 7/7. main.js?v=17, css?v=7.
+- [x] **Sketch grid fills the canvas (2026-07-29).** The sketch SVG used a SQUARE
+  viewBox → on a wide canvas it letterboxed, so the grid sat in a small central
+  square with dark empty sides. draw() now sets the viewBox to the canvas's real
+  aspect ratio (ex = ext*aspect, ey = ext) and draws grid/axes/guides across the
+  full extent → grid fills edge-to-edge like Fusion. Default zoom ext 60→90.
+  Verified 3/3 (viewBox aspect == canvas 2.32, grid spans 1521/1556px).
+  main.js?v=18.
 - [ ] **Remaining sketch polish (later):** type-while-drawing dimensions (type
   before the 2nd click, Tab between fields), Spline/Point/Text tools, MODIFY +
   CONSTRAINTS ribbon groups, and edit-committed-sketch reopening the new UI.
