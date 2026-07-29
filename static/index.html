@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=7">
+<link rel="stylesheet" href="/static/css/studio.css?v=8">
 </head>
 <body>
 
@@ -176,6 +176,38 @@
   </form>
 </dialog>
 
+<!-- ============ Extrude panel (non-modal, live preview) ============ -->
+<div id="extrudeDialog" style="display:none">
+  <div class="exhead">↑ Extrude</div>
+  <label>Profile <select id="exProfile"></select></label>
+  <label>Direction
+    <select id="exDir">
+      <option value="one">One side</option>
+      <option value="sym">Symmetric</option>
+      <option value="two">Two sides</option>
+    </select></label>
+  <div class="exrow">
+    <label>Distance (mm) <input id="exDist" type="number" step="any" value="10"></label>
+    <label id="exDist2Row" style="display:none">Distance 2 <input id="exDist2" type="number" step="any" value="10"></label>
+  </div>
+  <div class="exrow">
+    <label>Taper (°) <input id="exTaper" type="number" step="any" value="0"></label>
+    <label class="excheck">Flip <input id="exFlip" type="checkbox"></label>
+  </div>
+  <label>Operation
+    <select id="exOp">
+      <option value="new">New body</option>
+      <option value="join">Join</option>
+      <option value="cut">Cut</option>
+      <option value="intersect">Intersect</option>
+    </select></label>
+  <label id="exTargetRow" style="display:none">Combine with <select id="exTarget"></select></label>
+  <div class="exfoot">
+    <button id="exCancel">Cancel</button>
+    <button class="primary" id="exOk">OK</button>
+  </div>
+</div>
+
 <!-- ============ spec editor dialog ============ -->
 <dialog id="specDialog">
   <form id="specForm" method="dialog">
@@ -208,6 +240,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=18"></script>
+<script type="module" src="/static/js/main.js?v=19"></script>
 </body>
 </html>

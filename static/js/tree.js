@@ -7,6 +7,7 @@ import { postJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
 import { loadMesh, showFeatureOverlay, clearHighlight } from './viewport.js';
 import { openFeatDialog } from './dialogs.js';
+import { openExtrude } from './extrude.js';
 import { fmtVol } from './settings.js';
 
 const treeEl = () => document.getElementById('tree');
@@ -97,8 +98,8 @@ function buildRow(doc, f) {
       () => bus.emit('edit-sketch', f));
   }
   if (f.op === 'sketch' || f.op === 'sketch_on_face') {
-    addAct(acts, '⬆', 'make solid — extrude / revolve this sketch',
-      () => openFeatDialog('extrude', [f.id]));
+    addAct(acts, '⬆', 'extrude this sketch into a solid',
+      () => openExtrude(f.id));
   }
   const isBar = doc.rollback === f.id;
   addAct(acts, isBar ? '⤓' : '⤒',

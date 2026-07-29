@@ -309,6 +309,30 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
   border: 1px solid var(--line); border-radius: 4px; padding: 3px 5px;
   font: inherit; font-size: 12px; }
 #skDimEdit input:focus { border-color: var(--accent); outline: none; }
+
+/* Extrude panel — non-modal so the live 3D preview stays visible */
+#extrudeDialog { position: fixed; top: 150px; right: 24px; width: 250px;
+  z-index: 40; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.55); }
+#extrudeDialog .exhead { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+#extrudeDialog label { display: block; margin: 8px 0 3px; color: var(--dim);
+  font-size: 11.5px; }
+#extrudeDialog select, #extrudeDialog input[type=number] { width: 100%;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 6px;
+  color: var(--text); padding: 6px 8px; font: inherit; }
+#extrudeDialog select:focus, #extrudeDialog input:focus { border-color: var(--accent);
+  outline: none; }
+#extrudeDialog .exrow { display: flex; gap: 8px; }
+#extrudeDialog .exrow > label { flex: 1; }
+#extrudeDialog .excheck { display: flex; align-items: center; gap: 6px; }
+#extrudeDialog .excheck input { width: auto; }
+#extrudeDialog .exfoot { display: flex; justify-content: flex-end; gap: 8px;
+  margin-top: 12px; }
+#extrudeDialog .exfoot button { background: var(--panel3); color: var(--text);
+  border: 1px solid var(--line); border-radius: 7px; padding: 7px 15px;
+  cursor: pointer; font: inherit; }
+#extrudeDialog .exfoot .primary { background: var(--accent); color: #08111e;
+  border: none; font-weight: 700; }
 #sketchSide { width: 260px; flex: none; }
 .skpalette { margin-top: 10px; }
 .skhead { color: var(--dim); font-size: 11px; text-transform: uppercase;

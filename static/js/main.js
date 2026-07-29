@@ -13,12 +13,14 @@ import { initSketcher } from './sketcher.js';
 import { initRibbon } from './ribbon.js';
 import { initSplitters } from './splitters.js';
 import { initSettings } from './settings.js';
+import { initExtrude } from './extrude.js';
 
 initSettings();          // load prefs before anything renders (fmtVol/fmtLen)
 initViewport();
 initChat();
 initDialogs();
 initSketcher();
+initExtrude();
 initRibbon();
 initSplitters();
 

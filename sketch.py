@@ -231,9 +231,26 @@ def sketch_on_face(solid, face_center: list, face_normal: list | None = None,
 # Sketch-consuming operations -> solids
 # ---------------------------------------------------------------------------
 
-def extrude_sketch(sketch, amount: float, both: bool = False):
-    """Pull a sketch straight, normal to its plane, into a solid."""
-    return _extrude(sketch, amount=float(amount), both=_to_bool(both, "both"))
+def extrude_sketch(sketch, amount: float, both: bool = False,
+                   amount2: float = 0.0, taper: float = 0.0, flip: bool = False):
+    """Pull a sketch straight, normal to its plane, into a solid (Fusion-style
+    Extrude). Direction:
+      * one side   : amount  (flip = extrude the other way)
+      * symmetric  : both=True — extrude `amount` to EACH side
+      * two sides  : amount one way + amount2 the opposite way
+    `taper` degrees tapers the walls (positive narrows as it extrudes)."""
+    a = float(amount)
+    if _to_bool(flip, "flip"):
+        a = -a
+    t = float(taper or 0.0)
+    if _to_bool(both, "both"):
+        return _extrude(sketch, amount=a, both=True, taper=t)
+    solid = _extrude(sketch, amount=a, taper=t)
+    amt2 = float(amount2 or 0.0)
+    if amt2 > 0:                      # two-sided: opposite direction by amt2
+        s2 = -1.0 if a >= 0 else 1.0
+        solid = solid + _extrude(sketch, amount=s2 * amt2, taper=t)
+    return solid
 
 
 def revolve_sketch(sketch, axis: str = "Z", angle: float = 360.0):

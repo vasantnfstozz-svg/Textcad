@@ -11,6 +11,7 @@ import { openSketchEditor, finishSketch, cancelSketch,
 import { openSettings } from './settings.js';
 import { startPlacement, PLACEABLE } from './placement.js';
 import { beginPlanePick } from './viewport.js';
+import { openExtrude } from './extrude.js';
 
 // sketch draw tools shown in the contextual SKETCH tab's CREATE group (top)
 const SKETCH_TOOLS = {
@@ -145,7 +146,8 @@ function renderRibbon() {
         b.title = item;
         b.innerHTML = `<span class="rico">${OP_ICONS[item] || '□'}</span>` +
                       `<span>${TOOL_NAMES[item] || item}</span>`;
-        b.onclick = PLACEABLE.includes(item) ? () => startPlacement(item)
+        b.onclick = item === 'extrude' ? () => openExtrude()
+          : PLACEABLE.includes(item) ? () => startPlacement(item)
           : () => openFeatDialog(item);
       }
       tools.appendChild(b);

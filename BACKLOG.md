@@ -85,6 +85,24 @@ See the Done section.
 
 ## Done
 
+### Fusion-style Extrude — v1 (2026-07-29)
+Built from the user's Fusion Extrude help text. v1 = profile + direction
+(one/symmetric/two-sides) + flip + taper + operation (new/join/cut/intersect) +
+live preview.
+- [x] Backend: `sketch.extrude_sketch(amount, both, amount2, taper, flip)` —
+  one-side / symmetric (both) / two-sided (amount2, opposite dir) / taper° / flip.
+  8 tests (test_extrude_v1.py); op_catalog auto-exposes the new params.
+- [x] Frontend: dedicated non-modal **Extrude panel** (extrude.js + #extrudeDialog)
+  with Profile / Direction / Distance(+Distance2) / Taper / Flip / Operation +
+  Combine-with target. LIVE PREVIEW: creates the extrude (+fuse/cut/intersect)
+  feature immediately and edits it in place via /api/feature/params through the
+  verified rebuild; Cancel removes the preview, OK keeps it. Create→Extrude and
+  the tree sketch ⬆ action open it. main.js?v=19, css?v=8. 129 tests green.
+  Verified 12/12 in the browser (panel, live volume update, symmetric/taper,
+  Join adds a fuse, OK keeps, Cancel removes).
+- [ ] **Extrude v2 (later):** Start=Offset, Extent=To Object/Through/All
+  (`until`/`target`), Thin Extrude, Start-from-face.
+
 ### Fusion sketch tab rebuild (user-driven, one-by-one) — 2026-07-29
 Target from Fusion screenshots: pick a plane full-size in the viewport → canvas
 fills the plane (no box) → draw tools in the TOP ribbon CREATE group → Finish
