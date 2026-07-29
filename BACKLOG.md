@@ -109,10 +109,13 @@ Sketch. Doing CREATE only for now; MODIFY/CONSTRAINTS later.
   mode when an entity is selected. Also REMOVED the Extrude dialog that
   auto-popped after Finish Sketch (Fusion doesn't; use Create→Extrude when
   ready). setTool deselects. Verified 6/6. main.js?v=16, css?v=6.
-- [ ] **Remaining sketch polish:** unify sketch-on-face into the full-canvas
-  layout (move its depth/Join-Cut out of the side panel), XY/XZ/YZ plane labels,
-  type-while-drawing dimensions, then Spline/Point/Text tools + MODIFY/CONSTRAINTS
-  ribbon groups.
+- [x] **Sketch polish (2026-07-29):** XY/XZ/YZ text-sprite labels on the origin
+  planes in the picker; sketch-on-face unified with the plane layout (green tab,
+  CREATE tools on top, inline dims, face reference outline, slim side strip with
+  only Depth + Join/Cut). Verified 7/7. main.js?v=17, css?v=7.
+- [ ] **Remaining sketch polish (later):** type-while-drawing dimensions (type
+  before the 2nd click, Tab between fields), Spline/Point/Text tools, MODIFY +
+  CONSTRAINTS ribbon groups, and edit-committed-sketch reopening the new UI.
 
 ### Fix: stale-asset caching booted the app half-dead (2026-07-29)
 User reloaded after the ribbon changes and got a blank app (no tabs/ribbon/doc).

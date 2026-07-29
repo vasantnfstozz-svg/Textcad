@@ -285,6 +285,13 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 #sketchDialog.docked.planemode > .row,
 #sketchDialog.docked.planemode > h3 { display: none; }
 #sketchDialog.docked.planemode #sketchWrap { gap: 0; }
+/* face sketch: tools in the ribbon + inline dims too; slim the side panel to
+   just the face note + depth/Join-Cut (which a face sketch genuinely needs) */
+#sketchDialog.docked.facemode #sketchSide { width: 210px; flex: none; }
+#sketchDialog.docked.facemode .skpalette,
+#sketchDialog.docked.facemode #skEntities,
+#sketchDialog.docked.facemode > .row,
+#sketchDialog.docked.facemode > h3 { display: none; }
 /* green contextual tab + prominent Finish Sketch + active draw tool */
 .tab.sketchctx { color: var(--ok); border-bottom: 2px solid var(--ok); }
 #ribbon.sketchctx { background: rgba(67,197,121,.05); }

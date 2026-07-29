@@ -919,9 +919,9 @@ let dimEditFor = -1;
 function updateDimEditor() {
   const el = document.getElementById('skDimEdit');
   if (!el) return;
-  const planeMode = dlg().classList.contains('planemode');
+  const inSketch = dlg().classList.contains('docked');   // plane OR face sketch
   const e = skEnts[selEnt];
-  const ok = planeMode && e && DIM_KEYS[e.kind] && !clicks.length && !ghost;
+  const ok = inSketch && e && DIM_KEYS[e.kind] && !clicks.length && !ghost;
   if (!ok) { el.style.display = 'none'; dimEditFor = -1; return; }
   if (dimEditFor !== selEnt) { buildDimEditor(e); dimEditFor = selEnt; }
   const s = svg().createSVGPoint(); s.x = e.x || 0; s.y = -(e.y || 0);

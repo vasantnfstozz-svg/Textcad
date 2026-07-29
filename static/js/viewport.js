@@ -134,13 +134,29 @@ function endPlanePick() {
   clearOriginPlanes();
 }
 
+function makeLabelSprite(text, color) {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 72;
+  const ctx = c.getContext('2d');
+  ctx.font = 'bold 44px Segoe UI, Arial, sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
+  ctx.fillText(text, 64, 38);
+  const tex = new THREE.CanvasTexture(c);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex,
+    transparent: true, depthTest: false }));
+  const h = Math.max(fitRadius * 0.32, 16);
+  sp.scale.set(h * (128 / 72), h, 1);
+  sp.renderOrder = 1000;
+  return sp;
+}
+
 function buildOriginPlanes() {
   clearOriginPlanes();
   const s = Math.max(fitRadius * 1.15, 55);      // half-size of each plane quad
   const defs = [
-    { plane: 'XY', rot: [0, 0, 0], color: 0x4d7fff },
-    { plane: 'XZ', rot: [Math.PI / 2, 0, 0], color: 0x43c579 },
-    { plane: 'YZ', rot: [0, Math.PI / 2, 0], color: 0xff6b6b },
+    { plane: 'XY', rot: [0, 0, 0], color: 0x4d7fff, lpos: [s * 0.72, s * 0.72, 0] },
+    { plane: 'XZ', rot: [Math.PI / 2, 0, 0], color: 0x43c579, lpos: [s * 0.72, 0, s * 0.72] },
+    { plane: 'YZ', rot: [0, Math.PI / 2, 0], color: 0xff6b6b, lpos: [0, s * 0.72, s * 0.72] },
   ];
   for (const d of defs) {
     const geo = new THREE.PlaneGeometry(2 * s, 2 * s);
@@ -156,11 +172,19 @@ function buildOriginPlanes() {
       new THREE.LineBasicMaterial({ color: d.color, transparent: true, opacity: 0.6 }));
     edge.rotation.set(...d.rot); edge.position.copy(fitCenter);
     edge.renderOrder = 999; scene.add(edge); originPlanes.push(edge);
+    const label = makeLabelSprite(d.plane, d.color);
+    label.position.set(fitCenter.x + d.lpos[0], fitCenter.y + d.lpos[1],
+                       fitCenter.z + d.lpos[2]);
+    scene.add(label); originPlanes.push(label);
   }
 }
 
 function clearOriginPlanes() {
-  for (const o of originPlanes) { scene.remove(o); o.geometry.dispose(); }
+  for (const o of originPlanes) {
+    scene.remove(o);
+    if (o.geometry) o.geometry.dispose();
+    if (o.material && o.material.map) o.material.map.dispose();
+  }
   originPlanes.length = 0;
 }
 
