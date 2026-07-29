@@ -113,11 +113,12 @@ export function cancelSketch() {
   exitMode();
 }
 
-export function openSketchEditor() {
+export function openSketchEditor(plane = 'XY') {
   skOnFace = null; skEditId = null;
   resetEditor();
   document.getElementById('skCreate').textContent = 'Create';
   document.getElementById('skName').value = nextName();
+  document.getElementById('skPlane').value = plane;      // chosen in the viewport
   document.getElementById('skOffset').value = '0';
   document.getElementById('skPlaneRow').style.display = '';
   document.getElementById('skFaceNote').style.display = 'none';

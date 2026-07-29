@@ -94,9 +94,13 @@ Sketch. Doing CREATE only for now; MODIFY/CONSTRAINTS later.
   active-tool highlight (setTool → bus 'sketch-tool'); plane sketches
   (.docked.planemode) hide the side palette/footer/title so the canvas fills the
   work area. Verified 14/14. main.js?v=14, css?v=5.
-- [ ] **Step 2: viewport plane picker** — Create Sketch shows the 3 origin planes
-  (+ pickable planar faces) full-size with "Select a plane or planar face";
-  currently plane defaults to XY.
+- [x] **Step 2: viewport plane picker.** Create Sketch now shows the 3 origin
+  planes (XY blue / XZ green / YZ red, translucent, hover-highlight) full-size in
+  the viewport with a "Select a plane or planar face · Esc to cancel" banner;
+  clicking a plane enters sketch mode on it, clicking a planar face routes to
+  sketch-on-face. viewport.js `beginPlanePick()`; ribbon Create Sketch calls it;
+  openSketchEditor(plane) opens on the chosen plane. Verified 5/5. main.js?v=15.
+  (Polish later: XY/XZ/YZ labels on the planes.)
 - [ ] **Step 3: inline on-canvas dimensions** — type sizes on the canvas; remove
   remaining value boxes (entity cards, Offset prompt). Then unify the
   sketch-on-face flow into the same full-canvas layout (move its depth/Join-Cut

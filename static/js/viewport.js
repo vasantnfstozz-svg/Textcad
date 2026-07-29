@@ -19,6 +19,8 @@ let fitRadius = 100;
 const fitCenter = new THREE.Vector3();
 let pickMode = false;
 let placeCb = null;              // when set, the next viewport click places a shape
+let planePickCb = null;          // when set, click an origin plane / face to sketch on
+const originPlanes = [];         // the 3 clickable origin planes during plane-pick
 const raycaster = new THREE.Raycaster();
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);   // Z=0 workplane
 
@@ -69,11 +71,16 @@ export function initViewport() {
     const moved = Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]);
     downXY = null;
     if (moved > 5) return;                 // that was an orbit-drag
+    if (planePickCb) { planePickAt(e); return; }
     if (placeCb) { placeGround(e); return; }
     if (pickMode) pickAt(e);
   });
+  renderer.domElement.addEventListener('pointermove', e => {
+    if (planePickCb) planePickHover(e);
+  });
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape' && placeCb) cancelPlacement();
+    if (e.key === 'Escape' && planePickCb) endPlanePick();
   });
 }
 
@@ -107,6 +114,90 @@ function placeGround(e) {
   } else {
     cb(0, 0);                              // ray parallel to ground — fall back
   }
+}
+
+/* ---------------- pick a plane (or planar face) to sketch on (Fusion) ------- */
+
+export function beginPlanePick(onPick) {
+  planePickCb = onPick;
+  renderer.domElement.style.cursor = 'pointer';
+  const h = document.getElementById('placeHint');
+  h.textContent = 'Select a plane or planar face · Esc to cancel';
+  h.style.display = 'block';
+  buildOriginPlanes();
+}
+
+function endPlanePick() {
+  planePickCb = null;
+  renderer.domElement.style.cursor = pickMode ? 'crosshair' : '';
+  document.getElementById('placeHint').style.display = 'none';
+  clearOriginPlanes();
+}
+
+function buildOriginPlanes() {
+  clearOriginPlanes();
+  const s = Math.max(fitRadius * 1.15, 55);      // half-size of each plane quad
+  const defs = [
+    { plane: 'XY', rot: [0, 0, 0], color: 0x4d7fff },
+    { plane: 'XZ', rot: [Math.PI / 2, 0, 0], color: 0x43c579 },
+    { plane: 'YZ', rot: [0, Math.PI / 2, 0], color: 0xff6b6b },
+  ];
+  for (const d of defs) {
+    const geo = new THREE.PlaneGeometry(2 * s, 2 * s);
+    const mat = new THREE.MeshBasicMaterial({ color: d.color, transparent: true,
+      opacity: 0.16, side: THREE.DoubleSide, depthWrite: false });
+    const m = new THREE.Mesh(geo, mat);
+    m.rotation.set(...d.rot);
+    m.position.copy(fitCenter);
+    m.userData.plane = d.plane; m.userData.base = 0.16;
+    m.renderOrder = 998;
+    scene.add(m); originPlanes.push(m);
+    const edge = new THREE.LineSegments(new THREE.EdgesGeometry(geo),
+      new THREE.LineBasicMaterial({ color: d.color, transparent: true, opacity: 0.6 }));
+    edge.rotation.set(...d.rot); edge.position.copy(fitCenter);
+    edge.renderOrder = 999; scene.add(edge); originPlanes.push(edge);
+  }
+}
+
+function clearOriginPlanes() {
+  for (const o of originPlanes) { scene.remove(o); o.geometry.dispose(); }
+  originPlanes.length = 0;
+}
+
+function ndcFrom(e) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  return new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1);
+}
+
+function planePickHover(e) {
+  raycaster.setFromCamera(ndcFrom(e), camera);
+  const quads = originPlanes.filter(o => o.userData.plane);
+  const hit = raycaster.intersectObjects(quads, false)[0];
+  for (const q of quads) q.material.opacity = q.userData.base;
+  renderer.domElement.style.cursor = 'pointer';
+  if (hit) { hit.object.material.opacity = 0.4; }
+  else if (mesh && raycaster.intersectObject(mesh, false).length)
+    renderer.domElement.style.cursor = 'crosshair';   // hovering a face
+}
+
+function planePickAt(e) {
+  raycaster.setFromCamera(ndcFrom(e), camera);
+  const quads = originPlanes.filter(o => o.userData.plane);
+  const pHit = raycaster.intersectObjects(quads, false)[0];
+  const fHit = mesh ? raycaster.intersectObject(mesh, false)[0] : null;
+  const cb = planePickCb;
+  // a planar face closer than the plane quad wins (you clicked the solid)
+  if (fHit && (!pHit || fHit.distance < pHit.distance - 1e-3) && MODEL) {
+    const fid = MODEL.faceId[fHit.face.a];
+    const info = MODEL.faces.find(f => f.id === fid);
+    if (info && info.type === 'PLANE' && info.center) {
+      endPlanePick(); cb('face', info); return;
+    }
+  }
+  if (pHit) { const pl = pHit.object.userData.plane; endPlanePick(); cb('plane', pl); return; }
+  // clicked empty space — keep waiting (don't cancel)
 }
 
 export function setView(dir) {

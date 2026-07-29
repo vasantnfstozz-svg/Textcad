@@ -10,6 +10,7 @@ import { openSketchEditor, finishSketch, cancelSketch,
          setSketchTool } from './sketcher.js';
 import { openSettings } from './settings.js';
 import { startPlacement, PLACEABLE } from './placement.js';
+import { beginPlanePick } from './viewport.js';
 
 // sketch draw tools shown in the contextual SKETCH tab's CREATE group (top)
 const SKETCH_TOOLS = {
@@ -22,12 +23,13 @@ const SKETCH_TOOLS = {
 };
 let curSketchTool = null;      // which draw tool is active (for ribbon highlight)
 
-// The Sketch tool: if a flat face is currently picked in the viewport, sketch
-// ON that face (Fusion-style: select a surface, then sketch on it). Otherwise
-// open a blank plane sketch.
+// Create Sketch (Fusion): pick a plane or a planar face IN THE VIEWPORT, then
+// enter sketch mode on it.
 function startSketch() {
-  if (S.pickedFace) bus.emit('sketch-on-face', S.pickedFace);
-  else openSketchEditor();
+  beginPlanePick((kind, data) => {
+    if (kind === 'face') bus.emit('sketch-on-face', data);
+    else openSketchEditor(data);            // data = 'XY' | 'XZ' | 'YZ'
+  });
 }
 
 // named (non-op) actions that live in the ribbon
