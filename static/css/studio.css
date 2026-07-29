@@ -279,10 +279,18 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
   border-top: 1px solid var(--line); z-index: 30;
 }
 #sketchDialog.docked #sketchCanvas { min-height: 0; }
-/* green contextual tab + prominent Finish Sketch */
+/* PLANE sketch: full-canvas, tools live in the top ribbon — hide the side box,
+   footer buttons and title so it fills the plane like Fusion */
+#sketchDialog.docked.planemode #sketchSide,
+#sketchDialog.docked.planemode > .row,
+#sketchDialog.docked.planemode > h3 { display: none; }
+#sketchDialog.docked.planemode #sketchWrap { gap: 0; }
+/* green contextual tab + prominent Finish Sketch + active draw tool */
 .tab.sketchctx { color: var(--ok); border-bottom: 2px solid var(--ok); }
 #ribbon.sketchctx { background: rgba(67,197,121,.05); }
 #ribbon .rbtn[title="Finish Sketch"] { color: var(--ok); font-weight: 700; }
+#ribbon .rbtn.active { color: var(--accent); background: var(--accent2);
+  border-radius: 6px; }
 #sketchSide { width: 260px; flex: none; }
 .skpalette { margin-top: 10px; }
 .skhead { color: var(--dim); font-size: 11px; text-transform: uppercase;

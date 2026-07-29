@@ -85,6 +85,23 @@ See the Done section.
 
 ## Done
 
+### Fusion sketch tab rebuild (user-driven, one-by-one) — 2026-07-29
+Target from Fusion screenshots: pick a plane full-size in the viewport → canvas
+fills the plane (no box) → draw tools in the TOP ribbon CREATE group → Finish
+Sketch. Doing CREATE only for now; MODIFY/CONSTRAINTS later.
+- [x] **Step 1: tools on top + full-plane canvas.** Contextual SKETCH tab CREATE
+  group (Line/Arc, Rectangle, Circle, Polygon, Slot, Ellipse) in the ribbon with
+  active-tool highlight (setTool → bus 'sketch-tool'); plane sketches
+  (.docked.planemode) hide the side palette/footer/title so the canvas fills the
+  work area. Verified 14/14. main.js?v=14, css?v=5.
+- [ ] **Step 2: viewport plane picker** — Create Sketch shows the 3 origin planes
+  (+ pickable planar faces) full-size with "Select a plane or planar face";
+  currently plane defaults to XY.
+- [ ] **Step 3: inline on-canvas dimensions** — type sizes on the canvas; remove
+  remaining value boxes (entity cards, Offset prompt). Then unify the
+  sketch-on-face flow into the same full-canvas layout (move its depth/Join-Cut
+  out of the side panel). Later: Spline/Point/Text/Conic tools, MODIFY + CONSTRAINTS groups.
+
 ### Fix: stale-asset caching booted the app half-dead (2026-07-29)
 User reloaded after the ribbon changes and got a blank app (no tabs/ribbon/doc).
 Root cause: `main.js?v=N` was cache-busted but the ES modules it imports

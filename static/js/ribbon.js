@@ -6,9 +6,21 @@ import { bus } from './bus.js';
 import { OP_ICONS, TOOL_NAMES } from './icons.js';
 import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport,
          actionUndo, actionSpec, loadSample } from './dialogs.js';
-import { openSketchEditor, finishSketch, cancelSketch } from './sketcher.js';
+import { openSketchEditor, finishSketch, cancelSketch,
+         setSketchTool } from './sketcher.js';
 import { openSettings } from './settings.js';
 import { startPlacement, PLACEABLE } from './placement.js';
+
+// sketch draw tools shown in the contextual SKETCH tab's CREATE group (top)
+const SKETCH_TOOLS = {
+  path: { icon: '⌇', name: 'Line/Arc' },
+  rectangle: { icon: '▭', name: 'Rectangle' },
+  circle: { icon: '●', name: 'Circle' },
+  regular_polygon: { icon: '⬡', name: 'Polygon' },
+  slot: { icon: '⬭', name: 'Slot' },
+  ellipse: { icon: '⬯', name: 'Ellipse' },
+};
+let curSketchTool = null;      // which draw tool is active (for ribbon highlight)
 
 // The Sketch tool: if a flat face is currently picked in the viewport, sketch
 // ON that face (Fusion-style: select a surface, then sketch on it). Otherwise
@@ -68,15 +80,21 @@ const TABS = {
 const TAB_ORDER = ['File', 'Create', 'Modify', 'Inspect'];
 let activeTab = 'Create';
 
-// contextual groups shown ONLY while in sketch mode (Fusion's green SKETCH tab)
+// contextual groups shown ONLY while in sketch mode (Fusion's green SKETCH tab):
+// the draw tools live in the top ribbon now, not a side palette.
 const SKETCH_CONTEXT = [
+  ['Create', Object.keys(SKETCH_TOOLS).map(t => ({ t }))],
   ['Finish', [{ a: 'finish_sketch' }, { a: 'cancel_sketch' }]],
 ];
 let sketchMode = false;
 
 export function initRibbon() {
   bus.on('sketch-mode', ({ active }) => {
-    sketchMode = active; renderTabs(); renderRibbon();
+    sketchMode = active; curSketchTool = null; renderTabs(); renderRibbon();
+  });
+  bus.on('sketch-tool', ({ tool }) => {      // reflect the active tool up top
+    curSketchTool = tool;
+    if (sketchMode) renderRibbon();
   });
   renderTabs(); renderRibbon();
 }
@@ -110,7 +128,13 @@ function renderRibbon() {
     const tools = document.createElement('div'); tools.className = 'rtools';
     for (const item of items) {
       const b = document.createElement('button'); b.className = 'rbtn';
-      if (typeof item === 'object') {                 // named action
+      if (item.t) {                                   // a sketch draw tool
+        const s = SKETCH_TOOLS[item.t];
+        b.title = s.name;
+        b.classList.toggle('active', curSketchTool === item.t);
+        b.innerHTML = `<span class="rico">${s.icon}</span><span>${s.name}</span>`;
+        b.onclick = () => setSketchTool(item.t);
+      } else if (typeof item === 'object') {          // named action
         const a = ACTIONS[item.a];
         b.title = a.name;
         b.innerHTML = `<span class="rico">${a.icon}</span><span>${a.name}</span>`;

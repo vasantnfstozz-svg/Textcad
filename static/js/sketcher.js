@@ -85,6 +85,10 @@ function enterMode() {
   sketchActive = true;
   const d = dlg();
   d.classList.add('docked');
+  // plane sketches go full-canvas with tools in the top ribbon (no side box);
+  // face sketches keep the side panel for now (they need depth + Join/Cut)
+  d.classList.toggle('planemode', !skOnFace);
+  d.classList.toggle('facemode', !!skOnFace);
   const dt = document.getElementById('doctabs');
   d.style.top = (dt ? dt.getBoundingClientRect().bottom : 130) + 'px';
   d.show();                          // NON-modal — no backdrop, ribbon stays live
@@ -232,6 +236,7 @@ function setTool(kind) {
   document.querySelectorAll('.skpalette button').forEach(b =>
     b.classList.toggle('active', b.dataset.shape === tool));
   svg().style.cursor = tool ? 'crosshair' : 'default';
+  bus.emit('sketch-tool', { tool });        // highlight the active tool in the ribbon
   updateHint();
   draw();
 }
