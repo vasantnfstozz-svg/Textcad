@@ -40,32 +40,57 @@ function fill(id, items, val) {
 const g = id => document.getElementById(id);
 
 export function openExtrude(preProfile) {
-  const sks = feats().filter(isSketch);
-  if (!sks.length) {
-    bus.emit('msg', 'bot', '⚠ Draw a sketch first (Create → Create Sketch), then Extrude it.');
+  const bods = solids();
+  // FACE MODE (Fusion: click a planar face, press Extrude, pull the arrow).
+  // Capture the pick now — loadMesh() clears it.
+  const face = S.pickedFace;
+  const tip = [...feats()].reverse().find(f => f.volume != null && !f.suppressed);
+  if (face && tip) {
+    st = { mode: 'face', face: { center: face.center, normal: face.normal || [0, 0, 1] },
+           inputId: tip.id, extrudeId: null, opId: null, opType: null, opTarget: null };
+    fill('exProfile', ['(selected face)'], '(selected face)');
+    g('exProfile').disabled = true;
+    fill('exTarget', bods.map(b => b.id), tip.id);
+    g('exDir').value = 'one'; g('exDist').value = '1'; g('exDist2').value = '10';
+    g('exTaper').value = '0'; g('exFlip').checked = false;
+    g('exOp').value = 'join';            // pulling a face usually grows the body
+    g('exDir').disabled = true;          // face extrude is one-directional (drag ± instead)
+    syncRows();
+    panel().style.display = 'block';
+    createPreview();
     return;
   }
-  const bods = solids();
+  const sks = feats().filter(isSketch);
+  if (!sks.length) {
+    bus.emit('msg', 'bot', '⚠ Draw a sketch first (Create → Create Sketch) — or ' +
+      'pick a flat face with ◉ Select — then press Extrude.');
+    return;
+  }
   const profileId = preProfile && sks.some(s => s.id === preProfile) ? preProfile : sks[0].id;
-  st = { sketches: sks.map(s => s.id), extrudeId: null, opId: null,
+  st = { mode: 'sketch', sketches: sks.map(s => s.id), extrudeId: null, opId: null,
          opType: null, opTarget: null, profileId };
   fill('exProfile', st.sketches, profileId);
+  g('exProfile').disabled = false;
   fill('exTarget', bods.map(b => b.id), bods[0] ? bods[0].id : null);
   // start tiny — the solid should grow when YOU pull the arrow, not jump to a
   // big default the moment the panel opens
   g('exDir').value = 'one'; g('exDist').value = '1'; g('exDist2').value = '10';
   g('exTaper').value = '0'; g('exFlip').checked = false; g('exOp').value = 'new';
+  g('exDir').disabled = false;
   syncRows();
   panel().style.display = 'block';
   createPreview();
 }
 
 function params() {
-  const dir = g('exDir').value;
   const d = Number(g('exDist').value) || 0;
-  const d2 = Number(g('exDist2').value) || 0;
   const taper = Number(g('exTaper').value) || 0;
   const flip = g('exFlip').checked;
+  if (st && st.mode === 'face')
+    return { face_center: st.face.center, face_normal: st.face.normal,
+             amount: d, taper, flip };
+  const dir = g('exDir').value;
+  const d2 = Number(g('exDist2').value) || 0;
   if (dir === 'sym') return { amount: d, both: true, amount2: 0, taper, flip: false };
   if (dir === 'two') return { amount: d, both: false, amount2: d2, taper, flip };
   return { amount: d, both: false, amount2: 0, taper, flip };
@@ -88,8 +113,10 @@ function warnIfFailed(doc) {
 async function createPreview() {
   st.extrudeId = uid('extrude');
   warned = false;
+  const op = st.mode === 'face' ? 'extrude_face' : 'extrude';
+  const input = st.mode === 'face' ? st.inputId : st.profileId;
   const doc = await postJSON('/api/feature/add',
-    { id: st.extrudeId, op: 'extrude', params: params(), inputs: [st.profileId] });
+    { id: st.extrudeId, op, params: params(), inputs: [input] });
   warnIfFailed(doc);
   await applyOp();
   loadMesh();
@@ -114,6 +141,11 @@ function entLocalCenter(e) {
 
 // put the drag arrow at the MIDDLE of the profile, perpendicular to its plane
 function placeArrow() {
+  if (st.mode === 'face') {
+    beginExtrudeArrow(st.face.center, st.face.normal,
+                      Number(g('exDist').value) || 1, onDrag, onDragCommit);
+    return;
+  }
   const prof = feats().find(f => f.id === st.profileId);
   if (!prof) return;
   let O, N;

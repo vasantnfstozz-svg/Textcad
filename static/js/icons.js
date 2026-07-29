@@ -10,12 +10,12 @@ export const OP_ICONS = {
   fillet: '◠', chamfer: '◣', shell: '▢',
   fuse: '∪', cut: '−', intersect: '∩',
   sketch: '✎', extrude: '⬆', revolve: '↻', loft: '⏢', sweep: '〜',
-  sketch_on_face: '✎',
+  sketch_on_face: '✎', extrude_face: '⬆',
 };
 
 export const TOOL_NAMES = {
   sketch: 'Sketch', extrude: 'Extrude', revolve: 'Revolve', loft: 'Loft',
-  sweep: 'Sweep',
+  sweep: 'Sweep', extrude_face: 'Extrude face',
   // Fusion-style primitive names (op ids unchanged underneath: plate=box, etc.)
   plate: 'Box', disc: 'Cylinder', ball: 'Sphere', cone: 'Cone', tube: 'Pipe',
   hex_plate: 'Hex', polygon_plate: 'Polygon', revolve_profile: 'Turn profile',

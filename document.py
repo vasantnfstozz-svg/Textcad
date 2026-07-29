@@ -60,6 +60,7 @@ MODIFIERS = {
     "chamfer": blocks.chamfer_edges,
     "shell": blocks.shell_out,
     "extrude": sk.extrude_sketch,       # sketch -> solid
+    "extrude_face": sk.extrude_face,    # solid's picked face -> prism (boss/pocket)
     "revolve": sk.revolve_sketch,       # sketch -> solid
     "sweep": sk.sweep_sketch,           # sketch + path -> solid
     "sketch_on_face": sk.sketch_on_face,  # solid -> sketch (on a picked face)

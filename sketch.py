@@ -231,6 +231,25 @@ def sketch_on_face(solid, face_center: list, face_normal: list | None = None,
 # Sketch-consuming operations -> solids
 # ---------------------------------------------------------------------------
 
+def extrude_face(solid, face_center: list, face_normal: list | None = None,
+                 amount: float = 10.0, taper: float = 0.0, flip: bool = False):
+    """Extrude a planar FACE of an existing solid (the Fusion workflow: click a
+    face, press Extrude, pull the arrow). The face is resolved by GEOMETRY at
+    every rebuild (nearest center + matching normal), so the pick survives
+    parameter changes. Returns ONLY the extruded prism — combine it with the
+    body via fuse (boss) or cut (pocket, with a negative/into amount).
+    The face's exact outline is used — holes and curved edges included."""
+    face = resolve_face(solid, face_center, face_normal)
+    if face.geom_type != b3d.GeomType.PLANE:
+        raise ValueError(
+            f"extrude_face: the picked face is {face.geom_type.name}, not flat "
+            f"— only planar faces can be extruded.")
+    a = float(amount)
+    if _to_bool(flip, "flip"):
+        a = -a
+    return _extrude(face, amount=a, taper=float(taper or 0.0))
+
+
 def extrude_sketch(sketch, amount: float, both: bool = False,
                    amount2: float = 0.0, taper: float = 0.0, flip: bool = False):
     """Pull a sketch straight, normal to its plane, into a solid (Fusion-style

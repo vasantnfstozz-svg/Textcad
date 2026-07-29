@@ -68,3 +68,57 @@ def test_op_catalog_exposes_new_extrude_params():
     names = [p["name"] for p in cat["extrude"]["params"]]
     for p in ("amount", "both", "amount2", "taper", "flip"):
         assert p in names, f"{p} missing from extrude params: {names}"
+    assert "extrude_face" in cat            # face extrude registered
+
+
+# ---------------------------------------------------- extrude a picked FACE
+
+def _box_doc():
+    doc = Document(name="facebox")
+    doc.add("sk", "sketch", {"plane": "XY", "entities": [
+        {"kind": "rectangle", "w": 40, "h": 30}]})
+    doc.add("body", "extrude", {"amount": 10}, inputs=["sk"])
+    return doc
+
+
+def test_extrude_face_boss_joins_exactly():
+    """Fusion flow: pick the top face, pull 8mm, Join."""
+    doc = _box_doc()
+    doc.add("boss", "extrude_face",
+            {"face_center": [0, 0, 10], "face_normal": [0, 0, 1], "amount": 8},
+            inputs=["body"])
+    doc.add("joined", "fuse", inputs=["body", "boss"])
+    assert doc.rebuild(), [f.problems for f in doc.features]
+    assert doc.result().volume == pytest.approx(40 * 30 * 18, rel=1e-6)
+
+
+def test_extrude_face_negative_cut_makes_pocket():
+    """Drag INTO the body + Cut = pocket."""
+    doc = _box_doc()
+    doc.add("plunge", "extrude_face",
+            {"face_center": [0, 0, 10], "face_normal": [0, 0, 1], "amount": -4},
+            inputs=["body"])
+    doc.add("pocket", "cut", inputs=["body", "plunge"])
+    assert doc.rebuild(), [f.problems for f in doc.features]
+    assert doc.result().volume == pytest.approx(40 * 30 * 6, rel=1e-6)
+
+
+def test_extrude_face_keeps_holes_exact():
+    doc = _box_doc()
+    doc.add("bore", "with_center_hole", {"radius": 5}, inputs=["body"])
+    doc.add("boss", "extrude_face",
+            {"face_center": [0, 0, 10], "face_normal": [0, 0, 1], "amount": 8},
+            inputs=["bore"])
+    assert doc.rebuild(), [f.problems for f in doc.features]
+    import math
+    assert doc.get("boss").volume == pytest.approx(
+        (40 * 30 - math.pi * 25) * 8, rel=1e-6)   # hole preserved exactly
+
+
+def test_extrude_face_rejects_curved_face():
+    """Defense-in-depth for API/AI callers (the UI only offers PLANE picks):
+    picking the cylinder side's true face center must raise, not extrude."""
+    import blocks
+    c = blocks.disc(10, 20)                      # side face center is (-10,0,0)
+    with pytest.raises(ValueError, match="not flat"):
+        sk.extrude_face(c, [-10, 0, 0], [-1, 0, 0], amount=5)
