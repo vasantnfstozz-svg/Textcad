@@ -6,7 +6,7 @@ import { S } from './state.js';
 import { bus } from './bus.js';
 import { postJSON, getJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
-import { loadMesh, clearMesh } from './viewport.js';
+import { loadMesh, clearMesh, cancelPlanePick } from './viewport.js';
 
 const featDialog = () => document.getElementById('featDialog');
 const libDialog = () => document.getElementById('libDialog');
@@ -69,6 +69,7 @@ export async function loadSample(name) {
 /* ---------------- Add Feature dialog ---------------- */
 
 export async function openFeatDialog(preselect, preInputs) {
+  cancelPlanePick();                 // a pending plane-pick must not linger
   if (!S.OPS.length) S.OPS = await getJSON('/api/ops');
   const sel = document.getElementById('featOp');
   sel.innerHTML = S.OPS.map(o =>

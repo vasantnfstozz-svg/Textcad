@@ -7,7 +7,7 @@
 import { bus } from './bus.js';
 import { S } from './state.js';
 import { postJSON } from './api.js';
-import { beginPlacement, loadMesh } from './viewport.js';
+import { beginPlacement, loadMesh, cancelPlanePick } from './viewport.js';
 
 // sensible starting dimensions (mm) per primitive — blocks have no defaults
 const DEFAULTS = {
@@ -24,6 +24,7 @@ export const PLACEABLE = Object.keys(DEFAULTS);
 const popup = () => document.getElementById('placePopup');
 
 export function startPlacement(op) {
+  cancelPlanePick();                       // a pending plane-pick must not linger
   closePlacePopup();                       // clear any stale popup from before
   beginPlacement(op, (x, y) => createAt(op, x, y));
 }

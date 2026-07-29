@@ -8,7 +8,7 @@ import { bus } from './bus.js';
 import { postJSON } from './api.js';
 import { loadMesh, beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          beginExtrudeGhost, setExtrudeGhost, hideExtrudeGhost,
-         endExtrudeGhost } from './viewport.js';
+         endExtrudeGhost, cancelPlanePick } from './viewport.js';
 
 // plane normals = the direction a positive offset/extrude actually goes
 // (probed against build123d: XZ offset +7 lands at y=-7, so XZ is -Y!)
@@ -26,36 +26,65 @@ const PLANE_FRAME = {
   YZ: o => ({ origin: [o, 0, 0], x_dir: [0, 1, 0], y_dir: [0, 0, 1], z_dir: [1, 0, 0] }),
 };
 
-/* conservative bbox of one entity in sketch-local coords */
-function entLocalBBox(e) {
-  const x = e.x || 0, y = e.y || 0;
-  const pts = p => p.reduce((b, q) => ({
-    minX: Math.min(b.minX, x + q[0]), maxX: Math.max(b.maxX, x + q[0]),
-    minY: Math.min(b.minY, y + q[1]), maxY: Math.max(b.maxY, y + q[1]) }),
-    { minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9 });
-  if (e.kind === 'polygon' && e.points) return pts(e.points);
-  if (e.kind === 'path' && e.start)
-    return pts([e.start, ...(e.segments || []).flatMap(s => s.via ? [s.via, s.to] : [s.to])]);
-  let rx = 1, ry = 1;
-  if (e.kind === 'circle') rx = ry = e.r || 1;
-  else if (e.kind === 'regular_polygon') rx = ry = e.radius || 1;
-  else if (e.kind === 'ellipse') { rx = e.rx || 1; ry = e.ry || 1; }
-  else if (e.kind === 'rectangle') { rx = (e.w || 1) / 2; ry = (e.h || 1) / 2; }
-  else if (e.kind === 'slot') { rx = (e.length || 1) / 2; ry = (e.height || 1) / 2; }
-  const r = Math.max(rx, ry);                    // rotation-safe (conservative)
-  const rot = e.rotation ? r : 0;
-  return { minX: x - (rot || rx), maxX: x + (rot || rx),
-           minY: y - (rot || ry), maxY: y + (rot || ry) };
+/* outline loop of one sketch entity in local coords — the ghost's TRUE shape */
+function entLoop(e) {
+  const x = e.x || 0, y = e.y || 0, rot = (e.rotation || 0) * Math.PI / 180;
+  const R = (px, py) => [x + px * Math.cos(rot) - py * Math.sin(rot),
+                         y + px * Math.sin(rot) + py * Math.cos(rot)];
+  const ring = (fx, fy, n = 48) => Array.from({ length: n }, (_, i) => {
+    const a = 2 * Math.PI * i / n; return R(fx(a), fy(a));
+  });
+  switch (e.kind) {
+    case 'circle': return ring(a => (e.r || 1) * Math.cos(a), a => (e.r || 1) * Math.sin(a));
+    case 'ellipse': return ring(a => (e.rx || 1) * Math.cos(a), a => (e.ry || 1) * Math.sin(a));
+    case 'regular_polygon': {
+      const n = Math.max(3, e.sides || 6), r = e.radius || 1;
+      return Array.from({ length: n }, (_, i) => {
+        const a = Math.PI / 2 + 2 * Math.PI * i / n;
+        return R(r * Math.cos(a), r * Math.sin(a));
+      });
+    }
+    case 'rectangle': {
+      const w = (e.w || 1) / 2, h = (e.h || 1) / 2;
+      return [R(-w, -h), R(w, -h), R(w, h), R(-w, h)];
+    }
+    case 'slot': {
+      const c = Math.max((e.length || 1) / 2 - (e.height || 1) / 2, 0);
+      const r = (e.height || 1) / 2, pts = [];
+      for (let i = 0; i <= 16; i++) {
+        const a = -Math.PI / 2 + Math.PI * i / 16;
+        pts.push(R(c + r * Math.cos(a), r * Math.sin(a)));
+      }
+      for (let i = 0; i <= 16; i++) {
+        const a = Math.PI / 2 + Math.PI * i / 16;
+        pts.push(R(-c + r * Math.cos(a), r * Math.sin(a)));
+      }
+      return pts;
+    }
+    case 'polygon': return (e.points || []).map(p => [x + p[0], y + p[1]]);
+    case 'path': {
+      if (!e.start) return null;
+      const out = [[x + e.start[0], y + e.start[1]]];
+      for (const s of e.segments || []) {
+        if (s.type === 'arc' && s.via) out.push([x + s.via[0], y + s.via[1]]);
+        out.push([x + s.to[0], y + s.to[1]]);
+      }
+      return out;
+    }
+  }
+  return null;
 }
 
-function profileBBox(entities) {
-  const b = { minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9 };
+/* ghost loops for a plane sketch: each ADD entity's true outline (cut
+   entities are skipped — the ghost is a drag aid, not the verified result) */
+function loopsForEntities(entities) {
+  const loops = [];
   for (const e of entities || []) {
-    const eb = entLocalBBox(e);
-    b.minX = Math.min(b.minX, eb.minX); b.maxX = Math.max(b.maxX, eb.maxX);
-    b.minY = Math.min(b.minY, eb.minY); b.maxY = Math.max(b.maxY, eb.maxY);
+    if (e.mode === 'subtract') continue;
+    const pts = entLoop(e);
+    if (pts && pts.length >= 3) loops.push({ outer: pts, holes: [] });
   }
-  return b.minX > b.maxX ? { minX: -10, maxX: 10, minY: -10, maxY: 10 } : b;
+  return loops;
 }
 
 const OPMAP = { join: 'fuse', cut: 'cut', intersect: 'intersect' };
@@ -79,6 +108,7 @@ function fill(id, items, val) {
 const g = id => document.getElementById(id);
 
 export function openExtrude(preProfile) {
+  cancelPlanePick();                 // a pending plane-pick must not linger
   const bods = solids();
   // FACE MODE (Fusion: click a planar face, press Extrude, pull the arrow).
   // Capture the pick now — loadMesh() clears it.
@@ -156,18 +186,25 @@ function warnIfFailed(doc) {
   } else if (f && f.status === 'ok') warned = false;
 }
 
-async function createPreview() {
-  st.extrudeId = uid('extrude');
+/* opening the tool builds NOTHING — just the arrow + ghost. The extrude
+   feature is created lazily on the first user action (drag release, typed
+   value, or OK). No more surprise 1mm boss the moment the panel opens. */
+function createPreview() {
+  st.extrudeId = null;
   warned = false;
+  placeArrow();
+  setupGhost();
+}
+
+/* create the extrude feature the first time the user actually acts */
+async function ensureCreated() {
+  if (st.extrudeId) return;
+  st.extrudeId = uid('extrude');
   const op = st.mode === 'face' ? 'extrude_face' : 'extrude';
   const input = st.mode === 'face' ? st.inputId : st.profileId;
   const doc = await postJSON('/api/feature/add',
     { id: st.extrudeId, op, params: params(), inputs: [input] });
   warnIfFailed(doc);
-  await applyOp();
-  loadMesh();
-  placeArrow();
-  setupGhost();
 }
 
 /* prepare the instant white ghost box (frame + profile bbox) for dragging */
@@ -180,19 +217,14 @@ async function setupGhost() {
                                face_normal: st.face.normal }) });
       const data = await r.json();
       if (!data.planar || !data.frame) return;
-      const pts = [...data.outer, ...data.holes.flat()];
-      const b = { minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9 };
-      for (const p of pts) {
-        b.minX = Math.min(b.minX, p[0]); b.maxX = Math.max(b.maxX, p[0]);
-        b.minY = Math.min(b.minY, p[1]); b.maxY = Math.max(b.maxY, p[1]);
-      }
-      beginExtrudeGhost(data.frame, b);
+      // the ghost is the REAL face shape — outline + holes (circle stays round)
+      beginExtrudeGhost(data.frame, [{ outer: data.outer, holes: data.holes }]);
     } else {
       const prof = feats().find(f => f.id === st.profileId);
       if (!prof || prof.op !== 'sketch') return;    // plane sketches only
       const plane = prof.params.plane || 'XY';
       const frame = (PLANE_FRAME[plane] || PLANE_FRAME.XY)(Number(prof.params.offset) || 0);
-      beginExtrudeGhost(frame, profileBBox(prof.params.entities));
+      beginExtrudeGhost(frame, loopsForEntities(prof.params.entities));
     }
   } catch (e) { /* ghost is a nicety — dragging still works, just rebuilds on release */ }
 }
@@ -253,6 +285,7 @@ async function onDragCommit(amount) {     // release: ONE real verified rebuild
 }
 
 async function applyOp() {
+  if (!st.extrudeId) return;                  // nothing built yet — nothing to combine
   const op = g('exOp').value;                 // new | join | cut | intersect
   const target = g('exTarget').value;
   if (st.opId && (op === 'new' || st.opType !== op || st.opTarget !== target)) {
@@ -268,11 +301,15 @@ async function applyOp() {
 }
 
 async function apply() {
-  if (!st || !st.extrudeId) return;
+  if (!st) return;
   const pr = params();
-  const doc = await postJSON('/api/feature/params',
-    { feature_id: st.extrudeId, params: pr });
-  warnIfFailed(doc);
+  if (!st.extrudeId) {
+    await ensureCreated();                 // first action creates the feature
+  } else {
+    const doc = await postJSON('/api/feature/params',
+      { feature_id: st.extrudeId, params: pr });
+    warnIfFailed(doc);
+  }
   await applyOp();
   loadMesh();
   // keep the arrow length in sync when the value is typed (not while dragging)
@@ -283,7 +320,8 @@ async function apply() {
 async function changeProfile() {
   await teardown();
   st.profileId = g('exProfile').value;
-  await createPreview();
+  loadMesh();
+  createPreview();
 }
 
 async function teardown() {
@@ -300,10 +338,13 @@ async function cancel() {
 }
 
 function ok() {
+  const created = st && st.extrudeId;
   endExtrudeArrow();
   endExtrudeGhost();
   st = null; panel().style.display = 'none';
-  bus.emit('msg', 'bot', 'Extrude created — editable in the feature tree.');
+  bus.emit('msg', 'bot', created
+    ? 'Extrude created — editable in the feature tree.'
+    : 'Nothing extruded — drag the arrow or type a distance next time.');
 }
 
 export function initExtrude() {

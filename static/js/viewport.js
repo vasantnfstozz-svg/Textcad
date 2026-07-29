@@ -83,6 +83,9 @@ export function initViewport() {
     if (e.key === 'Escape' && placeCb) cancelPlacement();
     if (e.key === 'Escape' && planePickCb) endPlanePick();
   });
+  // any document change (tab switch, sample opened, external design) while a
+  // plane-pick is pending would leave the 3 plane quads stranded — cancel it
+  bus.on('doc-updated', () => { if (planePickCb) endPlanePick(); });
 
   // Extrude arrow drag — capture phase so we grab it BEFORE OrbitControls,
   // then disable orbit for the drag. Move/up on window so the drag survives
@@ -127,6 +130,9 @@ function placeGround(e) {
 }
 
 /* ---------------- pick a plane (or planar face) to sketch on (Fusion) ------- */
+
+/* other tools call this so a pending plane-pick never lingers ("stuck grids") */
+export function cancelPlanePick() { if (planePickCb) endPlanePick(); }
 
 export function beginPlanePick(onPick) {
   planePickCb = onPick;
@@ -269,25 +275,37 @@ export function endExtrudeArrow() {
 
 export function hasExtrudeArrow() { return !!exArrow; }
 
-/* ---------------- extrude GHOST box (instant drag preview) ----------------
-   While dragging, a translucent white box shows where the material will go —
-   no geometry rebuild per frame. The REAL verified extrude builds once on
-   release. frame = {origin, x_dir, y_dir, z_dir}; bbox = profile extents in
-   plane-local coords. */
+/* ---------------- extrude GHOST (instant drag preview) ----------------
+   While dragging, a translucent white prism in the TRUE SHAPE of the profile
+   (outer outline + holes — a circle face gives a circular ghost) shows where
+   the material will go — no geometry rebuild per frame. The REAL verified
+   extrude builds once on release. frame = {origin, x_dir, y_dir, z_dir};
+   loops = [{outer: [[x,y],…], holes: [[[x,y],…],…]}, …] in plane-local coords. */
 let exGhost = null;
 
-export function beginExtrudeGhost(frame, bbox) {
+export function beginExtrudeGhost(frame, loops) {
   endExtrudeGhost();
-  const geo = new THREE.BoxGeometry(1, 1, 1);
+  const shapes = [];
+  for (const L of loops || []) {
+    if (!L.outer || L.outer.length < 3) continue;
+    const s = new THREE.Shape(L.outer.map(p => new THREE.Vector2(p[0], p[1])));
+    for (const h of L.holes || [])
+      if (h.length >= 3) s.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p[0], p[1]))));
+    shapes.push(s);
+  }
+  if (!shapes.length) return;
+  // unit-depth prism of the real profile; drags scale it along the normal
+  const geo = new THREE.ExtrudeGeometry(shapes, { depth: 1, bevelEnabled: false });
   const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-    color: 0xffffff, transparent: true, opacity: 0.13, depthWrite: false }));
-  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo),
+    color: 0xffffff, transparent: true, opacity: 0.13, depthWrite: false,
+    side: THREE.DoubleSide }));
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 15),
     new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.65 }));
   mesh.renderOrder = 990; edges.renderOrder = 991;
   mesh.matrixAutoUpdate = false; edges.matrixAutoUpdate = false;
   scene.add(mesh); scene.add(edges);
   exGhost = {
-    mesh, edges, bbox,
+    mesh, edges,
     x: new THREE.Vector3(...frame.x_dir), y: new THREE.Vector3(...frame.y_dir),
     z: new THREE.Vector3(...frame.z_dir), o: new THREE.Vector3(...frame.origin),
   };
@@ -297,16 +315,10 @@ export function beginExtrudeGhost(frame, bbox) {
 export function setExtrudeGhost(amount) {
   if (!exGhost) return;
   ghostVisible(true);
-  const b = exGhost.bbox;
-  const w = Math.max(b.maxX - b.minX, 0.01), h = Math.max(b.maxY - b.minY, 0.01);
-  const d = Math.max(Math.abs(amount), 0.01);
-  const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2, cz = amount / 2;
-  const center = exGhost.o.clone()
-    .add(exGhost.x.clone().multiplyScalar(cx))
-    .add(exGhost.y.clone().multiplyScalar(cy))
-    .add(exGhost.z.clone().multiplyScalar(cz));
+  const d = Math.abs(amount) < 0.01 ? 0.01 : amount;   // keep non-degenerate
   const m = new THREE.Matrix4().makeBasis(exGhost.x, exGhost.y, exGhost.z)
-    .scale(new THREE.Vector3(w, h, d)).setPosition(center);
+    .scale(new THREE.Vector3(1, 1, d))
+    .setPosition(exGhost.o);
   exGhost.mesh.matrix.copy(m);
   exGhost.edges.matrix.copy(m);
 }
