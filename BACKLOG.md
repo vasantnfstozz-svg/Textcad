@@ -85,6 +85,19 @@ See the Done section.
 
 ## Done
 
+### Fix: stale-asset caching booted the app half-dead (2026-07-29)
+User reloaded after the ribbon changes and got a blank app (no tabs/ribbon/doc).
+Root cause: `main.js?v=N` was cache-busted but the ES modules it imports
+(settings.js, ribbon.js, …) had NO version query, so the browser served fresh
+main.js + STALE cached modules → boot crash. Proven: a fresh browser loaded
+8124 perfectly (4 tabs, 14 buttons, flange verified, 0 errors); only the user's
+cached browser broke.
+- [x] `studio.py` HTTP middleware sends `Cache-Control: no-cache, no-store,
+  must-revalidate` (+ Pragma/Expires) for `/` and `/static/*`, so the browser
+  never runs a stale mix again. Removes the ?v= cache-buster fragility for good.
+  One Ctrl+F5 clears the already-cached copies; after that normal reloads stay
+  fresh. 121 tests green.
+
 ### Fusion-style ribbon — Stage A: reorganization (2026-07-29)
 User goal: make the toolbar make sense / work like Fusion 360 (they sent Fusion
 SOLID + SKETCH screenshots). Stage A = regroup only (op ids unchanged, verified

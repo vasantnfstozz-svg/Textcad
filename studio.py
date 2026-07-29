@@ -43,6 +43,23 @@ DESIGNS = ROOT / "designs"
 DESIGNS.mkdir(exist_ok=True)
 
 app = FastAPI(title="TextCAD Studio")
+
+
+@app.middleware("http")
+async def _no_stale_assets(request, call_next):
+    """Serve the UI (index.html + every JS/CSS module) with no-cache so the
+    browser NEVER runs a stale mix — a fresh main.js importing cached old
+    modules was booting the app half-dead. Local dev app: correctness over
+    cache. This removes the need for ?v= cache-busters entirely."""
+    resp = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.startswith("/static"):
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+    return resp
+
+
 app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
 
