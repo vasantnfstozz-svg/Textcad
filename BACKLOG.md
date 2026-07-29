@@ -96,10 +96,21 @@ pipeline untouched):
   names via TOOL_NAMES) / Advanced (Turn profile · Blade).
 - [x] Modify / Inspect unchanged. Welcome text updated. main.js?v=12. Verified
   in browser (5/5 checks; Create Sketch opens the editor).
-- [ ] **Stage B (next): contextual sketch mode** — Create Sketch → pick
-  plane/face → green SKETCH contextual tab + Sketch Palette (grid/snap/dims
-  toggles) + Finish Sketch; dock the sketch canvas over the viewport instead of
-  a modal. (Stage C later: true draw-in-3D on the plane.)
+### Fusion-style ribbon — Stage B: contextual sketch mode (2026-07-29)
+- [x] Sketching is now a MODE. Create Sketch → the editor shows **non-modal,
+  docked over the main area** (`#sketchDialog.docked`, `.show()` not
+  `showModal()`; top set to the doctabs bottom). A green **"✎ Sketch"
+  contextual tab** replaces the normal tabs (ribbon listens to bus
+  `sketch-mode`), and the ribbon shows a FINISH group: ✓ Finish Sketch (green)
+  + ✕ Cancel Sketch. Finish commits the feature and restores the normal tabs;
+  Cancel discards (confirm if non-empty). sketcher exports setSketchTool/
+  finishSketch/cancelSketch; Esc/Delete handled via a window keydown guarded by
+  sketchActive. main.js?v=13, css?v=4. Verified in browser (8/8, 0 console
+  errors; green tab, docked canvas, draw circle, Finish → feature + tabs back).
+- [ ] **Stage C (later): true draw-in-3D** — draw directly on the tilted plane
+  inside the 3D viewport (2D↔3D projection, camera plane-lock). Also possible
+  refinement: move the draw tools into the contextual ribbon tab (Fusion has
+  them there); they currently live in the docked side palette.
 
 ### Feature: Settings panel + click-to-place primitives (2026-07-28)
 User ask: a settings section for units/drawing prefs, and replace the irritating

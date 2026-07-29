@@ -6,7 +6,7 @@ import { bus } from './bus.js';
 import { OP_ICONS, TOOL_NAMES } from './icons.js';
 import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport,
          actionUndo, actionSpec, loadSample } from './dialogs.js';
-import { openSketchEditor } from './sketcher.js';
+import { openSketchEditor, finishSketch, cancelSketch } from './sketcher.js';
 import { openSettings } from './settings.js';
 import { startPlacement, PLACEABLE } from './placement.js';
 
@@ -30,6 +30,8 @@ const ACTIONS = {
              fn: () => document.getElementById('vSelect').click() },
   settings: { icon: '⚙', name: 'Settings', fn: openSettings },
   newsketch: { icon: '✎', name: 'Create Sketch', fn: startSketch },
+  finish_sketch: { icon: '✓', name: 'Finish Sketch', fn: finishSketch },
+  cancel_sketch: { icon: '✕', name: 'Cancel Sketch', fn: cancelSketch },
   ex_flange:     { icon: '⚙', name: 'Flange',     fn: () => loadSample('flange') },
   ex_impeller:   { icon: '🌀', name: 'Impeller',   fn: () => loadSample('impeller') },
   ex_compressor: { icon: '💨', name: 'Compressor', fn: () => loadSample('compressor') },
@@ -66,11 +68,29 @@ const TABS = {
 const TAB_ORDER = ['File', 'Create', 'Modify', 'Inspect'];
 let activeTab = 'Create';
 
-export function initRibbon() { renderTabs(); renderRibbon(); }
+// contextual groups shown ONLY while in sketch mode (Fusion's green SKETCH tab)
+const SKETCH_CONTEXT = [
+  ['Finish', [{ a: 'finish_sketch' }, { a: 'cancel_sketch' }]],
+];
+let sketchMode = false;
+
+export function initRibbon() {
+  bus.on('sketch-mode', ({ active }) => {
+    sketchMode = active; renderTabs(); renderRibbon();
+  });
+  renderTabs(); renderRibbon();
+}
 
 function renderTabs() {
   const strip = document.getElementById('tabstrip');
   strip.innerHTML = '';
+  if (sketchMode) {                       // contextual: only the green SKETCH tab
+    const b = document.createElement('button');
+    b.className = 'tab active sketchctx';
+    b.textContent = '✎ Sketch';
+    strip.appendChild(b);
+    return;
+  }
   for (const name of TAB_ORDER) {
     const b = document.createElement('button');
     b.className = 'tab' + (name === activeTab ? ' active' : '');
@@ -83,7 +103,9 @@ function renderTabs() {
 function renderRibbon() {
   const rb = document.getElementById('ribbon');
   rb.innerHTML = '';
-  for (const [label, items] of TABS[activeTab]) {
+  rb.classList.toggle('sketchctx', sketchMode);
+  const groups = sketchMode ? SKETCH_CONTEXT : TABS[activeTab];
+  for (const [label, items] of groups) {
     const g = document.createElement('div'); g.className = 'rgroup';
     const tools = document.createElement('div'); tools.className = 'rtools';
     for (const item of items) {

@@ -269,7 +269,20 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 #sketchDialog[open] { display: flex; flex-direction: column; }
 #sketchDialog h3, #sketchDialog .row { flex: none; }
 #sketchWrap { display: flex; gap: 16px; flex: 1; min-height: 0; }
-#sketchSide { overflow-y: auto; }
+#sketchSide { overflow-y: auto; width: 260px; flex: none; }
+/* contextual sketch MODE: dock the editor over the main area (non-modal), so
+   the green SKETCH ribbon tab stays live above it — Fusion's Finish-Sketch flow */
+#sketchDialog.docked {
+  position: fixed; left: 0; right: 0; bottom: 0;   /* top set inline by JS */
+  width: auto; height: auto; max-width: none; max-height: none;
+  margin: 0; border-radius: 0; border: none;
+  border-top: 1px solid var(--line); z-index: 30;
+}
+#sketchDialog.docked #sketchCanvas { min-height: 0; }
+/* green contextual tab + prominent Finish Sketch */
+.tab.sketchctx { color: var(--ok); border-bottom: 2px solid var(--ok); }
+#ribbon.sketchctx { background: rgba(67,197,121,.05); }
+#ribbon .rbtn[title="Finish Sketch"] { color: var(--ok); font-weight: 700; }
 #sketchSide { width: 260px; flex: none; }
 .skpalette { margin-top: 10px; }
 .skhead { color: var(--dim); font-size: 11px; text-transform: uppercase;

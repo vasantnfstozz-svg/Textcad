@@ -30,6 +30,7 @@ let skEnts = [];          // the sketch's entities
 let skOnFace = null;      // {center, normal, inputId} when sketching on a face
 let skEditId = null;      // feature id when EDITING an existing committed sketch
 let faceRef = null;       // {outer:[[x,y]..], holes:[[[x,y]..]..]} reference outline
+let sketchActive = false; // true while in sketch MODE (non-modal, docked)
 let tool = null;          // active drawing tool (entity kind) or null = select
 let clicks = [];          // world-space clicks collected for the current tool
 let ghost = null;         // preview entity while placing
@@ -77,6 +78,37 @@ function nextName() {
   return 'sketch' + n;
 }
 
+/* Enter/leave sketch MODE (Fusion-style): the editor shows NON-modally, docked
+   over the main area, so the contextual green SKETCH ribbon tab stays clickable
+   above it. 'sketch-mode' tells the ribbon to swap in the contextual tab. */
+function enterMode() {
+  sketchActive = true;
+  const d = dlg();
+  d.classList.add('docked');
+  const dt = document.getElementById('doctabs');
+  d.style.top = (dt ? dt.getBoundingClientRect().bottom : 130) + 'px';
+  d.show();                          // NON-modal — no backdrop, ribbon stays live
+  bus.emit('sketch-mode', { active: true });
+}
+
+function exitMode() {
+  sketchActive = false;
+  const d = dlg();
+  d.classList.remove('docked');
+  d.style.top = '';
+  try { d.close(); } catch { /* already closed */ }
+  bus.emit('sketch-mode', { active: false });
+}
+
+// ribbon-facing controls for the contextual SKETCH tab
+export function setSketchTool(kind) { setTool(tool === kind ? null : kind); }
+export function finishSketch() { create(); }
+export function cancelSketch() {
+  if (skEnts.length && !confirm(
+    `Discard this sketch (${skEnts.length} shape${skEnts.length > 1 ? 's' : ''})?`)) return;
+  exitMode();
+}
+
 export function openSketchEditor() {
   skOnFace = null; skEditId = null;
   resetEditor();
@@ -86,7 +118,7 @@ export function openSketchEditor() {
   document.getElementById('skPlaneRow').style.display = '';
   document.getElementById('skFaceNote').style.display = 'none';
   document.getElementById('skFaceExtrude').style.display = 'none';
-  dlg().showModal();
+  enterMode();
   draw();
 }
 
@@ -103,7 +135,7 @@ export function editSketch(feature) {
   document.getElementById('skFaceNote').style.display = 'none';
   document.getElementById('skFaceExtrude').style.display = 'none';
   document.getElementById('skCreate').textContent = 'Save changes';
-  dlg().showModal();
+  enterMode();
   // frame the existing geometry
   const xs = skEnts.map(e => e.x || 0), ys = skEnts.map(e => e.y || 0);
   if (xs.length) {
@@ -130,7 +162,7 @@ export function openSketchOnFace(faceInfo) {
   document.getElementById('skFaceNote').textContent =
     `On the selected face of "${skOnFace.inputId}" (grey = the surface outline). ` +
     `Pick a shape, click to draw, set depth + Join/Cut, then Create.`;
-  dlg().showModal();
+  enterMode();
   draw();
   loadFaceRef(faceInfo);          // fetch + show the selected surface as reference
 }
@@ -158,19 +190,23 @@ export function initSketcher() {
   for (const b of document.querySelectorAll('.skpalette button[data-shape]')) {
     b.onclick = () => setTool(tool === b.dataset.shape ? null : b.dataset.shape);
   }
-  document.getElementById('skCancel').onclick = () => {
-    if (skEnts.length && !confirm(
-      `Discard this sketch (${skEnts.length} shape${skEnts.length > 1 ? 's' : ''})?`)) return;
-    dlg().close();
-  };
+  document.getElementById('skCancel').onclick = cancelSketch;
   document.getElementById('skCreate').onclick = create;
 
-  // Esc must NEVER close the dialog and destroy the sketch: the browser fires
-  // 'cancel' on Esc even when focus escaped to <body> (SVG isn't focusable),
-  // bypassing our keydown handler. Intercept it and cancel the TOOL instead.
+  // non-modal now, but keep guarding the modal 'cancel' (Esc) just in case:
+  // cancel the active TOOL, never destroy the sketch.
   dlg().addEventListener('cancel', e => {
     e.preventDefault();
     setTool(null);
+  });
+  // sketch mode is non-modal, so key handling lives on the window (guarded)
+  window.addEventListener('keydown', e => {
+    if (!sketchActive || e.target.tagName === 'INPUT') return;
+    if (e.key === 'Escape' && (tool || clicks.length)) {
+      e.preventDefault(); setTool(null);
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && selEnt >= 0) {
+      e.preventDefault(); skEnts.splice(selEnt, 1); selEnt = -1; renderEnts();
+    }
   });
   document.getElementById('skMirrorV').onclick = () => modifySel(e => mirrorEntity(e, 'v'));
   document.getElementById('skMirrorH').onclick = () => modifySel(e => mirrorEntity(e, 'h'));
@@ -187,16 +223,6 @@ export function initSketcher() {
   c.addEventListener('pointerup', onUp);
   c.addEventListener('dblclick', onDblClick);
   c.addEventListener('wheel', onWheel, { passive: false });
-
-  dlg().addEventListener('keydown', e => {
-    if (e.target.tagName === 'INPUT') return;
-    if (e.key === 'Escape' && (tool || clicks.length)) {
-      e.preventDefault(); setTool(null);
-    }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && selEnt >= 0) {
-      e.preventDefault(); skEnts.splice(selEnt, 1); selEnt = -1; renderEnts();
-    }
-  });
 }
 
 function setTool(kind) {
@@ -888,7 +914,7 @@ async function create() {
       if (!['kind', 'mode', 'ghostOpen'].includes(k)) o[k] = e[k];
     return o;
   });
-  dlg().close();
+  exitMode();
   const id = document.getElementById('skName').value || 'sketch1';
 
   if (skEditId) {
