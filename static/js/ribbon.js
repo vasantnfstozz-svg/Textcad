@@ -29,12 +29,15 @@ const ACTIONS = {
   select:  { icon: '◉', name: 'Select',
              fn: () => document.getElementById('vSelect').click() },
   settings: { icon: '⚙', name: 'Settings', fn: openSettings },
+  newsketch: { icon: '✎', name: 'Create Sketch', fn: startSketch },
   ex_flange:     { icon: '⚙', name: 'Flange',     fn: () => loadSample('flange') },
   ex_impeller:   { icon: '🌀', name: 'Impeller',   fn: () => loadSample('impeller') },
   ex_compressor: { icon: '💨', name: 'Compressor', fn: () => loadSample('compressor') },
 };
 
-// each tab -> list of [group-label, items]; an item is an op name or {a:action}
+// each tab -> list of [group-label, items]; an item is an op name or {a:action}.
+// Fusion-style: Sketch is NOT a permanent tab — "Create Sketch" lives in the
+// Create tab beside the sketch-consuming ops (Extrude/Revolve/Loft/Sweep).
 const TABS = {
   File: [
     ['Design', [{ a: 'new' }, { a: 'open' }, { a: 'save' }, { a: 'export' }]],
@@ -42,13 +45,10 @@ const TABS = {
     ['Preferences', [{ a: 'settings' }]],
   ],
   Create: [
-    ['Primitives', ['plate', 'disc', 'ball', 'cone', 'tube', 'hex_plate',
-                    'polygon_plate']],
-    ['From profile', ['revolve_profile', 'curved_blade']],
-  ],
-  Sketch: [
-    ['Sketch', ['sketch']],
-    ['From sketch', ['extrude', 'revolve', 'loft', 'sweep']],
+    ['Create', [{ a: 'newsketch' }, 'extrude', 'revolve', 'loft', 'sweep']],
+    ['Primitives', ['plate', 'disc', 'ball', 'cone', 'tube', 'polygon_plate',
+                    'hex_plate']],
+    ['Advanced', ['revolve_profile', 'curved_blade']],
   ],
   Modify: [
     ['Features', ['with_center_hole', 'with_bolt_circle', 'fillet', 'chamfer',
@@ -63,7 +63,7 @@ const TABS = {
     ['History', [{ a: 'undo' }]],
   ],
 };
-const TAB_ORDER = ['File', 'Create', 'Sketch', 'Modify', 'Inspect'];
+const TAB_ORDER = ['File', 'Create', 'Modify', 'Inspect'];
 let activeTab = 'Create';
 
 export function initRibbon() { renderTabs(); renderRibbon(); }
@@ -97,8 +97,7 @@ function renderRibbon() {
         b.title = item;
         b.innerHTML = `<span class="rico">${OP_ICONS[item] || '□'}</span>` +
                       `<span>${TOOL_NAMES[item] || item}</span>`;
-        b.onclick = item === 'sketch' ? startSketch
-          : PLACEABLE.includes(item) ? () => startPlacement(item)
+        b.onclick = PLACEABLE.includes(item) ? () => startPlacement(item)
           : () => openFeatDialog(item);
       }
       tools.appendChild(b);

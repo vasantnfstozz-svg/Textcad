@@ -16,7 +16,8 @@ export const OP_ICONS = {
 export const TOOL_NAMES = {
   sketch: 'Sketch', extrude: 'Extrude', revolve: 'Revolve', loft: 'Loft',
   sweep: 'Sweep',
-  plate: 'Plate', disc: 'Disc', ball: 'Ball', cone: 'Cone', tube: 'Tube',
+  // Fusion-style primitive names (op ids unchanged underneath: plate=box, etc.)
+  plate: 'Box', disc: 'Cylinder', ball: 'Sphere', cone: 'Cone', tube: 'Pipe',
   hex_plate: 'Hex', polygon_plate: 'Polygon', revolve_profile: 'Turn profile',
   curved_blade: 'Blade', with_center_hole: 'Hole',
   with_bolt_circle: 'Bolt circle', fillet: 'Fillet', chamfer: 'Chamfer',

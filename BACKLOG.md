@@ -85,6 +85,22 @@ See the Done section.
 
 ## Done
 
+### Fusion-style ribbon — Stage A: reorganization (2026-07-29)
+User goal: make the toolbar make sense / work like Fusion 360 (they sent Fusion
+SOLID + SKETCH screenshots). Stage A = regroup only (op ids unchanged, verified
+pipeline untouched):
+- [x] Sketch is no longer a permanent tab. "Create Sketch" moved into the Create
+  tab beside the sketch-consumers. Tabs now File · Create · Modify · Inspect.
+- [x] Create tab → Create (Create Sketch · Extrude · Revolve · Loft · Sweep) /
+  Primitives (Box · Cylinder · Sphere · Cone · Pipe · Polygon · Hex — Fusion
+  names via TOOL_NAMES) / Advanced (Turn profile · Blade).
+- [x] Modify / Inspect unchanged. Welcome text updated. main.js?v=12. Verified
+  in browser (5/5 checks; Create Sketch opens the editor).
+- [ ] **Stage B (next): contextual sketch mode** — Create Sketch → pick
+  plane/face → green SKETCH contextual tab + Sketch Palette (grid/snap/dims
+  toggles) + Finish Sketch; dock the sketch canvas over the viewport instead of
+  a modal. (Stage C later: true draw-in-3D on the plane.)
+
 ### Feature: Settings panel + click-to-place primitives (2026-07-28)
 User ask: a settings section for units/drawing prefs, and replace the irritating
 Create-dialog with click-a-point-in-the-viewport placement + a small inline popup.

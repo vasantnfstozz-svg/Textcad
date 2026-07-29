@@ -58,4 +58,4 @@ loadMesh(true);
 addMsg('bot', 'Welcome to TextCAD Studio.\n' +
   '• Describe a part to design it from scratch (opens in a new tab)\n' +
   '• Ask for changes ("make the bore 12mm")\n' +
-  '• Or build manually with the Create / Sketch tabs — every path is verified.');
+  '• Or build manually: Create tab → Create Sketch, primitives, Extrude… — every path is verified.');
