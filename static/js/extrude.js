@@ -9,7 +9,15 @@ import { postJSON } from './api.js';
 import { loadMesh, beginExtrudeArrow, endExtrudeArrow,
          setExtrudeArrowAmount } from './viewport.js';
 
-const PLANE_N = { XY: [0, 0, 1], XZ: [0, 1, 0], YZ: [1, 0, 0] };
+// plane normals = the direction a positive offset/extrude actually goes
+// (probed against build123d: XZ offset +7 lands at y=-7, so XZ is -Y!)
+const PLANE_N = { XY: [0, 0, 1], XZ: [0, -1, 0], YZ: [1, 0, 0] };
+// sketch-local (u,v) + offset o -> world, per plane (probed)
+const PLANE_MAP = {
+  XY: (u, v, o) => [u, v, o],
+  XZ: (u, v, o) => [u, -o, v],
+  YZ: (u, v, o) => [o, u, v],
+};
 
 const OPMAP = { join: 'fuse', cut: 'cut', intersect: 'intersect' };
 const panel = () => document.getElementById('extrudeDialog');
@@ -43,7 +51,9 @@ export function openExtrude(preProfile) {
          opType: null, opTarget: null, profileId };
   fill('exProfile', st.sketches, profileId);
   fill('exTarget', bods.map(b => b.id), bods[0] ? bods[0].id : null);
-  g('exDir').value = 'one'; g('exDist').value = '10'; g('exDist2').value = '10';
+  // start tiny — the solid should grow when YOU pull the arrow, not jump to a
+  // big default the moment the panel opens
+  g('exDir').value = 'one'; g('exDist').value = '1'; g('exDist2').value = '10';
   g('exTaper').value = '0'; g('exFlip').checked = false; g('exOp').value = 'new';
   syncRows();
   panel().style.display = 'block';
@@ -86,7 +96,23 @@ async function createPreview() {
   placeArrow();
 }
 
-// put the drag arrow on the profile, perpendicular to its plane/face
+/* centroid of one entity in sketch-local coords */
+function entLocalCenter(e) {
+  const ox = e.x || 0, oy = e.y || 0;
+  if (e.kind === 'polygon' && e.points && e.points.length) {
+    const n = e.points.length;
+    return [ox + e.points.reduce((s, p) => s + p[0], 0) / n,
+            oy + e.points.reduce((s, p) => s + p[1], 0) / n];
+  }
+  if (e.kind === 'path' && e.start) {
+    const pts = [e.start, ...(e.segments || []).map(s => s.to)];
+    return [ox + pts.reduce((s, p) => s + p[0], 0) / pts.length,
+            oy + pts.reduce((s, p) => s + p[1], 0) / pts.length];
+  }
+  return [ox, oy];
+}
+
+// put the drag arrow at the MIDDLE of the profile, perpendicular to its plane
 function placeArrow() {
   const prof = feats().find(f => f.id === st.profileId);
   if (!prof) return;
@@ -95,11 +121,18 @@ function placeArrow() {
     O = prof.params.face_center || [0, 0, 0];
     N = prof.params.face_normal || [0, 0, 1];
   } else {
-    N = PLANE_N[prof.params.plane || 'XY'] || [0, 0, 1];
+    const plane = prof.params.plane || 'XY';
+    N = PLANE_N[plane] || [0, 0, 1];
     const off = Number(prof.params.offset) || 0;
-    O = [N[0] * off, N[1] * off, N[2] * off];
+    const ents = prof.params.entities || [];
+    let u = 0, v = 0;
+    if (ents.length) {
+      for (const e of ents) { const c = entLocalCenter(e); u += c[0]; v += c[1]; }
+      u /= ents.length; v /= ents.length;
+    }
+    O = (PLANE_MAP[plane] || PLANE_MAP.XY)(u, v, off);
   }
-  beginExtrudeArrow(O, N, Number(g('exDist').value) || 10, onDrag, onDragCommit);
+  beginExtrudeArrow(O, N, Number(g('exDist').value) || 1, onDrag, onDragCommit);
 }
 
 function onDrag(amount) {                 // live while dragging the arrow

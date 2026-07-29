@@ -246,12 +246,16 @@ export function beginExtrudeArrow(originArr, normalArr, amount, onChange, onComm
   }
   arrow.line.renderOrder = 1002; arrow.cone.renderOrder = 1002;
   arrow.renderOrder = 1001;
+  // Fusion-style: the arrow has a FIXED comfortable size and RIDES the
+  // extruded face (base at O + N·amount) — its length does not encode the
+  // distance, so it is always easy to see and grab.
+  const len = Math.max(fitRadius * 0.32, 16);
+  const grabR = Math.max(fitRadius * 0.07, 4.5);
   const hit = new THREE.Mesh(                    // fat invisible grab cylinder
-    new THREE.CylinderGeometry(Math.max(fitRadius * 0.05, 3),
-                               Math.max(fitRadius * 0.05, 3), 1, 10),
+    new THREE.CylinderGeometry(grabR, grabR, 1, 10),
     new THREE.MeshBasicMaterial({ visible: false }));
   scene.add(arrow); scene.add(hit);
-  exArrow = { arrow, hit, O, N, amount: amount || 1, onChange, onCommit,
+  exArrow = { arrow, hit, O, N, amount: amount || 1, len, onChange, onCommit,
               dragging: false, grab: 0 };
   updateArrow();
 }
@@ -265,33 +269,61 @@ export function endExtrudeArrow() {
 
 export function hasExtrudeArrow() { return !!exArrow; }
 
+/* debug snapshot of the arrow gizmo (used by verification scripts) */
+export function extrudeArrowDebug() {
+  if (!exArrow) return null;
+  const v = axisScreenVector();
+  return { amount: exArrow.amount, len: exArrow.len, fitRadius,
+           pxPerMm: Math.hypot(v.x, v.y), camDist: camera.position.distanceTo(fitCenter) };
+}
+
 /* keep the arrow in sync when the distance is typed in the value box */
 export function setExtrudeArrowAmount(a) {
   if (exArrow && !exArrow.dragging) { exArrow.amount = a; updateArrow(); }
 }
 
-/* screen (client) coords of the arrow tip — for driving/aiming the drag */
-export function extrudeArrowTipScreen() {
-  if (!exArrow) return null;
-  const a = exArrow.amount;
-  const dir = a >= 0 ? exArrow.N : exArrow.N.clone().negate();
-  const tip = exArrow.O.clone().add(dir.clone().multiplyScalar(Math.max(Math.abs(a), 0.5)));
-  const v = tip.project(camera);
+function toScreen(p) {
+  const v = p.clone().project(camera);
   const r = renderer.domElement.getBoundingClientRect();
   return { x: r.left + (v.x * 0.5 + 0.5) * r.width,
            y: r.top + (-v.y * 0.5 + 0.5) * r.height };
 }
 
+/* the arrow's pointing direction — always a COPY: multiplying a reference to
+   exArrow.N would scale the stored normal and corrupt every later calculation. */
+function arrowDir() {
+  const d = exArrow.N.clone();
+  return exArrow.amount >= 0 ? d : d.negate();
+}
+function arrowBase() {
+  return exArrow.O.clone().add(exArrow.N.clone().multiplyScalar(exArrow.amount));
+}
+
+/* screen (client) coords of the arrow's middle — for driving/aiming the drag */
+export function extrudeArrowTipScreen() {
+  if (!exArrow) return null;
+  return toScreen(arrowBase().add(arrowDir().multiplyScalar(exArrow.len * 0.5)));
+}
+
+/* screen coords of the arrow base and tip — the true on-screen drag axis */
+export function extrudeArrowAxisScreen() {
+  if (!exArrow) return null;
+  const base = arrowBase();
+  const tip = base.clone().add(arrowDir().multiplyScalar(exArrow.len));
+  return { base: toScreen(base), tip: toScreen(tip) };
+}
+
 function updateArrow() {
-  const a = exArrow.amount;
-  const len = Math.max(Math.abs(a), 0.5);
-  const dir = a >= 0 ? exArrow.N : exArrow.N.clone().negate();
-  const head = Math.min(len * 0.32, Math.max(fitRadius * 0.14, 6));
+  const len = exArrow.len;
+  const dir = arrowDir();                        // copy — never mutate N
+  const base = arrowBase();
+  const head = len * 0.42;                       // big, easy-to-see head
+  exArrow.arrow.position.copy(base);
   exArrow.arrow.setDirection(dir);
   exArrow.arrow.setLength(len, head, head * 0.62);
-  const mid = exArrow.O.clone().add(dir.clone().multiplyScalar(len / 2));
+  const mid = base.clone().add(dir.clone().multiplyScalar(len / 2));
   exArrow.hit.position.copy(mid);
-  exArrow.hit.scale.set(1, len, 1);
+  exArrow.hit.scale.set(1, len * 1.2, 1);        // grab a bit beyond the tip
   exArrow.hit.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
 }
 
@@ -307,17 +339,44 @@ function projectAmount(e) {
   return (b * ee - c * d) / denom;
 }
 
+/* pixels of screen movement per 1mm along the extrude axis. When the axis is
+   nearly head-on to the camera this collapses, so we fall back to the ray
+   method — otherwise dragging follows the arrow's ON-SCREEN direction, which is
+   what makes a gizmo feel predictable. */
+function axisScreenVector() {
+  const a = exArrow.amount;
+  const p0 = toScreen(exArrow.O.clone().add(exArrow.N.clone().multiplyScalar(a)));
+  const p1 = toScreen(exArrow.O.clone().add(exArrow.N.clone().multiplyScalar(a + 1)));
+  return { x: p1.x - p0.x, y: p1.y - p0.y };
+}
+
 function arrowGrab(e) {
   raycaster.setFromCamera(ndcFrom(e), camera);
   if (!raycaster.intersectObject(exArrow.hit, false).length) return false;
   exArrow.dragging = true;
   controls.enabled = false;
-  exArrow.grab = exArrow.amount - projectAmount(e);
+  const v = axisScreenVector();
+  const len2 = v.x * v.x + v.y * v.y;
+  if (len2 > 4) {                        // >2px per mm — screen-space drag
+    exArrow.mode = 'screen';
+    exArrow.axis2D = v; exArrow.axisLen2 = len2;
+    exArrow.startAmount = exArrow.amount;
+    exArrow.startXY = { x: e.clientX, y: e.clientY };
+  } else {                               // axis points at the camera — use the ray
+    exArrow.mode = 'ray';
+    exArrow.grab = exArrow.amount - projectAmount(e);
+  }
   return true;
 }
 
 function arrowDrag(e) {
-  exArrow.amount = projectAmount(e) + exArrow.grab;
+  if (exArrow.mode === 'screen') {
+    const dx = e.clientX - exArrow.startXY.x, dy = e.clientY - exArrow.startXY.y;
+    const along = (dx * exArrow.axis2D.x + dy * exArrow.axis2D.y) / exArrow.axisLen2;
+    exArrow.amount = exArrow.startAmount + along;
+  } else {
+    exArrow.amount = projectAmount(e) + exArrow.grab;
+  }
   updateArrow();
   exArrow.onChange(exArrow.amount);
 }
