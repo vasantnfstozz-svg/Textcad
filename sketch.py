@@ -239,6 +239,21 @@ def sketch_on_face(solid, face_center: list, face_normal: list | None = None,
 # Sketch-consuming operations -> solids
 # ---------------------------------------------------------------------------
 
+def _tapered_extrude(profile, amount: float, taper: float):
+    """extrude() with a FRIENDLY error when a steep taper makes the walls
+    collapse or collide (e.g. a profile with a hole) — OCCT otherwise raises a
+    bare RuntimeError('Unexpected result type')."""
+    try:
+        return _extrude(profile, amount=amount, taper=taper)
+    except RuntimeError as e:
+        if taper:
+            raise ValueError(
+                f"taper {taper}° is too steep for this profile at "
+                f"{abs(amount)}mm — the walls collapse or collide before full "
+                f"height; reduce the taper or the distance") from e
+        raise
+
+
 def extrude_face(solid, face_center: list, face_normal: list | None = None,
                  amount: float = 10.0, taper: float = 0.0, flip: bool = False):
     """Extrude a planar FACE of an existing solid (the Fusion workflow: click a
@@ -255,7 +270,7 @@ def extrude_face(solid, face_center: list, face_normal: list | None = None,
     a = float(amount)
     if _to_bool(flip, "flip"):
         a = -a
-    return _extrude(face, amount=a, taper=float(taper or 0.0))
+    return _tapered_extrude(face, a, float(taper or 0.0))
 
 
 def extrude_sketch(sketch, amount: float, both: bool = False,
@@ -271,12 +286,20 @@ def extrude_sketch(sketch, amount: float, both: bool = False,
         a = -a
     t = float(taper or 0.0)
     if _to_bool(both, "both"):
-        return _extrude(sketch, amount=a, both=True, taper=t)
-    solid = _extrude(sketch, amount=a, taper=t)
+        try:
+            return _extrude(sketch, amount=a, both=True, taper=t)
+        except RuntimeError as e:
+            if t:
+                raise ValueError(
+                    f"taper {t}° is too steep for this profile at {abs(a)}mm — "
+                    f"the walls collapse or collide before full height; reduce "
+                    f"the taper or the distance") from e
+            raise
+    solid = _tapered_extrude(sketch, a, t)
     amt2 = float(amount2 or 0.0)
     if amt2 > 0:                      # two-sided: opposite direction by amt2
         s2 = -1.0 if a >= 0 else 1.0
-        solid = solid + _extrude(sketch, amount=s2 * amt2, taper=t)
+        solid = solid + _tapered_extrude(sketch, s2 * amt2, t)
     return solid
 
 

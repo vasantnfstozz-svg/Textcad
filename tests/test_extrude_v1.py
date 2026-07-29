@@ -38,6 +38,16 @@ def test_two_sided_asymmetric():
     assert _zspan(s) == (-5, 20)
 
 
+def test_collapsing_taper_gives_friendly_error():
+    """A profile WITH A HOLE at steep taper makes OCCT fail with a bare
+    RuntimeError('Unexpected result type') — users must get guidance instead."""
+    s = sk.make_sketch("XY", 0, [
+        {"kind": "rectangle", "w": 40, "h": 20},
+        {"kind": "circle", "r": 5, "mode": "subtract"}])
+    with pytest.raises(ValueError, match="too steep"):
+        sk.extrude_sketch(s, amount=15, taper=35)
+
+
 def test_taper_narrows_and_is_healthy():
     straight = sk.extrude_sketch(_rect(), amount=30)
     tapered = sk.extrude_sketch(_rect(), amount=30, taper=10)

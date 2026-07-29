@@ -249,7 +249,8 @@ function planePickAt(e) {
 
 /* ---------------- draggable Extrude arrow (Fusion-style) ---------------- */
 
-export function beginExtrudeArrow(originArr, normalArr, amount, onChange, onCommit) {
+export function beginExtrudeArrow(originArr, normalArr, amount, onChange, onCommit,
+                                   clampFn) {
   endExtrudeArrow();
   const O = new THREE.Vector3(...originArr);
   const N = new THREE.Vector3(...normalArr).normalize();
@@ -269,7 +270,7 @@ export function beginExtrudeArrow(originArr, normalArr, amount, onChange, onComm
     new THREE.MeshBasicMaterial({ visible: false }));
   scene.add(arrow); scene.add(hit);
   exArrow = { arrow, hit, O, N, amount: amount || 1, len, onChange, onCommit,
-              dragging: false, grab: 0 };
+              clampFn, dragging: false, grab: 0 };
   updateArrow();
 }
 
@@ -303,11 +304,13 @@ export function beginExtrudeGhost(frame, loops) {
   if (!shapes.length) return;
   // unit-depth prism of the real profile; drags scale it along the normal
   const geo = new THREE.ExtrudeGeometry(shapes, { depth: 1, bevelEnabled: false });
+  // depthTest OFF: the ghost must stay visible when pushed INSIDE the body
   const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
     color: 0xffffff, transparent: true, opacity: 0.13, depthWrite: false,
-    side: THREE.DoubleSide }));
+    depthTest: false, side: THREE.DoubleSide }));
   const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 15),
-    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.65 }));
+    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true,
+      opacity: 0.65, depthTest: false }));
   mesh.renderOrder = 990; edges.renderOrder = 991;
   mesh.matrixAutoUpdate = false; edges.matrixAutoUpdate = false;
   scene.add(mesh); scene.add(edges);
@@ -373,7 +376,8 @@ export function endExtrudeGhost() {
    protocol as the arrow: drag = ghost only, release = one verified rebuild. */
 let taperRing = null;
 
-export function beginTaperRing(centerArr, frame, radius, taper0, onChange, onCommit) {
+export function beginTaperRing(centerArr, frame, radius, taper0, onChange, onCommit,
+                               clampFn) {
   endTaperRing();
   const C = new THREE.Vector3(...centerArr);
   const X = new THREE.Vector3(...frame.x_dir).normalize();
@@ -400,7 +404,7 @@ export function beginTaperRing(centerArr, frame, radius, taper0, onChange, onCom
   handle.renderOrder = 1002;
   scene.add(circle); scene.add(handle); scene.add(grab);
   taperRing = { circle, handle, grab, C, X, Y, N, R, ringAt,
-                taper: taper0 || 0, onChange, onCommit,
+                taper: taper0 || 0, onChange, onCommit, clampFn,
                 dragging: false, grabOff: 0 };
   taperRingPlace();
 }
@@ -454,7 +458,9 @@ function taperDrag(e) {
   let t = taperAngleAt(e) + taperRing.grabOff;
   while (t > 180) t -= 360;
   while (t < -180) t += 360;
-  taperRing.taper = Math.max(-60, Math.min(60, t));
+  t = Math.max(-60, Math.min(60, t));
+  if (taperRing.clampFn) t = taperRing.clampFn(t);   // barrier (wall collapse)
+  taperRing.taper = t;
   taperRingPlace();
   taperRing.onChange(taperRing.taper);
 }
@@ -566,13 +572,16 @@ function arrowGrab(e) {
 }
 
 function arrowDrag(e) {
+  let a;
   if (exArrow.mode === 'screen') {
     const dx = e.clientX - exArrow.startXY.x, dy = e.clientY - exArrow.startXY.y;
     const along = (dx * exArrow.axis2D.x + dy * exArrow.axis2D.y) / exArrow.axisLen2;
-    exArrow.amount = exArrow.startAmount + along;
+    a = exArrow.startAmount + along;
   } else {
-    exArrow.amount = projectAmount(e) + exArrow.grab;
+    a = projectAmount(e) + exArrow.grab;
   }
+  if (exArrow.clampFn) a = exArrow.clampFn(a);   // barrier (e.g. taper collapse)
+  exArrow.amount = a;
   updateArrow();
   exArrow.onChange(exArrow.amount);
 }

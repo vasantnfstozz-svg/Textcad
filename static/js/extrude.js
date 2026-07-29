@@ -208,6 +208,39 @@ async function ensureCreated() {
   warnIfFailed(doc);
 }
 
+/* safe shrink radius for taper: how far the walls can move inward before the
+   profile collapses (inradius proxy) or a hole wall collides (half min wall) */
+function safeRadius(loops) {
+  let minR = Infinity;
+  for (const L of loops || []) {
+    if (!L.outer || L.outer.length < 3) continue;
+    let cx = 0, cy = 0;
+    for (const p of L.outer) { cx += p[0]; cy += p[1]; }
+    cx /= L.outer.length; cy /= L.outer.length;
+    for (const p of L.outer)
+      minR = Math.min(minR, Math.hypot(p[0] - cx, p[1] - cy));
+    for (const h of L.holes || [])
+      for (const hp of h)
+        for (const op of L.outer)
+          minR = Math.min(minR, Math.hypot(hp[0] - op[0], hp[1] - op[1]) / 2);
+  }
+  return isFinite(minR) ? Math.max(minR, 0.1) : null;
+}
+
+/* barriers: keep the drag inside geometrically-buildable territory */
+function clampAmountFn(a) {
+  const t = Number(g('exTaper').value) || 0;
+  if (t <= 0 || !st || !st.safeR) return a;
+  const maxA = 0.9 * st.safeR / Math.tan(t * Math.PI / 180);
+  return Math.max(-maxA, Math.min(maxA, a));
+}
+function clampTaperFn(t) {
+  if (t <= 0 || !st || !st.safeR) return t;
+  const a = Math.abs(Number(g('exDist').value) || 1);
+  const tmax = Math.atan(0.9 * st.safeR / Math.max(a, 0.01)) * 180 / Math.PI;
+  return Math.min(t, tmax);
+}
+
 /* prepare the instant white ghost box (frame + profile bbox) for dragging */
 async function setupGhost() {
   try {
@@ -219,14 +252,17 @@ async function setupGhost() {
       const data = await r.json();
       if (!data.planar || !data.frame) return;
       // the ghost is the REAL face shape — outline + holes (circle stays round)
-      beginExtrudeGhost(data.frame, [{ outer: data.outer, holes: data.holes }]);
-      setupTaperRing(data.frame, [{ outer: data.outer, holes: data.holes }]);
+      const loops = [{ outer: data.outer, holes: data.holes }];
+      st.safeR = safeRadius(loops);
+      beginExtrudeGhost(data.frame, loops);
+      setupTaperRing(data.frame, loops);
     } else {
       const prof = feats().find(f => f.id === st.profileId);
       if (!prof || prof.op !== 'sketch') return;    // plane sketches only
       const plane = prof.params.plane || 'XY';
       const frame = (PLANE_FRAME[plane] || PLANE_FRAME.XY)(Number(prof.params.offset) || 0);
       const loops = loopsForEntities(prof.params.entities);
+      st.safeR = safeRadius(loops);
       beginExtrudeGhost(frame, loops);
       setupTaperRing(frame, loops);
     }
@@ -256,7 +292,8 @@ function setupTaperRing(frame, loops) {
       g('exTaper').value = Math.round(t * 10) / 10;
       await apply();
       hideExtrudeGhost();
-    });
+    },
+    clampTaperFn);                           // barrier: stop before collapse
 }
 
 /* centroid of one entity in sketch-local coords */
@@ -279,7 +316,8 @@ function entLocalCenter(e) {
 function placeArrow() {
   if (st.mode === 'face') {
     beginExtrudeArrow(st.face.center, st.face.normal,
-                      Number(g('exDist').value) || 1, onDrag, onDragCommit);
+                      Number(g('exDist').value) || 1, onDrag, onDragCommit,
+                      clampAmountFn);
     return;
   }
   const prof = feats().find(f => f.id === st.profileId);
@@ -300,7 +338,8 @@ function placeArrow() {
     }
     O = (PLANE_MAP[plane] || PLANE_MAP.XY)(u, v, off);
   }
-  beginExtrudeArrow(O, N, Number(g('exDist').value) || 1, onDrag, onDragCommit);
+  beginExtrudeArrow(O, N, Number(g('exDist').value) || 1, onDrag, onDragCommit,
+                    clampAmountFn);
 }
 
 function onDrag(amount) {
@@ -330,16 +369,35 @@ async function applyOp() {
   }
 }
 
+let reverting = false;
 async function apply() {
   if (!st) return;
   const pr = params();
+  let doc;
   if (!st.extrudeId) {
     await ensureCreated();                 // first action creates the feature
+    doc = S.lastDoc;
   } else {
-    const doc = await postJSON('/api/feature/params',
+    doc = await postJSON('/api/feature/params',
       { feature_id: st.extrudeId, params: pr });
     warnIfFailed(doc);
   }
+  // safety net: if the build failed (e.g. a typed taper collapses the walls),
+  // snap back to the last values that worked instead of leaving a red tree
+  const f = doc && (doc.features || []).find(x => x.id === st.extrudeId);
+  if (f && f.status === 'failed' && !reverting && st.lastGood) {
+    reverting = true;
+    g('exDist').value = st.lastGood.amount;
+    g('exTaper').value = st.lastGood.taper;
+    bus.emit('msg', 'bot', `⚠ ${(f.problems || ['build failed'])[0]} — snapped ` +
+      `back to ${st.lastGood.amount}mm / ${st.lastGood.taper}°.`);
+    await apply();
+    reverting = false;
+    return;
+  }
+  if (f && f.status === 'ok')
+    st.lastGood = { amount: Number(g('exDist').value) || 1,
+                    taper: Number(g('exTaper').value) || 0 };
   await applyOp();
   loadMesh();
   // keep the gizmos in sync when values are typed (not while dragging)
