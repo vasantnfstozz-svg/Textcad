@@ -7,8 +7,9 @@ import { S } from './state.js';
 import { bus } from './bus.js';
 import { postJSON } from './api.js';
 import { loadMesh, beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
-         beginExtrudeGhost, setExtrudeGhost, hideExtrudeGhost,
-         endExtrudeGhost, cancelPlanePick } from './viewport.js';
+         beginExtrudeGhost, setExtrudeGhost, hideExtrudeGhost, endExtrudeGhost,
+         beginTaperRing, setTaperRingAngle, endTaperRing,
+         cancelPlanePick } from './viewport.js';
 
 // plane normals = the direction a positive offset/extrude actually goes
 // (probed against build123d: XZ offset +7 lands at y=-7, so XZ is -Y!)
@@ -219,14 +220,43 @@ async function setupGhost() {
       if (!data.planar || !data.frame) return;
       // the ghost is the REAL face shape — outline + holes (circle stays round)
       beginExtrudeGhost(data.frame, [{ outer: data.outer, holes: data.holes }]);
+      setupTaperRing(data.frame, [{ outer: data.outer, holes: data.holes }]);
     } else {
       const prof = feats().find(f => f.id === st.profileId);
       if (!prof || prof.op !== 'sketch') return;    // plane sketches only
       const plane = prof.params.plane || 'XY';
       const frame = (PLANE_FRAME[plane] || PLANE_FRAME.XY)(Number(prof.params.offset) || 0);
-      beginExtrudeGhost(frame, loopsForEntities(prof.params.entities));
+      const loops = loopsForEntities(prof.params.entities);
+      beginExtrudeGhost(frame, loops);
+      setupTaperRing(frame, loops);
     }
   } catch (e) { /* ghost is a nicety — dragging still works, just rebuilds on release */ }
+}
+
+/* Fusion's dashed taper circle: centered on the profile, drag the handle
+   around it to set the taper angle — ghost only while dragging, one rebuild
+   on release, value box stays in sync. */
+function setupTaperRing(frame, loops) {
+  let cx = 0, cy = 0, np = 0, maxR = 0;
+  for (const L of loops || []) for (const p of L.outer) { cx += p[0]; cy += p[1]; np++; }
+  if (!np) return;
+  cx /= np; cy /= np;
+  for (const L of loops) for (const p of L.outer)
+    maxR = Math.max(maxR, Math.hypot(p[0] - cx, p[1] - cy));
+  const X = frame.x_dir, Y = frame.y_dir, O = frame.origin;
+  const center = [O[0] + X[0] * cx + Y[0] * cy,
+                  O[1] + X[1] * cx + Y[1] * cy,
+                  O[2] + X[2] * cx + Y[2] * cy];
+  beginTaperRing(center, frame, maxR * 1.35, Number(g('exTaper').value) || 0,
+    t => {                                   // dragging: ghost + value box only
+      g('exTaper').value = Math.round(t * 10) / 10;
+      setExtrudeGhost(Number(g('exDist').value) || 1, t);
+    },
+    async t => {                             // release: ONE verified rebuild
+      g('exTaper').value = Math.round(t * 10) / 10;
+      await apply();
+      hideExtrudeGhost();
+    });
 }
 
 /* centroid of one entity in sketch-local coords */
@@ -276,7 +306,7 @@ function placeArrow() {
 function onDrag(amount) {
   // while dragging: move ONLY the instant white ghost box — no rebuild, no lag
   g('exDist').value = Math.round(amount * 100) / 100;
-  setExtrudeGhost(amount);
+  setExtrudeGhost(amount, Number(g('exTaper').value) || 0);
 }
 async function onDragCommit(amount) {     // release: ONE real verified rebuild
   g('exDist').value = Math.round(amount * 100) / 100;
@@ -312,9 +342,10 @@ async function apply() {
   }
   await applyOp();
   loadMesh();
-  // keep the arrow length in sync when the value is typed (not while dragging)
+  // keep the gizmos in sync when values are typed (not while dragging)
   const signed = pr.flip ? -pr.amount : pr.amount;
   setExtrudeArrowAmount(signed);
+  setTaperRingAngle(pr.taper || 0);
 }
 
 async function changeProfile() {
@@ -327,6 +358,7 @@ async function changeProfile() {
 async function teardown() {
   endExtrudeArrow();
   endExtrudeGhost();
+  endTaperRing();
   if (st && st.opId) await postJSON('/api/feature/remove', { feature_id: st.opId });
   if (st && st.extrudeId) await postJSON('/api/feature/remove', { feature_id: st.extrudeId });
   if (st) { st.opId = st.opType = st.opTarget = st.extrudeId = null; }
@@ -341,6 +373,7 @@ function ok() {
   const created = st && st.extrudeId;
   endExtrudeArrow();
   endExtrudeGhost();
+  endTaperRing();
   st = null; panel().style.display = 'none';
   bus.emit('msg', 'bot', created
     ? 'Extrude created — editable in the feature tree.'

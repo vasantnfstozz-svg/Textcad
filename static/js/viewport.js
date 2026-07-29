@@ -87,14 +87,21 @@ export function initViewport() {
   // plane-pick is pending would leave the 3 plane quads stranded — cancel it
   bus.on('doc-updated', () => { if (planePickCb) endPlanePick(); });
 
-  // Extrude arrow drag — capture phase so we grab it BEFORE OrbitControls,
-  // then disable orbit for the drag. Move/up on window so the drag survives
-  // the pointer leaving the canvas.
+  // Extrude gizmo drags (arrow + taper ring) — capture phase so we grab them
+  // BEFORE OrbitControls, then disable orbit for the drag. Move/up on window
+  // so the drag survives the pointer leaving the canvas.
   renderer.domElement.addEventListener('pointerdown', e => {
-    if (exArrow && !exArrow.dragging && arrowGrab(e)) e.stopPropagation();
+    if (exArrow && !exArrow.dragging && arrowGrab(e)) { e.stopPropagation(); return; }
+    if (taperRing && !taperRing.dragging && taperGrab(e)) e.stopPropagation();
   }, true);
-  window.addEventListener('pointermove', e => { if (exArrow && exArrow.dragging) arrowDrag(e); });
-  window.addEventListener('pointerup', e => { if (exArrow && exArrow.dragging) arrowRelease(e); });
+  window.addEventListener('pointermove', e => {
+    if (exArrow && exArrow.dragging) arrowDrag(e);
+    else if (taperRing && taperRing.dragging) taperDrag(e);
+  });
+  window.addEventListener('pointerup', e => {
+    if (exArrow && exArrow.dragging) arrowRelease(e);
+    else if (taperRing && taperRing.dragging) taperRelease(e);
+  });
 }
 
 /* ---------------- click-to-place on the Z=0 ground plane ---------------- */
@@ -304,18 +311,42 @@ export function beginExtrudeGhost(frame, loops) {
   mesh.renderOrder = 990; edges.renderOrder = 991;
   mesh.matrixAutoUpdate = false; edges.matrixAutoUpdate = false;
   scene.add(mesh); scene.add(edges);
+  // centroid + mean radius of the profile (for the taper morph)
+  let cx = 0, cy = 0, np = 0;
+  for (const L of loops) for (const p of L.outer) { cx += p[0]; cy += p[1]; np++; }
+  cx /= np || 1; cy /= np || 1;
+  let mr = 0;
+  for (const L of loops) for (const p of L.outer)
+    mr += Math.hypot(p[0] - cx, p[1] - cy);
+  mr = Math.max(mr / (np || 1), 0.5);
   exGhost = {
-    mesh, edges,
+    mesh, edges, cx, cy, meanR: mr, lastTaper: null, lastAmount: null,
+    basePos: Float32Array.from(geo.attributes.position.array),
     x: new THREE.Vector3(...frame.x_dir), y: new THREE.Vector3(...frame.y_dir),
     z: new THREE.Vector3(...frame.z_dir), o: new THREE.Vector3(...frame.origin),
   };
   ghostVisible(false);
 }
 
-export function setExtrudeGhost(amount) {
+export function setExtrudeGhost(amount, taper = 0) {
   if (!exGhost) return;
   ghostVisible(true);
   const d = Math.abs(amount) < 0.01 ? 0.01 : amount;   // keep non-degenerate
+  // taper morph: shrink cross-sections toward the profile centroid with height
+  // (approximate — the ghost is a drag aid; the real solid is exact)
+  if (exGhost.basePos && (taper !== exGhost.lastTaper || amount !== exGhost.lastAmount)) {
+    const pos = exGhost.mesh.geometry.attributes.position;
+    const base = exGhost.basePos;
+    const k = Math.tan((taper || 0) * Math.PI / 180) * Math.abs(d) / exGhost.meanR;
+    for (let i = 0; i < pos.count; i++) {
+      const x = base[i * 3], y = base[i * 3 + 1], z = base[i * 3 + 2];
+      const s = Math.max(1 - k * z, 0.03);
+      pos.setXYZ(i, exGhost.cx + (x - exGhost.cx) * s,
+                    exGhost.cy + (y - exGhost.cy) * s, z);
+    }
+    pos.needsUpdate = true;
+    exGhost.lastTaper = taper; exGhost.lastAmount = amount;
+  }
   const m = new THREE.Matrix4().makeBasis(exGhost.x, exGhost.y, exGhost.z)
     .scale(new THREE.Vector3(1, 1, d))
     .setPosition(exGhost.o);
@@ -334,6 +365,104 @@ export function endExtrudeGhost() {
   scene.remove(exGhost.mesh); scene.remove(exGhost.edges);
   exGhost.mesh.geometry.dispose(); exGhost.edges.geometry.dispose();
   exGhost = null;
+}
+
+/* ---------------- taper RING (Fusion's dashed circle + handle) -------------
+   A dashed circle in the profile plane with a round handle; dragging the
+   handle around the ring changes the taper angle (± around zero). Same ghost
+   protocol as the arrow: drag = ghost only, release = one verified rebuild. */
+let taperRing = null;
+
+export function beginTaperRing(centerArr, frame, radius, taper0, onChange, onCommit) {
+  endTaperRing();
+  const C = new THREE.Vector3(...centerArr);
+  const X = new THREE.Vector3(...frame.x_dir).normalize();
+  const Y = new THREE.Vector3(...frame.y_dir).normalize();
+  const N = new THREE.Vector3(...frame.z_dir).normalize();
+  const R = Math.max(radius, 8);
+  const ringAt = deg => {
+    const a = deg * Math.PI / 180;
+    return C.clone().add(X.clone().multiplyScalar(R * Math.cos(a)))
+                    .add(Y.clone().multiplyScalar(R * Math.sin(a)));
+  };
+  const pts = Array.from({ length: 97 }, (_, i) => ringAt(i * 360 / 96));
+  const circGeo = new THREE.BufferGeometry().setFromPoints(pts);
+  const circle = new THREE.Line(circGeo, new THREE.LineDashedMaterial({
+    color: 0x4da3ff, dashSize: 2.4, gapSize: 1.6, transparent: true,
+    opacity: 0.9, depthTest: false }));
+  circle.computeLineDistances();
+  circle.renderOrder = 1001;
+  const hr = Math.max(R * 0.055, 2.2);
+  const handle = new THREE.Mesh(new THREE.SphereGeometry(hr, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0x4da3ff, depthTest: false }));
+  const grab = new THREE.Mesh(new THREE.SphereGeometry(hr * 2.6, 8, 6),
+    new THREE.MeshBasicMaterial({ visible: false }));
+  handle.renderOrder = 1002;
+  scene.add(circle); scene.add(handle); scene.add(grab);
+  taperRing = { circle, handle, grab, C, X, Y, N, R, ringAt,
+                taper: taper0 || 0, onChange, onCommit,
+                dragging: false, grabOff: 0 };
+  taperRingPlace();
+}
+
+function taperRingPlace() {
+  const p = taperRing.ringAt(taperRing.taper);
+  taperRing.handle.position.copy(p);
+  taperRing.grab.position.copy(p);
+}
+
+export function setTaperRingAngle(deg) {
+  if (taperRing && !taperRing.dragging) { taperRing.taper = deg; taperRingPlace(); }
+}
+
+export function endTaperRing() {
+  if (!taperRing) return;
+  for (const o of [taperRing.circle, taperRing.handle, taperRing.grab]) {
+    scene.remove(o); o.geometry.dispose();
+  }
+  taperRing = null;
+}
+
+export function hasTaperRing() { return !!taperRing; }
+
+/* screen position of a ring point at `deg` — lets tests drive angular drags */
+export function taperRingPointScreen(deg) {
+  if (!taperRing) return null;
+  return toScreen(taperRing.ringAt(deg));
+}
+
+/* pointer ray -> angle (deg) around the ring in its plane */
+function taperAngleAt(e) {
+  raycaster.setFromCamera(ndcFrom(e), camera);
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(taperRing.N, taperRing.C);
+  const hit = new THREE.Vector3();
+  if (!raycaster.ray.intersectPlane(plane, hit)) return taperRing.taper;
+  const v = hit.sub(taperRing.C);
+  return Math.atan2(v.dot(taperRing.Y), v.dot(taperRing.X)) * 180 / Math.PI;
+}
+
+function taperGrab(e) {
+  raycaster.setFromCamera(ndcFrom(e), camera);
+  if (!raycaster.intersectObject(taperRing.grab, false).length) return false;
+  taperRing.dragging = true;
+  controls.enabled = false;
+  taperRing.grabOff = taperRing.taper - taperAngleAt(e);
+  return true;
+}
+
+function taperDrag(e) {
+  let t = taperAngleAt(e) + taperRing.grabOff;
+  while (t > 180) t -= 360;
+  while (t < -180) t += 360;
+  taperRing.taper = Math.max(-60, Math.min(60, t));
+  taperRingPlace();
+  taperRing.onChange(taperRing.taper);
+}
+
+function taperRelease() {
+  taperRing.dragging = false;
+  controls.enabled = true;
+  taperRing.onCommit(taperRing.taper);
 }
 
 /* debug snapshot of the arrow gizmo (used by verification scripts) */
