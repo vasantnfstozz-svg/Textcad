@@ -44,6 +44,9 @@ export function fmtVol(mm3) {
   return `${v} ${u.label}³`;
 }
 
+/* a value typed in the DISPLAY unit -> mm (the working unit) */
+export function toMm(v) { return v / UNITS[SETTINGS.unit].f; }
+
 function round(v, dp) {
   const k = 10 ** dp;
   return Math.round(v * k) / k;

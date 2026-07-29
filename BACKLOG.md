@@ -101,10 +101,18 @@ Sketch. Doing CREATE only for now; MODIFY/CONSTRAINTS later.
   sketch-on-face. viewport.js `beginPlanePick()`; ribbon Create Sketch calls it;
   openSketchEditor(plane) opens on the chosen plane. Verified 5/5. main.js?v=15.
   (Polish later: XY/XZ/YZ labels on the planes.)
-- [ ] **Step 3: inline on-canvas dimensions** — type sizes on the canvas; remove
-  remaining value boxes (entity cards, Offset prompt). Then unify the
-  sketch-on-face flow into the same full-canvas layout (move its depth/Join-Cut
-  out of the side panel). Later: Spline/Point/Text/Conic tools, MODIFY + CONSTRAINTS groups.
+- [x] **Step 3: inline on-canvas dimensions.** Draw a shape → a small floating
+  editor appears next to it with its size fields (circle R; rect W/H; ellipse
+  Rx/Ry; slot L/H; n-gon R/N) — type exact sizes on the canvas, no side box.
+  Values shown/typed in the display unit, converted to mm (settings.toMm).
+  `#skDimEdit` + updateDimEditor/buildDimEditor in sketcher.js; shows in plane
+  mode when an entity is selected. Also REMOVED the Extrude dialog that
+  auto-popped after Finish Sketch (Fusion doesn't; use Create→Extrude when
+  ready). setTool deselects. Verified 6/6. main.js?v=16, css?v=6.
+- [ ] **Remaining sketch polish:** unify sketch-on-face into the full-canvas
+  layout (move its depth/Join-Cut out of the side panel), XY/XZ/YZ plane labels,
+  type-while-drawing dimensions, then Spline/Point/Text tools + MODIFY/CONSTRAINTS
+  ribbon groups.
 
 ### Fix: stale-asset caching booted the app half-dead (2026-07-29)
 User reloaded after the ribbon changes and got a blank app (no tabs/ribbon/doc).

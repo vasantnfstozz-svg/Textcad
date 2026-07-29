@@ -13,7 +13,7 @@ import { postJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
 import { loadMesh } from './viewport.js';
 import { openFeatDialog } from './dialogs.js';
-import { SETTINGS, unitLabel, fmtLen } from './settings.js';
+import { SETTINGS, unitLabel, fmtLen, toMm } from './settings.js';
 
 /* ---------------- state ---------------- */
 
@@ -231,7 +231,7 @@ export function initSketcher() {
 }
 
 function setTool(kind) {
-  tool = kind; clicks = []; ghost = null;
+  tool = kind; clicks = []; ghost = null; selEnt = -1;   // deselect on tool pick
   activeSnap = null; axisLock = null;
   pathStart = null; pathSegs = []; pendingVia = null; segMode = 'line';
   document.querySelectorAll('.skpalette button').forEach(b =>
@@ -902,6 +902,54 @@ function draw() {
   el.innerHTML = out;
   const gridEl = document.getElementById('skGrid');
   if (gridEl) gridEl.textContent = `grid ${fmtLen(step, false)} ${unitLabel()}`;
+  updateDimEditor();
+}
+
+/* ---------------- inline on-canvas dimension entry (Step 3) ---------------- */
+// type exact sizes right on the canvas next to the shape — no side box.
+const DIM_KEYS = {
+  circle: [['r', 'R']],
+  rectangle: [['w', 'W'], ['h', 'H']],
+  ellipse: [['rx', 'Rx'], ['ry', 'Ry']],
+  slot: [['length', 'L'], ['height', 'H']],
+  regular_polygon: [['radius', 'R'], ['sides', 'N']],
+};
+let dimEditFor = -1;
+
+function updateDimEditor() {
+  const el = document.getElementById('skDimEdit');
+  if (!el) return;
+  const planeMode = dlg().classList.contains('planemode');
+  const e = skEnts[selEnt];
+  const ok = planeMode && e && DIM_KEYS[e.kind] && !clicks.length && !ghost;
+  if (!ok) { el.style.display = 'none'; dimEditFor = -1; return; }
+  if (dimEditFor !== selEnt) { buildDimEditor(e); dimEditFor = selEnt; }
+  const s = svg().createSVGPoint(); s.x = e.x || 0; s.y = -(e.y || 0);
+  const scr = s.matrixTransform(svg().getScreenCTM());
+  const wrap = document.getElementById('sketchCanvasWrap').getBoundingClientRect();
+  el.style.left = (scr.x - wrap.left + 14) + 'px';
+  el.style.top = (scr.y - wrap.top + 14) + 'px';
+  el.style.display = 'flex';
+}
+
+function buildDimEditor(e) {
+  const el = document.getElementById('skDimEdit');
+  el.innerHTML = '';
+  for (const [key, label] of DIM_KEYS[e.kind]) {
+    const w = document.createElement('label');
+    w.innerHTML = `<span>${label}</span>`;
+    const inp = document.createElement('input');
+    inp.type = 'number'; inp.step = 'any';
+    inp.value = key === 'sides' ? e.sides : fmtLen(e[key] ?? 0, false);
+    inp.onkeydown = ev => { ev.stopPropagation(); if (ev.key === 'Enter') inp.blur(); };
+    inp.oninput = () => {
+      const v = Number(inp.value);
+      if (isNaN(v)) return;
+      e[key] = key === 'sides' ? Math.max(3, Math.round(v)) : toMm(v);
+      draw();
+    };
+    w.appendChild(inp); el.appendChild(w);
+  }
 }
 
 /* ---------------- create the feature(s) ---------------- */
@@ -981,10 +1029,10 @@ async function create() {
       bus.emit('msg', 'bot', `⚠ Sketch "${id}" has a problem: ` +
         (doc.error || f.problems.join('; ')));
     } else {
-      bus.emit('msg', 'bot', `Sketch "${id}" created — you can see it in the ` +
-        `viewport. Set a depth to turn it into a solid, or Cancel to keep ` +
-        `sketching.`);
-      openFeatDialog('extrude', [id]);   // Fusion-style: finish sketch -> extrude
+      // Fusion: finishing a sketch does NOT auto-anything — no popup box. The
+      // sketch shows in the viewport; use Create → Extrude/Revolve when ready.
+      bus.emit('msg', 'bot', `Sketch "${id}" created. Use Create → Extrude or ` +
+        `Revolve to turn it into a solid.`);
     }
   }
 }

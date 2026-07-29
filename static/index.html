@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=5">
+<link rel="stylesheet" href="/static/css/studio.css?v=6">
 </head>
 <body>
 
@@ -138,6 +138,7 @@
     </div>
     <div id="sketchCanvasWrap">
       <div id="skHelp" class="skhelp">Pick a shape, then click on the canvas to draw</div>
+      <div id="skDimEdit" style="display:none"></div>
       <svg id="sketchCanvas" viewBox="-60 -60 120 120"></svg>
       <div class="skhint">
         <span id="skCoords">x 0, y 0</span> · <span id="skGrid">grid 10mm</span>
@@ -207,6 +208,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=15"></script>
+<script type="module" src="/static/js/main.js?v=16"></script>
 </body>
 </html>
