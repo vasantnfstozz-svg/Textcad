@@ -269,6 +269,61 @@ export function endExtrudeArrow() {
 
 export function hasExtrudeArrow() { return !!exArrow; }
 
+/* ---------------- extrude GHOST box (instant drag preview) ----------------
+   While dragging, a translucent white box shows where the material will go —
+   no geometry rebuild per frame. The REAL verified extrude builds once on
+   release. frame = {origin, x_dir, y_dir, z_dir}; bbox = profile extents in
+   plane-local coords. */
+let exGhost = null;
+
+export function beginExtrudeGhost(frame, bbox) {
+  endExtrudeGhost();
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.13, depthWrite: false }));
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo),
+    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.65 }));
+  mesh.renderOrder = 990; edges.renderOrder = 991;
+  mesh.matrixAutoUpdate = false; edges.matrixAutoUpdate = false;
+  scene.add(mesh); scene.add(edges);
+  exGhost = {
+    mesh, edges, bbox,
+    x: new THREE.Vector3(...frame.x_dir), y: new THREE.Vector3(...frame.y_dir),
+    z: new THREE.Vector3(...frame.z_dir), o: new THREE.Vector3(...frame.origin),
+  };
+  ghostVisible(false);
+}
+
+export function setExtrudeGhost(amount) {
+  if (!exGhost) return;
+  ghostVisible(true);
+  const b = exGhost.bbox;
+  const w = Math.max(b.maxX - b.minX, 0.01), h = Math.max(b.maxY - b.minY, 0.01);
+  const d = Math.max(Math.abs(amount), 0.01);
+  const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2, cz = amount / 2;
+  const center = exGhost.o.clone()
+    .add(exGhost.x.clone().multiplyScalar(cx))
+    .add(exGhost.y.clone().multiplyScalar(cy))
+    .add(exGhost.z.clone().multiplyScalar(cz));
+  const m = new THREE.Matrix4().makeBasis(exGhost.x, exGhost.y, exGhost.z)
+    .scale(new THREE.Vector3(w, h, d)).setPosition(center);
+  exGhost.mesh.matrix.copy(m);
+  exGhost.edges.matrix.copy(m);
+}
+
+function ghostVisible(v) {
+  if (exGhost) { exGhost.mesh.visible = v; exGhost.edges.visible = v; }
+}
+export function hideExtrudeGhost() { ghostVisible(false); }
+export function hasExtrudeGhostVisible() { return !!(exGhost && exGhost.mesh.visible); }
+
+export function endExtrudeGhost() {
+  if (!exGhost) return;
+  scene.remove(exGhost.mesh); scene.remove(exGhost.edges);
+  exGhost.mesh.geometry.dispose(); exGhost.edges.geometry.dispose();
+  exGhost = null;
+}
+
 /* debug snapshot of the arrow gizmo (used by verification scripts) */
 export function extrudeArrowDebug() {
   if (!exArrow) return null;

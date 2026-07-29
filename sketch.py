@@ -206,7 +206,15 @@ def face_outline_2d(solid, face_center: list, face_normal: list | None = None):
 
     outer = face.outer_wire()
     holes = [project(w) for w in face.wires() if w.length != outer.length]
-    return {"outer": project(outer), "holes": holes, "planar": True}
+
+    def vec(v):
+        return [round(v.X, 4), round(v.Y, 4), round(v.Z, 4)]
+
+    # the plane's world frame, so a UI can draw ghost geometry in place
+    frame = {"origin": vec(pl.origin), "x_dir": vec(pl.x_dir),
+             "y_dir": vec(pl.y_dir), "z_dir": vec(pl.z_dir)}
+    return {"outer": project(outer), "holes": holes, "planar": True,
+            "frame": frame}
 
 
 def sketch_on_face(solid, face_center: list, face_normal: list | None = None,

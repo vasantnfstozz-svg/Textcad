@@ -6,8 +6,9 @@
 import { S } from './state.js';
 import { bus } from './bus.js';
 import { postJSON } from './api.js';
-import { loadMesh, beginExtrudeArrow, endExtrudeArrow,
-         setExtrudeArrowAmount } from './viewport.js';
+import { loadMesh, beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
+         beginExtrudeGhost, setExtrudeGhost, hideExtrudeGhost,
+         endExtrudeGhost } from './viewport.js';
 
 // plane normals = the direction a positive offset/extrude actually goes
 // (probed against build123d: XZ offset +7 lands at y=-7, so XZ is -Y!)
@@ -18,6 +19,44 @@ const PLANE_MAP = {
   XZ: (u, v, o) => [u, -o, v],
   YZ: (u, v, o) => [o, u, v],
 };
+// full frame per plane for the ghost box (x_dir/y_dir = local axes in world)
+const PLANE_FRAME = {
+  XY: o => ({ origin: [0, 0, o], x_dir: [1, 0, 0], y_dir: [0, 1, 0], z_dir: [0, 0, 1] }),
+  XZ: o => ({ origin: [0, -o, 0], x_dir: [1, 0, 0], y_dir: [0, 0, 1], z_dir: [0, -1, 0] }),
+  YZ: o => ({ origin: [o, 0, 0], x_dir: [0, 1, 0], y_dir: [0, 0, 1], z_dir: [1, 0, 0] }),
+};
+
+/* conservative bbox of one entity in sketch-local coords */
+function entLocalBBox(e) {
+  const x = e.x || 0, y = e.y || 0;
+  const pts = p => p.reduce((b, q) => ({
+    minX: Math.min(b.minX, x + q[0]), maxX: Math.max(b.maxX, x + q[0]),
+    minY: Math.min(b.minY, y + q[1]), maxY: Math.max(b.maxY, y + q[1]) }),
+    { minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9 });
+  if (e.kind === 'polygon' && e.points) return pts(e.points);
+  if (e.kind === 'path' && e.start)
+    return pts([e.start, ...(e.segments || []).flatMap(s => s.via ? [s.via, s.to] : [s.to])]);
+  let rx = 1, ry = 1;
+  if (e.kind === 'circle') rx = ry = e.r || 1;
+  else if (e.kind === 'regular_polygon') rx = ry = e.radius || 1;
+  else if (e.kind === 'ellipse') { rx = e.rx || 1; ry = e.ry || 1; }
+  else if (e.kind === 'rectangle') { rx = (e.w || 1) / 2; ry = (e.h || 1) / 2; }
+  else if (e.kind === 'slot') { rx = (e.length || 1) / 2; ry = (e.height || 1) / 2; }
+  const r = Math.max(rx, ry);                    // rotation-safe (conservative)
+  const rot = e.rotation ? r : 0;
+  return { minX: x - (rot || rx), maxX: x + (rot || rx),
+           minY: y - (rot || ry), maxY: y + (rot || ry) };
+}
+
+function profileBBox(entities) {
+  const b = { minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9 };
+  for (const e of entities || []) {
+    const eb = entLocalBBox(e);
+    b.minX = Math.min(b.minX, eb.minX); b.maxX = Math.max(b.maxX, eb.maxX);
+    b.minY = Math.min(b.minY, eb.minY); b.maxY = Math.max(b.maxY, eb.maxY);
+  }
+  return b.minX > b.maxX ? { minX: -10, maxX: 10, minY: -10, maxY: 10 } : b;
+}
 
 const OPMAP = { join: 'fuse', cut: 'cut', intersect: 'intersect' };
 const panel = () => document.getElementById('extrudeDialog');
@@ -60,10 +99,17 @@ export function openExtrude(preProfile) {
     createPreview();
     return;
   }
-  const sks = feats().filter(isSketch);
+  // only UNCONSUMED sketches are offered — a sketch already used by an extrude
+  // must not silently become the profile again ("goes back to the old sketch").
+  // An explicit preProfile (tree ⬆ action) is honoured even if consumed.
+  const consumed = new Set(feats().flatMap(f => f.inputs));
+  const sks = feats().filter(isSketch)
+    .filter(s => !consumed.has(s.id) || s.id === preProfile);
   if (!sks.length) {
-    bus.emit('msg', 'bot', '⚠ Draw a sketch first (Create → Create Sketch) — or ' +
-      'pick a flat face with ◉ Select — then press Extrude.');
+    bus.emit('msg', 'bot', tip
+      ? '⚠ Nothing selected to extrude. Pick a flat face of the body first ' +
+        '(◉ Select → click a face → Extrude), or draw a new sketch.'
+      : '⚠ Draw a sketch first (Create → Create Sketch), then Extrude it.');
     return;
   }
   const profileId = preProfile && sks.some(s => s.id === preProfile) ? preProfile : sks[0].id;
@@ -121,6 +167,34 @@ async function createPreview() {
   await applyOp();
   loadMesh();
   placeArrow();
+  setupGhost();
+}
+
+/* prepare the instant white ghost box (frame + profile bbox) for dragging */
+async function setupGhost() {
+  try {
+    if (st.mode === 'face') {
+      const r = await fetch('/api/face-outline', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ face_center: st.face.center,
+                               face_normal: st.face.normal }) });
+      const data = await r.json();
+      if (!data.planar || !data.frame) return;
+      const pts = [...data.outer, ...data.holes.flat()];
+      const b = { minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9 };
+      for (const p of pts) {
+        b.minX = Math.min(b.minX, p[0]); b.maxX = Math.max(b.maxX, p[0]);
+        b.minY = Math.min(b.minY, p[1]); b.maxY = Math.max(b.maxY, p[1]);
+      }
+      beginExtrudeGhost(data.frame, b);
+    } else {
+      const prof = feats().find(f => f.id === st.profileId);
+      if (!prof || prof.op !== 'sketch') return;    // plane sketches only
+      const plane = prof.params.plane || 'XY';
+      const frame = (PLANE_FRAME[plane] || PLANE_FRAME.XY)(Number(prof.params.offset) || 0);
+      beginExtrudeGhost(frame, profileBBox(prof.params.entities));
+    }
+  } catch (e) { /* ghost is a nicety — dragging still works, just rebuilds on release */ }
 }
 
 /* centroid of one entity in sketch-local coords */
@@ -167,21 +241,15 @@ function placeArrow() {
   beginExtrudeArrow(O, N, Number(g('exDist').value) || 1, onDrag, onDragCommit);
 }
 
-function onDrag(amount) {                 // live while dragging the arrow
+function onDrag(amount) {
+  // while dragging: move ONLY the instant white ghost box — no rebuild, no lag
   g('exDist').value = Math.round(amount * 100) / 100;
-  applyThrottled();
+  setExtrudeGhost(amount);
 }
-function onDragCommit(amount) {           // final value on release
+async function onDragCommit(amount) {     // release: ONE real verified rebuild
   g('exDist').value = Math.round(amount * 100) / 100;
-  apply();
-}
-
-let inflight = false, pending = false;
-async function applyThrottled() {         // one rebuild in flight; coalesce the rest
-  if (inflight) { pending = true; return; }
-  inflight = true;
-  try { await apply(); } finally { inflight = false; }
-  if (pending) { pending = false; applyThrottled(); }
+  await apply();
+  hideExtrudeGhost();                     // the real solid replaces the ghost
 }
 
 async function applyOp() {
@@ -220,6 +288,7 @@ async function changeProfile() {
 
 async function teardown() {
   endExtrudeArrow();
+  endExtrudeGhost();
   if (st && st.opId) await postJSON('/api/feature/remove', { feature_id: st.opId });
   if (st && st.extrudeId) await postJSON('/api/feature/remove', { feature_id: st.extrudeId });
   if (st) { st.opId = st.opType = st.opTarget = st.extrudeId = null; }
@@ -232,6 +301,7 @@ async function cancel() {
 
 function ok() {
   endExtrudeArrow();
+  endExtrudeGhost();
   st = null; panel().style.display = 'none';
   bus.emit('msg', 'bot', 'Extrude created — editable in the feature tree.');
 }

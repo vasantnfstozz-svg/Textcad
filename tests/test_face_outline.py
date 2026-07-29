@@ -16,6 +16,11 @@ def test_face_outline_projects_outer_and_hole():
                 if f.geom_type == b3d.GeomType.PLANE)
     out = sk.face_outline_2d(part, [0, 0, top_z], [0, 0, 1])
     assert out["planar"] is True
+    # world frame ships with the outline (for ghost previews)
+    f = out["frame"]
+    assert set(f) == {"origin", "x_dir", "y_dir", "z_dir"}
+    assert f["origin"][2] == pytest.approx(top_z, abs=1e-3)
+    assert abs(f["z_dir"][2]) == pytest.approx(1, abs=1e-6)   # normal is ±Z
     xs = [p[0] for p in out["outer"]]
     ys = [p[1] for p in out["outer"]]
     # 80x60 plate top -> local coords span +-40 x +-30
