@@ -66,10 +66,21 @@ function syncRows() {
   g('exTargetRow').style.display = g('exOp').value === 'new' ? 'none' : '';
 }
 
+let warned = false;
+function warnIfFailed(doc) {
+  const f = (doc.features || []).find(x => x.id === st.extrudeId);
+  if (f && f.status === 'failed' && !warned) {
+    warned = true;
+    bus.emit('msg', 'bot', `⚠ Extrude failed: ${(f.problems || []).join('; ')}`);
+  } else if (f && f.status === 'ok') warned = false;
+}
+
 async function createPreview() {
   st.extrudeId = uid('extrude');
-  await postJSON('/api/feature/add',
+  warned = false;
+  const doc = await postJSON('/api/feature/add',
     { id: st.extrudeId, op: 'extrude', params: params(), inputs: [st.profileId] });
+  warnIfFailed(doc);
   await applyOp();
   loadMesh();
   placeArrow();
@@ -126,7 +137,9 @@ async function applyOp() {
 async function apply() {
   if (!st || !st.extrudeId) return;
   const pr = params();
-  await postJSON('/api/feature/params', { feature_id: st.extrudeId, params: pr });
+  const doc = await postJSON('/api/feature/params',
+    { feature_id: st.extrudeId, params: pr });
+  warnIfFailed(doc);
   await applyOp();
   loadMesh();
   // keep the arrow length in sync when the value is typed (not while dragging)

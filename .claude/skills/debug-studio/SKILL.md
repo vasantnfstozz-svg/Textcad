@@ -23,8 +23,16 @@ description: Diagnosis playbook for TextCAD Studio problems — server won't sta
 3. **MCP "Server disconnected"** — module missing (wrong python) OR something
    printed to stdout (stdout IS the protocol). Keep geometry calls inside
    `_quiet()` in mcp_server.py.
-4. **UI shows old behavior after a JS change** — browser cache. Bump
-   `main.js?v=N` in index.html and hard-refresh (Ctrl+F5).
+4. **UI shows old behavior after a JS change** — browser cache. The server now
+   sends no-cache headers for `/` and `/static/*`; one Ctrl+F5 clears anything
+   cached from before that fix.
+4b. **Feature fails with "unexpected keyword argument"** — the SERVER process
+   is running old backend code (Python doesn't hot-reload; new frontend sends
+   params the old backend doesn't know). Symptom pattern: red TypeError in the
+   tree, viewport missing the solid. Fix: restart the server — or launch with
+   `python dev.py` (uvicorn reload=True) so backend edits auto-restart it.
+   Freeing a stuck port works via `netstat -ano | findstr :PORT` + `taskkill
+   /PID <pid> /F`.
 5. **Sphere-bearing solids "not manifold"** — build123d 0.11 false negative;
    inspector.health already tolerates it (checks for GeomType.SPHERE faces).
 6. **`setx` env var invisible** — processes inherit VS Code's env from before
