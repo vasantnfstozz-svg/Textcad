@@ -6,7 +6,10 @@
 import { S } from './state.js';
 import { bus } from './bus.js';
 import { postJSON } from './api.js';
-import { loadMesh } from './viewport.js';
+import { loadMesh, beginExtrudeArrow, endExtrudeArrow,
+         setExtrudeArrowAmount } from './viewport.js';
+
+const PLANE_N = { XY: [0, 0, 1], XZ: [0, 1, 0], YZ: [1, 0, 0] };
 
 const OPMAP = { join: 'fuse', cut: 'cut', intersect: 'intersect' };
 const panel = () => document.getElementById('extrudeDialog');
@@ -69,6 +72,40 @@ async function createPreview() {
     { id: st.extrudeId, op: 'extrude', params: params(), inputs: [st.profileId] });
   await applyOp();
   loadMesh();
+  placeArrow();
+}
+
+// put the drag arrow on the profile, perpendicular to its plane/face
+function placeArrow() {
+  const prof = feats().find(f => f.id === st.profileId);
+  if (!prof) return;
+  let O, N;
+  if (prof.op === 'sketch_on_face') {
+    O = prof.params.face_center || [0, 0, 0];
+    N = prof.params.face_normal || [0, 0, 1];
+  } else {
+    N = PLANE_N[prof.params.plane || 'XY'] || [0, 0, 1];
+    const off = Number(prof.params.offset) || 0;
+    O = [N[0] * off, N[1] * off, N[2] * off];
+  }
+  beginExtrudeArrow(O, N, Number(g('exDist').value) || 10, onDrag, onDragCommit);
+}
+
+function onDrag(amount) {                 // live while dragging the arrow
+  g('exDist').value = Math.round(amount * 100) / 100;
+  applyThrottled();
+}
+function onDragCommit(amount) {           // final value on release
+  g('exDist').value = Math.round(amount * 100) / 100;
+  apply();
+}
+
+let inflight = false, pending = false;
+async function applyThrottled() {         // one rebuild in flight; coalesce the rest
+  if (inflight) { pending = true; return; }
+  inflight = true;
+  try { await apply(); } finally { inflight = false; }
+  if (pending) { pending = false; applyThrottled(); }
 }
 
 async function applyOp() {
@@ -88,9 +125,13 @@ async function applyOp() {
 
 async function apply() {
   if (!st || !st.extrudeId) return;
-  await postJSON('/api/feature/params', { feature_id: st.extrudeId, params: params() });
+  const pr = params();
+  await postJSON('/api/feature/params', { feature_id: st.extrudeId, params: pr });
   await applyOp();
   loadMesh();
+  // keep the arrow length in sync when the value is typed (not while dragging)
+  const signed = pr.flip ? -pr.amount : pr.amount;
+  setExtrudeArrowAmount(signed);
 }
 
 async function changeProfile() {
@@ -100,6 +141,7 @@ async function changeProfile() {
 }
 
 async function teardown() {
+  endExtrudeArrow();
   if (st && st.opId) await postJSON('/api/feature/remove', { feature_id: st.opId });
   if (st && st.extrudeId) await postJSON('/api/feature/remove', { feature_id: st.extrudeId });
   if (st) { st.opId = st.opType = st.opTarget = st.extrudeId = null; }
@@ -111,6 +153,7 @@ async function cancel() {
 }
 
 function ok() {
+  endExtrudeArrow();
   st = null; panel().style.display = 'none';
   bus.emit('msg', 'bot', 'Extrude created — editable in the feature tree.');
 }

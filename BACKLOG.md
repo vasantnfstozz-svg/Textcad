@@ -100,8 +100,18 @@ live preview.
   the tree sketch ⬆ action open it. main.js?v=19, css?v=8. 129 tests green.
   Verified 12/12 in the browser (panel, live volume update, symmetric/taper,
   Join adds a fuse, OK keeps, Cancel removes).
+- [x] **Extrude drag-arrow (2026-07-29):** Fusion direct-manipulation — clicking
+  Extrude puts a draggable orange **arrow** on the profile perpendicular to its
+  plane/face (renders on top of the solid); dragging it pulls the extrusion up/
+  down LIVE (throttled, one verified rebuild in flight), signed distance = drag
+  direction; the small panel is the value box for exact distance + options. Built
+  in viewport.js (beginExtrudeArrow/arrowGrab/arrowDrag, capture-phase grab +
+  controls.enabled=false to beat OrbitControls) + extrude.js (placeArrow/onDrag).
+  Verified 8/8 (arrow appears, drag 10→19.15 & solid 16000→30640, value box,
+  OK/Cancel clear the arrow). main.js?v=20.
 - [ ] **Extrude v2 (later):** Start=Offset, Extent=To Object/Through/All
-  (`until`/`target`), Thin Extrude, Start-from-face.
+  (`until`/`target`), Thin Extrude, Start-from-face; also give Revolve the same
+  drag-handle treatment.
 
 ### Fusion sketch tab rebuild (user-driven, one-by-one) — 2026-07-29
 Target from Fusion screenshots: pick a plane full-size in the viewport → canvas

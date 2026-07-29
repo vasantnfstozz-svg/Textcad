@@ -21,6 +21,7 @@ let pickMode = false;
 let placeCb = null;              // when set, the next viewport click places a shape
 let planePickCb = null;          // when set, click an origin plane / face to sketch on
 const originPlanes = [];         // the 3 clickable origin planes during plane-pick
+let exArrow = null;              // the draggable Extrude manipulator arrow
 const raycaster = new THREE.Raycaster();
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);   // Z=0 workplane
 
@@ -82,6 +83,15 @@ export function initViewport() {
     if (e.key === 'Escape' && placeCb) cancelPlacement();
     if (e.key === 'Escape' && planePickCb) endPlanePick();
   });
+
+  // Extrude arrow drag — capture phase so we grab it BEFORE OrbitControls,
+  // then disable orbit for the drag. Move/up on window so the drag survives
+  // the pointer leaving the canvas.
+  renderer.domElement.addEventListener('pointerdown', e => {
+    if (exArrow && !exArrow.dragging && arrowGrab(e)) e.stopPropagation();
+  }, true);
+  window.addEventListener('pointermove', e => { if (exArrow && exArrow.dragging) arrowDrag(e); });
+  window.addEventListener('pointerup', e => { if (exArrow && exArrow.dragging) arrowRelease(e); });
 }
 
 /* ---------------- click-to-place on the Z=0 ground plane ---------------- */
@@ -222,6 +232,100 @@ function planePickAt(e) {
   }
   if (pHit) { const pl = pHit.object.userData.plane; endPlanePick(); cb('plane', pl); return; }
   // clicked empty space — keep waiting (don't cancel)
+}
+
+/* ---------------- draggable Extrude arrow (Fusion-style) ---------------- */
+
+export function beginExtrudeArrow(originArr, normalArr, amount, onChange, onCommit) {
+  endExtrudeArrow();
+  const O = new THREE.Vector3(...originArr);
+  const N = new THREE.Vector3(...normalArr).normalize();
+  const arrow = new THREE.ArrowHelper(N, O, 1, 0xffb85c);
+  for (const m of [arrow.line.material, arrow.cone.material]) {
+    m.depthTest = false; m.transparent = true;      // always visible, on top of the solid
+  }
+  arrow.line.renderOrder = 1002; arrow.cone.renderOrder = 1002;
+  arrow.renderOrder = 1001;
+  const hit = new THREE.Mesh(                    // fat invisible grab cylinder
+    new THREE.CylinderGeometry(Math.max(fitRadius * 0.05, 3),
+                               Math.max(fitRadius * 0.05, 3), 1, 10),
+    new THREE.MeshBasicMaterial({ visible: false }));
+  scene.add(arrow); scene.add(hit);
+  exArrow = { arrow, hit, O, N, amount: amount || 1, onChange, onCommit,
+              dragging: false, grab: 0 };
+  updateArrow();
+}
+
+export function endExtrudeArrow() {
+  if (!exArrow) return;
+  scene.remove(exArrow.arrow); scene.remove(exArrow.hit);
+  exArrow.hit.geometry.dispose();
+  exArrow = null;
+}
+
+export function hasExtrudeArrow() { return !!exArrow; }
+
+/* keep the arrow in sync when the distance is typed in the value box */
+export function setExtrudeArrowAmount(a) {
+  if (exArrow && !exArrow.dragging) { exArrow.amount = a; updateArrow(); }
+}
+
+/* screen (client) coords of the arrow tip — for driving/aiming the drag */
+export function extrudeArrowTipScreen() {
+  if (!exArrow) return null;
+  const a = exArrow.amount;
+  const dir = a >= 0 ? exArrow.N : exArrow.N.clone().negate();
+  const tip = exArrow.O.clone().add(dir.clone().multiplyScalar(Math.max(Math.abs(a), 0.5)));
+  const v = tip.project(camera);
+  const r = renderer.domElement.getBoundingClientRect();
+  return { x: r.left + (v.x * 0.5 + 0.5) * r.width,
+           y: r.top + (-v.y * 0.5 + 0.5) * r.height };
+}
+
+function updateArrow() {
+  const a = exArrow.amount;
+  const len = Math.max(Math.abs(a), 0.5);
+  const dir = a >= 0 ? exArrow.N : exArrow.N.clone().negate();
+  const head = Math.min(len * 0.32, Math.max(fitRadius * 0.14, 6));
+  exArrow.arrow.setDirection(dir);
+  exArrow.arrow.setLength(len, head, head * 0.62);
+  const mid = exArrow.O.clone().add(dir.clone().multiplyScalar(len / 2));
+  exArrow.hit.position.copy(mid);
+  exArrow.hit.scale.set(1, len, 1);
+  exArrow.hit.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+}
+
+/* signed distance along the axis (O + s·N) nearest to the pointer ray */
+function projectAmount(e) {
+  raycaster.setFromCamera(ndcFrom(e), camera);
+  const rp = raycaster.ray.origin, rd = raycaster.ray.direction;
+  const r = new THREE.Vector3().subVectors(exArrow.O, rp);
+  const b = exArrow.N.dot(rd), c = rd.dot(rd);
+  const d = exArrow.N.dot(r), ee = rd.dot(r);
+  const denom = c - b * b;                        // a = N·N = 1
+  if (Math.abs(denom) < 1e-6) return exArrow.amount;
+  return (b * ee - c * d) / denom;
+}
+
+function arrowGrab(e) {
+  raycaster.setFromCamera(ndcFrom(e), camera);
+  if (!raycaster.intersectObject(exArrow.hit, false).length) return false;
+  exArrow.dragging = true;
+  controls.enabled = false;
+  exArrow.grab = exArrow.amount - projectAmount(e);
+  return true;
+}
+
+function arrowDrag(e) {
+  exArrow.amount = projectAmount(e) + exArrow.grab;
+  updateArrow();
+  exArrow.onChange(exArrow.amount);
+}
+
+function arrowRelease() {
+  exArrow.dragging = false;
+  controls.enabled = true;
+  exArrow.onCommit(exArrow.amount);
 }
 
 export function setView(dir) {
