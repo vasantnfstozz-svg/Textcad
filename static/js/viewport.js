@@ -8,6 +8,9 @@ import { bus } from './bus.js';
 import { S } from './state.js';
 
 let scene, camera, renderer, controls;
+let groundGrid = null;           // the XY GridHelper (hidden while sketching)
+let sketchCam = null;            // ortho camera while sketch-view is active
+let sketchFrame = null;          // {o,x,y,z} basis of the active sketch plane
 let mesh = null;                 // the body
 const edgeLines = [];            // crisp OCCT topology edges
 const sketchObjs = [];           // floating 2D sketch profiles (Fusion-style)
@@ -41,8 +44,8 @@ export function initViewport() {
   key.position.set(1, -1, 2); scene.add(key);
   const rim = new THREE.DirectionalLight(0x88bbff, 0.5);
   rim.position.set(-2, 2, -1); scene.add(rim);
-  const grid = new THREE.GridHelper(400, 40, 0x2b303c, 0x1b1f28);
-  grid.rotation.x = Math.PI / 2; scene.add(grid);
+  groundGrid = new THREE.GridHelper(400, 40, 0x2b303c, 0x1b1f28);
+  groundGrid.rotation.x = Math.PI / 2; scene.add(groundGrid);
 
   const resize = () => {
     camera.aspect = pane.clientWidth / pane.clientHeight;
@@ -51,7 +54,7 @@ export function initViewport() {
   };
   new ResizeObserver(resize).observe(pane);
   (function animate() { requestAnimationFrame(animate);
-    controls.update(); renderer.render(scene, camera); })();
+    controls.update(); renderer.render(scene, sketchCam || camera); })();
 
   document.getElementById('vFit').onclick = () => setView('iso');
   document.getElementById('vTop').onclick = () => setView('top');
@@ -245,6 +248,56 @@ function planePickAt(e) {
   }
   if (pHit) { const pl = pHit.object.userData.plane; endPlanePick(); cb('plane', pl); return; }
   // clicked empty space — keep waiting (don't cancel)
+}
+
+/* ---------------- sketch view: look straight at the sketch plane -----------
+   While a PLANE sketch is open, the 2D editor becomes a transparent overlay
+   and the 3D scene is rendered through it with an ORTHOGRAPHIC camera aimed
+   down the plane's normal — so the SVG grid/entities sit exactly ON the plane
+   and the model stays visible behind them (Fusion's sketch mode).
+   The mapping: the sketcher's world window (cx, cy, ext in plane coords over
+   the SVG rect) is re-projected onto the renderer canvas rect, so the two
+   line up even when the rects differ by a few px. */
+
+export function enterSketchView(frame) {
+  sketchFrame = {
+    o: new THREE.Vector3(...frame.origin),
+    x: new THREE.Vector3(...frame.x_dir).normalize(),
+    y: new THREE.Vector3(...frame.y_dir).normalize(),
+    z: new THREE.Vector3(...frame.z_dir).normalize(),
+  };
+  sketchCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.5, 10);
+  controls.enabled = false;              // the overlay owns pan/zoom now
+  groundGrid.visible = false;            // the SVG grid replaces it
+}
+
+export function updateSketchView(view, svgEl) {
+  if (!sketchCam || !sketchFrame) return;
+  const sr = svgEl.getBoundingClientRect();
+  const rr = renderer.domElement.getBoundingClientRect();
+  if (sr.height < 2 || rr.height < 2) return;
+  const mmPerPx = (2 * view.ext) / sr.height;       // uniform x/y scale
+  // world (plane-local) center of the RENDERER rect
+  const cx = view.cx + ((rr.left + rr.width / 2) - (sr.left + sr.width / 2)) * mmPerPx;
+  const cy = view.cy - ((rr.top + rr.height / 2) - (sr.top + sr.height / 2)) * mmPerPx;
+  const ex = (rr.width / 2) * mmPerPx, ey = (rr.height / 2) * mmPerPx;
+  const D = Math.max(fitRadius * 5, 400);           // stand well clear of the body
+  const c = sketchFrame.o.clone()
+    .add(sketchFrame.x.clone().multiplyScalar(cx))
+    .add(sketchFrame.y.clone().multiplyScalar(cy));
+  sketchCam.position.copy(c.clone().add(sketchFrame.z.clone().multiplyScalar(D)));
+  sketchCam.up.copy(sketchFrame.y);
+  sketchCam.lookAt(c);
+  sketchCam.left = -ex; sketchCam.right = ex;
+  sketchCam.top = ey; sketchCam.bottom = -ey;
+  sketchCam.near = 0.5; sketchCam.far = D + Math.max(fitRadius * 10, 800);
+  sketchCam.updateProjectionMatrix();
+}
+
+export function exitSketchView() {
+  sketchCam = null; sketchFrame = null;
+  controls.enabled = true;
+  groundGrid.visible = true;
 }
 
 /* ---------------- draggable Extrude arrow (Fusion-style) ---------------- */

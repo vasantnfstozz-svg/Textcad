@@ -285,6 +285,18 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 #sketchDialog.docked.planemode > .row,
 #sketchDialog.docked.planemode > h3 { display: none; }
 #sketchDialog.docked.planemode #sketchWrap { gap: 0; }
+/* …and TRANSPARENT: the editor is an overlay glued to the viewer pane (JS sets
+   left/top/width/height); the 3D view renders through it, looking straight at
+   the sketch plane, so the model stays visible behind the grid (Fusion) */
+#sketchDialog.docked.planemode { background: transparent; border: none;
+  box-shadow: none; padding: 0; right: auto; bottom: auto;
+  min-width: 0; min-height: 0; }
+#sketchDialog.docked.planemode #sketchCanvas { background: transparent;
+  border: none; border-radius: 0; }
+#sketchDialog.docked.planemode .skhelp,
+#sketchDialog.docked.planemode .skhint { background: rgba(15, 17, 21, .75);
+  border-radius: 6px; padding: 3px 10px; margin: 4px auto; width: max-content;
+  max-width: 90%; }
 /* face sketch: tools in the ribbon + inline dims too; slim the side panel to
    just the face note + depth/Join-Cut (which a face sketch genuinely needs) */
 #sketchDialog.docked.facemode #sketchSide { width: 210px; flex: none; }

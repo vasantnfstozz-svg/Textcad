@@ -11,7 +11,8 @@ import { S } from './state.js';
 import { bus } from './bus.js';
 import { postJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
-import { loadMesh } from './viewport.js';
+import { loadMesh, enterSketchView, updateSketchView,
+         exitSketchView } from './viewport.js';
 import { openFeatDialog } from './dialogs.js';
 import { SETTINGS, unitLabel, fmtLen, toMm } from './settings.js';
 
@@ -49,6 +50,34 @@ let axisLock = null;      // {axis:'h'|'v', ref:{x,y}} — inference guide line
 
 const dlg = () => document.getElementById('sketchDialog');
 const svg = () => document.getElementById('sketchCanvas');
+
+/* principal-plane frames, PROBED from build123d 0.11.1 (never assume — the
+   XZ plane's normal points -Y, and offset moves the origin along z_dir) */
+const PLANE_FRAMES = {
+  XY: { x_dir: [1, 0, 0], y_dir: [0, 1, 0], z_dir: [0, 0, 1] },
+  XZ: { x_dir: [1, 0, 0], y_dir: [0, 0, 1], z_dir: [0, -1, 0] },
+  YZ: { x_dir: [0, 1, 0], y_dir: [0, 0, 1], z_dir: [1, 0, 0] },
+};
+
+function planeFrame() {
+  const f = PLANE_FRAMES[document.getElementById('skPlane').value] || PLANE_FRAMES.XY;
+  const off = Number(document.getElementById('skOffset').value) || 0;
+  return { origin: f.z_dir.map(c => c * off),
+           x_dir: f.x_dir, y_dir: f.y_dir, z_dir: f.z_dir };
+}
+
+/* Plane sketches overlay the 3D viewport exactly (transparent editor, model
+   visible behind) — keep the docked dialog glued to the viewer pane's rect. */
+function positionOverViewer() {
+  const v = document.getElementById('viewer');
+  const d = dlg();
+  if (!v || !d.classList.contains('planemode')) return;
+  const r = v.getBoundingClientRect();
+  const want = { left: r.left + 'px', top: r.top + 'px',
+                 width: r.width + 'px', height: r.height + 'px' };
+  for (const k of Object.keys(want))
+    if (d.style[k] !== want[k]) d.style[k] = want[k];
+}
 
 /* ---------------- open / close ---------------- */
 
@@ -89,17 +118,25 @@ function enterMode() {
   // face sketches keep the side panel for now (they need depth + Join/Cut)
   d.classList.toggle('planemode', !skOnFace);
   d.classList.toggle('facemode', !!skOnFace);
-  const dt = document.getElementById('doctabs');
-  d.style.top = (dt ? dt.getBoundingClientRect().bottom : 130) + 'px';
+  if (!skOnFace) {
+    // transparent overlay glued to the viewer: the 3D view looks straight at
+    // the sketch plane and stays visible behind the grid (Fusion sketch mode)
+    positionOverViewer();
+    enterSketchView(planeFrame());
+  } else {
+    const dt = document.getElementById('doctabs');
+    d.style.top = (dt ? dt.getBoundingClientRect().bottom : 130) + 'px';
+  }
   d.show();                          // NON-modal — no backdrop, ribbon stays live
   bus.emit('sketch-mode', { active: true });
 }
 
 function exitMode() {
   sketchActive = false;
+  exitSketchView();                  // restore orbit camera + ground grid
   const d = dlg();
   d.classList.remove('docked');
-  d.style.top = '';
+  for (const k of ['top', 'left', 'width', 'height']) d.style[k] = '';
   try { d.close(); } catch { /* already closed */ }
   bus.emit('sketch-mode', { active: false });
 }
@@ -216,7 +253,9 @@ export function initSketcher() {
   document.getElementById('skMirrorV').onclick = () => modifySel(e => mirrorEntity(e, 'v'));
   document.getElementById('skMirrorH').onclick = () => modifySel(e => mirrorEntity(e, 'h'));
   document.getElementById('skDup').onclick = () => modifySel(duplicateEntity);
-  document.getElementById('skOffset').onclick = () => {
+  // NB: 'skOffset' is the plane-offset INPUT — the tool button is skOffsetTool
+  // (they shared an id once, which hung this prompt on the input instead)
+  document.getElementById('skOffsetTool').onclick = () => {
     const d = Number(prompt('Offset distance in mm (+ bigger / − smaller):', '5'));
     if (!d) return;
     modifySel(e => offsetEntity(e, d));
@@ -228,6 +267,11 @@ export function initSketcher() {
   c.addEventListener('pointerup', onUp);
   c.addEventListener('dblclick', onDblClick);
   c.addEventListener('wheel', onWheel, { passive: false });
+
+  // keep the plane-sketch overlay + its 3D camera glued through window resizes
+  window.addEventListener('resize', () => {
+    if (sketchActive && !skOnFace) draw();
+  });
 }
 
 function setTool(kind) {
@@ -839,6 +883,13 @@ function draw() {
   const aspect = rect.height > 0 ? rect.width / rect.height : 1;
   const ex = ext * aspect, ey = ext;              // half-extents (x wider on wide canvas)
   el.setAttribute('viewBox', `${cx - ex} ${-cy - ey} ${2 * ex} ${2 * ey}`);
+
+  // plane sketch: keep the 3D ortho camera locked to this world window so the
+  // model behind the transparent canvas lines up with the grid exactly
+  if (sketchActive && !skOnFace) {
+    positionOverViewer();
+    updateSketchView(view, el);
+  }
 
   // grid step = the configured grid size, coarsened while zoomed out so lines
   // never crowd (keep at least ~7px apart at the current zoom)
