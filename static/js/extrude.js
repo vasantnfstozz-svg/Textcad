@@ -138,7 +138,13 @@ export function openExtrude(preProfile) {
   const sks = feats().filter(isSketch)
     .filter(s => !consumed.has(s.id) || s.id === preProfile);
   if (!sks.length) {
-    bus.emit('msg', 'bot', tip
+    const curved = S.pickedCurved;
+    bus.emit('msg', 'bot', curved
+      ? `⚠ Extrude needs a FLAT face — the selected surface is ${curved.type} ` +
+        `(curved). Flat faces (including tilted/inclined ones) extrude fine; a ` +
+        `rounded face like a cone or cylinder side can't. Pick a flat face, or ` +
+        `sketch on a plane and extrude.`
+      : tip
       ? '⚠ Nothing selected to extrude. Pick a flat face of the body first ' +
         '(◉ Select → click a face → Extrude), or draw a new sketch.'
       : '⚠ Draw a sketch first (Create → Create Sketch), then Extrude it.');
