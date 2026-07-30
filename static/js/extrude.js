@@ -178,38 +178,31 @@ function syncRows() {
   g('exTargetRow').style.display = g('exOp').value === 'new' ? 'none' : '';
 }
 
-let warned = false;
-function warnIfFailed(doc) {
-  const f = (doc.features || []).find(x => x.id === st.extrudeId);
-  if (f && f.status === 'failed' && !warned) {
-    warned = true;
-    bus.emit('msg', 'bot', `⚠ Extrude failed: ${(f.problems || []).join('; ')}`);
-  } else if (f && f.status === 'ok') warned = false;
-}
-
 /* opening the tool builds NOTHING — just the arrow + ghost. The extrude
    feature is created lazily on the first user action (drag release, typed
    value, or OK). No more surprise 1mm boss the moment the panel opens. */
 function createPreview() {
   st.extrudeId = null;
-  warned = false;
   placeArrow();
   setupGhost();
 }
 
 /* create the extrude feature the first time the user actually acts */
 async function ensureCreated() {
-  if (st.extrudeId) return;
+  if (st.extrudeId) return null;
   st.extrudeId = uid('extrude');
   const op = st.mode === 'face' ? 'extrude_face' : 'extrude';
   const input = st.mode === 'face' ? st.inputId : st.profileId;
-  const doc = await postJSON('/api/feature/add',
+  return await postJSON('/api/feature/add',
     { id: st.extrudeId, op, params: params(), inputs: [input] });
-  warnIfFailed(doc);
 }
 
-/* safe shrink radius for taper: how far the walls can move inward before the
-   profile collapses (inradius proxy) or a hole wall collides (half min wall) */
+/* Inradius of the profile: how far the walls can move inward before it
+   collapses. The face-outline samples points ALONG the edges, so the min
+   distance from the centroid to a sampled point ≈ the inradius (correct for
+   convex faces: rect→half-short-side, circle→radius). Holes shrink it to half
+   the thinnest wall. This is the LIVE-barrier estimate; the verified back-off
+   in apply() is the backstop when the estimate is off (e.g. non-convex). */
 function safeRadius(loops) {
   let minR = Infinity;
   for (const L of loops || []) {
@@ -227,18 +220,19 @@ function safeRadius(loops) {
   return isFinite(minR) ? Math.max(minR, 0.1) : null;
 }
 
-/* barriers: keep the drag inside geometrically-buildable territory */
+/* live barrier: keep a NARROWING taper (or a distance under taper) inside the
+   buildable range. Flaring (negative taper) never collapses, so it stays free.
+   If safeR is unknown, don't block — the verified back-off will catch it. */
+function clampTaperFn(t) {
+  if (t <= 0 || !st || !st.safeR) return t;             // flare = free
+  const a = Math.abs(Number(g('exDist').value) || 1);
+  return Math.min(t, Math.atan(0.92 * st.safeR / Math.max(a, 0.01)) * 180 / Math.PI);
+}
 function clampAmountFn(a) {
   const t = Number(g('exTaper').value) || 0;
   if (t <= 0 || !st || !st.safeR) return a;
-  const maxA = 0.9 * st.safeR / Math.tan(t * Math.PI / 180);
+  const maxA = 0.92 * st.safeR / Math.tan(t * Math.PI / 180);
   return Math.max(-maxA, Math.min(maxA, a));
-}
-function clampTaperFn(t) {
-  if (t <= 0 || !st || !st.safeR) return t;
-  const a = Math.abs(Number(g('exDist').value) || 1);
-  const tmax = Math.atan(0.9 * st.safeR / Math.max(a, 0.01)) * 180 / Math.PI;
-  return Math.min(t, tmax);
 }
 
 /* prepare the instant white ghost box (frame + profile bbox) for dragging */
@@ -290,10 +284,10 @@ function setupTaperRing(frame, loops) {
     },
     async t => {                             // release: ONE verified rebuild
       g('exTaper').value = Math.round(t * 10) / 10;
-      await apply();
+      await apply();                         // apply() enforces the real barrier
       hideExtrudeGhost();
     },
-    clampTaperFn);                           // barrier: stop before collapse
+    clampTaperFn);                           // live barrier: stop before collapse
 }
 
 /* centroid of one entity in sketch-local coords */
@@ -369,41 +363,103 @@ async function applyOp() {
   }
 }
 
-let reverting = false;
-async function apply() {
-  if (!st) return;
-  const pr = params();
-  let doc;
-  if (!st.extrudeId) {
-    await ensureCreated();                 // first action creates the feature
-    doc = S.lastDoc;
-  } else {
-    doc = await postJSON('/api/feature/params',
-      { feature_id: st.extrudeId, params: pr });
-    warnIfFailed(doc);
+const featOf = doc => doc && (doc.features || []).find(x => x.id === st.extrudeId);
+const isOk = f => f && f.status === 'ok';
+
+/* push one set of params and read back the extrude feature's health */
+async function push(pr) {
+  const doc = await postJSON('/api/feature/params',
+    { feature_id: st.extrudeId, params: pr });
+  return { doc, f: featOf(doc) };
+}
+
+/* THE REAL BARRIER — verified, not guessed. If the chosen taper (or distance)
+   collapses the solid, bisect it back toward zero to the largest magnitude the
+   geometry kernel actually accepts, keeping its sign. No reliance on a face-
+   shape estimate, so it holds for any profile and both drag directions. */
+/* apply the analytic barrier to the CURRENT box values (same limit the ring/
+   arrow use live) so typed values behave identically to dragging — and note it
+   once when we actually had to reduce something. Returns true if it changed. */
+function clampBoxValues() {
+  let changed = false;
+  const t0 = Number(g('exTaper').value) || 0, t1 = clampTaperFn(t0);
+  if (Math.abs(t1 - t0) > 0.05) {
+    g('exTaper').value = Math.round(t1 * 10) / 10;
+    bus.emit('msg', 'bot', `Taper limited to ${g('exTaper').value}° — ` +
+      `steeper collapses the walls at this distance.`);
+    changed = true;
   }
-  // safety net: if the build failed (e.g. a typed taper collapses the walls),
-  // snap back to the last values that worked instead of leaving a red tree
-  const f = doc && (doc.features || []).find(x => x.id === st.extrudeId);
-  if (f && f.status === 'failed' && !reverting && st.lastGood) {
-    reverting = true;
+  const a0 = Number(g('exDist').value) || 1, a1 = clampAmountFn(a0);
+  if (Math.abs(a1 - a0) > 0.05) { g('exDist').value = Math.round(a1 * 100) / 100; changed = true; }
+  return changed;
+}
+
+/* rare backstop: the analytic clamp already prevents collapse on normal faces,
+   but if a build still fails (e.g. a non-convex face where the estimate is off,
+   or a value with no safeR), shrink the taper toward zero a few times, then
+   fall back to the last values that worked. A few rebuilds at most. */
+async function settleValid(pr) {
+  const sign = pr.taper < 0 ? -1 : 1;
+  let mag = Math.abs(pr.taper);
+  for (let k = 0; k < 4 && mag > 0.2; k++) {
+    mag *= 0.6;
+    const t = await push({ ...pr, taper: sign * mag });
+    if (isOk(t.f)) {
+      const val = Math.round(sign * mag * 10) / 10;
+      g('exTaper').value = val;
+      bus.emit('msg', 'bot', `Taper limited to ${val}° — steeper collapses the walls here.`);
+      return t;
+    }
+  }
+  if (st.lastGood) {                          // taper wasn't it — restore last good
+    const r = await push({ ...pr, amount: st.lastGood.amount, taper: st.lastGood.taper });
     g('exDist').value = st.lastGood.amount;
     g('exTaper').value = st.lastGood.taper;
-    bus.emit('msg', 'bot', `⚠ ${(f.problems || ['build failed'])[0]} — snapped ` +
-      `back to ${st.lastGood.amount}mm / ${st.lastGood.taper}°.`);
-    await apply();
-    reverting = false;
-    return;
+    bus.emit('msg', 'bot', `Reverted to ${st.lastGood.amount}mm / ` +
+      `${st.lastGood.taper}° — the new values broke the solid.`);
+    return r;
   }
-  if (f && f.status === 'ok')
+  return await push({ ...pr, taper: 0 });
+}
+
+/* one full apply pass. Serialized by apply() so it always finishes. */
+async function applyOnce() {
+  clampBoxValues();                           // analytic barrier — one rebuild
+  const pr = params();
+  let doc = st.extrudeId ? (await push(pr)).doc : await ensureCreated();
+  if (!st) return;
+  let f = featOf(doc);
+  // backstop for the rare case the estimate missed — never leave a collapsed
+  // solid on screen (red tree / blank body).
+  if (f && f.status === 'failed') {
+    const settled = await settleValid(pr);
+    if (!st) return;
+    doc = settled.doc; f = settled.f;
+  }
+  if (isOk(f))
     st.lastGood = { amount: Number(g('exDist').value) || 1,
                     taper: Number(g('exTaper').value) || 0 };
   await applyOp();
   loadMesh();
-  // keep the gizmos in sync when values are typed (not while dragging)
-  const signed = pr.flip ? -pr.amount : pr.amount;
-  setExtrudeArrowAmount(signed);
-  setTaperRingAngle(pr.taper || 0);
+  // keep the gizmos in sync with the (possibly adjusted) values
+  const amt = Number(g('exDist').value) || 1;
+  setExtrudeArrowAmount(g('exFlip').checked ? -amt : amt);
+  setTaperRingAngle(Number(g('exTaper').value) || 0);
+}
+
+// Serialize applies: a settle does several rebuilds and must run to completion,
+// but doc-updated re-renders (and fast user input) can call apply() meanwhile.
+// Rather than kill the in-flight pass, mark it pending and re-run ONCE after
+// with the latest values — coalescing bursts into a single trailing rebuild.
+let applyBusy = false, applyPending = false;
+async function apply() {
+  if (!st) return;
+  if (applyBusy) { applyPending = true; return; }
+  applyBusy = true;
+  try {
+    do { applyPending = false; await applyOnce(); }
+    while (applyPending && st);
+  } finally { applyBusy = false; }
 }
 
 async function changeProfile() {
