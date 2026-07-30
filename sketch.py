@@ -16,6 +16,7 @@ here is confirmed against build123d 0.11.1.
 """
 
 from __future__ import annotations
+import math
 import build123d as b3d
 from build123d import (
     Rectangle, Circle, Ellipse, Polygon, SlotOverall, RegularPolygon,
@@ -181,6 +182,47 @@ def resolve_face(solid, face_center: list, face_normal: list | None = None):
     return min(faces, key=score)
 
 
+def face_plane(face, ang_tol_deg: float = 1.0, dist_tol: float = 1e-2):
+    """A build123d Plane if `face` is geometrically FLAT — even when the kernel
+    stores it as a BSPLINE / BEZIER / EXTRUSION surface. Taper, loft and sweep
+    routinely produce a wall that is dead flat yet NOT typed PLANE; those must
+    still be sketchable/extrudable. A surface is planar ⇔ its normal is constant
+    and its points are coplanar. Returns None for genuinely curved faces."""
+    from build123d import Plane
+    try:
+        c = face.center()
+    except Exception:
+        return None
+    if face.geom_type == b3d.GeomType.PLANE:
+        try:
+            return Plane(face)
+        except Exception:
+            pass
+    normals, pts = [], []
+    for u in (0.15, 0.5, 0.85):
+        for v in (0.15, 0.5, 0.85):
+            try:
+                p = face.position_at(u, v)
+                n = face.normal_at(p)
+                normals.append((n.X, n.Y, n.Z)); pts.append((p.X, p.Y, p.Z))
+            except Exception:
+                pass
+    if len(normals) < 3:
+        return None
+    n0 = normals[0]
+    cos_tol = math.cos(math.radians(ang_tol_deg))
+    for n in normals[1:]:                       # every normal must be parallel
+        if abs(n0[0]*n[0] + n0[1]*n[1] + n0[2]*n[2]) < cos_tol:
+            return None
+    for p in pts:                               # and every point coplanar
+        if abs((p[0]-c.X)*n0[0] + (p[1]-c.Y)*n0[1] + (p[2]-c.Z)*n0[2]) > dist_tol:
+            return None
+    try:
+        return Plane(origin=(c.X, c.Y, c.Z), z_dir=n0)
+    except Exception:
+        return None
+
+
 def face_outline_2d(solid, face_center: list, face_normal: list | None = None):
     """Project a picked PLANAR face's boundary into its own plane's local 2D
     coordinates — the outer wire plus any inner wires (holes). Returned in the
@@ -189,11 +231,10 @@ def face_outline_2d(solid, face_center: list, face_normal: list | None = None):
 
     -> {"outer": [[x,y],...], "holes": [[[x,y],...],...], "planar": bool}
     """
-    from build123d import Plane
     face = resolve_face(solid, face_center, face_normal)
-    if face.geom_type != b3d.GeomType.PLANE:
+    pl = face_plane(face)
+    if pl is None:                              # genuinely curved — can't project
         return {"outer": [], "holes": [], "planar": False}
-    pl = Plane(face)
 
     def project(wire):
         poly = []
@@ -225,14 +266,14 @@ def sketch_on_face(solid, face_center: list, face_normal: list | None = None,
     normal best matches `face_normal`) — so it survives parameter changes
     instead of breaking like a stored face index would."""
     face = resolve_face(solid, face_center, face_normal)
-    if face.geom_type != b3d.GeomType.PLANE:
+    pl = face_plane(face)
+    if pl is None:
         raise ValueError(
-            f"sketch_on_face: the picked face is {face.geom_type.name}, not flat "
-            f"— a sketch needs a PLANAR face. For a slot/pocket in a curved "
+            f"sketch_on_face: the picked face is {face.geom_type.name} and not "
+            f"flat — a sketch needs a PLANAR face. For a slot/pocket in a curved "
             f"surface, sketch on a principal plane (offset to the surface) and "
             f"extrude-cut through the body instead.")
-    from build123d import Plane
-    return _as_sketch(Plane(face) * _compose(entities or []))
+    return _as_sketch(pl * _compose(entities or []))
 
 
 # ---------------------------------------------------------------------------
@@ -263,10 +304,10 @@ def extrude_face(solid, face_center: list, face_normal: list | None = None,
     body via fuse (boss) or cut (pocket, with a negative/into amount).
     The face's exact outline is used — holes and curved edges included."""
     face = resolve_face(solid, face_center, face_normal)
-    if face.geom_type != b3d.GeomType.PLANE:
+    if face_plane(face) is None:               # flat BSPLINE/BEZIER walls are OK
         raise ValueError(
-            f"extrude_face: the picked face is {face.geom_type.name}, not flat "
-            f"— only planar faces can be extruded.")
+            f"extrude_face: the picked face is {face.geom_type.name} and not "
+            f"flat — only planar faces can be extruded.")
     a = float(amount)
     if _to_bool(flip, "flip"):
         a = -a

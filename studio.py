@@ -455,6 +455,13 @@ def get_model():
         base += len(verts)
         gt = str(face.geom_type).replace("GeomType.", "")
         info = {"id": fi, "type": gt, "area": round(face.area, 2)}
+        # FLAT test is geometric, not by surface type: taper/loft/sweep make dead-
+        # flat walls stored as BSPLINE/BEZIER/EXTRUSION that are still sketchable
+        # and extrudable. `planar` drives face selection in the UI.
+        try:
+            info["planar"] = gt == "PLANE" or sketchlib.face_plane(face) is not None
+        except Exception:
+            info["planar"] = gt == "PLANE"
         try:
             c = face.center()
             info["center"] = [round(c.X, 2), round(c.Y, 2), round(c.Z, 2)]

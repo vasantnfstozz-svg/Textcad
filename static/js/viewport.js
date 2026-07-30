@@ -782,15 +782,17 @@ function selectFace(fid) {
     polygonOffset: true, polygonOffsetFactor: -3 }));
   scene.add(pickHl);
   const info = m.faces.find(f => f.id === fid) || {};
-  // remember the picked face so the Sketch tab can sketch on it (planar only);
-  // a CURVED pick is remembered separately so tools can explain the limit
-  S.pickedFace = (info.center && info.type === 'PLANE') ? info : null;
-  S.pickedCurved = (info.center && info.type !== 'PLANE') ? info : null;
-  showPick(`<b>Face ${fid}</b> — ${info.type}`,
+  // FLAT is decided geometrically (info.planar), NOT by surface type — a taper/
+  // loft wall can be dead flat yet typed BSPLINE, and must still be sketchable.
+  // a genuinely CURVED pick is remembered separately so tools can explain it.
+  const isFlat = info.planar ?? (info.type === 'PLANE');
+  S.pickedFace = (info.center && isFlat) ? info : null;
+  S.pickedCurved = (info.center && !isFlat) ? info : null;
+  showPick(`<b>Face ${fid}</b> — ${isFlat && info.type !== 'PLANE' ? info.type + ' (flat)' : info.type}`,
     [['area', (info.area ?? '?') + ' mm²'],
      info.radius != null ? ['radius', info.radius + ' mm'] : null,
      info.center ? ['center', info.center.join(', ')] : null]);
-  if (info.center && info.type === 'PLANE') {   // sketching needs a FLAT face
+  if (info.center && isFlat) {                  // sketching needs a FLAT face
     const btn = document.createElement('button');
     btn.textContent = '✎ Sketch on this face';
     btn.style.cssText = 'margin-top:7px;width:100%;background:var(--accent);' +

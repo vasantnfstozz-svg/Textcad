@@ -11,6 +11,36 @@ def _rect():
     return sk.make_sketch("XY", 0, [{"kind": "rectangle", "w": 40, "h": 40}])
 
 
+def test_flat_bspline_face_is_extrudable():
+    """A face that is geometrically FLAT but stored as a freeform surface
+    (BSPLINE/BEZIER — as taper/loft/sweep produce) must be selectable and
+    extrudable; only GENUINELY curved faces are refused."""
+    from build123d import Face, Vector, extrude
+    pts = [[Vector(0, 0, 0), Vector(20, 0, 0), Vector(40, 0, 0)],
+           [Vector(0, 15, 0), Vector(20, 15, 0), Vector(40, 15, 0)],
+           [Vector(0, 30, 0), Vector(20, 30, 0), Vector(40, 30, 0)]]
+    solid = extrude(Face.make_bezier_surface(pts), amount=10)
+    bf = min(solid.faces(), key=lambda f: f.center().Z)   # flat bezier face
+    assert str(bf.geom_type).replace("GeomType.", "") != "PLANE"   # not a plane
+    assert sk.face_plane(bf) is not None                  # ...but detected flat
+    c = bf.center(); n = bf.normal_at(c)
+    boss = sk.extrude_face(solid, [c.X, c.Y, c.Z], [n.X, n.Y, n.Z], amount=8)
+    assert not inspector.health(boss)
+    out = sk.face_outline_2d(solid, [c.X, c.Y, c.Z], [n.X, n.Y, n.Z])
+    assert out["planar"] and len(out["outer"]) >= 4
+
+
+def test_curved_face_still_refused():
+    import build123d as b3d
+    cyl = b3d.Cylinder(10, 12)
+    side = next(f for f in cyl.faces()
+                if str(f.geom_type) == "GeomType.CYLINDER")
+    c = side.center(); n = side.normal_at(c)
+    assert sk.face_plane(side) is None
+    with pytest.raises(ValueError, match="not"):
+        sk.extrude_face(cyl, [c.X, c.Y, c.Z], [n.X, n.Y, n.Z], amount=5)
+
+
 def _zspan(solid):
     bb = solid.bounding_box()
     return round(bb.min.Z, 3), round(bb.max.Z, 3)
