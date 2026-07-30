@@ -11,7 +11,7 @@ import { openSketchEditor, finishSketch, cancelSketch,
 import { openSettings } from './settings.js';
 import { startPlacement, PLACEABLE } from './placement.js';
 import { beginPlanePick } from './viewport.js';
-import { openExtrude } from './extrude.js';
+import { openExtrude, cancelExtrude } from './extrude.js';
 
 // sketch draw tools shown in the contextual SKETCH tab's CREATE group (top)
 const SKETCH_TOOLS = {
@@ -27,6 +27,7 @@ let curSketchTool = null;      // which draw tool is active (for ribbon highligh
 // Create Sketch (Fusion): pick a plane or a planar face IN THE VIEWPORT, then
 // enter sketch mode on it.
 function startSketch() {
+  cancelExtrude();                          // don't leave extrude gizmos eating clicks
   beginPlanePick((kind, data) => {
     if (kind === 'face') bus.emit('sketch-on-face', data);
     else openSketchEditor(data);            // data = 'XY' | 'XZ' | 'YZ'

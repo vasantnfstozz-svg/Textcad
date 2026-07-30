@@ -110,6 +110,7 @@ const g = id => document.getElementById(id);
 
 export function openExtrude(preProfile) {
   cancelPlanePick();                 // a pending plane-pick must not linger
+  cancelExtrude();                   // clear any prior extrude session's gizmos
   const bods = solids();
   // FACE MODE (Fusion: click a planar face, press Extrude, pull the arrow).
   // Capture the pick now — loadMesh() clears it.
@@ -492,6 +493,19 @@ function ok() {
   bus.emit('msg', 'bot', created
     ? 'Extrude created — editable in the feature tree.'
     : 'Nothing extruded — drag the arrow or type a distance next time.');
+}
+
+/* Close a lingering Extrude session when ANOTHER tool starts — otherwise its
+   arrow/ring gizmos stay in the viewport and swallow the next click, so faces
+   can't be selected anymore. Keeps any already-committed extrude (it's a real
+   verified feature); just clears the gizmos + panel. Mirrors cancelPlanePick. */
+export function cancelExtrude() {
+  if (!st && panel().style.display === 'none') return;
+  endExtrudeArrow();
+  endExtrudeGhost();
+  endTaperRing();
+  st = null;
+  panel().style.display = 'none';
 }
 
 export function initExtrude() {

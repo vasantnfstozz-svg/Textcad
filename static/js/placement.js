@@ -8,6 +8,7 @@ import { bus } from './bus.js';
 import { S } from './state.js';
 import { postJSON } from './api.js';
 import { beginPlacement, loadMesh, cancelPlanePick } from './viewport.js';
+import { cancelExtrude } from './extrude.js';
 
 // sensible starting dimensions (mm) per primitive — blocks have no defaults
 const DEFAULTS = {
@@ -25,6 +26,7 @@ const popup = () => document.getElementById('placePopup');
 
 export function startPlacement(op) {
   cancelPlanePick();                       // a pending plane-pick must not linger
+  cancelExtrude();                         // a lingering extrude gizmo would eat clicks
   closePlacePopup();                       // clear any stale popup from before
   beginPlacement(op, (x, y) => createAt(op, x, y));
 }
