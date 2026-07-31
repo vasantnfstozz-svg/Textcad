@@ -6,11 +6,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { bus } from './bus.js';
 import { S } from './state.js';
+import { initSketch3D, sketch3DActive } from './sketch3d.js';
 
 let scene, camera, renderer, controls;
 let groundGrid = null;           // the XY GridHelper (hidden while sketching)
-let sketchCam = null;            // ortho camera while sketch-view is active
-let sketchFrame = null;          // {o,x,y,z} basis of the active sketch plane
 let mesh = null;                 // the body
 const edgeLines = [];            // crisp OCCT topology edges
 const sketchObjs = [];           // floating 2D sketch profiles (Fusion-style)
@@ -28,6 +27,33 @@ let exArrow = null;              // the draggable Extrude manipulator arrow
 const raycaster = new THREE.Raycaster();
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);   // Z=0 workplane
 
+/* OrbitControls freezes its ORBIT AXIS at construction time
+   (`setFromUnitVectors(object.up, (0,1,0))` lives in update()'s closure), so
+   `camera.up = …` afterwards is ignored. Looking straight down an axis that is
+   a pole of that frozen frame makes orbiting dead (the XZ sketch view sat at
+   phi = π exactly). Rebuilding the controls with the wanted up is the only
+   reliable way — cheap, and it preserves pose. up=null restores the default. */
+function buildControls(up) {
+  const pos = camera.position.clone();
+  const tgt = controls ? controls.target.clone() : new THREE.Vector3();
+  if (controls) controls.dispose();
+  camera.up.copy(up || new THREE.Vector3(0, 1, 0));
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.dampingFactor = 0.12;
+  camera.position.copy(pos);
+  controls.target.copy(tgt);
+  controls.addEventListener('change', () => bus.emit('view-changed'));
+  controls.update();
+  return controls;
+}
+
+/* used by sketch mode: orbit around the SKETCH PLANE's up, so the view can be
+   rotated freely from a flat-on sketch view (no pole at the start pose) */
+export function setOrbitUp(upArr) {
+  return buildControls(upArr ? new THREE.Vector3(...upArr).normalize() : null);
+}
+export function getControls() { return controls; }
+
 export function initViewport() {
   const pane = document.getElementById('viewer');
   scene = new THREE.Scene();
@@ -36,8 +62,7 @@ export function initViewport() {
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
   pane.appendChild(renderer.domElement);
-  controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true; controls.dampingFactor = 0.12;
+  buildControls(null);
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x223, 0.9));
   const key = new THREE.DirectionalLight(0xffffff, 1.5);
@@ -53,8 +78,17 @@ export function initViewport() {
     renderer.setSize(pane.clientWidth, pane.clientHeight);
   };
   new ResizeObserver(resize).observe(pane);
+  // in-viewport sketch layer (Fusion-style sketch mode) — needs the internals.
+  // controls are REBUILT when the orbit axis changes, so pass a getter.
+  initSketch3D({ scene, camera, dom: renderer.domElement, groundGrid,
+                 getControls, setOrbitUp, getFitRadius: () => fitRadius });
+  // e2e/debug handle (read-only use): camera, controls and the fit volume the
+  // origin-plane quads are sized from
+  window.__vp = { camera, getControls,
+                  getFit: () => ({ r: fitRadius, c: fitCenter.toArray() }) };
+
   (function animate() { requestAnimationFrame(animate);
-    controls.update(); renderer.render(scene, sketchCam || camera); })();
+    controls.update(); renderer.render(scene, camera); })();
 
   document.getElementById('vFit').onclick = () => setView('iso');
   document.getElementById('vTop').onclick = () => setView('top');
@@ -74,6 +108,7 @@ export function initViewport() {
     if (!downXY) return;
     const moved = Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]);
     downXY = null;
+    if (sketch3DActive()) return;          // sketch mode owns viewport clicks
     if (moved > 5) return;                 // that was an orbit-drag
     if (planePickCb) { planePickAt(e); return; }
     if (placeCb) { placeGround(e); return; }
@@ -248,56 +283,6 @@ function planePickAt(e) {
   }
   if (pHit) { const pl = pHit.object.userData.plane; endPlanePick(); cb('plane', pl); return; }
   // clicked empty space — keep waiting (don't cancel)
-}
-
-/* ---------------- sketch view: look straight at the sketch plane -----------
-   While a PLANE sketch is open, the 2D editor becomes a transparent overlay
-   and the 3D scene is rendered through it with an ORTHOGRAPHIC camera aimed
-   down the plane's normal — so the SVG grid/entities sit exactly ON the plane
-   and the model stays visible behind them (Fusion's sketch mode).
-   The mapping: the sketcher's world window (cx, cy, ext in plane coords over
-   the SVG rect) is re-projected onto the renderer canvas rect, so the two
-   line up even when the rects differ by a few px. */
-
-export function enterSketchView(frame) {
-  sketchFrame = {
-    o: new THREE.Vector3(...frame.origin),
-    x: new THREE.Vector3(...frame.x_dir).normalize(),
-    y: new THREE.Vector3(...frame.y_dir).normalize(),
-    z: new THREE.Vector3(...frame.z_dir).normalize(),
-  };
-  sketchCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.5, 10);
-  controls.enabled = false;              // the overlay owns pan/zoom now
-  groundGrid.visible = false;            // the SVG grid replaces it
-}
-
-export function updateSketchView(view, svgEl) {
-  if (!sketchCam || !sketchFrame) return;
-  const sr = svgEl.getBoundingClientRect();
-  const rr = renderer.domElement.getBoundingClientRect();
-  if (sr.height < 2 || rr.height < 2) return;
-  const mmPerPx = (2 * view.ext) / sr.height;       // uniform x/y scale
-  // world (plane-local) center of the RENDERER rect
-  const cx = view.cx + ((rr.left + rr.width / 2) - (sr.left + sr.width / 2)) * mmPerPx;
-  const cy = view.cy - ((rr.top + rr.height / 2) - (sr.top + sr.height / 2)) * mmPerPx;
-  const ex = (rr.width / 2) * mmPerPx, ey = (rr.height / 2) * mmPerPx;
-  const D = Math.max(fitRadius * 5, 400);           // stand well clear of the body
-  const c = sketchFrame.o.clone()
-    .add(sketchFrame.x.clone().multiplyScalar(cx))
-    .add(sketchFrame.y.clone().multiplyScalar(cy));
-  sketchCam.position.copy(c.clone().add(sketchFrame.z.clone().multiplyScalar(D)));
-  sketchCam.up.copy(sketchFrame.y);
-  sketchCam.lookAt(c);
-  sketchCam.left = -ex; sketchCam.right = ex;
-  sketchCam.top = ey; sketchCam.bottom = -ey;
-  sketchCam.near = 0.5; sketchCam.far = D + Math.max(fitRadius * 10, 800);
-  sketchCam.updateProjectionMatrix();
-}
-
-export function exitSketchView() {
-  sketchCam = null; sketchFrame = null;
-  controls.enabled = true;
-  groundGrid.visible = true;
 }
 
 /* ---------------- draggable Extrude arrow (Fusion-style) ---------------- */

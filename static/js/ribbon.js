@@ -11,6 +11,7 @@ import { openSketchEditor, finishSketch, cancelSketch,
 import { openSettings } from './settings.js';
 import { startPlacement, PLACEABLE } from './placement.js';
 import { beginPlanePick } from './viewport.js';
+import { lookAtSketch } from './sketch3d.js';
 import { openExtrude, cancelExtrude } from './extrude.js';
 
 // sketch draw tools shown in the contextual SKETCH tab's CREATE group (top)
@@ -48,6 +49,7 @@ const ACTIONS = {
   newsketch: { icon: '✎', name: 'Create Sketch', fn: startSketch },
   finish_sketch: { icon: '✓', name: 'Finish Sketch', fn: finishSketch },
   cancel_sketch: { icon: '✕', name: 'Cancel Sketch', fn: cancelSketch },
+  look_at: { icon: '⌖', name: 'Look At', fn: lookAtSketch },
   ex_flange:     { icon: '⚙', name: 'Flange',     fn: () => loadSample('flange') },
   ex_impeller:   { icon: '🌀', name: 'Impeller',   fn: () => loadSample('impeller') },
   ex_compressor: { icon: '💨', name: 'Compressor', fn: () => loadSample('compressor') },
@@ -88,6 +90,7 @@ let activeTab = 'Create';
 // the draw tools live in the top ribbon now, not a side palette.
 const SKETCH_CONTEXT = [
   ['Create', Object.keys(SKETCH_TOOLS).map(t => ({ t }))],
+  ['View', [{ a: 'look_at' }]],
   ['Finish', [{ a: 'finish_sketch' }, { a: 'cancel_sketch' }]],
 ];
 let sketchMode = false;

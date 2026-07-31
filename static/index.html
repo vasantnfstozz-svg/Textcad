@@ -44,6 +44,16 @@
     <div id="pickInfo"></div>
     <div id="placeHint" style="display:none"></div>
     <div id="placePopup" style="display:none"></div>
+    <!-- sketch mode v2: the viewport IS the sketch editor (Fusion-style) -->
+    <div id="sk3dBar" style="display:none">
+      <span id="sk3dHelp"></span>
+      <span class="sk3dmeta"><span id="sk3dCoords">x 0, y 0</span> ·
+        <span id="sk3dGrid">grid 10 mm</span> ·
+        left draw · right orbit · middle pan · Esc cancel · Del delete</span>
+    </div>
+    <div id="skDimEdit3d" style="display:none"></div>
+    <div id="sk3dDim" style="display:none"></div>
+    <div id="sk3dSnap" style="display:none"></div>
   </div>
 
   <div class="splitter" id="splitRight" title="drag to resize · double-click to reset"></div>
@@ -240,6 +250,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=31"></script>
+<script type="module" src="/static/js/main.js?v=32"></script>
 </body>
 </html>

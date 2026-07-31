@@ -11,8 +11,9 @@ import { S } from './state.js';
 import { bus } from './bus.js';
 import { postJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
-import { loadMesh, enterSketchView, updateSketchView,
-         exitSketchView } from './viewport.js';
+import { loadMesh } from './viewport.js';
+import { enterSketch3D, exitSketch3D, renderSketch3D,
+         planeToScreen } from './sketch3d.js';
 import { openFeatDialog } from './dialogs.js';
 import { SETTINGS, unitLabel, fmtLen, toMm } from './settings.js';
 
@@ -66,18 +67,18 @@ function planeFrame() {
            x_dir: f.x_dir, y_dir: f.y_dir, z_dir: f.z_dir };
 }
 
-/* Plane sketches overlay the 3D viewport exactly (transparent editor, model
-   visible behind) — keep the docked dialog glued to the viewer pane's rect. */
-function positionOverViewer() {
-  const v = document.getElementById('viewer');
-  const d = dlg();
-  if (!v || !d.classList.contains('planemode')) return;
-  const r = v.getBoundingClientRect();
-  const want = { left: r.left + 'px', top: r.top + 'px',
-                 width: r.width + 'px', height: r.height + 'px' };
-  for (const k of Object.keys(want))
-    if (d.style[k] !== want[k]) d.style[k] = want[k];
-}
+/* PLANE sketches happen IN the 3D viewport (sketch3d.js) — Fusion's sketch
+   mode: entities live on the plane as real geometry, and the user can orbit
+   (right-drag) / pan (middle) / zoom at any time while drawing with LEFT.
+   Face sketches still use the docked 2D editor until they are unified. */
+const inPlane3D = () => sketchActive && !skOnFace;
+let snapTol3d = 2;        // mm for ~12 px — updated with every 3D pointer event
+let pendingFocus = null;  // {cx, cy, extent} camera framing for the next enter
+let gridStep3d = 10;
+let edgeOnView = false;   // view rotated (nearly) parallel to the sketch plane
+
+/* snap/close tolerance in plane mm — screen-derived in 3D mode */
+const snapTolWorld = () => inPlane3D() ? snapTol3d : view.ext / 40;
 
 /* ---------------- open / close ---------------- */
 
@@ -112,31 +113,36 @@ function nextName() {
    above it. 'sketch-mode' tells the ribbon to swap in the contextual tab. */
 function enterMode() {
   sketchActive = true;
-  const d = dlg();
-  d.classList.add('docked');
-  // plane sketches go full-canvas with tools in the top ribbon (no side box);
-  // face sketches keep the side panel for now (they need depth + Join/Cut)
-  d.classList.toggle('planemode', !skOnFace);
-  d.classList.toggle('facemode', !!skOnFace);
   if (!skOnFace) {
-    // transparent overlay glued to the viewer: the 3D view looks straight at
-    // the sketch plane and stays visible behind the grid (Fusion sketch mode)
-    positionOverViewer();
-    enterSketchView(planeFrame());
+    // Fusion-style: NO separate editor — the viewport IS the sketch. Tools sit
+    // in the contextual ribbon; a floating hint bar + dim labels overlay the
+    // 3D view; the camera turns to the plane but stays free to orbit.
+    enterSketch3D(planeFrame(), { gridMm: SETTINGS.gridMm,
+                                  focus: pendingFocus || undefined });
+    pendingFocus = null;
+    document.getElementById('sk3dBar').style.display = '';
   } else {
+    // face sketches: keep the docked 2D editor (side panel has depth/Join-Cut)
+    const d = dlg();
+    d.classList.add('docked', 'facemode');
+    d.classList.remove('planemode');
     const dt = document.getElementById('doctabs');
     d.style.top = (dt ? dt.getBoundingClientRect().bottom : 130) + 'px';
+    d.show();                        // NON-modal — no backdrop, ribbon stays live
   }
-  d.show();                          // NON-modal — no backdrop, ribbon stays live
   bus.emit('sketch-mode', { active: true });
 }
 
 function exitMode() {
   sketchActive = false;
-  exitSketchView();                  // restore orbit camera + ground grid
+  exitSketch3D();                    // no-op unless a plane sketch was open
+  for (const id of ['sk3dBar', 'sk3dDim', 'sk3dSnap', 'skDimEdit3d']) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  }
   const d = dlg();
-  d.classList.remove('docked');
-  for (const k of ['top', 'left', 'width', 'height']) d.style[k] = '';
+  d.classList.remove('docked', 'facemode', 'planemode');
+  d.style.top = '';
   try { d.close(); } catch { /* already closed */ }
   bus.emit('sketch-mode', { active: false });
 }
@@ -160,7 +166,9 @@ export function openSketchEditor(plane = 'XY') {
   document.getElementById('skPlaneRow').style.display = '';
   document.getElementById('skFaceNote').style.display = 'none';
   document.getElementById('skFaceExtrude').style.display = 'none';
+  pendingFocus = { cx: 0, cy: 0, extent: 90 };
   enterMode();
+  updateHint();
   draw();
 }
 
@@ -177,13 +185,16 @@ export function editSketch(feature) {
   document.getElementById('skFaceNote').style.display = 'none';
   document.getElementById('skFaceExtrude').style.display = 'none';
   document.getElementById('skCreate').textContent = 'Save changes';
-  enterMode();
-  // frame the existing geometry
+  // frame the existing geometry (camera focus in 3D, viewBox in the SVG editor)
   const xs = skEnts.map(e => e.x || 0), ys = skEnts.map(e => e.y || 0);
   if (xs.length) {
-    view = { cx: (Math.min(...xs) + Math.max(...xs)) / 2,
-             cy: (Math.min(...ys) + Math.max(...ys)) / 2, ext: 60 };
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    pendingFocus = { cx, cy, extent: 90 };
+    view = { cx, cy, ext: 60 };
   }
+  enterMode();
+  updateHint();
   renderEnts();
 }
 bus.on('edit-sketch', editSketch);
@@ -268,9 +279,31 @@ export function initSketcher() {
   c.addEventListener('dblclick', onDblClick);
   c.addEventListener('wheel', onWheel, { passive: false });
 
-  // keep the plane-sketch overlay + its 3D camera glued through window resizes
-  window.addEventListener('resize', () => {
-    if (sketchActive && !skOnFace) draw();
+  window.addEventListener('resize', () => { if (sketchActive) draw(); });
+
+  // 3D sketch mode input: plane-local points arrive over the bus (sketch3d.js)
+  bus.on('sk3d-down', p => {
+    if (!inPlane3D()) return;
+    snapTol3d = p.tol; pointerDown(p);
+  });
+  bus.on('sk3d-move', p => {
+    if (!inPlane3D()) return;
+    snapTol3d = p.tol; pointerMove(p);
+  });
+  bus.on('sk3d-up', () => { if (inPlane3D()) pointerUp(); });
+  bus.on('sk3d-dbl', () => { if (inPlane3D()) onDblClick(); });
+  bus.on('sk3d-grid', ({ step }) => {
+    gridStep3d = step;
+    const el = document.getElementById('sk3dGrid');
+    if (el) el.textContent = `grid ${fmtLen(gridStep3d, false)} ${unitLabel()}`;
+  });
+  // orbiting moves the camera — re-place the HTML labels over the 3D scene
+  bus.on('sk3d-view', () => { if (inPlane3D()) updateFloatingLabels(); });
+  // rotated (nearly) edge-on to the plane: say so instead of taking nonsense
+  // clicks — orbiting there is fine, drawing is not
+  bus.on('sk3d-edge', ({ edgeOn }) => {
+    edgeOnView = edgeOn;
+    if (inPlane3D()) updateHint();
   });
 }
 
@@ -357,7 +390,7 @@ function refPoint() {
 /* Geometry snap > axis lock > grid snap. Sets activeSnap/axisLock for draw(). */
 function smartSnap(raw) {
   activeSnap = null; axisLock = null;
-  const tol = view.ext / 40;
+  const tol = snapTolWorld();
   let best = null, bd = tol;
   for (const sp of collectSnapPoints()) {
     const d = dist(raw, sp);
@@ -381,33 +414,27 @@ function smartSnap(raw) {
 let dragging = null;      // {idx, startX, startY, ex, ey} moving an entity
 let panning = null;       // {px, py, cx, cy} moving the view
 
-function onDown(e) {
-  if (e.button !== 0) return;
-  if (tool) { placeClick(smartSnap(worldPoint(e))); return; }
-  const p = snapPt(worldPoint(e));
-
-  const hit = hitTest(worldPoint(e));
+/* shared select/draw logic in PLANE coordinates — the SVG canvas (face
+   sketches) and the 3D viewport (plane sketches) both feed points in here */
+function pointerDown(raw) {
+  if (tool) { placeClick(smartSnap(raw)); return 'tool'; }
+  const hit = hitTest(raw);
   if (hit >= 0) {
     selEnt = hit;
     const ent = skEnts[hit];
+    const p = snapPt(raw);
     dragging = { idx: hit, startX: p.x, startY: p.y,
                  ex: ent.x || 0, ey: ent.y || 0 };
-    svg().setPointerCapture(e.pointerId);
     renderCards(); draw();
-  } else {
-    selEnt = -1;
-    const raw = worldPoint(e);
-    panning = { px: raw.x, py: raw.y, cx: view.cx, cy: view.cy };
-    svg().setPointerCapture(e.pointerId);
-    renderCards(); draw();
+    return 'drag';
   }
+  selEnt = -1;
+  renderCards(); draw();
+  return 'miss';
 }
 
-function onMove(e) {
-  const p = worldPoint(e);
-  document.getElementById('skCoords').textContent =
-    `x ${fmtLen(snap(p.x), false)}, y ${fmtLen(snap(p.y), false)} ${unitLabel()}`;
-
+function pointerMove(p) {
+  setCoordsReadout(p);
   if (tool === 'path' && pathStart) { ghost = pathGhost(smartSnap(p)); draw(); return; }
   if (tool && clicks.length) { ghost = buildGhost(smartSnap(p)); draw(); return; }
   if (tool) { smartSnap(p); draw(); }         // show snap markers pre-click too
@@ -415,18 +442,45 @@ function onMove(e) {
     const ent = skEnts[dragging.idx];
     ent.x = snap(dragging.ex + (p.x - dragging.startX));
     ent.y = snap(dragging.ey + (p.y - dragging.startY));
-    draw(); return;
-  }
-  if (panning) {
-    view.cx = panning.cx - (p.x - panning.px);
-    view.cy = panning.cy - (p.y - panning.py);
     draw();
   }
 }
 
+function pointerUp() {
+  if (dragging) renderCards();
+  dragging = null;
+}
+
+function setCoordsReadout(p) {
+  const el = document.getElementById(inPlane3D() ? 'sk3dCoords' : 'skCoords');
+  if (el) el.textContent =
+    `x ${fmtLen(snap(p.x), false)}, y ${fmtLen(snap(p.y), false)} ${unitLabel()}`;
+}
+
+function onDown(e) {
+  if (e.button !== 0) return;
+  const raw = worldPoint(e);
+  const acted = pointerDown(raw);
+  if (acted === 'drag') {
+    svg().setPointerCapture(e.pointerId);
+  } else if (acted === 'miss') {              // SVG only: drag empty space pans
+    panning = { px: raw.x, py: raw.y, cx: view.cx, cy: view.cy };
+    svg().setPointerCapture(e.pointerId);
+  }
+}
+
+function onMove(e) {
+  const p = worldPoint(e);
+  if (panning) {
+    view.cx = panning.cx - (p.x - panning.px);
+    view.cy = panning.cy - (p.y - panning.py);
+    draw(); return;
+  }
+  pointerMove(p);
+}
+
 function onUp(e) {
-  if (dragging) { renderCards(); }
-  dragging = null; panning = null;
+  pointerUp(); panning = null;
   try { svg().releasePointerCapture(e.pointerId); } catch {}
 }
 
@@ -569,7 +623,7 @@ function placeClick(p) {
 
   if (tool === 'polygon') {
     // click near the first point closes the shape
-    if (clicks.length >= 3 && dist(p, clicks[0]) < view.ext / 30) {
+    if (clicks.length >= 3 && dist(p, clicks[0]) < snapTolWorld() * 1.4) {
       clicks.pop(); finishPolygon();
     }
     ghost = buildGhost(p); draw(); updateHint();
@@ -616,7 +670,7 @@ function pathClick(p) {
   if (!pathStart) { pathStart = p; updateHint(); draw(); return; }
 
   // clicking near the start closes the profile
-  const closeR = view.ext / 30;
+  const closeR = snapTolWorld() * 1.4;
   if (pathSegs.length >= 1 && !pendingVia
       && dist(p, pathStart) < closeR) { finishPath(); return; }
 
@@ -757,7 +811,12 @@ function renderCards() {
 }
 
 function updateHint() {
-  const el = document.getElementById('skHelp');
+  const el = document.getElementById(inPlane3D() ? 'sk3dHelp' : 'skHelp');
+  if (inPlane3D() && edgeOnView) {
+    el.textContent = '⚠ You are looking along the sketch plane — rotate back, '
+      + 'or press Look At, to keep drawing';
+    return;
+  }
   if (tool === 'path') {
     const msg = !pathStart ? 'Click the START point of your profile'
       : pendingVia ? 'Arc: now click the END point'
@@ -874,6 +933,7 @@ function entitySVG(e, opts = {}) {
 }
 
 function draw() {
+  if (inPlane3D()) { draw3D(); return; }          // plane sketches render in 3D
   const el = svg();
   const { cx, cy, ext } = view;
   // viewBox matches the canvas's REAL aspect ratio so the grid fills the whole
@@ -883,13 +943,6 @@ function draw() {
   const aspect = rect.height > 0 ? rect.width / rect.height : 1;
   const ex = ext * aspect, ey = ext;              // half-extents (x wider on wide canvas)
   el.setAttribute('viewBox', `${cx - ex} ${-cy - ey} ${2 * ex} ${2 * ey}`);
-
-  // plane sketch: keep the 3D ortho camera locked to this world window so the
-  // model behind the transparent canvas lines up with the grid exactly
-  if (sketchActive && !skOnFace) {
-    positionOverViewer();
-    updateSketchView(view, el);
-  }
 
   // grid step = the configured grid size, coarsened while zoomed out so lines
   // never crowd (keep at least ~7px apart at the current zoom)
@@ -962,6 +1015,175 @@ function draw() {
   updateDimEditor();
 }
 
+/* ---------------- 3D sketch mode rendering (plane sketches) ----------------
+   Same entities, same tool state — but drawn as real geometry on the plane
+   via sketch3d.js, with HTML labels projected over the viewport. */
+
+function circleOutline(cx, cy, r, n = 48) {
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = i * 2 * Math.PI / n;
+    pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+  }
+  return pts;
+}
+
+/* entity -> plane-local outline points (rotation applied) */
+function outlinePts(e) {
+  const x = e.x || 0, y = e.y || 0, a = (e.rotation || 0) * Math.PI / 180;
+  const rot = pts => pts.map(([px, py]) => [
+    x + px * Math.cos(a) - py * Math.sin(a),
+    y + px * Math.sin(a) + py * Math.cos(a)]);
+  if (e.kind === 'rectangle')
+    return { closed: true, pts: rot([[-e.w / 2, -e.h / 2], [e.w / 2, -e.h / 2],
+                                     [e.w / 2, e.h / 2], [-e.w / 2, e.h / 2]]) };
+  if (e.kind === 'circle')
+    return { closed: true, pts: circleOutline(x, y, e.r) };
+  if (e.kind === 'ellipse') {
+    const pts = [];
+    for (let i = 0; i < 48; i++) {
+      const t = i * 2 * Math.PI / 48;
+      pts.push([e.rx * Math.cos(t), e.ry * Math.sin(t)]);
+    }
+    return { closed: true, pts: rot(pts) };
+  }
+  if (e.kind === 'slot') {
+    const r = e.height / 2, hx = Math.max(e.length / 2 - r, 0), pts = [];
+    for (let i = 0; i <= 12; i++) {                  // right cap  -90° -> +90°
+      const t = -Math.PI / 2 + i * Math.PI / 12;
+      pts.push([hx + r * Math.cos(t), r * Math.sin(t)]);
+    }
+    for (let i = 0; i <= 12; i++) {                  // left cap   +90° -> +270°
+      const t = Math.PI / 2 + i * Math.PI / 12;
+      pts.push([-hx + r * Math.cos(t), r * Math.sin(t)]);
+    }
+    return { closed: true, pts: rot(pts) };
+  }
+  if (e.kind === 'regular_polygon') {
+    const pts = [];
+    for (let k = 0; k < e.sides; k++) {
+      const t = Math.PI / 2 + k * 2 * Math.PI / e.sides;
+      pts.push([e.radius * Math.cos(t), e.radius * Math.sin(t)]);
+    }
+    return { closed: true, pts: rot(pts) };
+  }
+  if (e.kind === 'polygon' && e.points)
+    return { closed: !e.ghostOpen,
+             pts: e.points.map(p => [x + p[0], y + p[1]]) };
+  if (e.kind === 'path' && e.start)
+    return { closed: !e.ghostOpen,
+             pts: pathOutline(e).map(q => [q.x, q.y]) };
+  return null;
+}
+
+function draw3D() {
+  const ADD = 0x43c579, CUT = 0xff5d5d, SEL = 0x4da3ff;
+  const shapes = [];
+  const push = (e, i, isGhost) => {
+    const o = outlinePts(e);
+    if (!o || o.pts.length < 2) return;
+    const col = e.mode === 'subtract' ? CUT : ADD;
+    shapes.push({ pts: o.pts, closed: o.closed,
+                  color: !isGhost && i === selEnt ? SEL : col,
+                  fill: isGhost || !o.closed ? null : col,
+                  fillOpacity: e.mode === 'subtract' ? 0.10 : 0.13,
+                  dashed: !!isGhost });
+  };
+  skEnts.forEach((e, i) => push(e, i, false));
+  if (ghost) push(ghost, -1, true);
+
+  const dR = Math.max(snapTol3d * 0.35, 0.6);
+  const dots = clicks.map(c => ({ x: c.x, y: c.y, r: dR, color: 0x4da3ff }));
+  if (tool === 'path' && pathStart) {
+    dots.push({ x: pathStart.x, y: pathStart.y, r: dR * 1.7,
+                color: 0x4da3ff, ring: true });          // the close target
+    for (const s of pathSegs)
+      dots.push({ x: s.to[0], y: s.to[1], r: dR * 0.8, color: 0x4da3ff });
+    if (pendingVia)
+      dots.push({ x: pendingVia.x, y: pendingVia.y, r: dR * 0.8, color: 0xd9a23c });
+  }
+
+  renderSketch3D({
+    shapes, dots,
+    cross: activeSnap
+      ? { x: activeSnap.x, y: activeSnap.y, size: Math.max(snapTol3d * 0.5, 1) }
+      : null,
+    guide: axisLock ? { axis: axisLock.axis, ref: axisLock.ref } : null,
+  });
+  updateFloatingLabels();
+}
+
+/* dimension label text + anchor (same semantics as the SVG dimensionSVG) */
+function dimLabel(e) {
+  const x = e.x || 0, y = e.y || 0;
+  const off = Math.max(snapTol3d * 1.2, 2);
+  if (e.kind === 'circle') return { x, y: y + off, text: `R ${fmt(e.r)}` };
+  if (e.kind === 'regular_polygon')
+    return { x, y: y + off, text: `R ${fmt(e.radius)} × ${e.sides}` };
+  if (e.kind === 'rectangle')
+    return { x, y: y + off, text: `${fmt(e.w)} × ${fmt(e.h)}` };
+  if (e.kind === 'ellipse')
+    return { x, y: y + off, text: `${fmt(e.rx)} × ${fmt(e.ry)}` };
+  if (e.kind === 'slot')
+    return { x, y: y + off, text: `L ${fmt(e.length)}  H ${fmt(e.height)}` };
+  if (e.kind === 'path' && e.ghostOpen && e.segments?.length) {
+    const last = e.segments[e.segments.length - 1];
+    const from = e.segments.length > 1
+      ? e.segments[e.segments.length - 2].to : e.start;
+    const len = Math.hypot(last.to[0] - from[0], last.to[1] - from[1]);
+    return { x: (from[0] + last.to[0]) / 2,
+             y: (from[1] + last.to[1]) / 2 + off, text: fmt(len) };
+  }
+  return null;
+}
+
+/* place a floating HTML label at a plane-local point (hidden off-pane) */
+function placeFloat(id, at, text) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const scr = at ? planeToScreen(at.x, at.y) : null;
+  const pane = document.getElementById('viewportPane').getBoundingClientRect();
+  if (!scr || scr.x < pane.left || scr.x > pane.right
+      || scr.y < pane.top || scr.y > pane.bottom) {
+    el.style.display = 'none';
+    return;
+  }
+  el.textContent = text;
+  el.style.left = (scr.x - pane.left) + 'px';
+  el.style.top = (scr.y - pane.top) + 'px';
+  el.style.display = 'block';
+}
+
+/* live dimension + snap tag + numeric dim editor — re-placed on every draw
+   AND on every camera move while orbiting ('sk3d-view') */
+function updateFloatingLabels() {
+  const e = ghost || (selEnt >= 0 ? skEnts[selEnt] : null) || null;
+  const d = e ? dimLabel(e) : null;
+  placeFloat('sk3dDim', d, d ? d.text : '');
+  placeFloat('sk3dSnap', activeSnap
+    ? { x: activeSnap.x, y: activeSnap.y + Math.max(snapTol3d, 1.6) } : null,
+    activeSnap ? activeSnap.label : '');
+  updateDimEditor3D();
+}
+
+function updateDimEditor3D() {
+  const el = document.getElementById('skDimEdit3d');
+  if (!el) return;
+  const e = selEnt >= 0 ? skEnts[selEnt] : null;
+  const ok = inPlane3D() && e && DIM_KEYS[e.kind] && !clicks.length && !ghost;
+  if (!ok) { el.style.display = 'none'; return; }
+  if (dimEditFor !== selEnt || !el.childElementCount) {
+    buildDimEditor(e, el);
+    dimEditFor = selEnt;
+  }
+  const scr = planeToScreen(e.x || 0, e.y || 0);
+  if (!scr) { el.style.display = 'none'; return; }
+  const pane = document.getElementById('viewportPane').getBoundingClientRect();
+  el.style.left = (scr.x - pane.left + 16) + 'px';
+  el.style.top = (scr.y - pane.top + 16) + 'px';
+  el.style.display = 'flex';
+}
+
 /* ---------------- inline on-canvas dimension entry (Step 3) ---------------- */
 // type exact sizes right on the canvas next to the shape — no side box.
 const DIM_KEYS = {
@@ -989,8 +1211,7 @@ function updateDimEditor() {
   el.style.display = 'flex';
 }
 
-function buildDimEditor(e) {
-  const el = document.getElementById('skDimEdit');
+function buildDimEditor(e, el = document.getElementById('skDimEdit')) {
   el.innerHTML = '';
   for (const [key, label] of DIM_KEYS[e.kind]) {
     const w = document.createElement('label');
