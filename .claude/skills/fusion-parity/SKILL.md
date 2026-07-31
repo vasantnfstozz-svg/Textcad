@@ -36,6 +36,12 @@ were each learned from a correction — do not regress them.
    chat immediately (warnIfFailed pattern) — never just a red dot.
 8. **Contextual modes.** Entering a mode (sketch) swaps the ribbon to a green
    contextual tab with Finish/Cancel; leaving restores the normal tabs.
+9. **A mode is never a separate screen.** Sketch mode is the NORMAL 3D view
+   with sketch tools switched on: the model stays in place, the sketch is
+   drawn on its plane in the scene, and the user can orbit / pan / zoom at
+   any moment while drawing (left = draw, right = orbit, middle = pan).
+   Never take the user to a flat 2D page they must leave to see their part.
+   Corollary: any new "editor" belongs IN the viewport, not beside it.
 
 ## Gizmo/drag mechanics (hard-won, in viewport.js)
 
@@ -48,6 +54,15 @@ were each learned from a correction — do not regress them.
 - THREE.Vector3 is MUTABLE: always `.clone()` before multiplyScalar/add on a
   stored vector (a shared-reference bug silently scaled the arrow's normal).
 - Plane normals must be PROBED, not assumed: build123d XZ extrudes toward -Y.
+- OrbitControls (three 0.160) FREEZES its orbit axis at construction —
+  `setFromUnitVectors(object.up,(0,1,0))` lives in update()'s closure, so
+  assigning `camera.up` later does nothing. Looking straight down an axis
+  that is a pole of that frozen frame kills orbiting (flat-on XZ sat at
+  phi=pi: 34 change events, zero camera movement). To orbit about a new up,
+  REBUILD the controls (`viewport.setOrbitUp`), preserving position/target.
+- When a click is raycast onto a plane, refuse it when the view is nearly
+  edge-on (|ray·normal| < ~0.15) — the hit point runs away to hundreds of mm
+  and makes degenerate geometry. Say why in the hint bar (rule 7).
 
 ## When unsure about a Fusion behavior
 
