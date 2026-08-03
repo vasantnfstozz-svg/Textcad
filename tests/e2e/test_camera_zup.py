@@ -192,6 +192,46 @@ def test_navigation_mapping_is_the_same_in_both_tabs(page):
     assert page.errors == []
 
 
+def test_shift_left_pans_in_both_tabs_and_never_draws(page):
+    """Pan lives on the middle button, which is awkward on some mice, so
+    Shift+left-drag pans too. OrbitControls reads mouseButtons at pointerdown,
+    so the Shift keydown has to have flipped LEFT to PAN by then. In sketch
+    mode the same gesture must NOT also drop a sketch point — sketch3d owns
+    left-clicks and needs its own shiftKey guard."""
+    page.evaluate("""async () => {
+      const vp = await import('/static/js/viewport.js'); vp.setView('iso');
+    }""")
+    page.wait_for_timeout(400)
+
+    page.keyboard.down("Shift")
+    page.wait_for_timeout(100)
+    assert page.evaluate(
+        "async () => (await import('/static/js/viewport.js')).shiftPanActive()")
+    assert page.evaluate(PAN_JS, [70, -25, 0]) > 1.0, "design: shift+left pans"
+    page.keyboard.up("Shift")
+    page.wait_for_timeout(150)
+    # released: left goes back to orbiting, not panning
+    assert page.evaluate(PAN_JS, [70, -25, 0]) < 1.0, "design: left pans again?"
+    assert page.evaluate(DRAG_JS, [70, -25, 0]) > 1.0, "design: left lost orbit"
+
+    page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      sk.openSketchEditor('XY');
+      await new Promise(r => setTimeout(r, 900));
+      sk.setSketchTool('circle');
+    }""")
+    page.wait_for_timeout(700)
+    page.keyboard.down("Shift")
+    page.wait_for_timeout(100)
+    assert page.evaluate(PAN_JS, [70, -25, 0]) > 1.0, "sketch: shift+left pans"
+    entities = page.evaluate(
+        "document.querySelectorAll('#skEntities .skent').length")
+    assert entities == 0, f"shift+left dropped {entities} sketch point(s)"
+    page.keyboard.up("Shift")
+    page.wait_for_timeout(150)
+    assert page.errors == []
+
+
 def test_sketch_mode_shows_the_navigation_legend(page):
     """The legend was grey 11px text between the coordinates and the Esc/Del
     keys and went unread — users left-dragged and gave up. It is its own chip

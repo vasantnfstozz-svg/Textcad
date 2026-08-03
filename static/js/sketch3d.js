@@ -34,7 +34,9 @@ const ctrl = () => ctx.getControls();
 export function initSketch3D(context) {
   ctx = context;
   ctx.dom.addEventListener('pointerdown', e => {
-    if (!active || e.button !== 0 || tween) return;
+    // Shift+left is PAN (viewport.setLeftButton): without this guard the same
+    // gesture would pan AND drop a sketch point
+    if (!active || e.button !== 0 || e.shiftKey || tween) return;
     const p = planePoint(e);
     if (!p) return;
     leftDown = true;
@@ -83,7 +85,9 @@ export function enterSketch3D(frameSpec, opts = {}) {
   // orbiting because it draws. MIDDLE=pan / RIGHT=orbit / wheel=zoom are the
   // app-wide mapping set in viewport.buildControls — do not diverge here, the
   // tabs disagreeing is what made "I can't rotate while sketching" happen.
-  c.mouseButtons.LEFT = null;                  // left draws
+  // Going through setLeftButton (not c.mouseButtons directly) keeps the
+  // Shift+left = pan fallback working while sketching.
+  ctx.setLeftButton(null);                     // left draws
   active = true; edgeOn = false;
   const f = opts.focus || { cx: 0, cy: 0, extent: 90 };
   lookAtPlanePoint(f.cx, f.cy, distanceFor(f.extent || 90));

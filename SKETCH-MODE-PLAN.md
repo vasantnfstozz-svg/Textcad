@@ -310,9 +310,22 @@ coordinates and Esc/Del — genuinely unreadable, which is why orbiting looked
 broken. It is its own contrasted chip now (`.sk3dnav`, button names in accent),
 and entering sketch mode also states it once in chat.
 
-3 new e2e tests (7 in `tests/e2e/`, ~78s): the mapping in BOTH tabs (pan is
-told from orbit by whether the orbit TARGET moved), and the legend being
-visible + announced. css?v=9, main.js?v=35.
+**Shift+left = pan (follow-up, same step).** The user checked the result and
+pointed out the cost: they had been using right-drag to pan in the design tab,
+and pan now lives only on the middle button. Added `Shift+left-drag = pan`
+everywhere as a fallback, since a wheel-press drag is awkward on some mice.
+Mechanics worth knowing: OrbitControls reads `mouseButtons` at **pointerdown**,
+so a Shift keydown listener flipping `LEFT` to `PAN` is enough — no patching of
+the controls internals. `viewport.setLeftButton(action)` now owns what LEFT
+does when Shift is *not* held (`ROTATE` in design, `null` in sketch), so a
+controls REBUILD (`setOrbitUp`) cannot drop the fallback, and `blur` releases
+it so alt-tab never sticks in pan. sketch3d's own pointerdown needed an
+`e.shiftKey` guard or the one gesture would pan AND drop a sketch point.
+
+4 new e2e tests (8 in `tests/e2e/`, ~78s): the mapping in BOTH tabs (pan is
+told from orbit by whether the orbit TARGET moved), Shift+left panning in both
+tabs while creating zero entities, Shift release restoring orbit, and the
+legend being visible + announced. css?v=9, main.js?v=36.
 
 ### Original S6 notes (kept for reference)
 

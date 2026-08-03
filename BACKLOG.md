@@ -33,9 +33,13 @@ UI around it produced 36 friction items, merged below. Screenshots in scratchpad
   `/api/model`, since that endpoint also emits `sketches`.
 - [ ] **Fusion navigation preset (Shift+middle orbit) not supported.** Fusion's
   own default is LEFT=select, MIDDLE=pan, **Shift+MIDDLE=orbit**, and it ships
-  a preference to switch styles. We chose left-orbit-in-design + right-orbit
-  (S6); adding Shift+middle as an alias, and/or a Settings > Navigation
-  dropdown, would let Fusion muscle memory work unchanged.
+  a preference to switch styles. We chose left-orbit-in-design + right-orbit,
+  plus Shift+left=pan (S6); adding Shift+**middle**=orbit as an alias, and/or a
+  Settings > Navigation dropdown, would let Fusion muscle memory work
+  unchanged. Cheap now that `viewport.setLeftButton` centralises the mapping.
+- [ ] **The design tab has no navigation legend.** Sketch mode got a readable
+  chip in S6; the design tab still tells the user nothing about right-orbit /
+  middle-pan / shift+left-pan. Put the same legend in the bottom status bar.
 
 ## P0 — silent wrong geometry / false verification / data loss
 

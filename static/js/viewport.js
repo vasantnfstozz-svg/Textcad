@@ -41,6 +41,26 @@ const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);   // Z=0 workplan
    reliable way — cheap, and it preserves pose. up=null restores WORLD_UP. */
 const WORLD_UP = new THREE.Vector3(0, 0, 1);
 
+/* What the LEFT button does when Shift is NOT held: orbit in the design tab,
+   nothing in sketch mode (it draws there). Holding Shift turns LEFT into PAN
+   in both — a fallback for mice whose wheel-press drag is awkward, since pan
+   otherwise lives only on the middle button. OrbitControls reads mouseButtons
+   at pointerdown, so flipping it on the Shift keydown is enough. */
+let leftBase = THREE.MOUSE.ROTATE;
+let shiftPan = false;
+
+function applyLeftButton() {
+  if (controls) controls.mouseButtons.LEFT = shiftPan ? THREE.MOUSE.PAN : leftBase;
+}
+
+/* sketch mode calls this with null so LEFT is free for drawing */
+export function setLeftButton(action) {
+  leftBase = action;
+  applyLeftButton();
+}
+
+export function shiftPanActive() { return shiftPan; }
+
 function buildControls(up) {
   const pos = camera.position.clone();
   const tgt = controls ? controls.target.clone() : new THREE.Vector3();
@@ -58,9 +78,11 @@ function buildControls(up) {
      left button either — it selects, and orbit is Shift+middle — but the
      design tab deliberately KEEPS left-drag orbit (user's call) since nothing
      else needs left there. */
-  controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE,
+  leftBase = THREE.MOUSE.ROTATE;        // design default; sketch mode frees it
+  controls.mouseButtons = { LEFT: leftBase,
                             MIDDLE: THREE.MOUSE.PAN,
                             RIGHT: THREE.MOUSE.ROTATE };
+  applyLeftButton();                    // a rebuild must not drop Shift-pan
   camera.position.copy(pos);
   controls.target.copy(tgt);
   controls.addEventListener('change', () => bus.emit('view-changed'));
@@ -102,7 +124,8 @@ export function initViewport() {
   // in-viewport sketch layer (Fusion-style sketch mode) — needs the internals.
   // controls are REBUILT when the orbit axis changes, so pass a getter.
   initSketch3D({ scene, camera, dom: renderer.domElement, groundGrid,
-                 getControls, setOrbitUp, getFitRadius: () => fitRadius });
+                 getControls, setOrbitUp, setLeftButton,
+                 getFitRadius: () => fitRadius });
   // e2e/debug handle (read-only use): camera, controls and the fit volume the
   // origin-plane quads are sized from
   window.__vp = { camera, getControls,
@@ -142,7 +165,13 @@ export function initViewport() {
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape' && placeCb) cancelPlacement();
     if (e.key === 'Escape' && planePickCb) endPlanePick();
+    if (e.key === 'Shift' && !shiftPan) { shiftPan = true; applyLeftButton(); }
   });
+  const dropShift = () => {
+    if (shiftPan) { shiftPan = false; applyLeftButton(); }
+  };
+  window.addEventListener('keyup', e => { if (e.key === 'Shift') dropShift(); });
+  window.addEventListener('blur', dropShift);   // alt-tab must not stick in pan
   // any document change (tab switch, sample opened, external design) while a
   // plane-pick is pending would leave the 3 plane quads stranded — cancel it
   bus.on('doc-updated', () => { if (planePickCb) endPlanePick(); });

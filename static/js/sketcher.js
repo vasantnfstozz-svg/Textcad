@@ -126,8 +126,8 @@ function enterMode() {
   if (!navTipShown) {
     navTipShown = true;
     bus.emit('msg', 'bot', 'Sketch mode: left-drag draws · RIGHT-drag orbits '
-      + '(the model stays live — you never leave 3D) · middle-drag pans · '
-      + 'wheel zooms · Look At re-faces the plane.');
+      + '(the model stays live — you never leave 3D) · middle-drag or '
+      + 'shift+left-drag pans · wheel zooms · Look At re-faces the plane.');
   }
   if (!skOnFace) {
     // Fusion-style: NO separate editor — the viewport IS the sketch. Tools sit
