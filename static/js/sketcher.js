@@ -16,7 +16,7 @@ import { bus } from './bus.js';
 import { postJSON } from './api.js';
 import { loadMesh, modelExtent } from './viewport.js';
 import { enterSketch3D, exitSketch3D, renderSketch3D,
-         planeToScreen } from './sketch3d.js';
+         planeToScreen, gridStep } from './sketch3d.js';
 import { SETTINGS, unitLabel, fmtLen, toMm } from './settings.js';
 
 /* ---------------- state ---------------- */
@@ -108,7 +108,6 @@ function focusOnModel(plane) {
    (right-drag) / pan (middle) / zoom at any time while drawing with LEFT. */
 let snapTol3d = 2;        // mm for ~12 px — updated with every 3D pointer event
 let pendingFocus = null;  // {cx, cy, extent} camera framing for the next enter
-let gridStep3d = 10;
 let edgeOnView = false;   // view rotated (nearly) parallel to the sketch plane
 
 /* snap/close tolerance in plane mm — derived from the screen scale */
@@ -178,6 +177,10 @@ function exitMode() {
 export function sketchEntities() { return skEnts.map(e => ({ ...e })); }
 export function sketchSnapTargets() {
   return { model: modelSnaps.map(m => ({ ...m })), edges: modelEdges.length };
+}
+/* the increment a click would snap by right now (tests assert grid snapping) */
+export function snapStepInfo() {
+  return { snapMm: SETTINGS.snapMm, gridStep3d: gridStep() };
 }
 
 // ribbon-facing controls for the contextual SKETCH tab
@@ -310,9 +313,8 @@ export function initSketcher() {
   bus.on('sk3d-up', () => { if (sketchActive) pointerUp(); });
   bus.on('sk3d-dbl', () => { if (sketchActive) onDblClick(); });
   bus.on('sk3d-grid', ({ step }) => {
-    gridStep3d = step;
     const el = document.getElementById('sk3dGrid');
-    if (el) el.textContent = `grid ${fmtLen(gridStep3d, false)} ${unitLabel()}`;
+    if (el) el.textContent = `grid ${fmtLen(step, false)} ${unitLabel()}`;
   });
   // orbiting moves the camera — re-place the HTML labels over the 3D scene
   bus.on('sk3d-view', () => { if (sketchActive) updateFloatingLabels(); });
@@ -337,8 +339,13 @@ function setTool(kind) {
 
 /* ---------------- coordinates ---------------- */
 
-const snap = v => {                       // snap increment from Settings (0 = off)
-  const s = SETTINGS.snapMm;
+/* Snap increment: an explicit value from Settings wins; otherwise follow the
+   LIVE adaptive grid (Fusion: clicks stick to the visible cells — every grid
+   corner is a start point, and zooming in refines the snap with the grid).
+   Read straight from sketch3d, so the snap can never disagree with the grid
+   that is actually on screen. */
+const snap = v => {
+  const s = SETTINGS.snapMm > 0 ? SETTINGS.snapMm : gridStep();
   return s > 0 ? Math.round(v / s) * s : Math.round(v * 100) / 100;
 };
 const snapPt = p => ({ x: snap(p.x), y: snap(p.y) });
@@ -701,15 +708,18 @@ function placeClick(p) {
 }
 
 function twoClickEntity(kind, a, b) {
+  // a and b are ALREADY snapped clicks — never re-snap derived values like
+  // the midpoint: rounding (a+b)/2 to the grid used to shift the whole
+  // rectangle so its corners no longer sat where the user clicked
   const d = Math.max(dist(a, b), 0.5);
   if (kind === 'circle')
-    return { kind, mode: 'add', x: a.x, y: a.y, r: snap(d) || 1 };
+    return { kind, mode: 'add', x: a.x, y: a.y, r: d };
   if (kind === 'regular_polygon')
-    return { kind, mode: 'add', x: a.x, y: a.y, radius: snap(d) || 1,
+    return { kind, mode: 'add', x: a.x, y: a.y, radius: d,
              sides: 6, rotation: 0 };
   if (kind === 'rectangle')
     return { kind, mode: 'add',
-             x: snap((a.x + b.x) / 2), y: snap((a.y + b.y) / 2),
+             x: (a.x + b.x) / 2, y: (a.y + b.y) / 2,
              w: Math.max(Math.abs(b.x - a.x), 1),
              h: Math.max(Math.abs(b.y - a.y), 1), rotation: 0 };
   if (kind === 'ellipse')
@@ -718,8 +728,8 @@ function twoClickEntity(kind, a, b) {
              ry: Math.max(Math.abs(b.y - a.y), 1), rotation: 0 };
   if (kind === 'slot')
     return { kind, mode: 'add',
-             x: snap((a.x + b.x) / 2), y: snap((a.y + b.y) / 2),
-             length: snap(d) || 1, height: 10,
+             x: (a.x + b.x) / 2, y: (a.y + b.y) / 2,
+             length: d, height: 10,
              rotation: Math.round(Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI) };
   return null;
 }

@@ -11,7 +11,9 @@ const UNITS = {
   in: { label: 'in', f: 1 / 25.4, dp: 4, vdp: 4 },
 };
 
-const DEFAULTS = { unit: 'mm', gridMm: 10, snapMm: 1 };
+// snapMm 0 = follow the visible (adaptive) grid — the Fusion default; set a
+// value to force a fixed increment instead
+const DEFAULTS = { unit: 'mm', gridMm: 10, snapMm: 0 };
 
 export const SETTINGS = { ...DEFAULTS };
 

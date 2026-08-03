@@ -90,6 +90,14 @@ async (args) => {
 }
 """
 
+# "the enter-tween has fully landed": entering sketch mode synchronously
+# starts a camera tween that DISABLES OrbitControls and re-enables them only
+# after the tween ends and the grid is refit — so controls.enabled is the
+# exact signal. (A camera-stillness settle is NOT: before the tween's first
+# frame the camera is also still, and clicking then snaps against the
+# pre-tween grid — a real flake we hit.)
+TWEEN_DONE = "() => window.__vp.getControls().enabled === true"
+
 DRAW_RECT = """
 async (args) => {
   const [ax, ay, bx, by] = args;
@@ -109,7 +117,8 @@ def face_sketch(page, fresh_doc):
     page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
     page.evaluate(OPEN_FACE_SKETCH)
     page.wait_for_function(IS_ACTIVE, timeout=15000)
-    page.wait_for_timeout(1200)                  # camera tween settles
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.wait_for_timeout(200)
     return page
 
 
@@ -172,7 +181,10 @@ def test_face_sketch_reopens_in_viewport_for_editing(face_sketch):
     """The tree's edit action must route a committed face sketch back into
     the in-viewport mode with its entities loaded — not a dead end."""
     page = face_sketch
-    page.evaluate(DRAW_RECT, [10, 5, 22, 14])             # a 12x9 rectangle
+    # corners on multiples of EVERY plausible grid step (snap follows the
+    # DISPLAYED grid, which can legitimately still be the coarse pre-tween one
+    # on a slow run) — snap precision itself is locked in test_adaptive_grid
+    page.evaluate(DRAW_RECT, [10, 10, 30, 20])            # a 20x10 rectangle
     page.evaluate("""async () => {
       const sk = await import('/static/js/sketcher.js');
       sk.finishSketch();
@@ -186,12 +198,13 @@ def test_face_sketch_reopens_in_viewport_for_editing(face_sketch):
       bus.emit('edit-sketch', f);
     }""")
     page.wait_for_function(IS_ACTIVE, timeout=15000)
-    page.wait_for_timeout(1200)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.wait_for_timeout(200)
     ents = page.evaluate("""async () => {
       const sk = await import('/static/js/sketcher.js');
       return sk.sketchEntities();
     }""")
     assert len(ents) == 1, ents
-    assert ents[0]["w"] == pytest.approx(12, abs=1e-6), ents[0]
+    assert ents[0]["w"] == pytest.approx(20, abs=1e-6), ents[0]
     assert page.evaluate("window.__vp.bodyCount()") == 1
     assert page.errors == []

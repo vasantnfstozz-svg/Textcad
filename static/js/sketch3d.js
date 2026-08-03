@@ -58,9 +58,14 @@ export function initSketch3D(context) {
   bus.on('sketch-tool', ({ tool }) => {
     if (active) ctx.dom.style.cursor = tool ? 'crosshair' : '';
   });
-  // orbiting moves HTML labels (dims, snap tag) — let the sketcher re-place
-  // them. viewport.js re-emits this for whichever controls instance is live.
-  bus.on('view-changed', () => { if (active) bus.emit('sk3d-view', {}); });
+  // orbiting/zooming re-fits the ADAPTIVE grid and moves the HTML labels
+  // (dims, snap tag) — let the sketcher re-place them. viewport.js re-emits
+  // this for whichever controls instance is live.
+  bus.on('view-changed', () => {
+    if (!active) return;
+    updateGrid();
+    bus.emit('sk3d-view', {});
+  });
 }
 
 export function sketch3DActive() { return active; }
@@ -76,7 +81,21 @@ export function enterSketch3D(frameSpec, opts = {}) {
   group.matrixAutoUpdate = false;
   group.matrix.makeBasis(frame.x, frame.y, frame.z).setPosition(frame.o);
   ctx.scene.add(group);
-  buildGrid(opts.gridMm || 10);
+  gridBase = Math.max(opts.gridMm || 10, 0.1);
+  gridState = null;
+  active = true;                 // updateGrid and pointer events are gated on it
+  updateGrid();
+  if (!gridState) {
+    // camera not facing the plane yet (the tween runs next): build the first
+    // grid from where the tween will land instead of the current view
+    const f = opts.focus || { cx: 0, cy: 0, extent: 90 };
+    const rect = ctx.dom.getBoundingClientRect();
+    const ext = f.extent || 90;
+    const pxPerMm = rect.height ? rect.height / (2 * ext * 1.15) : 3;
+    buildGridFor({ minX: f.cx - ext, maxX: f.cx + ext,
+                   minY: f.cy - ext, maxY: f.cy + ext,
+                   cx: f.cx, cy: f.cy }, pxPerMm);
+  }
   ctx.groundGrid.visible = false;
   // orbit around the PLANE's up so the flat-on sketch view is never a gimbal
   // pole (looking down world -Y at XZ was exactly phi=pi => orbit was dead)
@@ -88,7 +107,7 @@ export function enterSketch3D(frameSpec, opts = {}) {
   // Going through setLeftButton (not c.mouseButtons directly) keeps the
   // Shift+left = pan fallback working while sketching.
   ctx.setLeftButton(null);                     // left draws
-  active = true; edgeOn = false;
+  edgeOn = false;                              // (active was set before the grid)
   const f = opts.focus || { cx: 0, cy: 0, extent: 90 };
   lookAtPlanePoint(f.cx, f.cy, distanceFor(f.extent || 90));
 }
@@ -97,7 +116,7 @@ export function exitSketch3D() {
   if (!active) return;
   active = false; leftDown = false; tween = null; edgeOn = false;
   disposeDeep(group); ctx.scene.remove(group);
-  group = null; gridObj = null; frame = null;
+  group = null; gridObj = null; gridState = null; frame = null;
   ctx.groundGrid.visible = true;
   ctx.setOrbitUp(null).enabled = true;      // default axis + default button map
   ctx.dom.style.cursor = '';
@@ -144,6 +163,7 @@ function stepTween(now) {
   if (k < 1) { requestAnimationFrame(stepTween); return; }
   tween = null;
   ctrl().enabled = true;
+  updateGrid();                              // fit the grid to the landed view
   bus.emit('sk3d-view', {});                 // re-place labels at the new pose
 }
 
@@ -203,22 +223,116 @@ export function planeToScreen(x, y) {
   return toScreen(localToWorld(x, y));
 }
 
-/* ---------------- rendering ---------------- */
+/* ---------------- the adaptive grid (Fusion-style) ----------------
+   The grid is DERIVED FROM THE VIEW, not built once: zooming in subdivides
+   the cells along a 1-2-5 ladder down to a floor of gridMm/10 — past that
+   the cells simply get bigger on screen (Fusion stops subdividing too) —
+   and the covered patch follows the camera, so the plane never "ends" while
+   panning, zooming out, or drawing something big. Rebuilt on 'view-changed';
+   a no-op when step, size and centre are unchanged. */
 
-function buildGrid(stepMm) {
-  const fit = ctx.getFitRadius();
-  let step = Math.max(0.5, stepMm);
-  const half = Math.max(fit * 2.2, 220);
-  while ((2 * half) / step > 160) step *= 2;      // never crowd the lines
-  const size = Math.ceil(half / step) * 2 * step;
-  gridObj = new THREE.GridHelper(size, size / step, 0x3a4150, 0x20242e);
-  gridObj.rotation.x = Math.PI / 2;               // GridHelper is XZ; we draw XY
-  gridObj.material.transparent = true;
-  gridObj.material.opacity = 0.8;
-  gridObj.material.depthWrite = false;
-  group.add(gridObj);
-  bus.emit('sk3d-grid', { step });                // status readout ("grid 10mm")
+let gridBase = 10;         // SETTINGS.gridMm at sketch enter
+let gridState = null;      // {step, major, size, cx, cy} of the built grid
+const MIN_CELL_PX = 10;    // never draw a minor cell narrower than this
+
+/* test/debug accessor for what grid is really in the scene */
+export function gridInfo() { return gridState ? { ...gridState } : null; }
+
+/* the LIVE minor step — the sketcher snaps by this, so clicks always stick
+   to the grid that is actually displayed (never a stale cached step) */
+export function gridStep() { return gridState ? gridState.step : 10; }
+
+function nextStep(s) {     // the 1-2-5 ladder, decade-normalized
+  const e = Math.floor(Math.log10(s) + 1e-9);
+  const m = s / 10 ** e;
+  return (m < 1.5 ? 2 : m < 3.5 ? 5 : 10) * 10 ** e;
 }
+
+/* plane-local bbox of the visible patch of the sketch plane: rays through
+   the viewport corners + centre, intersected with the plane. null when the
+   view is (nearly) edge-on — the caller keeps the current grid. */
+function viewFootprint() {
+  const rect = ctx.dom.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  const pts = [];
+  for (const [nx, ny] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, 0]]) {
+    raycaster.setFromCamera(new THREE.Vector2(nx, ny), ctx.camera);
+    if (Math.abs(raycaster.ray.direction.dot(frame.z)) < 0.02) continue;
+    const hit = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(plane, hit)) pts.push(worldToLocal(hit));
+  }
+  if (pts.length < 3) return null;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of pts) {
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  }
+  return { minX, maxX, minY, maxY,
+           cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
+}
+
+function updateGrid() {
+  if (!active || !frame) return;
+  const fp = viewFootprint();
+  if (!fp) return;                       // edge-on: keep what we have
+  const a = toScreen(localToWorld(fp.cx, fp.cy));
+  const b = toScreen(localToWorld(fp.cx + 1, fp.cy));
+  if (!a || !b) return;
+  buildGridFor(fp, Math.max(Math.hypot(b.x - a.x, b.y - a.y), 1e-4));
+}
+
+function buildGridFor(fp, pxPerMm) {
+  const floor = Math.max(gridBase / 10, 0.01);   // where subdivision ENDS
+  let step = floor;
+  while (step * pxPerMm < MIN_CELL_PX && step < 1e6) step = nextStep(step);
+  const major = step * 10;
+  // cover the visible patch with margin, but cap the line count — when the
+  // horizon is in view the footprint runs to infinity and a grid should not
+  const spanNeed = Math.max(fp.maxX - fp.minX, fp.maxY - fp.minY) * 1.3;
+  const size = Math.max(Math.min(Math.ceil(spanNeed / major) * major,
+                                 24 * major), 2 * major);
+  // centre on a MAJOR multiple so the lines stay put in the world while the
+  // grid re-centres under a pan (a drifting grid reads as swimming lines)
+  const cx = Math.round(fp.cx / major) * major;
+  const cy = Math.round(fp.cy / major) * major;
+  if (gridState && gridState.step === step && gridState.size === size
+      && gridState.cx === cx && gridState.cy === cy) return;
+  const stepChanged = !gridState || gridState.step !== step;
+  if (gridObj) { group.remove(gridObj); disposeDeep(gridObj); }
+  gridObj = new THREE.Group();
+  const minor = new THREE.GridHelper(size, Math.round(size / step),
+                                     0x20242e, 0x20242e);
+  const majorG = new THREE.GridHelper(size, Math.round(size / major),
+                                      0x3a4150, 0x3a4150);
+  let z = 0;
+  for (const g of [minor, majorG]) {
+    g.rotation.x = Math.PI / 2;         // GridHelper is XZ; we draw XY
+    g.position.z = z; z += 0.004;       // majors paint over minors, no z-fight
+    g.material.transparent = true;
+    g.material.opacity = 0.8;
+    g.material.depthWrite = false;
+    gridObj.add(g);
+  }
+  // the plane's own axes through the origin, while the origin is on-grid
+  const half = size / 2;
+  const axis = (p1, p2) => {
+    const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+    const l = new THREE.Line(geo, new THREE.LineBasicMaterial({
+      color: 0x4a5468, transparent: true, depthWrite: false }));
+    l.position.z = z;
+    gridObj.add(l);
+  };
+  if (Math.abs(cx) <= half)
+    axis(new THREE.Vector3(-cx, -half, 0), new THREE.Vector3(-cx, half, 0));
+  if (Math.abs(cy) <= half)
+    axis(new THREE.Vector3(-half, -cy, 0), new THREE.Vector3(half, -cy, 0));
+  gridObj.position.set(cx, cy, 0);
+  group.add(gridObj);
+  gridState = { step, major, size, cx, cy };
+  if (stepChanged) bus.emit('sk3d-grid', { step });   // readout + snap step
+}
+
+/* ---------------- rendering ---------------- */
 
 /* spec (all in plane-local mm):
    { shapes: [{pts:[[x,y]..], closed, color, fill, fillOpacity, dashed}],
