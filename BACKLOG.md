@@ -69,8 +69,9 @@ See the Done section.
   only — revisit after the P0/P1 list is burned down).
 - [ ] **Compressor sample rebuild is slow (~1–2 min)** (pre-existing). Profile;
   cache unchanged sub-parts or parallelize blade builds.
-- [ ] **Frontend automated test coverage is minimal.** E2E suite exists as a skill
-  plan (tests/e2e/) — every P0/P1 fix above must land with an E2E regression test.
+- [ ] **Frontend automated test coverage is minimal.** `tests/e2e/` now exists
+  (first tests landed with S1 camera work, 5 tests / ~55s, one shared browser
+  per module) — keep adding one per UI fix.
 - [ ] **No measure tools in viewport** (pre-existing): distance between two picks,
   whole-part bounding box readout.
 

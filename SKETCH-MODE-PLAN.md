@@ -88,7 +88,45 @@ a CSS regression once passed every DOM check and failed only visually.
   doomed process to `designs/my-part.tcad.json` and re-verified: it loads
   and rebuilds `ok=True` under current code. **Use it as the S3 test case.**
 
-## S1 — Z-up world (smallest step, biggest feel win)
+## S1 — Z-up world — ✅ DONE 2026-08-03
+
+**Shipped:** `WORLD_UP = (0,0,1)` in viewport.js `buildControls` (sketch mode's
+per-plane override via `setOrbitUp` kept intact), and `setView` poses reworked
+for the Z-up frame. Verified 12/12 in the browser + 5 permanent e2e tests in
+the NEW `tests/e2e/` (55s, one shared browser).
+
+**What the verification caught that reading the code did not:**
+
+1. **TOP was parked exactly ON the Z-up pole** — up antiparallel to the view
+   direction, so `cross(up, viewDir) = 0`: degenerate camera basis, and
+   OrbitControls clamps phi so the view could not be orbited at all (measured
+   **180.0deg, 0.07mm** of movement on a full drag). A 0.4% -Y nudge was NOT
+   enough (0.23deg still reads as the pole). Fixed by tilting TOP `TOP_TILT`
+   = **2deg** off vertical: screen-up comes out +Y (Fusion's top view),
+   the basis is sound, the tilt is invisible (~3mm of side wall on a 100mm
+   part). Dragging *further past* straight-down stays clamped — inherent to a
+   fixed-axis orbit and a meaningless gesture; all other directions are free.
+2. **FRONT was the degenerate one BEFORE this step** (looking along +Y with
+   up +Y) — that is what its old `c.z + d*0.001` nudge was patching. Z-up
+   makes it exact, so the nudge is gone.
+3. **The real reason "I can't rotate while sketching" (complaint #1, plane
+   sketches):** in sketch mode **LEFT-drag draws and RIGHT-drag orbits**.
+   Measured with a draw tool armed: left-drag moves the camera **0.0mm**,
+   right-drag **97mm**. Orbiting was never broken for plane sketches — it is
+   undiscoverable. **This raises S6 from polish to a real fix** (the hint bar
+   must say it; consider also accepting middle-drag or a modifier). Confirm
+   with the user whether they were left-dragging before investing in S4.
+4. Test-quality trap worth keeping: asserting "leaving sketch mode restores
+   +Z" on an **XZ** sketch is a FALSE PASS — the XZ plane's up IS +Z, so the
+   check passes even if nothing is restored. The e2e test uses **XY** (up +Y)
+   and also asserts `sketch3DActive()` flipped.
+
+**Not changed:** lights (they are positioned relative to the Z-up geometry, not
+the camera — verified visually). Framing/`Fit` still centres on the bounding
+sphere and can leave a model off-centre — pre-existing P2 "viewport camera
+quirks", untouched here.
+
+### Original S1 notes (kept for reference)
 
 **Goal:** the viewport orbits like a CAD tool: Z stays up, horizon level.
 
@@ -236,11 +274,18 @@ to it, with a marker+label, exactly like origin/center snaps. Complaint #4.
   box edges → expected plane-local points for XY and a face plane. E2E: one
   snap-and-draw pass.
 
-## S6 — Discoverability polish (tiny, do last)
+## S6 — Discoverability (PROMOTED by S1 — no longer "polish")
+
+S1 measured it: with a draw tool armed, left-drag orbits **0.0mm** and
+right-drag **97mm**. Plane-sketch orbiting works and is simply invisible, so
+this step is a large part of complaint #1, not a nicety. Do it EARLY (it is
+minutes of work) rather than last.
 
 - Hint bar (`#sk3dBar`, sketcher.js `updateHint`): always append
   "right-drag orbit · middle pan · Look At re-faces the plane" — the user
-  did not know orbit existed (complaint #1 was half this).
+  did not know orbit existed (complaint #1 was half this). The hint text
+  already exists in the status line but reads as a footnote; make it
+  unmissable on entering sketch mode.
 - On entering sketch mode with a body present, do NOT tween fully flat-on if
   it would hide the model? Keep Fusion behavior (it DOES go flat-on) — just
   make the hint visible. No code beyond the hint unless the user asks.

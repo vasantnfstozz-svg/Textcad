@@ -27,17 +27,25 @@ let exArrow = null;              // the draggable Extrude manipulator arrow
 const raycaster = new THREE.Raycaster();
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);   // Z=0 workplane
 
-/* OrbitControls freezes its ORBIT AXIS at construction time
+/* The world is Z-UP: build123d/OCCT models are built in a Z-up frame, the
+   ground workplane is XY (GROUND, z=0) and the ground grid is rotated into XY.
+   The camera must share that convention or the horizon rolls while orbiting
+   and nothing lines up with the origin planes. WORLD_UP is the default orbit
+   axis; sketch mode overrides it with its plane's up via setOrbitUp.
+
+   OrbitControls freezes its ORBIT AXIS at construction time
    (`setFromUnitVectors(object.up, (0,1,0))` lives in update()'s closure), so
    `camera.up = …` afterwards is ignored. Looking straight down an axis that is
    a pole of that frozen frame makes orbiting dead (the XZ sketch view sat at
    phi = π exactly). Rebuilding the controls with the wanted up is the only
-   reliable way — cheap, and it preserves pose. up=null restores the default. */
+   reliable way — cheap, and it preserves pose. up=null restores WORLD_UP. */
+const WORLD_UP = new THREE.Vector3(0, 0, 1);
+
 function buildControls(up) {
   const pos = camera.position.clone();
   const tgt = controls ? controls.target.clone() : new THREE.Vector3();
   if (controls) controls.dispose();
-  camera.up.copy(up || new THREE.Vector3(0, 1, 0));
+  camera.up.copy(up || WORLD_UP);
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; controls.dampingFactor = 0.12;
   camera.position.copy(pos);
@@ -630,12 +638,29 @@ function arrowRelease() {
   exArrow.onCommit(exArrow.amount);
 }
 
+/* Standard CAD view poses in the Z-up frame (see WORLD_UP).
+
+   TOP looks down -Z, which is the POLE of the Z-up orbit frame. Parked exactly
+   there, up is antiparallel to the view direction: cross(up, viewDir) = 0, the
+   camera basis is degenerate (lookAt goes to pieces) and OrbitControls clamps
+   phi so orbiting dies — measured 180.0deg and 0.07mm of movement on a full
+   drag. So TOP sits TILT_DEG off vertical: screen-up comes out +Y (Fusion's
+   top view, X right / Y up), the basis is sound, and the tilt is invisible at
+   2deg (~3mm of side wall across a 100mm part). Dragging further past
+   straight-down is still clamped by the pole — inherent to a fixed-axis orbit,
+   and the gesture is meaningless anyway; every other direction is free.
+
+   FRONT needs no such trick now: looking along +Y with up +Z is already
+   perpendicular. It used to be the degenerate one, back when the camera was
+   Y-up — that is exactly what its old z*0.001 nudge was patching. */
+const TOP_TILT = 2 * Math.PI / 180;
+
 export function setView(dir) {
   const d = fitRadius * 2.4, c = fitCenter;
   const views = {
     iso:   [c.x + d * 0.7, c.y - d * 0.7, c.z + d * 0.55],
-    top:   [c.x, c.y, c.z + d],
-    front: [c.x, c.y - d, c.z + d * 0.001],
+    top:   [c.x, c.y - d * Math.sin(TOP_TILT), c.z + d * Math.cos(TOP_TILT)],
+    front: [c.x, c.y - d, c.z],
   };
   camera.position.set(...views[dir]); controls.target.copy(c);
 }
