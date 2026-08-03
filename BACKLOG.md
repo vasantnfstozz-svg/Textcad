@@ -1,5 +1,11 @@
 # TextCAD backlog — the single source of truth for problems & missing tools
 
+> **ACTIVE WORKSTREAM (2026-08-03): Fusion-parity sketch mode overhaul — see
+> [SKETCH-MODE-PLAN.md](SKETCH-MODE-PLAN.md)** (root-caused: face sketches
+> stuck in the flat docked editor, non-result bodies ghosted "blank", origin
+> planes drawn at the model center instead of the origin, Y-up orbit in a
+> Z-up world, no snapping to model edges). P2 items below resume after it.
+
 How this file works:
 - **One entry per problem.** Every bug, friction point, or missing tool gets a line
   here the moment it is noticed — especially during dogfooding sessions.
