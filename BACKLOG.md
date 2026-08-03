@@ -27,10 +27,7 @@ See the Done section.
 
 ## P1 — blocks basic manual design
 
-**6 of 7 P1 items FIXED 2026-07-28 — see Done. Remaining: sketch trim tool.**
-
-- [ ] **Sketch trim tool missing** (pre-existing). Needs curve-curve intersection;
-  add/cut composition covers some cases but real 2D drafting needs trim.
+**ALL P1 items FIXED — trim tool landed 2026-08-03, see Done.**
 
 ## P2 — hurts daily use
 
@@ -84,6 +81,33 @@ See the Done section.
   design is robust.
 
 ## Done
+
+### Sketch TRIM tool — the last P1 (2026-08-03)
+Fusion's Trim adapted to the closed-entity sketch model: entity outlines are
+split at their crossings into pieces; hover highlights one red, click removes
+it. Material always wins (trim never removes material):
+- [x] Backend `sketch_trim.py` (pure functions, stateless): `trim_pieces`
+  samples outlines + vectorized crossing detection; `trim_apply` classifies
+  the clicked piece by probing material on both flanks — internal seam →
+  dissolved (shapes union-rebuilt), enclosed gap boundary → gap filled (the
+  exact arrangement CELL, clipped per entity — a U−M component can span the
+  profile edge), outer boundary → refused with a clear message, crossing-free
+  entity → deleted whole (Fusion parity). The overlapping CLUSTER is rebuilt
+  from the exact OCCT wires as path entities (lines + true 3-point arcs;
+  untouched full circles survive as parametric circles); entities outside the
+  cluster stay untouched. Areas verified exact (2-circle union to 0.2mm²).
+- [x] Endpoints `POST /api/sketch/trim/pieces` + `/apply` — stateless, work on
+  the entity list the open editor sends, errors as {"error"} for the chat.
+- [x] Frontend: ✂ Trim in the contextual sketch ribbon (own MODIFY group) +
+  the face-mode palette; hover→red piece (3D scene + SVG), click→apply with
+  chat narration; stale-piece guard (entities re-serialized and compared
+  before any apply). main.js?v=33.
+- [x] 12 new pytest tests (tests/test_sketch_trim.py, 148 total green) +
+  8/8 Playwright checks on a live server, screenshots visually confirmed.
+- Honest limits (later if needed): tangent-contact shapes aren't split (no
+  crossing), trim can't REMOVE material (use cut entities for that), and
+  rebuilt clusters lose their original parametric kinds (like Fusion, where
+  trim also breaks curves).
 
 ### Fusion-style Extrude — v1 (2026-07-29)
 Built from the user's Fusion Extrude help text. v1 = profile + direction

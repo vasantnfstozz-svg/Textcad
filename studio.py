@@ -33,6 +33,7 @@ import build123d as b3d
 
 import author
 import sketch as sketchlib
+import sketch_trim as trimlib
 from document import Document
 from samples import SAMPLES, sample_flange, sample_impeller, sample_compressor  # noqa: F401 (re-export for tests)
 
@@ -241,6 +242,11 @@ class ParamsReq(BaseModel):
 class FaceReq(BaseModel):
     face_center: list
     face_normal: list | None = None
+
+
+class TrimReq(BaseModel):
+    entities: list
+    piece: str | None = None
 
 
 class ChatReq(BaseModel):
@@ -537,6 +543,26 @@ def face_outline(req: FaceReq):
         return sketchlib.face_outline_2d(part, req.face_center, req.face_normal)
     except Exception as e:
         return {"outer": [], "holes": [], "planar": False, "error": str(e)}
+
+
+@app.post("/api/sketch/trim/pieces")
+def sketch_trim_pieces(req: TrimReq):
+    """Split every entity outline at its crossings with the others — the
+    hoverable trim segments. Stateless: works on the entity list sent by the
+    open sketch editor, not on the document."""
+    try:
+        return {"pieces": trimlib.trim_pieces(req.entities)}
+    except (KeyError, ValueError) as e:
+        return {"pieces": [], "error": str(e)}
+
+
+@app.post("/api/sketch/trim/apply")
+def sketch_trim_apply(req: TrimReq):
+    """Delete one trim piece and return the rebuilt entity list."""
+    try:
+        return trimlib.trim_apply(req.entities, req.piece or "")
+    except (KeyError, ValueError) as e:
+        return {"error": str(e)}
 
 
 @app.post("/api/feature/params")

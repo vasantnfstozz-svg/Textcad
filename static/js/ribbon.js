@@ -22,7 +22,10 @@ const SKETCH_TOOLS = {
   regular_polygon: { icon: '⬡', name: 'Polygon' },
   slot: { icon: '⬭', name: 'Slot' },
   ellipse: { icon: '⬯', name: 'Ellipse' },
+  trim: { icon: '✂', name: 'Trim' },        // modify, not create (see groups)
 };
+const SKETCH_CREATE = ['path', 'rectangle', 'circle', 'regular_polygon',
+                       'slot', 'ellipse'];
 let curSketchTool = null;      // which draw tool is active (for ribbon highlight)
 
 // Create Sketch (Fusion): pick a plane or a planar face IN THE VIEWPORT, then
@@ -89,7 +92,8 @@ let activeTab = 'Create';
 // contextual groups shown ONLY while in sketch mode (Fusion's green SKETCH tab):
 // the draw tools live in the top ribbon now, not a side palette.
 const SKETCH_CONTEXT = [
-  ['Create', Object.keys(SKETCH_TOOLS).map(t => ({ t }))],
+  ['Create', SKETCH_CREATE.map(t => ({ t }))],
+  ['Modify', [{ t: 'trim' }]],
   ['View', [{ a: 'look_at' }]],
   ['Finish', [{ a: 'finish_sketch' }, { a: 'cancel_sketch' }]],
 ];

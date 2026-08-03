@@ -49,6 +49,13 @@ let pendingVia = null;    // arc: the middle (via) point, waiting for the end
 let activeSnap = null;    // {x, y, label} — geometry point the cursor snapped to
 let axisLock = null;      // {axis:'h'|'v', ref:{x,y}} — inference guide line
 
+// trim tool (last P1): entity outlines split at their crossings into PIECES
+// by the backend; hovering highlights one red, clicking removes it
+let trimPieces = null;    // [{id, ent, whole, pts:[[x,y]..]}] or null=loading
+let trimHover = -1;       // index into trimPieces
+let trimFor = '';         // JSON of the skEnts the pieces were computed for
+let trimBusy = false;     // an apply is in flight
+
 const dlg = () => document.getElementById('sketchDialog');
 const svg = () => document.getElementById('sketchCanvas');
 
@@ -85,6 +92,7 @@ const snapTolWorld = () => inPlane3D() ? snapTol3d : view.ext / 40;
 function resetEditor() {
   skEnts = []; tool = null; clicks = []; ghost = null; selEnt = -1;
   faceRef = null;
+  trimPieces = null; trimHover = -1; trimFor = '';
   view = { cx: 0, cy: 0, ext: 90 };          // roomier default, Fusion-like
   document.querySelectorAll('.skpalette button')
     .forEach(b => b.classList.remove('active'));
@@ -311,6 +319,8 @@ function setTool(kind) {
   tool = kind; clicks = []; ghost = null; selEnt = -1;   // deselect on tool pick
   activeSnap = null; axisLock = null;
   pathStart = null; pathSegs = []; pendingVia = null; segMode = 'line';
+  trimHover = -1;
+  if (tool === 'trim') fetchTrimPieces(); else trimPieces = null;
   document.querySelectorAll('.skpalette button').forEach(b =>
     b.classList.toggle('active', b.dataset.shape === tool));
   svg().style.cursor = tool ? 'crosshair' : 'default';
@@ -409,6 +419,68 @@ function smartSnap(raw) {
   return p;
 }
 
+/* ---------------- the trim tool (last P1) ----------------
+   The backend owns the geometry (/api/sketch/trim/*, stateless): pieces are
+   fetched for the CURRENT entity list; a click sends the same list back, so
+   what is applied is exactly what was highlighted. If the entities changed
+   under the pieces (card edit mid-trim), they are refetched, never misused. */
+
+async function fetchTrimPieces() {
+  trimPieces = null; trimHover = -1;
+  const snapshot = JSON.stringify(skEnts);
+  trimFor = snapshot;
+  if (!skEnts.length) { updateHint(); draw(); return; }
+  try {
+    const r = await fetch('/api/sketch/trim/pieces', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: `{"entities":${snapshot}}`,
+    });
+    const res = await r.json();
+    if (tool !== 'trim' || trimFor !== snapshot) return;  // user moved on
+    if (res.error) { bus.emit('msg', 'bot', '⚠ ' + res.error); return; }
+    trimPieces = res.pieces || [];
+  } catch { /* server unreachable — the apply path will say so */ }
+  updateHint(); draw();
+}
+
+function segDist(p, a, b) {
+  const ax = a[0], ay = a[1], dx = b[0] - ax, dy = b[1] - ay;
+  const L2 = dx * dx + dy * dy;
+  const t = L2
+    ? Math.min(Math.max(((p.x - ax) * dx + (p.y - ay) * dy) / L2, 0), 1) : 0;
+  return Math.hypot(p.x - (ax + t * dx), p.y - (ay + t * dy));
+}
+
+function updateTrimHover(p) {
+  if (JSON.stringify(skEnts) !== trimFor) { fetchTrimPieces(); return; }
+  const tol = Math.max(snapTolWorld() * 1.2, 0.8);
+  let best = -1, bd = tol;
+  (trimPieces || []).forEach((piece, i) => {
+    for (let k = 0; k + 1 < piece.pts.length; k++) {
+      const d = segDist(p, piece.pts[k], piece.pts[k + 1]);
+      if (d < bd) { bd = d; best = i; }
+    }
+  });
+  if (best !== trimHover) { trimHover = best; updateHint(); }
+}
+
+async function trimClick() {
+  if (trimBusy) return;
+  if (JSON.stringify(skEnts) !== trimFor) { fetchTrimPieces(); return; }
+  if (trimHover < 0 || !trimPieces || !trimPieces[trimHover]) return;
+  const piece = trimPieces[trimHover];
+  trimBusy = true;
+  const res = await postJSON('/api/sketch/trim/apply',
+    { entities: skEnts, piece: piece.id }, 'trimming…');
+  trimBusy = false;
+  if (res.error) return;                     // postJSON already toasted why
+  skEnts = res.entities || [];
+  selEnt = -1;
+  bus.emit('msg', 'bot', res.message || 'trimmed');
+  renderEnts();
+  fetchTrimPieces();
+}
+
 /* ---------------- pointer interaction ---------------- */
 
 let dragging = null;      // {idx, startX, startY, ex, ey} moving an entity
@@ -417,6 +489,7 @@ let panning = null;       // {px, py, cx, cy} moving the view
 /* shared select/draw logic in PLANE coordinates — the SVG canvas (face
    sketches) and the 3D viewport (plane sketches) both feed points in here */
 function pointerDown(raw) {
+  if (tool === 'trim') { trimClick(); return 'tool'; }
   if (tool) { placeClick(smartSnap(raw)); return 'tool'; }
   const hit = hitTest(raw);
   if (hit >= 0) {
@@ -435,6 +508,7 @@ function pointerDown(raw) {
 
 function pointerMove(p) {
   setCoordsReadout(p);
+  if (tool === 'trim') { updateTrimHover(p); draw(); return; }
   if (tool === 'path' && pathStart) { ghost = pathGhost(smartSnap(p)); draw(); return; }
   if (tool && clicks.length) { ghost = buildGhost(smartSnap(p)); draw(); return; }
   if (tool) { smartSnap(p); draw(); }         // show snap markers pre-click too
@@ -838,6 +912,15 @@ function updateHint() {
               document.createTextNode(' ' + msg));
     return;
   }
+  if (tool === 'trim') {
+    el.textContent = trimPieces === null && skEnts.length
+      ? 'Trim: finding crossings…'
+      : trimHover >= 0 && trimPieces?.[trimHover]?.whole
+        ? 'Trim: this shape crosses nothing — a click deletes the WHOLE shape'
+        : 'Trim: hover a segment between crossings (turns red), click to ' +
+          'remove it · outer boundaries are protected';
+    return;
+  }
   if (!tool) el.textContent =
     'Pick a shape, then click to draw — clicks snap to centers/corners of ' +
     'existing shapes · drag shapes to move · wheel zooms';
@@ -974,6 +1057,11 @@ function draw() {
 
   skEnts.forEach((e, i) => out += entitySVG(e, { sel: i === selEnt }));
   if (ghost) out += entitySVG(ghost, { ghost: true });
+  if (tool === 'trim' && trimPieces && trimHover >= 0) {
+    const pl = trimPieces[trimHover].pts.map(q => `${q[0]},${-q[1]}`).join(' ');
+    out += `<polyline points="${pl}" fill="none" stroke="#ff3333"
+      stroke-width="3.5" vector-effect="non-scaling-stroke" opacity="0.95"/>`;
+  }
   for (const c of clicks)
     out += `<circle cx="${c.x}" cy="${-c.y}" r="${ext / 90}" fill="#4da3ff"/>`;
   if (tool === 'path' && pathStart) {
@@ -1094,6 +1182,14 @@ function draw3D() {
 
   const dR = Math.max(snapTol3d * 0.35, 0.6);
   const dots = clicks.map(c => ({ x: c.x, y: c.y, r: dR, color: 0x4da3ff }));
+  if (tool === 'trim' && trimPieces && trimHover >= 0) {
+    const piece = trimPieces[trimHover];        // the doomed segment, in red
+    shapes.push({ pts: piece.pts, closed: false, color: 0xff3333 });
+    const end = piece.pts[piece.pts.length - 1];
+    dots.push({ x: piece.pts[0][0], y: piece.pts[0][1], r: dR * 0.9,
+                color: 0xff3333 });
+    dots.push({ x: end[0], y: end[1], r: dR * 0.9, color: 0xff3333 });
+  }
   if (tool === 'path' && pathStart) {
     dots.push({ x: pathStart.x, y: pathStart.y, r: dR * 1.7,
                 color: 0x4da3ff, ring: true });          // the close target
