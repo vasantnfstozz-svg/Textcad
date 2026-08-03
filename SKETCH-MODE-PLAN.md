@@ -321,7 +321,51 @@ model visible, orbit free (fusion-parity rule 9). This is complaint #1.
   (existing coverage mostly holds); e2e: camera position changes while
   sketch tool active on a FACE sketch (the literal regression).
 
-## S5 — Snap to the model while sketching (start lines at box edges)
+## S5 — ✅ DONE 2026-08-03 — the part's own geometry snaps
+
+**Shipped:** new `sketch_snap.py` (pure, testable) finds body geometry
+COINCIDENT with the sketch plane and returns it in the plane's local 2D:
+`corner` (vertex in the plane), `midpoint`, `center` (circular edge centre — a
+hole centre), and `crossing` (where an edge PIERCES the plane, which is what
+makes a box standing on the plane snappable at its plan-view corners). Plus
+`edges`, the in-plane edges as polylines. `POST /api/sketch/snap {plane,offset}`
+runs it over every leaf body; the sketcher fetches ONCE per sketch (never per
+mousemove) and merges the points into `collectSnapPoints`.
+
+**Seeing is the point:** in-plane edges draw as dashed grey reference geometry,
+and every snap target gets a small grey dot (a ring for centres) so the points
+are visible BEFORE you hover — the first version returned 4 perfect snap points
+for a box with nothing drawn at them, which is just a differently-shaped
+version of the original complaint. Hover then shows the usual orange cross plus
+a label ("model corner" / "model centre" / "model edge").
+
+**Bonus honesty fix:** the coordinate readout showed the RAW cursor (28, 19)
+while the click was snapping to (30, 20). `pointerMove` now snaps FIRST and
+reports the snapped point — and calls `smartSnap` once instead of once per
+branch.
+
+Proven end-to-end: a click ~2mm off a box corner produced a rectangle of
+EXACTLY 30x20 centred at (15,10) — corner to origin, to the micron. 9 pytest +
+3 e2e tests. `sketcher.sketchEntities()/sketchSnapTargets()` added for
+assertions. main.js?v=39.
+
+**Known limits (filed, not silently shipped):** only EDGES are considered, so a
+plane cutting through a cylinder gives no circle — just the lone arbitrary point
+where the cylindrical face's seam edge crosses (a true plane∩face section is
+Project-Geometry work). Face sketches keep using `faceRef` for snapping, since
+they still run the docked editor (S4).
+
+**Test-suite lesson (cost a false failure):** an e2e assertion that passed alone
+FAILED once the suite ran in a different order — "left-drag orbited 5.9mm" in
+sketch mode, where left cannot orbit. Cause: OrbitControls' damping keeps easing
+the camera for ~a second after pointerup, so the measurement credited the
+PREVIOUS drag's inertia to the new gesture. Fixed in the harness (`SETTLE`
+spins on requestAnimationFrame until the camera stops before taking a
+baseline), not in app code. Recorded in the e2e-test skill: a test that passes
+alone and fails in the suite is shared state or leftover animation until proven
+otherwise.
+
+### Original S5 notes (kept for reference)
 
 **Goal:** hovering near an existing body's edge/corner while sketching snaps
 to it, with a marker+label, exactly like origin/center snaps. Complaint #4.

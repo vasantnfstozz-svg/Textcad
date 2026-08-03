@@ -68,6 +68,12 @@ See the Done section.
 
 ## P2 — hurts daily use
 
+- [ ] **Snapping ignores plane∩FACE sections (S5 limit).** `sketch_snap` only
+  looks at EDGES, so a sketch plane cutting through a cylinder/bore gets no
+  circle to snap to — just the single arbitrary point where the cylindrical
+  face's seam edge crosses. Proper fix is a section curve (plane ∩ faces), which
+  is also the groundwork for a real "Project Geometry" command. Meanwhile a hole
+  IS snappable when sketching on the face its circular edge lies in.
 - [ ] **Plane-picker labels may sit off-screen.** The XY/XZ/YZ sprites are
   offset 0.72×quad-size from the quad centre; in a tight view (a small part
   filling the viewport) they were not visible in the S2 screenshot. Not

@@ -23,6 +23,22 @@ pytest.importorskip("playwright.sync_api")
 # server / browser / page fixtures live in tests/e2e/conftest.py (shared so the
 # whole e2e run needs one uvicorn and one chromium)
 
+# OrbitControls has damping on, so the camera keeps easing for a while after a
+# drag ends. Measuring straight away credits the NEXT drag with the previous
+# one's leftover inertia — that showed up as "left-drag orbited 5.9mm" in sketch
+# mode where left cannot orbit at all. Wait for the camera to come to rest first.
+SETTLE = """
+  const settle = async () => {
+    let last = vp.camera.position.clone(), still = 0;
+    for (let i = 0; i < 60 && still < 3; i++) {
+      await new Promise(res => requestAnimationFrame(res));
+      if (vp.camera.position.distanceTo(last) < 1e-4) still++; else still = 0;
+      last = vp.camera.position.clone();
+    }
+  };
+  await settle();
+"""
+
 # canvas drag with a chosen mouse button -> how far the camera moved (mm)
 DRAG_JS = """
 async (args) => {
@@ -33,6 +49,7 @@ async (args) => {
   cv.releasePointerCapture = () => {};
   const r = cv.getBoundingClientRect();
   const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+""" + SETTLE + """
   const before = vp.camera.position.clone();
   const buttons = button === 2 ? 2 : 1;
   const ev = (t, x, y, down) => cv.dispatchEvent(new PointerEvent(t,
@@ -58,6 +75,7 @@ async (args) => {
   cv.releasePointerCapture = () => {};
   const r = cv.getBoundingClientRect();
   const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+""" + SETTLE + """
   const before = vp.getControls().target.clone();
   const buttons = button === 2 ? 2 : (button === 1 ? 4 : 1);
   const ev = (t, x, y, down) => cv.dispatchEvent(new PointerEvent(t,

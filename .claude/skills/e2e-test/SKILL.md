@@ -69,6 +69,16 @@ Caveats (probe before trusting):
 - WebGL/three.js renders in headless Chromium but needs settle time — prefer
   waiting for a DOM signal (status bar volume text, busy overlay hidden) over
   fixed sleeps.
+- **OrbitControls damping outlives the drag.** `enableDamping` keeps easing the
+  camera for ~a second after pointerup, so a test that measures "did this drag
+  move the camera" right after a PREVIOUS drag credits the leftover inertia to
+  the new gesture. It surfaced as "left-drag orbited 5.9mm" in sketch mode,
+  where left cannot orbit at all — a green-looking assertion that was pure
+  noise, and it only failed once the tests ran in a different order. Spin on
+  `requestAnimationFrame` until `camera.position` stops changing BEFORE taking
+  the baseline (see `SETTLE` in tests/e2e/test_camera_zup.py). A test that
+  passes alone and fails in the suite is usually shared state or leftover
+  animation, not a real regression — check both before touching app code.
 
 ## Priority flows to cover first (from BACKLOG.md)
 

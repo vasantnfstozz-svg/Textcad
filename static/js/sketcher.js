@@ -56,6 +56,12 @@ let trimHover = -1;       // index into trimPieces
 let trimFor = '';         // JSON of the skEnts the pieces were computed for
 let trimBusy = false;     // an apply is in flight
 
+// S5 — the MODEL's own geometry as snap targets (corners / edge midpoints /
+// hole centres / where an edge pierces the plane), fetched once per sketch from
+// /api/sketch/snap and drawn faintly so the user can SEE what is snappable.
+let modelSnaps = [];      // [{x, y, kind, body}] in plane-local mm
+let modelEdges = [];      // [{body, pts:[[x,y]..]}] in plane-local mm
+
 const dlg = () => document.getElementById('sketchDialog');
 const svg = () => document.getElementById('sketchCanvas');
 
@@ -72,6 +78,25 @@ function planeFrame() {
   const off = Number(document.getElementById('skOffset').value) || 0;
   return { origin: f.z_dir.map(c => c * off),
            x_dir: f.x_dir, y_dir: f.y_dir, z_dir: f.z_dir };
+}
+
+/* Pull in the model geometry that lies ON this sketch plane, so the part's own
+   corners / hole centres / edge midpoints become snap targets — drawing against
+   an existing body was pure guesswork before. Fetched ONCE per sketch (never
+   per mousemove); failure is silent, snapping just falls back to the sketch's
+   own entities. */
+async function loadModelSnaps(plane, offset = 0) {
+  modelSnaps = []; modelEdges = [];
+  try {
+    const r = await fetch('/api/sketch/snap', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plane, offset }) });
+    const data = await r.json();
+    if (!sketchActive) return;                 // sketch closed while fetching
+    modelSnaps = data.points || [];
+    modelEdges = data.edges || [];
+    draw();
+  } catch { /* offline / no bodies — snapping still works on own entities */ }
 }
 
 /* Frame the sketch camera on the MODEL projected into the chosen plane, not on
@@ -105,6 +130,7 @@ function resetEditor() {
   skEnts = []; tool = null; clicks = []; ghost = null; selEnt = -1;
   faceRef = null;
   trimPieces = null; trimHover = -1; trimFor = '';
+  modelSnaps = []; modelEdges = [];
   view = { cx: 0, cy: 0, ext: 90 };          // roomier default, Fusion-like
   document.querySelectorAll('.skpalette button')
     .forEach(b => b.classList.remove('active'));
@@ -175,6 +201,14 @@ function exitMode() {
   bus.emit('sketch-mode', { active: false });
 }
 
+/* test/debug accessor: what is currently drawn on the sketch canvas, and the
+   snap targets in play. Tests must be able to assert that a sloppy click landed
+   on an EXACT coordinate — that is the whole point of snapping. */
+export function sketchEntities() { return skEnts.map(e => ({ ...e })); }
+export function sketchSnapTargets() {
+  return { model: modelSnaps.map(m => ({ ...m })), edges: modelEdges.length };
+}
+
 // ribbon-facing controls for the contextual SKETCH tab
 export function setSketchTool(kind) { setTool(tool === kind ? null : kind); }
 export function finishSketch() { create(); }
@@ -198,6 +232,7 @@ export function openSketchEditor(plane = 'XY') {
   enterMode();
   updateHint();
   draw();
+  loadModelSnaps(plane, 0);          // the part's own corners/centres to snap to
 }
 
 /* Reopen a committed sketch to edit its entities (the alternative to
@@ -224,6 +259,7 @@ export function editSketch(feature) {
   enterMode();
   updateHint();
   renderEnts();
+  loadModelSnaps(feature.params.plane || 'XY', feature.params.offset ?? 0);
 }
 bus.on('edit-sketch', editSketch);
 
@@ -412,6 +448,12 @@ function collectSnapPoints() {
       pts.push({ x: hx, y: hy, label: 'hole center' });
     }
   }
+  // the MODEL's geometry on this plane (S5) — labelled so the marker says what
+  // it locked onto ("model corner" reads very differently from "grid")
+  const LABEL = { corner: 'model corner', midpoint: 'model edge midpoint',
+                  center: 'model centre', crossing: 'model edge' };
+  for (const m of modelSnaps)
+    pts.push({ x: m.x, y: m.y, label: LABEL[m.kind] || 'model' });
   return pts;
 }
 
@@ -532,11 +574,19 @@ function pointerDown(raw) {
 }
 
 function pointerMove(p) {
+  if (tool === 'trim') { setCoordsReadout(p); updateTrimHover(p); draw(); return; }
+  if (tool) {
+    // snap FIRST, then report: the readout has to say where the click will
+    // actually land, not where the raw cursor is (it read "28, 19" while the
+    // point was snapping to a model corner at 30, 20)
+    const s = smartSnap(p);
+    setCoordsReadout(s);
+    if (tool === 'path' && pathStart) ghost = pathGhost(s);
+    else if (clicks.length) ghost = buildGhost(s);
+    draw();
+    return;
+  }
   setCoordsReadout(p);
-  if (tool === 'trim') { updateTrimHover(p); draw(); return; }
-  if (tool === 'path' && pathStart) { ghost = pathGhost(smartSnap(p)); draw(); return; }
-  if (tool && clicks.length) { ghost = buildGhost(smartSnap(p)); draw(); return; }
-  if (tool) { smartSnap(p); draw(); }         // show snap markers pre-click too
   if (dragging) {
     const ent = skEnts[dragging.idx];
     ent.x = snap(dragging.ex + (p.x - dragging.startX));
@@ -1192,6 +1242,11 @@ function outlinePts(e) {
 function draw3D() {
   const ADD = 0x43c579, CUT = 0xff5d5d, SEL = 0x4da3ff;
   const shapes = [];
+  // the model's on-plane edges, faint and dashed: they are reference geometry,
+  // not part of the sketch, but you must SEE them to know they will snap
+  for (const e of modelEdges)
+    if (e.pts && e.pts.length >= 2)
+      shapes.push({ pts: e.pts, closed: false, color: 0x8a97a8, dashed: true });
   const push = (e, i, isGhost) => {
     const o = outlinePts(e);
     if (!o || o.pts.length < 2) return;
@@ -1207,6 +1262,12 @@ function draw3D() {
 
   const dR = Math.max(snapTol3d * 0.35, 0.6);
   const dots = clicks.map(c => ({ x: c.x, y: c.y, r: dR, color: 0x4da3ff }));
+  // Mark every model snap target so it is VISIBLE before you hover it. Without
+  // these, a box's corners in plan view are invisible points you have to hunt
+  // for — "we need something for selecting to those edges" was exactly this.
+  for (const m of modelSnaps)
+    dots.push({ x: m.x, y: m.y, r: dR * 0.75, color: 0x8a97a8,
+                ring: m.kind === 'center' });      // centres read as a ring
   if (tool === 'trim' && trimPieces && trimHover >= 0) {
     const piece = trimPieces[trimHover];        // the doomed segment, in red
     shapes.push({ pts: piece.pts, closed: false, color: 0xff3333 });

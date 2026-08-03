@@ -34,6 +34,7 @@ import build123d as b3d
 import author
 import sketch as sketchlib
 import sketch_trim as trimlib
+import sketch_snap as snaplib
 from document import Document
 from samples import SAMPLES, sample_flange, sample_impeller, sample_compressor  # noqa: F401 (re-export for tests)
 
@@ -248,6 +249,11 @@ class FaceReq(BaseModel):
 class TrimReq(BaseModel):
     entities: list
     piece: str | None = None
+
+
+class SnapReq(BaseModel):
+    plane: str = "XY"
+    offset: float = 0.0
 
 
 class ChatReq(BaseModel):
@@ -588,6 +594,20 @@ def face_outline(req: FaceReq):
         return sketchlib.face_outline_2d(part, req.face_center, req.face_normal)
     except Exception as e:
         return {"outer": [], "holes": [], "planar": False, "error": str(e)}
+
+
+@app.post("/api/sketch/snap")
+def sketch_snap_points(req: SnapReq):
+    """Geometry of the visible bodies that is COINCIDENT with the sketch plane,
+    in the plane's own 2D coords: corners / edge midpoints / circle centres /
+    where an edge pierces the plane, plus the in-plane edges as polylines so
+    the sketcher can draw what is snappable. Fetched once when a sketch opens."""
+    doc = _doc()
+    parts = {fid: doc._parts.get(fid) for fid in doc.leaf_solid_ids()}
+    try:
+        return snaplib.snap_geometry(parts, req.plane, req.offset)
+    except (KeyError, ValueError) as e:
+        return {"points": [], "edges": [], "error": str(e)}
 
 
 @app.post("/api/sketch/trim/pieces")
