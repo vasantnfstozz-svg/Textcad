@@ -274,7 +274,47 @@ to it, with a marker+label, exactly like origin/center snaps. Complaint #4.
   box edges → expected plane-local points for XY and a face plane. E2E: one
   snap-and-draw pass.
 
-## S6 — Discoverability (PROMOTED by S1 — no longer "polish")
+## S6 — ✅ DONE 2026-08-03 — it was an INCONSISTENCY, not just a missing hint
+
+**The user's diagnosis (better than the plan's):** "in design tab, the left
+click is for rotating and right click moving fully; in the sketch tab it's
+reversed — I can rotate by right clicking, and left click is not working."
+The tabs disagreed about every button:
+
+| | design (before) | sketch (before) | BOTH (now) |
+|---|---|---|---|
+| LEFT | orbit | draw | orbit in design, draw in sketch |
+| MIDDLE | dolly/zoom | pan | **pan** |
+| RIGHT | pan | orbit | **orbit** |
+| WHEEL | zoom | zoom | zoom |
+
+So the same drag did different things depending on where you were, and the one
+gesture users try first (left-drag) silently drew instead of rotating.
+
+**Autodesk's actual convention** (checked, not guessed — Fusion's Navigation
+docs + the Pan/Zoom/Orbit preference): LEFT **selects and never orbits**,
+MIDDLE-drag pans, **Shift+MIDDLE orbits**, wheel zooms, RIGHT opens a context
+menu. Fusion also ships a preference to switch navigation styles.
+
+**Shipped (user chose "keep left-orbit in design"):** ONE mapping set in
+`viewport.buildControls` — `LEFT: ROTATE, MIDDLE: PAN, RIGHT: ROTATE` — and
+sketch mode now overrides **only** `LEFT = null` (it draws) instead of
+re-specifying all three. Design keeps left-drag orbit deliberately; right,
+middle and wheel are identical everywhere. Two guards came with it: gizmo
+grabs and face picking are now `button === 0` only, so a right-drag orbit is no
+longer swallowed by starting on an extrude arrow, and a right-click can't
+select a face.
+
+**Legend:** the nav hint existed as grey 11px text wedged between the cursor
+coordinates and Esc/Del — genuinely unreadable, which is why orbiting looked
+broken. It is its own contrasted chip now (`.sk3dnav`, button names in accent),
+and entering sketch mode also states it once in chat.
+
+3 new e2e tests (7 in `tests/e2e/`, ~78s): the mapping in BOTH tabs (pan is
+told from orbit by whether the orbit TARGET moved), and the legend being
+visible + announced. css?v=9, main.js?v=35.
+
+### Original S6 notes (kept for reference)
 
 S1 measured it: with a draw tool armed, left-drag orbits **0.0mm** and
 right-drag **97mm**. Plane-sketch orbiting works and is simply invisible, so

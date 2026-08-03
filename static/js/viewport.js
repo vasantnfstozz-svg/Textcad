@@ -48,6 +48,19 @@ function buildControls(up) {
   camera.up.copy(up || WORLD_UP);
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; controls.dampingFactor = 0.12;
+  /* ONE navigation mapping for the whole app. The tabs used to disagree —
+     design was OrbitControls' stock LEFT orbit / MIDDLE dolly / RIGHT pan
+     while sketch mode had LEFT draw / MIDDLE pan / RIGHT orbit — so the same
+     drag did different things depending on where you were, and left-dragging
+     in a sketch (which draws) read as "rotating is broken".
+     Now RIGHT-drag orbits, MIDDLE-drag pans and the wheel zooms EVERYWHERE;
+     sketch mode only takes LEFT away (it draws). Fusion never orbits with the
+     left button either — it selects, and orbit is Shift+middle — but the
+     design tab deliberately KEEPS left-drag orbit (user's call) since nothing
+     else needs left there. */
+  controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE,
+                            MIDDLE: THREE.MOUSE.PAN,
+                            RIGHT: THREE.MOUSE.ROTATE };
   camera.position.copy(pos);
   controls.target.copy(tgt);
   controls.addEventListener('change', () => bus.emit('view-changed'));
@@ -116,6 +129,7 @@ export function initViewport() {
     if (!downXY) return;
     const moved = Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]);
     downXY = null;
+    if (e.button !== 0) return;            // right/middle navigate, never pick
     if (sketch3DActive()) return;          // sketch mode owns viewport clicks
     if (moved > 5) return;                 // that was an orbit-drag
     if (planePickCb) { planePickAt(e); return; }
@@ -137,6 +151,8 @@ export function initViewport() {
   // BEFORE OrbitControls, then disable orbit for the drag. Move/up on window
   // so the drag survives the pointer leaving the canvas.
   renderer.domElement.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;            // a right/middle drag must still
+                                           // navigate, even starting ON a gizmo
     if (exArrow && !exArrow.dragging && arrowGrab(e)) { e.stopPropagation(); return; }
     if (taperRing && !taperRing.dragging && taperGrab(e)) e.stopPropagation();
   }, true);

@@ -79,9 +79,11 @@ export function enterSketch3D(frameSpec, opts = {}) {
   // orbit around the PLANE's up so the flat-on sketch view is never a gimbal
   // pole (looking down world -Y at XZ was exactly phi=pi => orbit was dead)
   const c = ctx.setOrbitUp(frame.y.toArray());
+  // Sketch mode changes exactly ONE thing about navigation: LEFT stops
+  // orbiting because it draws. MIDDLE=pan / RIGHT=orbit / wheel=zoom are the
+  // app-wide mapping set in viewport.buildControls — do not diverge here, the
+  // tabs disagreeing is what made "I can't rotate while sketching" happen.
   c.mouseButtons.LEFT = null;                  // left draws
-  c.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
-  c.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;   // orbit stays LIVE while drawing
   active = true; edgeOn = false;
   const f = opts.focus || { cx: 0, cy: 0, extent: 90 };
   lookAtPlanePoint(f.cx, f.cy, distanceFor(f.extent || 90));

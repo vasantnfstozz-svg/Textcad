@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=8">
+<link rel="stylesheet" href="/static/css/studio.css?v=9">
 </head>
 <body>
 
@@ -47,9 +47,14 @@
     <!-- sketch mode v2: the viewport IS the sketch editor (Fusion-style) -->
     <div id="sk3dBar" style="display:none">
       <span id="sk3dHelp"></span>
+      <span class="sk3dnav" title="the model stays live while you sketch">
+        <b>left</b> draw <span class="sk3dsep">·</span>
+        <b>RIGHT-drag</b> orbit <span class="sk3dsep">·</span>
+        <b>middle</b> pan <span class="sk3dsep">·</span>
+        <b>wheel</b> zoom</span>
       <span class="sk3dmeta"><span id="sk3dCoords">x 0, y 0</span> ·
         <span id="sk3dGrid">grid 10 mm</span> ·
-        left draw · right orbit · middle pan · Esc cancel · Del delete</span>
+        Esc cancel · Del delete</span>
     </div>
     <div id="skDimEdit3d" style="display:none"></div>
     <div id="sk3dDim" style="display:none"></div>
@@ -251,6 +256,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=34"></script>
+<script type="module" src="/static/js/main.js?v=35"></script>
 </body>
 </html>

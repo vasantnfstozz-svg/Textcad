@@ -50,6 +50,31 @@ async (args) => {
 }
 """
 
+# same drag, but reporting how far the ORBIT TARGET moved — pan slides the
+# target, orbit leaves it put, so this tells the two apart
+PAN_JS = """
+async (args) => {
+  const [dx, dy, button] = args;
+  const vp = window.__vp;
+  const cv = document.querySelector('#viewer canvas');
+  cv.setPointerCapture = () => {};
+  cv.releasePointerCapture = () => {};
+  const r = cv.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const before = vp.getControls().target.clone();
+  const buttons = button === 2 ? 2 : (button === 1 ? 4 : 1);
+  const ev = (t, x, y, down) => cv.dispatchEvent(new PointerEvent(t,
+    { clientX: x, clientY: y, bubbles: true, pointerId: 1, isPrimary: true,
+      button, buttons: down ? buttons : 0 }));
+  ev('pointerdown', cx, cy, true);
+  for (let i = 1; i <= 8; i++)
+    ev('pointermove', cx + dx * i / 8, cy + dy * i / 8, true);
+  ev('pointerup', cx + dx, cy + dy, false);
+  await new Promise(res => setTimeout(res, 400));
+  return vp.getControls().target.distanceTo(before);
+}
+"""
+
 # degrees between the view direction and the orbit axis, folded to the nearest
 # pole: ~0 means a degenerate basis / dead orbit
 POLE_JS = """
@@ -134,6 +159,56 @@ def test_view_presets_are_off_the_orbit_pole_and_can_orbit(page, view):
     down_drag = page.evaluate(DRAG_JS, [70, 25, 0])
     assert max(up_drag, down_drag) > 1.0, (
         f"{view}: orbit dead (up {up_drag:.2f}mm, down {down_drag:.2f}mm)")
+    assert page.errors == []
+
+
+def test_navigation_mapping_is_the_same_in_both_tabs(page):
+    """The tabs used to disagree about what each mouse button does (design:
+    left orbit / middle dolly / right pan; sketch: left draw / middle pan /
+    right orbit), so left-dragging in a sketch drew instead of rotating and
+    read as "rotating is broken". RIGHT orbits and MIDDLE pans everywhere now;
+    sketch mode only takes LEFT away. Design keeps left-drag orbit by choice.
+    Pan is told from orbit by whether the ORBIT TARGET moved."""
+    page.evaluate("""async () => {
+      const vp = await import('/static/js/viewport.js'); vp.setView('iso');
+    }""")
+    page.wait_for_timeout(400)
+
+    assert page.evaluate(DRAG_JS, [70, -25, 2]) > 1.0, "design: right must orbit"
+    assert page.evaluate(PAN_JS, [70, -25, 2]) < 1.0, "design: right must not pan"
+    assert page.evaluate(PAN_JS, [70, -25, 1]) > 1.0, "design: middle must pan"
+    assert page.evaluate(DRAG_JS, [70, -25, 0]) > 1.0, "design keeps left orbit"
+
+    page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      sk.openSketchEditor('XY');
+      await new Promise(r => setTimeout(r, 900));
+      sk.setSketchTool('rectangle');           // a draw tool is armed
+    }""")
+    page.wait_for_timeout(700)
+    assert page.evaluate(DRAG_JS, [70, -25, 2]) > 1.0, "sketch: right must orbit"
+    assert page.evaluate(PAN_JS, [70, -25, 1]) > 1.0, "sketch: middle must pan"
+    assert page.evaluate(DRAG_JS, [70, -25, 0]) < 1.0, "sketch: left draws"
+    assert page.errors == []
+
+
+def test_sketch_mode_shows_the_navigation_legend(page):
+    """The legend was grey 11px text between the coordinates and the Esc/Del
+    keys and went unread — users left-dragged and gave up. It is its own chip
+    now, and entering sketch mode also says it once in chat."""
+    nav = page.locator("#sk3dBar .sk3dnav")
+    assert not nav.is_visible()
+    page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      sk.openSketchEditor('XY');
+    }""")
+    page.wait_for_timeout(1100)
+    assert nav.is_visible()
+    text = " ".join(nav.inner_text().split())
+    assert "RIGHT-drag" in text and "orbit" in text, text
+    assert "middle" in text and "pan" in text, text
+    chat = page.locator("#chatLog").inner_text()
+    assert "RIGHT-drag orbits" in chat, chat[-200:]
     assert page.errors == []
 
 

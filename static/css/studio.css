@@ -291,6 +291,16 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
   pointer-events: auto; min-height: 18px; }
 #sk3dBar .sk3dmeta { color: var(--dim); font-size: 11px;
   background: rgba(15,17,21,.78); padding: 2px 8px; border-radius: 6px; }
+/* Navigation legend. It used to be grey 11px text wedged between the cursor
+   coordinates and the Esc/Del keys, and users simply did not see it — they
+   left-dragged (which draws), concluded "I can't rotate while sketching" and
+   stopped. It gets its own readable chip now: same size as the hint, real
+   contrast, button names in bold. */
+#sk3dBar .sk3dnav { color: #cdd5e0; font-size: 11.5px; letter-spacing: .1px;
+  background: rgba(15,17,21,.9); border: 1px solid var(--line);
+  padding: 3px 10px; border-radius: 6px; pointer-events: auto; }
+#sk3dBar .sk3dnav b { color: var(--accent); font-weight: 600; }
+#sk3dBar .sk3dnav .sk3dsep { color: var(--dim); margin: 0 1px; }
 #sk3dDim, #sk3dSnap { position: absolute; z-index: 6; pointer-events: none;
   color: #dde2ea; font-size: 12px; font-weight: 600;
   text-shadow: 0 1px 3px #000, 0 0 6px #000;

@@ -119,8 +119,16 @@ function nextName() {
 /* Enter/leave sketch MODE (Fusion-style): the editor shows NON-modally, docked
    over the main area, so the contextual green SKETCH ribbon tab stays clickable
    above it. 'sketch-mode' tells the ribbon to swap in the contextual tab. */
+let navTipShown = false;      // the orbit tip goes to chat once per page load
+
 function enterMode() {
   sketchActive = true;
+  if (!navTipShown) {
+    navTipShown = true;
+    bus.emit('msg', 'bot', 'Sketch mode: left-drag draws · RIGHT-drag orbits '
+      + '(the model stays live — you never leave 3D) · middle-drag pans · '
+      + 'wheel zooms · Look At re-faces the plane.');
+  }
   if (!skOnFace) {
     // Fusion-style: NO separate editor — the viewport IS the sketch. Tools sit
     // in the contextual ribbon; a floating hint bar + dim labels overlay the

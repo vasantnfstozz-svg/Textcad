@@ -23,7 +23,19 @@ UI around it produced 36 friction items, merged below. Screenshots in scratchpad
 
 ## To triage (dump new problems here, sort later)
 
-- (empty — add anything that annoys you, even small things)
+- [ ] **Unconsumed sketch profiles may render as filled areas when viewed
+  edge-on** (noticed during S6 visual verify, NOT investigated). Sketching on
+  XY with my-part open: sketch1 (XZ) and sketch2 (YZ) correctly showed as
+  edge-on green LINES, but two additional filled green rectangles appeared
+  abutting the body. Could be legitimate (DoubleSide meshes, depthTest:false,
+  renderOrder) or a real duplicate/misplaced profile. Repro: open `my-part`,
+  Create Sketch on XY, look straight down. Decide before S3 touches
+  `/api/model`, since that endpoint also emits `sketches`.
+- [ ] **Fusion navigation preset (Shift+middle orbit) not supported.** Fusion's
+  own default is LEFT=select, MIDDLE=pan, **Shift+MIDDLE=orbit**, and it ships
+  a preference to switch styles. We chose left-orbit-in-design + right-orbit
+  (S6); adding Shift+middle as an alias, and/or a Settings > Navigation
+  dropdown, would let Fusion muscle memory work unchanged.
 
 ## P0 — silent wrong geometry / false verification / data loss
 
