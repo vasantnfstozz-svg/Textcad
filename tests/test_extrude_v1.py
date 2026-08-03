@@ -70,12 +70,20 @@ def test_two_sided_asymmetric():
 
 def test_collapsing_taper_gives_friendly_error():
     """A profile WITH A HOLE at steep taper makes OCCT fail with a bare
-    RuntimeError('Unexpected result type') — users must get guidance instead."""
+    RuntimeError('Unexpected result type') — users must get guidance instead.
+
+    The message used to claim the taper was "too steep", which was wrong for
+    the cases that actually bite (0.3° = 0.2mm of offset failed on a fused
+    body's seam face). It now names the offset that could not be built and
+    what to change."""
     s = sk.make_sketch("XY", 0, [
         {"kind": "rectangle", "w": 40, "h": 20},
         {"kind": "circle", "r": 5, "mode": "subtract"}])
-    with pytest.raises(ValueError, match="too steep"):
+    with pytest.raises(ValueError) as exc:
         sk.extrude_sketch(s, amount=15, taper=35)
+    msg = str(exc.value).lower()
+    assert "taper" in msg
+    assert any(w in msg for w in ("smaller", "shorter", "other way"))
 
 
 def test_taper_narrows_and_is_healthy():

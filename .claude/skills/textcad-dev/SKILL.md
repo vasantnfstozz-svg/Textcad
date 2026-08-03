@@ -21,6 +21,19 @@ discipline applies to developing it. Follow these rules on every change.
 3. **Never trust, always measure.** Any claim about geometry ("the boss is on
    the face", "it's 7-fold symmetric") must be verified via `inspector`
    measurements, not assumed from the code looking right.
+4. **An operation is the feature TIMES the geometry.** Testing an op on the
+   shape you developed it against tests one cell of a large grid. Every op
+   that eats a face/profile/body must run the corpus in `tests/gauntlet.py`
+   (see the add-operation skill). Extrude+taper passed on a box, shipped, and
+   then failed on a pentagon face of a FUSED body — in ONE taper direction —
+   because fusing a tapered body leaves straight BSPLINE seam edges that
+   OCCT's 2D offset silently turns to garbage. The corpus grows with every
+   real bug; that is how the same class never ships twice.
+5. **Two ways to fail, both banned.** A kernel exception reaching the user
+   (OCP errors derive from `Exception`, NOT `RuntimeError` — an
+   `except RuntimeError` barrier does not catch them), and a "successful"
+   result that is actually an invalid or non-manifold solid. Check the health
+   of what you return; a failed feature beats a silently corrupt body.
 
 ## Architecture map (where things go)
 

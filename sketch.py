@@ -280,19 +280,166 @@ def sketch_on_face(solid, face_center: list, face_normal: list | None = None,
 # Sketch-consuming operations -> solids
 # ---------------------------------------------------------------------------
 
-def _tapered_extrude(profile, amount: float, taper: float):
-    """extrude() with a FRIENDLY error when a steep taper makes the walls
-    collapse or collide (e.g. a profile with a hole) — OCCT otherwise raises a
-    bare RuntimeError('Unexpected result type')."""
+def _is_straight(edge, tol: float = 1e-4) -> bool:
+    """True if `edge` is geometrically a straight segment, whatever the kernel
+    stores it as. Fusing a tapered (lofted) body leaves seam edges typed
+    BSPLINE that are dead straight — see _straighten_face."""
     try:
-        return _extrude(profile, amount=amount, taper=taper)
-    except RuntimeError as e:
-        if taper:
+        p0, p1 = edge @ 0, edge @ 1
+    except Exception:
+        return False
+    chord = (p1 - p0).length
+    if chord < 1e-9:
+        return False
+    for i in range(1, 12):                      # every sample on the chord?
+        try:
+            p = edge @ (i / 12)
+        except Exception:
+            return False
+        if ((p - p0).cross(p1 - p0)).length / chord > tol:
+            return False
+    return True
+
+
+def _straighten_face(face):
+    """Rebuild `face` with every straight-but-curve-typed edge replaced by a
+    real LINE edge — or return it unchanged when there is nothing to fix.
+
+    WHY: OCCT's 2D offset (BRepOffsetAPI_MakeOffset, which build123d uses for
+    tapered extrudes) mis-handles BSPLINE edges. Offsetting such a wire toward
+    ONE side silently returns a degenerate wire — measured: a 4-edge rectangle
+    with one straight BSPLINE edge offset by +0.2mm came back as a SINGLE edge
+    of length 50.4 instead of 161.6 — which then detonates inside make_loft
+    (Standard_NoSuchObject, or an OCCT access violation that kills the
+    process). The other side offsets fine, which is exactly why a taper works
+    outward but fails inward on the same face. Straight BSPLINE seam edges are
+    left behind by fusing a tapered body, so any face touching that seam is
+    affected. Rebuilt as LINEs, all directions offset correctly."""
+    try:
+        outer = face.outer_wire()
+        wires = face.wires()
+    except Exception:
+        return face
+    inner = [w for w in wires if w.length != outer.length]
+
+    def fix(wire):
+        edges, changed = [], False
+        for e in wire.edges():
+            if e.geom_type != b3d.GeomType.LINE and _is_straight(e):
+                edges.append(b3d.Edge.make_line(e @ 0, e @ 1)); changed = True
+            else:
+                edges.append(e)
+        return (b3d.Wire(edges), True) if changed else (wire, False)
+
+    new_outer, ch = fix(outer)
+    new_inner, changed = [], ch
+    for w in inner:
+        nw, c = fix(w)
+        new_inner.append(nw); changed = changed or c
+    if not changed:
+        return face
+    try:
+        rebuilt = b3d.Face(new_outer, new_inner) if new_inner \
+            else b3d.Face(new_outer)
+    except Exception:
+        return face                             # never make things worse
+    # only accept a faithful rebuild (same area to 0.1%)
+    try:
+        if face.area > 0 and abs(rebuilt.area - face.area) / face.area > 1e-3:
+            return face
+    except Exception:
+        return face
+    return rebuilt
+
+
+def _taper_offset_problem(profile, amount: float, taper: float):
+    """Replicate the 2D offset build123d will perform for a tapered extrude and
+    report a problem STRING if it comes back degenerate — before OCCT is handed
+    that garbage and crashes the process (an access violation would take the
+    whole server down, so this check must happen here, not in an except:).
+
+    Mirrors Solid.extrude_taper: the loft path (the fragile one) is used unless
+    the direction matches the face normal AND the plane faces up AND the taper
+    is positive AND there are no holes; offset = -|amount| * tan(taper)."""
+    if not taper:
+        return None
+    try:
+        face = profile if isinstance(profile, b3d.Face) else None
+        if face is None:
+            faces = profile.faces()
+            if len(faces) != 1:
+                return None                     # multi-face: let build123d try
+            face = faces[0]
+        pl = b3d.Plane(face)
+        direction = pl.z_dir * amount
+        inner = face.inner_wires()
+        if (direction.normalized() == face.normal_at()
+                and pl.z_dir.Z > 0 and taper > 0 and not inner):
+            return None                         # robust DPrism path, no offset
+        off = -abs(amount) * math.tan(math.radians(taper))
+        if abs(off) < 1e-9:
+            return None
+        for i, wire in enumerate([face.outer_wire()] + list(inner)):
+            flip = -1 if i > 0 else 1           # build123d flips inner wires
+            local = pl.to_local_coords(wire)
+            n_before = len(local.edges())
+            try:
+                res = local.offset_2d(flip * off, kind=b3d.Kind.INTERSECTION)
+            except Exception as e:
+                return (f"the {'hole' if i else 'outline'} cannot be offset by "
+                        f"{abs(off):.3f}mm ({type(e).__name__})")
+            n_after = len(res.edges())
+            # the degenerate signature: edges vanish while the offset is tiny
+            if n_after < n_before and abs(off) < 0.25 * math.sqrt(
+                    max(face.area, 1e-9)):
+                return (f"the {'hole' if i else 'outline'} collapses when "
+                        f"offset by {abs(off):.3f}mm "
+                        f"({n_before} edges -> {n_after})")
+    except Exception:
+        return None                             # a check must never break a build
+    return None
+
+
+def _tapered_extrude(profile, amount: float, taper: float):
+    """extrude() with the taper failure modes handled honestly:
+      * straight BSPLINE seam edges (from a fused tapered body) are rebuilt as
+        LINEs first, which makes the offset — and the extrude — actually work;
+      * a genuinely degenerate offset is caught BEFORE OCCT crashes on it;
+      * kernel errors are reported as-is instead of being blamed on the taper.
+    OCP raises Standard_NoSuchObject etc., which derive from Exception and NOT
+    from RuntimeError — an `except RuntimeError` here never caught them and the
+    raw kernel error reached the feature tree."""
+    if taper:
+        profile = _straighten_face(profile) if isinstance(profile, b3d.Face) \
+            else profile
+        problem = _taper_offset_problem(profile, amount, taper)
+        if problem:
             raise ValueError(
-                f"taper {taper}° is too steep for this profile at "
-                f"{abs(amount)}mm — the walls collapse or collide before full "
-                f"height; reduce the taper or the distance") from e
-        raise
+                f"taper {taper}° over {abs(amount)}mm does not work on this "
+                f"profile: {problem}. Try a smaller taper, a shorter distance, "
+                f"or taper the other way.")
+    try:
+        solid = _extrude(profile, amount=amount, taper=taper)
+    except Exception as e:
+        if not taper:
+            raise
+        raise ValueError(
+            f"taper {taper}° over {abs(amount)}mm failed on this profile "
+            f"({type(e).__name__}: {str(e)[:80]}). Try a smaller taper, a "
+            f"shorter distance, or taper the other way.") from e
+    if taper:
+        # A tapered extrude can also SUCCEED into a broken solid (measured on
+        # an L-bracket's reflex corner and a DPrism boss face: an open shell /
+        # OCCT-invalid result). Handing that to a fuse corrupts the model
+        # silently, so refuse it here — a failed feature beats a bad body.
+        import inspector                       # local: avoids an import cycle
+        problems = inspector.health(solid)
+        if problems:
+            raise ValueError(
+                f"taper {taper}° over {abs(amount)}mm produces a broken solid "
+                f"on this profile ({problems[0]}). Try a smaller taper, a "
+                f"shorter distance, or taper the other way.")
+    return solid
 
 
 def extrude_face(solid, face_center: list, face_normal: list | None = None,
@@ -329,12 +476,12 @@ def extrude_sketch(sketch, amount: float, both: bool = False,
     if _to_bool(both, "both"):
         try:
             return _extrude(sketch, amount=a, both=True, taper=t)
-        except RuntimeError as e:
+        except Exception as e:
             if t:
                 raise ValueError(
-                    f"taper {t}° is too steep for this profile at {abs(a)}mm — "
-                    f"the walls collapse or collide before full height; reduce "
-                    f"the taper or the distance") from e
+                    f"taper {t}° over {abs(a)}mm (symmetric) failed on this "
+                    f"profile ({type(e).__name__}: {str(e)[:80]}). Try a "
+                    f"smaller taper, a shorter distance, or the other way.") from e
             raise
     solid = _tapered_extrude(sketch, a, t)
     amt2 = float(amount2 or 0.0)

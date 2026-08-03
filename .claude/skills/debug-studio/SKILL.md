@@ -43,6 +43,18 @@ description: Diagnosis playbook for TextCAD Studio problems — server won't sta
    n_solids in inspector.measure.
 8. **Model returns empty viewport** — a bare sketch has no volume; sketches
    ship separately in /api/model's `sketches` list (unconsumed only).
+9. **Taper works one way but not the other on a picked face** — the face's
+   outline contains a straight BSPLINE seam edge (left by fusing a tapered /
+   lofted body). build123d's tapered extrude offsets that wire with
+   `BRepOffsetAPI_MakeOffset`, which for ONE offset sign silently returns a
+   degenerate wire (a 4-edge rectangle came back as 1 edge), and `make_loft`
+   then dies — `Standard_NoSuchObject`, or a 0xC0000005 access violation that
+   kills the whole server. `sketch._straighten_face` rebuilds such edges as
+   LINEs (fixing it), `_taper_offset_problem` pre-checks the offset so OCCT is
+   never handed the garbage. If a NEW op offsets wires, it needs the same two
+   guards. Diagnose with: print `[e.geom_type.name for e in
+   face.outer_wire().edges()]` — a non-LINE entry on a visually straight edge
+   is the tell.
 
 ## Diagnosis discipline
 Read the actual log/traceback BEFORE forming a fix. Reproduce via TestClient

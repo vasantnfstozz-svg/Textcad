@@ -26,5 +26,25 @@ half-invisible (works in tests, missing in UI, unknown to the AI).
 6. **Tests** — add to `tests/test_e1_ops.py` (or a new file): healthy output,
    semantic check (volume/size/symmetry), invalid-args raise, works inside a
    Document tree.
-7. **Run** `python -m pytest tests -q` — all green.
-8. Restart studio, smoke-test via API if the op has UI implications.
+7. **THE GAUNTLET (mandatory for any op that consumes a face, profile or
+   body).** One example is one cell of a grid: an op is the feature TIMES
+   every geometry a user can feed it. Run it over the whole corpus in
+   `tests/gauntlet.py`:
+
+       from gauntlet import BODIES, planar_faces, assert_op
+       for name, make in BODIES.items():
+           solid = make()
+           for idx, face, center, normal in planar_faces(solid):
+               for param in (...):          # the op's own parameter grid
+                   assert_op(f"{name}.f{idx} p={param}",
+                             lambda: my_op(solid, center, normal, param))
+
+   `assert_op` enforces the contract: a HEALTHY solid, or a friendly
+   ValueError. A raw kernel exception, or a "successful" invalid/non-manifold
+   solid, is a test failure. See `tests/test_taper_gauntlet.py` for the shape
+   of it — that file caught three real defects the day it was written.
+   **When a real bug is found, add its geometry to `BODIES`** so the corpus
+   only ever grows (it already carries the fused-taper seam body that broke
+   extrude, precisely because a box never would have).
+8. **Run** `python -m pytest tests -q` — all green.
+9. Restart studio, smoke-test via API if the op has UI implications.
