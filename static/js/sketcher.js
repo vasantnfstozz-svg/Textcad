@@ -11,7 +11,7 @@ import { S } from './state.js';
 import { bus } from './bus.js';
 import { postJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
-import { loadMesh } from './viewport.js';
+import { loadMesh, modelExtent } from './viewport.js';
 import { enterSketch3D, exitSketch3D, renderSketch3D,
          planeToScreen } from './sketch3d.js';
 import { openFeatDialog } from './dialogs.js';
@@ -72,6 +72,18 @@ function planeFrame() {
   const off = Number(document.getElementById('skOffset').value) || 0;
   return { origin: f.z_dir.map(c => c * off),
            x_dir: f.x_dir, y_dir: f.y_dir, z_dir: f.z_dir };
+}
+
+/* Frame the sketch camera on the MODEL projected into the chosen plane, not on
+   the world origin: with a part sitting 200mm out, entering a sketch used to
+   stare at empty space at 0,0 while the part sat off-screen. */
+function focusOnModel(plane) {
+  const f = PLANE_FRAMES[plane] || PLANE_FRAMES.XY;
+  const { center, radius, hasModel } = modelExtent();
+  if (!hasModel) return { cx: 0, cy: 0, extent: 90 };
+  const dot = d => center[0] * d[0] + center[1] * d[1] + center[2] * d[2];
+  return { cx: dot(f.x_dir), cy: dot(f.y_dir),
+           extent: Math.max(radius * 1.35, 60) };
 }
 
 /* PLANE sketches happen IN the 3D viewport (sketch3d.js) — Fusion's sketch
@@ -182,7 +194,7 @@ export function openSketchEditor(plane = 'XY') {
   document.getElementById('skPlaneRow').style.display = '';
   document.getElementById('skFaceNote').style.display = 'none';
   document.getElementById('skFaceExtrude').style.display = 'none';
-  pendingFocus = { cx: 0, cy: 0, extent: 90 };
+  pendingFocus = focusOnModel(plane);
   enterMode();
   updateHint();
   draw();

@@ -150,7 +150,33 @@ quirks", untouched here.
 - **Tests:** e2e assert via `window.__vp`: after `setView('top')` orbit by
   dispatching pointer events → camera.position changes (no dead orbit).
 
-## S2 — Origin planes must tell the truth
+## S2 — ✅ DONE 2026-08-03 — the quad you click is where the sketch lands
+
+**The lie:** `buildOriginPlanes` centred all three quads on `fitCenter`, the
+model's bounding-sphere centre. With a part at z=60 the quad labelled "XY"
+floated at z=60 — but clicking it starts a sketch on the TRUE XY plane at z=0.
+Every quad was off by exactly the model's offset along its own normal, which is
+the "coordinate planes are not aligned with the design" complaint.
+
+**Fix:** each quad is placed at `fitCenter` PROJECTED onto its own plane (the
+normal component zeroed, `normalAxis` per def), so it lies exactly in the plane
+it names while still sitting under/through the part in the two in-plane axes.
+The label sprites were already in-plane offsets, so they just follow the
+projected centre. Measured on a box moved to (160, 90, 60): XY quad
+(160, 90, **0**), XZ (160, **0**, 60), YZ (**0**, 90, 60).
+
+**Second half — the camera:** `openSketchEditor` hard-coded
+`pendingFocus = {cx: 0, cy: 0}`, so entering a sketch always stared at the
+world origin and a part 200mm away sat off-screen. New `sketcher.focusOnModel`
+projects the model centre into the chosen plane's frame (via the probed
+`PLANE_FRAMES`) and frames that, falling back to the origin when there is no
+model. `viewport.modelExtent()` exposes centre/radius/hasModel.
+
+Verified 7/7 in the browser with screenshots (the XY quad now sits visibly
+BELOW a lifted box — truthful, and what Fusion does); 2 e2e tests parameterised
+over all three planes. `__vp.originPlaneInfo()` added. main.js?v=38.
+
+### Original S2 notes (kept for reference)
 
 **Goal:** the plane quad you click is EXACTLY where the sketch will land
 (Fusion's origin planes pass through the origin, always).

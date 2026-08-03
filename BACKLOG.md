@@ -68,6 +68,11 @@ See the Done section.
 
 ## P2 — hurts daily use
 
+- [ ] **Plane-picker labels may sit off-screen.** The XY/XZ/YZ sprites are
+  offset 0.72×quad-size from the quad centre; in a tight view (a small part
+  filling the viewport) they were not visible in the S2 screenshot. Not
+  confirmed as a bug — check whether they should be clamped into view or
+  anchored to the quad corner nearest the camera.
 - [ ] **Status bar volume is the RESULT body's only.** With several bodies now
   visible (S3), "volume 40000 mm³" next to two boxes is ambiguous — it silently
   ignores the other body (and the STEP export does too). Either label it

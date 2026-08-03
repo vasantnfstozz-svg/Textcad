@@ -101,6 +101,13 @@ export function setOrbitUp(upArr) {
 }
 export function getControls() { return controls; }
 
+/* where the model actually is, so a tool can frame on the PART instead of the
+   world origin (entering a sketch used to always look at 0,0) */
+export function modelExtent() {
+  return { center: fitCenter.toArray(), radius: fitRadius,
+           hasModel: bodyObjs.length > 0 };
+}
+
 export function initViewport() {
   const pane = document.getElementById('viewer');
   scene = new THREE.Scene();
@@ -145,6 +152,11 @@ export function initViewport() {
       transparent: b.mesh.material.transparent,
       color: '#' + b.mesh.material.color.getHexString() })),
     bodyObjsRaw: () => bodyObjs,
+    /* the origin-plane quads: which plane, where they sit, how big — a quad
+       must lie IN the plane it names (normal component 0) */
+    originPlaneInfo: () => originPlanes.filter(o => o.userData.plane).map(o => ({
+      plane: o.userData.plane, position: o.position.toArray(),
+      size: o.geometry.parameters.width })),
     /* how many of each thing is actually in the scene — catches duplicate
        objects piling up from overlapping loads */
     sceneCounts: () => ({ bodies: bodyObjs.length, edges: edgeLines.length,
@@ -294,31 +306,48 @@ function makeLabelSprite(text, color) {
   return sp;
 }
 
+/* The three origin planes, drawn WHERE THE SKETCH WILL ACTUALLY LAND.
+
+   They used to be centred on `fitCenter` (the model's bounding-sphere centre),
+   so with a part sitting at z=40 the "XY" quad floated at z=40 — but clicking
+   it starts a sketch on the TRUE XY plane at z=0. The quad was in the wrong
+   place by exactly the model's offset, which is the "coordinate planes are not
+   aligned with the design" complaint.
+
+   Each quad is now placed at fitCenter PROJECTED onto its own plane (the
+   normal component zeroed), so it lies exactly in the plane it names while
+   staying under/through the part rather than off at the origin. `normalAxis`
+   is the component that must be 0. */
 function buildOriginPlanes() {
   clearOriginPlanes();
   const s = Math.max(fitRadius * 1.15, 55);      // half-size of each plane quad
   const defs = [
-    { plane: 'XY', rot: [0, 0, 0], color: 0x4d7fff, lpos: [s * 0.72, s * 0.72, 0] },
-    { plane: 'XZ', rot: [Math.PI / 2, 0, 0], color: 0x43c579, lpos: [s * 0.72, 0, s * 0.72] },
-    { plane: 'YZ', rot: [0, Math.PI / 2, 0], color: 0xff6b6b, lpos: [0, s * 0.72, s * 0.72] },
+    { plane: 'XY', rot: [0, 0, 0], color: 0x4d7fff, normalAxis: 'z',
+      lpos: [s * 0.72, s * 0.72, 0] },
+    { plane: 'XZ', rot: [Math.PI / 2, 0, 0], color: 0x43c579, normalAxis: 'y',
+      lpos: [s * 0.72, 0, s * 0.72] },
+    { plane: 'YZ', rot: [0, Math.PI / 2, 0], color: 0xff6b6b, normalAxis: 'x',
+      lpos: [0, s * 0.72, s * 0.72] },
   ];
   for (const d of defs) {
+    const at = fitCenter.clone();
+    at[d.normalAxis] = 0;                        // ON the plane, not beside it
     const geo = new THREE.PlaneGeometry(2 * s, 2 * s);
     const mat = new THREE.MeshBasicMaterial({ color: d.color, transparent: true,
       opacity: 0.16, side: THREE.DoubleSide, depthWrite: false });
     const m = new THREE.Mesh(geo, mat);
     m.rotation.set(...d.rot);
-    m.position.copy(fitCenter);
+    m.position.copy(at);
     m.userData.plane = d.plane; m.userData.base = 0.16;
     m.renderOrder = 998;
     scene.add(m); originPlanes.push(m);
     const edge = new THREE.LineSegments(new THREE.EdgesGeometry(geo),
       new THREE.LineBasicMaterial({ color: d.color, transparent: true, opacity: 0.6 }));
-    edge.rotation.set(...d.rot); edge.position.copy(fitCenter);
+    edge.rotation.set(...d.rot); edge.position.copy(at);
     edge.renderOrder = 999; scene.add(edge); originPlanes.push(edge);
     const label = makeLabelSprite(d.plane, d.color);
-    label.position.set(fitCenter.x + d.lpos[0], fitCenter.y + d.lpos[1],
-                       fitCenter.z + d.lpos[2]);
+    // label offsets are already IN-plane, so they keep the quad's plane
+    label.position.set(at.x + d.lpos[0], at.y + d.lpos[1], at.z + d.lpos[2]);
     scene.add(label); originPlanes.push(label);
   }
 }
