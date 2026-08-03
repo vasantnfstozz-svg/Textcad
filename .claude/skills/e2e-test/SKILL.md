@@ -12,9 +12,16 @@ fix should leave one behind.
 ## Layout & running
 
 - Tests live in `tests/e2e/test_*.py` (pytest + playwright sync API).
-- Run: `C:\Python314\python.exe -m pytest tests/e2e -q` (slower than unit tests —
-  keep them OUT of the default `tests` run only if they exceed ~60s total;
-  otherwise run everything).
+- Run: `C:\Python314\python.exe -m pytest tests/e2e -q`.
+- **Shared fixtures are in `tests/e2e/conftest.py`** — session-scoped `server`
+  (one uvicorn on a private port) + `browser` (one chromium), function-scoped
+  `page` and `fresh_doc`. USE THEM; a per-file server/browser tripled the
+  runtime for no isolation benefit.
+- Current runtime ~105s (11 tests), so the full `pytest tests` run is ~5 min.
+  For a fast inner loop use `pytest tests -q --ignore=tests/e2e`, then run
+  everything before committing. Prefer `page.wait_for_function(...)` over fixed
+  sleeps — most of the runtime is waiting, and an awaited `loadMesh()` inside
+  `page.evaluate` already means the scene is rebuilt when it resolves.
 - Skip cleanly when the browser is unavailable:
 
 ```python

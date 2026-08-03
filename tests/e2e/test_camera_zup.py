@@ -16,15 +16,12 @@ Runs its own uvicorn on a private port — never the dev server (several
 processes CAN bind one port on Windows, and then responses come from whichever
 bound last; see the debug-studio skill).
 """
-import threading
-import time
-
 import pytest
 
-pw_api = pytest.importorskip("playwright.sync_api")
+pytest.importorskip("playwright.sync_api")
 
-PORT = 8136
-URL = f"http://127.0.0.1:{PORT}"
+# server / browser / page fixtures live in tests/e2e/conftest.py (shared so the
+# whole e2e run needs one uvicorn and one chromium)
 
 # canvas drag with a chosen mouse button -> how far the camera moved (mm)
 DRAG_JS = """
@@ -87,54 +84,6 @@ POLE_JS = """
   return Math.min(a, 180 - a);
 }
 """
-
-
-@pytest.fixture(scope="module")
-def server():
-    import uvicorn
-    import studio
-    studio.STATE["docs"].clear()
-    studio.STATE["active"] = None
-    studio.STATE["seq"] = 0
-    cfg = uvicorn.Config(studio.app, host="127.0.0.1", port=PORT,
-                         log_level="warning")
-    srv = uvicorn.Server(cfg)
-    threading.Thread(target=srv.run, daemon=True).start()
-    import httpx
-    for _ in range(80):
-        try:
-            httpx.get(f"{URL}/api/doc", timeout=1)
-            break
-        except Exception:
-            time.sleep(0.25)
-    yield URL
-    srv.should_exit = True
-
-
-@pytest.fixture(scope="module")
-def browser():
-    """One browser for the whole module — launching chromium per test tripled
-    the runtime (88s -> ~30s) for no isolation benefit; each test sets its own
-    camera pose and gets a fresh PAGE."""
-    with pw_api.sync_playwright() as pw:
-        b = pw.chromium.launch()
-        yield b
-        b.close()
-
-
-@pytest.fixture()
-def page(server, browser):
-    pg = browser.new_page(viewport={"width": 1200, "height": 800})
-    errs = []
-    pg.on("pageerror", lambda e: errs.append(str(e)))
-    pg.on("console",
-          lambda m: errs.append(m.text) if m.type == "error" else None)
-    pg.goto(server)
-    pg.wait_for_function("() => !!window.__vp", timeout=20000)
-    pg.wait_for_timeout(1200)                      # first render
-    pg.errors = errs
-    yield pg
-    pg.close()
 
 
 def test_world_is_z_up(page):

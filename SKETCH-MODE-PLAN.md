@@ -171,7 +171,57 @@ quirks", untouched here.
 - **Tests:** e2e: quad meshes' world z (for XY) == 0 regardless of model
   position (read via `window.__vp`/scene or a small exported probe).
 
-## S3 — Multi-body viewport: no body ever "goes blank"
+## S3 — ✅ DONE 2026-08-03 — every body is a real, pickable solid
+
+**The bug, exactly as reported:** "when I draw second design or something else,
+and then when I am extruding it, the first solid box going blank." Nothing was
+deleted — only the RESULT solid was face-tagged and drawn as a real body, and
+every other leaf body came back as a bare silhouette drawn as a translucent
+grey ghost. Extruding a second sketch made THAT the result, so the first body
+turned into a ghost.
+
+**Backend (`studio.py`):** the per-face tessellation + metadata loop is now
+`_tagged_mesh(part, body_id)`, and `/api/model` runs EVERY leaf body through it,
+returning `bodies: [{id, result, positions, indices, faceId, faces, edges}]`
+with `body` stamped on each face and edge. Top-level keys still mirror the
+result body, so older callers keep working. `_mesh_tol` factored out.
+
+**Frontend (`viewport.js`):** `bodyObjs` registry replaces the ghost list —
+each body gets the same opaque solid material and its own crisp OCCT edges;
+`mesh`/`MODEL` still point at the result for the extrude-ghost / plane-pick /
+fit paths. Picking raycasts ALL bodies (`bodyMeshes()`), `selectFace` takes the
+body it hit, `selectEdge` takes the body id (edge ids restart per body, so
+"edge 3" is ambiguous without it), and the pick panel names the body. Framing
+now includes every body, so a second body off to the side can't sit outside the
+view looking like it was never made.
+
+**Acting on the PICKED body, not the tip** (this would have been the next bug):
+`/api/face-outline` accepts `feature_id` and resolves the face on that body;
+`extrude.js` face mode and `sketcher.openSketchOnFace` pass the picked body and
+use it as the feature input / Join target instead of "the last thing with a
+volume".
+
+**Bonus fix found while verifying:** `loadMesh` was async with no re-entrancy
+guard, and it is fired from dialogs, tab switches AND the 3s watcher — two in
+flight each added their scene objects while only one disposed, stacking
+duplicates. Now generation-guarded (`loadSeq`); 4 parallel loads leave the
+scene byte-identical. This also closes the "extra green profiles" triage item,
+which was otherwise a misread screenshot (`/api/model` provably returns ONE
+unconsumed sketch for my-part).
+
+6 pytest + 3 e2e tests. `window.__vp` gained `bodyCount/bodyInfo/bodyObjsRaw/
+sceneCounts/pickAtWorld` so tests can assert on what is REALLY in the scene —
+a body drawn as a ghost passes every DOM check while looking broken. e2e
+fixtures moved to `tests/e2e/conftest.py` (one server + one browser for the
+whole run). main.js?v=37.
+
+**Verify-harness lessons:** (1) `all([])` is True — a check like "every body is
+opaque" PASSED on an empty scene; guard aggregate assertions with a count.
+(2) Adding a feature over the API does NOT refresh the viewport: `postJSON`
+updates `S.lastDoc`, so main.js's watcher sees an unchanged signature and never
+calls `loadMesh` — the real UI paths call it explicitly, and so must any test.
+
+### Original S3 notes (kept for reference)
 
 **Goal:** every unconsumed solid body renders as a REAL solid (Fusion's
 Bodies folder), fully lit, pickable. Ghost-grey is reserved for previews.

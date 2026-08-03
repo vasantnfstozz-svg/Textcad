@@ -216,11 +216,15 @@ export function editSketch(feature) {
 bus.on('edit-sketch', editSketch);
 
 export function openSketchOnFace(faceInfo) {
-  const tip = [...(S.lastDoc?.features || [])].reverse()
-    .find(f => f.volume != null);
+  const feats = S.lastDoc?.features || [];
+  const tip = [...feats].reverse().find(f => f.volume != null);
   if (!tip) { bus.emit('msg', 'bot', '⚠ No solid to sketch on yet.'); return; }
+  // sketch on the body the face was PICKED FROM (several bodies are visible and
+  // clickable now); the tip is only a fallback
+  const owner = faceInfo.body && feats.some(f => f.id === faceInfo.body)
+    ? faceInfo.body : tip.id;
   skOnFace = { center: faceInfo.center, normal: faceInfo.normal || null,
-               inputId: tip.id };
+               inputId: owner };
   skEditId = null;
   resetEditor();
   document.getElementById('skCreate').textContent = 'Create';
@@ -244,7 +248,8 @@ async function loadFaceRef(faceInfo) {
     const r = await fetch('/api/face-outline', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ face_center: faceInfo.center,
-                             face_normal: faceInfo.normal || null }) });
+                             face_normal: faceInfo.normal || null,
+                             feature_id: faceInfo.body || null }) });
     const data = await r.json();
     if (!data.planar || !(data.outer || []).length) return;
     faceRef = { outer: data.outer, holes: data.holes || [] };

@@ -242,6 +242,7 @@ class ParamsReq(BaseModel):
 class FaceReq(BaseModel):
     face_center: list
     face_normal: list | None = None
+    feature_id: str | None = None       # which BODY the face belongs to
 
 
 class TrimReq(BaseModel):
@@ -397,8 +398,8 @@ def _sketches_json(doc: Document) -> list[dict]:
 
 
 def _plain_mesh(part, tol: float) -> dict:
-    """Bare position/index mesh of a solid (no face tagging) — for ghost
-    bodies that are shown but not picked."""
+    """Bare position/index mesh of a solid (no face tagging). Kept for callers
+    that only need a silhouette; bodies in /api/model are fully tagged now."""
     positions, indices, base = [], [], 0
     for face in part.faces():
         try:
@@ -413,39 +414,22 @@ def _plain_mesh(part, tol: float) -> dict:
     return {"positions": positions, "indices": indices}
 
 
-@app.get("/api/model")
-def get_model():
-    """Face-tagged mesh + edge polylines of the current result solid (for
-    face/edge picking) PLUS unconsumed sketches (shown as 2D profiles) PLUS
-    any OTHER unconsumed solid bodies (rendered as ghosts, so positioning a
-    second body before a fuse is not blind)."""
-    doc = _doc()
-    sketches = _sketches_json(doc)
-    part = doc.result()
-    # ghost bodies: leaf solids that are not the displayed result
-    result_id = doc._result_feature().id if doc._result_feature() else None
-    bodies = []
-    for fid in doc.leaf_solid_ids():
-        if fid == result_id:
-            continue
-        gp = doc._parts.get(fid)
-        if gp is None:
-            continue
-        try:
-            gbb = gp.bounding_box()
-            gtol = max((gbb.size.X + gbb.size.Y + gbb.size.Z) / 600.0, 0.1)
-            bodies.append({"id": fid, **_plain_mesh(gp, gtol)})
-        except Exception:
-            continue
-    if part is None:
-        return {"positions": [], "indices": [], "faceId": [],
-                "faces": [], "edges": [], "sketches": sketches, "bodies": bodies}
+def _mesh_tol(part, denom: float = 900.0, floor: float = 0.05) -> float:
     try:
         bb = part.bounding_box()
-        tol = max((bb.size.X + bb.size.Y + bb.size.Z) / 900.0, 0.05)
+        return max((bb.size.X + bb.size.Y + bb.size.Z) / denom, floor)
     except Exception:
-        tol = 0.2
+        return 0.2
 
+
+def _tagged_mesh(part, body_id: str | None = None) -> dict:
+    """Face-tagged mesh of ONE solid: triangles carry the index of the OCCT
+    face they came from, plus per-face and per-edge metadata for picking.
+
+    Every visible body goes through this, not just the displayed result — a
+    body you can see but cannot click is a trap (and a body rendered as a grey
+    ghost reads as "it disappeared", which is exactly what users report)."""
+    tol = _mesh_tol(part)
     positions, indices, face_ids, faces_meta = [], [], [], []
     base = 0
     for fi, face in enumerate(part.faces()):
@@ -461,6 +445,8 @@ def get_model():
         base += len(verts)
         gt = str(face.geom_type).replace("GeomType.", "")
         info = {"id": fi, "type": gt, "area": round(face.area, 2)}
+        if body_id is not None:
+            info["body"] = body_id          # which body this face belongs to
         # FLAT test is geometric, not by surface type: taper/loft/sweep make dead-
         # flat walls stored as BSPLINE/BEZIER/EXTRUSION that are still sketchable
         # and extrudable. `planar` drives face selection in the UI.
@@ -489,13 +475,66 @@ def get_model():
         try:
             pts = [edge @ (i / n) for i in range(n + 1)]
             poly = [[round(p.X, 4), round(p.Y, 4), round(p.Z, 4)] for p in pts]
-            edges_meta.append({"id": ei, "type": gt,
-                               "length": round(edge.length, 2), "points": poly})
+        except Exception:
+            continue
+        em = {"id": ei, "type": gt, "length": round(edge.length, 2),
+              "points": poly}
+        if body_id is not None:
+            em["body"] = body_id
+        edges_meta.append(em)
+
+    return {"positions": positions, "indices": indices, "faceId": face_ids,
+            "faces": faces_meta, "edges": edges_meta}
+
+
+@app.get("/api/model")
+def get_model():
+    """EVERY visible body, each face-tagged for picking, plus unconsumed
+    sketches as 2D profiles.
+
+    `bodies` lists every unconsumed solid — including the displayed result,
+    flagged `result: true` — so the viewport can draw them all as real solids.
+    They used to be drawn as translucent grey ghosts with only the result
+    solid: extruding a second sketch made the FIRST body a ghost, which reads
+    exactly like "my box went blank / disappeared". Fusion shows every body in
+    the Bodies folder as a real, clickable solid.
+
+    The top-level positions/indices/faceId/faces/edges keys still describe the
+    RESULT body, so older callers keep working."""
+    doc = _doc()
+    sketches = _sketches_json(doc)
+    part = doc.result()
+    result_id = doc._result_feature().id if doc._result_feature() else None
+
+    bodies = []
+    for fid in doc.leaf_solid_ids():
+        gp = doc._parts.get(fid)
+        if gp is None:
+            continue
+        try:
+            bodies.append({"id": fid, "result": fid == result_id,
+                           **_tagged_mesh(gp, body_id=fid)})
         except Exception:
             continue
 
-    return {"positions": positions, "indices": indices, "faceId": face_ids,
-            "faces": faces_meta, "edges": edges_meta, "sketches": sketches,
+    result_mesh = next((b for b in bodies if b["result"]), None)
+    if result_mesh is None and part is not None:
+        # a result that is not a leaf (shouldn't happen) — tag it anyway
+        try:
+            result_mesh = {"id": result_id, "result": True,
+                           **_tagged_mesh(part, body_id=result_id)}
+            bodies.append(result_mesh)
+        except Exception:
+            result_mesh = None
+    if result_mesh is None:
+        return {"positions": [], "indices": [], "faceId": [], "faces": [],
+                "edges": [], "sketches": sketches, "bodies": bodies}
+
+    return {"positions": result_mesh["positions"],
+            "indices": result_mesh["indices"],
+            "faceId": result_mesh["faceId"],
+            "faces": result_mesh["faces"], "edges": result_mesh["edges"],
+            "sketches": sketches,
             "bodies": bodies}
 
 
@@ -534,8 +573,14 @@ def edit(req: EditReq):
 def face_outline(req: FaceReq):
     """The picked face's boundary (outer + holes) projected into its plane's
     local 2D — so the sketch editor can show the selected surface as reference
-    geometry. Resolves the face on the current RESULT solid by geometry."""
-    part = _doc().result()
+    geometry. Resolves the face by GEOMETRY on the body it was picked from
+    (feature_id), falling back to the result solid; with several bodies visible
+    the result is not necessarily the one you clicked."""
+    part = None
+    if req.feature_id:
+        part = _doc()._parts.get(req.feature_id)
+    if part is None:
+        part = _doc().result()
     if part is None:
         return {"outer": [], "holes": [], "planar": False,
                 "error": "no solid to sketch on"}

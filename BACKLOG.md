@@ -23,14 +23,29 @@ UI around it produced 36 friction items, merged below. Screenshots in scratchpad
 
 ## To triage (dump new problems here, sort later)
 
-- [ ] **Unconsumed sketch profiles may render as filled areas when viewed
-  edge-on** (noticed during S6 visual verify, NOT investigated). Sketching on
-  XY with my-part open: sketch1 (XZ) and sketch2 (YZ) correctly showed as
-  edge-on green LINES, but two additional filled green rectangles appeared
-  abutting the body. Could be legitimate (DoubleSide meshes, depthTest:false,
-  renderOrder) or a real duplicate/misplaced profile. Repro: open `my-part`,
-  Create Sketch on XY, look straight down. Decide before S3 touches
-  `/api/model`, since that endpoint also emits `sketches`.
+- [ ] **OPEN: panning still does not work for the user** (reported 2026-08-03
+  after S6 + the Shift+left follow-up; user deferred it to work on S3, so it is
+  NOT diagnosed). Unknown which gesture failed — middle-drag, Shift+left, or
+  both. Automated checks pass (e2e asserts the orbit TARGET moves for
+  middle-drag and Shift+left in both tabs), so this is likely environmental
+  rather than logic. Hypotheses in order: (1) the Shift+left code shipped after
+  their last hard refresh — Ctrl+F5; (2) their mouse's wheel-press does not
+  emit button 1 / is bound by the OS or mouse driver; (3) damping makes a short
+  pan look like nothing moved; (4) something swallows the gesture only with a
+  model loaded (the e2e runs on an empty doc). FIRST STEP when resuming: ask
+  which gesture and whether they refreshed, then add a temporary on-screen
+  readout of the live pointer button + resulting camera delta rather than
+  guessing.
+
+- [x] ~~Unconsumed sketch profiles may render as filled areas when viewed
+  edge-on~~ **CLOSED in S3, mostly as a misread screenshot.** Checked the data:
+  `/api/model` for my-part returns exactly ONE unconsumed sketch (sketch2, 4
+  outline loops, correctly edge-on at x=0) and one body — no duplicate or
+  misplaced profile at the source. One real client-side duplication path DID
+  exist and is now fixed: `loadMesh` was async with no re-entrancy guard, so
+  overlapping calls (dialogs + tabs + the 3s watcher) each added scene objects
+  while only one disposed. Verified 5 parallel loads now leave exactly 1 body /
+  12 edges / 5 sketch objects. Re-open if stray profiles are ever seen again.
 - [ ] **Fusion navigation preset (Shift+middle orbit) not supported.** Fusion's
   own default is LEFT=select, MIDDLE=pan, **Shift+MIDDLE=orbit**, and it ships
   a preference to switch styles. We chose left-orbit-in-design + right-orbit,
@@ -53,6 +68,10 @@ See the Done section.
 
 ## P2 — hurts daily use
 
+- [ ] **Status bar volume is the RESULT body's only.** With several bodies now
+  visible (S3), "volume 40000 mm³" next to two boxes is ambiguous — it silently
+  ignores the other body (and the STEP export does too). Either label it
+  "result volume" or show total + per-body.
 - [ ] **Stale/blank viewport around rebuilds.** Busy overlay clears when the POST
   returns, but the old mesh (even of deleted features) keeps rendering for seconds
   while /api/model tessellates — screen contradicts tree; on first load it's blank

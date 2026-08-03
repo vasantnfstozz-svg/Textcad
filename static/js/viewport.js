@@ -10,10 +10,14 @@ import { initSketch3D, sketch3DActive } from './sketch3d.js';
 
 let scene, camera, renderer, controls;
 let groundGrid = null;           // the XY GridHelper (hidden while sketching)
-let mesh = null;                 // the body
-const edgeLines = [];            // crisp OCCT topology edges
+let mesh = null;                 // the RESULT body's mesh (bodyObjs entry too)
+const edgeLines = [];            // crisp OCCT topology edges of ALL bodies
 const sketchObjs = [];           // floating 2D sketch profiles (Fusion-style)
-const ghostObjs = [];            // other unconsumed solid bodies (translucent)
+/* Every unconsumed solid, each a REAL pickable body (Fusion's Bodies folder):
+   [{ id, result, mesh, data:{positions,indices,faceId,faces} }].
+   Non-result bodies used to be translucent grey ghosts, so extruding a second
+   sketch turned the first body into a ghost and read as "it went blank". */
+const bodyObjs = [];
 let hlMesh = null;               // orange overlay for a tree-selected feature
 let pickHl = null;               // orange overlay for a picked face/edge
 let MODEL = null;                // /api/model payload (faceId, faces, edges)
@@ -127,9 +131,35 @@ export function initViewport() {
                  getControls, setOrbitUp, setLeftButton,
                  getFitRadius: () => fitRadius });
   // e2e/debug handle (read-only use): camera, controls and the fit volume the
-  // origin-plane quads are sized from
-  window.__vp = { camera, getControls,
-                  getFit: () => ({ r: fitRadius, c: fitCenter.toArray() }) };
+  // origin-plane quads are sized from, plus body/pick introspection so tests
+  // can assert on what is actually IN the scene (a body drawn as a translucent
+  // ghost passes every DOM check while looking broken to the user)
+  window.__vp = {
+    camera, getControls,
+    getFit: () => ({ r: fitRadius, c: fitCenter.toArray() }),
+    bodyCount: () => bodyObjs.length,
+    bodyInfo: () => bodyObjs.map(b => ({
+      id: b.id, result: b.result, faces: (b.data.faces || []).length,
+      edges: (b.data.edges || []).length,
+      opacity: b.mesh.material.opacity,
+      transparent: b.mesh.material.transparent,
+      color: '#' + b.mesh.material.color.getHexString() })),
+    bodyObjsRaw: () => bodyObjs,
+    /* how many of each thing is actually in the scene — catches duplicate
+       objects piling up from overlapping loads */
+    sceneCounts: () => ({ bodies: bodyObjs.length, edges: edgeLines.length,
+                          sketchObjs: sketchObjs.length,
+                          sceneChildren: scene.children.length }),
+    /* raycast at a WORLD point (e.g. a face centre) as if the user clicked
+       there, and report what got picked — deterministic, no screen maths */
+    pickAtWorld: (world) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const v = new THREE.Vector3(...world).project(camera);
+      pickAt({ clientX: rect.left + (v.x + 1) / 2 * rect.width,
+               clientY: rect.top + (1 - (v.y + 1) / 2) * rect.height });
+      return S.pickedFace || S.pickedCurved || null;
+    },
+  };
 
   (function animate() { requestAnimationFrame(animate);
     controls.update(); renderer.render(scene, camera); })();
@@ -316,7 +346,7 @@ function planePickHover(e) {
   for (const q of quads) q.material.opacity = q.userData.base;
   renderer.domElement.style.cursor = 'pointer';
   if (hit) { hit.object.material.opacity = 0.4; }
-  else if (mesh && raycaster.intersectObject(mesh, false).length)
+  else if (raycaster.intersectObjects(bodyMeshes(), false).length)
     renderer.domElement.style.cursor = 'crosshair';   // hovering a face
 }
 
@@ -324,12 +354,13 @@ function planePickAt(e) {
   raycaster.setFromCamera(ndcFrom(e), camera);
   const quads = originPlanes.filter(o => o.userData.plane);
   const pHit = raycaster.intersectObjects(quads, false)[0];
-  const fHit = mesh ? raycaster.intersectObject(mesh, false)[0] : null;
+  const fHit = raycaster.intersectObjects(bodyMeshes(), false)[0];   // any body
   const cb = planePickCb;
   // a planar face closer than the plane quad wins (you clicked the solid)
-  if (fHit && (!pHit || fHit.distance < pHit.distance - 1e-3) && MODEL) {
-    const fid = MODEL.faceId[fHit.face.a];
-    const info = MODEL.faces.find(f => f.id === fid);
+  if (fHit && (!pHit || fHit.distance < pHit.distance - 1e-3)) {
+    const entry = bodyObjs.find(b => b.mesh === fHit.object);
+    const fid = entry && entry.data.faceId[fHit.face.a];
+    const info = entry && entry.data.faces.find(f => f.id === fid);
     if (info && info.type === 'PLANE' && info.center) {
       endPlanePick(); cb('face', info); return;
     }
@@ -711,19 +742,21 @@ export function setView(dir) {
 }
 
 function disposeModel() {
-  if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); mesh = null; }
+  for (const b of bodyObjs) { scene.remove(b.mesh); b.mesh.geometry.dispose(); }
+  bodyObjs.length = 0;
+  mesh = null;
   for (const l of edgeLines) { scene.remove(l); l.geometry.dispose(); }
   edgeLines.length = 0;
   for (const o of sketchObjs) { scene.remove(o); o.geometry.dispose(); }
   sketchObjs.length = 0;
-  for (const o of ghostObjs) { scene.remove(o); o.geometry.dispose(); }
-  ghostObjs.length = 0;
   clearPickHighlight();
 }
 
+/* Every body from /api/model, drawn as a real solid with its own crisp OCCT
+   edges and registered so picking works on ALL of them. The result body is
+   remembered in `mesh`/`MODEL` because the extrude ghost, plane-pick and fit
+   paths still talk about "the" body. */
 function addBodies(bodies) {
-  // other unconsumed solid bodies — shown translucent so positioning a second
-  // body (before it is fused/cut) is not blind. Not pickable.
   for (const b of bodies || []) {
     if (!b.positions || !b.positions.length) continue;
     const g = new THREE.BufferGeometry();
@@ -731,15 +764,28 @@ function addBodies(bodies) {
     g.setIndex(b.indices);
     g.computeVertexNormals();
     const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-      color: 0x8aa0b8, metalness: 0.1, roughness: 0.6, transparent: true,
-      opacity: 0.32, depthWrite: false }));
-    scene.add(m); ghostObjs.push(m);
-    const eg = new THREE.EdgesGeometry(g, 25);
-    const el = new THREE.LineSegments(eg, new THREE.LineBasicMaterial({
-      color: 0x6b7f96, transparent: true, opacity: 0.5 }));
-    scene.add(el); ghostObjs.push(el);
+      color: 0x5ba7f7, metalness: 0.25, roughness: 0.42 }));
+    m.userData.body = b.id;
+    scene.add(m);
+    const entry = { id: b.id, result: !!b.result, mesh: m,
+                    data: { positions: b.positions, indices: b.indices,
+                            faceId: b.faceId, faces: b.faces,
+                            edges: b.edges || [] } };
+    bodyObjs.push(entry);
+    if (b.result) { mesh = m; MODEL = entry.data; }
+    for (const e of b.edges || []) {
+      const eg = new THREE.BufferGeometry().setFromPoints(
+        e.points.map(p => new THREE.Vector3(p[0], p[1], p[2])));
+      const line = new THREE.Line(eg, new THREE.LineBasicMaterial({
+        color: 0x0c2a4a, transparent: true, opacity: 0.55 }));
+      line.userData.edgeId = e.id;
+      line.userData.body = b.id;
+      scene.add(line); edgeLines.push(line);
+    }
   }
 }
+
+function bodyMeshes() { return bodyObjs.map(b => b.mesh); }
 
 function addSketches(sketches) {
   for (const s of sketches || []) {
@@ -764,45 +810,40 @@ function addSketches(sketches) {
   }
 }
 
+/* Overlapping loads used to DOUBLE the scene: loadMesh is async and called
+   from several places (dialogs, tabs, the 3s watcher), and two in flight each
+   added their objects while only one disposed — leaving duplicate ghost
+   profiles/bodies stacked on the real ones. The newest load wins; older ones
+   drop their payload. */
+let loadSeq = 0;
+
 export async function loadMesh(fit = false) {
+  const mine = ++loadSeq;
   clearHighlight(); clearPick();
   try {
     const m = await (await fetch('/api/model?t=' + Date.now())).json();
+    if (mine !== loadSeq) return;          // a newer load started meanwhile
     disposeModel();
+    MODEL = null;
     addSketches(m.sketches);
-    addBodies(m.bodies);
-    if (!m.positions || !m.positions.length) {
-      MODEL = null;
-      if (fit && (sketchObjs.length || ghostObjs.length))
-        fitToObjects([...sketchObjs, ...ghostObjs]);
+    addBodies(m.bodies);          // sets mesh + MODEL for the result body
+    if (!bodyObjs.length) {
+      if (fit && sketchObjs.length) fitToObjects(sketchObjs);
       return;
     }
-    MODEL = m;
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position',
-      new THREE.Float32BufferAttribute(m.positions, 3));
-    geo.setIndex(m.indices);
-    geo.computeVertexNormals();
-    mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-      color: 0x5ba7f7, metalness: 0.25, roughness: 0.42 }));
-    scene.add(mesh);
-    for (const e of m.edges) {
-      const g = new THREE.BufferGeometry().setFromPoints(
-        e.points.map(p => new THREE.Vector3(p[0], p[1], p[2])));
-      const line = new THREE.Line(g, new THREE.LineBasicMaterial({
-        color: 0x0c2a4a, transparent: true, opacity: 0.55 }));
-      line.userData.edgeId = e.id;
-      scene.add(line); edgeLines.push(line);
+    // frame on EVERY body, not just the result — a second body off to the side
+    // must be in view, otherwise it looks like it never got made
+    const all = [...bodyMeshes(), ...sketchObjs];
+    const box = new THREE.Box3();
+    for (const o of all) box.expandByObject(o);
+    if (!box.isEmpty()) {
+      const sphere = box.getBoundingSphere(new THREE.Sphere());
+      fitRadius = sphere.radius || 100;
+      fitCenter.copy(sphere.center);
     }
-    geo.computeBoundingSphere();
-    fitRadius = geo.boundingSphere.radius || 100;
-    fitCenter.copy(geo.boundingSphere.center);
     if (fit) {
-      if (ghostObjs.length) { fitToObjects([mesh, ...ghostObjs]); }
-      else {
-        camera.near = fitRadius / 100; camera.far = fitRadius * 100;
-        camera.updateProjectionMatrix(); setView('iso');
-      }
+      camera.near = fitRadius / 100; camera.far = fitRadius * 100;
+      camera.updateProjectionMatrix(); setView('iso');
     }
   } catch (e) { /* no model yet */ }
 }
@@ -855,7 +896,7 @@ function clearPick() {
 }
 
 function pickAt(e) {
-  if (!mesh || !MODEL) return;
+  if (!bodyObjs.length) return;
   const rect = renderer.domElement.getBoundingClientRect();
   const ndc = new THREE.Vector2(
     ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -864,17 +905,22 @@ function pickAt(e) {
   raycaster.params.Line.threshold = fitRadius / 60;
 
   const eHits = raycaster.intersectObjects(edgeLines, false);
-  const fHit = raycaster.intersectObject(mesh, false)[0];
+  // ALL bodies are pickable, not just the displayed result
+  const fHit = raycaster.intersectObjects(bodyMeshes(), false)[0];
   if (eHits.length && (!fHit || eHits[0].distance <= fHit.distance + 1e-3)) {
-    selectEdge(eHits[0].object.userData.edgeId);
+    selectEdge(eHits[0].object.userData.edgeId,
+               eHits[0].object.userData.body);
   } else if (fHit) {
-    selectFace(MODEL.faceId[fHit.face.a]);
+    const entry = bodyObjs.find(b => b.mesh === fHit.object);
+    if (entry) selectFace(entry.data.faceId[fHit.face.a], entry);
   }
 }
 
-function selectFace(fid) {
+function selectFace(fid, entry = null) {
   clearPickHighlight();
-  const m = MODEL, pos = m.positions, keep = [];
+  const m = (entry ? entry.data : MODEL);
+  if (!m) return;
+  const pos = m.positions, keep = [];
   for (let t = 0; t < m.indices.length; t += 3) {
     const a = m.indices[t];
     if (m.faceId[a] === fid)
@@ -897,7 +943,10 @@ function selectFace(fid) {
   S.pickedFace = (info.center && isFlat) ? info : null;
   S.pickedCurved = (info.center && !isFlat) ? info : null;
   showPick(`<b>Face ${fid}</b> — ${isFlat && info.type !== 'PLANE' ? info.type + ' (flat)' : info.type}`,
-    [['area', (info.area ?? '?') + ' mm²'],
+    [// which BODY this face belongs to — several are pickable now, and the
+     // tools act on the picked one, so the user must see which it is
+     info.body ? ['body', info.body] : null,
+     ['area', (info.area ?? '?') + ' mm²'],
      info.radius != null ? ['radius', info.radius + ' mm'] : null,
      info.center ? ['center', info.center.join(', ')] : null]);
   if (info.center && isFlat) {                  // sketching needs a FLAT face
@@ -917,18 +966,25 @@ function selectFace(fid) {
   }
 }
 
-function selectEdge(eid) {
+/* bodyId comes from the picked LINE's userData — edge ids restart per body, so
+   'edge 3' is ambiguous without it */
+function selectEdge(eid, bodyId = null) {
   clearPickHighlight();
   S.pickedFace = null;                 // an edge pick is not a sketchable face
   S.pickedCurved = null;
-  const e = MODEL.edges.find(x => x.id === eid);
+  const src = bodyObjs.find(b => b.id === bodyId)
+    || bodyObjs.find(b => b.result) || bodyObjs[0];
+  const e = src && (src.data.edges || []).find(x => x.id === eid);
+  if (!e) return;
   const g = new THREE.BufferGeometry().setFromPoints(
     e.points.map(p => new THREE.Vector3(p[0], p[1], p[2])));
   pickHl = new THREE.Line(g, new THREE.LineBasicMaterial({
     color: 0xffb85c, linewidth: 3, depthTest: false }));
   pickHl.renderOrder = 999;
   scene.add(pickHl);
-  showPick(`<b>Edge ${eid}</b> — ${e.type}`, [['length', e.length + ' mm']]);
+  showPick(`<b>Edge ${eid}</b> — ${e.type}`,
+    [src && bodyObjs.length > 1 ? ['body', src.id] : null,
+     ['length', e.length + ' mm']]);
 }
 
 function showPick(title, rows) {

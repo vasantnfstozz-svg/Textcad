@@ -117,11 +117,17 @@ export function openExtrude(preProfile) {
   const face = S.pickedFace;
   const tip = [...feats()].reverse().find(f => f.volume != null && !f.suppressed);
   if (face && tip) {
-    st = { mode: 'face', face: { center: face.center, normal: face.normal || [0, 0, 1] },
-           inputId: tip.id, extrudeId: null, opId: null, opType: null, opTarget: null };
+    // Extrude the body the face was PICKED FROM, not whatever happens to be
+    // the tip — with several bodies visible those differ, and resolving the
+    // face on the wrong body silently extrudes the wrong thing (or fails).
+    const owner = face.body && feats().some(f => f.id === face.body)
+      ? face.body : tip.id;
+    st = { mode: 'face', face: { center: face.center, normal: face.normal || [0, 0, 1],
+                                 body: owner },
+           inputId: owner, extrudeId: null, opId: null, opType: null, opTarget: null };
     fill('exProfile', ['(selected face)'], '(selected face)');
     g('exProfile').disabled = true;
-    fill('exTarget', bods.map(b => b.id), tip.id);
+    fill('exTarget', bods.map(b => b.id), owner);
     g('exDir').value = 'one'; g('exDist').value = '1'; g('exDist2').value = '10';
     g('exTaper').value = '0'; g('exFlip').checked = false;
     g('exOp').value = 'join';            // pulling a face usually grows the body
@@ -249,7 +255,8 @@ async function setupGhost() {
       const r = await fetch('/api/face-outline', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ face_center: st.face.center,
-                               face_normal: st.face.normal }) });
+                               face_normal: st.face.normal,
+                               feature_id: st.face.body }) });
       const data = await r.json();
       if (!data.planar || !data.frame) return;
       // the ghost is the REAL face shape — outline + holes (circle stays round)
