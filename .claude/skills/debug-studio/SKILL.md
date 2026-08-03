@@ -33,6 +33,29 @@ description: Diagnosis playbook for TextCAD Studio problems — server won't sta
    `python dev.py` (uvicorn reload=True) so backend edits auto-restart it.
    Freeing a stuck port works via `netstat -ano | findstr :PORT` + `taskkill
    /PID <pid> /F`.
+4c. **SEVERAL servers answering ONE port (nondeterministic responses).**
+   Windows lets multiple processes LISTEN on the same 127.0.0.1:PORT without
+   SO_EXCLUSIVEADDRUSE, so a "new" server can bind alongside old ones and
+   requests go to whichever bound last — verification results then make no
+   sense. Two traps compound it: `uvicorn reload=True` runs a PARENT plus a
+   spawned CHILD (`multiprocessing.spawn ... --multiprocessing-fork`), so
+   killing the parent leaves the child serving; and `netstat` keeps printing
+   LISTENING for PIDs that are already dead. Diagnose properly in PowerShell:
+   `Get-NetTCPConnection -LocalPort 8124 -State Listen` then
+   `Get-Process -Id <OwningProcess>` to prove it is alive, and
+   `Get-CimInstance Win32_Process -Filter "ProcessId=N"` to read its
+   CommandLine/CreationDate (that is how a reload child is identified). Kill
+   parent AND child, confirm `curl` refuses, then start exactly one.
+   NOTE from Git Bash: `taskkill /PID` gets MSYS-mangled into a PATH
+   (`Invalid argument/option - 'C:/Program Files/Git/PID'`) — use PowerShell
+   `Stop-Process -Id a,b,c -Force` instead.
+4d. **A long-open BROWSER TAB is the real staleness risk, not dev.py.** A
+   running `dev.py` is never stale (it reloads on any repo .py change, and
+   `static/*` is read from disk per request under no-cache headers). But a
+   tab loaded days ago still runs the JS it downloaded then — no-cache
+   headers cannot help a page that never reloads. When a user reports UI
+   behavior that contradicts shipped code, ask when they last hard-refreshed
+   BEFORE re-diagnosing the code.
 5. **Sphere-bearing solids "not manifold"** — build123d 0.11 false negative;
    inspector.health already tolerates it (checks for GeomType.SPHERE faces).
 6. **`setx` env var invisible** — processes inherit VS Code's env from before

@@ -48,16 +48,45 @@ a CSS regression once passed every DOM check and failed only visually.
 
 ---
 
-## S0 — Preflight (no code)
+## S0 — Preflight — ✅ DONE 2026-08-03
 
-1. Resolve the uncommitted taper WIP (`sketch.py`, `tests/conftest.py`,
-   `tests/test_extrude_v1.py`, `tests/gauntlet.py`,
-   `tests/test_taper_gauntlet.py`, 3 skill files): ASK THE USER whether to
-   commit it as its own commit first (recommended if
-   `pytest tests/test_taper_gauntlet.py -q` is green) or stash it. Do NOT mix
-   it into sketch-mode commits.
-2. `python -m pytest tests -q` must be green before starting.
-3. Start `python dev.py 8124` for interactive work; verify `/api/doc` answers.
+1. ✅ Taper WIP committed on its own (**8e9f519**, user's choice): the
+   flat-BSPLINE seam fix + `tests/gauntlet.py` corpus + skill updates.
+   Working tree clean.
+2. ✅ `python -m pytest tests -q` → **161 passed** (includes 13 gauntlet tests).
+3. ✅ One fresh `python dev.py 8124`, verified current: `/api/doc` = empty
+   "untitled", `/api/sketch/trim/pieces` → 4 pieces (today's code),
+   `main.js?v=33`.
+
+**S0 findings that change how S1–S4 must be verified:**
+
+- **ORPHANED SERVERS WERE MULTI-BINDING PORT 8124.** Three processes were
+  LISTENING on 127.0.0.1:8124 at once (Windows permits this without
+  SO_EXCLUSIVEADDRUSE), so requests were answered by whichever bound last —
+  nondeterministic. Root cause: `uvicorn reload=True` runs a PARENT +
+  spawned CHILD (`multiprocessing.spawn ... --multiprocessing-fork`);
+  killing the parent leaves the CHILD holding the socket, and `netstat`
+  keeps printing LISTENING for already-dead PIDs. Before trusting ANY
+  verification run: `Get-NetTCPConnection -LocalPort <p> -State Listen`,
+  confirm the owning PID is `alive`, and kill children too. Recipe added to
+  the debug-studio skill.
+- **CORRECTION to a wrong first read:** those old processes were NOT serving
+  5-day-old code. `dev.py` auto-reloads on every repo `.py` change (a reload
+  child had respawned the same morning) and `static/*` is read from disk per
+  request under no-cache headers. **A running dev.py is never stale.**
+- **THEREFORE complaint #1 needs one confirmation before S4 is built.** The
+  in-viewport orbit-while-sketching work (`9c44ca4`, 07/31) WAS being
+  served. Two live hypotheses remain: (a) the user sketched on a FACE —
+  which genuinely still opens the flat docked editor (S4's verified root
+  cause, unaffected), or (b) their browser TAB had been open since before
+  07/31, so it was running pre-v2 JS from memory (no reload → no-cache
+  headers can't help). ASK which one, or reproduce both, before deleting the
+  docked editor. S1/S2/S3/S5 root causes were read from CURRENT source and
+  stand regardless.
+- The user's unsaved in-progress session (sketch1 XZ → extrude1 → sketch2
+  YZ — literally the "second body goes blank" repro) was rescued from the
+  doomed process to `designs/my-part.tcad.json` and re-verified: it loads
+  and rebuilds `ok=True` under current code. **Use it as the S3 test case.**
 
 ## S1 — Z-up world (smallest step, biggest feel win)
 
