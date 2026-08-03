@@ -191,8 +191,10 @@ def test_shift_left_pans_in_both_tabs_and_never_draws(page):
     page.keyboard.down("Shift")
     page.wait_for_timeout(100)
     assert page.evaluate(PAN_JS, [70, -25, 0]) > 1.0, "sketch: shift+left pans"
-    entities = page.evaluate(
-        "document.querySelectorAll('#skEntities .skent').length")
+    entities = page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      return sk.sketchEntities().length;
+    }""")
     assert entities == 0, f"shift+left dropped {entities} sketch point(s)"
     page.keyboard.up("Shift")
     page.wait_for_timeout(150)

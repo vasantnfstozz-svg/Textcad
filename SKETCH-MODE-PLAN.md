@@ -280,7 +280,46 @@ Bodies folder), fully lit, pickable. Ghost-grey is reserved for previews.
   bodies; picking metadata carries body ids. E2E: DOM/scene assert 2 meshes
   with the solid material.
 
-## S4 — Face sketches live IN the viewport (kill the docked 2D editor)
+## S4 — ✅ DONE 2026-08-03 — face sketches live IN the viewport, 2D editor DELETED
+
+**Shipped (user re-confirmed the mandate in their own words first):** ONE
+sketch path. `openSketchOnFace` fetches `/api/face-outline` BEFORE entering the
+mode (the response carries the plane `frame` AND the boundary in one call;
+curved face → clear chat message, mode never opens), `enterMode()` lost its
+`else` branch, and the docked editor is GONE: `#sketchDialog` markup, the whole
+SVG renderer (entitySVG/dimensionSVG/draw), its pan/zoom/pointer handlers,
+entity cards and all its CSS. The dialog's hidden inputs (name/plane/offset)
+became module state. Mirror/Duplicate/Offset moved into the contextual ribbon's
+Modify group — they had been dialog-only, i.e. unreachable for plane sketches.
+`faceRef` renders in `draw3D` as dashed grey rings (holes too, with ring
+markers at hole centres — S5's "seeing is the point" rule) and stays a snap
+source. Finish creates the `sketch_on_face` feature ONLY (no auto
+boss/pocket — Fusion doesn't; chat points to Create → Extrude), checked via
+addChecked so a failed rebuild removes it and says why. `editSketch` routes
+BOTH kinds into the viewport (face sketches re-resolve their frame by geometry
+and send only `{entities}` — `/api/feature/params` merges, keeping
+face_center/normal); the tree's ✎ now shows on sketch_on_face features too.
+
+**Real-click bug the bus-driven e2e could NOT see (ui-verify caught it):**
+`planePickAt` gave the pick to whichever hit was NEARER — but the origin-plane
+quads pass THROUGH the model, so from iso the XZ quad sat 4mm in front of a
+box's top face and every click on the visible solid silently became an XZ
+PLANE sketch. Fix: a body face wins whenever the ray hits one; the quads pick
+on their ample area outside the model's silhouette (hover matches: crosshair
+over faces, quad highlight only when the quad would win). Lesson recorded:
+tests that emit `sketch-on-face` over the bus bypass the picker entirely —
+only a real click at real pixels exercises it.
+
+3 new e2e tests (`tests/e2e/test_face_sketch_in_viewport.py`): in-viewport
+mode + body visible + right-drag orbits mid-face-sketch; face-outline corner
+snap + Finish creates exactly one sketch_on_face (nothing auto-extruded);
+tree-edit reopens in the viewport with entities loaded. The old
+`test_sketch_dialog_display_is_gated_by_open` is repurposed to assert the
+dialog stays deleted. 195 pytest green; screenshots taken and LOOKED at
+(flat-on entry, mid-orbit with the circle on the face, finished tree).
+main.js?v=40, css?v=10.
+
+### Original S4 notes (kept for reference)
 
 **Goal:** sketching on a face == sketching on a plane: same in-viewport mode,
 model visible, orbit free (fusion-parity rule 9). This is complaint #1.

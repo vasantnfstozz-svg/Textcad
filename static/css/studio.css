@@ -263,25 +263,8 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 .libitem:hover { border-color: var(--accent); background: var(--panel2); }
 .libitem .meta { color: var(--dim); font-size: 11.5px; }
 
-/* sketch editor — flex layout ONLY when open, or the UA display:none for a
-   closed <dialog> is overridden and the panel shows permanently. */
-#sketchDialog { min-width: 840px; max-width: 1000px; max-height: 92vh; }
-#sketchDialog[open] { display: flex; flex-direction: column; }
-#sketchDialog h3, #sketchDialog .row { flex: none; }
-#sketchWrap { display: flex; gap: 16px; flex: 1; min-height: 0; }
-#sketchSide { overflow-y: auto; width: 260px; flex: none; }
-/* contextual sketch MODE: dock the editor over the main area (non-modal), so
-   the green SKETCH ribbon tab stays live above it — Fusion's Finish-Sketch flow */
-#sketchDialog.docked {
-  position: fixed; left: 0; right: 0; bottom: 0;   /* top set inline by JS */
-  width: auto; height: auto; max-width: none; max-height: none;
-  margin: 0; border-radius: 0; border: none;
-  border-top: 1px solid var(--line); z-index: 30;
-}
-#sketchDialog.docked #sketchCanvas { min-height: 0; }
-/* PLANE sketch = sketch mode v2: the viewport IS the editor (sketch3d.js);
-   only floating UI overlays it — no dialog at all. (The docked dialog below
-   is now used by FACE sketches only.) */
+/* sketch mode: the viewport IS the editor (sketch3d.js) for EVERY sketch —
+   origin plane or picked face; only floating UI overlays it — no dialog. */
 #sk3dBar { position: absolute; bottom: 12px; left: 50%;
   transform: translateX(-50%); z-index: 6; display: flex;
   flex-direction: column; align-items: center; gap: 4px;
@@ -306,14 +289,6 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
   text-shadow: 0 1px 3px #000, 0 0 6px #000;
   transform: translate(-50%, -130%); }
 #sk3dSnap { color: #ffb85c; font-size: 10.5px; font-weight: 500; }
-#skDimEdit3d { position: absolute; z-index: 7; }
-/* face sketch: tools in the ribbon + inline dims too; slim the side panel to
-   just the face note + depth/Join-Cut (which a face sketch genuinely needs) */
-#sketchDialog.docked.facemode #sketchSide { width: 210px; flex: none; }
-#sketchDialog.docked.facemode .skpalette,
-#sketchDialog.docked.facemode #skEntities,
-#sketchDialog.docked.facemode > .row,
-#sketchDialog.docked.facemode > h3 { display: none; }
 /* green contextual tab + prominent Finish Sketch + active draw tool */
 .tab.sketchctx { color: var(--ok); border-bottom: 2px solid var(--ok); }
 #ribbon.sketchctx { background: rgba(67,197,121,.05); }
@@ -321,17 +296,15 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 #ribbon .rbtn.active { color: var(--accent); background: var(--accent2);
   border-radius: 6px; }
 /* inline on-canvas dimension editor — type exact sizes next to the shape */
-#sketchCanvasWrap { position: relative; }
-#skDimEdit, #skDimEdit3d { position: absolute; z-index: 5; display: flex;
+#skDimEdit3d { position: absolute; z-index: 7; display: flex;
   gap: 5px; background: var(--panel); border: 1px solid var(--accent);
   border-radius: 6px; padding: 4px 6px; box-shadow: 0 4px 14px rgba(0,0,0,.5); }
-#skDimEdit3d { z-index: 7; }
-#skDimEdit label, #skDimEdit3d label { display: flex; align-items: center;
+#skDimEdit3d label { display: flex; align-items: center;
   gap: 3px; margin: 0; color: var(--dim); font-size: 11px; }
-#skDimEdit input, #skDimEdit3d input { width: 52px; background: var(--panel2);
+#skDimEdit3d input { width: 52px; background: var(--panel2);
   color: var(--text); border: 1px solid var(--line); border-radius: 4px;
   padding: 3px 5px; font: inherit; font-size: 12px; }
-#skDimEdit input:focus, #skDimEdit3d input:focus { border-color: var(--accent);
+#skDimEdit3d input:focus { border-color: var(--accent);
   outline: none; }
 
 /* Extrude panel — non-modal so the live 3D preview stays visible */
@@ -357,41 +330,3 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
   cursor: pointer; font: inherit; }
 #extrudeDialog .exfoot .primary { background: var(--accent); color: #08111e;
   border: none; font-weight: 700; }
-#sketchSide { width: 260px; flex: none; }
-.skpalette { margin-top: 10px; }
-.skhead { color: var(--dim); font-size: 11px; text-transform: uppercase;
-  letter-spacing: .08em; margin-bottom: 5px; }
-.skpalette button { display: inline-block; width: calc(50% - 3px);
-  margin: 0 2px 4px 0; background: var(--panel2); border: 1px solid var(--line);
-  color: var(--text); border-radius: 6px; padding: 6px 4px; cursor: pointer;
-  font: inherit; font-size: 12px; text-align: left; }
-.skpalette button:hover { border-color: var(--accent); }
-.skpalette button.active { border-color: var(--accent); color: var(--accent);
-  background: var(--accent2); font-weight: 600; }
-.skent.sel { border-color: var(--accent); }
-.skhelp { color: var(--accent); font-size: 12px; padding: 0 0 5px;
-  min-height: 18px; }
-.skents { margin-top: 10px; max-height: 200px; overflow-y: auto; }
-.skent { background: var(--panel2); border: 1px solid var(--line);
-  border-radius: 7px; padding: 6px 8px; margin-bottom: 5px; }
-.skent .eh { display: flex; align-items: center; gap: 6px; }
-.skent .eh b { flex: 1; font-size: 12px; }
-.skent .ef { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.skent .ef label { display: flex; align-items: center; gap: 2px; margin: 0;
-  color: var(--dim); font-size: 11px; }
-.skent .ef input { width: 46px; background: var(--bg); color: var(--text);
-  border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px;
-  font: inherit; font-size: 12px; }
-.skent select { background: var(--bg); color: var(--text);
-  border: 1px solid var(--line); border-radius: 4px; font: inherit;
-  font-size: 11px; }
-.skent .del { background: none; border: none; color: var(--dim);
-  cursor: pointer; }
-#sketchCanvasWrap { flex: 1; display: flex; flex-direction: column; }
-#sketchCanvas { flex: 1; background: var(--bg); border: 1px solid var(--line);
-  border-radius: 8px; min-height: 430px; touch-action: none; }
-.skhint { color: var(--dim); font-size: 11px; text-align: center;
-  padding-top: 5px; }
-#skFaceNote { color: var(--accent); font-size: 11.5px;
-  background: var(--accent2); padding: 6px 8px; border-radius: 6px;
-  margin: 4px 0; }

@@ -115,22 +115,19 @@ def test_empty_server_doc_does_not_500(client):
     assert body["features"] == []
 
 
-def test_sketch_dialog_display_is_gated_by_open():
-    """Regression: setting `display:flex` on #sketchDialog unconditionally
-    overrode the UA `display:none` for a CLOSED <dialog>, so the sketch editor
-    panel showed permanently. Any display rule for the dialog must be gated by
-    [open] (caught only by looking at the rendered page, not the DOM)."""
-    import re
+def test_docked_2d_sketch_editor_stays_deleted():
+    """S4 (SKETCH-MODE-PLAN): the docked 2D SVG sketch editor was a separate
+    flat screen — the model vanished and orbiting was impossible, violating
+    fusion-parity rule 9 ('a mode is never a separate screen'). It was deleted:
+    EVERY sketch (origin plane or picked face) runs in the 3D viewport. This
+    locks the deletion in — none of its markup/hooks may come back."""
     from pathlib import Path
-    css = Path(__file__).resolve().parents[1] / "static" / "css" / "studio.css"
-    text = css.read_text(encoding="utf-8")
-    # every rule whose selector mentions #sketchDialog and sets display must
-    # also require [open]
-    for m in re.finditer(r"([^{}]*#sketchDialog[^{}]*)\{([^}]*)\}", text):
-        selector, body = m.group(1), m.group(2)
-        if "display" in body and "none" not in body:
-            assert "[open]" in selector, (
-                f"#sketchDialog rule sets display without [open]: {selector.strip()!r}")
+    static = Path(__file__).resolve().parents[1] / "static"
+    banned = ["sketchDialog", "sketchCanvas", "skFaceExtrude", "skPlaneRow"]
+    for rel in ["index.html", "css/studio.css", "js/sketcher.js"]:
+        text = (static / rel).read_text(encoding="utf-8")
+        for token in banned:
+            assert token not in text, f"{token!r} resurfaced in static/{rel}"
 
 
 def test_feature_params_sets_multiple_in_one_rebuild(client):

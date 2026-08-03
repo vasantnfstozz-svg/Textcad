@@ -371,12 +371,14 @@ function ndcFrom(e) {
 function planePickHover(e) {
   raycaster.setFromCamera(ndcFrom(e), camera);
   const quads = originPlanes.filter(o => o.userData.plane);
-  const hit = raycaster.intersectObjects(quads, false)[0];
   for (const q of quads) q.material.opacity = q.userData.base;
   renderer.domElement.style.cursor = 'pointer';
-  if (hit) { hit.object.material.opacity = 0.4; }
-  else if (raycaster.intersectObjects(bodyMeshes(), false).length)
-    renderer.domElement.style.cursor = 'crosshair';   // hovering a face
+  if (raycaster.intersectObjects(bodyMeshes(), false).length) {
+    renderer.domElement.style.cursor = 'crosshair';   // a face will be picked
+    return;
+  }
+  const hit = raycaster.intersectObjects(quads, false)[0];
+  if (hit) hit.object.material.opacity = 0.4;
 }
 
 function planePickAt(e) {
@@ -385,8 +387,14 @@ function planePickAt(e) {
   const pHit = raycaster.intersectObjects(quads, false)[0];
   const fHit = raycaster.intersectObjects(bodyMeshes(), false)[0];   // any body
   const cb = planePickCb;
-  // a planar face closer than the plane quad wins (you clicked the solid)
-  if (fHit && (!pHit || fHit.distance < pHit.distance - 1e-3)) {
+  // A body face under the cursor wins even when an origin-plane quad floats
+  // IN FRONT of it. The quads are translucent glass passing THROUGH the
+  // model, so "nearest hit wins" made faces unpickable from whole view
+  // angles: from iso, the XZ quad sat 4mm in front of a box's top face and
+  // every click on the visible solid silently became an XZ plane sketch.
+  // Clicking the solid means the solid; the quads keep their ample area
+  // OUTSIDE the model's silhouette (they are sized past fitRadius).
+  if (fHit) {
     const entry = bodyObjs.find(b => b.mesh === fHit.object);
     const fid = entry && entry.data.faceId[fHit.face.a];
     const info = entry && entry.data.faces.find(f => f.id === fid);

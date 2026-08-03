@@ -1,43 +1,38 @@
-// sketcher.js — the interactive 2D sketch editor (Fusion-style):
-//   * pick a tool in the palette, then CLICK ON THE CANVAS to draw
+// sketcher.js — sketch mode tool logic (Fusion-style). A sketch is NEVER a
+// separate screen (fusion-parity rule 9): whether it starts on an origin plane
+// or on a picked FACE of a body, the viewport IS the editor — the grid lands
+// on the sketch plane in the 3D scene, every body stays visible, and the user
+// orbits (right-drag) / pans (middle / shift+left) / zooms at any moment.
+//   * pick a tool in the contextual ribbon, then CLICK IN THE VIEWPORT to draw
 //     (circle: click center, click radius; rectangle: two corners;
 //      polygon: click points, double-click to close)
-//   * no tool active = select / drag-move shapes, drag empty space to pan
-//   * mouse wheel zooms around the cursor; grid-snapped coordinates
+//   * no tool active = select / drag-move shapes
 //   * Esc cancels the tool, Delete removes the selected shape
-// Two flows: plane sketch (Sketch tab) and face sketch (guided boss/pocket).
+// This module owns the tool state machine in plane-local coordinates;
+// sketch3d.js renders its spec and converts pointer rays to plane points.
 
 import { S } from './state.js';
 import { bus } from './bus.js';
 import { postJSON } from './api.js';
-import { OP_ICONS } from './icons.js';
 import { loadMesh, modelExtent } from './viewport.js';
 import { enterSketch3D, exitSketch3D, renderSketch3D,
          planeToScreen } from './sketch3d.js';
-import { openFeatDialog } from './dialogs.js';
 import { SETTINGS, unitLabel, fmtLen, toMm } from './settings.js';
 
 /* ---------------- state ---------------- */
 
-const DEFAULT_FIELDS = {
-  rectangle: { w: 40, h: 20, x: 0, y: 0, rotation: 0 },
-  circle: { r: 15, x: 0, y: 0 },
-  ellipse: { rx: 20, ry: 10, x: 0, y: 0, rotation: 0 },
-  slot: { length: 30, height: 10, x: 0, y: 0, rotation: 0 },
-  regular_polygon: { radius: 20, sides: 6, x: 0, y: 0, rotation: 0 },
-  polygon: { points: [[0, 0], [30, 0], [15, 25]], x: 0, y: 0 },
-};
-
 let skEnts = [];          // the sketch's entities
-let skOnFace = null;      // {center, normal, inputId} when sketching on a face
+let skOnFace = null;      // {center, normal, inputId, frame} when on a face
 let skEditId = null;      // feature id when EDITING an existing committed sketch
 let faceRef = null;       // {outer:[[x,y]..], holes:[[[x,y]..]..]} reference outline
-let sketchActive = false; // true while in sketch MODE (non-modal, docked)
+let sketchActive = false; // true while in sketch MODE (in-viewport, non-modal)
+let skName = 'sketch1';   // feature id the sketch will be created/saved as
+let skPlaneName = 'XY';   // origin plane for plane sketches (unused on a face)
+let skPlaneOffset = 0;    // plane offset in mm (kept when re-editing)
 let tool = null;          // active drawing tool (entity kind) or null = select
 let clicks = [];          // world-space clicks collected for the current tool
 let ghost = null;         // preview entity while placing
 let selEnt = -1;          // selected entity index
-let view = { cx: 0, cy: 0, ext: 60 };   // world-space view (ext = half-width)
 
 // path tool (chained lines + arcs)
 let pathStart = null;     // first point of the profile
@@ -62,9 +57,6 @@ let trimBusy = false;     // an apply is in flight
 let modelSnaps = [];      // [{x, y, kind, body}] in plane-local mm
 let modelEdges = [];      // [{body, pts:[[x,y]..]}] in plane-local mm
 
-const dlg = () => document.getElementById('sketchDialog');
-const svg = () => document.getElementById('sketchCanvas');
-
 /* principal-plane frames, PROBED from build123d 0.11.1 (never assume — the
    XZ plane's normal points -Y, and offset moves the origin along z_dir) */
 const PLANE_FRAMES = {
@@ -74,8 +66,8 @@ const PLANE_FRAMES = {
 };
 
 function planeFrame() {
-  const f = PLANE_FRAMES[document.getElementById('skPlane').value] || PLANE_FRAMES.XY;
-  const off = Number(document.getElementById('skOffset').value) || 0;
+  const f = PLANE_FRAMES[skPlaneName] || PLANE_FRAMES.XY;
+  const off = skPlaneOffset || 0;
   return { origin: f.z_dir.map(c => c * off),
            x_dir: f.x_dir, y_dir: f.y_dir, z_dir: f.z_dir };
 }
@@ -111,18 +103,16 @@ function focusOnModel(plane) {
            extent: Math.max(radius * 1.35, 60) };
 }
 
-/* PLANE sketches happen IN the 3D viewport (sketch3d.js) — Fusion's sketch
+/* EVERY sketch happens IN the 3D viewport (sketch3d.js) — Fusion's sketch
    mode: entities live on the plane as real geometry, and the user can orbit
-   (right-drag) / pan (middle) / zoom at any time while drawing with LEFT.
-   Face sketches still use the docked 2D editor until they are unified. */
-const inPlane3D = () => sketchActive && !skOnFace;
+   (right-drag) / pan (middle) / zoom at any time while drawing with LEFT. */
 let snapTol3d = 2;        // mm for ~12 px — updated with every 3D pointer event
 let pendingFocus = null;  // {cx, cy, extent} camera framing for the next enter
 let gridStep3d = 10;
 let edgeOnView = false;   // view rotated (nearly) parallel to the sketch plane
 
-/* snap/close tolerance in plane mm — screen-derived in 3D mode */
-const snapTolWorld = () => inPlane3D() ? snapTol3d : view.ext / 40;
+/* snap/close tolerance in plane mm — derived from the screen scale */
+const snapTolWorld = () => snapTol3d;
 
 /* ---------------- open / close ---------------- */
 
@@ -131,21 +121,18 @@ function resetEditor() {
   faceRef = null;
   trimPieces = null; trimHover = -1; trimFor = '';
   modelSnaps = []; modelEdges = [];
-  view = { cx: 0, cy: 0, ext: 90 };          // roomier default, Fusion-like
-  document.querySelectorAll('.skpalette button')
-    .forEach(b => b.classList.remove('active'));
-  renderEnts();
+  draw();
 }
 
-/* Fit the view to a set of [x,y] points (with margin). */
-function fitToPoints(pts) {
-  if (!pts.length) return;
+/* Camera framing that covers a set of plane-local [x,y] points (with margin). */
+function focusOnPoints(pts) {
+  if (!pts || !pts.length) return null;
   const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
   const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
   const span = Math.max(Math.max(...xs) - Math.min(...xs),
                         Math.max(...ys) - Math.min(...ys), 20);
-  view = { cx, cy, ext: span * 0.65 };
+  return { cx, cy, extent: Math.max(span * 0.8, 60) };
 }
 
 function nextName() {
@@ -154,9 +141,10 @@ function nextName() {
   return 'sketch' + n;
 }
 
-/* Enter/leave sketch MODE (Fusion-style): the editor shows NON-modally, docked
-   over the main area, so the contextual green SKETCH ribbon tab stays clickable
-   above it. 'sketch-mode' tells the ribbon to swap in the contextual tab. */
+/* Enter/leave sketch MODE (Fusion-style). ONE path for planes AND faces: the
+   viewport IS the sketch (rule 9) — tools sit in the contextual green ribbon,
+   a floating hint bar + dim labels overlay the 3D view, the camera turns to
+   the sketch plane but stays free to orbit, and every body stays visible. */
 let navTipShown = false;      // the orbit tip goes to chat once per page load
 
 function enterMode() {
@@ -167,37 +155,20 @@ function enterMode() {
       + '(the model stays live — you never leave 3D) · middle-drag or '
       + 'shift+left-drag pans · wheel zooms · Look At re-faces the plane.');
   }
-  if (!skOnFace) {
-    // Fusion-style: NO separate editor — the viewport IS the sketch. Tools sit
-    // in the contextual ribbon; a floating hint bar + dim labels overlay the
-    // 3D view; the camera turns to the plane but stays free to orbit.
-    enterSketch3D(planeFrame(), { gridMm: SETTINGS.gridMm,
-                                  focus: pendingFocus || undefined });
-    pendingFocus = null;
-    document.getElementById('sk3dBar').style.display = '';
-  } else {
-    // face sketches: keep the docked 2D editor (side panel has depth/Join-Cut)
-    const d = dlg();
-    d.classList.add('docked', 'facemode');
-    d.classList.remove('planemode');
-    const dt = document.getElementById('doctabs');
-    d.style.top = (dt ? dt.getBoundingClientRect().bottom : 130) + 'px';
-    d.show();                        // NON-modal — no backdrop, ribbon stays live
-  }
+  enterSketch3D(skOnFace ? skOnFace.frame : planeFrame(),
+                { gridMm: SETTINGS.gridMm, focus: pendingFocus || undefined });
+  pendingFocus = null;
+  document.getElementById('sk3dBar').style.display = '';
   bus.emit('sketch-mode', { active: true });
 }
 
 function exitMode() {
   sketchActive = false;
-  exitSketch3D();                    // no-op unless a plane sketch was open
+  exitSketch3D();
   for (const id of ['sk3dBar', 'sk3dDim', 'sk3dSnap', 'skDimEdit3d']) {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   }
-  const d = dlg();
-  d.classList.remove('docked', 'facemode', 'planemode');
-  d.style.top = '';
-  try { d.close(); } catch { /* already closed */ }
   bus.emit('sketch-mode', { active: false });
 }
 
@@ -221,13 +192,9 @@ export function cancelSketch() {
 export function openSketchEditor(plane = 'XY') {
   skOnFace = null; skEditId = null;
   resetEditor();
-  document.getElementById('skCreate').textContent = 'Create';
-  document.getElementById('skName').value = nextName();
-  document.getElementById('skPlane').value = plane;      // chosen in the viewport
-  document.getElementById('skOffset').value = '0';
-  document.getElementById('skPlaneRow').style.display = '';
-  document.getElementById('skFaceNote').style.display = 'none';
-  document.getElementById('skFaceExtrude').style.display = 'none';
+  skName = nextName();
+  skPlaneName = plane;               // chosen in the viewport
+  skPlaneOffset = 0;
   pendingFocus = focusOnModel(plane);
   enterMode();
   updateHint();
@@ -236,34 +203,43 @@ export function openSketchEditor(plane = 'XY') {
 }
 
 /* Reopen a committed sketch to edit its entities (the alternative to
-   delete-and-redraw). Loads the stored entities back onto the canvas. */
-export function editSketch(feature) {
-  skOnFace = null; skEditId = feature.id;
+   delete-and-redraw) — plane sketches AND face sketches, both in the viewport.
+   A face sketch's plane is re-resolved by geometry via /api/face-outline. */
+export async function editSketch(feature) {
+  const onFace = feature.op === 'sketch_on_face';
+  let outline = null;
+  if (onFace) {
+    outline = await fetchFaceOutline(feature.params.face_center,
+      feature.params.face_normal || null, feature.inputs?.[0] || null);
+    if (!outline?.planar || !outline.frame) {
+      bus.emit('msg', 'bot', '⚠ Could not re-resolve the face this sketch ' +
+        'sits on' + (outline?.error ? `: ${outline.error}` : '.'));
+      return;
+    }
+  }
+  skOnFace = onFace
+    ? { center: feature.params.face_center,
+        normal: feature.params.face_normal || null,
+        inputId: feature.inputs?.[0] || null, frame: outline.frame }
+    : null;
+  skEditId = feature.id;
   resetEditor();
   skEnts = (feature.params.entities || []).map(e => ({ ...e }));
-  document.getElementById('skName').value = feature.id;
-  document.getElementById('skPlaneRow').style.display = '';
-  document.getElementById('skPlane').value = feature.params.plane || 'XY';
-  document.getElementById('skOffset').value = feature.params.offset ?? 0;
-  document.getElementById('skFaceNote').style.display = 'none';
-  document.getElementById('skFaceExtrude').style.display = 'none';
-  document.getElementById('skCreate').textContent = 'Save changes';
-  // frame the existing geometry (camera focus in 3D, viewBox in the SVG editor)
-  const xs = skEnts.map(e => e.x || 0), ys = skEnts.map(e => e.y || 0);
-  if (xs.length) {
-    const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-    const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-    pendingFocus = { cx, cy, extent: 90 };
-    view = { cx, cy, ext: 60 };
-  }
+  skName = feature.id;
+  skPlaneName = feature.params.plane || 'XY';
+  skPlaneOffset = Number(feature.params.offset) || 0;
+  if (onFace) faceRef = { outer: outline.outer, holes: outline.holes || [] };
+  // frame the existing geometry (fall back to the face outline, then origin)
+  pendingFocus = focusOnPoints(skEnts.map(e => [e.x || 0, e.y || 0]))
+    || focusOnPoints(faceRef?.outer);
   enterMode();
   updateHint();
   renderEnts();
-  loadModelSnaps(feature.params.plane || 'XY', feature.params.offset ?? 0);
+  if (!onFace) loadModelSnaps(skPlaneName, skPlaneOffset);
 }
 bus.on('edit-sketch', editSketch);
 
-export function openSketchOnFace(faceInfo) {
+export async function openSketchOnFace(faceInfo) {
   const feats = S.lastDoc?.features || [];
   const tip = [...feats].reverse().find(f => f.volume != null);
   if (!tip) { bus.emit('msg', 'bot', '⚠ No solid to sketch on yet.'); return; }
@@ -271,56 +247,47 @@ export function openSketchOnFace(faceInfo) {
   // clickable now); the tip is only a fallback
   const owner = faceInfo.body && feats.some(f => f.id === faceInfo.body)
     ? faceInfo.body : tip.id;
+  // the face's plane IS the sketch frame, so it must arrive BEFORE the mode
+  // can open — same fetch also brings the boundary shown as reference
+  const data = await fetchFaceOutline(faceInfo.center, faceInfo.normal || null,
+                                      owner);
+  if (!data?.planar || !data.frame) {
+    bus.emit('msg', 'bot', '⚠ ' + (data?.error ||
+      'That face is curved — a sketch needs a FLAT face. Pick a planar face, ' +
+      'or sketch on an origin plane instead.'));
+    return;
+  }
   skOnFace = { center: faceInfo.center, normal: faceInfo.normal || null,
-               inputId: owner };
+               inputId: owner, frame: data.frame };
   skEditId = null;
   resetEditor();
-  document.getElementById('skCreate').textContent = 'Create';
-  document.getElementById('skName').value = nextName();
-  document.getElementById('skPlaneRow').style.display = 'none';
-  document.getElementById('skFaceNote').style.display = '';
-  document.getElementById('skFaceExtrude').style.display = '';
-  document.getElementById('skFaceNote').textContent =
-    `On the selected face of "${skOnFace.inputId}" (grey = the surface outline). ` +
-    `Pick a shape, click to draw, set depth + Join/Cut, then Create.`;
+  skName = nextName();
+  faceRef = { outer: data.outer || [], holes: data.holes || [] };
+  pendingFocus = focusOnPoints(faceRef.outer);
   enterMode();
+  updateHint();
   draw();
-  loadFaceRef(faceInfo);          // fetch + show the selected surface as reference
+  bus.emit('msg', 'bot', `Sketching on a face of "${owner}" — the grey dashed ` +
+    'outline is that surface. Draw your profile, Finish Sketch, then ' +
+    'Create → Extrude to raise a boss or cut a pocket.');
 }
 bus.on('sketch-on-face', openSketchOnFace);
 
-/* Fetch the picked face's boundary (in the sketch plane's 2D coords) and show
-   it as grey reference geometry, so the user draws against the real surface. */
-async function loadFaceRef(faceInfo) {
+/* The picked face's plane frame + boundary (in the plane's own 2D coords),
+   resolved by geometry on the body it was picked from. */
+async function fetchFaceOutline(center, normal, featureId) {
   try {
     const r = await fetch('/api/face-outline', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ face_center: faceInfo.center,
-                             face_normal: faceInfo.normal || null,
-                             feature_id: faceInfo.body || null }) });
-    const data = await r.json();
-    if (!data.planar || !(data.outer || []).length) return;
-    faceRef = { outer: data.outer, holes: data.holes || [] };
-    if (!skEnts.length) fitToPoints(faceRef.outer);   // frame the surface
-    draw();
-  } catch (e) { /* reference is a nicety; ignore fetch errors */ }
+      body: JSON.stringify({ face_center: center, face_normal: normal,
+                             feature_id: featureId }) });
+    return await r.json();
+  } catch { return null; }
 }
 
-/* ---------------- init: palette, canvas, keyboard ---------------- */
+/* ---------------- init: keyboard + viewport events ---------------- */
 
 export function initSketcher() {
-  for (const b of document.querySelectorAll('.skpalette button[data-shape]')) {
-    b.onclick = () => setTool(tool === b.dataset.shape ? null : b.dataset.shape);
-  }
-  document.getElementById('skCancel').onclick = cancelSketch;
-  document.getElementById('skCreate').onclick = create;
-
-  // non-modal now, but keep guarding the modal 'cancel' (Esc) just in case:
-  // cancel the active TOOL, never destroy the sketch.
-  dlg().addEventListener('cancel', e => {
-    e.preventDefault();
-    setTool(null);
-  });
   // sketch mode is non-modal, so key handling lives on the window (guarded)
   window.addEventListener('keydown', e => {
     if (!sketchActive || e.target.tagName === 'INPUT') return;
@@ -330,49 +297,30 @@ export function initSketcher() {
       e.preventDefault(); skEnts.splice(selEnt, 1); selEnt = -1; renderEnts();
     }
   });
-  document.getElementById('skMirrorV').onclick = () => modifySel(e => mirrorEntity(e, 'v'));
-  document.getElementById('skMirrorH').onclick = () => modifySel(e => mirrorEntity(e, 'h'));
-  document.getElementById('skDup').onclick = () => modifySel(duplicateEntity);
-  // NB: 'skOffset' is the plane-offset INPUT — the tool button is skOffsetTool
-  // (they shared an id once, which hung this prompt on the input instead)
-  document.getElementById('skOffsetTool').onclick = () => {
-    const d = Number(prompt('Offset distance in mm (+ bigger / − smaller):', '5'));
-    if (!d) return;
-    modifySel(e => offsetEntity(e, d));
-  };
 
-  const c = svg();
-  c.addEventListener('pointerdown', onDown);
-  c.addEventListener('pointermove', onMove);
-  c.addEventListener('pointerup', onUp);
-  c.addEventListener('dblclick', onDblClick);
-  c.addEventListener('wheel', onWheel, { passive: false });
-
-  window.addEventListener('resize', () => { if (sketchActive) draw(); });
-
-  // 3D sketch mode input: plane-local points arrive over the bus (sketch3d.js)
+  // sketch input: plane-local points arrive over the bus (sketch3d.js)
   bus.on('sk3d-down', p => {
-    if (!inPlane3D()) return;
+    if (!sketchActive) return;
     snapTol3d = p.tol; pointerDown(p);
   });
   bus.on('sk3d-move', p => {
-    if (!inPlane3D()) return;
+    if (!sketchActive) return;
     snapTol3d = p.tol; pointerMove(p);
   });
-  bus.on('sk3d-up', () => { if (inPlane3D()) pointerUp(); });
-  bus.on('sk3d-dbl', () => { if (inPlane3D()) onDblClick(); });
+  bus.on('sk3d-up', () => { if (sketchActive) pointerUp(); });
+  bus.on('sk3d-dbl', () => { if (sketchActive) onDblClick(); });
   bus.on('sk3d-grid', ({ step }) => {
     gridStep3d = step;
     const el = document.getElementById('sk3dGrid');
     if (el) el.textContent = `grid ${fmtLen(gridStep3d, false)} ${unitLabel()}`;
   });
   // orbiting moves the camera — re-place the HTML labels over the 3D scene
-  bus.on('sk3d-view', () => { if (inPlane3D()) updateFloatingLabels(); });
+  bus.on('sk3d-view', () => { if (sketchActive) updateFloatingLabels(); });
   // rotated (nearly) edge-on to the plane: say so instead of taking nonsense
   // clicks — orbiting there is fine, drawing is not
   bus.on('sk3d-edge', ({ edgeOn }) => {
     edgeOnView = edgeOn;
-    if (inPlane3D()) updateHint();
+    if (sketchActive) updateHint();
   });
 }
 
@@ -382,9 +330,6 @@ function setTool(kind) {
   pathStart = null; pathSegs = []; pendingVia = null; segMode = 'line';
   trimHover = -1;
   if (tool === 'trim') fetchTrimPieces(); else trimPieces = null;
-  document.querySelectorAll('.skpalette button').forEach(b =>
-    b.classList.toggle('active', b.dataset.shape === tool));
-  svg().style.cursor = tool ? 'crosshair' : 'default';
   bus.emit('sketch-tool', { tool });        // highlight the active tool in the ribbon
   updateHint();
   draw();
@@ -392,12 +337,6 @@ function setTool(kind) {
 
 /* ---------------- coordinates ---------------- */
 
-function worldPoint(e) {
-  const el = svg();
-  const pt = new DOMPoint(e.clientX, e.clientY)
-    .matrixTransform(el.getScreenCTM().inverse());
-  return { x: pt.x, y: -pt.y };            // flip: world +y is up
-}
 const snap = v => {                       // snap increment from Settings (0 = off)
   const s = SETTINGS.snapMm;
   return s > 0 ? Math.round(v / s) * s : Math.round(v * 100) / 100;
@@ -551,10 +490,9 @@ async function trimClick() {
 /* ---------------- pointer interaction ---------------- */
 
 let dragging = null;      // {idx, startX, startY, ex, ey} moving an entity
-let panning = null;       // {px, py, cx, cy} moving the view
 
-/* shared select/draw logic in PLANE coordinates — the SVG canvas (face
-   sketches) and the 3D viewport (plane sketches) both feed points in here */
+/* select/draw logic in PLANE coordinates — the 3D viewport feeds points in
+   here over the bus ('sk3d-down/move/up') */
 function pointerDown(raw) {
   if (tool === 'trim') { trimClick(); return 'tool'; }
   if (tool) { placeClick(smartSnap(raw)); return 'tool'; }
@@ -565,11 +503,11 @@ function pointerDown(raw) {
     const p = snapPt(raw);
     dragging = { idx: hit, startX: p.x, startY: p.y,
                  ex: ent.x || 0, ey: ent.y || 0 };
-    renderCards(); draw();
+    draw();
     return 'drag';
   }
   selEnt = -1;
-  renderCards(); draw();
+  draw();
   return 'miss';
 }
 
@@ -596,41 +534,13 @@ function pointerMove(p) {
 }
 
 function pointerUp() {
-  if (dragging) renderCards();
   dragging = null;
 }
 
 function setCoordsReadout(p) {
-  const el = document.getElementById(inPlane3D() ? 'sk3dCoords' : 'skCoords');
+  const el = document.getElementById('sk3dCoords');
   if (el) el.textContent =
     `x ${fmtLen(snap(p.x), false)}, y ${fmtLen(snap(p.y), false)} ${unitLabel()}`;
-}
-
-function onDown(e) {
-  if (e.button !== 0) return;
-  const raw = worldPoint(e);
-  const acted = pointerDown(raw);
-  if (acted === 'drag') {
-    svg().setPointerCapture(e.pointerId);
-  } else if (acted === 'miss') {              // SVG only: drag empty space pans
-    panning = { px: raw.x, py: raw.y, cx: view.cx, cy: view.cy };
-    svg().setPointerCapture(e.pointerId);
-  }
-}
-
-function onMove(e) {
-  const p = worldPoint(e);
-  if (panning) {
-    view.cx = panning.cx - (p.x - panning.px);
-    view.cy = panning.cy - (p.y - panning.py);
-    draw(); return;
-  }
-  pointerMove(p);
-}
-
-function onUp(e) {
-  pointerUp(); panning = null;
-  try { svg().releasePointerCapture(e.pointerId); } catch {}
 }
 
 function onDblClick() {
@@ -648,23 +558,24 @@ function pathGhost(p) {
            start: [pathStart.x, pathStart.y], segments: segs };
 }
 
-function onWheel(e) {
-  e.preventDefault();
-  const p = worldPoint(e);
-  const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15;
-  const ext = Math.max(10, Math.min(2000, view.ext * factor));
-  const k = ext / view.ext;
-  view.cx = p.x - (p.x - view.cx) * k;
-  view.cy = p.y - (p.y - view.cy) * k;
-  view.ext = ext;
-  draw();
-}
+/* ---------------- modify tools (P5): mirror / duplicate / offset ----------
+   Ribbon-facing (the contextual SKETCH tab's Modify group): these used to be
+   side-panel buttons of the docked 2D editor, which died with S4. */
 
-/* ---------------- modify tools (P5): mirror / duplicate / offset ---------- */
+export function sketchModify(kind) {
+  if (kind === 'mirror_v') return modifySel(e => mirrorEntity(e, 'v'));
+  if (kind === 'mirror_h') return modifySel(e => mirrorEntity(e, 'h'));
+  if (kind === 'duplicate') return modifySel(duplicateEntity);
+  if (kind === 'offset') {
+    const d = Number(prompt('Offset distance in mm (+ bigger / − smaller):', '5'));
+    if (!d) return;
+    modifySel(e => offsetEntity(e, d));
+  }
+}
 
 function modifySel(fn) {
   if (selEnt < 0 || !skEnts[selEnt]) {
-    bus.emit('msg', 'bot', '⚠ Select a shape first (click it on the canvas).');
+    bus.emit('msg', 'bot', '⚠ Select a shape first (click it in the viewport).');
     return;
   }
   const copy = fn(JSON.parse(JSON.stringify(skEnts[selEnt])));
@@ -904,64 +815,11 @@ function pointInPolygon(x, y, pts) {
   return inside;
 }
 
-/* ---------------- entity cards (numeric editing) ---------------- */
-
-function renderEnts() { renderCards(); draw(); }
-
-function renderCards() {
-  const box = document.getElementById('skEntities');
-  box.innerHTML = '';
-  skEnts.forEach((e, i) => {
-    const card = document.createElement('div');
-    card.className = 'skent' + (i === selEnt ? ' sel' : '');
-    card.onclick = () => { selEnt = i; renderCards(); draw(); };
-    const head = document.createElement('div'); head.className = 'eh';
-    head.innerHTML = `<b>${OP_ICONS[e.kind] || ''} ${e.kind}</b>`;
-    const mode = document.createElement('select');
-    mode.innerHTML = '<option value="add">add</option>' +
-                     '<option value="subtract">cut</option>';
-    mode.value = e.mode;
-    mode.disabled = i === 0;                 // first must be additive
-    mode.onchange = () => { e.mode = mode.value; draw(); };
-    const del = document.createElement('button'); del.className = 'del';
-    del.textContent = '✕';
-    del.onclick = ev => { ev.stopPropagation();
-      skEnts.splice(i, 1); if (selEnt >= skEnts.length) selEnt = -1;
-      renderEnts(); };
-    head.append(mode, del);
-    card.appendChild(head);
-
-    const f = document.createElement('div'); f.className = 'ef';
-    for (const k of Object.keys(e)) {
-      if (['kind', 'mode', 'points', 'ghostOpen', 'start', 'segments']
-          .includes(k)) continue;
-      const lab = document.createElement('label');
-      lab.textContent = k;
-      const inp = document.createElement('input'); inp.value = e[k];
-      inp.onclick = ev => ev.stopPropagation();
-      inp.oninput = () => { e[k] = Number(inp.value) || 0; draw(); };
-      lab.appendChild(inp); f.appendChild(lab);
-    }
-    for (const jsonKey of ['points', 'start', 'segments']) {
-      if (!e[jsonKey]) continue;
-      const lab = document.createElement('label');
-      lab.textContent = jsonKey;
-      const inp = document.createElement('input'); inp.style.width = '150px';
-      inp.value = JSON.stringify(e[jsonKey]);
-      inp.onclick = ev => ev.stopPropagation();
-      inp.oninput = () => {
-        try { e[jsonKey] = JSON.parse(inp.value); draw(); } catch {}
-      };
-      lab.appendChild(inp); f.appendChild(lab);
-    }
-    card.appendChild(f);
-    box.appendChild(card);
-  });
-}
+function renderEnts() { draw(); }
 
 function updateHint() {
-  const el = document.getElementById(inPlane3D() ? 'sk3dHelp' : 'skHelp');
-  if (inPlane3D() && edgeOnView) {
+  const el = document.getElementById('sk3dHelp');
+  if (edgeOnView) {
     el.textContent = '⚠ You are looking along the sketch plane — rotate back, '
       + 'or press Look At, to keep drawing';
     return;
@@ -1011,176 +869,16 @@ function updateHint() {
          regular_polygon: 'N-gon: click the center' }[tool] || 'Click to place');
 }
 
-/* ---------------- on-canvas dimensions (P4) ---------------- */
+/* ---------------- rendering ---------------- */
 
 function fmt(v) { return fmtLen(v, false); }   // dimension labels in display unit
 
-function dimText(x, y, text, fs) {
-  return `<text x="${x}" y="${-y}" font-size="${fs}" fill="#dde2ea"
-    text-anchor="middle" style="paint-order:stroke" stroke="#0f1115"
-    stroke-width="${fs / 5}" font-family="Segoe UI, sans-serif">${text}</text>`;
-}
+function draw() { if (sketchActive) draw3D(); }
 
-function dimensionSVG(e, fs) {
-  const x = e.x || 0, y = e.y || 0, off = fs * 1.2;
-  if (e.kind === 'circle') return dimText(x, y + off, `R ${fmt(e.r)}`, fs);
-  if (e.kind === 'regular_polygon')
-    return dimText(x, y + off, `R ${fmt(e.radius)} × ${e.sides}`, fs);
-  if (e.kind === 'rectangle')
-    return dimText(x, y + off, `${fmt(e.w)} × ${fmt(e.h)}`, fs);
-  if (e.kind === 'ellipse')
-    return dimText(x, y + off, `${fmt(e.rx)} × ${fmt(e.ry)}`, fs);
-  if (e.kind === 'slot')
-    return dimText(x, y + off, `L ${fmt(e.length)}  H ${fmt(e.height)}`, fs);
-  if (e.kind === 'path' && e.ghostOpen && e.segments?.length) {
-    // live length of the segment being drawn
-    const last = e.segments[e.segments.length - 1];
-    const from = e.segments.length > 1
-      ? e.segments[e.segments.length - 2].to : e.start;
-    const mx = (from[0] + last.to[0]) / 2, my = (from[1] + last.to[1]) / 2;
-    const len = Math.hypot(last.to[0] - from[0], last.to[1] - from[1]);
-    return dimText(mx, my + off, fmt(len), fs);
-  }
-  return '';
-}
-
-/* ---------------- rendering ---------------- */
-
-function entitySVG(e, opts = {}) {
-  const col = e.mode === 'subtract' ? '#ff5d5d' : '#43c579';
-  const fill = opts.ghost ? 'none'
-    : e.mode === 'subtract' ? 'rgba(255,93,93,.10)' : 'rgba(67,197,121,.13)';
-  const sw = opts.sel ? 2 : 1;
-  const dash = opts.ghost ? ' stroke-dasharray="3 3"' : '';
-  const x = e.x || 0, y = -(e.y || 0);
-  const st = `fill="${fill}" stroke="${col}" stroke-width="${sw}"` +
-             ` vector-effect="non-scaling-stroke"${dash}`;
-  const rot = `transform="rotate(${-(e.rotation || 0)} ${x} ${y})"`;
-  if (e.kind === 'rectangle')
-    return `<rect x="${x - e.w / 2}" y="${y - e.h / 2}" width="${e.w}" height="${e.h}" ${st} ${rot}/>`;
-  if (e.kind === 'circle')
-    return `<circle cx="${x}" cy="${y}" r="${e.r}" ${st}/>`;
-  if (e.kind === 'ellipse')
-    return `<ellipse cx="${x}" cy="${y}" rx="${e.rx}" ry="${e.ry}" ${st} ${rot}/>`;
-  if (e.kind === 'slot') {
-    const r = e.height / 2;
-    return `<rect x="${x - e.length / 2}" y="${y - r}" width="${e.length}" height="${e.height}" rx="${r}" ${st} ${rot}/>`;
-  }
-  if (e.kind === 'regular_polygon') {
-    const pts = [];
-    for (let k = 0; k < e.sides; k++) {
-      const a = Math.PI / 2 + k * 2 * Math.PI / e.sides;
-      pts.push(`${x + e.radius * Math.cos(a)},${y - e.radius * Math.sin(a)}`);
-    }
-    return `<polygon points="${pts.join(' ')}" ${st} ${rot}/>`;
-  }
-  if (e.kind === 'polygon' && e.points) {
-    const pts = e.points.map(p =>
-      `${(e.x || 0) + p[0]},${-((e.y || 0) + p[1])}`).join(' ');
-    return e.ghostOpen
-      ? `<polyline points="${pts}" ${st}/>`
-      : `<polygon points="${pts}" ${st}/>`;
-  }
-  if (e.kind === 'path' && e.start) {
-    const pts = pathOutline(e).map(q => `${q.x},${-q.y}`).join(' ');
-    return e.ghostOpen
-      ? `<polyline points="${pts}" ${st}/>`
-      : `<polygon points="${pts}" ${st}/>`;
-  }
-  return '';
-}
-
-function draw() {
-  if (inPlane3D()) { draw3D(); return; }          // plane sketches render in 3D
-  const el = svg();
-  const { cx, cy, ext } = view;
-  // viewBox matches the canvas's REAL aspect ratio so the grid fills the whole
-  // (wide) canvas edge-to-edge like Fusion — a square viewBox letterboxed it,
-  // leaving the grid stuck in a small central square with dark empty sides.
-  const rect = el.getBoundingClientRect();
-  const aspect = rect.height > 0 ? rect.width / rect.height : 1;
-  const ex = ext * aspect, ey = ext;              // half-extents (x wider on wide canvas)
-  el.setAttribute('viewBox', `${cx - ex} ${-cy - ey} ${2 * ex} ${2 * ey}`);
-
-  // grid step = the configured grid size, coarsened while zoomed out so lines
-  // never crowd (keep at least ~7px apart at the current zoom)
-  let step = Math.max(0.1, SETTINGS.gridMm);
-  while ((2 * ey) / step > 90) step *= 2;
-  let out = '';
-  const x0 = Math.floor((cx - ex) / step) * step;
-  const y0 = Math.floor((-cy - ey) / step) * step;
-  for (let g = x0; g <= cx + ex; g += step)
-    out += `<line x1="${g}" y1="${-cy - ey}" x2="${g}" y2="${-cy + ey}" stroke="#20242e" stroke-width="0.5" vector-effect="non-scaling-stroke"/>`;
-  for (let g = y0; g <= -cy + ey; g += step)
-    out += `<line x1="${cx - ex}" y1="${g}" x2="${cx + ex}" y2="${g}" stroke="#20242e" stroke-width="0.5" vector-effect="non-scaling-stroke"/>`;
-  out += `<line x1="${cx - ex}" y1="0" x2="${cx + ex}" y2="0" stroke="#3a4150" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
-  out += `<line x1="0" y1="${-cy - ey}" x2="0" y2="${-cy + ey}" stroke="#3a4150" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
-
-  // selected-surface reference (grey, non-editable): outer minus holes
-  if (faceRef && faceRef.outer.length) {
-    const ring = pts => pts.map(p => `${p[0]},${-p[1]}`).join(' ');
-    const path = ['M ' + faceRef.outer.map(p => `${p[0]} ${-p[1]}`).join(' L ') + ' Z'];
-    for (const h of faceRef.holes)
-      path.push('M ' + h.map(p => `${p[0]} ${-p[1]}`).join(' L ') + ' Z');
-    out += `<path d="${path.join(' ')}" fill="#5a6472" fill-rule="evenodd"
-      fill-opacity="0.22" stroke="#8a97a8" stroke-width="1.5"
-      vector-effect="non-scaling-stroke"/>`;
-    for (const h of faceRef.holes)
-      out += `<polygon points="${ring(h)}" fill="none" stroke="#8a97a8"
-        stroke-width="1.5" vector-effect="non-scaling-stroke"/>`;
-  }
-
-  skEnts.forEach((e, i) => out += entitySVG(e, { sel: i === selEnt }));
-  if (ghost) out += entitySVG(ghost, { ghost: true });
-  if (tool === 'trim' && trimPieces && trimHover >= 0) {
-    const pl = trimPieces[trimHover].pts.map(q => `${q[0]},${-q[1]}`).join(' ');
-    out += `<polyline points="${pl}" fill="none" stroke="#ff3333"
-      stroke-width="3.5" vector-effect="non-scaling-stroke" opacity="0.95"/>`;
-  }
-  for (const c of clicks)
-    out += `<circle cx="${c.x}" cy="${-c.y}" r="${ext / 90}" fill="#4da3ff"/>`;
-  if (tool === 'path' && pathStart) {
-    out += `<circle cx="${pathStart.x}" cy="${-pathStart.y}" r="${ext / 60}"
-      fill="none" stroke="#4da3ff" stroke-width="1.5"
-      vector-effect="non-scaling-stroke"/>`;      // close target
-    for (const s of pathSegs)
-      out += `<circle cx="${s.to[0]}" cy="${-s.to[1]}" r="${ext / 110}" fill="#4da3ff"/>`;
-    if (pendingVia)
-      out += `<circle cx="${pendingVia.x}" cy="${-pendingVia.y}" r="${ext / 110}" fill="#d9a23c"/>`;
-  }
-
-  // P4: snap marker, axis guide, live dimensions
-  const fs = ext / 26;
-  if (axisLock) {
-    const r = axisLock.ref;
-    const guide = axisLock.axis === 'v'
-      ? `<line x1="${r.x}" y1="${-cy - ey}" x2="${r.x}" y2="${-cy + ey}"`
-      : `<line x1="${cx - ex}" y1="${-r.y}" x2="${cx + ex}" y2="${-r.y}"`;
-    out += guide + ` stroke="#4da3ff" stroke-width="1" stroke-dasharray="4 4"
-      vector-effect="non-scaling-stroke" opacity="0.7"/>`;
-  }
-  if (activeSnap) {
-    const s = activeSnap, m = ext / 70;
-    out += `<path d="M ${s.x - m} ${-s.y} L ${s.x + m} ${-s.y}
-      M ${s.x} ${-s.y - m} L ${s.x} ${-s.y + m}" stroke="#ffb85c"
-      stroke-width="2" vector-effect="non-scaling-stroke"/>`;
-    out += `<rect x="${s.x - m}" y="${-s.y - m}" width="${2 * m}" height="${2 * m}"
-      fill="none" stroke="#ffb85c" stroke-width="1"
-      vector-effect="non-scaling-stroke"/>`;
-    out += dimText(s.x, s.y - m * 2.2, s.label, fs * 0.85);
-  }
-  if (ghost) out += dimensionSVG(ghost, fs);
-  else if (selEnt >= 0 && skEnts[selEnt]) out += dimensionSVG(skEnts[selEnt], fs);
-
-  el.innerHTML = out;
-  const gridEl = document.getElementById('skGrid');
-  if (gridEl) gridEl.textContent = `grid ${fmtLen(step, false)} ${unitLabel()}`;
-  updateDimEditor();
-}
-
-/* ---------------- 3D sketch mode rendering (plane sketches) ----------------
-   Same entities, same tool state — but drawn as real geometry on the plane
-   via sketch3d.js, with HTML labels projected over the viewport. */
+/* ---------------- 3D sketch rendering (all sketches) ----------------
+   Entities, ghosts, snap markers and reference geometry drawn as real
+   geometry on the sketch plane via sketch3d.js, with HTML labels projected
+   over the viewport. */
 
 function circleOutline(cx, cy, r, n = 48) {
   const pts = [];
@@ -1247,6 +945,13 @@ function draw3D() {
   for (const e of modelEdges)
     if (e.pts && e.pts.length >= 2)
       shapes.push({ pts: e.pts, closed: false, color: 0x8a97a8, dashed: true });
+  // face sketches: the picked surface's boundary (outer + holes), same dashed
+  // grey — the user draws against the real surface, right on the part
+  if (faceRef) {
+    for (const ring of [faceRef.outer, ...(faceRef.holes || [])])
+      if (ring && ring.length >= 2)
+        shapes.push({ pts: ring, closed: true, color: 0x8a97a8, dashed: true });
+  }
   const push = (e, i, isGhost) => {
     const o = outlinePts(e);
     if (!o || o.pts.length < 2) return;
@@ -1268,6 +973,14 @@ function draw3D() {
   for (const m of modelSnaps)
     dots.push({ x: m.x, y: m.y, r: dR * 0.75, color: 0x8a97a8,
                 ring: m.kind === 'center' });      // centres read as a ring
+  // face sketches: hole centres of the picked surface are snap targets too —
+  // mark them so they are visible BEFORE you hover (same S5 honesty rule)
+  if (faceRef) for (const h of faceRef.holes || []) {
+    if (!h.length) continue;
+    dots.push({ x: h.reduce((s, p) => s + p[0], 0) / h.length,
+                y: h.reduce((s, p) => s + p[1], 0) / h.length,
+                r: dR * 0.75, color: 0x8a97a8, ring: true });
+  }
   if (tool === 'trim' && trimPieces && trimHover >= 0) {
     const piece = trimPieces[trimHover];        // the doomed segment, in red
     shapes.push({ pts: piece.pts, closed: false, color: 0xff3333 });
@@ -1295,7 +1008,7 @@ function draw3D() {
   updateFloatingLabels();
 }
 
-/* dimension label text + anchor (same semantics as the SVG dimensionSVG) */
+/* dimension label text + anchor, shown as a floating HTML label */
 function dimLabel(e) {
   const x = e.x || 0, y = e.y || 0;
   const off = Math.max(snapTol3d * 1.2, 2);
@@ -1352,7 +1065,7 @@ function updateDimEditor3D() {
   const el = document.getElementById('skDimEdit3d');
   if (!el) return;
   const e = selEnt >= 0 ? skEnts[selEnt] : null;
-  const ok = inPlane3D() && e && DIM_KEYS[e.kind] && !clicks.length && !ghost;
+  const ok = sketchActive && e && DIM_KEYS[e.kind] && !clicks.length && !ghost;
   if (!ok) { el.style.display = 'none'; return; }
   if (dimEditFor !== selEnt || !el.childElementCount) {
     buildDimEditor(e, el);
@@ -1377,23 +1090,7 @@ const DIM_KEYS = {
 };
 let dimEditFor = -1;
 
-function updateDimEditor() {
-  const el = document.getElementById('skDimEdit');
-  if (!el) return;
-  const inSketch = dlg().classList.contains('docked');   // plane OR face sketch
-  const e = skEnts[selEnt];
-  const ok = inSketch && e && DIM_KEYS[e.kind] && !clicks.length && !ghost;
-  if (!ok) { el.style.display = 'none'; dimEditFor = -1; return; }
-  if (dimEditFor !== selEnt) { buildDimEditor(e); dimEditFor = selEnt; }
-  const s = svg().createSVGPoint(); s.x = e.x || 0; s.y = -(e.y || 0);
-  const scr = s.matrixTransform(svg().getScreenCTM());
-  const wrap = document.getElementById('sketchCanvasWrap').getBoundingClientRect();
-  el.style.left = (scr.x - wrap.left + 14) + 'px';
-  el.style.top = (scr.y - wrap.top + 14) + 'px';
-  el.style.display = 'flex';
-}
-
-function buildDimEditor(e, el = document.getElementById('skDimEdit')) {
+function buildDimEditor(e, el) {
   el.innerHTML = '';
   for (const [key, label] of DIM_KEYS[e.kind]) {
     const w = document.createElement('label');
@@ -1429,15 +1126,15 @@ async function create() {
     return o;
   });
   exitMode();
-  const id = document.getElementById('skName').value || 'sketch1';
+  const id = skName || 'sketch1';
 
   if (skEditId) {
-    // editing an existing sketch: replace its entities/plane/offset in place
+    // editing an existing sketch: replace its entities in place (plane/offset
+    // too for plane sketches; a face sketch keeps its stored face reference)
+    const params = skOnFace ? { entities }
+      : { plane: skPlaneName, offset: skPlaneOffset, entities };
     const doc = await postJSON('/api/feature/params', {
-      feature_id: skEditId,
-      params: { plane: document.getElementById('skPlane').value,
-                offset: Number(document.getElementById('skOffset').value) || 0,
-                entities } }, 'updating sketch…');
+      feature_id: skEditId, params }, 'updating sketch…');
     loadMesh();
     const f = (doc.features || []).find(x => x.id === skEditId);
     bus.emit('msg', 'bot', doc.error || (f && f.status === 'failed')
@@ -1448,40 +1145,23 @@ async function create() {
   }
 
   if (skOnFace) {
-    // one guided action: sketch on face -> extrude -> join/cut with the body.
-    // Each step is CHECKED — on failure the partial features are removed and
-    // the user gets the real error, never a false "pocket cut" success.
-    const op = document.getElementById('skOp').value;
-    const depth = Number(document.getElementById('skDepth').value) || 10;
+    // Fusion: finishing a face sketch creates the SKETCH only — no auto
+    // boss/pocket. Extrude (which takes sketches and picked faces) does that,
+    // with its live preview and Join/Cut, when the user is ready.
     const added = [];
-    let problem =
-      await addChecked({ id, op: 'sketch_on_face',
-        params: { face_center: skOnFace.center, face_normal: skOnFace.normal,
-                  entities },
-        inputs: [skOnFace.inputId] }, added);
-    if (!problem) problem =
-      await addChecked({ id: id + '_solid', op: 'extrude',
-        params: { amount: depth }, inputs: [id] }, added);
-    if (!problem && op !== 'new') problem =
-      await addChecked({ id: id + (op === 'cut' ? '_pocket' : '_boss'),
-        op: op === 'cut' ? 'cut' : 'fuse',
-        inputs: [skOnFace.inputId, id + '_solid'] }, added);
-    loadMesh();
-    if (problem) {
-      bus.emit('msg', 'bot', `⚠ ${op === 'cut' ? 'Pocket' : op === 'join'
-        ? 'Boss' : 'Extrude'} failed: ${problem} The partial features were removed.`);
-      return;
-    }
-    bus.emit('msg', 'bot',
-      op === 'cut' ? `Pocket cut into the face (depth ${depth}mm).`
-      : op === 'join' ? `Boss added on the face (height ${depth}mm).`
-      : `New body extruded from the face (${depth}mm).`);
+    const problem = await addChecked({ id, op: 'sketch_on_face',
+      params: { face_center: skOnFace.center, face_normal: skOnFace.normal,
+                entities },
+      inputs: [skOnFace.inputId] }, added);
+    loadMesh(true);          // the sketch now shows in the viewport (green)
+    bus.emit('msg', 'bot', problem
+      ? `⚠ Sketch "${id}" failed: ${problem} The feature was removed.`
+      : `Sketch "${id}" created on the face of "${skOnFace.inputId}". Use ` +
+        `Create → Extrude to raise a boss or cut a pocket.`);
   } else {
     const doc = await postJSON('/api/feature/add', {
       id, op: 'sketch',
-      params: { plane: document.getElementById('skPlane').value,
-                offset: Number(document.getElementById('skOffset').value) || 0,
-                entities },
+      params: { plane: skPlaneName, offset: skPlaneOffset, entities },
       inputs: [] });
     loadMesh(true);          // the sketch now shows in the viewport (green)
     const f = (doc.features || []).find(x => x.id === id);

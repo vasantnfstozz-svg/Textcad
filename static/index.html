@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=9">
+<link rel="stylesheet" href="/static/css/studio.css?v=10">
 </head>
 <body>
 
@@ -107,68 +107,9 @@
   <div class="row"><button id="libClose">Close</button></div>
 </dialog>
 
-<!-- ============ 2D sketch editor ============ -->
-<dialog id="sketchDialog">
-  <h3>Sketch — draw a 2D profile</h3>
-  <div id="sketchWrap">
-    <div id="sketchSide">
-      <label>Sketch name <input id="skName" value="sketch1"></label>
-      <div id="skPlaneRow">
-        <label>Plane
-          <select id="skPlane">
-            <option value="XY">XY (top)</option>
-            <option value="XZ">XZ (front) — for revolve</option>
-            <option value="YZ">YZ (right)</option>
-          </select></label>
-        <label>Plane offset (mm) <input id="skOffset" value="0"></label>
-      </div>
-      <div id="skFaceNote" style="display:none"></div>
-      <div id="skFaceExtrude" style="display:none">
-        <label>Depth (mm) <input id="skDepth" value="10"></label>
-        <label>Operation
-          <select id="skOp">
-            <option value="join">Join — add a boss</option>
-            <option value="cut">Cut — make a pocket</option>
-            <option value="new">New separate body</option>
-          </select></label>
-      </div>
-      <div class="skpalette">
-        <div class="skhead">Add shape</div>
-        <button data-shape="path">⌇ Lines / Arcs</button>
-        <button data-shape="rectangle">▭ Rectangle</button>
-        <button data-shape="circle">● Circle</button>
-        <button data-shape="polygon">⬠ Polygon</button>
-        <button data-shape="slot">⬭ Slot</button>
-        <button data-shape="ellipse">⬯ Ellipse</button>
-        <button data-shape="regular_polygon">⬡ N-gon</button>
-        <button data-shape="trim" title="remove a segment between crossings — crossing-free shapes are deleted whole">✂ Trim</button>
-      </div>
-      <div class="skpalette">
-        <div class="skhead">Modify selected</div>
-        <button id="skMirrorV" title="mirrored copy across the vertical (Y) axis">⇋ Mirror ↔</button>
-        <button id="skMirrorH" title="mirrored copy across the horizontal (X) axis">⇅ Mirror ↕</button>
-        <button id="skDup" title="duplicate the selected shape">⧉ Duplicate</button>
-        <button id="skOffsetTool" title="offset copy (bigger/smaller by a distance)">⇢ Offset</button>
-      </div>
-      <div id="skEntities" class="skents"></div>
-    </div>
-    <div id="sketchCanvasWrap">
-      <div id="skHelp" class="skhelp">Pick a shape, then click on the canvas to draw</div>
-      <div id="skDimEdit" style="display:none"></div>
-      <svg id="sketchCanvas" viewBox="-60 -60 120 120"></svg>
-      <div class="skhint">
-        <span id="skCoords">x 0, y 0</span> · <span id="skGrid">grid 10mm</span>
-        · <span style="color:var(--ok)">green add</span>
-        / <span style="color:var(--fail)">red cut</span>
-        · Esc cancel · Del delete
-      </div>
-    </div>
-  </div>
-  <div class="row">
-    <button id="skCancel">Cancel</button>
-    <button class="primary" id="skCreate">Create sketch</button>
-  </div>
-</dialog>
+<!-- The 2D sketch editor dialog is GONE (S4): every sketch — origin plane or
+     picked face — happens IN the viewport (sketch3d.js + the contextual
+     ribbon). A sketch is never a separate screen (fusion-parity rule 9). -->
 
 <!-- ============ settings dialog ============ -->
 <dialog id="settingsDialog">
@@ -256,6 +197,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=39"></script>
+<script type="module" src="/static/js/main.js?v=40"></script>
 </body>
 </html>

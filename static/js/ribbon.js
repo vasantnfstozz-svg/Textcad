@@ -7,7 +7,7 @@ import { OP_ICONS, TOOL_NAMES } from './icons.js';
 import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport,
          actionUndo, actionSpec, loadSample } from './dialogs.js';
 import { openSketchEditor, finishSketch, cancelSketch,
-         setSketchTool } from './sketcher.js';
+         setSketchTool, sketchModify } from './sketcher.js';
 import { openSettings } from './settings.js';
 import { startPlacement, PLACEABLE } from './placement.js';
 import { beginPlanePick } from './viewport.js';
@@ -53,6 +53,11 @@ const ACTIONS = {
   finish_sketch: { icon: '✓', name: 'Finish Sketch', fn: finishSketch },
   cancel_sketch: { icon: '✕', name: 'Cancel Sketch', fn: cancelSketch },
   look_at: { icon: '⌖', name: 'Look At', fn: lookAtSketch },
+  // sketch Modify tools (were side-panel buttons of the retired 2D editor)
+  sk_mirror_v: { icon: '⇋', name: 'Mirror ↔', fn: () => sketchModify('mirror_v') },
+  sk_mirror_h: { icon: '⇅', name: 'Mirror ↕', fn: () => sketchModify('mirror_h') },
+  sk_duplicate: { icon: '⧉', name: 'Duplicate', fn: () => sketchModify('duplicate') },
+  sk_offset: { icon: '⇢', name: 'Offset', fn: () => sketchModify('offset') },
   ex_flange:     { icon: '⚙', name: 'Flange',     fn: () => loadSample('flange') },
   ex_impeller:   { icon: '🌀', name: 'Impeller',   fn: () => loadSample('impeller') },
   ex_compressor: { icon: '💨', name: 'Compressor', fn: () => loadSample('compressor') },
@@ -93,7 +98,8 @@ let activeTab = 'Create';
 // the draw tools live in the top ribbon now, not a side palette.
 const SKETCH_CONTEXT = [
   ['Create', SKETCH_CREATE.map(t => ({ t }))],
-  ['Modify', [{ t: 'trim' }]],
+  ['Modify', [{ t: 'trim' }, { a: 'sk_mirror_v' }, { a: 'sk_mirror_h' },
+              { a: 'sk_duplicate' }, { a: 'sk_offset' }]],
   ['View', [{ a: 'look_at' }]],
   ['Finish', [{ a: 'finish_sketch' }, { a: 'cancel_sketch' }]],
 ];
