@@ -1,15 +1,20 @@
-"""E2E: the sketch grid is ADAPTIVE, Fusion-style.
+"""E2E: the grids are ADAPTIVE, Fusion-style — sketch plane AND ground plane.
 
-Reported (2026-08-03, after S4): "when I am zooming in, there will always be
-small boxes, but after a certain point it will end · the starting point should
-recognize all box edges, not only the origin · when I am drawing big boxes the
-plane should extend."
+Reported (2026-08-03/04): "when I am zooming in, there will always be small
+boxes, but after a certain point it will end · the starting point should
+recognize all box edges, not only the origin · zooming out must NOT keep
+growing the plane — there is a limit, and when the design goes beyond the
+plane it should automatically get bigger to the next size · the design tab
+should have the same adaptive grid."
 
 Locked in:
   1. zooming IN subdivides the cells (1-2-5 ladder) down to a floor of
      gridMm/10 — past that, subdivision STOPS (cells just get bigger);
   2. clicks snap to the visible grid corners, not just the origin;
-  3. the grid follows the view when panning — the plane never ends.
+  3. the plane is a FINITE plate: zooming out shows its edge instead of
+     growing it, and it jumps to the next ladder size only when the sketch
+     CONTENT outgrows it;
+  4. the design tab's ground grid follows the same rules.
 """
 import pytest
 
@@ -44,39 +49,20 @@ async (args) => {
 }
 """
 
-# middle-button drag = pan (the app-wide mapping)
-PAN = """
+# same wheel gesture, reporting the DESIGN tab's ground grid instead
+WHEEL_GROUND = """
 async (args) => {
-  const [dx, dy] = args;
+  const [ticks, deltaY] = args;
   const cv = document.querySelector('#viewer canvas');
-  cv.setPointerCapture = () => {};
-  cv.releasePointerCapture = () => {};
   const r = cv.getBoundingClientRect();
-  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-  const ev = (t, x, y, down) => cv.dispatchEvent(new PointerEvent(t,
-    { clientX: x, clientY: y, bubbles: true, pointerId: 3, isPrimary: true,
-      button: 1, buttons: down ? 4 : 0 }));
-  ev('pointerdown', cx, cy, true);
-  for (let i = 1; i <= 8; i++)
-    ev('pointermove', cx + dx * i / 8, cy + dy * i / 8, true);
-  ev('pointerup', cx + dx, cy + dy, false);
-  await new Promise(res => setTimeout(res, 500));
-  return (await import('/static/js/sketch3d.js')).gridInfo();
-}
-"""
-
-# where the viewport centre currently sits on the sketch plane (world == plane
-# local for an XY sketch at offset 0)
-VIEW_CENTRE = """
-async () => {
-  const THREE = await import('three');
-  const vp = window.__vp;
-  const cv = document.querySelector('#viewer canvas');
-  const ray = new THREE.Raycaster();
-  ray.setFromCamera(new THREE.Vector2(0, 0), vp.camera);
-  const hit = new THREE.Vector3();
-  ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), hit);
-  return { x: hit.x, y: hit.y };
+  for (let i = 0; i < ticks; i++) {
+    cv.dispatchEvent(new WheelEvent('wheel',
+      { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
+        deltaY, bubbles: true, cancelable: true }));
+    await new Promise(res => setTimeout(res, 5));
+  }
+  await new Promise(res => setTimeout(res, 300));
+  return window.__vp.groundGridInfo();
 }
 """
 
@@ -145,16 +131,62 @@ def test_clicks_snap_to_the_grid_corners(sketch):
     assert page.errors == []
 
 
-def test_grid_follows_the_pan(sketch):
-    """Panning away from the origin must bring the grid along — the plane
-    never 'ends'. The grid re-centres on major multiples near the view."""
+def test_plane_is_finite_when_zooming_out(sketch):
+    """Zooming out must show the plate's EDGE, not grow it: the covered area
+    never exceeds the plane bounds, and the plane size itself only reacts to
+    content, never to the camera."""
     page = sketch
     g0 = page.evaluate(GRID_INFO)
-    g = None
-    for _ in range(6):                          # pan hard to the left 6 times
-        g = page.evaluate(PAN, [-350, 0])
-    assert (g["cx"], g["cy"]) != (g0["cx"], g0["cy"]), (g0, g)
-    centre = page.evaluate(VIEW_CENTRE)
-    assert abs(g["cx"] - centre["x"]) <= g["size"] / 2 + g["major"], (g, centre)
-    assert abs(g["cy"] - centre["y"]) <= g["size"] / 2 + g["major"], (g, centre)
+    g = page.evaluate(WHEEL, [80, 120])         # zoom OUT hard
+    assert g["half"] == g0["half"], (g0, g)     # camera never grows the plate
+    assert g["clip"]["maxX"] - g["clip"]["minX"] <= 2 * g["half"] + 1e-6, g
+    assert g["clip"]["maxY"] - g["clip"]["minY"] <= 2 * g["half"] + 1e-6, g
+    assert g["step"] <= g["half"] / 2, g        # a plate always shows cells
+    assert page.errors == []
+
+
+def test_plane_grows_to_the_next_size_when_content_exceeds_it(sketch):
+    """Drawing past the plate's edge must bump the plane to the NEXT ladder
+    size ('automatically bigger to the next size'), like Fusion."""
+    page = sketch
+    half0 = page.evaluate(GRID_INFO)["half"]
+    page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      sk.setSketchTool('rectangle');
+    }""")
+    page.evaluate(ACT, [0, 0, 1.5])                       # corner at the origin
+    page.evaluate(ACT, [half0 * 1.05, half0 * 0.2, 1.5])  # corner PAST the edge
+    g = page.evaluate(GRID_INFO)
+    assert g["half"] > half0, (half0, g)
+    ents = page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      return sk.sketchEntities();
+    }""")
+    assert len(ents) == 1, ents
+    assert page.errors == []
+
+
+def test_ground_grid_is_adaptive_and_finite(page, fresh_doc):
+    """The DESIGN tab's ground plane follows the same rules: cells subdivide
+    on zoom (with the same floor), and the plate is a finite, model-sized
+    square that zooming out cannot grow."""
+    page.evaluate("""async () => {
+      const { postJSON } = await import('/static/js/api.js');
+      const { loadMesh } = await import('/static/js/viewport.js');
+      await postJSON('/api/feature/add',
+        { id: 'b', op: 'plate', params: { width: 60, depth: 40, thickness: 20 },
+          inputs: [] }, 'add');
+      await loadMesh(true);
+    }""")
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    page.wait_for_timeout(600)
+    g0 = page.evaluate("window.__vp.groundGridInfo()")
+    assert g0 and g0["step"] >= 2, g0
+    g_in = page.evaluate(WHEEL_GROUND, [40, -120])        # zoom IN
+    assert g_in["step"] < g0["step"], (g0, g_in)
+    assert g_in["step"] == pytest.approx(1.0), g_in       # same gridMm/10 floor
+    g_out = page.evaluate(WHEEL_GROUND, [100, 120])       # zoom OUT hard
+    assert g_out["half"] == g0["half"], (g0, g_out)       # finite plate
+    assert (g_out["clip"]["maxX"] - g_out["clip"]["minX"]
+            <= 2 * g_out["half"] + 1e-6), g_out
     assert page.errors == []

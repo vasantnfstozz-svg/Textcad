@@ -7,6 +7,9 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { bus } from './bus.js';
 import { S } from './state.js';
 import { initSketch3D, sketch3DActive } from './sketch3d.js';
+import { SETTINGS } from './settings.js';
+import { gridStepFor, planeHalfFor, buildGridLines, patchFor,
+         viewFootprintOn } from './grid3d.js';
 
 let scene, camera, renderer, controls;
 let groundGrid = null;           // the XY GridHelper (hidden while sketching)
@@ -87,6 +90,9 @@ function buildControls(up) {
                             MIDDLE: THREE.MOUSE.PAN,
                             RIGHT: THREE.MOUSE.ROTATE };
   applyLeftButton();                    // a rebuild must not drop Shift-pan
+  // never dolly past the far clip plane — beyond it the whole scene (model,
+  // grids, everything) is clipped to a black void that reads as a crash
+  controls.maxDistance = camera.far * 0.85;
   camera.position.copy(pos);
   controls.target.copy(tgt);
   controls.addEventListener('change', () => bus.emit('view-changed'));
@@ -123,20 +129,32 @@ export function initViewport() {
   key.position.set(1, -1, 2); scene.add(key);
   const rim = new THREE.DirectionalLight(0x88bbff, 0.5);
   rim.position.set(-2, 2, -1); scene.add(rim);
-  groundGrid = new THREE.GridHelper(400, 40, 0x2b303c, 0x1b1f28);
-  groundGrid.rotation.x = Math.PI / 2; scene.add(groundGrid);
+  // the ground workplane is ADAPTIVE like the sketch grid (grid3d.js): cells
+  // subdivide with zoom down to gridMm/10, and the plate is a finite,
+  // model-sized square — a persistent Group whose children are rebuilt, so
+  // sketch mode's visible-toggle always points at the live object
+  groundGrid = new THREE.Group();
+  scene.add(groundGrid);
+  bus.on('view-changed', updateGroundGrid);
+  updateGroundGrid();
 
   const resize = () => {
     camera.aspect = pane.clientWidth / pane.clientHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(pane.clientWidth, pane.clientHeight);
-  };
+    updateGroundGrid();       // first layout builds the boot grid; the canvas
+  };                          // has no size before the observer fires
   new ResizeObserver(resize).observe(pane);
+  // a real starting pose: the camera used to boot AT the origin (inside the
+  // ground plane — nothing visible until the first fit), so an empty doc
+  // showed a black void with no workplane at all
+  setView('iso');
   // in-viewport sketch layer (Fusion-style sketch mode) — needs the internals.
   // controls are REBUILT when the orbit axis changes, so pass a getter.
   initSketch3D({ scene, camera, dom: renderer.domElement, groundGrid,
                  getControls, setOrbitUp, setLeftButton,
-                 getFitRadius: () => fitRadius });
+                 getFitRadius: () => fitRadius,
+                 refreshGroundGrid: updateGroundGrid });
   // e2e/debug handle (read-only use): camera, controls and the fit volume the
   // origin-plane quads are sized from, plus body/pick introspection so tests
   // can assert on what is actually IN the scene (a body drawn as a translucent
@@ -157,6 +175,9 @@ export function initViewport() {
     originPlaneInfo: () => originPlanes.filter(o => o.userData.plane).map(o => ({
       plane: o.userData.plane, position: o.position.toArray(),
       size: o.geometry.parameters.width })),
+    /* the adaptive ground grid actually in the scene (step/half/clip) */
+    groundGridInfo: () => groundState ? { step: groundState.step,
+      half: groundState.half, clip: { ...groundState.clip } } : null,
     /* how many of each thing is actually in the scene — catches duplicate
        objects piling up from overlapping loads */
     sceneCounts: () => ({ bodies: bodyObjs.length, edges: edgeLines.length,
@@ -267,6 +288,69 @@ function placeGround(e) {
   } else {
     cb(0, 0);                              // ray parallel to ground — fall back
   }
+}
+
+/* ---------------- the adaptive ground grid (design tab) ----------------
+   Same two rules as the sketch grid (grid3d.js): cell size follows the
+   camera (1-2-5 subdivision, floored at gridMm/10), plate size follows the
+   MODEL — a finite square that jumps to the next ladder size when the model
+   outgrows it, never sized by how far the camera happens to look. */
+
+let groundState = null;      // {step, half, clip} of the built ground grid
+
+function groundFootprint() {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const toPx = w => {
+    const v = w.clone().project(camera);
+    return v.z > 1 ? null
+      : { x: (v.x + 1) / 2 * rect.width, y: (1 - (v.y + 1) / 2) * rect.height };
+  };
+  return viewFootprintOn({
+    camera, dom: renderer.domElement, plane: GROUND,
+    hitToLocal: w => ({ x: w.x, y: w.y }),           // ground IS world XY
+    pxPerMmAt: p => {
+      const a = toPx(new THREE.Vector3(p.x, p.y, 0));
+      const b = toPx(new THREE.Vector3(p.x + 1, p.y, 0));
+      if (!a || !b) return null;
+      return Math.max(Math.hypot(b.x - a.x, b.y - a.y), 1e-4);
+    },
+  });
+}
+
+let lastGroundFp = null;     // reused when the view is momentarily
+                             // unprojectable (edge-on, far-clipped)
+function updateGroundGrid() {
+  if (!groundGrid || !groundGrid.visible) return;    // hidden while sketching
+  const fp = groundFootprint() || lastGroundFp;
+  if (!fp) return;
+  lastGroundFp = fp;
+  const pxPerMm = fp.pxPerMm;
+  // the plate covers the MODEL (origin-centred), not the camera's reach
+  const need = Math.max(Math.abs(fitCenter.x), Math.abs(fitCenter.y))
+             + fitRadius * 1.3;
+  const half = planeHalfFor(Math.max(need, 220));
+  const step = gridStepFor(pxPerMm, Math.max(SETTINGS.gridMm / 10, 0.01),
+                           half / 2);
+  const bounds = { minX: -half, maxX: half, minY: -half, maxY: half };
+  const patch = patchFor(fp, step);
+  const clip = {
+    minX: Math.max(bounds.minX, patch.minX),
+    maxX: Math.min(bounds.maxX, patch.maxX),
+    minY: Math.max(bounds.minY, patch.minY),
+    maxY: Math.min(bounds.maxY, patch.maxY),
+  };
+  if (groundState && groundState.step === step && groundState.half === half
+      && groundState.clip.minX === clip.minX && groundState.clip.maxX === clip.maxX
+      && groundState.clip.minY === clip.minY && groundState.clip.maxY === clip.maxY)
+    return;
+  for (const c of [...groundGrid.children]) {
+    groundGrid.remove(c);
+    c.traverse(o => { if (o.geometry) o.geometry.dispose();
+                      if (o.material) o.material.dispose(); });
+  }
+  groundGrid.add(buildGridLines({ step, bounds, patch,
+    colors: { minor: 0x1b1f28, major: 0x2b303c, axes: 0x39404e } }));
+  groundState = { step, half, clip };
 }
 
 /* ---------------- pick a plane (or planar face) to sketch on (Fusion) ------- */
@@ -776,6 +860,9 @@ export function setView(dir) {
     front: [c.x, c.y - d, c.z],
   };
   camera.position.set(...views[dir]); controls.target.copy(c);
+  // posing the camera directly bypasses OrbitControls' change event — tell
+  // the listeners (adaptive grids, sketch labels) the view moved anyway
+  bus.emit('view-changed');
 }
 
 function disposeModel() {
@@ -877,9 +964,11 @@ export async function loadMesh(fit = false) {
       const sphere = box.getBoundingSphere(new THREE.Sphere());
       fitRadius = sphere.radius || 100;
       fitCenter.copy(sphere.center);
+      updateGroundGrid();               // the plate grows with the model
     }
     if (fit) {
       camera.near = fitRadius / 100; camera.far = fitRadius * 100;
+      controls.maxDistance = camera.far * 0.85;
       camera.updateProjectionMatrix(); setView('iso');
     }
   } catch (e) { /* no model yet */ }
@@ -896,7 +985,9 @@ function fitToObjects(objs) {
   const sphere = box.getBoundingSphere(new THREE.Sphere());
   fitRadius = sphere.radius || 100;
   fitCenter.copy(sphere.center);
+  updateGroundGrid();                   // the plate grows with the model
   camera.near = fitRadius / 100; camera.far = fitRadius * 100;
+  controls.maxDistance = camera.far * 0.85;
   camera.updateProjectionMatrix(); setView('iso');
 }
 
