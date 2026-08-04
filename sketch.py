@@ -527,6 +527,15 @@ def sweep_sketch(sketch, path_points: list, smooth: bool = False):
 # for area, not solid health
 SKETCH_PRODUCERS = {"sketch", "sketch_on_face"}
 
+# ops whose solid input is only a FACE REFERENCE (where to work), never
+# geometric consumption: a sketch drawn on a box's face does not eat the box,
+# and extrude_face outputs a separate boss solid while the source body lives
+# on. The document engine must NOT count their inputs as "consumed" or the
+# referenced body vanishes from the viewport the moment the sketch is used
+# (reported: "after finishing the sketch and extruding, the main body
+# vanishes").
+FACE_REFERENCE_OPS = {"sketch_on_face", "extrude_face"}
+
 
 def is_sketch(obj) -> bool:
     return isinstance(obj, b3d.Sketch)

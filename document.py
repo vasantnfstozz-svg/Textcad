@@ -281,8 +281,14 @@ class Document:
         the bodies that should be VISIBLE in the viewport. Multiple leaves are
         normal mid-build (a base plate and a wall before they are fused); the
         old viewport showed only the last one, so positioning a second body was
-        blind. The last leaf is the result; the rest render as ghosts."""
-        consumed = {dep for f in self.features for dep in f.inputs}
+        blind. The last leaf is the result; the rest render as ghosts.
+
+        Face-reference ops (sketch_on_face, extrude_face) do NOT consume their
+        body input — they only point at a face. Counting them as consumers made
+        the base body vanish as soon as a face sketch on it was extruded."""
+        consumed = {dep for f in self.features
+                    if f.op not in sk.FACE_REFERENCE_OPS
+                    for dep in f.inputs}
         out = []
         for f in self.features:
             if f.suppressed or f.id in consumed:

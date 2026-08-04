@@ -322,7 +322,8 @@ function growPlaneFor(contentR) {
 /* spec (all in plane-local mm):
    { shapes: [{pts:[[x,y]..], closed, color, fill, fillOpacity, dashed}],
      dots:   [{x, y, r, color, ring}],
-     cross:  {x, y, size} | null,
+     cross:  {x, y, size} | null          — geometry snap (orange cross),
+     mark:   {x, y, size} | null          — grid pick box (Fusion square),
      guide:  {axis:'h'|'v', ref:{x,y}} | null }             */
 export function renderSketch3D(spec) {
   if (!active || !group) return;
@@ -385,6 +386,29 @@ export function renderSketch3D(spec) {
       color: 0xffb85c, depthTest: false }));
     cross.renderOrder = 1008;
     group.add(cross);
+  }
+  if (spec.mark) {
+    // Fusion's grid pick box: a small square on the locked cell corner with
+    // tick marks running past its edges
+    const { x, y, size: m } = spec.mark;
+    const sq = [[x - m, y - m], [x + m, y - m], [x + m, y + m],
+                [x - m, y + m], [x - m, y - m]]
+      .map(p => new THREE.Vector3(p[0], p[1], Z));
+    const mat = new THREE.LineBasicMaterial({ color: 0x4da3ff, depthTest: false });
+    const box = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(sq), mat);
+    box.renderOrder = 1008;
+    group.add(box);
+    const t = m * 2.1;
+    const ticks = [
+      new THREE.Vector3(x - t, y, Z), new THREE.Vector3(x - m, y, Z),
+      new THREE.Vector3(x + m, y, Z), new THREE.Vector3(x + t, y, Z),
+      new THREE.Vector3(x, y - t, Z), new THREE.Vector3(x, y - m, Z),
+      new THREE.Vector3(x, y + m, Z), new THREE.Vector3(x, y + t, Z)];
+    const tickLines = new THREE.LineSegments(
+      new THREE.BufferGeometry().setFromPoints(ticks), mat.clone());
+    tickLines.renderOrder = 1008;
+    group.add(tickLines);
   }
   if (spec.guide) {
     const g = spec.guide, L = 100000;

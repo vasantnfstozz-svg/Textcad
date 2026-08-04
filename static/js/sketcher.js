@@ -43,6 +43,8 @@ let pendingVia = null;    // arc: the middle (via) point, waiting for the end
 // snapping (P4)
 let activeSnap = null;    // {x, y, label} — geometry point the cursor snapped to
 let axisLock = null;      // {axis:'h'|'v', ref:{x,y}} — inference guide line
+let gridMark = null;      // {x, y} — grid corner the cursor is locked to (the
+                          // Fusion-style pick box; geometry snaps outrank it)
 
 // trim tool (last P1): entity outlines split at their crossings into PIECES
 // by the backend; hovering highlights one red, clicking removes it
@@ -328,7 +330,7 @@ export function initSketcher() {
 
 function setTool(kind) {
   tool = kind; clicks = []; ghost = null; selEnt = -1;   // deselect on tool pick
-  activeSnap = null; axisLock = null;
+  activeSnap = null; axisLock = null; gridMark = null;
   pathStart = null; pathSegs = []; pendingVia = null; segMode = 'line';
   trimHover = -1;
   if (tool === 'trim') fetchTrimPieces(); else trimPieces = null;
@@ -410,9 +412,11 @@ function refPoint() {
   return null;
 }
 
-/* Geometry snap > axis lock > grid snap. Sets activeSnap/axisLock for draw(). */
+/* Geometry snap > axis lock > grid snap. Sets activeSnap/axisLock/gridMark
+   for draw() — the grid lock gets a visible PICK BOX (Fusion's little square)
+   so every cell corner reads as a real start point, not just the origin. */
 function smartSnap(raw) {
-  activeSnap = null; axisLock = null;
+  activeSnap = null; axisLock = null; gridMark = null;
   const tol = snapTolWorld();
   let best = null, bd = tol;
   for (const sp of collectSnapPoints()) {
@@ -429,7 +433,15 @@ function smartSnap(raw) {
       p.y = ref.y; axisLock = { axis: 'h', ref };
     }
   }
+  gridMark = { x: p.x, y: p.y };        // where the click will actually land
   return p;
+}
+
+/* test/debug accessor: what the cursor is locked to right now */
+export function hoverInfo() {
+  return { grid: gridMark ? { ...gridMark } : null,
+           snap: activeSnap ? { x: activeSnap.x, y: activeSnap.y,
+                                label: activeSnap.label } : null };
 }
 
 /* ---------------- the trim tool (last P1) ----------------
@@ -1012,6 +1024,11 @@ function draw3D() {
     shapes, dots,
     cross: activeSnap
       ? { x: activeSnap.x, y: activeSnap.y, size: Math.max(snapTol3d * 0.5, 1) }
+      : null,
+    // the grid pick box shows ONLY while a draw tool is armed and no geometry
+    // snap outranks it — every cell corner reads as a start point (Fusion)
+    mark: tool && tool !== 'trim' && gridMark && !activeSnap
+      ? { x: gridMark.x, y: gridMark.y, size: Math.max(snapTol3d * 0.4, 0.8) }
       : null,
     guide: axisLock ? { axis: axisLock.axis, ref: axisLock.ref } : null,
   });
