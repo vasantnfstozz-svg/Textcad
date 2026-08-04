@@ -16,6 +16,16 @@ description: Diagnosis playbook for TextCAD Studio problems — server won't sta
   the whole API works in-process (see tests/test_api.py fixtures).
 
 ## Known failure modes (all hit before, all real)
+0. **"Software not responding" after a Claude session restart** — the USER'S
+   server was launched as a session background task, and session restarts
+   kill their child processes (happened twice on 2026-08-04, losing unsaved
+   in-memory tabs both times). Launch the user's server DETACHED so it
+   outlives the session:
+   `Start-Process -FilePath "C:\Python314\python.exe" -ArgumentList "-u","dev.py"
+    -WorkingDirectory <repo> -WindowStyle Hidden
+    -RedirectStandardOutput "$env:TEMP\textcad-dev.log"
+    -RedirectStandardError "$env:TEMP\textcad-dev.err.log"`.
+   Background-task launches are fine only for private TEST servers.
 1. **Port 8123 in use (WinError 10048)** — an old `python studio.py` is still
    alive. Find/stop it before relaunching.
 2. **Two Pythons** — Desktop/PATH may resolve `python` to 3.12; everything is

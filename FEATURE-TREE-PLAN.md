@@ -162,9 +162,17 @@ section; tick them THERE too when done)
   Profile/Operation rows locked in edit mode (rewiring = later step).
   Proof: tests/e2e/test_edit_extrude.py (3 tests, suite 214 green),
   ui-verified with screenshots.
-- [ ] **Step 2 — tree reads like a history**: auto-named features (Sketch1,
-  Extrude1) + rename, sketch grouped under its consuming feature, failures
-  speak (toast + human message, not just a red dot).
+- [x] **Step 2 — tree reads like a history** (`a0a1a22`, 2026-08-04).
+  Double-click a feature's NAME to rename (Document.rename rewrites id in
+  inputs/rollback/part-cache — never breaks the tree; /api/feature/rename,
+  undoable, charset [A-Za-z0-9_-]{1,40}); Add Feature dialog auto-suggests
+  op-numbered ids; consumed sketches nest as CHILD rows under their
+  consumer; newly-failed features post a HUMAN chat message (reprs
+  unwrapped, kernel errors translated; extrude panel's live feature
+  excluded). Hard-won: selection must toggle classes IN PLACE — a full
+  re-render between a double-click's two clicks makes Chromium never fire
+  dblclick. Proof: 3 backend tests + 4 e2e (test_tree_history.py), suite
+  221 green, screenshot-verified.
 - [ ] **Step 3 — AI records the same history**: sketch-first authoring
   contract in author.py + tree lint gate (blob trees rejected, model
   retries). Capture one real logo tree as the before-artifact first.
