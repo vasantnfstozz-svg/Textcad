@@ -151,3 +151,120 @@ def test_extruding_a_face_sketch_keeps_the_main_body(face_sketch_via_real_click)
     for x in info:                       # a ghosted body passes DOM checks
         assert x["opacity"] == 1 and not x["transparent"], info
     assert page.errors == []
+
+
+# ---------------------------------------------------------------------------
+# Reported 2026-08-04 (screenshots: dome + rectangle sketch on its flat top):
+# "when I am selecting the surface the full circle surface is selecting, and
+# the rectangle I can't select it, in order to extrude it ... when I am
+# selecting the extruding, I can select the surface freely, it's MY choice —
+# it should not automatically select and extrude the drawn sketch."
+# ---------------------------------------------------------------------------
+
+DRAW_RECT_ON_FACE = """
+async () => {
+  const sk = await import('/static/js/sketcher.js');
+  const { bus } = await import('/static/js/bus.js');
+  sk.setSketchTool('rectangle');
+  bus.emit('sk3d-down', { x: -10, y: -10, tol: 1.5 }); bus.emit('sk3d-up', {});
+  bus.emit('sk3d-down', { x: 10, y: 10, tol: 1.5 }); bus.emit('sk3d-up', {});
+}
+"""
+
+
+@pytest.fixture()
+def dome_with_rect_sketch(page, fresh_doc):
+    """The user's scene: a dome (flat-topped cone) with a rectangle sketched
+    on its circular top face, sketch finished."""
+    page.evaluate("""async () => {
+      const { postJSON } = await import('/static/js/api.js');
+      const { loadMesh, setView } = await import('/static/js/viewport.js');
+      await postJSON('/api/feature/add',
+        { id: 'dome', op: 'cone',
+          params: { bottom_radius: 40, top_radius: 25, height: 20 },
+          inputs: [] }, 'add');
+      await loadMesh(true);
+      setView('iso');
+    }""")
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    page.wait_for_timeout(500)
+    # the cone is CENTERED on the origin: height 20 -> flat top at z=+10
+    page.evaluate("""async () => {
+      const { bus } = await import('/static/js/bus.js');
+      bus.emit('sketch-on-face', { center: [0, 0, 10], normal: [0, 0, 1],
+                                   body: 'dome' });
+    }""")
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.wait_for_timeout(200)
+    page.evaluate(DRAW_RECT_ON_FACE)
+    page.click("#ribbon .rbtn[title='Finish Sketch']")
+    page.wait_for_function(NOT_ACTIVE, timeout=15000)
+    page.wait_for_timeout(800)
+    return page
+
+
+def test_sketch_profile_is_pickable_over_the_face_below(dome_with_rect_sketch):
+    """Clicking INSIDE the drawn rectangle must select the PROFILE, not the
+    circular face it sits on (they are coplanar — the profile wins the tie)."""
+    page = dome_with_rect_sketch
+    page.click("#vSelect")                          # ◉ Select mode
+    inside = page.evaluate(TO_SCREEN, [5, 5, 10])   # inside rect AND circle
+    page.mouse.click(inside["x"], inside["y"], button="left")
+    page.wait_for_timeout(300)
+    picked = page.evaluate(
+        "async () => (await import('/static/js/state.js')).S.pickedProfile")
+    assert picked and picked["id"] == "sketch1", picked
+    info = page.locator("#pickInfo").inner_text()
+    assert "Sketch profile" in info, info
+    # outside the rectangle but still on the circular top: the FACE is picked
+    outside = page.evaluate(TO_SCREEN, [0, -18, 10])
+    page.mouse.click(outside["x"], outside["y"], button="left")
+    page.wait_for_timeout(300)
+    picked = page.evaluate(
+        "async () => (await import('/static/js/state.js')).S.pickedProfile")
+    face = page.evaluate(
+        "async () => (await import('/static/js/state.js')).S.pickedFace")
+    assert picked is None and face, (picked, face)
+    assert page.errors == []
+
+
+def test_extrude_never_auto_selects_the_sketch(dome_with_rect_sketch):
+    """Pressing Extrude with NOTHING selected must not create anything —
+    it asks the user to pick. Clicking the rectangle then extrudes THAT
+    profile, and both bodies remain."""
+    page = dome_with_rect_sketch
+    n0 = page.evaluate(
+        "async () => (await (await fetch('/api/doc')).json()).features.length")
+    page.click("#ribbon .rbtn[title='extrude']")
+    page.wait_for_timeout(500)
+    n1 = page.evaluate(
+        "async () => (await (await fetch('/api/doc')).json()).features.length")
+    assert n1 == n0, "Extrude auto-created a feature without the user choosing"
+    assert page.locator("#extrudeDialog").is_hidden(), \
+        "the panel opened before the user picked a profile"
+    hint = page.locator("#placeHint")
+    assert hint.is_visible() and "profile" in hint.inner_text(), \
+        "no prompt telling the user to pick"
+
+    inside = page.evaluate(TO_SCREEN, [5, 5, 10])   # the user CHOOSES the rect
+    page.mouse.click(inside["x"], inside["y"], button="left")
+    page.wait_for_timeout(700)
+    assert page.locator("#extrudeDialog").is_visible()
+    assert page.evaluate("document.getElementById('exProfile').value") \
+        == "sketch1"
+    # type a distance — the real create path (lazy until the user acts)
+    page.evaluate("""() => {
+      const d = document.getElementById('exDist');
+      d.value = '6';
+      d.dispatchEvent(new Event('input', { bubbles: true }));
+    }""")
+    page.wait_for_timeout(1500)
+    page.click("#exOk")
+    page.wait_for_timeout(800)
+    doc = page.evaluate("async () => (await (await fetch('/api/doc')).json())")
+    ex = [f for f in doc["features"] if f["op"] == "extrude"]
+    assert len(ex) == 1 and ex[0]["inputs"] == ["sketch1"], ex
+    assert page.evaluate("window.__vp.bodyCount()") == 2, \
+        "extruding the picked profile lost a body"
+    assert page.errors == []

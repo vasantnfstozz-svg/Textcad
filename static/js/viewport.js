@@ -218,6 +218,7 @@ export function initViewport() {
     if (e.button !== 0) return;            // right/middle navigate, never pick
     if (sketch3DActive()) return;          // sketch mode owns viewport clicks
     if (moved > 5) return;                 // that was an orbit-drag
+    if (profilePickCb) { profilePickAt(e); return; }
     if (planePickCb) { planePickAt(e); return; }
     if (placeCb) { placeGround(e); return; }
     if (pickMode) pickAt(e);
@@ -228,6 +229,7 @@ export function initViewport() {
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape' && placeCb) cancelPlacement();
     if (e.key === 'Escape' && planePickCb) endPlanePick();
+    if (e.key === 'Escape' && profilePickCb) cancelProfilePick();
     if (e.key === 'Shift' && !shiftPan) { shiftPan = true; applyLeftButton(); }
   });
   const dropShift = () => {
@@ -237,7 +239,10 @@ export function initViewport() {
   window.addEventListener('blur', dropShift);   // alt-tab must not stick in pan
   // any document change (tab switch, sample opened, external design) while a
   // plane-pick is pending would leave the 3 plane quads stranded — cancel it
-  bus.on('doc-updated', () => { if (planePickCb) endPlanePick(); });
+  bus.on('doc-updated', () => {
+    if (planePickCb) endPlanePick();
+    if (profilePickCb) cancelProfilePick();
+  });
 
   // Extrude gizmo drags (arrow + taper ring) — capture phase so we grab them
   // BEFORE OrbitControls, then disable orbit for the drag. Move/up on window
@@ -351,6 +356,54 @@ function updateGroundGrid() {
   groundGrid.add(buildGridLines({ step, bounds, patch,
     colors: { minor: 0x1b1f28, major: 0x2b303c, axes: 0x39404e } }));
   groundState = { step, half, clip };
+}
+
+/* ------- pick a PROFILE or planar face for a tool (Fusion: Extrude) -------
+   Command-then-select: the tool is pressed with nothing selected, so the
+   NEXT viewport click chooses its input — a sketch profile or a flat face.
+   The user picks; nothing is auto-selected for them. */
+
+let profilePickCb = null;
+
+export function beginProfilePick(onPick) {
+  profilePickCb = onPick;
+  renderer.domElement.style.cursor = 'crosshair';
+  const h = document.getElementById('placeHint');
+  h.textContent = 'Select a sketch profile or a flat face to extrude · Esc to cancel';
+  h.style.display = 'block';
+}
+
+export function cancelProfilePick() {
+  if (!profilePickCb) return;
+  profilePickCb = null;
+  renderer.domElement.style.cursor = pickMode ? 'crosshair' : '';
+  document.getElementById('placeHint').style.display = 'none';
+}
+
+function profilePickAt(e) {
+  raycaster.setFromCamera(ndcFrom(e), camera);
+  const sHit = raycaster.intersectObjects(sketchMeshes(), false)[0];
+  const fHit = raycaster.intersectObjects(bodyMeshes(), false)[0];
+  const cb = profilePickCb;
+  // coplanar tie: the profile drawn ON the face wins, same rule as pickAt
+  if (sHit && (!fHit || sHit.distance <= fHit.distance + 0.5)) {
+    cancelProfilePick(); cb('profile', sHit.object.userData.sketchId); return;
+  }
+  if (fHit) {
+    const entry = bodyObjs.find(b => b.mesh === fHit.object);
+    const fid = entry && entry.data.faceId[fHit.face.a];
+    const info = entry && entry.data.faces.find(f => f.id === fid);
+    const flat = info && (info.planar ?? (info.type === 'PLANE'));
+    if (info && flat && info.center) {
+      cancelProfilePick(); cb('face', info); return;
+    }
+    if (info) {
+      bus.emit('msg', 'bot', `⚠ That face is ${info.type} (curved) — Extrude ` +
+        'needs a sketch profile or a FLAT face. Keep picking, or Esc.');
+      return;
+    }
+  }
+  // clicked empty space — keep waiting (don't cancel)
 }
 
 /* ---------------- pick a plane (or planar face) to sketch on (Fusion) ------- */
@@ -922,6 +975,7 @@ function addSketches(sketches) {
       const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
         color: 0x43c579, transparent: true, opacity: 0.18,
         side: THREE.DoubleSide, depthWrite: false }));
+      m.userData.sketchId = s.id;      // profiles are PICKABLE (Fusion)
       scene.add(m); sketchObjs.push(m);
     }
     for (const line of s.outlines || []) {
@@ -932,6 +986,11 @@ function addSketches(sketches) {
       scene.add(l); sketchObjs.push(l);
     }
   }
+}
+
+/* the pickable profile fills (outline Lines excluded) */
+function sketchMeshes() {
+  return sketchObjs.filter(o => o.isMesh && o.userData.sketchId);
 }
 
 /* Overlapping loads used to DOUBLE the scene: loadMesh is async and called
@@ -1020,11 +1079,12 @@ function clearPick() {
   clearPickHighlight();
   S.pickedFace = null;
   S.pickedCurved = null;
+  S.pickedProfile = null;
   document.getElementById('pickInfo').style.display = 'none';
 }
 
 function pickAt(e) {
-  if (!bodyObjs.length) return;
+  if (!bodyObjs.length && !sketchMeshes().length) return;
   const rect = renderer.domElement.getBoundingClientRect();
   const ndc = new THREE.Vector2(
     ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -1035,6 +1095,15 @@ function pickAt(e) {
   const eHits = raycaster.intersectObjects(edgeLines, false);
   // ALL bodies are pickable, not just the displayed result
   const fHit = raycaster.intersectObjects(bodyMeshes(), false)[0];
+  // a SKETCH PROFILE drawn on a face is COPLANAR with it — on a tie the
+  // profile wins, or the rectangle you just sketched could never be picked
+  // (clicking it always selected the whole face underneath)
+  const sHit = raycaster.intersectObjects(sketchMeshes(), false)[0];
+  if (sHit && (!fHit || sHit.distance <= fHit.distance + 0.5)
+      && (!eHits.length || sHit.distance <= eHits[0].distance + 0.5)) {
+    selectProfile(sHit.object.userData.sketchId, sHit.object);
+    return;
+  }
   if (eHits.length && (!fHit || eHits[0].distance <= fHit.distance + 1e-3)) {
     selectEdge(eHits[0].object.userData.edgeId,
                eHits[0].object.userData.body);
@@ -1042,6 +1111,27 @@ function pickAt(e) {
     const entry = bodyObjs.find(b => b.mesh === fHit.object);
     if (entry) selectFace(entry.data.faceId[fHit.face.a], entry);
   }
+}
+
+/* a finished sketch is a first-class selectable PROFILE (Fusion): picking it
+   remembers it for select-then-command tools (Extrude uses it directly) */
+function selectProfile(sketchId, meshObj) {
+  clearPickHighlight();
+  S.pickedFace = null;
+  S.pickedCurved = null;
+  S.pickedProfile = { id: sketchId };
+  pickHl = new THREE.Mesh(meshObj.geometry.clone(),
+    new THREE.MeshBasicMaterial({ color: 0xffb85c, transparent: true,
+      opacity: 0.55, side: THREE.DoubleSide, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -4 }));
+  pickHl.renderOrder = 999;
+  scene.add(pickHl);
+  showPick(`<b>Sketch profile</b> — ${sketchId}`,
+    [['feature', sketchId]]);
+  const note = document.createElement('div');
+  note.style.cssText = 'margin-top:7px;color:var(--dim);font-size:11px;line-height:1.4';
+  note.textContent = 'Press Extrude to pull this profile.';
+  document.getElementById('pickInfo').appendChild(note);
 }
 
 function selectFace(fid, entry = null) {
@@ -1070,6 +1160,7 @@ function selectFace(fid, entry = null) {
   const isFlat = info.planar ?? (info.type === 'PLANE');
   S.pickedFace = (info.center && isFlat) ? info : null;
   S.pickedCurved = (info.center && !isFlat) ? info : null;
+  S.pickedProfile = null;              // a face pick replaces a profile pick
   showPick(`<b>Face ${fid}</b> — ${isFlat && info.type !== 'PLANE' ? info.type + ' (flat)' : info.type}`,
     [// which BODY this face belongs to — several are pickable now, and the
      // tools act on the picked one, so the user must see which it is
@@ -1100,6 +1191,7 @@ function selectEdge(eid, bodyId = null) {
   clearPickHighlight();
   S.pickedFace = null;                 // an edge pick is not a sketchable face
   S.pickedCurved = null;
+  S.pickedProfile = null;
   const src = bodyObjs.find(b => b.id === bodyId)
     || bodyObjs.find(b => b.result) || bodyObjs[0];
   const e = src && (src.data.edges || []).find(x => x.id === eid);

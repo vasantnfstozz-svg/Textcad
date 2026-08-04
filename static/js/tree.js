@@ -30,8 +30,10 @@ export function renderDoc(doc) {
   const nWarn = (doc.warnings || []).length;
   if (!doc.features.length) { badge.className = 'none'; badge.textContent = 'empty'; }
   else if (doc.ok && nWarn) {
+    // separate bodies are NORMAL (Fusion's Bodies folder) — say how many,
+    // don't cry "stray": the old wording read as an error on every boss
     badge.className = 'ok';
-    badge.textContent = `✓ verified — ⚠ ${nWarn} stray bod${nWarn > 1 ? 'ies' : 'y'}`;
+    badge.textContent = `✓ verified — ${nWarn + 1} bodies`;
     badge.title = doc.warnings.join('\n');
   }
   else if (doc.ok) { badge.className = 'ok'; badge.textContent = '✓ verified'; badge.title = ''; }
@@ -70,11 +72,13 @@ bus.on('settings-changed', () => { if (S.lastDoc) renderDoc(S.lastDoc); });
 
 function renderWarnings(doc, el) {
   if (!doc.warnings || !doc.warnings.length) return;
+  // neutral info styling — multiple bodies are a normal modeling state, and
+  // the old amber ⚠ box made every boss/pocket-in-progress read as an error
   const w = document.createElement('div');
-  w.style.cssText = 'margin:8px 6px;padding:7px 9px;border:1px solid #8a6a2a;' +
-    'background:rgba(217,162,60,.08);color:#d9a23c;border-radius:6px;' +
+  w.style.cssText = 'margin:8px 6px;padding:7px 9px;border:1px solid var(--line);' +
+    'background:rgba(120,140,170,.07);color:var(--dim);border-radius:6px;' +
     'font-size:11.5px;line-height:1.45';
-  w.innerHTML = doc.warnings.map(t => `<div>⚠ ${t}</div>`).join('');
+  w.innerHTML = doc.warnings.map(t => `<div>ℹ ${t}</div>`).join('');
   el.appendChild(w);
 }
 

@@ -313,11 +313,13 @@ class Document:
         for fid in self.leaf_solid_ids():
             if fid == rf.id:
                 continue
+            # informational, not an error: separate bodies are everyday CAD
+            # (Fusion's Bodies folder) — the note exists so an ACCIDENTAL
+            # stray (chained from the wrong feature) is never silent
             self.warnings.append(
-                f"body '{fid}' is NOT part of the displayed result "
-                f"('{rf.id}') — it is a separate body. If that is intended "
-                f"(e.g. before a fuse/cut) ignore this; if you chained from the "
-                f"wrong feature, fuse/cut it with the main body or remove it.")
+                f"'{fid}' and '{rf.id}' are separate bodies — normal while "
+                f"modeling. Use Extrude's Join/Cut (or a fuse/cut feature) "
+                f"to combine them, or remove '{fid}' if it was unintended.")
 
     # -- results --------------------------------------------------------------
     def _result_feature(self) -> Feature | None:

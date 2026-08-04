@@ -9,7 +9,7 @@ import { postJSON } from './api.js';
 import { loadMesh, beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          beginExtrudeGhost, setExtrudeGhost, hideExtrudeGhost, endExtrudeGhost,
          beginTaperRing, setTaperRingAngle, endTaperRing,
-         cancelPlanePick } from './viewport.js';
+         cancelPlanePick, beginProfilePick, cancelProfilePick } from './viewport.js';
 
 // plane normals = the direction a positive offset/extrude actually goes
 // (probed against build123d: XZ offset +7 lands at y=-7, so XZ is -Y!)
@@ -110,6 +110,7 @@ const g = id => document.getElementById(id);
 
 export function openExtrude(preProfile) {
   cancelPlanePick();                 // a pending plane-pick must not linger
+  cancelProfilePick();               // nor a pending profile-pick
   cancelExtrude();                   // clear any prior extrude session's gizmos
   const bods = solids();
   // FACE MODE (Fusion: click a planar face, press Extrude, pull the arrow).
@@ -137,39 +138,51 @@ export function openExtrude(preProfile) {
     createPreview();
     return;
   }
+  // an explicitly SELECTED profile (viewport pick) counts like the tree's ⬆
+  if (!preProfile && S.pickedProfile) preProfile = S.pickedProfile.id;
+  if (S.pickedCurved && !preProfile) {
+    bus.emit('msg', 'bot',
+      `⚠ Extrude needs a FLAT face — the selected surface is ` +
+      `${S.pickedCurved.type} (curved). Flat faces (including tilted ones) ` +
+      `extrude fine; a rounded face like a cone or cylinder side can't.`);
+    return;
+  }
   // only UNCONSUMED sketches are offered — a sketch already used by an extrude
   // must not silently become the profile again ("goes back to the old sketch").
-  // An explicit preProfile (tree ⬆ action) is honoured even if consumed.
+  // An explicit preProfile (tree ⬆ / viewport pick) is honoured even if consumed.
   const consumed = new Set(feats().flatMap(f => f.inputs));
   const sks = feats().filter(isSketch)
     .filter(s => !consumed.has(s.id) || s.id === preProfile);
-  if (!sks.length) {
-    const curved = S.pickedCurved;
-    bus.emit('msg', 'bot', curved
-      ? `⚠ Extrude needs a FLAT face — the selected surface is ${curved.type} ` +
-        `(curved). Flat faces (including tilted/inclined ones) extrude fine; a ` +
-        `rounded face like a cone or cylinder side can't. Pick a flat face, or ` +
-        `sketch on a plane and extrude.`
-      : tip
-      ? '⚠ Nothing selected to extrude. Pick a flat face of the body first ' +
-        '(◉ Select → click a face → Extrude), or draw a new sketch.'
-      : '⚠ Draw a sketch first (Create → Create Sketch), then Extrude it.');
+  if (!sks.length && !bods.length) {
+    bus.emit('msg', 'bot',
+      '⚠ Draw a sketch first (Create → Create Sketch), then Extrude it.');
     return;
   }
-  const profileId = preProfile && sks.some(s => s.id === preProfile) ? preProfile : sks[0].id;
-  st = { mode: 'sketch', sketches: sks.map(s => s.id), extrudeId: null, opId: null,
-         opType: null, opTarget: null, profileId };
-  fill('exProfile', st.sketches, profileId);
-  g('exProfile').disabled = false;
-  fill('exTarget', bods.map(b => b.id), bods[0] ? bods[0].id : null);
-  // start tiny — the solid should grow when YOU pull the arrow, not jump to a
-  // big default the moment the panel opens
-  g('exDir').value = 'one'; g('exDist').value = '1'; g('exDist2').value = '10';
-  g('exTaper').value = '0'; g('exFlip').checked = false; g('exOp').value = 'new';
-  g('exDir').disabled = false;
-  syncRows();
-  panel().style.display = 'block';
-  createPreview();
+  if (preProfile && sks.some(s => s.id === preProfile)) {
+    st = { mode: 'sketch', sketches: sks.map(s => s.id), extrudeId: null,
+           opId: null, opType: null, opTarget: null, profileId: preProfile };
+    fill('exProfile', st.sketches, preProfile);
+    g('exProfile').disabled = false;
+    fill('exTarget', bods.map(b => b.id), bods[0] ? bods[0].id : null);
+    // start tiny — the solid should grow when YOU pull the arrow, not jump to
+    // a big default the moment the panel opens
+    g('exDir').value = 'one'; g('exDist').value = '1'; g('exDist2').value = '10';
+    g('exTaper').value = '0'; g('exFlip').checked = false; g('exOp').value = 'new';
+    g('exDir').disabled = false;
+    syncRows();
+    panel().style.display = 'block';
+    createPreview();
+    return;
+  }
+  // NOTHING selected: Fusion's command-then-select — the USER picks what to
+  // extrude (a sketch profile or a flat face); never auto-grab a sketch
+  beginProfilePick((kind, data) => {
+    if (kind === 'profile') { openExtrude(data); return; }
+    S.pickedFace = data;                 // planar face — reuse face mode
+    openExtrude();
+  });
+  bus.emit('msg', 'bot', 'Extrude: click a sketch profile or a flat face in ' +
+    'the viewport — your pick, nothing is chosen for you. Esc cancels.');
 }
 
 function params() {
@@ -513,6 +526,7 @@ function ok() {
    can't be selected anymore. Keeps any already-committed extrude (it's a real
    verified feature); just clears the gizmos + panel. Mirrors cancelPlanePick. */
 export function cancelExtrude() {
+  cancelProfilePick();               // a pending "pick a profile" dies with us
   if (!st && panel().style.display === 'none') return;
   endExtrudeArrow();
   endExtrudeGhost();
