@@ -108,10 +108,19 @@ function fill(id, items, val) {
 }
 const g = id => document.getElementById(id);
 
+function setHeader(text) { panel().querySelector('.exhead').textContent = text; }
+function unlockDialog() {           // edit mode locks rows — a NEW session resets
+  setHeader('↑ Extrude');
+  g('exProfile').title = '';
+  g('exOp').disabled = false; g('exOp').title = '';
+  g('exTarget').disabled = false;
+}
+
 export function openExtrude(preProfile) {
   cancelPlanePick();                 // a pending plane-pick must not linger
   cancelProfilePick();               // nor a pending profile-pick
   cancelExtrude();                   // clear any prior extrude session's gizmos
+  unlockDialog();
   const bods = solids();
   // FACE MODE (Fusion: click a planar face, press Extrude, pull the arrow).
   // Capture the pick now — loadMesh() clears it.
@@ -183,6 +192,75 @@ export function openExtrude(preProfile) {
   });
   bus.emit('msg', 'bot', 'Extrude: click a sketch profile or a flat face in ' +
     'the viewport — your pick, nothing is chosen for you. Esc cancels.');
+}
+
+/* EDIT FEATURE (Fusion parity): reopen an EXISTING extrude in the same tool
+   that created it — arrow, ghost, taper ring, live verified preview. Every
+   change is pushed to the real feature via /api/feature/params; Cancel
+   restores the exact params it had when the dialog opened. Profile and
+   Operation rows are shown but locked — rewiring the tree is a later step. */
+const COMBINER_LABEL = { fuse: 'join', cut: 'cut', intersect: 'intersect' };
+
+export function openExtrudeEdit(fid) {
+  cancelPlanePick();
+  cancelProfilePick();
+  cancelExtrude();
+  unlockDialog();
+  const f = feats().find(x => x.id === fid);
+  if (!f || (f.op !== 'extrude' && f.op !== 'extrude_face')) return;
+  const p = f.params || {};
+  const face = f.op === 'extrude_face';
+  // normalized snapshot of EVERY param this dialog can write in this mode —
+  // Cancel pushes it back verbatim, so keys the session added are reset too
+  const original = face
+    ? { face_center: p.face_center, face_normal: p.face_normal || [0, 0, 1],
+        amount: Number(p.amount) || 0, taper: Number(p.taper) || 0,
+        flip: !!p.flip }
+    : { amount: Number(p.amount) || 0, both: !!p.both,
+        amount2: Number(p.amount2) || 0, taper: Number(p.taper) || 0,
+        flip: !!p.flip };
+  if (face) {
+    st = { mode: 'face', editing: true, extrudeId: f.id, original,
+           inputId: f.inputs[0],
+           face: { center: original.face_center, normal: original.face_normal,
+                   body: f.inputs[0] },
+           opId: null, opType: null, opTarget: null,
+           lastGood: { amount: original.amount, taper: original.taper } };
+    fill('exProfile', [`(face of ${f.inputs[0]})`], `(face of ${f.inputs[0]})`);
+    g('exDir').value = 'one'; g('exDir').disabled = true;
+  } else {
+    st = { mode: 'sketch', editing: true, extrudeId: f.id, original,
+           profileId: f.inputs[0], sketches: [f.inputs[0]],
+           opId: null, opType: null, opTarget: null,
+           lastGood: { amount: original.amount, taper: original.taper } };
+    fill('exProfile', [f.inputs[0]], f.inputs[0]);
+    g('exDir').disabled = false;
+    g('exDir').value = original.both ? 'sym' : (original.amount2 ? 'two' : 'one');
+  }
+  g('exProfile').disabled = true;
+  g('exProfile').title = 'changing the profile of an existing extrude comes later';
+  g('exDist').value = original.amount;
+  g('exDist2').value = original.amount2 || 10;
+  g('exTaper').value = original.taper;
+  g('exFlip').checked = original.flip;
+  // Operation row: show what the tree ACTUALLY does with this extrude (the
+  // downstream combiner, if any) — honest but locked in edit mode
+  const comb = feats().find(x => COMBINER_LABEL[x.op]
+    && (x.inputs || []).includes(f.id));
+  g('exOp').value = comb ? COMBINER_LABEL[comb.op] : 'new';
+  g('exOp').disabled = true;
+  g('exOp').title = 'changing the operation of an existing extrude comes later';
+  if (comb) {
+    const target = (comb.inputs || []).find(i => i !== f.id) || '';
+    fill('exTarget', [target], target);
+    g('exTarget').disabled = true;
+  }
+  setHeader(`✎ Edit ${f.id}`);
+  syncRows();
+  panel().style.display = 'block';
+  placeArrow();
+  setupGhost();
+  setExtrudeArrowAmount(original.flip ? -original.amount : original.amount);
 }
 
 function params() {
@@ -391,6 +469,7 @@ async function onDragCommit(amount) {     // release: ONE real verified rebuild
 
 async function applyOp() {
   if (!st.extrudeId) return;                  // nothing built yet — nothing to combine
+  if (st.editing) return;                     // edit mode never rewires combiners (v1)
   const op = g('exOp').value;                 // new | join | cut | intersect
   const target = g('exTarget').value;
   if (st.opId && (op === 'new' || st.opType !== op || st.opTarget !== target)) {
@@ -521,17 +600,29 @@ async function teardown() {
 }
 
 async function cancel() {
+  if (st && st.editing) {                // edit mode: the feature stays — put
+    const { extrudeId, original } = st;  // its ORIGINAL params back verbatim
+    endExtrudeArrow(); endExtrudeGhost(); endTaperRing();
+    st = null; panel().style.display = 'none';
+    await postJSON('/api/feature/params',
+      { feature_id: extrudeId, params: original });
+    loadMesh();
+    return;
+  }
   await teardown(); loadMesh();
   st = null; panel().style.display = 'none';
 }
 
 function ok() {
+  const editing = st && st.editing;
   const created = st && st.extrudeId;
   endExtrudeArrow();
   endExtrudeGhost();
   endTaperRing();
   st = null; panel().style.display = 'none';
-  bus.emit('msg', 'bot', created
+  bus.emit('msg', 'bot', editing
+    ? 'Extrude updated — the change is in the feature tree.'
+    : created
     ? 'Extrude created — editable in the feature tree.'
     : 'Nothing extruded — drag the arrow or type a distance next time.');
 }

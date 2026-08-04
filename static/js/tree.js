@@ -7,7 +7,7 @@ import { postJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
 import { loadMesh, showFeatureOverlay, clearHighlight } from './viewport.js';
 import { openFeatDialog } from './dialogs.js';
-import { openExtrude } from './extrude.js';
+import { openExtrude, openExtrudeEdit } from './extrude.js';
 import { fmtVol } from './settings.js';
 
 const treeEl = () => document.getElementById('tree');
@@ -105,6 +105,11 @@ function buildRow(doc, f) {
     addAct(acts, '⬆', 'extrude this sketch into a solid',
       () => openExtrude(f.id));
   }
+  if (f.op === 'extrude' || f.op === 'extrude_face') {
+    // Edit Feature (Fusion parity): reopen the tool that CREATED the feature
+    addAct(acts, '✎', 'edit this extrude (reopens the Extrude tool with its ' +
+      'arrow and live preview)', () => openExtrudeEdit(f.id));
+  }
   const isBar = doc.rollback === f.id;
   addAct(acts, isBar ? '⤓' : '⤒',
     isBar ? 'release rollback bar (build everything)'
@@ -122,6 +127,11 @@ function buildRow(doc, f) {
   const dot = document.createElement('span'); dot.className = 'ndot ' + f.status;
   row.append(acts, dot);
   row.onclick = () => selectFeature(f.id);
+  // Fusion's gesture: double-click a feature = edit it with its own tool
+  row.ondblclick = () => {
+    if (f.op === 'sketch' || f.op === 'sketch_on_face') bus.emit('edit-sketch', f);
+    else if (f.op === 'extrude' || f.op === 'extrude_face') openExtrudeEdit(f.id);
+  };
   return row;
 }
 
