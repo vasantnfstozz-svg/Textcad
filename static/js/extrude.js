@@ -279,9 +279,24 @@ async function setupGhost() {
       setupTaperRing(data.frame, loops);
     } else {
       const prof = feats().find(f => f.id === st.profileId);
-      if (!prof || prof.op !== 'sketch') return;    // plane sketches only
-      const plane = prof.params.plane || 'XY';
-      const frame = (PLANE_FRAME[plane] || PLANE_FRAME.XY)(Number(prof.params.offset) || 0);
+      if (!prof) return;
+      let frame;
+      if (prof.op === 'sketch_on_face') {
+        // a FACE sketch's frame lives on the body: re-resolve it by geometry
+        // — without this, face-sketch extrudes had NO ghost box and NO taper
+        // ring ("I can't see how far I am going")
+        const r = await fetch('/api/face-outline', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ face_center: prof.params.face_center,
+                                 face_normal: prof.params.face_normal || null,
+                                 feature_id: (prof.inputs || [])[0] || null }) });
+        const data = await r.json();
+        if (!data.planar || !data.frame) return;
+        frame = data.frame;
+      } else {
+        const plane = prof.params.plane || 'XY';
+        frame = (PLANE_FRAME[plane] || PLANE_FRAME.XY)(Number(prof.params.offset) || 0);
+      }
       const loops = loopsForEntities(prof.params.entities);
       st.safeR = safeRadius(loops);
       beginExtrudeGhost(frame, loops);
@@ -537,7 +552,23 @@ export function cancelExtrude() {
 
 export function initExtrude() {
   g('exProfile').onchange = changeProfile;
-  for (const id of ['exDir', 'exOp', 'exTarget', 'exFlip'])
+  g('exOp').onchange = () => {
+    // Fusion: CUT goes INTO the material. A face sketch's normal points OUT
+    // of the body, so a positive distance leaves the tool floating outside
+    // and the cut removes NOTHING — that read as "cut is not working". Flip
+    // the sign once when Cut is chosen (the user can still drag either way).
+    const prof = st && st.mode === 'sketch'
+      && feats().find(f => f.id === st.profileId);
+    const d = Number(g('exDist').value) || 0;
+    if (g('exOp').value === 'cut' && prof
+        && prof.op === 'sketch_on_face' && d > 0) {
+      g('exDist').value = -d;
+      bus.emit('msg', 'bot', `Cut goes INTO the body — distance flipped to ` +
+        `${-d}mm. Drag the arrow (or type) to set the pocket depth.`);
+    }
+    syncRows(); apply();
+  };
+  for (const id of ['exDir', 'exTarget', 'exFlip'])
     g(id).onchange = () => { syncRows(); apply(); };
   for (const id of ['exDist', 'exDist2', 'exTaper'])
     g(id).oninput = () => debounce(apply);

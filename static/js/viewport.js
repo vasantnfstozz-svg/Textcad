@@ -178,6 +178,9 @@ export function initViewport() {
     /* the adaptive ground grid actually in the scene (step/half/clip) */
     groundGridInfo: () => groundState ? { step: groundState.step,
       half: groundState.half, clip: { ...groundState.clip } } : null,
+    /* which extrude gizmos are live — a face-sketch extrude must have ALL
+       three (the ghost/ring were silently missing there once) */
+    gizmos: () => ({ arrow: !!exArrow, ghost: !!exGhost, ring: !!taperRing }),
     /* how many of each thing is actually in the scene — catches duplicate
        objects piling up from overlapping loads */
     sceneCounts: () => ({ bodies: bodyObjs.length, edges: edgeLines.length,

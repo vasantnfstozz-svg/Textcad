@@ -268,3 +268,72 @@ def test_extrude_never_auto_selects_the_sketch(dome_with_rect_sketch):
     assert page.evaluate("window.__vp.bodyCount()") == 2, \
         "extruding the picked profile lost a body"
     assert page.errors == []
+
+
+# ---------------------------------------------------------------------------
+# Reported 2026-08-04: "what if I want to cut in the body by extruding the
+# sketch down — it has to make a cut" + "I am not getting the ghost box ...
+# and the round thing (taper ring) also" for face-sketch extrudes, and the
+# unproven Operation entries should be locked.
+# ---------------------------------------------------------------------------
+
+def test_cut_a_pocket_through_the_real_ui(face_sketch_via_real_click):
+    """The full pocket journey: draw a circle on the block's top face, Finish,
+    pick the profile, Extrude -> Cut. Choosing Cut must flip the direction
+    INTO the body, the ghost + taper ring must exist for the face sketch, and
+    the pocket's volume must be exactly plate − cylinder."""
+    page = face_sketch_via_real_click
+    page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      sk.setSketchTool('circle');
+    }""")
+    # r=5 centred at (10,5): safely INSIDE the 60x40 face — a circle touching
+    # the face boundary makes a zero-thickness wall the kernel rightly refuses
+    page.evaluate(CLICK, [10, 5, 1.5])               # centre
+    page.evaluate(CLICK, [15, 5, 1.5])               # radius = 5
+    page.click("#ribbon .rbtn[title='Finish Sketch']")
+    page.wait_for_function(NOT_ACTIVE, timeout=15000)
+    page.wait_for_timeout(800)
+
+    inside = page.evaluate(TO_SCREEN, [10, 5, 10])   # pick the circle profile
+    page.click("#vSelect")
+    page.mouse.click(inside["x"], inside["y"], button="left")
+    page.wait_for_timeout(300)
+    page.click("#ribbon .rbtn[title='extrude']")
+    page.wait_for_function("() => document.getElementById('extrudeDialog')"
+                           ".style.display === 'block'", timeout=10000)
+    # the reported gap: face-sketch extrudes had NO ghost box and NO taper ring
+    page.wait_for_function(
+        "() => { const g = window.__vp.gizmos(); return g.arrow && g.ghost && g.ring; }",
+        timeout=10000)
+    # the unproven operation stays locked
+    assert page.evaluate(
+        "document.querySelector('#exOp option[value=intersect]').disabled")
+
+    page.evaluate("""() => {
+      const op = document.getElementById('exOp');
+      op.value = 'cut';
+      op.dispatchEvent(new Event('change', { bubbles: true }));
+    }""")
+    page.wait_for_timeout(400)
+    assert float(page.evaluate(
+        "document.getElementById('exDist').value")) < 0, \
+        "choosing Cut must point the extrude INTO the body"
+    page.evaluate("""() => {
+      const d = document.getElementById('exDist');
+      d.value = '-6';
+      d.dispatchEvent(new Event('input', { bubbles: true }));
+    }""")
+    page.wait_for_timeout(1800)
+    page.click("#exOk")
+    page.wait_for_timeout(1000)
+
+    doc = page.evaluate("async () => (await (await fetch('/api/doc')).json())")
+    cut = [f for f in doc["features"] if f["op"] == "cut"]
+    assert len(cut) == 1 and cut[0]["status"] == "ok", cut
+    import math
+    expect = 60 * 40 * 20 - math.pi * 5 * 5 * 6
+    assert cut[0]["volume"] == pytest.approx(expect, rel=1e-3), cut[0]
+    assert page.evaluate("window.__vp.bodyCount()") == 1, \
+        "a pocket cut must leave ONE body"
+    assert page.errors == []

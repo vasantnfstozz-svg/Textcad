@@ -156,7 +156,9 @@
       <option value="new">New body</option>
       <option value="join">Join</option>
       <option value="cut">Cut</option>
-      <option value="intersect">Intersect</option>
+      <!-- locked until it has a workflow that makes sense here: extruding a
+           face sketch upward intersects NOTHING (honest empty-solid failure) -->
+      <option value="intersect" disabled>Intersect — coming soon</option>
     </select></label>
   <label id="exTargetRow" style="display:none">Combine with <select id="exTarget"></select></label>
   <div class="exfoot">
@@ -197,6 +199,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=44"></script>
+<script type="module" src="/static/js/main.js?v=45"></script>
 </body>
 </html>

@@ -71,6 +71,77 @@ def test_extrude_face_new_body_keeps_the_source(client):
         "extrude_face (new body) made the source body vanish"
 
 
+def test_cut_pocket_by_extruding_the_face_sketch_downward(client):
+    """The user's ask: 'what if I want to cut in the body by extruding the
+    sketch down — it has to make a cut.' Extrude the face sketch INTO the
+    body (negative amount) and cut: the pocket's volume must be exactly
+    plate − cylinder. Measured, not assumed."""
+    import math
+    c = client
+    c.post("/api/new", json={"name": "pocket"})
+    _add(c, {"id": "b", "op": "plate",
+             "params": {"width": 60, "depth": 40, "thickness": 20},
+             "inputs": []})
+    _add(c, {"id": "sk", "op": "sketch_on_face",
+             "params": {"face_center": [0, 0, 10], "face_normal": [0, 0, 1],
+                        "entities": [{"kind": "circle", "mode": "add",
+                                      "x": 0, "y": 0, "r": 8}]},
+             "inputs": ["b"]})
+    _add(c, {"id": "ex", "op": "extrude", "params": {"amount": -6},
+             "inputs": ["sk"]})
+    r = _add(c, {"id": "pocket", "op": "cut", "params": {},
+                 "inputs": ["b", "ex"]})
+    f = next(x for x in r["features"] if x["id"] == "pocket")
+    expect = 60 * 40 * 20 - math.pi * 8 * 8 * 6
+    assert f["volume"] == pytest.approx(expect, rel=1e-3), f["volume"]
+    doc = studio._doc()
+    assert doc.leaf_solid_ids() == ["pocket"], doc.leaf_solid_ids()
+
+
+def test_cut_with_the_tool_outside_removes_nothing(client):
+    """Direction matters: extruding UP leaves the tool floating outside the
+    body, so the cut changes nothing — this exact case is why 'Cut' read as
+    broken in the UI (the panel now flips the sign when Cut is chosen)."""
+    c = client
+    c.post("/api/new", json={"name": "noop"})
+    _add(c, {"id": "b", "op": "plate",
+             "params": {"width": 60, "depth": 40, "thickness": 20},
+             "inputs": []})
+    _add(c, {"id": "sk", "op": "sketch_on_face",
+             "params": {"face_center": [0, 0, 10], "face_normal": [0, 0, 1],
+                        "entities": [{"kind": "circle", "mode": "add",
+                                      "x": 0, "y": 0, "r": 8}]},
+             "inputs": ["b"]})
+    _add(c, {"id": "ex", "op": "extrude", "params": {"amount": 6},
+             "inputs": ["sk"]})
+    r = _add(c, {"id": "c1", "op": "cut", "params": {}, "inputs": ["b", "ex"]})
+    f = next(x for x in r["features"] if x["id"] == "c1")
+    assert f["volume"] == pytest.approx(48000, rel=1e-6), f["volume"]
+
+
+def test_join_fuses_an_upward_boss(client):
+    """Join WORKS (volume = plate + cylinder, ONE body) — it only looks like
+    'New body' from outside; the tree/badge show the difference."""
+    import math
+    c = client
+    c.post("/api/new", json={"name": "boss"})
+    _add(c, {"id": "b", "op": "plate",
+             "params": {"width": 60, "depth": 40, "thickness": 20},
+             "inputs": []})
+    _add(c, {"id": "sk", "op": "sketch_on_face",
+             "params": {"face_center": [0, 0, 10], "face_normal": [0, 0, 1],
+                        "entities": [{"kind": "circle", "mode": "add",
+                                      "x": 0, "y": 0, "r": 8}]},
+             "inputs": ["b"]})
+    _add(c, {"id": "ex", "op": "extrude", "params": {"amount": 6},
+             "inputs": ["sk"]})
+    r = _add(c, {"id": "j", "op": "fuse", "params": {}, "inputs": ["b", "ex"]})
+    f = next(x for x in r["features"] if x["id"] == "j")
+    expect = 60 * 40 * 20 + math.pi * 8 * 8 * 6
+    assert f["volume"] == pytest.approx(expect, rel=1e-3), f["volume"]
+    assert studio._doc().leaf_solid_ids() == ["j"]
+
+
 def test_join_still_consumes_both_parents(client):
     """The fix must not over-reach: a fuse DOES consume its inputs — after a
     Join only the fused body is a leaf."""
