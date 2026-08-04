@@ -61,6 +61,30 @@ def test_remove_refuses_when_depended_on():
     assert len(doc.features) == 2
 
 
+def test_rename_rewrites_references_everywhere():
+    doc = flange_doc()
+    doc.rebuild()
+    doc.rollback = "bore"
+    doc.rename("bore", "center_hole")
+    assert doc.get("center_hole").op == "with_center_hole"
+    assert doc.get("bolts").inputs == ["center_hole"]      # inputs rewritten
+    assert doc.rollback == "center_hole"                   # bar follows
+    assert "center_hole" in doc._parts and "bore" not in doc._parts
+    assert doc.get("center_hole").status == "ok"           # no rebuild needed
+
+
+def test_rename_rejects_duplicates_and_bad_names():
+    doc = flange_doc()
+    with pytest.raises(ValueError):
+        doc.rename("bore", "bolts")            # collision with existing id
+    with pytest.raises(ValueError):
+        doc.rename("bore", "")                 # empty
+    with pytest.raises(ValueError):
+        doc.rename("bore", "my hole")          # spaces break URL/chat refs
+    with pytest.raises(KeyError):
+        doc.rename("nope", "x")                # unknown feature
+
+
 def test_suppress_passes_through_input():
     doc = flange_doc()
     doc.rebuild()

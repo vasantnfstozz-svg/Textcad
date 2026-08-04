@@ -62,6 +62,24 @@ def test_feature_add_remove_suppress(client):
     assert all(f["id"] != "rim" for f in d["features"])
 
 
+def test_feature_rename_endpoint(client):
+    d = client.post("/api/feature/rename",
+                    json={"feature_id": "bore", "name": "center_hole"}).json()
+    assert "error" not in d
+    ids = [f["id"] for f in d["features"]]
+    assert "center_hole" in ids and "bore" not in ids
+    bolts = next(f for f in d["features"] if f["id"] == "bolts")
+    assert bolts["inputs"] == ["center_hole"]     # references rewritten
+    # geometry untouched: statuses survive without a rebuild
+    assert all(f["status"] == "ok" for f in d["features"])
+    # bad names are refused and undoable state is not corrupted
+    d = client.post("/api/feature/rename",
+                    json={"feature_id": "center_hole", "name": "has space"}).json()
+    assert "error" in d
+    d = client.post("/api/undo", json={}).json()
+    assert any(f["id"] == "bore" for f in d["features"])  # rename undone
+
+
 def test_save_open_roundtrip(client):
     client.post("/api/save")
     lst = client.get("/api/designs").json()

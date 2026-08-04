@@ -275,6 +275,11 @@ class RemoveReq(BaseModel):
     feature_id: str
 
 
+class RenameReq(BaseModel):
+    feature_id: str
+    name: str
+
+
 class SuppressReq(BaseModel):
     feature_id: str
     suppressed: bool
@@ -668,6 +673,20 @@ def remove_feature(req: RemoveReq):
         _entry()["history"].pop()
         return {"error": str(e), **_doc_json()}
     _rebuild_and_mesh()
+    return _doc_json()
+
+
+@app.post("/api/feature/rename")
+def rename_feature(req: RenameReq):
+    """Fusion's browser rename: the id is rewritten everywhere it is
+    referenced (inputs, rollback bar, part cache). Geometry is untouched,
+    so no rebuild — the snapshot still makes it undoable."""
+    _snapshot()
+    try:
+        _doc().rename(req.feature_id, req.name)
+    except (KeyError, ValueError) as e:
+        _entry()["history"].pop()
+        return {"error": str(e), **_doc_json()}
     return _doc_json()
 
 

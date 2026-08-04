@@ -91,6 +91,10 @@ function loopsForEntities(entities) {
 const OPMAP = { join: 'fuse', cut: 'cut', intersect: 'intersect' };
 const panel = () => document.getElementById('extrudeDialog');
 let st = null;                    // active session
+/* the feature the Extrude tool is live-editing right now (null when idle) —
+   lets the tree's failure toasts stay quiet about a feature whose failures
+   this tool already explains + auto-repairs (settleValid) */
+export const activeExtrudeId = () => (st && st.extrudeId) || null;
 let timer = null;
 const debounce = fn => { clearTimeout(timer); timer = setTimeout(fn, 200); };
 

@@ -7,7 +7,7 @@ import { postJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
 import { loadMesh, showFeatureOverlay, clearHighlight } from './viewport.js';
 import { openFeatDialog } from './dialogs.js';
-import { openExtrude, openExtrudeEdit } from './extrude.js';
+import { openExtrude, openExtrudeEdit, activeExtrudeId } from './extrude.js';
 import { fmtVol } from './settings.js';
 
 const treeEl = () => document.getElementById('tree');
@@ -41,17 +41,38 @@ export function renderDoc(doc) {
 
   const el = treeEl();
   el.innerHTML = '';
-  let pastBar = false;
-  for (const f of doc.features) {
+  // rolled-back marking follows BUILD order (the features list), independent
+  // of how the rows are nested for display below
+  const rolled = new Set();
+  {
+    let past = false;
+    for (const f of doc.features) {
+      if (past) rolled.add(f.id);
+      if (doc.rollback === f.id) past = true;
+    }
+  }
+  // Fusion grouping: a consumed sketch renders as a CHILD of the feature
+  // that consumed it (Extrude1 ▸ sketch1), not as a sibling row — the tree
+  // then reads as design history, not a flat op list
+  const isSk = f => f.op === 'sketch' || f.op === 'sketch_on_face';
+  const consumerOf = {};
+  for (const f of doc.features)
+    for (const d of f.inputs) {
+      const src = doc.features.find(x => x.id === d);
+      if (src && isSk(src) && !(d in consumerOf)) consumerOf[d] = f.id;
+    }
+  const makeNode = (f, child) => {
     const node = document.createElement('div');
+    node.dataset.fid = f.id;
     const hasKids = Object.keys(f.params).length > 0 || f.volume != null;
     node.className = 'node' + (S.openNodes.has(f.id) ? ' open' : '')
       + (f.suppressed ? ' suppressed' : '')
       + (S.selected === f.id ? ' sel' : '')
-      + (pastBar ? ' rolledback' : '') + (hasKids ? ' haskids' : '');
+      + (rolled.has(f.id) ? ' rolledback' : '')
+      + (hasKids ? ' haskids' : '') + (child ? ' child' : '');
     node.appendChild(buildRow(doc, f));
     node.appendChild(buildBody(f));
-    const probs = f.problems.filter(p => p !== '(suppressed)');
+    const probs = f.problems.filter(p => p !== '(suppressed)').map(humanProblem);
     if (probs.length) {
       const pd = document.createElement('div'); pd.className = 'nproblems';
       pd.textContent = probs.join(' • '); node.appendChild(pd);
@@ -61,14 +82,55 @@ export function renderDoc(doc) {
       const bar = document.createElement('div'); bar.className = 'rollbar';
       bar.title = 'rollback bar — features below are not built';
       el.appendChild(bar);
-      pastBar = true;
     }
+  };
+  for (const f of doc.features) {
+    if (consumerOf[f.id]) continue;          // renders under its consumer
+    makeNode(f, false);
+    for (const d of f.inputs)
+      if (consumerOf[d] === f.id)
+        makeNode(doc.features.find(x => x.id === d), true);
   }
   renderWarnings(doc, el);
   renderSpecRow(doc, el);
 }
 bus.on('doc-updated', renderDoc);
 bus.on('settings-changed', () => { if (S.lastDoc) renderDoc(S.lastDoc); });
+
+/* Failures speak (Fusion parity rule 7): the moment a feature NEWLY fails,
+   say so in chat in human words — never just the little red dot. The extrude
+   panel's live feature is excluded: that tool already explains and auto-
+   repairs its own failures. */
+let prevFailed = new Set();
+bus.on('doc-updated', doc => {
+  const failed = new Map();
+  for (const f of doc.features)
+    if (f.status === 'failed' && !f.problems.includes('(after rollback bar)'))
+      failed.set(f.id, f);
+  for (const [id, f] of failed)
+    if (!prevFailed.has(id) && id !== activeExtrudeId())
+      bus.emit('msg', 'bot', failMessage(f));
+  prevFailed = new Set(failed.keys());
+});
+
+function humanProblem(p) {
+  // backend raises carry good messages — unwrap them from the Python repr
+  const m = p.match(/^(ValueError|KeyError|TypeError|RuntimeError)\((['"])([\s\S]*)\2\)$/);
+  if (m) return m[1] === 'TypeError'
+    ? 'bad parameters — ' + m[3] : m[3];
+  if (/StdFail|Standard_|OCP\.|BRep|TopoDS|GeomAbs/.test(p))
+    return 'the geometry kernel rejected this shape — try smaller values ' +
+           'or a different face (' + p + ')';
+  if (p.includes('is unavailable'))
+    return p + ' — fix that upstream feature first';
+  return p;
+}
+
+function failMessage(f) {
+  const probs = f.problems.filter(p => p !== '(suppressed)').map(humanProblem);
+  return `⚠ Feature "${f.id}" (${f.op}) failed to build: ` +
+         `${probs.join('; ')} — click it in the tree to adjust or delete it.`;
+}
 
 function renderWarnings(doc, el) {
   if (!doc.warnings || !doc.warnings.length) return;
@@ -95,6 +157,12 @@ function buildRow(doc, f) {
     S.openNodes.has(f.id) ? S.openNodes.delete(f.id) : S.openNodes.add(f.id);
     renderDoc(S.lastDoc);
   };
+
+  // Fusion's browser rename: double-click the NAME itself (double-click
+  // elsewhere on the row is Edit Feature)
+  const nameEl = row.querySelector('.nname');
+  nameEl.title = 'double-click to rename';
+  nameEl.ondblclick = e => { e.stopPropagation(); beginRename(nameEl, f); };
 
   const acts = document.createElement('span'); acts.className = 'nacts';
   if (f.op === 'sketch' || f.op === 'sketch_on_face') {
@@ -193,11 +261,44 @@ function renderSpecRow(doc, el) {
 }
 
 function selectFeature(fid) {
-  if (S.selected === fid) {          // click again = deselect
-    S.selected = null; clearHighlight(); renderDoc(S.lastDoc); return;
+  // toggle classes IN PLACE — a full re-render here replaces the row between
+  // the two clicks of a double-click, and Chromium then never synthesizes
+  // dblclick (rename / Edit Feature silently stopped working)
+  const was = S.selected === fid;
+  S.selected = was ? null : fid;
+  if (was) clearHighlight(); else showFeatureOverlay(fid);
+  for (const n of treeEl().querySelectorAll('.node.sel'))
+    n.classList.remove('sel');
+  if (!was) {
+    const n = treeEl().querySelector(`.node[data-fid="${CSS.escape(fid)}"]`);
+    if (n) n.classList.add('sel');
   }
-  S.selected = fid; renderDoc(S.lastDoc);
-  showFeatureOverlay(fid);
+}
+
+function beginRename(el, f) {
+  const input = document.createElement('input');
+  input.value = f.id;
+  el.replaceChildren(input); input.focus(); input.select();
+  let done = false;                 // renderDoc may destroy the input mid-way
+  const finish = async commit => {
+    if (done) return; done = true;
+    const v = input.value.trim();
+    if (!commit || !v || v === f.id) { el.textContent = f.id; return; }
+    const doc = await postJSON('/api/feature/rename',
+      { feature_id: f.id, name: v });        // postJSON toasts doc.error itself
+    if (doc.error) { el.textContent = f.id; return; }
+    if (S.selected === f.id) S.selected = v;
+    if (S.openNodes.has(f.id)) { S.openNodes.delete(f.id); S.openNodes.add(v); }
+    loadMesh();                     // viewport body ids follow the new name
+  };
+  input.onclick = e => e.stopPropagation();
+  input.ondblclick = e => e.stopPropagation();
+  input.onkeydown = e => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') finish(false);
+  };
+  input.onblur = () => finish(false);
 }
 
 function beginEdit(el, fid, param, oldVal) {

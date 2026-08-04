@@ -57,15 +57,20 @@ def feat(url, fid):
 
 
 def wait_param(url, fid, param, value, timeout=15):
-    """Poll until the feature's param reaches value (debounce + rebuild)."""
+    """Poll until the feature's param reaches value AND the rebuild finished.
+    Sync endpoints run in a threadpool, so /api/doc can observe the param
+    already written while the rebuild is still running (status 'stale',
+    volume from the previous build) — trusting that snapshot is a race."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         f = feat(url, fid)
-        if abs(float(f["params"].get(param, 0)) - value) < 1e-9:
+        if (abs(float(f["params"].get(param, 0)) - value) < 1e-9
+                and f["status"] == "ok"):
             return f
         time.sleep(0.2)
     raise AssertionError(
-        f"{fid}.{param} never became {value}; last: {f['params']}")
+        f"{fid}.{param} never became {value} with status ok; "
+        f"last: {f['params']} status={f['status']}")
 
 
 def open_edit(page, fid):

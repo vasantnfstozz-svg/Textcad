@@ -107,8 +107,23 @@ function paramField(p) {
     </label>`;
 }
 
+/* Fusion-style auto-name (disc1, fillet2, …): the user should never have to
+   INVENT an id — only override it when they want a meaningful one. Re-suggest
+   on op change only while the field still holds our previous suggestion. */
+let lastSuggestedId = '';
+function suggestId(op) {
+  const ids = new Set(((S.lastDoc && S.lastDoc.features) || []).map(f => f.id));
+  let n = 1; while (ids.has(op + n)) n++;
+  return op + n;
+}
+
 function renderFeatForm() {
   const op = S.OPS.find(o => o.op === document.getElementById('featOp').value);
+  const idEl = document.getElementById('featId');
+  if (!idEl.value.trim() || idEl.value === lastSuggestedId) {
+    lastSuggestedId = suggestId(op.op);
+    idEl.value = lastSuggestedId;
+  }
   document.getElementById('featParams').innerHTML =
     op.params.map(paramField).join('') +
     (op.note ? `<div class="opnote">ℹ ${op.note}</div>` : '');

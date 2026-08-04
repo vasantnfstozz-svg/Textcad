@@ -28,6 +28,7 @@ the recipe is the artifact, not just the STEP it produces.
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 import json
+import re
 
 import build123d as b3d
 from build123d import Pos
@@ -162,6 +163,28 @@ class Document:
             if f.id == feature_id:
                 return f
         raise KeyError(f"no feature named '{feature_id}'")
+
+    def rename(self, old: str, new: str) -> None:
+        """Rename a feature EVERYWHERE it is referenced (Fusion's browser
+        rename). The id doubles as the reference key, so inputs, the rollback
+        bar and the part cache are rewritten atomically — a rename can never
+        break the tree. Geometry is untouched: no rebuild needed."""
+        f = self.get(old)
+        new = (new or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", new):
+            raise ValueError("feature names use letters, digits, '_' or '-' "
+                             "(1-40 chars, no spaces)")
+        if new == old:
+            return
+        if any(x.id == new for x in self.features):
+            raise ValueError(f"duplicate feature id '{new}'")
+        f.id = new
+        for x in self.features:
+            x.inputs = [new if d == old else d for d in x.inputs]
+        if self.rollback == old:
+            self.rollback = new
+        if old in self._parts:
+            self._parts[new] = self._parts.pop(old)
 
     def remove(self, feature_id: str) -> None:
         dependents = [f.id for f in self.features if feature_id in f.inputs]
