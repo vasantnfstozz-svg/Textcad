@@ -248,14 +248,17 @@ section; tick them THERE too when done)
 - [ ] **Step 4 (later) — incremental tool-calling authoring**: the AI drives
   the same endpoints as the ribbon, verified per step; needed once AI
   designs reference existing faces.
-- [ ] **Step 5 — tree order + declutter + sketch highlight** (R4, R5, R3a):
-  consumed sketch renders ABOVE its consumer; suppress/rollback UI removed;
-  clicking a sketch row colors the sketch in the viewport (works for
-  consumed sketches too via a per-sketch mesh endpoint).
-- [ ] **Step 6 — edit-sketch isolation** (R3b): editing a sketch rolls the
-  model back to that sketch (its extrude + later features vanish, earlier
-  bodies stay), other floating sketches hidden while in sketch mode;
-  restored on Finish/Cancel.
+- [x] **Step 5 — tree order + declutter + sketch highlight** (`d14adde`,
+  2026-08-05): consumed sketch renders ABOVE its consumer (creation
+  order); suppress/rollback UI removed (backend kept); clicking a sketch
+  row colors it orange in the viewport — consumed sketches too, via new
+  GET /api/sketch-mesh/{id}, depth-ignoring overlay glows through the body.
+- [x] **Step 6 — edit-sketch isolation** (`d14adde`, 2026-08-05): editing
+  a sketch transiently sets doc.rollback to it (extrude + later features
+  vanish, earlier bodies stay), floating sketches hidden in sketch mode
+  (viewport listens to 'sketch-mode'); released on Finish/Cancel — save
+  runs under the bar, release does the one full rebuild. e2e: real ✎
+  click → bodyCount 1→0, rollback=sk1 → Finish → 1, rollback=None.
 - [ ] **Step 7 — on-screen dimension input while drawing** (R7): after the
   first click of a shape, a small input follows the cursor with the live
   dimension (r/w×h/…); typing a value + Enter commits exactly.
