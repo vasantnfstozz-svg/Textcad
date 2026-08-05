@@ -1280,9 +1280,12 @@ function updateDimEditor3D() {
   const e = selEnt >= 0 ? skEnts[selEnt] : null;
   const ok = sketchActive && e && DIM_KEYS[e.kind] && !clicks.length && !ghost;
   if (!ok) { el.style.display = 'none'; return; }
-  if (dimEditFor !== selEnt || !el.childElementCount) {
+  // cache by ENTITY IDENTITY, not index: after a delete, another shape can
+  // take the same index and inherit the previous shape's input fields (a
+  // circle showing W/H boxes — user report 2026-08-05)
+  if (dimEditFor !== e || !el.childElementCount) {
     buildDimEditor(e, el);
-    dimEditFor = selEnt;
+    dimEditFor = e;
   }
   // live refresh: dragging a resize handle must update the numbers too
   for (const inp of el.querySelectorAll('input')) {
@@ -1307,7 +1310,7 @@ const DIM_KEYS = {
   slot: [['length', 'L'], ['height', 'H']],
   regular_polygon: [['radius', 'R'], ['sides', 'N']],
 };
-let dimEditFor = -1;
+let dimEditFor = null;     // the ENTITY the editor was built for (not an index)
 
 function buildDimEditor(e, el) {
   el.innerHTML = '';

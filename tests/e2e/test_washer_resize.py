@@ -121,6 +121,27 @@ def test_drag_rect_corner_resizes_about_opposite(server, page, fresh_doc):
     assert not page.errors, page.errors
 
 
+def test_dim_editor_fields_follow_the_shape(server, page, fresh_doc):
+    """User report 2026-08-05: 'for circle i am getting w and h box'. The
+    floating dim editor cached its inputs BY INDEX — delete a rectangle and
+    a circle inheriting index 0 kept the rectangle's W/H fields."""
+    page.evaluate(OPEN_SKETCH % "rectangle")
+    page.evaluate(CLICK, [0, 0]); page.evaluate(CLICK, [20, 10])
+    page.evaluate(TOGGLE_TOOL % "rectangle")           # -> select mode
+    page.evaluate(CLICK, [10, 5])                      # select rect: W/H box
+    assert page.locator("#skDimEdit3d input").count() == 2
+    page.keyboard.press("Delete")                      # rect gone
+    page.evaluate(TOGGLE_TOOL % "circle")
+    page.evaluate(CLICK, [0, 0]); page.evaluate(CLICK, [10, 0])
+    page.evaluate(TOGGLE_TOOL % "circle")              # -> select mode
+    page.evaluate(CLICK, [3, 3])                       # select the circle
+    labels = page.locator("#skDimEdit3d label span").all_text_contents()
+    assert page.locator("#skDimEdit3d input").count() == 1, \
+        f"a circle has ONE dimension, got fields {labels}"
+    assert labels[0] == "R", labels
+    assert not page.errors, page.errors
+
+
 def test_dim_box_shows_unit(server, page, fresh_doc):
     page.evaluate(OPEN_SKETCH % "circle")
     page.evaluate(CLICK, [0, 0])
