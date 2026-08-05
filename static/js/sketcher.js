@@ -166,7 +166,8 @@ function enterMode() {
 function exitMode() {
   sketchActive = false;
   exitSketch3D();
-  for (const id of ['sk3dBar', 'sk3dDim', 'sk3dSnap', 'skDimEdit3d']) {
+  for (const id of ['sk3dBar', 'sk3dDim', 'sk3dSnap', 'skDimEdit3d',
+                    'skDimDraw']) {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   }
@@ -317,6 +318,7 @@ export function initSketcher() {
   // sketch mode is non-modal, so key handling lives on the window (guarded)
   window.addEventListener('keydown', e => {
     if (!sketchActive || e.target.tagName === 'INPUT') return;
+    if (routeDigitToDrawBox(e)) return;   // typing a number = dimension entry
     if (e.key === 'Escape' && (tool || clicks.length)) {
       e.preventDefault(); setTool(null);
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && selEnt >= 0) {
@@ -558,6 +560,7 @@ function pointerMove(p) {
     // actually land, not where the raw cursor is (it read "28, 19" while the
     // point was snapping to a model corner at 30, 20)
     const s = smartSnap(p);
+    lastMove = s;                 // the draw-time dimension box follows this
     setCoordsReadout(s);
     if (tool === 'path' && pathStart) ghost = pathGhost(s);
     else if (clicks.length) ghost = buildGhost(s);
@@ -1107,6 +1110,7 @@ function updateFloatingLabels() {
     ? { x: activeSnap.x, y: activeSnap.y + Math.max(snapTol3d, 1.6) } : null,
     activeSnap ? activeSnap.label : '');
   updateDimEditor3D();
+  updateDrawDimBox();
 }
 
 function updateDimEditor3D() {
@@ -1155,6 +1159,165 @@ function buildDimEditor(e, el) {
     };
     w.appendChild(inp); el.appendChild(w);
   }
+}
+
+/* ---------------- dimension box WHILE DRAWING (Step 7, Fusion) -------------
+   After the first click of a shape, a small input follows the cursor with
+   the LIVE dimension; just start typing (no click needed) and press Enter to
+   commit the exact size. Tab hops between fields (w↹h). Mouse keeps working:
+   a second click still commits at the clicked size. */
+
+const DRAW_DIMS = {
+  circle: [['r', 'R']],
+  rectangle: [['w', 'W'], ['h', 'H']],
+  ellipse: [['rx', 'Rx'], ['ry', 'Ry']],
+  slot: [['length', 'L'], ['height', 'H']],
+  regular_polygon: [['radius', 'R'], ['sides', 'N']],
+};
+let lastMove = null;         // latest snapped cursor point (plane coords)
+let drawDimKey = '';         // state signature — rebuild fields on change
+let drawLocked = {};         // field key -> user typed (stop live overwrite)
+
+function drawDimFields() {
+  if (!sketchActive || !tool || edgeOnView) return null;
+  if (tool === 'path')
+    return (pathStart && !pendingVia && segMode === 'line')
+      ? [['len', 'L']] : null;
+  return (DRAW_DIMS[tool] && clicks.length === 1) ? DRAW_DIMS[tool] : null;
+}
+
+/* live value of one field from the current ghost / cursor */
+function drawDimValue(key) {
+  if (key === 'len') {
+    const cur = pathCursor();
+    return (cur && lastMove) ? Math.hypot(lastMove.x - cur.x,
+                                          lastMove.y - cur.y) : 0;
+  }
+  const g = ghost || (lastMove && buildGhost(lastMove));
+  return g ? (g[key] ?? 0) : 0;
+}
+
+function updateDrawDimBox() {
+  const el = document.getElementById('skDimDraw');
+  if (!el) return;
+  const fields = drawDimFields();
+  if (!fields) {
+    el.style.display = 'none';
+    drawDimKey = ''; drawLocked = {};
+    return;
+  }
+  const sig = `${tool}|${clicks.length}|${pathSegs.length}|${pathStart ? 1 : 0}`;
+  if (sig !== drawDimKey) {
+    drawDimKey = sig; drawLocked = {};
+    el.innerHTML = '';
+    for (const [key, label] of fields) {
+      const w = document.createElement('label');
+      w.innerHTML = `<span>${label}</span>`;
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.step = 'any'; inp.dataset.dim = key;
+      inp.oninput = () => { drawLocked[key] = true; };
+      inp.onkeydown = ev => {
+        ev.stopPropagation();
+        if (ev.key === 'Enter') { ev.preventDefault(); commitDrawDims(); }
+        if (ev.key === 'Escape') {           // back to live values, keep tool
+          ev.preventDefault(); drawLocked = {}; inp.blur(); updateDrawDimBox();
+        }
+      };
+      w.appendChild(inp); el.appendChild(w);
+    }
+  }
+  for (const inp of el.querySelectorAll('input')) {
+    const key = inp.dataset.dim;
+    if (drawLocked[key] || document.activeElement === inp) continue;
+    const v = drawDimValue(key);
+    inp.value = key === 'sides' ? (v || 6) : fmtLen(v, false);
+  }
+  const at = lastMove || clicks[0] || pathStart;
+  const scr = at ? planeToScreen(at.x, at.y) : null;
+  const pane = document.getElementById('viewportPane').getBoundingClientRect();
+  if (!scr || scr.x < pane.left || scr.x > pane.right
+      || scr.y < pane.top || scr.y > pane.bottom) {
+    el.style.display = 'none';
+    return;
+  }
+  el.style.left = (scr.x - pane.left + 18) + 'px';
+  el.style.top = (scr.y - pane.top + 18) + 'px';
+  el.style.display = 'flex';
+}
+
+/* first digit typed anywhere in sketch mode lands in the box (Fusion) */
+function routeDigitToDrawBox(e) {
+  if (e.target.tagName === 'INPUT' || e.ctrlKey || e.metaKey) return false;
+  if (!/^[0-9.]$/.test(e.key)) return false;
+  const el = document.getElementById('skDimDraw');
+  if (!el || el.style.display === 'none') return false;
+  const inp = el.querySelector('input');
+  if (!inp) return false;
+  e.preventDefault();
+  inp.value = e.key;                 // number inputs put the caret at the end
+  drawLocked[inp.dataset.dim] = true;
+  inp.focus();
+  return true;
+}
+
+/* Enter in the box: commit the shape with the TYPED dimensions */
+function commitDrawDims() {
+  const el = document.getElementById('skDimDraw');
+  const fields = drawDimFields();
+  if (!el || !fields) return;
+  const val = {};
+  for (const inp of el.querySelectorAll('input')) {
+    const key = inp.dataset.dim;
+    const n = Number(inp.value);
+    val[key] = (!isNaN(n) && inp.value.trim() !== '')
+      ? (key === 'sides' ? Math.max(3, Math.round(n)) : Math.max(toMm(n), 0.1))
+      : (key === 'sides' ? 6 : Math.max(drawDimValue(key), 0.1));
+  }
+  el.style.display = 'none'; drawDimKey = ''; drawLocked = {};
+
+  if (tool === 'path') {                      // typed segment LENGTH along the
+    const cur = pathCursor();                 // current cursor direction
+    if (!cur || !lastMove) return;
+    const d = Math.hypot(lastMove.x - cur.x, lastMove.y - cur.y);
+    if (d < 1e-6 || !val.len) return;
+    const ux = (lastMove.x - cur.x) / d, uy = (lastMove.y - cur.y) / d;
+    pathSegs.push({ type: 'line',
+                    to: [snap(cur.x + ux * val.len), snap(cur.y + uy * val.len)] });
+    updateHint(); draw();
+    return;
+  }
+
+  const a = clicks[0];
+  if (!a) return;
+  const to = lastMove || a;
+  const sx = to.x >= a.x ? 1 : -1, sy = to.y >= a.y ? 1 : -1;
+  let ent = null;
+  if (tool === 'circle')
+    ent = { kind: 'circle', mode: 'add', x: a.x, y: a.y, r: val.r };
+  else if (tool === 'regular_polygon')
+    ent = { kind: 'regular_polygon', mode: 'add', x: a.x, y: a.y,
+            radius: val.radius, sides: val.sides, rotation: 0 };
+  else if (tool === 'rectangle')                    // first click = a CORNER,
+    ent = { kind: 'rectangle', mode: 'add',         // grows toward the cursor
+            x: a.x + sx * val.w / 2, y: a.y + sy * val.h / 2,
+            w: val.w, h: val.h, rotation: 0 };
+  else if (tool === 'ellipse')
+    ent = { kind: 'ellipse', mode: 'add', x: a.x, y: a.y,
+            rx: val.rx, ry: val.ry, rotation: 0 };
+  else if (tool === 'slot') {
+    const d = Math.max(Math.hypot(to.x - a.x, to.y - a.y), 1e-6);
+    const ux = (to.x - a.x) / d, uy = (to.y - a.y) / d;
+    ent = { kind: 'slot', mode: 'add',
+            x: a.x + ux * val.length / 2, y: a.y + uy * val.length / 2,
+            length: Math.max(val.length, val.height + 0.5),
+            height: val.height,
+            rotation: Math.round(Math.atan2(uy, ux) * 180 / Math.PI) };
+  }
+  if (!ent) return;
+  skEnts.push(ent);
+  selEnt = skEnts.length - 1;
+  clicks = []; ghost = null;
+  renderEnts(); updateHint();
 }
 
 /* ---------------- create the feature(s) ---------------- */

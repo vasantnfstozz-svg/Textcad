@@ -259,8 +259,13 @@ section; tick them THERE too when done)
   (viewport listens to 'sketch-mode'); released on Finish/Cancel — save
   runs under the bar, release does the one full rebuild. e2e: real ✎
   click → bodyCount 1→0, rollback=sk1 → Finish → 1, rollback=None.
-- [ ] **Step 7 — on-screen dimension input while drawing** (R7): after the
-  first click of a shape, a small input follows the cursor with the live
-  dimension (r/w×h/…); typing a value + Enter commits exactly.
+- [x] **Step 7 — on-screen dimension input while drawing** (R7,
+  2026-08-05): #skDimDraw follows the cursor after the first click with
+  live dims (circle R, rect W/H, ellipse Rx/Ry, slot L/H, N-gon R/N, path
+  segment L); first digit typed anywhere routes into the box, Tab hops
+  fields, Enter commits exact (rect anchors at clicked corner toward
+  cursor; slot/path direction from cursor); second click / Esc unchanged.
+  3 e2e tests, suite 232. Note: live values show the SNAPPED radius (the
+  value a click would land at) — typed values are exact and unsnapped.
 - [ ] **Step 8 — drag-resize sketch entities** (R6): grab a rim/corner
   point of an entity in select mode and pull/push to resize live.

@@ -304,16 +304,18 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 #ribbon .rbtn[title="Finish Sketch"] { color: var(--ok); font-weight: 700; }
 #ribbon .rbtn.active { color: var(--accent); background: var(--accent2);
   border-radius: 6px; }
-/* inline on-canvas dimension editor — type exact sizes next to the shape */
-#skDimEdit3d { position: absolute; z-index: 7; display: flex;
+/* inline on-canvas dimension editors — type exact sizes next to the shape
+   (#skDimEdit3d = selected entity; #skDimDraw = WHILE DRAWING, follows the
+   cursor between the first and second click — Fusion's dimension box) */
+#skDimEdit3d, #skDimDraw { position: absolute; z-index: 7; display: flex;
   gap: 5px; background: var(--panel); border: 1px solid var(--accent);
   border-radius: 6px; padding: 4px 6px; box-shadow: 0 4px 14px rgba(0,0,0,.5); }
-#skDimEdit3d label { display: flex; align-items: center;
+#skDimEdit3d label, #skDimDraw label { display: flex; align-items: center;
   gap: 3px; margin: 0; color: var(--dim); font-size: 11px; }
-#skDimEdit3d input { width: 52px; background: var(--panel2);
+#skDimEdit3d input, #skDimDraw input { width: 52px; background: var(--panel2);
   color: var(--text); border: 1px solid var(--line); border-radius: 4px;
   padding: 3px 5px; font: inherit; font-size: 12px; }
-#skDimEdit3d input:focus { border-color: var(--accent);
+#skDimEdit3d input:focus, #skDimDraw input:focus { border-color: var(--accent);
   outline: none; }
 
 /* Extrude panel — non-modal so the live 3D preview stays visible */
