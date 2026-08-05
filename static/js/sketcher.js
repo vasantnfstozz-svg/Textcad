@@ -14,6 +14,7 @@
 import { S } from './state.js';
 import { bus } from './bus.js';
 import { postJSON } from './api.js';
+import { modalGuard } from './dialogs.js';
 import { loadMesh, modelExtent } from './viewport.js';
 import { enterSketch3D, exitSketch3D, renderSketch3D,
          planeToScreen, gridStep } from './sketch3d.js';
@@ -232,6 +233,7 @@ export function openSketchEditor(plane = 'XY') {
    delete-and-redraw) — plane sketches AND face sketches, both in the viewport.
    A face sketch's plane is re-resolved by geometry via /api/face-outline. */
 export async function editSketch(feature) {
+  if (modalGuard()) return;         // finish the open tool (OK/Cancel) first
   const onFace = feature.op === 'sketch_on_face';
   let outline = null;
   if (onFace) {
@@ -267,6 +269,7 @@ export async function editSketch(feature) {
 bus.on('edit-sketch', editSketch);
 
 export async function openSketchOnFace(faceInfo) {
+  if (modalGuard()) return;         // finish the open tool (OK/Cancel) first
   const feats = S.lastDoc?.features || [];
   const tip = [...feats].reverse().find(f => f.volume != null);
   if (!tip) { bus.emit('msg', 'bot', '⚠ No solid to sketch on yet.'); return; }

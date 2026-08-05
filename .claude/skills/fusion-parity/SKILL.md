@@ -36,7 +36,16 @@ were each learned from a correction — do not regress them.
    chat immediately (warnIfFailed pattern) — never just a red dot.
 8. **Contextual modes.** Entering a mode (sketch) swaps the ribbon to a green
    contextual tab with Finish/Cancel; leaving restores the normal tabs.
-9. **A mode is never a separate screen.** Sketch mode is the NORMAL 3D view
+9. **ONE COMMAND AT A TIME (user mandate 2026-08-05 — applies to EVERY
+   current and future design tool).** While a tool's panel is open (e.g.
+   Extrude), every other design tool must REFUSE to start — chat message +
+   flash the open panel (`dialogs.modalGuard()`, driven by `S.modalTool` /
+   `S.modalToolPanel`) — until the user presses OK or Cancel. Never
+   silently cancel the open tool, never let the user land in sketch mode
+   with a tool panel still floating. A NEW tool with a panel MUST set
+   S.modalTool/S.modalToolPanel on open and clear them on OK/Cancel, and
+   its entry points must call modalGuard() first.
+10. **A mode is never a separate screen.** Sketch mode is the NORMAL 3D view
    with sketch tools switched on: the model stays in place, the sketch is
    drawn on its plane in the scene, and the user can orbit / pan / zoom at
    any moment while drawing (left = draw, right = orbit, middle = pan).

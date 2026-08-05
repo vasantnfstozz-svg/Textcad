@@ -13,6 +13,24 @@ const featDialog = () => document.getElementById('featDialog');
 const libDialog = () => document.getElementById('libDialog');
 const specDialog = () => document.getElementById('specDialog');
 
+/* ---------------- one command at a time ----------------
+   User mandate (2026-08-05, applies to EVERY design tool): while a tool's
+   panel is open (e.g. Extrude), other tools must REFUSE — say why in chat
+   and flash the open panel — until the user presses OK or Cancel. */
+export function modalGuard() {
+  if (!S.modalTool) return false;
+  bus.emit('msg', 'bot', `⚠ Finish the ${S.modalTool} first — press OK or ` +
+    `Cancel in its panel (flashing on the right).`);
+  const el = S.modalToolPanel && document.getElementById(S.modalToolPanel);
+  if (el) {
+    el.classList.remove('modalflash');
+    void el.offsetWidth;                    // restart the CSS animation
+    el.classList.add('modalflash');
+    setTimeout(() => el.classList.remove('modalflash'), 1300);
+  }
+  return true;
+}
+
 /* ---------------- File actions ---------------- */
 
 export async function actionNew() {

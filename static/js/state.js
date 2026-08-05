@@ -6,4 +6,9 @@ export const S = {
   openNodes: new Set(),   // expanded tree nodes
   OPS: [],                // /api/ops catalog (cached)
   pickedFace: null,       // last face picked in the viewport {center,normal,type,id}
+  // ONE COMMAND AT A TIME (user mandate 2026-08-05): while a tool's panel is
+  // open, every other design tool refuses until OK/Cancel. The open tool sets
+  // these; dialogs.modalGuard() enforces them everywhere.
+  modalTool: null,        // e.g. 'Extrude' while its panel is open
+  modalToolPanel: null,   // element id of the open panel (flashed on refusal)
 };

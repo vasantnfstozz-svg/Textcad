@@ -196,6 +196,27 @@ section; tick them THERE too when done)
   slot/rect COM to the drawn position. Untested grid cell: rotation ≠ 0 at
   off-origin positions had no coverage (gauntlet lesson, textcad-dev §4).
 
+- **R12 (2026-08-05): taper ring must narrow "untill it become a flat
+  surface" (Fusion).** User's words: "i can make it wideer or closer using
+  this circle option right, in our case when we are going closer, it wont
+  go after certain limit right... in fusion, it will goes untill it become
+  a flat surface... we can short it untill becoming a flat plate". Fixed:
+  clamp factor 0.92→0.995 for HOLE-LESS profiles (probed: exact collapse
+  angle is an OCCT singularity, a hair under builds a wedge/near-apex
+  fine; rects even build BEYOND it); profiles with holes keep 0.92 —
+  hole-wall collision genuinely breaks the kernel.
+- **R13 (2026-08-05): ONE COMMAND AT A TIME — permanent rule.** User's
+  words: "when pressing the exturde button, the box is pobbing out right,
+  i did not see it was not open, so i went to sketch, the box was still
+  open in the sketch tab... i should not go to the sketch tab, untill i am
+  pressing ok or cancel to that box... this should be apply to the
+  upcoming the design tools, alwazs remember this". Encoded as
+  fusion-parity golden rule 9 + `dialogs.modalGuard()` on S.modalTool:
+  ribbon buttons, tree actions/dblclicks/rename/param-edits and
+  sketch-on-face all refuse with a chat message while the open panel
+  FLASHES (.modalflash). Extrude sets/clears it; every future tool panel
+  must do the same.
+
 ## Confirmed root causes
 
 - **R1a — authoring treats sketch→extrude as a fallback, primitives as

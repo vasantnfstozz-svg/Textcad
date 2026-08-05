@@ -113,6 +113,16 @@ function fill(id, items, val) {
 const g = id => document.getElementById(id);
 
 function setHeader(text) { panel().querySelector('.exhead').textContent = text; }
+/* one-command-at-a-time (user mandate 2026-08-05): while this panel is open,
+   dialogs.modalGuard() makes every other tool refuse until OK/Cancel */
+function showPanel() {
+  panel().style.display = 'block';
+  S.modalTool = 'Extrude';
+  S.modalToolPanel = 'extrudeDialog';
+}
+function releaseModal() {
+  if (S.modalTool === 'Extrude') { S.modalTool = null; S.modalToolPanel = null; }
+}
 function unlockDialog() {           // edit mode locks rows — a NEW session resets
   setHeader('↑ Extrude');
   g('exProfile').title = '';
@@ -147,7 +157,7 @@ export function openExtrude(preProfile) {
     g('exOp').value = 'join';            // pulling a face usually grows the body
     g('exDir').disabled = true;          // face extrude is one-directional (drag ± instead)
     syncRows();
-    panel().style.display = 'block';
+    showPanel();
     createPreview();
     return;
   }
@@ -183,7 +193,7 @@ export function openExtrude(preProfile) {
     g('exTaper').value = '0'; g('exFlip').checked = false; g('exOp').value = 'new';
     g('exDir').disabled = false;
     syncRows();
-    panel().style.display = 'block';
+    showPanel();
     createPreview();
     return;
   }
@@ -261,7 +271,7 @@ export function openExtrudeEdit(fid) {
   }
   setHeader(`✎ Edit ${f.id}`);
   syncRows();
-  panel().style.display = 'block';
+  showPanel();
   placeArrow();
   setupGhost();
   setExtrudeArrowAmount(original.flip ? -original.amount : original.amount);
@@ -330,16 +340,21 @@ function safeRadius(loops) {
 
 /* live barrier: keep a NARROWING taper (or a distance under taper) inside the
    buildable range. Flaring (negative taper) never collapses, so it stays free.
-   If safeR is unknown, don't block — the verified back-off will catch it. */
+   If safeR is unknown, don't block — the verified back-off will catch it.
+   Fusion parity (user mandate 2026-08-05): a HOLE-LESS profile may narrow all
+   the way to full collapse — a wedge/apex "flat" limit (0.995: probed — the
+   exact singular angle fails in OCCT, a hair under builds fine). Profiles
+   with holes keep the 0.92 margin: hole-wall collision genuinely breaks. */
+const taperF = () => (st && st.hasHoles ? 0.92 : 0.995);
 function clampTaperFn(t) {
   if (t <= 0 || !st || !st.safeR) return t;             // flare = free
   const a = Math.abs(Number(g('exDist').value) || 1);
-  return Math.min(t, Math.atan(0.92 * st.safeR / Math.max(a, 0.01)) * 180 / Math.PI);
+  return Math.min(t, Math.atan(taperF() * st.safeR / Math.max(a, 0.01)) * 180 / Math.PI);
 }
 function clampAmountFn(a) {
   const t = Number(g('exTaper').value) || 0;
   if (t <= 0 || !st || !st.safeR) return a;
-  const maxA = 0.92 * st.safeR / Math.tan(t * Math.PI / 180);
+  const maxA = taperF() * st.safeR / Math.tan(t * Math.PI / 180);
   return Math.max(-maxA, Math.min(maxA, a));
 }
 
@@ -357,6 +372,7 @@ async function setupGhost() {
       // the ghost is the REAL face shape — outline + holes (circle stays round)
       const loops = [{ outer: data.outer, holes: data.holes }];
       st.safeR = safeRadius(loops);
+      st.hasHoles = !!(data.holes && data.holes.length);
       beginExtrudeGhost(data.frame, loops);
       setupTaperRing(data.frame, loops);
     } else {
@@ -381,6 +397,8 @@ async function setupGhost() {
       }
       const loops = loopsForEntities(prof.params.entities);
       st.safeR = safeRadius(loops);
+      st.hasHoles = (prof.params.entities || [])
+        .some(e => e.mode === 'subtract');
       beginExtrudeGhost(frame, loops);
       setupTaperRing(frame, loops);
     }
@@ -604,6 +622,7 @@ async function teardown() {
 }
 
 async function cancel() {
+  releaseModal();
   if (st && st.editing) {                // edit mode: the feature stays — put
     const { extrudeId, original } = st;  // its ORIGINAL params back verbatim
     endExtrudeArrow(); endExtrudeGhost(); endTaperRing();
@@ -618,6 +637,7 @@ async function cancel() {
 }
 
 function ok() {
+  releaseModal();
   const editing = st && st.editing;
   const created = st && st.extrudeId;
   endExtrudeArrow();
@@ -636,6 +656,7 @@ function ok() {
    can't be selected anymore. Keeps any already-committed extrude (it's a real
    verified feature); just clears the gizmos + panel. Mirrors cancelPlanePick. */
 export function cancelExtrude() {
+  releaseModal();
   cancelProfilePick();               // a pending "pick a profile" dies with us
   if (!st && panel().style.display === 'none') return;
   endExtrudeArrow();

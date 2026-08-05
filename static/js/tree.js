@@ -6,7 +6,7 @@ import { S } from './state.js';
 import { postJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
 import { loadMesh, showFeatureOverlay, clearHighlight } from './viewport.js';
-import { openFeatDialog } from './dialogs.js';
+import { openFeatDialog, modalGuard } from './dialogs.js';
 import { openExtrude, openExtrudeEdit, activeExtrudeId } from './extrude.js';
 import { fmtVol } from './settings.js';
 
@@ -162,7 +162,10 @@ function buildRow(doc, f) {
   // elsewhere on the row is Edit Feature)
   const nameEl = row.querySelector('.nname');
   nameEl.title = 'double-click to rename';
-  nameEl.ondblclick = e => { e.stopPropagation(); beginRename(nameEl, f); };
+  nameEl.ondblclick = e => {
+    e.stopPropagation();
+    if (!modalGuard()) beginRename(nameEl, f);
+  };
 
   const acts = document.createElement('span'); acts.className = 'nacts';
   if (f.op === 'sketch' || f.op === 'sketch_on_face') {
@@ -189,6 +192,7 @@ function buildRow(doc, f) {
   row.onclick = () => selectFeature(f.id);
   // Fusion's gesture: double-click a feature = edit it with its own tool
   row.ondblclick = () => {
+    if (modalGuard()) return;
     if (f.op === 'sketch' || f.op === 'sketch_on_face') bus.emit('edit-sketch', f);
     else if (f.op === 'extrude' || f.op === 'extrude_face') openExtrudeEdit(f.id);
   };
@@ -198,7 +202,7 @@ function buildRow(doc, f) {
 function addAct(parent, label, title, fn) {
   const b = document.createElement('button'); b.className = 'nact';
   b.textContent = label; b.title = title;
-  b.onclick = e => { e.stopPropagation(); fn(); };
+  b.onclick = e => { e.stopPropagation(); if (!modalGuard()) fn(); };
   parent.appendChild(b);
 }
 
@@ -214,13 +218,17 @@ function buildBody(f) {
       cb.type = 'checkbox'; cb.checked = v; cb.style.width = 'auto';
       cb.onclick = e => e.stopPropagation();
       cb.onchange = async () => {
+        if (modalGuard()) { cb.checked = !cb.checked; return; }
         await postJSON('/api/edit', { feature_id: f.id, param: k, value: cb.checked });
         loadMesh();
       };
       val.appendChild(cb); pr.appendChild(val); body.appendChild(pr);
     } else if (typeof v === 'number' || typeof v === 'string') {
       val.className = 'pval'; val.textContent = v; val.title = 'click to edit';
-      val.onclick = e => { e.stopPropagation(); beginEdit(val, f.id, k, v); };
+      val.onclick = e => {
+        e.stopPropagation();
+        if (!modalGuard()) beginEdit(val, f.id, k, v);
+      };
       pr.appendChild(val); body.appendChild(pr);
     } else if (Array.isArray(v) && v.length && Array.isArray(v[0])) {
       body.appendChild(pr);                       // label row

@@ -5,7 +5,7 @@ import { S } from './state.js';
 import { bus } from './bus.js';
 import { OP_ICONS, TOOL_NAMES } from './icons.js';
 import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport,
-         actionUndo, actionSpec, loadSample } from './dialogs.js';
+         actionUndo, actionSpec, loadSample, modalGuard } from './dialogs.js';
 import { openSketchEditor, finishSketch, cancelSketch,
          setSketchTool, sketchModify } from './sketcher.js';
 import { openSettings } from './settings.js';
@@ -145,24 +145,27 @@ function renderRibbon() {
     const tools = document.createElement('div'); tools.className = 'rtools';
     for (const item of items) {
       const b = document.createElement('button'); b.className = 'rbtn';
+      // one-command-at-a-time: every ribbon tool refuses while a tool panel
+      // (e.g. Extrude) is open — OK/Cancel it first (user mandate 2026-08-05)
+      const guard = fn => () => { if (!modalGuard()) fn(); };
       if (item.t) {                                   // a sketch draw tool
         const s = SKETCH_TOOLS[item.t];
         b.title = s.name;
         b.classList.toggle('active', curSketchTool === item.t);
         b.innerHTML = `<span class="rico">${s.icon}</span><span>${s.name}</span>`;
-        b.onclick = () => setSketchTool(item.t);
+        b.onclick = guard(() => setSketchTool(item.t));
       } else if (typeof item === 'object') {          // named action
         const a = ACTIONS[item.a];
         b.title = a.name;
         b.innerHTML = `<span class="rico">${a.icon}</span><span>${a.name}</span>`;
-        b.onclick = a.fn;
+        b.onclick = guard(a.fn);
       } else {                                        // an op
         b.title = item;
         b.innerHTML = `<span class="rico">${OP_ICONS[item] || '□'}</span>` +
                       `<span>${TOOL_NAMES[item] || item}</span>`;
-        b.onclick = item === 'extrude' ? () => openExtrude()
+        b.onclick = guard(item === 'extrude' ? () => openExtrude()
           : PLACEABLE.includes(item) ? () => startPlacement(item)
-          : () => openFeatDialog(item);
+          : () => openFeatDialog(item));
       }
       tools.appendChild(b);
     }
