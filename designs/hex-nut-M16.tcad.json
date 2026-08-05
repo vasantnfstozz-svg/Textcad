@@ -1,0 +1,34 @@
+{
+  "name": "hex-nut-M16",
+  "spec": {
+    "n_solids": 1,
+    "symmetry": 6,
+    "holes": {
+      "8.0": 1
+    },
+    "tol": 0.5
+  },
+  "features": [
+    {
+      "id": "nut_body",
+      "op": "hex_plate",
+      "params": {
+        "across_flats": 24,
+        "thickness": 13
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "thread_bore",
+      "op": "with_center_hole",
+      "params": {
+        "radius": 8
+      },
+      "inputs": [
+        "nut_body"
+      ],
+      "suppressed": false
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "name": "flange-100",
+  "spec": {
+    "symmetry": 6,
+    "n_solids": 1,
+    "holes": {
+      "4.0": 6
+    },
+    "tol": 0.5
+  },
+  "features": [
+    {
+      "id": "body",
+      "op": "disc",
+      "params": {
+        "radius": 50,
+        "thickness": 10
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "bore",
+      "op": "with_center_hole",
+      "params": {
+        "radius": 20
+      },
+      "inputs": [
+        "body"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "bolts",
+      "op": "with_bolt_circle",
+      "params": {
+        "count": 8,
+        "bolt_radius": 4,
+        "pitch_circle_dia": 76
+      },
+      "inputs": [
+        "bore"
+      ],
+      "suppressed": false
+    }
+  ]
+}

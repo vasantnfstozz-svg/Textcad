@@ -43,8 +43,12 @@ complete. Details + Done history: MANUAL-DESIGN.md.
 - [ ] **Vendor three.js locally** (unpkg CDN today — app breaks offline).
 - [ ] **No LICENSE file / third-party notices.** Decide license; NOTICE for
   build123d/OCCT/three.js.
-- [ ] **No git remote (backup!).** `winget install GitHub.cli` + `gh auth login`
-  (user), then private repo + push + CI running pytest.
+- [x] **No git remote (backup!)** — DONE 2026-08-05: private repo
+  https://github.com/Vasan0021/textcad (gh CLI installed, device-flow auth,
+  keyring). designs/*.tcad.json un-ignored so the design library is backed
+  up too; ship-check now ends with `git push`. Still open: CI running
+  pytest (heavy: build123d + playwright install per run — needs its own
+  pass).
 - [ ] **Assemblies/joints in Studio** (assembly.py exists; UI is single-part).
 - [ ] **Units/grid settings** — everything is implicitly mm; at least label it.
 - [ ] **AI-flow polish** (chat edits during rollback etc.) — parked until manual

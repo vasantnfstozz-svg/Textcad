@@ -1,0 +1,29 @@
+{
+  "name": "mcp-live-washer",
+  "spec": {
+    "n_solids": 1
+  },
+  "features": [
+    {
+      "id": "body",
+      "op": "disc",
+      "params": {
+        "radius": 20,
+        "thickness": 4
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "hole",
+      "op": "with_center_hole",
+      "params": {
+        "radius": 10
+      },
+      "inputs": [
+        "body"
+      ],
+      "suppressed": false
+    }
+  ]
+}

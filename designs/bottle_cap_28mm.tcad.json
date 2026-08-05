@@ -1,0 +1,98 @@
+{
+  "name": "bottle-cap-28mm",
+  "spec": {
+    "n_solids": 1,
+    "symmetry": 24,
+    "size": [
+      43.1,
+      43.1,
+      22
+    ],
+    "tol": 0.5
+  },
+  "features": [
+    {
+      "id": "cap_shell",
+      "op": "revolve_profile",
+      "params": {
+        "points": [
+          [
+            0,
+            22
+          ],
+          [
+            19,
+            22
+          ],
+          [
+            20.5,
+            20
+          ],
+          [
+            20.5,
+            0
+          ],
+          [
+            17,
+            0
+          ],
+          [
+            17,
+            19.5
+          ],
+          [
+            0,
+            19.5
+          ]
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "grip_rib",
+      "op": "plate",
+      "params": {
+        "width": 2,
+        "depth": 3,
+        "thickness": 20
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "rib_placed",
+      "op": "move",
+      "params": {
+        "x": 20.5,
+        "y": 0,
+        "z": 10
+      },
+      "inputs": [
+        "grip_rib"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_ring",
+      "op": "polar_pattern",
+      "params": {
+        "count": 24
+      },
+      "inputs": [
+        "rib_placed"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cap",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "cap_shell",
+        "rib_ring"
+      ],
+      "suppressed": false
+    }
+  ]
+}

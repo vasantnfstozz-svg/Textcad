@@ -1,0 +1,280 @@
+{
+  "name": "oneplus_7_pro_case",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      78.9,
+      165.6,
+      null
+    ],
+    "tol": 3.0
+  },
+  "features": [
+    {
+      "id": "base_shell",
+      "op": "plate",
+      "params": {
+        "width": 78.9,
+        "depth": 165.6,
+        "thickness": 10.8
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "inner_cavity",
+      "op": "plate",
+      "params": {
+        "width": 75.9,
+        "depth": 162.6,
+        "thickness": 8.8
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "inner_raised",
+      "op": "move",
+      "params": {
+        "z": 1.0
+      },
+      "inputs": [
+        "inner_cavity"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "hollowed_case",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "base_shell",
+        "inner_raised"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "screen_lip_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 5.4,
+        "entities": [
+          {
+            "kind": "rectangle",
+            "w": 76.9,
+            "h": 163.6,
+            "x": 0,
+            "y": 0,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "screen_lip",
+      "op": "extrude",
+      "params": {
+        "amount": 1.2
+      },
+      "inputs": [
+        "screen_lip_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "case_with_lip",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "hollowed_case",
+        "screen_lip"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "camera_cutout",
+      "op": "plate",
+      "params": {
+        "width": 20.0,
+        "depth": 15.0,
+        "thickness": 12.0
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "camera_positioned",
+      "op": "move",
+      "params": {
+        "y": 75.0,
+        "z": 0
+      },
+      "inputs": [
+        "camera_cutout"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "charging_port",
+      "op": "plate",
+      "params": {
+        "width": 12.0,
+        "depth": 8.0,
+        "thickness": 12.0
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "charging_positioned",
+      "op": "move",
+      "params": {
+        "y": -78.0,
+        "z": -2.0
+      },
+      "inputs": [
+        "charging_port"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "left_speaker",
+      "op": "plate",
+      "params": {
+        "width": 8.0,
+        "depth": 4.0,
+        "thickness": 12.0
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "left_speaker_pos",
+      "op": "move",
+      "params": {
+        "x": -20.0,
+        "y": -78.0,
+        "z": -2.0
+      },
+      "inputs": [
+        "left_speaker"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "right_speaker",
+      "op": "plate",
+      "params": {
+        "width": 8.0,
+        "depth": 4.0,
+        "thickness": 12.0
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "right_speaker_pos",
+      "op": "move",
+      "params": {
+        "x": 20.0,
+        "y": -78.0,
+        "z": -2.0
+      },
+      "inputs": [
+        "right_speaker"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "power_button",
+      "op": "plate",
+      "params": {
+        "width": 12.0,
+        "depth": 12.0,
+        "thickness": 12.0
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "power_positioned",
+      "op": "move",
+      "params": {
+        "x": 42.0,
+        "y": 20.0,
+        "z": 0
+      },
+      "inputs": [
+        "power_button"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "volume_up",
+      "op": "plate",
+      "params": {
+        "width": 12.0,
+        "depth": 15.0,
+        "thickness": 12.0
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "volume_up_pos",
+      "op": "move",
+      "params": {
+        "x": -42.0,
+        "y": 30.0,
+        "z": 0
+      },
+      "inputs": [
+        "volume_up"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "volume_down",
+      "op": "plate",
+      "params": {
+        "width": 12.0,
+        "depth": 15.0,
+        "thickness": 12.0
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "volume_down_pos",
+      "op": "move",
+      "params": {
+        "x": -42.0,
+        "y": 10.0,
+        "z": 0
+      },
+      "inputs": [
+        "volume_down"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "final_case",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "case_with_lip",
+        "camera_positioned",
+        "charging_positioned",
+        "left_speaker_pos",
+        "right_speaker_pos",
+        "power_positioned",
+        "volume_up_pos",
+        "volume_down_pos"
+      ],
+      "suppressed": false
+    }
+  ]
+}

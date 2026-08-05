@@ -13,7 +13,9 @@ description: The pre-commit shipping routine for TextCAD — full test suite, se
 4. **Frontend changed?** Confirm `main.js?v=N` was bumped in static/index.html
    and every new JS/CSS file serves 200 from `/static/...`.
 5. **Commit** with capability + proof in the message
-   (`git` is at `C:\Program Files\Git\cmd\git.exe`).
+   (`git` is at `C:\Program Files\Git\cmd\git.exe`), then **`git push`** —
+   the private backup at https://github.com/Vasan0021/textcad only protects
+   what actually gets pushed (gh CLI is authenticated via keyring).
 6. **Update memory** (the project memory file) with what shipped, the commit
    hash, and any lessons/bugs discovered.
 7. Tell the user what to do to SEE it (usually Ctrl+F5) and how to verify it

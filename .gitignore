@@ -4,3 +4,6 @@ __pycache__/
 *.stl
 _studio_mesh.stl
 *.tcad.json
+# the design LIBRARY is user work — back it up (root-level .tcad.json are
+# self-test artifacts and stay ignored)
+!designs/*.tcad.json
