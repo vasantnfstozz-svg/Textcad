@@ -967,6 +967,15 @@ function addBodies(bodies) {
 
 function bodyMeshes() { return bodyObjs.map(b => b.mesh); }
 
+/* While sketch MODE is on, floating sketch profiles hide (user mandate R3:
+   the sketch being edited is drawn by the sketcher itself; other sketches
+   must not clutter the isolated view — Fusion behavior). */
+let sketchesHidden = false;
+bus.on('sketch-mode', ({ active }) => {
+  sketchesHidden = active;
+  for (const o of sketchObjs) o.visible = !active;
+});
+
 function addSketches(sketches) {
   for (const s of sketches || []) {
     if (s.positions.length) {
@@ -979,6 +988,7 @@ function addSketches(sketches) {
         color: 0x43c579, transparent: true, opacity: 0.18,
         side: THREE.DoubleSide, depthWrite: false }));
       m.userData.sketchId = s.id;      // profiles are PICKABLE (Fusion)
+      m.visible = !sketchesHidden;
       scene.add(m); sketchObjs.push(m);
     }
     for (const line of s.outlines || []) {
@@ -986,6 +996,7 @@ function addSketches(sketches) {
         line.map(p => new THREE.Vector3(p[0], p[1], p[2])));
       const l = new THREE.Line(g, new THREE.LineBasicMaterial({
         color: 0x43c579 }));
+      l.visible = !sketchesHidden;
       scene.add(l); sketchObjs.push(l);
     }
   }
@@ -1056,12 +1067,46 @@ function fitToObjects(objs) {
 /* ---------------- feature overlay (tree row click) ---------------- */
 
 export function clearHighlight() {
-  if (hlMesh) { scene.remove(hlMesh); hlMesh.geometry.dispose(); hlMesh = null; }
+  if (!hlMesh) return;
+  scene.remove(hlMesh);
+  for (const o of (hlMesh.isGroup ? hlMesh.children : [hlMesh]))
+    if (o.geometry) o.geometry.dispose();
+  hlMesh = null;
 }
 
 export async function showFeatureOverlay(fid) {
   clearHighlight();
+  const f = ((S.lastDoc && S.lastDoc.features) || []).find(x => x.id === fid);
   try {
+    if (f && (f.op === 'sketch' || f.op === 'sketch_on_face')) {
+      // sketches highlight from their own tessellation — a CONSUMED sketch
+      // has no scene object at all (it sits inside its extrude), so the
+      // overlay must ignore depth to glow through the body
+      const m = await (await fetch('/api/sketch-mesh/' + fid
+                                   + '?t=' + Date.now())).json();
+      if (m.error || S.selected !== fid) return;
+      const grp = new THREE.Group();
+      if (m.positions.length) {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position',
+          new THREE.Float32BufferAttribute(m.positions, 3));
+        g.setIndex(m.indices);
+        grp.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+          color: 0xffb85c, transparent: true, opacity: 0.35,
+          side: THREE.DoubleSide, depthWrite: false, depthTest: false })));
+      }
+      for (const line of m.outlines || []) {
+        const g = new THREE.BufferGeometry().setFromPoints(
+          line.map(p => new THREE.Vector3(p[0], p[1], p[2])));
+        grp.add(new THREE.Line(g, new THREE.LineBasicMaterial({
+          color: 0xffb85c, depthTest: false })));
+      }
+      grp.renderOrder = 5;
+      grp.traverse(o => { o.renderOrder = 5; });
+      hlMesh = grp;
+      scene.add(grp);
+      return;
+    }
     const geo = await new STLLoader()
       .loadAsync('/api/feature-mesh/' + fid + '.stl?t=' + Date.now());
     geo.computeVertexNormals();

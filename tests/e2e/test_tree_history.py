@@ -51,15 +51,64 @@ def feats(url):
     return httpx.get(f"{url}/api/doc", timeout=5).json()["features"]
 
 
-def test_sketch_nests_under_its_consumer(server, page, fresh_doc):
+def test_sketch_nests_with_its_consumer(server, page, fresh_doc):
     page.evaluate(BUILD)
     page.wait_for_selector("#tree .nrow >> text=ex1")
     sk_node = page.locator("#tree .node", has=page.locator(".nname", has_text="sk1"))
     assert "child" in sk_node.get_attribute("class"), \
         "consumed sketch must nest as a child of its extrude"
-    # display order: the consumer first, its sketch nested after it
+    # creation order (user mandate R4): the sketch FIRST, its consumer below
     names = page.locator("#tree .nname").all_text_contents()
-    assert names.index("ex1") < names.index("sk1")
+    assert names.index("sk1") < names.index("ex1")
+    assert not page.errors, page.errors
+
+
+def test_no_suppress_or_rollback_actions(server, page, fresh_doc):
+    """User mandate R5: suppress + rollback are gone from the tree UI."""
+    page.evaluate(BUILD)
+    page.wait_for_selector("#tree .nrow >> text=ex1")
+    page.locator("#tree .nrow", has_text="ex1").hover()
+    assert page.locator("#tree button[title*='suppress']").count() == 0
+    assert page.locator("#tree button[title*='roll back']").count() == 0
+    assert page.locator("#tree .rollbar").count() == 0
+    assert not page.errors, page.errors
+
+
+def test_edit_sketch_isolates_model(server, page, fresh_doc):
+    """User mandate R3 (Fusion): editing a sketch rolls the model back to it —
+    the consuming extrude's body vanishes while editing, and returns after
+    Finish Sketch."""
+    page.evaluate(BUILD)
+    page.wait_for_selector("#tree .nrow >> text=ex1")
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+
+    row = page.locator("#tree .nrow",
+                       has=page.locator(".nname", has_text="sk1"))
+    row.hover()
+    row.locator("button[title^='edit this sketch']").click()
+    page.wait_for_function("() => window.__vp.bodyCount() === 0", timeout=20000)
+    doc = httpx.get(f"{server}/api/doc", timeout=5).json()
+    assert doc["rollback"] == "sk1", "edit must roll back to the sketch"
+
+    page.click("#ribbon .rbtn[title='Finish Sketch']")
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    doc = httpx.get(f"{server}/api/doc", timeout=5).json()
+    assert doc["rollback"] is None, "finish must release the rollback"
+    f = next(x for x in doc["features"] if x["id"] == "ex1")
+    assert f["status"] == "ok"
+    assert not page.errors, page.errors
+
+
+def test_selected_sketch_highlights(server, page, fresh_doc):
+    """User mandate R3a: clicking a consumed sketch row colors it in the
+    viewport (needs the per-sketch mesh endpoint — STL can't do sketches)."""
+    page.evaluate(BUILD)
+    page.wait_for_selector("#tree .nrow >> text=sk1")
+    m = httpx.get(f"{server}/api/sketch-mesh/sk1", timeout=10).json()
+    assert m.get("outlines"), "consumed sketch must still tessellate"
+    page.locator("#tree .nrow",
+                 has=page.locator(".nname", has_text="sk1")).click()
+    page.wait_for_timeout(600)
     assert not page.errors, page.errors
 
 

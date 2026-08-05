@@ -372,6 +372,30 @@ def get_mesh():
     return Response(status_code=404)
 
 
+def _sketch_mesh_data(p) -> dict | None:
+    """Tessellation of one built Sketch: triangle fill + edge outlines."""
+    positions, indices = [], []
+    base = 0
+    try:
+        for face in p.faces():
+            verts, tris = face.tessellate(0.3)
+            for v in verts:
+                positions += [round(v.X, 4), round(v.Y, 4), round(v.Z, 4)]
+            for t in tris:
+                indices += [base + t[0], base + t[1], base + t[2]]
+            base += len(verts)
+        outlines = []
+        for edge in p.edges():
+            gt = str(edge.geom_type).replace("GeomType.", "")
+            n = 2 if gt == "LINE" else 24
+            pts = [edge @ (i / n) for i in range(n + 1)]
+            outlines.append([[round(q.X, 4), round(q.Y, 4), round(q.Z, 4)]
+                             for q in pts])
+    except Exception:
+        return None
+    return {"positions": positions, "indices": indices, "outlines": outlines}
+
+
 def _sketches_json(doc: Document) -> list[dict]:
     """Unconsumed sketches, tessellated so the viewport can SHOW them as
     floating 2D profiles (like Fusion). Consumed sketches (already extruded /
@@ -384,27 +408,10 @@ def _sketches_json(doc: Document) -> list[dict]:
         p = doc._parts.get(f.id)
         if p is None or not sketchlib.is_sketch(p):
             continue
-        positions, indices = [], []
-        base = 0
-        try:
-            for face in p.faces():
-                verts, tris = face.tessellate(0.3)
-                for v in verts:
-                    positions += [round(v.X, 4), round(v.Y, 4), round(v.Z, 4)]
-                for t in tris:
-                    indices += [base + t[0], base + t[1], base + t[2]]
-                base += len(verts)
-            outlines = []
-            for edge in p.edges():
-                gt = str(edge.geom_type).replace("GeomType.", "")
-                n = 2 if gt == "LINE" else 24
-                pts = [edge @ (i / n) for i in range(n + 1)]
-                outlines.append([[round(q.X, 4), round(q.Y, 4), round(q.Z, 4)]
-                                 for q in pts])
-        except Exception:
+        m = _sketch_mesh_data(p)
+        if m is None:
             continue
-        out.append({"id": f.id, "positions": positions, "indices": indices,
-                    "outlines": outlines})
+        out.append({"id": f.id, **m})
     return out
 
 
@@ -547,6 +554,20 @@ def get_model():
             "faces": result_mesh["faces"], "edges": result_mesh["edges"],
             "sketches": sketches,
             "bodies": bodies}
+
+
+@app.get("/api/sketch-mesh/{feature_id}")
+def get_sketch_mesh(feature_id: str):
+    """Tessellation of ONE sketch feature — consumed or not — so the tree can
+    highlight a selected sketch in the viewport (feature-mesh only does
+    solids; a consumed sketch isn't in /api/model's sketches at all)."""
+    p = _doc()._parts.get(feature_id)
+    if p is None or not sketchlib.is_sketch(p):
+        return {"error": "not a built sketch"}
+    m = _sketch_mesh_data(p)
+    if m is None:
+        return {"error": "tessellation failed"}
+    return {"id": feature_id, **m}
 
 
 @app.get("/api/feature-mesh/{feature_id}.stl")

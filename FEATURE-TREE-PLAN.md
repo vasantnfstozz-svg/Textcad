@@ -119,6 +119,45 @@ section; tick them THERE too when done)
   server crash — chat designs are memory-only; reproduce for the artifact
   when needed.)
 
+- **R3 (2026-08-05): editing a sketch must ISOLATE it (Fusion rollback
+  behavior).** User's words: "in fusion, everything is recoederd step by
+  step right, like for examble when i click sketch, i want to see only the
+  sketch, when i am pressing sketch the sketch should visible in other
+  color, when i want to edit the sketch, it will go to, sketch tab right,
+  where i want see only the sketch not other bode or extrude as well, only
+  sketch, if i want to see extrude, i can see the extrude that belongs to
+  the sketch, like that, not other sketch is not need to show when i am
+  editing". Reading: (a) clicking a sketch row highlights the sketch in the
+  viewport in a distinct color; (b) EDITING a sketch temporarily rolls the
+  model back to that sketch's point in history — the extrude it feeds (and
+  everything later) disappears while editing, earlier bodies stay; other
+  sketches are hidden. This is exactly Fusion's edit-sketch timeline
+  rollback.
+- **R4 (2026-08-05): tree order — sketch first, its extrude after.**
+  User's words: "the tree order is not proper, it should start from sketch
+  below extrude and then what ever i sam doing, right now the extrude is
+  in the top and sketch is below that, i dont want that". Step 2's
+  grouping put the consumer ABOVE its nested sketch; creation order is
+  sketch → extrude and the tree must read that way.
+- **R5 (2026-08-05): remove suppress + rollback from the tree UI.**
+  User's words: "in the feature tree, ehast is the surpress and rolback
+  bar, other option, right now, we dont need them, just remove them".
+  Remove the ⏸ suppress and ⤒ rollback row actions and the rollback bar
+  from the UI (backend stays — R3's edit-isolation is BUILT on the
+  rollback machinery).
+- **R6 (2026-08-05): sketch entities must be drag-resizable.** User's
+  words: "when i am editing the sketch, i can simpley pick anz point just
+  pull it to make it bigger or push it reduse smaller, like that i need".
+  Grab a point on an entity (circle rim, rectangle corner) and drag to
+  resize it live.
+- **R7 (2026-08-05): on-screen dimension input while drawing.** User's
+  words: "when i am drawing in the sketch tab, in the number tan should in
+  the, for examble, if i am drawing a ciecrl, after picked a point, when i
+  am moving out, the small box should show,a dia or radis in mm, where i
+  can simpley type and press ender like that i need". Fusion's dimension
+  box: after the first click of a shape, a small input follows the cursor
+  showing the live dimension; typing a number + Enter commits it exactly.
+
 ## Confirmed root causes
 
 - **R1a — authoring treats sketch→extrude as a fallback, primitives as
@@ -153,6 +192,29 @@ section; tick them THERE too when done)
   must be re-openable with the same tool that created it** — that single
   rule is what makes one history serve both manual and AI design.
 
+- **R3a — clicking a sketch row highlights NOTHING.**
+  [viewport.js:1062](static/js/viewport.js#L1062) `showFeatureOverlay`
+  fetches `/api/feature-mesh/{id}.stl` — STL export of a 2D Sketch fails →
+  silent catch. Worse: consumed sketches aren't even in the scene
+  ([studio.py:375](studio.py#L375) `_sketches_json` ships UNCONSUMED only),
+  so there is nothing to color. Fix: per-sketch tessellation endpoint +
+  sketch branch in the overlay.
+- **R3b — edit-sketch shows everything.** [sketcher.js:213](static/js/sketcher.js#L213)
+  `editSketch` never touches the model state — the consuming extrude's body
+  sits exactly on top of the sketch being edited. Fusion rolls the timeline
+  back to the sketch. We HAVE that machinery: `doc.rollback` + `/api/rollback`
+  build-to-here — set it transiently on edit, restore on finish/cancel.
+- **R4 — step 2's grouping renders consumer first, nested sketch after**
+  ([tree.js](static/js/tree.js) makeNode loop). Creation order is sketch →
+  extrude; swap to child-first.
+- **R5 — suppress/rollback row actions + rollbar** built in tree.js
+  buildRow/renderDoc; remove from UI, keep backend (R3b uses rollback).
+- **R6 — no drag-resize:** sketcher select mode drags entities by CENTER
+  only (drag-move); no handle/point grabbing to change r/w/h.
+- **R7 — no dimension input while drawing:** sketcher shows live dims as
+  SVG text (dimensionSVG) but there is no typable box; exact sizes require
+  editing the entity card afterwards.
+
 ## Steps
 
 - [x] **Step 1 — Edit Feature for extrude** (`9721185`, 2026-08-04). ✎ on an
@@ -186,3 +248,16 @@ section; tick them THERE too when done)
 - [ ] **Step 4 (later) — incremental tool-calling authoring**: the AI drives
   the same endpoints as the ribbon, verified per step; needed once AI
   designs reference existing faces.
+- [ ] **Step 5 — tree order + declutter + sketch highlight** (R4, R5, R3a):
+  consumed sketch renders ABOVE its consumer; suppress/rollback UI removed;
+  clicking a sketch row colors the sketch in the viewport (works for
+  consumed sketches too via a per-sketch mesh endpoint).
+- [ ] **Step 6 — edit-sketch isolation** (R3b): editing a sketch rolls the
+  model back to that sketch (its extrude + later features vanish, earlier
+  bodies stay), other floating sketches hidden while in sketch mode;
+  restored on Finish/Cancel.
+- [ ] **Step 7 — on-screen dimension input while drawing** (R7): after the
+  first click of a shape, a small input follows the cursor with the live
+  dimension (r/w×h/…); typing a value + Enter commits exactly.
+- [ ] **Step 8 — drag-resize sketch entities** (R6): grab a rim/corner
+  point of an entity in select mode and pull/push to resize live.

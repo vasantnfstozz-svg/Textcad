@@ -91,11 +91,12 @@ main { flex: 1; display: flex; min-height: 0; }
 .node { position: relative; }
 .node.suppressed > .nrow { opacity: .45; }
 .node.rolledback { opacity: .35; }
-/* a consumed sketch nests under the feature that used it (Fusion browser) */
+/* a consumed sketch nests ABOVE the feature that used it (creation order:
+   sketch first, its extrude below — user mandate R4) */
 .node.child { margin-left: 22px; }
-.node.child::before { content: ""; position: absolute; left: -9px; top: 0;
-  bottom: 50%; width: 8px; border-left: 1px solid var(--line);
-  border-bottom: 1px solid var(--line); border-bottom-left-radius: 5px; }
+.node.child::before { content: ""; position: absolute; left: -9px; top: 50%;
+  bottom: -8px; width: 8px; border-left: 1px solid var(--line);
+  border-top: 1px solid var(--line); border-top-left-radius: 5px; }
 .nname input { width: 110px; font: inherit; background: var(--panel2);
   color: var(--text); border: 1px solid var(--accent); border-radius: 4px;
   padding: 1px 4px; }

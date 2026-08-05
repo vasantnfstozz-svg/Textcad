@@ -72,24 +72,24 @@ export function renderDoc(doc) {
       + (hasKids ? ' haskids' : '') + (child ? ' child' : '');
     node.appendChild(buildRow(doc, f));
     node.appendChild(buildBody(f));
-    const probs = f.problems.filter(p => p !== '(suppressed)').map(humanProblem);
+    // '(after rollback bar)' is edit-isolation plumbing, not a user problem —
+    // the dimmed row already says "not built right now"
+    const probs = f.problems
+      .filter(p => p !== '(suppressed)' && p !== '(after rollback bar)')
+      .map(humanProblem);
     if (probs.length) {
       const pd = document.createElement('div'); pd.className = 'nproblems';
       pd.textContent = probs.join(' • '); node.appendChild(pd);
     }
     el.appendChild(node);
-    if (doc.rollback === f.id) {
-      const bar = document.createElement('div'); bar.className = 'rollbar';
-      bar.title = 'rollback bar — features below are not built';
-      el.appendChild(bar);
-    }
   };
   for (const f of doc.features) {
-    if (consumerOf[f.id]) continue;          // renders under its consumer
-    makeNode(f, false);
+    if (consumerOf[f.id]) continue;          // renders with its consumer
+    // creation order (user mandate R4): the sketch FIRST, its consumer below
     for (const d of f.inputs)
       if (consumerOf[d] === f.id)
         makeNode(doc.features.find(x => x.id === d), true);
+    makeNode(f, false);
   }
   renderWarnings(doc, el);
   renderSpecRow(doc, el);
@@ -178,16 +178,8 @@ function buildRow(doc, f) {
     addAct(acts, '✎', 'edit this extrude (reopens the Extrude tool with its ' +
       'arrow and live preview)', () => openExtrudeEdit(f.id));
   }
-  const isBar = doc.rollback === f.id;
-  addAct(acts, isBar ? '⤓' : '⤒',
-    isBar ? 'release rollback bar (build everything)'
-          : 'roll back to here (build only up to this feature)',
-    () => postJSON('/api/rollback', { feature_id: isBar ? null : f.id })
-            .then(() => loadMesh()));
-  addAct(acts, f.suppressed ? '▶' : '⏸',
-    f.suppressed ? 'unsuppress' : 'suppress',
-    () => postJSON('/api/feature/suppress',
-      { feature_id: f.id, suppressed: !f.suppressed }).then(() => loadMesh()));
+  // suppress + rollback actions removed from the UI (user mandate R5) — the
+  // backend machinery stays: edit-sketch isolation is built on rollback
   addAct(acts, '✕', 'delete feature',
     () => postJSON('/api/feature/remove', { feature_id: f.id })
             .then(() => loadMesh()));

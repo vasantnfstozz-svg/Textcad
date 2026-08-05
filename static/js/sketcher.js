@@ -171,6 +171,26 @@ function exitMode() {
     if (el) el.style.display = 'none';
   }
   bus.emit('sketch-mode', { active: false });
+  releaseIsolation();               // fallback — normally released by create()
+}
+
+/* Fusion edit-sketch isolation (R3): editing a committed sketch rolls the
+   model back to that sketch's point in history — its extrude and everything
+   later vanish while editing, earlier bodies stay. Built on the backend
+   rollback machinery (the UI bar is gone, the engine remains). */
+let skIsolated = false;
+
+async function isolateAt(featureId) {
+  skIsolated = true;
+  await postJSON('/api/rollback', { feature_id: featureId });
+  loadMesh();
+}
+
+async function releaseIsolation() {
+  if (!skIsolated) return;
+  skIsolated = false;
+  await postJSON('/api/rollback', { feature_id: null });
+  loadMesh();
 }
 
 /* test/debug accessor: what is currently drawn on the sketch canvas, and the
@@ -237,6 +257,7 @@ export async function editSketch(feature) {
   // frame the existing geometry (fall back to the face outline, then origin)
   pendingFocus = focusOnPoints(skEnts.map(e => [e.x || 0, e.y || 0]))
     || focusOnPoints(faceRef?.outer);
+  await isolateAt(feature.id);      // Fusion: the model rolls back to here
   enterMode();
   updateHint();
   renderEnts();
@@ -1152,16 +1173,17 @@ async function create() {
       if (!['kind', 'mode', 'ghostOpen'].includes(k)) o[k] = e[k];
     return o;
   });
-  exitMode();
   const id = skName || 'sketch1';
 
   if (skEditId) {
-    // editing an existing sketch: replace its entities in place (plane/offset
-    // too for plane sketches; a face sketch keeps its stored face reference)
+    // editing an existing sketch: replace its entities in place FIRST (a
+    // fast rebuild up to the rollback bar), THEN exit — releasing the
+    // edit-isolation triggers the one full rebuild with the new entities
     const params = skOnFace ? { entities }
       : { plane: skPlaneName, offset: skPlaneOffset, entities };
     const doc = await postJSON('/api/feature/params', {
       feature_id: skEditId, params }, 'updating sketch…');
+    exitMode();
     loadMesh();
     const f = (doc.features || []).find(x => x.id === skEditId);
     bus.emit('msg', 'bot', doc.error || (f && f.status === 'failed')
@@ -1171,6 +1193,7 @@ async function create() {
     return;
   }
 
+  exitMode();
   if (skOnFace) {
     // Fusion: finishing a face sketch creates the SKETCH only — no auto
     // boss/pocket. Extrude (which takes sketches and picked faces) does that,
