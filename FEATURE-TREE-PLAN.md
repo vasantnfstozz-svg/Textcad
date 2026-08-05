@@ -173,9 +173,16 @@ section; tick them THERE too when done)
   re-render between a double-click's two clicks makes Chromium never fire
   dblclick. Proof: 3 backend tests + 4 e2e (test_tree_history.py), suite
   221 green, screenshot-verified.
-- [ ] **Step 3 — AI records the same history**: sketch-first authoring
-  contract in author.py + tree lint gate (blob trees rejected, model
-  retries). Capture one real logo tree as the before-artifact first.
+- [x] **Step 3 — AI records the same history** (`9f5559a`, 2026-08-05).
+  AUTHOR_PROMPT: "RECORD A DESIGN HISTORY" — sketch→extrude primary,
+  flat-artwork recipe, no transform chains, meaningful ids; `lint_tree()`
+  gate in `_to_document` (>10-entity sketches, one-sketch blobs >4
+  entities, generic ids → rejected pre-geometry, repair loop feeds back);
+  generate.py max_tokens 2000→8000 (truncated history trees read as
+  "unterminated string" JSON errors). Before/after on "the spider man
+  logo": 10 features/0 sketches (ball+tubes+rotate chains) → 13 features,
+  5 named sketch→extrude pairs + patterns + fuse, verified, recognizable
+  emblem (designs/spiderman-logo.tcad.json). 5 new tests, suite 226.
 - [ ] **Step 4 (later) — incremental tool-calling authoring**: the AI drives
   the same endpoints as the ribbon, verified per step; needed once AI
   designs reference existing faces.
