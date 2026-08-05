@@ -317,6 +317,8 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
   padding: 3px 5px; font: inherit; font-size: 12px; }
 #skDimEdit3d input:focus, #skDimDraw input:focus { border-color: var(--accent);
   outline: none; }
+#skDimEdit3d .dimunit, #skDimDraw .dimunit { color: var(--dim);
+  font-size: 10px; }
 
 /* Extrude panel — non-modal so the live 3D preview stays visible */
 #extrudeDialog { position: fixed; top: 150px; right: 24px; width: 250px;

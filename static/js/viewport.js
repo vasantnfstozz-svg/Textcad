@@ -984,10 +984,14 @@ function addSketches(sketches) {
         new THREE.Float32BufferAttribute(s.positions, 3));
       g.setIndex(s.indices);
       g.computeVertexNormals();
+      // polygonOffset: a sketch drawn ON a body's face is COPLANAR with it —
+      // without the offset it z-fights and reads as "my sketch disappeared"
       const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
         color: 0x43c579, transparent: true, opacity: 0.18,
-        side: THREE.DoubleSide, depthWrite: false }));
+        side: THREE.DoubleSide, depthWrite: false,
+        polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
       m.userData.sketchId = s.id;      // profiles are PICKABLE (Fusion)
+      m.renderOrder = 2;
       m.visible = !sketchesHidden;
       scene.add(m); sketchObjs.push(m);
     }
@@ -995,7 +999,9 @@ function addSketches(sketches) {
       const g = new THREE.BufferGeometry().setFromPoints(
         line.map(p => new THREE.Vector3(p[0], p[1], p[2])));
       const l = new THREE.Line(g, new THREE.LineBasicMaterial({
-        color: 0x43c579 }));
+        color: 0x43c579,
+        polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+      l.renderOrder = 2;
       l.visible = !sketchesHidden;
       scene.add(l); sketchObjs.push(l);
     }

@@ -166,6 +166,23 @@ section; tick them THERE too when done)
   studio.py `__main__` boots an EMPTY "untitled" document; samples remain
   under File → Examples, saved work under File → Open.
 
+- **R9 (2026-08-05): unit label in the dimension boxes.** User's words:
+  "just add mm, in the boxes, near to taht numbers, becuase sometimes it
+  feels something off". Show the unit next to every dim input
+  (#skDimDraw + #skDimEdit3d).
+- **R10 (2026-08-05): nested shapes must make HOLES, and new sketches on
+  a body must be visible.** User's words: "when i draw a new box, or some
+  shapes, if i am drwaing new shapes inside that design, its not showing
+  in the design tab, its one problem, and next when i am extrding that, i
+  can see the small box in the ghost box, at the end i am just getting
+  some big merged box... lets sat i am drawing two circile outer circle
+  and inner circle, when i am extruding, i should get a washer like that,
+  instead i am just getting a solid box, its not usefull". Two parts:
+  (a) a finished sketch drawn ON a body's face z-fights with the face and
+  is invisible; (b) every drawn shape gets mode "add", so an inner circle
+  UNIONS instead of cutting — Fusion's even-odd region rule expected
+  (shape inside a shape = hole).
+
 ## Confirmed root causes
 
 - **R1a — authoring treats sketch→extrude as a fallback, primitives as
@@ -275,5 +292,15 @@ section; tick them THERE too when done)
   cursor; slot/path direction from cursor); second click / Esc unchanged.
   3 e2e tests, suite 232. Note: live values show the SNAPPED radius (the
   value a click would land at) — typed values are exact and unsnapped.
-- [ ] **Step 8 — drag-resize sketch entities** (R6): grab a rim/corner
-  point of an entity in select mode and pull/push to resize live.
+- [x] **Step 8 — drag-resize + even-odd holes + mm labels + z-fight fix**
+  (2026-08-05, R6+R9+R10): resize handles on the selected shape (circle/
+  N-gon rim → radius, rect corner → resize about OPPOSITE corner, ellipse
+  cardinals, slot ends re-aim, polygon/path vertices); `assignModes()`
+  even-odd rule — a shape drawn inside another auto-becomes a HOLE (two
+  circles = washer; containment by OUTLINE sampling, NOT centroid —
+  concentric circles broke the centroid version; never recomputed on
+  merely opening a sketch); unit labels in both dim boxes; finished
+  sketches get polygonOffset so on-face sketches stop z-fighting.
+  4 e2e tests incl. the user's exact washer flow (volume within 1% of
+  π(R²−r²)h). Lesson: e2e "page" fixture boots BEFORE fresh_doc resets —
+  never hardcode auto-generated ids; resolve them from /api/doc.

@@ -322,7 +322,8 @@ export function initSketcher() {
     if (e.key === 'Escape' && (tool || clicks.length)) {
       e.preventDefault(); setTool(null);
     } else if ((e.key === 'Delete' || e.key === 'Backspace') && selEnt >= 0) {
-      e.preventDefault(); skEnts.splice(selEnt, 1); selEnt = -1; renderEnts();
+      e.preventDefault(); skEnts.splice(selEnt, 1); selEnt = -1;
+      assignModes(); renderEnts();
     }
   });
 
@@ -538,6 +539,14 @@ let dragging = null;      // {idx, startX, startY, ex, ey} moving an entity
 function pointerDown(raw) {
   if (tool === 'trim') { trimClick(); return 'tool'; }
   if (tool) { placeClick(smartSnap(raw)); return 'tool'; }
+  // RESIZE handles first (step 8): a grab point on a shape beats moving it
+  const grab = resizeGrab(raw);
+  if (grab) {
+    selEnt = grab.idx;
+    dragging = { resize: grab };
+    draw();
+    return 'drag';
+  }
   const hit = hitTest(raw);
   if (hit >= 0) {
     selEnt = hit;
@@ -568,6 +577,11 @@ function pointerMove(p) {
     return;
   }
   setCoordsReadout(p);
+  if (dragging && dragging.resize) {
+    applyResize(dragging.resize, snapPt(p));
+    draw();
+    return;
+  }
   if (dragging) {
     const ent = skEnts[dragging.idx];
     ent.x = snap(dragging.ex + (p.x - dragging.startX));
@@ -577,7 +591,116 @@ function pointerMove(p) {
 }
 
 function pointerUp() {
-  dragging = null;
+  if (dragging) {                 // moved OR resized: nesting may have changed
+    dragging = null;
+    assignModes();
+    renderEnts();
+  }
+}
+
+/* ---------------- drag-resize handles (step 8, R6) ----------------
+   Grab a point ON a shape and pull: circle/N-gon rim -> radius, rectangle
+   corner -> resize about the OPPOSITE corner, ellipse cardinal -> rx/ry,
+   slot end -> length+direction, polygon/path vertex -> move that vertex. */
+
+function entityHandles(e) {
+  const x = e.x || 0, y = e.y || 0, a = (e.rotation || 0) * Math.PI / 180;
+  const rot = (px, py) => ({ x: x + px * Math.cos(a) - py * Math.sin(a),
+                             y: y + px * Math.sin(a) + py * Math.cos(a) });
+  const hs = [];
+  if (e.kind === 'circle')
+    for (const [px, py] of [[e.r, 0], [-e.r, 0], [0, e.r], [0, -e.r]])
+      hs.push({ ...rot(px, py), kind: 'radius' });
+  else if (e.kind === 'regular_polygon')
+    for (let k = 0; k < e.sides; k++) {
+      const t = Math.PI / 2 + k * 2 * Math.PI / e.sides;
+      hs.push({ ...rot(e.radius * Math.cos(t), e.radius * Math.sin(t)),
+                kind: 'radius' });
+    }
+  else if (e.kind === 'rectangle') {
+    const c = [[-e.w / 2, -e.h / 2], [e.w / 2, -e.h / 2],
+               [e.w / 2, e.h / 2], [-e.w / 2, e.h / 2]];
+    c.forEach(([px, py], i) => {
+      const opp = c[(i + 2) % 4];
+      hs.push({ ...rot(px, py), kind: 'corner', anchor: rot(opp[0], opp[1]) });
+    });
+  } else if (e.kind === 'ellipse') {
+    hs.push({ ...rot(e.rx, 0), kind: 'rx' }, { ...rot(-e.rx, 0), kind: 'rx' },
+            { ...rot(0, e.ry), kind: 'ry' }, { ...rot(0, -e.ry), kind: 'ry' });
+  } else if (e.kind === 'slot') {
+    const hx = e.length / 2;
+    hs.push({ ...rot(hx, 0), kind: 'slotend', anchor: rot(-hx, 0) },
+            { ...rot(-hx, 0), kind: 'slotend', anchor: rot(hx, 0) },
+            { ...rot(0, e.height / 2), kind: 'height' },
+            { ...rot(0, -e.height / 2), kind: 'height' });
+  } else if (e.kind === 'polygon' && e.points) {
+    e.points.forEach((p, i) =>
+      hs.push({ x: x + p[0], y: y + p[1], kind: 'vertex', index: i }));
+  } else if (e.kind === 'path' && e.start) {
+    hs.push({ x: x + e.start[0], y: y + e.start[1], kind: 'pathpt',
+              field: 'start' });
+    (e.segments || []).forEach((s, i) => {
+      hs.push({ x: x + s.to[0], y: y + s.to[1], kind: 'pathpt',
+                field: 'to', index: i });
+      if (s.via) hs.push({ x: x + s.via[0], y: y + s.via[1], kind: 'pathpt',
+                           field: 'via', index: i });
+    });
+  }
+  return hs;
+}
+
+function resizeGrab(p) {
+  const tolW = snapTolWorld();
+  const order = [];
+  if (selEnt >= 0 && skEnts[selEnt]) order.push(selEnt);
+  for (let i = skEnts.length - 1; i >= 0; i--)
+    if (i !== selEnt) order.push(i);
+  for (const i of order)
+    for (const h of entityHandles(skEnts[i]))
+      if (Math.hypot(p.x - h.x, p.y - h.y) <= tolW)
+        return { idx: i, handle: h };
+  return null;
+}
+
+function applyResize(grab, p) {
+  const e = skEnts[grab.idx];
+  const h = grab.handle;
+  const x = e.x || 0, y = e.y || 0, a = -(e.rotation || 0) * Math.PI / 180;
+  // cursor in the entity's local (un-rotated) frame
+  const lx = (p.x - x) * Math.cos(a) - (p.y - y) * Math.sin(a);
+  const ly = (p.x - x) * Math.sin(a) + (p.y - y) * Math.cos(a);
+  if (h.kind === 'radius') {
+    const r = Math.max(Math.hypot(p.x - x, p.y - y), 0.5);
+    if (e.kind === 'circle') e.r = r; else e.radius = r;
+  } else if (h.kind === 'rx') e.rx = Math.max(Math.abs(lx), 0.5);
+  else if (h.kind === 'ry') e.ry = Math.max(Math.abs(ly), 0.5);
+  else if (h.kind === 'height') {
+    e.height = Math.min(Math.max(Math.abs(ly) * 2, 0.5), e.length - 0.5);
+  } else if (h.kind === 'corner') {
+    // the opposite corner stays PUT; the grabbed one follows the cursor
+    const A = h.anchor, ra = (e.rotation || 0) * Math.PI / 180;
+    const dxl = (p.x - A.x) * Math.cos(-ra) - (p.y - A.y) * Math.sin(-ra);
+    const dyl = (p.x - A.x) * Math.sin(-ra) + (p.y - A.y) * Math.cos(-ra);
+    e.w = Math.max(Math.abs(dxl), 0.5);
+    e.h = Math.max(Math.abs(dyl), 0.5);
+    e.x = A.x + (dxl / 2) * Math.cos(ra) - (dyl / 2) * Math.sin(ra);
+    e.y = A.y + (dxl / 2) * Math.sin(ra) + (dyl / 2) * Math.cos(ra);
+  } else if (h.kind === 'slotend') {
+    // re-aim: the other end cap stays PUT, length + rotation follow
+    const A = h.anchor;
+    const d = Math.max(Math.hypot(p.x - A.x, p.y - A.y), e.height + 0.5);
+    const ang = Math.atan2(p.y - A.y, p.x - A.x);
+    e.length = d;
+    e.rotation = Math.round(ang * 180 / Math.PI);
+    e.x = A.x + (d / 2) * Math.cos(ang);
+    e.y = A.y + (d / 2) * Math.sin(ang);
+  } else if (h.kind === 'vertex') {
+    e.points[h.index] = [p.x - x, p.y - y];
+  } else if (h.kind === 'pathpt') {
+    if (h.field === 'start') e.start = [p.x - x, p.y - y];
+    else if (h.field === 'via') e.segments[h.index].via = [p.x - x, p.y - y];
+    else e.segments[h.index].to = [p.x - x, p.y - y];
+  }
 }
 
 function setCoordsReadout(p) {
@@ -625,6 +748,7 @@ function modifySel(fn) {
   if (!copy) return;
   skEnts.push(copy);
   selEnt = skEnts.length - 1;
+  assignModes();
   renderEnts();
 }
 
@@ -737,6 +861,7 @@ function placeClick(p) {
     const ent = twoClickEntity(tool, clicks[0], clicks[1]);
     if (ent) { skEnts.push(ent); selEnt = skEnts.length - 1; }
     clicks = []; ghost = null;
+    assignModes();                 // inner shape = hole (even-odd, R10)
     renderEnts(); updateHint();
   } else {
     ghost = buildGhost(p); draw(); updateHint();
@@ -797,6 +922,7 @@ function finishPath() {
                 start: [pathStart.x, pathStart.y], segments: pathSegs });
   selEnt = skEnts.length - 1;
   pathStart = null; pathSegs = []; pendingVia = null;
+  assignModes();
   renderEnts(); updateHint();
 }
 
@@ -811,6 +937,7 @@ function finishPolygon() {
   skEnts.push({ kind: 'polygon', mode: 'add', x: 0, y: 0, points: pts });
   selEnt = skEnts.length - 1;
   clicks = []; ghost = null;
+  assignModes();
   renderEnts(); updateHint();
 }
 
@@ -862,6 +989,36 @@ function pointInPolygon(x, y, pts) {
 }
 
 function renderEnts() { draw(); }
+
+/* Fusion's even-odd region rule, approximated (R10): a closed shape whose
+   centroid lies inside an ODD number of other closed shapes is a HOLE
+   (mode subtract) — an inner circle makes a washer, a ring inside it is a
+   boss again. Recomputed whenever the user changes the sketch (place, move,
+   resize, delete, duplicate) — NOT on merely opening an existing sketch,
+   so a committed design never changes by being looked at. */
+function assignModes() {
+  const outlines = skEnts.map(e => {
+    const o = outlinePts(e);
+    return o && o.closed && o.pts.length >= 3 ? o.pts : null;
+  });
+  // CONTAINMENT, not centroid-in: concentric circles share a centre, so the
+  // outer's centroid sits "inside" the inner too — sampling the OUTLINE
+  // tells them apart (the outer's rim is not inside the inner)
+  const containedIn = (a, b) => {
+    const step = Math.max(1, Math.floor(a.length / 8));
+    for (let k = 0; k < a.length; k += step)
+      if (!pointInPolygon(a[k][0], a[k][1], b)) return false;
+    return true;
+  };
+  skEnts.forEach((e, i) => {
+    if (!outlines[i]) return;
+    let depth = 0;
+    outlines.forEach((pts, j) => {
+      if (j !== i && pts && containedIn(outlines[i], pts)) depth++;
+    });
+    e.mode = depth % 2 === 1 ? 'subtract' : 'add';
+  });
+}
 
 function updateHint() {
   const el = document.getElementById('sk3dHelp');
@@ -1013,6 +1170,10 @@ function draw3D() {
 
   const dR = Math.max(snapTol3d * 0.35, 0.6);
   const dots = clicks.map(c => ({ x: c.x, y: c.y, r: dR, color: 0x4da3ff }));
+  // resize handles of the SELECTED shape — grab one and pull (step 8)
+  if (!tool && selEnt >= 0 && skEnts[selEnt])
+    for (const h of entityHandles(skEnts[selEnt]))
+      dots.push({ x: h.x, y: h.y, r: dR * 0.85, color: 0x4da3ff, ring: true });
   // Mark every model snap target so it is VISIBLE before you hover it. Without
   // these, a box's corners in plan view are invisible points you have to hunt
   // for — "we need something for selecting to those edges" was exactly this.
@@ -1123,6 +1284,12 @@ function updateDimEditor3D() {
     buildDimEditor(e, el);
     dimEditFor = selEnt;
   }
+  // live refresh: dragging a resize handle must update the numbers too
+  for (const inp of el.querySelectorAll('input')) {
+    if (document.activeElement === inp) continue;
+    const key = inp.dataset.dim;
+    if (key) inp.value = key === 'sides' ? e.sides : fmtLen(e[key] ?? 0, false);
+  }
   const scr = planeToScreen(e.x || 0, e.y || 0);
   if (!scr) { el.style.display = 'none'; return; }
   const pane = document.getElementById('viewportPane').getBoundingClientRect();
@@ -1148,7 +1315,7 @@ function buildDimEditor(e, el) {
     const w = document.createElement('label');
     w.innerHTML = `<span>${label}</span>`;
     const inp = document.createElement('input');
-    inp.type = 'number'; inp.step = 'any';
+    inp.type = 'number'; inp.step = 'any'; inp.dataset.dim = key;
     inp.value = key === 'sides' ? e.sides : fmtLen(e[key] ?? 0, false);
     inp.onkeydown = ev => { ev.stopPropagation(); if (ev.key === 'Enter') inp.blur(); };
     inp.oninput = () => {
@@ -1157,7 +1324,13 @@ function buildDimEditor(e, el) {
       e[key] = key === 'sides' ? Math.max(3, Math.round(v)) : toMm(v);
       draw();
     };
-    w.appendChild(inp); el.appendChild(w);
+    w.appendChild(inp);
+    if (key !== 'sides') {                  // "12.5" alone feels off — say mm
+      const u = document.createElement('span');
+      u.className = 'dimunit'; u.textContent = unitLabel();
+      w.appendChild(u);
+    }
+    el.appendChild(w);
   }
 }
 
@@ -1223,7 +1396,13 @@ function updateDrawDimBox() {
           ev.preventDefault(); drawLocked = {}; inp.blur(); updateDrawDimBox();
         }
       };
-      w.appendChild(inp); el.appendChild(w);
+      w.appendChild(inp);
+      if (key !== 'sides') {                // "12.5" alone feels off — say mm
+        const u = document.createElement('span');
+        u.className = 'dimunit'; u.textContent = unitLabel();
+        w.appendChild(u);
+      }
+      el.appendChild(w);
     }
   }
   for (const inp of el.querySelectorAll('input')) {
@@ -1317,6 +1496,7 @@ function commitDrawDims() {
   skEnts.push(ent);
   selEnt = skEnts.length - 1;
   clicks = []; ghost = null;
+  assignModes();
   renderEnts(); updateHint();
 }
 

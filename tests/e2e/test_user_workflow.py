@@ -293,7 +293,11 @@ def test_cut_a_pocket_through_the_real_ui(face_sketch_via_real_click):
     page.evaluate(CLICK, [15, 5, 1.5])               # radius = 5
     page.click("#ribbon .rbtn[title='Finish Sketch']")
     page.wait_for_function(NOT_ACTIVE, timeout=15000)
-    page.wait_for_timeout(800)
+    # the exit tween must FINISH before projecting world->pixels: a fixed
+    # sleep raced it under load, the click landed off the profile, the pick
+    # fell to the FACE and Cut (sketch-mode-only flip) silently didn't flip
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.wait_for_timeout(400)
 
     inside = page.evaluate(TO_SCREEN, [10, 5, 10])   # pick the circle profile
     page.click("#vSelect")
