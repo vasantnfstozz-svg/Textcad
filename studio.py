@@ -876,7 +876,10 @@ def chat(req: ChatReq):
 
 if __name__ == "__main__":
     import uvicorn
-    _new_tab(sample_flange())
+    # Start EMPTY (user mandate 2026-08-05: the demo flange forced a
+    # primitive-tree "disc with bolts" on every launch). Samples stay
+    # available under File -> Examples; saved work under File -> Open.
+    _new_tab(Document(name="untitled"))
     _rebuild_and_mesh()
     url = "http://127.0.0.1:8123"
     print(f"TextCAD Studio -> {url}")

@@ -158,6 +158,14 @@ section; tick them THERE too when done)
   box: after the first click of a shape, a small input follows the cursor
   showing the live dimension; typing a number + Enter commits it exactly.
 
+- **R8 (2026-08-05): the server must not open the demo flange on every
+  launch.** User's words: "what is some disc with both, everytime, its
+  loading, it does not have a proper fresature tree, even i can edit".
+  The hardcoded `sample_flange()` boot doc (disc + bore + bolts — an
+  old-style primitive tree) confused every session start. FIXED same day:
+  studio.py `__main__` boots an EMPTY "untitled" document; samples remain
+  under File → Examples, saved work under File → Open.
+
 ## Confirmed root causes
 
 - **R1a — authoring treats sketch→extrude as a fallback, primitives as
