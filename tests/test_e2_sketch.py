@@ -74,6 +74,26 @@ def test_extrude_both_directions():
     assert inspector.measure(solid)["size"][2] == pytest.approx(10, abs=0.01)
 
 
+def test_rotated_entities_stay_where_drawn():
+    """User report 2026-08-05: 'after finishing it, it goes completely to
+    different shape'. Entities were rotated about the PLANE ORIGIN after
+    positioning — a slot drawn right-to-left (rotation=180) at (-12, 6)
+    teleported to (12, -6). Rotation must spin the shape IN PLACE."""
+    for ent, cx, cy in [
+        ({"kind": "slot", "length": 16, "height": 4, "x": 30, "y": 20,
+          "rotation": 90}, 30, 20),
+        ({"kind": "slot", "length": 28, "height": 4, "x": -12, "y": 6,
+          "rotation": 180}, -12, 6),
+        ({"kind": "rectangle", "w": 20, "h": 8, "x": 15, "y": -25,
+          "rotation": 45}, 15, -25),
+    ]:
+        s = sk.make_sketch("XY", 0, [ent])
+        solid = sk.extrude_sketch(s, amount=3)
+        m = inspector.measure(solid)
+        assert m["com"][0] == pytest.approx(cx, abs=0.1), (ent, m["com"])
+        assert m["com"][1] == pytest.approx(cy, abs=0.1), (ent, m["com"])
+
+
 def test_revolve_makes_solid_of_revolution():
     prof = sk.make_sketch("XZ", 0, [{"kind": "rectangle", "w": 10, "h": 30, "x": 20}])
     solid = sk.revolve_sketch(prof, axis="Z", angle=360)

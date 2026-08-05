@@ -183,6 +183,19 @@ section; tick them THERE too when done)
   UNIONS instead of cutting — Fusion's even-odd region rule expected
   (shape inside a shape = hole).
 
+- **R11 (2026-08-05): finished sketches must look like what was DRAWN.**
+  User's words (with screenshots): "when i draw something in the sketch
+  and after finishing it, it goes completely to difeerent shape, this is
+  completely different behaviour, which can not be accedpted or used".
+  Root cause [sketch.py](sketch.py) `_entity`: shapes were positioned
+  FIRST and then `rotate(Axis.Z)` — which spins about the PLANE ORIGIN,
+  not the shape's centre. Every rotated entity (slots drawn right-to-left
+  carry rotation=180, vertical ±90) point-reflected/orbited on build,
+  while the editor (which rotates locally) showed it where drawn. FIXED
+  same day: rotate first, then translate; regression test locks rotated
+  slot/rect COM to the drawn position. Untested grid cell: rotation ≠ 0 at
+  off-origin positions had no coverage (gauntlet lesson, textcad-dev §4).
+
 ## Confirmed root causes
 
 - **R1a — authoring treats sketch→extrude as a fallback, primitives as

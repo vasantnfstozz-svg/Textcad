@@ -80,9 +80,17 @@ def _entity(e: dict):
         s = _path_face(e)
     else:
         raise ValueError(f"unknown sketch entity kind '{k}'")
-    s = Pos(x, y) * s
+    # Rotate FIRST (about the shape's own centre — every primitive above is
+    # built centred on the local origin), THEN translate. The old order
+    # rotated the already-positioned shape about the PLANE ORIGIN, so any
+    # rotated entity (slots drawn right-to-left carry rotation=180, vertical
+    # ones ±90) teleported to a point-reflected position the moment the
+    # sketch was built — while the editor, which rotates locally, showed it
+    # where the user drew it. (User report 2026-08-05: "after finishing it,
+    # it goes completely to different shape".)
     if rot:
         s = s.rotate(Axis.Z, rot)
+    s = Pos(x, y) * s
     return s
 
 
