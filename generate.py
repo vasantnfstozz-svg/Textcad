@@ -110,8 +110,11 @@ class OpenRouterModel:
         print(f"[OpenRouter model: {model}]")
 
     def generate(self, messages: list[dict]) -> str:
+        # 8000: a decomposed HISTORY tree (many sketches with path entities)
+        # regularly exceeds the old 2000 cap — truncation surfaced as
+        # baffling "unterminated string" JSON errors the model can't fix
         resp = self.client.chat.completions.create(
-            model=self.model, messages=messages, max_tokens=2000, temperature=0,
+            model=self.model, messages=messages, max_tokens=8000, temperature=0,
         )
         return resp.choices[0].message.content or ""
 
@@ -128,7 +131,7 @@ class AnthropicModel:
         turns = [{"role": m["role"], "content": m["content"]}
                  for m in messages if m["role"] != "system"]
         resp = self.client.messages.create(
-            model=self.model, max_tokens=2000, system=system, messages=turns,
+            model=self.model, max_tokens=8000, system=system, messages=turns,
         )
         return "".join(b.text for b in resp.content if b.type == "text")
 

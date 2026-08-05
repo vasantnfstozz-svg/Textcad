@@ -1,0 +1,240 @@
+{
+  "name": "spiderman-logo",
+  "spec": {
+    "n_solids": 1,
+    "tol": 10
+  },
+  "features": [
+    {
+      "id": "base_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 0.0,
+        "entities": [
+          {
+            "kind": "ellipse",
+            "rx": 40,
+            "ry": 50,
+            "x": 0,
+            "y": 0,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "base_extrude",
+      "op": "extrude",
+      "params": {
+        "amount": 3,
+        "both": false
+      },
+      "inputs": [
+        "base_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "spider_body_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 3.0,
+        "entities": [
+          {
+            "kind": "ellipse",
+            "rx": 8,
+            "ry": 12,
+            "x": 0,
+            "y": 5,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "spider_body_extrude",
+      "op": "extrude",
+      "params": {
+        "amount": 2,
+        "both": false
+      },
+      "inputs": [
+        "spider_body_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "spider_head_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 3.0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 6,
+            "x": 0,
+            "y": -8,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "spider_head_extrude",
+      "op": "extrude",
+      "params": {
+        "amount": 2,
+        "both": false
+      },
+      "inputs": [
+        "spider_head_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "leg_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 3.0,
+        "entities": [
+          {
+            "kind": "path",
+            "start": [
+              0,
+              0
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  15,
+                  15
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  25,
+                  20
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  24,
+                  17
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  14,
+                  13
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  0,
+                  -1
+                ]
+              }
+            ],
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "leg_extrude",
+      "op": "extrude",
+      "params": {
+        "amount": 2,
+        "both": false
+      },
+      "inputs": [
+        "leg_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "legs_pattern",
+      "op": "polar_pattern",
+      "params": {
+        "count": 8
+      },
+      "inputs": [
+        "leg_extrude"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "web_line_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 3.0,
+        "entities": [
+          {
+            "kind": "rectangle",
+            "w": 20,
+            "h": 2,
+            "x": 10,
+            "y": -5,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "web_line_extrude",
+      "op": "extrude",
+      "params": {
+        "amount": 1.5,
+        "both": false
+      },
+      "inputs": [
+        "web_line_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "web_pattern",
+      "op": "polar_pattern",
+      "params": {
+        "count": 8
+      },
+      "inputs": [
+        "web_line_extrude"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "fuse_all",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "base_extrude",
+        "spider_body_extrude",
+        "spider_head_extrude",
+        "legs_pattern",
+        "web_pattern"
+      ],
+      "suppressed": false
+    }
+  ]
+}

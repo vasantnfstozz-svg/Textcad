@@ -176,24 +176,46 @@ RULES AND CONVENTIONS:
   dimensional requirements the user never asked for and then fight them.
 - spec "symmetry" is ONLY for discrete repeated features (N blades, N bolts),
   as an integer. Bodies of revolution are inherently round — omit symmetry.
-DESIGN FOR EDITABILITY (critical — the tree IS the product, not just the
-solid; the user will open it in a CAD feature tree and edit it):
-- DECOMPOSE the part into its natural engineering features, one per node,
-  with meaningful ids: a water bottle is body + shoulder + neck + lip +
-  inner cavity (cut), NOT one giant profile. A bracket is base_plate +
-  ribs + each hole group. 5-12 features is typical; 1-2 features for a
-  non-trivial part is WRONG.
+RECORD A DESIGN HISTORY (critical — the tree IS the product, not just the
+solid; the user will open it in a CAD feature tree, rename features, reopen
+each one in the tool that created it, and edit dimensions):
+- Author the tree as the SEQUENCE OF STEPS a Fusion 360 user would take:
+  sketch a profile, extrude it, sketch the next element, extrude and
+  fuse/cut it, and so on. One logical design element per step, with
+  meaningful ids (base_sketch, base_extrude, web_sketch, web_cut...).
+- DECOMPOSE the part into its natural features, one per node: a water
+  bottle is body + shoulder + neck + lip + inner cavity (cut), NOT one
+  giant profile. A bracket is base_plate + ribs + each hole group.
+  5-12 features is typical; 1-2 features for a non-trivial part is WRONG.
 - Every dimension the user might want to change (diameters, heights, wall
   thickness, counts, angles) must appear as a NUMERIC param on some feature.
   Hollow containers: build the outer solid, then CUT a scaled inner solid —
   so wall thickness is controlled by the difference in their params.
-- revolve_profile is for genuinely curved/contoured sections only; where a
-  section is a simple cylinder or ring, use disc/tube instead (their radius/
-  thickness params are directly editable; buried profile points are not).
+- NO transform chains: rotate→rotate→move on a primitive is unreadable
+  history. Place geometry where it belongs by drawing the sketch entities
+  at the right coordinates (entity x/y, rotation), and keep at most ONE
+  move/rotate per feature when truly needed (e.g. laying a wheel on its
+  side). polar_pattern/linear_pattern replace repeated copies.
+- Primitives (disc, plate, tube, ball...) are for solids whose primitive
+  params ARE the editable dimensions (a washer = disc + with_center_hole).
+  revolve_profile is for genuinely curved axisymmetric sections only.
 
-SKETCH WORKFLOW (for shapes the primitives don't cover): make a "sketch"
-feature (a creator), then a "extrude"/"revolve"/"sweep" feature consuming it,
-or "loft" consuming two sketches. A sketch's params are
+SKETCH -> EXTRUDE IS THE PRIMARY WORKFLOW — required for logos, emblems,
+text-like artwork, plates with cutouts, brackets, and any flat/prismatic
+shape: make a "sketch" feature (a creator), then an "extrude"/"revolve"/
+"sweep" feature consuming it, or "loft" consuming two sketches.
+FLAT-ARTWORK RECIPE (a logo IS 2D artwork extruded — never a pile of 3D
+primitives): base_sketch (the outline or backing shape) -> base_extrude
+(2-5mm) -> then EACH raised element: own sketch -> own extrude -> fuse with
+the base; EACH engraved/pierced element: own sketch -> own extrude -> cut
+from the base. Draw shapes at their final x/y in the sketch.
+HARD LIMITS (linted — trees breaking them are REJECTED before building):
+- a sketch may hold AT MOST 10 entities; split larger artwork into logical
+  sketches (one per design element);
+- a design that is just ONE sketch + ONE extrude may hold at most 4
+  entities in that sketch — anything richer must be recorded as history
+  (base + per-element features as above).
+A sketch's params are
 {{"plane":"XY|XZ|YZ", "offset":mm, "entities":[...]}} where each entity is
 {{"kind":"rectangle","w":..,"h":..,"x":0,"y":0,"mode":"add"}} (kinds:
 rectangle w/h, circle r, ellipse rx/ry, slot length/height (length = OVERALL
@@ -216,6 +238,43 @@ def _parse(raw: str) -> dict:
     return json.loads(raw)
 
 
+# ---------------------------------------------------------------------------
+# Tree lint — the HISTORY contract, enforced (prompt wording alone drifts).
+# A tree that "builds" but is an unreadable blob is rejected BEFORE geometry,
+# with diagnostics the repair loop feeds back to the model.
+# ---------------------------------------------------------------------------
+
+_GENERIC_ID = re.compile(r"^(feature|node|item|part|f)_?\d*$", re.I)
+
+
+def lint_tree(features) -> list[str]:
+    """History-quality rules for AUTHORED trees (AI/MCP paths only — the
+    manual UI records history naturally, one action per feature)."""
+    problems = []
+    sketches = [f for f in features if f.op == "sketch"]
+    for f in sketches:
+        n = len(f.params.get("entities") or [])
+        if n > 10:
+            problems.append(
+                f"sketch '{f.id}' crams {n} entities into one feature — "
+                f"split the artwork into logical sketches (one per design "
+                f"element, each with its own extrude, fused/cut together)")
+    if len(features) == 2 and len(sketches) == 1:
+        n = len(sketches[0].params.get("entities") or [])
+        if n > 4:
+            problems.append(
+                f"the whole design is ONE sketch ({n} entities) + one "
+                f"consumer — that is a blob, not a design history. Record "
+                f"it as steps: base_sketch -> base_extrude, then each "
+                f"element as its own sketch -> extrude, fused or cut")
+    generic = [f.id for f in features if _GENERIC_ID.match(f.id)]
+    if generic:
+        problems.append(
+            f"ids {generic} are meaningless — name features after what "
+            f"they ARE (base_plate, web_sketch, eye_cut...)")
+    return problems
+
+
 def _to_document(data: dict) -> Document:
     """Validate + construct. Raises ValueError with a diagnostic message."""
     if not isinstance(data.get("features"), list) or not data["features"]:
@@ -223,6 +282,9 @@ def _to_document(data: dict) -> Document:
     doc = Document(name=str(data.get("name", "untitled"))[:60])
     for f in data["features"]:
         doc.add(f["id"], f["op"], f.get("params") or {}, f.get("inputs") or [])
+    lint = lint_tree(doc.features)
+    if lint:
+        raise ValueError("history lint: " + "; ".join(lint))
     spec = data.get("spec") or {}
     known = {"size", "volume", "holes", "n_solids", "symmetry", "tip_radius",
              "com", "require_manifold", "tol", "vol_tol"}

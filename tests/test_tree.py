@@ -160,6 +160,72 @@ def test_author_rejects_non_integer_symmetry():
         author._to_document(bad)
 
 
+def _sketch_tree(n_entities, extra_features=(), sketch_id="art_sketch"):
+    ents = [{"kind": "circle", "r": 3 + i, "x": i * 10, "y": 0, "mode": "add"}
+            for i in range(n_entities)]
+    return {"name": "t", "features": [
+        {"id": sketch_id, "op": "sketch",
+         "params": {"plane": "XY", "offset": 0, "entities": ents}},
+        {"id": "art_extrude", "op": "extrude", "params": {"amount": 3},
+         "inputs": [sketch_id]},
+        *extra_features,
+    ], "spec": {"n_solids": 1}}
+
+
+def test_lint_rejects_blob_sketch():
+    with pytest.raises(ValueError, match="crams"):
+        author._to_document(_sketch_tree(12))
+
+
+def test_lint_rejects_single_sketch_extrude_blob():
+    with pytest.raises(ValueError, match="blob"):
+        author._to_document(_sketch_tree(6))
+
+
+def test_lint_rejects_generic_ids():
+    tree = {"name": "t", "features": [
+        {"id": "feature1", "op": "disc",
+         "params": {"radius": 10, "thickness": 3}}], "spec": {"n_solids": 1}}
+    with pytest.raises(ValueError, match="meaningless"):
+        author._to_document(tree)
+
+
+def test_lint_accepts_recorded_history():
+    # base sketch->extrude + eye sketch->extrude->cut: a real history passes
+    tree = {"name": "logo", "features": [
+        {"id": "base_sketch", "op": "sketch",
+         "params": {"plane": "XY", "offset": 0, "entities": [
+             {"kind": "rectangle", "w": 40, "h": 30, "x": 0, "y": 0,
+              "mode": "add"}]}},
+        {"id": "base_extrude", "op": "extrude", "params": {"amount": 3},
+         "inputs": ["base_sketch"]},
+        {"id": "eye_sketch", "op": "sketch",
+         "params": {"plane": "XY", "offset": 0, "entities": [
+             {"kind": "circle", "r": 4, "x": -8, "y": 5, "mode": "add"},
+             {"kind": "circle", "r": 4, "x": 8, "y": 5, "mode": "add"}]}},
+        {"id": "eye_extrude", "op": "extrude", "params": {"amount": 5},
+         "inputs": ["eye_sketch"]},
+        {"id": "eye_cut", "op": "cut",
+         "inputs": ["base_extrude", "eye_extrude"]},
+    ], "spec": {"n_solids": 1}}
+    doc = author._to_document(tree)          # must not raise
+    assert doc.rebuild(), [p for f in doc.features for p in f.problems]
+
+
+def test_author_repairs_blob_into_history():
+    blob = json.dumps(_sketch_tree(6))
+    good = json.dumps({"name": "plate", "features": [
+        {"id": "base_sketch", "op": "sketch",
+         "params": {"plane": "XY", "offset": 0, "entities": [
+             {"kind": "rectangle", "w": 20, "h": 10, "x": 0, "y": 0,
+              "mode": "add"}]}},
+        {"id": "base_extrude", "op": "extrude", "params": {"amount": 3},
+         "inputs": ["base_sketch"]}], "spec": {"n_solids": 1}})
+    doc, transcript = author.author_design("a plate", ScriptedModel(blob, good))
+    assert doc is not None
+    assert "history lint" in transcript[0]   # rejection fed back to the model
+
+
 def test_op_catalog_matches_document_registry():
     from document import KNOWN_OPS
     assert {c["op"] for c in author.op_catalog()} == KNOWN_OPS
