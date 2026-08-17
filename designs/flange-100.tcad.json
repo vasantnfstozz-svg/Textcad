@@ -23,7 +23,7 @@
       "id": "bore",
       "op": "with_center_hole",
       "params": {
-        "radius": 20
+        "radius": 15
       },
       "inputs": [
         "body"
@@ -34,7 +34,7 @@
       "id": "bolts",
       "op": "with_bolt_circle",
       "params": {
-        "count": 8,
+        "count": 6,
         "bolt_radius": 4,
         "pitch_circle_dia": 76
       },

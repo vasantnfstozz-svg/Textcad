@@ -1,0 +1,27 @@
+{
+  "name": "my-part-4",
+  "spec": {},
+  "features": [
+    {
+      "id": "sketch1",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "rectangle",
+            "mode": "add",
+            "x": 25,
+            "y": -25,
+            "w": 50,
+            "h": 50,
+            "rotation": 0
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    }
+  ]
+}

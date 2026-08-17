@@ -1,4 +1,21 @@
-# Feature Tree — development sheet (ACTIVE workstream, started 2026-08-04)
+# Feature Tree — development sheet (PAUSED 2026-08-17, resume-ready)
+
+> **PAUSE NOTE (2026-08-17, user: "not going do anything with this text to
+> cad for next four weeks... everything should be recorded properly").**
+> State at pause: steps 1–3 and 5–8 SHIPPED (R1–R14 all closed, suite 241
+> green at `a446ad3`); every open Studio tab snapshotted uniquely into
+> designs/ (my-part, my-part-2..4, untitled, t-washer, spiderman-logo) and
+> pushed to the private backup https://github.com/Vasan0021/textcad.
+> **To resume:** read this file top to bottom, then MEMORY (auto-loaded);
+> launch the app DETACHED via
+> `Start-Process C:\Python314\python.exe -ArgumentList "-u","studio.py"
+> -WorkingDirectory <repo> -WindowStyle Hidden` (debug-studio skill rule 0);
+> saved designs open via File → Open. Open work, in priority order:
+> step 4 (incremental tool-calling authoring — needed when AI designs must
+> reference existing faces), BACKLOG cross-cutting P2s (compressor rebuild
+> speed), P3s (CI running pytest, vendor three.js, LICENSE).
+
+*(original header: ACTIVE workstream, started 2026-08-04)*
 
 **Mandate (user, 2026-08-04):** many changes are coming to the feature tree.
 The manual-design workstream is parked in
@@ -216,6 +233,17 @@ section; tick them THERE too when done)
   sketch-on-face all refuse with a chat message while the open panel
   FLASHES (.modalflash). Extrude sets/clears it; every future tool panel
   must do the same.
+
+- **R14 (2026-08-05): "the tapper function is not working ... throwing
+  some red error text" (rectangle).** Reproduced from the user's LIVE doc
+  (read-only /api/doc): narrowing taper on a face extruded from the
+  TILTED wall of a tapered body failed at 10° and 31° but built at
+  5/20/40° — OCCT's loft-based taper intermittently flags valid geometry
+  as an invalid solid. FIXED same day: `sketch._shapefix` (ShapeFix_Shape)
+  heals the result, accepted ONLY when health passes with volume unchanged
+  to 0.1% (a repair must never quietly change geometry). Regression sweeps
+  the user's exact tree. The honest-refusal path stays for genuinely
+  broken results.
 
 ## Confirmed root causes
 
