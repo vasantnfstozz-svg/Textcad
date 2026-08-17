@@ -443,11 +443,35 @@ def _tapered_extrude(profile, amount: float, taper: float):
         import inspector                       # local: avoids an import cycle
         problems = inspector.health(solid)
         if problems:
+            # OCCT's loft-based taper INTERMITTENTLY flags valid geometry as
+            # an invalid solid (probed on a 97mm extrude from a tilted face:
+            # taper 10° and 31° "invalid", 5/20/40° fine — same volumes).
+            # ShapeFix heals the bookkeeping; accept the repair only if it
+            # passes health with the volume unchanged (0.1%).
+            healed = _shapefix(solid)
+            if healed is not None and not inspector.health(healed):
+                return healed
             raise ValueError(
                 f"taper {taper}° over {abs(amount)}mm produces a broken solid "
                 f"on this profile ({problems[0]}). Try a smaller taper, a "
                 f"shorter distance, or taper the other way.")
     return solid
+
+
+def _shapefix(solid):
+    """Repair an OCCT-invalid solid; None unless the repair is FAITHFUL
+    (same volume to 0.1%) — a repair must never quietly change geometry."""
+    try:
+        from OCP.ShapeFix import ShapeFix_Shape
+        fixer = ShapeFix_Shape(solid.wrapped)
+        fixer.Perform()
+        healed = b3d.Solid(fixer.Shape())
+        if solid.volume > 1e-9 and \
+                abs(healed.volume - solid.volume) / solid.volume < 1e-3:
+            return healed
+    except Exception:
+        pass
+    return None
 
 
 def extrude_face(solid, face_center: list, face_normal: list | None = None,

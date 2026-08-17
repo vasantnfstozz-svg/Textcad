@@ -8,6 +8,32 @@ worked. It passed every box-shaped test we had.
 import math
 
 import pytest
+
+
+def test_tilted_face_taper_heals_intermittent_invalids():
+    """User repro 2026-08-05: narrowing taper on a face extruded from the
+    tilted wall of a tapered body failed at 10 and 31 deg but built at
+    5/20/40 — OCCT intermittently flags the loft result invalid. ShapeFix
+    heals it (probed: identical volume); the whole sweep must now be ok."""
+    from document import Document
+    for taper in (5.0, 10.0, 20.0, 31.0, 40.0):
+        doc = Document(name="repro")
+        doc.add("sk", "sketch", {"plane": "XY", "offset": 0, "entities": [
+            {"kind": "rectangle", "mode": "add", "x": 16.25, "y": 46.25,
+             "w": 37.5, "h": 32.5, "rotation": 0}]})
+        doc.add("e1", "extrude", {"amount": 94.12, "taper": 31.3}, ["sk"])
+        doc.add("e2", "extrude_face",
+                {"face_center": [16.25, 36.05, 9.96],
+                 "face_normal": [0, -0.854, 0.52], "amount": 71.78}, ["e1"])
+        doc.add("j1", "fuse", {}, ["e1", "e2"])
+        doc.add("e3", "extrude_face",
+                {"face_center": [16.25, 56.45, 9.96],
+                 "face_normal": [0, 0.854, 0.52], "amount": 97.32,
+                 "taper": taper}, ["j1"])
+        doc.add("j2", "fuse", {}, ["j1", "e3"])
+        doc.rebuild()
+        f = doc.get("e3")
+        assert f.status == "ok", (taper, f.problems)
 from build123d import Edge, Kind, Line, Spline, Wire
 
 import sketch as sk
