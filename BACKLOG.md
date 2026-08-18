@@ -33,7 +33,25 @@ complete. Details + Done history: MANUAL-DESIGN.md.
 
 ## To triage (dump new problems here if they don't clearly belong to a workstream file)
 
-*(empty)*
+- [ ] **P0 — clockwise polygons silently refuse to fuse** (found 2026-08-18
+  designing rocky-keychain during the pause). A `polygon` sketch entity whose
+  points run CLOCKWISE builds a face with a −Z normal; OCCT fuse then quietly
+  keeps it as a SEPARATE face — every entity overlapping it stays disjoint, and
+  the downstream extrude+cut yields a non-manifold "open shell" solid. The 2D
+  intersection areas are nonzero (2–4 mm²), so nothing looks wrong until Layer 2
+  fails the cut. Repro: torso polygon of rocky-keychain with reversed points.
+  Fix: normalize winding to CCW in `sketch._entity` polygon branch (shoelace
+  sign test, reverse if negative) + regression test. Same normalization is
+  already proven in the design generator (scratchpad `rocky_probe.py`).
+- [ ] **P2 — /api/model has no mesh cache; complex designs blank the viewport
+  ~25 s per page load.** rocky-keychain (5 letters sampled to 100-pt polygons)
+  tessellates ~25 s on EVERY /api/model call; the viewport is empty with no
+  progress hint meanwhile (looks exactly like "model disappeared"). Cache the
+  tagged mesh keyed on rebuild stamp, and/or show a "meshing…" state.
+- [ ] **P3 — `text` sketch entity** (build123d `Text`). rocky-keychain needed
+  font lettering; had to bake Impact outlines into polygon entities offline.
+  A first-class text entity (font, size, position) via the add-sketch-entity
+  checklist would make name plates / engraving one entity instead of ~15.
 
 ## Cross-cutting P2
 
