@@ -119,15 +119,97 @@
       "suppressed": false
     },
     {
-      "id": "figure_sketch",
+      "id": "field_sketch",
       "op": "sketch",
       "params": {
         "plane": "XY",
         "offset": 2.0,
         "entities": [
           {
-            "kind": "polygon",
+            "kind": "path",
             "mode": "add",
+            "start": [
+              -16.0,
+              -25.0
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  16.0,
+                  -25.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  17.060660171779823,
+                  -24.560660171779823
+                ],
+                "to": [
+                  17.5,
+                  -23.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  17.5,
+                  23.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  17.060660171779823,
+                  24.560660171779823
+                ],
+                "to": [
+                  16.0,
+                  25.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -16.0,
+                  25.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -17.060660171779823,
+                  24.560660171779823
+                ],
+                "to": [
+                  -17.5,
+                  23.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -17.5,
+                  -23.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -17.060660171779823,
+                  -24.560660171779823
+                ],
+                "to": [
+                  -16.0,
+                  -25.0
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "polygon",
+            "mode": "subtract",
             "x": -0.017,
             "y": 6.167,
             "points": [
@@ -952,44 +1034,10 @@
                 16.634
               ]
             ]
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "figure_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 2.0,
-        "both": false
-      },
-      "inputs": [
-        "figure_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "engrave_figure",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "plate",
-        "figure_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "name_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 2.0,
-        "entities": [
+          },
           {
             "kind": "polygon",
-            "mode": "add",
+            "mode": "subtract",
             "x": -12.423,
             "y": -17.8,
             "points": [
@@ -1397,7 +1445,7 @@
           },
           {
             "kind": "polygon",
-            "mode": "subtract",
+            "mode": "add",
             "x": -12.338,
             "y": -15.816,
             "points": [
@@ -1645,7 +1693,7 @@
           },
           {
             "kind": "polygon",
-            "mode": "add",
+            "mode": "subtract",
             "x": -6.183,
             "y": -17.8,
             "points": [
@@ -2053,7 +2101,7 @@
           },
           {
             "kind": "polygon",
-            "mode": "subtract",
+            "mode": "add",
             "x": -6.183,
             "y": -17.8,
             "points": [
@@ -2301,7 +2349,7 @@
           },
           {
             "kind": "polygon",
-            "mode": "add",
+            "mode": "subtract",
             "x": 0.177,
             "y": -17.799,
             "points": [
@@ -2709,7 +2757,7 @@
           },
           {
             "kind": "polygon",
-            "mode": "add",
+            "mode": "subtract",
             "x": 6.713,
             "y": -17.8,
             "points": [
@@ -3117,7 +3165,7 @@
           },
           {
             "kind": "polygon",
-            "mode": "add",
+            "mode": "subtract",
             "x": 12.284,
             "y": -17.8,
             "points": [
@@ -3522,6 +3570,13 @@
                 4.559
               ]
             ]
+          },
+          {
+            "kind": "circle",
+            "mode": "subtract",
+            "x": 0.0,
+            "y": 22.5,
+            "r": 4.0
           }
         ]
       },
@@ -3529,14 +3584,14 @@
       "suppressed": false
     },
     {
-      "id": "name_tool",
+      "id": "field_tool",
       "op": "extrude",
       "params": {
         "amount": 2.0,
         "both": false
       },
       "inputs": [
-        "name_sketch"
+        "field_sketch"
       ],
       "suppressed": false
     },
@@ -3545,8 +3600,8 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "engrave_figure",
-        "name_tool"
+        "plate",
+        "field_tool"
       ],
       "suppressed": false
     }
