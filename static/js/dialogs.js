@@ -47,6 +47,38 @@ export async function actionSave() {
   if (res.saved) bus.emit('msg', 'bot', `Saved "${res.saved}" to the design library.`);
 }
 
+export function actionTracePng() {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'image/png,image/jpeg';
+  inp.onchange = async () => {
+    const f = inp.files[0];
+    if (!f) return;
+    const h = prompt('Traced artwork height in mm:', '50');
+    if (h === null) return;
+    const dataUrl = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = rej;
+      r.readAsDataURL(f);
+    });
+    const out = await postJSON('/api/trace-png', {
+      png_base64: dataUrl,
+      height_mm: parseFloat(h) || 50,
+      feature_id: (f.name.replace(/\.[^.]*$/, '').replace(/[^\w-]+/g, '-')
+                   .slice(0, 24) || 'traced-image'),
+    }, 'tracing…');
+    if (out && !out.error) {
+      const i = out.trace_info || {};
+      bus.emit('msg', 'bot',
+        `Traced "${f.name}" into sketch "${i.feature_id}" — ` +
+        `${i.width_mm}×${i.height_mm}mm, ${i.contours} outline(s), ` +
+        `${i.holes} hole(s). Select it in the tree and Extrude.`);
+    }
+  };
+  inp.click();
+}
+
 export async function actionOpen() {
   const list = await getJSON('/api/designs');
   const el = document.getElementById('libList');

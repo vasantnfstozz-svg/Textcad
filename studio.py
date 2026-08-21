@@ -18,6 +18,7 @@ health + spec verification. The LLM never regenerates a design during an edit.
 """
 
 from __future__ import annotations
+import base64
 import json
 import os
 import re
@@ -32,6 +33,7 @@ from pydantic import BaseModel
 import build123d as b3d
 
 import author
+import imgtrace
 import sketch as sketchlib
 import sketch_trim as trimlib
 import sketch_snap as snaplib
@@ -269,6 +271,16 @@ class FeatureReq(BaseModel):
     op: str
     params: dict = {}
     inputs: list[str] = []
+
+
+class TracePngReq(BaseModel):
+    png_base64: str                  # data-URL or bare base64 of a PNG/JPG
+    feature_id: str = "traced-image"
+    height_mm: float = 50.0
+    plane: str = "XY"
+    offset: float = 0.0
+    tol_mm: float = 0.15
+    min_channel_mm: float = 0.0      # end-mill pre-fill; 0 = off
 
 
 class RemoveReq(BaseModel):
@@ -683,6 +695,29 @@ def add_feature(req: FeatureReq):
         return {"error": str(e), **_doc_json()}
     _rebuild_and_mesh()
     return _doc_json()
+
+
+@app.post("/api/trace-png")
+def trace_png(req: TracePngReq):
+    """Upload an image, get a SKETCH feature holding its traced outline —
+    then Extrude / Revolve / Cut it like any hand-drawn sketch."""
+    _snapshot()
+    try:
+        data = base64.b64decode(req.png_base64.split(",")[-1])
+        ents, info = imgtrace.image_to_entities(
+            data, req.height_mm, req.tol_mm, req.min_channel_mm)
+        fid, n = req.feature_id, 2
+        while any(f.id == fid for f in _doc().features):
+            fid = f"{req.feature_id}-{n}"
+            n += 1
+        _doc().add(fid, "sketch",
+                   {"plane": req.plane, "offset": req.offset,
+                    "entities": ents}, [])
+    except Exception as e:        # decode/trace errors -> honest message
+        _entry()["history"].pop()
+        return {"error": str(e), **_doc_json()}
+    _rebuild_and_mesh()
+    return {**_doc_json(), "trace_info": {**info, "feature_id": fid}}
 
 
 @app.post("/api/feature/remove")

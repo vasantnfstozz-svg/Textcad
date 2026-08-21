@@ -5,7 +5,8 @@ import { S } from './state.js';
 import { bus } from './bus.js';
 import { OP_ICONS, TOOL_NAMES } from './icons.js';
 import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport,
-         actionUndo, actionSpec, loadSample, modalGuard } from './dialogs.js';
+         actionUndo, actionSpec, actionTracePng, loadSample,
+         modalGuard } from './dialogs.js';
 import { openSketchEditor, finishSketch, cancelSketch,
          setSketchTool, sketchModify } from './sketcher.js';
 import { openSettings } from './settings.js';
@@ -50,6 +51,7 @@ const ACTIONS = {
              fn: () => document.getElementById('vSelect').click() },
   settings: { icon: '⚙', name: 'Settings', fn: openSettings },
   newsketch: { icon: '✎', name: 'Create Sketch', fn: startSketch },
+  trace_png: { icon: '🖼', name: 'Trace PNG', fn: actionTracePng },
   finish_sketch: { icon: '✓', name: 'Finish Sketch', fn: finishSketch },
   cancel_sketch: { icon: '✕', name: 'Cancel Sketch', fn: cancelSketch },
   look_at: { icon: '⌖', name: 'Look At', fn: lookAtSketch },
@@ -73,7 +75,8 @@ const TABS = {
     ['Preferences', [{ a: 'settings' }]],
   ],
   Create: [
-    ['Create', [{ a: 'newsketch' }, 'extrude', 'revolve', 'loft', 'sweep']],
+    ['Create', [{ a: 'newsketch' }, { a: 'trace_png' },
+                'extrude', 'revolve', 'loft', 'sweep']],
     ['Primitives', ['plate', 'disc', 'ball', 'cone', 'tube', 'polygon_plate',
                     'hex_plate']],
     ['Advanced', ['revolve_profile', 'curved_blade']],
