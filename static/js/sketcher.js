@@ -168,7 +168,7 @@ function exitMode() {
   sketchActive = false;
   exitSketch3D();
   for (const id of ['sk3dBar', 'sk3dDim', 'sk3dSnap', 'sk3dScale',
-                    'skDimEdit3d', 'skDimDraw']) {
+                    'sk3dScaleW', 'skDimEdit3d', 'skDimDraw']) {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   }
@@ -341,16 +341,20 @@ export function initSketcher() {
   bus.on('sk3d-down', p => {
     if (!sketchActive) return;
     snapTol3d = p.tol;
-    if (scaleDrag) { commitScale(); return; }   // click commits the scale
+    if (scaleDrag) { scaleDown(p); return; }    // grab an arrow / finish
     pointerDown(p);
   });
   bus.on('sk3d-move', p => {
     if (!sketchActive) return;
     snapTol3d = p.tol;
-    if (scaleDrag) { scaleMove(p); return; }    // live resize + readout
+    if (scaleDrag) { scaleMove(p); return; }    // resize only while grabbed
     pointerMove(p);
   });
-  bus.on('sk3d-up', () => { if (sketchActive) pointerUp(); });
+  bus.on('sk3d-up', () => {
+    if (!sketchActive) return;
+    if (scaleDrag) { scaleUp(); return; }       // release = value stays
+    pointerUp();
+  });
   bus.on('sk3d-dbl', () => { if (sketchActive) onDblClick(); });
   bus.on('sk3d-grid', ({ step }) => {
     const el = document.getElementById('sk3dGrid');
@@ -792,24 +796,53 @@ function scaleSel() {
   const base = idxs.map(i => JSON.parse(JSON.stringify(skEnts[i])));
   const bb = entsBBox(base);
   if (!(bb.h > 1e-6)) return;
-  scaleDrag = { idxs, base, all, w0: bb.w, h0: bb.h, startY: null, f: 1 };
-  renderEnts();                       // show the rulers + marker immediately
+  scaleDrag = { idxs, base, all, w0: bb.w, h0: bb.h, f: 1, grab: null };
+  renderEnts();                       // show the rulers + markers immediately
   setScaleReadout(1);
   bus.emit('msg', 'bot',
     (all ? `Scaling ALL ${idxs.length} shape(s). ` : 'Scaling the selected shape. ') +
-    'Move the cursor UP to enlarge, DOWN to shrink — the size readout follows. ' +
-    'Click to commit, Esc to cancel.');
+    'GRAB one of the amber arrows and drag — up/right enlarges, down/left ' +
+    'shrinks; release to set. Click anywhere else to finish, Esc to cancel.');
+}
+
+/* which gizmo arrow (if any) is under the pointer — 'v' height, 'h' width */
+function scaleHit(p) {
+  const bb = scaleGizmoBox();
+  if (!bb) return null;
+  const m = Math.max(3, bb.h * 0.08);
+  const a = Math.max(1.2, Math.min(bb.h, bb.w) * 0.06);
+  const tol = Math.max(snapTol3d * 1.5, 2);
+  const xr = bb.x1 + m, yb = bb.y0 - m;
+  if (Math.abs(p.x - xr) <= tol + a
+      && p.y >= bb.y0 - a - tol && p.y <= bb.y1 + a + tol) return 'v';
+  if (Math.abs(p.y - yb) <= tol + a
+      && p.x >= bb.x0 - a - tol && p.x <= bb.x1 + a + tol) return 'h';
+  return null;
+}
+
+function scaleDown(p) {
+  const axis = scaleHit(p);
+  if (axis) {                         // grab an arrow — dragging starts
+    scaleDrag.grab = { axis, x0: p.x, y0: p.y, f0: scaleDrag.f };
+    return;
+  }
+  commitScale();                      // click away from the gizmo = done
 }
 
 function scaleMove(p) {
   const d = scaleDrag;
-  if (d.startY === null) { d.startY = p.y; return; }
-  d.f = Math.min(100, Math.max(0.02, Math.pow(2, (p.y - d.startY) / 40)));
+  if (!d.grab) return;                // arrows only move while GRABBED
+  const delta = d.grab.axis === 'v' ? p.y - d.grab.y0 : p.x - d.grab.x0;
+  d.f = Math.min(100, Math.max(0.02, d.grab.f0 * Math.pow(2, delta / 40)));
   d.idxs.forEach((idx, k) => {
     skEnts[idx] = scaleEntity(JSON.parse(JSON.stringify(d.base[k])), d.f, !d.all);
   });
   renderEnts();
   setScaleReadout(d.f);
+}
+
+function scaleUp() {
+  if (scaleDrag && scaleDrag.grab) scaleDrag.grab = null;   // value stays
 }
 
 function setScaleReadout(f) {
@@ -1468,10 +1501,13 @@ function placeFloat(id, at, text) {
    AND on every camera move while orbiting ('sk3d-view') */
 function updateFloatingLabels() {
   const bb = scaleDrag ? scaleGizmoBox() : null;
-  placeFloat('sk3dScale',
-    bb ? { x: bb.x1 + Math.max(3, bb.h * 0.08), y: (bb.y0 + bb.y1) / 2 } : null,
-    bb ? `W ${bb.w.toFixed(1)} × H ${bb.h.toFixed(1)} ${unitLabel()}` +
-         `  (×${scaleDrag.f.toFixed(2)})` : '');
+  const gm = bb ? Math.max(3, bb.h * 0.08) : 0;
+  placeFloat('sk3dScale',              // height marker beside its arrow
+    bb ? { x: bb.x1 + gm, y: (bb.y0 + bb.y1) / 2 } : null,
+    bb ? `H ${bb.h.toFixed(1)} ${unitLabel()}  (×${scaleDrag.f.toFixed(2)})` : '');
+  placeFloat('sk3dScaleW',             // width marker under its arrow
+    bb ? { x: (bb.x0 + bb.x1) / 2, y: bb.y0 - gm } : null,
+    bb ? `W ${bb.w.toFixed(1)} ${unitLabel()}` : '');
   const e = ghost || (selEnt >= 0 ? skEnts[selEnt] : null) || null;
   const d = e ? dimLabel(e) : null;
   placeFloat('sk3dDim', d, d ? d.text : '');

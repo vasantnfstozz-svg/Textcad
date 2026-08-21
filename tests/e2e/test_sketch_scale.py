@@ -113,19 +113,21 @@ def test_modify_tab_scale_routes_a_sketch_into_drag_scale(page, fresh_doc,
         "async () => (await import('/static/js/sketch3d.js')).sketch3DActive()"
     ), timeout=20000)
     page.wait_for_timeout(800)
-    # drag mode is live: anchor, move +40mm = x2, click commits
-    page.evaluate(CLICKISH := """
+    # GRAB the vertical arrow (rect bbox -5..15 x 0..10 -> ruler at x=18),
+    # drag +40mm = x2, release, then click away to finish the scale
+    page.evaluate(EMIT := """
     async (args) => {
-      const [x, y, kind] = args;
+      const [kind, x, y] = args;
       const { bus } = await import('/static/js/bus.js');
-      bus.emit(kind, { x, y, tol: 1.0 });
-      if (kind === 'sk3d-down') bus.emit('sk3d-up', {});
+      bus.emit(kind, x === null ? {} : { x, y, tol: 2.0 });
       await new Promise(r => setTimeout(r, 120));
     }
-    """, [0, 0, "sk3d-move"])
-    page.evaluate(CLICKISH, [0, 40, "sk3d-move"])
+    """, ["sk3d-down", 18, 5])
+    page.evaluate(EMIT, ["sk3d-move", 18, 45])
     assert page.text_content("#sk3dCoords").startswith("scale")
-    page.evaluate(CLICKISH, [0, 40, "sk3d-down"])
+    page.evaluate(EMIT, ["sk3d-up", None, None])
+    page.evaluate(EMIT, ["sk3d-down", -40, -30])       # away = finish
+    page.evaluate(EMIT, ["sk3d-up", None, None])
     page.click("#ribbon .rbtn[title='Finish Sketch']")
     page.wait_for_function(
         "async () => !(await import('/static/js/sketch3d.js')).sketch3DActive()",
@@ -170,21 +172,23 @@ def test_scale_in_empty_new_sketch_jumps_to_the_real_one(page, fresh_doc,
     page.wait_for_timeout(1000)
     page.click("#ribbon .rbtn[title='Scale']")     # empty sketch -> must jump
     page.wait_for_timeout(2500)
-    MOVE = """
+    EMIT = """
     async (args) => {
-      const [x, y] = args;
+      const [kind, x, y] = args;
       const { bus } = await import('/static/js/bus.js');
-      bus.emit('sk3d-move', { x, y, tol: 1.0 });
+      bus.emit(kind, x === null ? {} : { x, y, tol: 2.0 });
       await new Promise(r => setTimeout(r, 120));
     }
     """
-    page.evaluate(MOVE, [0, 0])
-    page.evaluate(MOVE, [0, 40])                   # x2 live, in the LOGO editor
+    # rect bbox -15..15 x -6..6 -> vertical ruler at x=18, mid y=0:
+    # grab it, drag +40mm = x2, release, click away to finish
+    page.evaluate(EMIT, ["sk3d-move", -30, 20])    # hover must NOT scale
+    page.evaluate(EMIT, ["sk3d-down", 18, 0])
+    page.evaluate(EMIT, ["sk3d-move", 18, 40])
     assert page.text_content("#sk3dCoords").startswith("scale")
-    page.evaluate("""async () => {
-      const { bus } = await import('/static/js/bus.js');
-      bus.emit('sk3d-down', { x: 0, y: 40, tol: 1.0 }); bus.emit('sk3d-up', {});
-    }""")
+    page.evaluate(EMIT, ["sk3d-up", None, None])
+    page.evaluate(EMIT, ["sk3d-down", -40, -30])
+    page.evaluate(EMIT, ["sk3d-up", None, None])
     page.click("#ribbon .rbtn[title='Finish Sketch']")
     page.wait_for_function(
         "async () => !(await import('/static/js/sketch3d.js')).sketch3DActive()",
@@ -206,30 +210,35 @@ def test_scale_all_then_scale_selected(top_face_sketch, server):
     page.evaluate(CLICK, [30, 5, 1.0])
     page.evaluate(CLICK, [35, 5, 1.0])
 
-    MOVE = """
+    EMIT = """
     async (args) => {
-      const [x, y, tol] = args;
+      const [kind, x, y] = args;
       const { bus } = await import('/static/js/bus.js');
-      bus.emit('sk3d-move', { x, y, tol });
-      await new Promise(r => setTimeout(r, 80));
+      bus.emit(kind, x === null ? {} : { x, y, tol: 2.0 });
+      await new Promise(r => setTimeout(r, 90));
     }
     """
-    # 1) NOTHING selected -> drag scales everything about the sketch origin.
-    #    first move anchors the drag; +80mm up = factor 2^(80/40) = 4.
+    # 1) NOTHING selected -> grab the vertical arrow, drag +80mm = x4.
+    #    bbox is 0..35 x 0..10 -> ruler at x=38, mid y=5.
     page.evaluate(SET_TOOL, None)                 # tool pick deselects
     page.evaluate(SCALE)
-    page.evaluate(MOVE, [0, 0, 1.0])              # anchor
-    page.evaluate(MOVE, [0, 80, 1.0])             # x4, live
-    page.evaluate(CLICK, [0, 80, 1.0])            # click commits
+    page.evaluate(EMIT, ["sk3d-down", 38, 5])     # grab
+    page.evaluate(EMIT, ["sk3d-move", 38, 85])    # x4, live
+    page.evaluate(EMIT, ["sk3d-up", None, None])  # release: value stays
+    page.evaluate(EMIT, ["sk3d-down", -20, -20])  # click away = finish
+    page.evaluate(EMIT, ["sk3d-up", None, None])
     page.wait_for_timeout(200)
 
-    # 2) SELECT the rectangle (click its left edge) -> drag halves it in
-    #    place: -40mm down = factor 2^(-40/40) = 0.5.
+    # 2) SELECT the rectangle (click its left edge; now 80x40 at (40,20))
+    #    -> grab its arrow (bbox 0..80 x 0..40 -> ruler x=83.2, mid y=20)
+    #    and drag -40mm = x0.5 in place.
     page.evaluate(CLICK, [0, 20, 2.0])
     page.evaluate(SCALE)
-    page.evaluate(MOVE, [0, 0, 1.0])              # anchor
-    page.evaluate(MOVE, [0, -40, 1.0])            # x0.5, live
-    page.evaluate(CLICK, [0, -40, 1.0])           # commit
+    page.evaluate(EMIT, ["sk3d-down", 83, 20])    # grab
+    page.evaluate(EMIT, ["sk3d-move", 83, -20])   # x0.5, live
+    page.evaluate(EMIT, ["sk3d-up", None, None])
+    page.evaluate(EMIT, ["sk3d-down", -30, 70])   # away = finish
+    page.evaluate(EMIT, ["sk3d-up", None, None])
     page.wait_for_timeout(200)
 
     page.click("#ribbon .rbtn[title='Finish Sketch']")
