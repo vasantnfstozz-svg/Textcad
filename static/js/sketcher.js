@@ -167,8 +167,8 @@ function enterMode() {
 function exitMode() {
   sketchActive = false;
   exitSketch3D();
-  for (const id of ['sk3dBar', 'sk3dDim', 'sk3dSnap', 'skDimEdit3d',
-                    'skDimDraw']) {
+  for (const id of ['sk3dBar', 'sk3dDim', 'sk3dSnap', 'sk3dScale',
+                    'skDimEdit3d', 'skDimDraw']) {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   }
@@ -793,6 +793,7 @@ function scaleSel() {
   const bb = entsBBox(base);
   if (!(bb.h > 1e-6)) return;
   scaleDrag = { idxs, base, all, w0: bb.w, h0: bb.h, startY: null, f: 1 };
+  renderEnts();                       // show the rulers + marker immediately
   setScaleReadout(1);
   bus.emit('msg', 'bot',
     (all ? `Scaling ALL ${idxs.length} shape(s). ` : 'Scaling the selected shape. ') +
@@ -873,7 +874,39 @@ function entsBBox(ents) {
       x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]);
       y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]);
     }
-  return { w: x1 - x0, h: y1 - y0 };
+  return { x0, x1, y0, y1, w: x1 - x0, h: y1 - y0 };
+}
+
+/* the drag-scale gizmo: amber dimension rulers hugging the LIVE bbox —
+   a vertical double-arrow beside the shapes (height) and a horizontal one
+   below (width). They grow and shrink with every cursor move, and the
+   floating #sk3dScale marker rides them with the current W × H in mm. */
+const SCALE_COL = 0xd9a23c;
+
+function scaleGizmoBox() {
+  if (!scaleDrag) return null;
+  return entsBBox(scaleDrag.idxs.map(i => skEnts[i]).filter(Boolean));
+}
+
+function scaleGizmoShapes(bb) {
+  const m = Math.max(3, bb.h * 0.08);          // ruler offset from the shapes
+  const a = Math.max(1.2, Math.min(bb.h, bb.w) * 0.06);   // arrowhead size
+  const xr = bb.x1 + m, yb = bb.y0 - m;
+  const V = [
+    [[xr, bb.y0], [xr, bb.y1]],                              // shaft
+    [[xr - a, bb.y1 - a], [xr, bb.y1]], [[xr, bb.y1], [xr + a, bb.y1 - a]],
+    [[xr - a, bb.y0 + a], [xr, bb.y0]], [[xr, bb.y0], [xr + a, bb.y0 + a]],
+    [[bb.x1, bb.y1], [xr + a, bb.y1]],                       // end ticks
+    [[bb.x1, bb.y0], [xr + a, bb.y0]],
+  ];
+  const H = [
+    [[bb.x0, yb], [bb.x1, yb]],
+    [[bb.x0 + a, yb - a], [bb.x0, yb]], [[bb.x0, yb], [bb.x0 + a, yb + a]],
+    [[bb.x1 - a, yb - a], [bb.x1, yb]], [[bb.x1, yb], [bb.x1 - a, yb + a]],
+    [[bb.x0, bb.y0], [bb.x0, yb - a]],
+    [[bb.x1, bb.y0], [bb.x1, yb - a]],
+  ];
+  return [...V, ...H].map(pts => ({ pts, closed: false, color: SCALE_COL }));
 }
 
 function scaleEntity(e, f, inPlace) {
@@ -1333,6 +1366,10 @@ function draw3D() {
   };
   skEnts.forEach((e, i) => push(e, i, false));
   if (ghost) push(ghost, -1, true);
+  if (scaleDrag) {
+    const bb = scaleGizmoBox();
+    if (bb && bb.w > 0) for (const s of scaleGizmoShapes(bb)) shapes.push(s);
+  }
 
   const dR = Math.max(snapTol3d * 0.35, 0.6);
   const dots = clicks.map(c => ({ x: c.x, y: c.y, r: dR, color: 0x4da3ff }));
@@ -1430,6 +1467,11 @@ function placeFloat(id, at, text) {
 /* live dimension + snap tag + numeric dim editor — re-placed on every draw
    AND on every camera move while orbiting ('sk3d-view') */
 function updateFloatingLabels() {
+  const bb = scaleDrag ? scaleGizmoBox() : null;
+  placeFloat('sk3dScale',
+    bb ? { x: bb.x1 + Math.max(3, bb.h * 0.08), y: (bb.y0 + bb.y1) / 2 } : null,
+    bb ? `W ${bb.w.toFixed(1)} × H ${bb.h.toFixed(1)} ${unitLabel()}` +
+         `  (×${scaleDrag.f.toFixed(2)})` : '');
   const e = ghost || (selEnt >= 0 ? skEnts[selEnt] : null) || null;
   const d = e ? dimLabel(e) : null;
   placeFloat('sk3dDim', d, d ? d.text : '');
