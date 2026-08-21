@@ -48,13 +48,43 @@ def test_luminance_polarity_black_on_white():
     assert abs(info["width_mm"] - 20) < 0.5          # 100x200px -> 20x40mm
 
 
-def test_split_pieces_are_bridged():
-    """Two blobs separated by a gap trace as ONE connected outline."""
+def test_split_pieces_stay_separate_unless_asked():
+    """Detailed art is legitimately many pieces: default keeps them apart;
+    connect_pieces=True welds them for single-piece pendants."""
     img = np.zeros((300, 300, 4), np.uint8)
     cv2.circle(img, (150, 100), 60, (0, 0, 0, 255), -1)
     cv2.circle(img, (150, 230), 60, (0, 0, 0, 255), -1)   # 10px gap
     ents, info = imgtrace.image_to_entities(_png(img), height_mm=50)
+    assert info["contours"] == 2
+    ents, info = imgtrace.image_to_entities(_png(img), height_mm=50,
+                                            connect_pieces=True)
     assert info["contours"] == 1
+
+
+def test_high_res_traced_small_keeps_detail():
+    """Reported 2026-08-21 (idol trace 'broken so much'): simplification used
+    to scale with the TARGET size, so a 2000px image traced to 20mm was
+    simplified at ~15px and detail died. Fidelity is now resolution-bound."""
+    img = np.zeros((2000, 1200, 4), np.uint8)
+    # a comb: body + 12 teeth 30px wide with 30px gaps — fine detail
+    cv2.rectangle(img, (100, 100), (1100, 800), (0, 0, 0, 255), -1)
+    for i in range(12):
+        x0 = 120 + i * 80
+        cv2.rectangle(img, (x0, 800), (x0 + 30, 1800), (0, 0, 0, 255), -1)
+    ents, info = imgtrace.image_to_entities(_png(img), height_mm=20)
+    assert info["contours"] == 1
+    # every tooth survives: the outline must weave 12 teeth -> lots of
+    # near-vertical excursions; a bulldozed trace has far fewer points
+    pts = ents[0]["points"]
+    ys = [p[1] for p in pts]
+    deep = sum(1 for p in pts if p[1] < min(ys) + 1.0)
+    assert deep >= 24, f"teeth lost: only {deep} deep points, {len(pts)} total"
+    # and tiny separate ornaments survive too (a 14px dot = 0.14mm at 20mm)
+    img2 = np.zeros((2000, 1200, 4), np.uint8)
+    cv2.circle(img2, (600, 1000), 500, (10, 10, 10, 255), -1)
+    cv2.circle(img2, (600, 200), 40, (10, 10, 10, 255), -1)   # 0.8mm ornament
+    ents2, info2 = imgtrace.image_to_entities(_png(img2), height_mm=20)
+    assert info2["contours"] == 2, "small ornament was dropped"
 
 
 def test_channel_absorb_fills_narrow_recess():

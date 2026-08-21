@@ -105,20 +105,29 @@ def _chaikin(pts: np.ndarray, cut_px: float) -> np.ndarray:
 
 def image_to_entities(data: bytes, height_mm: float = 50.0,
                       tol_mm: float = 0.15, min_channel_mm: float = 0.0,
-                      min_area_frac: float = 0.01):
+                      connect_pieces: bool = False):
     """bytes of a PNG/JPG -> (sketch polygon entities, info dict).
 
     height_mm       : traced artwork is scaled to this overall height.
     tol_mm          : simplification fidelity (smaller = more points).
+                      Internally CAPPED at ~3 source pixels: tracing a
+                      high-res image to a small target must not bulldoze
+                      its detail (the user can rescale the sketch later).
     min_channel_mm  : pre-fill background recesses narrower than this
                       (set to the end-mill diameter + margin; 0 = off).
+    connect_pieces  : weld disjoint pieces with straight bridges (for
+                      single-piece pendants). Default OFF — detailed art
+                      is legitimately many separate pieces, and a sketch
+                      handles that fine.
     """
     if not (1.0 <= float(height_mm) <= 1000.0):
         raise ValueError("height_mm must be between 1 and 1000")
     img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
     mask = _mask_from_image(img)
 
-    # drop speckle components but KEEP interior holes (donuts stay donuts)
+    # drop only true speckles, KEEPING small ornaments and interior holes:
+    # the floor is a physical ~0.25mm at the final scale, not a fraction of
+    # the biggest piece (that used to silently eat dots and thin ornaments)
     n_comp, labels, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
     if n_comp < 2:
         raise ValueError("no artwork found in the image")
@@ -126,15 +135,19 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
     biggest = int(comp_areas.max())
     if biggest < 64:
         raise ValueError("artwork too small to trace")
-    keep = {i + 1 for i, a in enumerate(comp_areas)
-            if a >= max(64.0, min_area_frac * biggest)}
+    ys, xs = np.where(mask)
+    h_all = int(ys.max()) - int(ys.min()) + 1
+    mm_px = float(height_mm) / h_all
+    min_area = max(9.0, (0.25 / mm_px) ** 2)
+    keep = {i + 1 for i, a in enumerate(comp_areas) if a >= min_area}
     solid = np.isin(labels, list(keep)).astype(np.uint8)
 
     ys, xs = np.where(solid)
     x, y = int(xs.min()), int(ys.min())
     w, h = int(xs.max()) - x + 1, int(ys.max()) - y + 1
     mm_px = float(height_mm) / h
-    solid = _bridge_pieces(solid, max(3, int(0.6 / mm_px)))
+    if connect_pieces:
+        solid = _bridge_pieces(solid, max(3, int(0.6 / mm_px)))
 
     if min_channel_mm and min_channel_mm > 0:
         k = int(min_channel_mm / mm_px) | 1
@@ -144,18 +157,21 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
         solid = (1 - field).astype(np.uint8)
 
-    # final geometry: outer rings + their holes
+    # final geometry: outer rings + their holes. Fidelity knobs are in SOURCE
+    # PIXELS with hard caps — the sketch must look like the artwork at any
+    # target size (resize later with the sketch Scale tool if needed).
     cnts, hier = cv2.findContours(solid, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
     x, y, w, h = cv2.boundingRect(np.vstack([c for c in cnts]))
     mm_px = float(height_mm) / h
     cx_px, cy_px = x + w / 2.0, y + h / 2.0
-    eps = max(0.5, tol_mm / mm_px)
+    eps = max(1.0, min(3.0, tol_mm / mm_px))
+    cut_px = max(0.8, min(2.0, 0.4 / mm_px))
 
     def to_mm(cnt):
         ap = cv2.approxPolyDP(cnt, eps, True).reshape(-1, 2).astype(float)
         if len(ap) < 3:
             return None
-        ap = _chaikin(ap, cut_px=0.4 / mm_px)
+        ap = _chaikin(ap, cut_px=cut_px)
         pts = [((px - cx_px) * mm_px, (cy_px - py) * mm_px) for px, py in ap]
         pts = _round_pts(pts)
         return pts if len(pts) >= 3 else None
@@ -165,7 +181,7 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
     order = sorted(range(len(cnts)),
                    key=lambda i: cv2.contourArea(cnts[i]), reverse=True)
     for i in order:
-        if cv2.contourArea(cnts[i]) < max(64.0, min_area_frac * biggest):
+        if cv2.contourArea(cnts[i]) < min_area:
             continue
         outer = hier[i][3] < 0            # no parent -> outer ring
         pts = to_mm(cnts[i])

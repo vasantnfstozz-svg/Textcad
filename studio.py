@@ -281,6 +281,7 @@ class TracePngReq(BaseModel):
     offset: float = 0.0
     tol_mm: float = 0.15
     min_channel_mm: float = 0.0      # end-mill pre-fill; 0 = off
+    connect_pieces: bool = False     # weld disjoint art into one piece
 
 
 class RemoveReq(BaseModel):
@@ -705,7 +706,8 @@ def trace_png(req: TracePngReq):
     try:
         data = base64.b64decode(req.png_base64.split(",")[-1])
         ents, info = imgtrace.image_to_entities(
-            data, req.height_mm, req.tol_mm, req.min_channel_mm)
+            data, req.height_mm, req.tol_mm, req.min_channel_mm,
+            connect_pieces=req.connect_pieces)
         fid, n = req.feature_id, 2
         while any(f.id == fid for f in _doc().features):
             fid = f"{req.feature_id}-{n}"
