@@ -766,7 +766,26 @@ let scaleDrag = null;
 function scaleSel() {
   const all = selEnt < 0 || !skEnts[selEnt];
   if (all && !skEnts.length) {
-    bus.emit('msg', 'bot', '⚠ Nothing to scale — the sketch is empty.');
+    // Empty editor, but shapes are visible on screen? They belong to a
+    // COMMITTED sketch (e.g. the traced logo) — jump there and scale it
+    // instead of dead-ending on "the sketch is empty" (reported 2026-08-21).
+    const cands = (S.lastDoc?.features || []).filter(f =>
+      (f.op === 'sketch' || f.op === 'sketch_on_face')
+      && f.id !== skEditId && (f.params?.entities || []).length);
+    if (!skEditId && cands.length === 1) {
+      const target = cands[0];
+      exitMode();                       // this sketch is empty — nothing lost
+      bus.emit('msg', 'bot', `This sketch was empty — opening ` +
+        `"${target.id}" (the shapes you see) for scaling instead.`);
+      editSketch(target).then(() => scaleSel());
+      return;
+    }
+    bus.emit('msg', 'bot', '⚠ Nothing to scale — this sketch is empty.'
+      + (cands.length
+         ? ` The shapes you see belong to ${cands.map(c => `"${c.id}"`).join(', ')}` +
+           ' — Cancel this sketch, then double-click that feature (or use' +
+           ' Modify → Scale).'
+         : ''));
     return;
   }
   const idxs = all ? skEnts.map((_, i) => i) : [selEnt];

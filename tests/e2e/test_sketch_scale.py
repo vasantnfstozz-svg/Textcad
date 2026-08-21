@@ -137,6 +137,65 @@ def test_modify_tab_scale_routes_a_sketch_into_drag_scale(page, fresh_doc,
     assert page.errors == []
 
 
+def test_scale_in_empty_new_sketch_jumps_to_the_real_one(page, fresh_doc,
+                                                         server):
+    """Reported 2026-08-21: user pressed Scale inside a NEW (empty) sketch
+    while the traced logo was visible -> 'the sketch is empty'. With exactly
+    one committed sketch in the doc, Scale must jump into IT and arm the
+    drag."""
+    httpx.post(f"{server}/api/feature/add", json={
+        "id": "logo", "op": "sketch",
+        "params": {"plane": "XY", "offset": 0, "entities": [
+            {"kind": "rectangle", "mode": "add", "x": 0, "y": 0,
+             "w": 30, "h": 12}]},
+        "inputs": []}, timeout=60)
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(2000)
+    page.click("#ribbon .rbtn[title='Create Sketch']")
+    page.wait_for_timeout(800)
+    q = page.evaluate("""() => {
+      const vp = window.__vp;
+      const info = vp.originPlaneInfo().find(x => x.plane === 'XY');
+      const cv = document.querySelector('#viewer canvas');
+      const r = cv.getBoundingClientRect();
+      const V3 = vp.camera.position.constructor;
+      const v = new V3(...info.position).project(vp.camera);
+      return { x: r.left + (v.x + 1) / 2 * r.width,
+               y: r.top + (1 - (v.y + 1) / 2) * r.height };
+    }""")
+    page.mouse.click(q["x"], q["y"])
+    page.wait_for_function(
+        "async () => (await import('/static/js/sketch3d.js')).sketch3DActive()",
+        timeout=20000)
+    page.wait_for_timeout(1000)
+    page.click("#ribbon .rbtn[title='Scale']")     # empty sketch -> must jump
+    page.wait_for_timeout(2500)
+    MOVE = """
+    async (args) => {
+      const [x, y] = args;
+      const { bus } = await import('/static/js/bus.js');
+      bus.emit('sk3d-move', { x, y, tol: 1.0 });
+      await new Promise(r => setTimeout(r, 120));
+    }
+    """
+    page.evaluate(MOVE, [0, 0])
+    page.evaluate(MOVE, [0, 40])                   # x2 live, in the LOGO editor
+    assert page.text_content("#sk3dCoords").startswith("scale")
+    page.evaluate("""async () => {
+      const { bus } = await import('/static/js/bus.js');
+      bus.emit('sk3d-down', { x: 0, y: 40, tol: 1.0 }); bus.emit('sk3d-up', {});
+    }""")
+    page.click("#ribbon .rbtn[title='Finish Sketch']")
+    page.wait_for_function(
+        "async () => !(await import('/static/js/sketch3d.js')).sketch3DActive()",
+        timeout=20000)
+    page.wait_for_timeout(500)
+    ents = _entities(server)
+    assert ents["rectangle"]["w"] == pytest.approx(60, abs=0.01)
+    assert ents["rectangle"]["h"] == pytest.approx(24, abs=0.01)
+    assert page.errors == []
+
+
 def test_scale_all_then_scale_selected(top_face_sketch, server):
     page = top_face_sketch
     # draw: rectangle (0,0)-(20,10) and circle centre (30,5) r 5
