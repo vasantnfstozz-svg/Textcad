@@ -93,6 +93,50 @@ def _entities(server):
     return {e["kind"]: e for e in sk["params"]["entities"]}
 
 
+def test_modify_tab_scale_routes_a_sketch_into_drag_scale(page, fresh_doc,
+                                                          server):
+    """Reported 2026-08-21: clicking Modify->Scale with a traced logo opened
+    the generic factor dialog ('still i am getting the same box'). With a
+    sketch as the obvious target it must open the editor IN drag-scale."""
+    httpx.post(f"{server}/api/feature/add", json={
+        "id": "logo", "op": "sketch",
+        "params": {"plane": "XY", "offset": 0, "entities": [
+            {"kind": "rectangle", "mode": "add", "x": 5, "y": 5,
+             "w": 20, "h": 10}]},
+        "inputs": []}, timeout=60)
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_timeout(2000)
+    page.click("#tabstrip >> text=Modify")
+    page.wait_for_timeout(300)
+    page.click("#ribbon .rbtn[title='scale']")
+    page.wait_for_function(IS_ACTIVE := (
+        "async () => (await import('/static/js/sketch3d.js')).sketch3DActive()"
+    ), timeout=20000)
+    page.wait_for_timeout(800)
+    # drag mode is live: anchor, move +40mm = x2, click commits
+    page.evaluate(CLICKISH := """
+    async (args) => {
+      const [x, y, kind] = args;
+      const { bus } = await import('/static/js/bus.js');
+      bus.emit(kind, { x, y, tol: 1.0 });
+      if (kind === 'sk3d-down') bus.emit('sk3d-up', {});
+      await new Promise(r => setTimeout(r, 120));
+    }
+    """, [0, 0, "sk3d-move"])
+    page.evaluate(CLICKISH, [0, 40, "sk3d-move"])
+    assert page.text_content("#sk3dCoords").startswith("scale")
+    page.evaluate(CLICKISH, [0, 40, "sk3d-down"])
+    page.click("#ribbon .rbtn[title='Finish Sketch']")
+    page.wait_for_function(
+        "async () => !(await import('/static/js/sketch3d.js')).sketch3DActive()",
+        timeout=20000)
+    page.wait_for_timeout(500)
+    ents = _entities(server)
+    assert ents["rectangle"]["w"] == pytest.approx(40, abs=0.01)
+    assert ents["rectangle"]["h"] == pytest.approx(20, abs=0.01)
+    assert page.errors == []
+
+
 def test_scale_all_then_scale_selected(top_face_sketch, server):
     page = top_face_sketch
     # draw: rectangle (0,0)-(20,10) and circle centre (30,5) r 5

@@ -8,7 +8,7 @@ import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport,
          actionUndo, actionSpec, actionTracePng, loadSample,
          modalGuard } from './dialogs.js';
 import { openSketchEditor, finishSketch, cancelSketch,
-         setSketchTool, sketchModify } from './sketcher.js';
+         setSketchTool, sketchModify, editSketch } from './sketcher.js';
 import { openSettings } from './settings.js';
 import { startPlacement, PLACEABLE } from './placement.js';
 import { beginPlanePick } from './viewport.js';
@@ -139,6 +139,24 @@ function renderTabs() {
   }
 }
 
+/* Modify → Scale routes by what the user means: a SKETCH (selected in the
+   tree, or the only sketch in the doc) opens the sketch editor straight
+   into interactive drag-scale — users clicking "Scale" on a traced logo
+   were landing in the generic factor dialog instead (reported 2026-08-21).
+   Solids keep the scale-modifier dialog. */
+async function smartScale() {
+  const feats = S.lastDoc?.features || [];
+  const sketches = feats.filter(f => f.op === 'sketch' || f.op === 'sketch_on_face');
+  const f = feats.find(x => x.id === S.selected && sketches.includes(x))
+         || (sketches.length === 1 && !S.selected ? sketches[0] : null);
+  if (f) {
+    await editSketch(f);
+    sketchModify('scale');
+    return;
+  }
+  openFeatDialog('scale');
+}
+
 function renderRibbon() {
   const rb = document.getElementById('ribbon');
   rb.innerHTML = '';
@@ -168,6 +186,7 @@ function renderRibbon() {
         b.innerHTML = `<span class="rico">${OP_ICONS[item] || '□'}</span>` +
                       `<span>${TOOL_NAMES[item] || item}</span>`;
         b.onclick = guard(item === 'extrude' ? () => openExtrude()
+          : item === 'scale' ? () => smartScale()
           : PLACEABLE.includes(item) ? () => startPlacement(item)
           : () => openFeatDialog(item));
       }
