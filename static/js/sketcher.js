@@ -209,7 +209,10 @@ export function snapStepInfo() {
 
 // ribbon-facing controls for the contextual SKETCH tab
 export function setSketchTool(kind) { setTool(tool === kind ? null : kind); }
-export function finishSketch() { create(); }
+export function finishSketch() {
+  if (scaleDrag) commitScale();          // keep the size the user is seeing
+  create();
+}
 export function cancelSketch() {
   if (skEnts.length && !confirm(
     `Discard this sketch (${skEnts.length} shape${skEnts.length > 1 ? 's' : ''})?`)) return;
@@ -321,6 +324,10 @@ export function initSketcher() {
   // sketch mode is non-modal, so key handling lives on the window (guarded)
   window.addEventListener('keydown', e => {
     if (!sketchActive || e.target.tagName === 'INPUT') return;
+    if (scaleDrag) {                      // interactive scale owns the keys
+      if (e.key === 'Escape') { e.preventDefault(); cancelScale(); }
+      return;
+    }
     if (routeDigitToDrawBox(e)) return;   // typing a number = dimension entry
     if (e.key === 'Escape' && (tool || clicks.length)) {
       e.preventDefault(); setTool(null);
@@ -333,11 +340,15 @@ export function initSketcher() {
   // sketch input: plane-local points arrive over the bus (sketch3d.js)
   bus.on('sk3d-down', p => {
     if (!sketchActive) return;
-    snapTol3d = p.tol; pointerDown(p);
+    snapTol3d = p.tol;
+    if (scaleDrag) { commitScale(); return; }   // click commits the scale
+    pointerDown(p);
   });
   bus.on('sk3d-move', p => {
     if (!sketchActive) return;
-    snapTol3d = p.tol; pointerMove(p);
+    snapTol3d = p.tol;
+    if (scaleDrag) { scaleMove(p); return; }    // live resize + readout
+    pointerMove(p);
   });
   bus.on('sk3d-up', () => { if (sketchActive) pointerUp(); });
   bus.on('sk3d-dbl', () => { if (sketchActive) onDblClick(); });
@@ -356,6 +367,7 @@ export function initSketcher() {
 }
 
 function setTool(kind) {
+  if (scaleDrag) cancelScale();          // picking a tool abandons the scale
   tool = kind; clicks = []; ghost = null; selEnt = -1;   // deselect on tool pick
   activeSnap = null; axisLock = null; gridMark = null;
   pathStart = null; pathSegs = []; pendingVia = null; segMode = 'line';
@@ -743,34 +755,65 @@ export function sketchModify(kind) {
   }
 }
 
-/* Scale — the one modify tool that works IN PLACE (resizing a traced logo
-   must not clone it). With a selection: that shape, about its own centre.
-   With NOTHING selected: every shape, about the sketch origin — so
-   multi-piece art (outline + holes) stays registered. Real mm numbers. */
+/* Scale — INTERACTIVE: press the button, then move the cursor UP to enlarge
+   / DOWN to shrink; the shapes resize live and a readout shows the current
+   W × H in real mm. Click commits, Esc cancels. Works IN PLACE (resizing a
+   traced logo must not clone it). With a selection: that shape, about its
+   own centre. With NOTHING selected: every shape, about the sketch origin —
+   so multi-piece art (outline + holes) stays registered. */
+let scaleDrag = null;
+
 function scaleSel() {
   const all = selEnt < 0 || !skEnts[selEnt];
   if (all && !skEnts.length) {
     bus.emit('msg', 'bot', '⚠ Nothing to scale — the sketch is empty.');
     return;
   }
-  const ents = all ? skEnts : [skEnts[selEnt]];
-  const h0 = entsHeight(ents);
-  if (!(h0 > 1e-6)) return;
-  const input = prompt(
-    (all ? `Scale ALL ${ents.length} shape(s) — nothing is selected. `
-         : 'Scale the selected shape. ') +
-    `Current height ${h0.toFixed(2)} mm → new height in mm:`, h0.toFixed(1));
-  if (input === null) return;
-  const h1 = Number(input);
-  if (!isFinite(h1) || h1 < 0.01) {
-    bus.emit('msg', 'bot', '⚠ Enter a positive size in mm.');
-    return;
-  }
-  const f = h1 / h0;
-  for (const e of ents) scaleEntity(e, f, !all);
-  renderEnts();
+  const idxs = all ? skEnts.map((_, i) => i) : [selEnt];
+  const base = idxs.map(i => JSON.parse(JSON.stringify(skEnts[i])));
+  const bb = entsBBox(base);
+  if (!(bb.h > 1e-6)) return;
+  scaleDrag = { idxs, base, all, w0: bb.w, h0: bb.h, startY: null, f: 1 };
+  setScaleReadout(1);
   bus.emit('msg', 'bot',
-    `Scaled ×${f.toFixed(3)} — height is now ${h1.toFixed(2)} mm.`);
+    (all ? `Scaling ALL ${idxs.length} shape(s). ` : 'Scaling the selected shape. ') +
+    'Move the cursor UP to enlarge, DOWN to shrink — the size readout follows. ' +
+    'Click to commit, Esc to cancel.');
+}
+
+function scaleMove(p) {
+  const d = scaleDrag;
+  if (d.startY === null) { d.startY = p.y; return; }
+  d.f = Math.min(100, Math.max(0.02, Math.pow(2, (p.y - d.startY) / 40)));
+  d.idxs.forEach((idx, k) => {
+    skEnts[idx] = scaleEntity(JSON.parse(JSON.stringify(d.base[k])), d.f, !d.all);
+  });
+  renderEnts();
+  setScaleReadout(d.f);
+}
+
+function setScaleReadout(f) {
+  const d = scaleDrag;
+  const el = document.getElementById('sk3dCoords');
+  if (el && d) el.textContent =
+    `scale ×${f.toFixed(3)} — W ${(d.w0 * f).toFixed(1)} × ` +
+    `H ${(d.h0 * f).toFixed(1)} ${unitLabel()}`;
+}
+
+function commitScale() {
+  const d = scaleDrag;
+  scaleDrag = null;
+  renderEnts();
+  bus.emit('msg', 'bot', `Scaled ×${d.f.toFixed(3)} — now ` +
+    `${(d.w0 * d.f).toFixed(1)} × ${(d.h0 * d.f).toFixed(1)} mm (W × H).`);
+}
+
+function cancelScale() {
+  const d = scaleDrag;
+  scaleDrag = null;
+  d.idxs.forEach((idx, k) => { skEnts[idx] = d.base[k]; });
+  renderEnts();
+  bus.emit('msg', 'bot', 'Scale cancelled — sizes restored.');
 }
 
 function entSamplePts(e) {
@@ -804,14 +847,14 @@ function entSamplePts(e) {
   return pts;
 }
 
-function entsHeight(ents) {
-  let lo = Infinity, hi = -Infinity;
+function entsBBox(ents) {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const e of ents)
     for (const p of entSamplePts(e)) {
-      lo = Math.min(lo, p[1]);
-      hi = Math.max(hi, p[1]);
+      x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]);
+      y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]);
     }
-  return hi - lo;
+  return { w: x1 - x0, h: y1 - y0 };
 }
 
 function scaleEntity(e, f, inPlace) {

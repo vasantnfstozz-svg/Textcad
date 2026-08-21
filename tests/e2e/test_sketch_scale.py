@@ -1,14 +1,15 @@
-"""E2E: the sketch Scale tool — real mm numbers, through the real UI.
+"""E2E: the sketch Scale tool — INTERACTIVE drag with a live mm readout.
 
-User request (2026-08-21): "if i want to scale up or scale down the logo...
-with the numbers like mm". Locked in here:
+User request (2026-08-21, v2): "just move the arrow up to increase, down to
+decrease... a virtual scale for knowing the height and width... instead of
+putting number". Locked in here:
 
-  1. with NOTHING selected, Scale resizes EVERY entity about the sketch
-     origin — positions AND dimensions — so multi-piece art (a traced logo's
-     outline + holes) stays registered;
-  2. with a shape SELECTED, Scale resizes just that shape in place (its
-     centre stays put) and leaves the rest alone;
-  3. the prompt talks in millimetres: current height shown, new height typed.
+  1. pressing Scale enters drag mode: cursor up/down resizes LIVE, factor
+     2^(dy/40); a click commits, the readout shows W × H in mm;
+  2. with NOTHING selected it scales EVERY entity about the sketch origin —
+     positions AND dimensions — so multi-piece art (a traced logo's outline
+     + holes) stays registered;
+  3. with a shape SELECTED it scales just that shape in place (centre stays).
 """
 import httpx
 import pytest
@@ -102,18 +103,30 @@ def test_scale_all_then_scale_selected(top_face_sketch, server):
     page.evaluate(CLICK, [30, 5, 1.0])
     page.evaluate(CLICK, [35, 5, 1.0])
 
-    # 1) NOTHING selected -> scales everything about the sketch origin.
-    #    bbox height is 10mm; answering 40 means factor 4.
+    MOVE = """
+    async (args) => {
+      const [x, y, tol] = args;
+      const { bus } = await import('/static/js/bus.js');
+      bus.emit('sk3d-move', { x, y, tol });
+      await new Promise(r => setTimeout(r, 80));
+    }
+    """
+    # 1) NOTHING selected -> drag scales everything about the sketch origin.
+    #    first move anchors the drag; +80mm up = factor 2^(80/40) = 4.
     page.evaluate(SET_TOOL, None)                 # tool pick deselects
-    page.once("dialog", lambda d: d.accept("40"))
     page.evaluate(SCALE)
+    page.evaluate(MOVE, [0, 0, 1.0])              # anchor
+    page.evaluate(MOVE, [0, 80, 1.0])             # x4, live
+    page.evaluate(CLICK, [0, 80, 1.0])            # click commits
     page.wait_for_timeout(200)
 
-    # 2) SELECT the rectangle (click its left edge) -> scales it in place.
-    #    rect is now 80x40 centred (40,20); answering 20 halves it.
+    # 2) SELECT the rectangle (click its left edge) -> drag halves it in
+    #    place: -40mm down = factor 2^(-40/40) = 0.5.
     page.evaluate(CLICK, [0, 20, 2.0])
-    page.once("dialog", lambda d: d.accept("20"))
     page.evaluate(SCALE)
+    page.evaluate(MOVE, [0, 0, 1.0])              # anchor
+    page.evaluate(MOVE, [0, -40, 1.0])            # x0.5, live
+    page.evaluate(CLICK, [0, -40, 1.0])           # commit
     page.wait_for_timeout(200)
 
     page.click("#ribbon .rbtn[title='Finish Sketch']")
