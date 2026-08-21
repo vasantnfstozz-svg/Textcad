@@ -735,11 +735,112 @@ export function sketchModify(kind) {
   if (kind === 'mirror_v') return modifySel(e => mirrorEntity(e, 'v'));
   if (kind === 'mirror_h') return modifySel(e => mirrorEntity(e, 'h'));
   if (kind === 'duplicate') return modifySel(duplicateEntity);
+  if (kind === 'scale') return scaleSel();
   if (kind === 'offset') {
     const d = Number(prompt('Offset distance in mm (+ bigger / − smaller):', '5'));
     if (!d) return;
     modifySel(e => offsetEntity(e, d));
   }
+}
+
+/* Scale — the one modify tool that works IN PLACE (resizing a traced logo
+   must not clone it). With a selection: that shape, about its own centre.
+   With NOTHING selected: every shape, about the sketch origin — so
+   multi-piece art (outline + holes) stays registered. Real mm numbers. */
+function scaleSel() {
+  const all = selEnt < 0 || !skEnts[selEnt];
+  if (all && !skEnts.length) {
+    bus.emit('msg', 'bot', '⚠ Nothing to scale — the sketch is empty.');
+    return;
+  }
+  const ents = all ? skEnts : [skEnts[selEnt]];
+  const h0 = entsHeight(ents);
+  if (!(h0 > 1e-6)) return;
+  const input = prompt(
+    (all ? `Scale ALL ${ents.length} shape(s) — nothing is selected. `
+         : 'Scale the selected shape. ') +
+    `Current height ${h0.toFixed(2)} mm → new height in mm:`, h0.toFixed(1));
+  if (input === null) return;
+  const h1 = Number(input);
+  if (!isFinite(h1) || h1 < 0.01) {
+    bus.emit('msg', 'bot', '⚠ Enter a positive size in mm.');
+    return;
+  }
+  const f = h1 / h0;
+  for (const e of ents) scaleEntity(e, f, !all);
+  renderEnts();
+  bus.emit('msg', 'bot',
+    `Scaled ×${f.toFixed(3)} — height is now ${h1.toFixed(2)} mm.`);
+}
+
+function entSamplePts(e) {
+  // characteristic points in SKETCH coords (position + rotation applied)
+  const pts = [];
+  const rot = ((e.rotation || 0) * Math.PI) / 180;
+  const c = Math.cos(rot), s = Math.sin(rot);
+  const push = (lx, ly) =>
+    pts.push([(e.x || 0) + lx * c - ly * s, (e.y || 0) + lx * s + ly * c]);
+  if (e.kind === 'circle') {
+    push(e.r, 0); push(-e.r, 0); push(0, e.r); push(0, -e.r);
+  } else if (e.kind === 'ellipse') {
+    push(e.rx, 0); push(-e.rx, 0); push(0, e.ry); push(0, -e.ry);
+  } else if (e.kind === 'regular_polygon') {
+    push(e.radius, 0); push(-e.radius, 0); push(0, e.radius); push(0, -e.radius);
+  } else if (e.kind === 'rectangle') {
+    for (const sx of [-1, 1]) for (const sy of [-1, 1])
+      push((sx * e.w) / 2, (sy * e.h) / 2);
+  } else if (e.kind === 'slot') {
+    for (const sx of [-1, 1]) for (const sy of [-1, 1])
+      push((sx * e.length) / 2, (sy * e.height) / 2);
+  } else if (e.kind === 'polygon') {
+    for (const p of e.points) push(p[0], p[1]);
+  } else if (e.kind === 'path') {
+    push(e.start[0], e.start[1]);
+    for (const sg of e.segments) {
+      push(sg.to[0], sg.to[1]);
+      if (sg.via) push(sg.via[0], sg.via[1]);
+    }
+  }
+  return pts;
+}
+
+function entsHeight(ents) {
+  let lo = Infinity, hi = -Infinity;
+  for (const e of ents)
+    for (const p of entSamplePts(e)) {
+      lo = Math.min(lo, p[1]);
+      hi = Math.max(hi, p[1]);
+    }
+  return hi - lo;
+}
+
+function scaleEntity(e, f, inPlace) {
+  if (!inPlace) { e.x = (e.x || 0) * f; e.y = (e.y || 0) * f; }
+  if (e.kind === 'circle') e.r *= f;
+  else if (e.kind === 'ellipse') { e.rx *= f; e.ry *= f; }
+  else if (e.kind === 'rectangle') { e.w *= f; e.h *= f; }
+  else if (e.kind === 'slot') { e.length *= f; e.height *= f; }
+  else if (e.kind === 'regular_polygon') e.radius *= f;
+  else if (e.kind === 'polygon')
+    e.points = e.points.map(p => [p[0] * f, p[1] * f]);
+  else if (e.kind === 'path') {
+    let cx = 0, cy = 0;
+    if (inPlace) {          // about the path's own local centre
+      const xs = [e.start[0]], ys = [e.start[1]];
+      for (const sg of e.segments) {
+        xs.push(sg.to[0]); ys.push(sg.to[1]);
+        if (sg.via) { xs.push(sg.via[0]); ys.push(sg.via[1]); }
+      }
+      cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+      cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    }
+    const sc = p => [cx + (p[0] - cx) * f, cy + (p[1] - cy) * f];
+    e.start = sc(e.start);
+    e.segments = e.segments.map(sg => ({
+      ...sg, to: sc(sg.to), ...(sg.via ? { via: sc(sg.via) } : {}),
+    }));
+  }
+  return e;
 }
 
 function modifySel(fn) {

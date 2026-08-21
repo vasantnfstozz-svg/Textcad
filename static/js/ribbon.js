@@ -60,6 +60,7 @@ const ACTIONS = {
   sk_mirror_h: { icon: '⇅', name: 'Mirror ↕', fn: () => sketchModify('mirror_h') },
   sk_duplicate: { icon: '⧉', name: 'Duplicate', fn: () => sketchModify('duplicate') },
   sk_offset: { icon: '⇢', name: 'Offset', fn: () => sketchModify('offset') },
+  sk_scale: { icon: '⤢', name: 'Scale', fn: () => sketchModify('scale') },
   ex_flange:     { icon: '⚙', name: 'Flange',     fn: () => loadSample('flange') },
   ex_impeller:   { icon: '🌀', name: 'Impeller',   fn: () => loadSample('impeller') },
   ex_compressor: { icon: '💨', name: 'Compressor', fn: () => loadSample('compressor') },
@@ -102,7 +103,7 @@ let activeTab = 'Create';
 const SKETCH_CONTEXT = [
   ['Create', SKETCH_CREATE.map(t => ({ t }))],
   ['Modify', [{ t: 'trim' }, { a: 'sk_mirror_v' }, { a: 'sk_mirror_h' },
-              { a: 'sk_duplicate' }, { a: 'sk_offset' }]],
+              { a: 'sk_duplicate' }, { a: 'sk_offset' }, { a: 'sk_scale' }]],
   ['View', [{ a: 'look_at' }]],
   ['Finish', [{ a: 'finish_sketch' }, { a: 'cancel_sketch' }]],
 ];
