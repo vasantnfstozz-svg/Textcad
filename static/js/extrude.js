@@ -636,9 +636,15 @@ async function cancel() {
   st = null; panel().style.display = 'none';
 }
 
-function ok() {
+async function ok() {
   releaseModal();
   const editing = st && st.editing;
+  if (st && !editing && !st.extrudeId) {
+    // OK must COMMIT the panel's values even if the user never dragged the
+    // arrow or touched an input (reported 2026-08-21: traced-logo sketch
+    // "could not extrude" — OK with the default distance did nothing).
+    await apply();
+  }
   const created = st && st.extrudeId;
   endExtrudeArrow();
   endExtrudeGhost();
@@ -648,7 +654,7 @@ function ok() {
     ? 'Extrude updated — the change is in the feature tree.'
     : created
     ? 'Extrude created — editable in the feature tree.'
-    : 'Nothing extruded — drag the arrow or type a distance next time.');
+    : 'Nothing extruded — the profile could not be pulled.');
 }
 
 /* Close a lingering Extrude session when ANOTHER tool starts — otherwise its
