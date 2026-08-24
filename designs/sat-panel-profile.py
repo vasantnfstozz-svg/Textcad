@@ -17,7 +17,7 @@ SCALLOPS = [(52, 86, 40), (-52, 86, 40), (52, -86, 40), (-52, -86, 40),
             (127, 0, 30), (-127, 0, 30)]
 CORNERS = [(104, 54), (-104, 54), (104, -54), (-104, -54)]
 BOSS_CLEAR = 18.8
-HEXES = [(0, 31), (0, -31), (88, 26), (-88, 26), (-88, -26), (88, -26)]
+HEXES = []   # v5: user wants the original full-triangle structure, no hexagons
 
 
 def ok_vertex(x, y):
