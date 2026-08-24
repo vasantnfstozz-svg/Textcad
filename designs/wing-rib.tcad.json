@@ -1,0 +1,456 @@
+{
+  "name": "wing-rib",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      200,
+      24.31,
+      10
+    ],
+    "holes": {
+      "6.0": 1,
+      "5.5": 1,
+      "4.5": 1
+    },
+    "tol": 0.3
+  },
+  "features": [
+    {
+      "id": "rib_outline",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              200.017,
+              0.251
+            ],
+            "segments": [
+              {
+                "type": "arc",
+                "via": [
+                  190.098,
+                  2.249
+                ],
+                "to": [
+                  180.161,
+                  4.113
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  160.233,
+                  7.463
+                ],
+                "to": [
+                  130.229,
+                  11.567
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  100.118,
+                  14.476
+                ],
+                "to": [
+                  69.851,
+                  15.834
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  43.475,
+                  14.855
+                ],
+                "to": [
+                  23.303,
+                  11.992
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  11.35,
+                  8.758
+                ],
+                "to": [
+                  4.512,
+                  5.691
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  1.301,
+                  3.207
+                ],
+                "to": [
+                  0,
+                  0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  1.899,
+                  -2.89
+                ],
+                "to": [
+                  5.488,
+                  -4.722
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  12.65,
+                  -6.538
+                ],
+                "to": [
+                  24.697,
+                  -7.912
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  44.525,
+                  -8.475
+                ],
+                "to": [
+                  70.149,
+                  -7.959
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  99.882,
+                  -6.699
+                ],
+                "to": [
+                  129.771,
+                  -4.956
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  159.767,
+                  -3.019
+                ],
+                "to": [
+                  179.839,
+                  -1.669
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  189.902,
+                  -0.971
+                ],
+                "to": [
+                  199.983,
+                  -0.251
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "rib_body",
+      "op": "extrude",
+      "params": {
+        "amount": 10
+      },
+      "inputs": [
+        "rib_outline"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "web_pocket_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 6.5,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              14.425,
+              -3.878
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  13.575,
+                  6.433
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  23.263,
+                  8.947
+                ],
+                "to": [
+                  33.035,
+                  10.651
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  42.853,
+                  11.79
+                ],
+                "to": [
+                  52.698,
+                  12.485
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  53.302,
+                  -5.396
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  43.647,
+                  -5.479
+                ],
+                "to": [
+                  33.965,
+                  -5.354
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  24.237,
+                  -4.902
+                ],
+                "to": [
+                  14.425,
+                  -3.878
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              67.145,
+              -5.055
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  66.855,
+                  12.843
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  83.768,
+                  12.452
+                ],
+                "to": [
+                  100.586,
+                  11.439
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  117.381,
+                  9.963
+                ],
+                "to": [
+                  134.147,
+                  8.087
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  133.853,
+                  -1.707
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  117.119,
+                  -2.734
+                ],
+                "to": [
+                  100.414,
+                  -3.673
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  83.732,
+                  -4.46
+                ],
+                "to": [
+                  67.145,
+                  -5.055
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "web_pocket_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 4
+      },
+      "inputs": [
+        "web_pocket_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "web_pocket_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "rib_body",
+        "web_pocket_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "spar_slot_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "rectangle",
+            "w": 8,
+            "h": 16.999,
+            "x": 60,
+            "y": 3.75,
+            "mode": "add"
+          },
+          {
+            "kind": "rectangle",
+            "w": 6,
+            "h": 7.647,
+            "x": 140,
+            "y": 3,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "spar_slot_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12
+      },
+      "inputs": [
+        "spar_slot_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "spar_slot_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "web_pocket_cut",
+        "spar_slot_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "lightening_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 5.5,
+            "x": 35,
+            "y": 2.734,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 6,
+            "x": 90,
+            "y": 3.972,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 4.5,
+            "x": 115,
+            "y": 3.66,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "lightening_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12
+      },
+      "inputs": [
+        "lightening_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "wing_rib",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "spar_slot_cut",
+        "lightening_tool"
+      ],
+      "suppressed": false
+    }
+  ]
+}
