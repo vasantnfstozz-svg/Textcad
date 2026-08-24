@@ -10,7 +10,7 @@
     "holes": {
       "2.1": 4
     },
-    "tol": 0.3
+    "tol": 0.05
   },
   "features": [
     {
@@ -238,6 +238,128 @@
       "suppressed": false
     },
     {
+      "id": "step1_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 9.8,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 65.4,
+            "x": 0,
+            "y": 108,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 62.7,
+            "x": 0,
+            "y": 108,
+            "mode": "subtract"
+          },
+          {
+            "kind": "circle",
+            "r": 65.4,
+            "x": 0,
+            "y": -108,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 62.7,
+            "x": 0,
+            "y": -108,
+            "mode": "subtract"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "step1_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 2
+      },
+      "inputs": [
+        "step1_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "step1_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "scoop_cut",
+        "step1_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "step2_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 9.6,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 62.7,
+            "x": 0,
+            "y": 108,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 60,
+            "x": 0,
+            "y": 108,
+            "mode": "subtract"
+          },
+          {
+            "kind": "circle",
+            "r": 62.7,
+            "x": 0,
+            "y": -108,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 60,
+            "x": 0,
+            "y": -108,
+            "mode": "subtract"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "step2_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 2
+      },
+      "inputs": [
+        "step2_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "step2_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "step1_cut",
+        "step2_tool"
+      ],
+      "suppressed": false
+    },
+    {
       "id": "skim_sketch",
       "op": "sketch",
       "params": {
@@ -433,7 +555,7 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "scoop_cut",
+        "step2_cut",
         "skim_tool"
       ],
       "suppressed": false
@@ -7423,11 +7545,11 @@
       "suppressed": false
     },
     {
-      "id": "frame_sketch",
+      "id": "band_sketch",
       "op": "sketch",
       "params": {
         "plane": "XY",
-        "offset": 8.6,
+        "offset": 9.0,
         "entities": [
           {
             "kind": "path",
@@ -7510,85 +7632,200 @@
                 ]
               }
             ]
-          },
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "band_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 2
+      },
+      "inputs": [
+        "band_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "band_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "dimple_cut",
+        "band_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "frame_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 8.4,
+        "entities": [
           {
             "kind": "path",
-            "mode": "subtract",
+            "mode": "add",
             "start": [
-              -83.0,
-              -13.0
+              -83.5,
+              -14.5
             ],
             "segments": [
               {
                 "type": "line",
                 "to": [
-                  83.0,
-                  -13.0
+                  83.5,
+                  -14.5
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  84.768,
-                  -12.268
+                  85.621,
+                  -13.621
                 ],
                 "to": [
-                  85.5,
-                  -10.5
+                  86.5,
+                  -11.5
                 ]
               },
               {
                 "type": "line",
                 "to": [
-                  85.5,
-                  10.5
+                  86.5,
+                  11.5
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  84.768,
-                  12.268
+                  85.621,
+                  13.621
+                ],
+                "to": [
+                  83.5,
+                  14.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -83.5,
+                  14.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -85.621,
+                  13.621
+                ],
+                "to": [
+                  -86.5,
+                  11.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -86.5,
+                  -11.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -85.621,
+                  -13.621
+                ],
+                "to": [
+                  -83.5,
+                  -14.5
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "path",
+            "mode": "subtract",
+            "start": [
+              -81.0,
+              -11.0
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  81.0,
+                  -11.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  82.414,
+                  -10.414
                 ],
                 "to": [
                   83.0,
-                  13.0
+                  -9.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  83.0,
+                  9.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  82.414,
+                  10.414
+                ],
+                "to": [
+                  81.0,
+                  11.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -81.0,
+                  11.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -82.414,
+                  10.414
+                ],
+                "to": [
+                  -83.0,
+                  9.0
                 ]
               },
               {
                 "type": "line",
                 "to": [
                   -83.0,
-                  13.0
+                  -9.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  -84.768,
-                  12.268
+                  -82.414,
+                  -10.414
                 ],
                 "to": [
-                  -85.5,
-                  10.5
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -85.5,
-                  -10.5
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -84.768,
-                  -12.268
-                ],
-                "to": [
-                  -83.0,
-                  -13.0
+                  -81.0,
+                  -11.0
                 ]
               }
             ]
@@ -7614,7 +7851,7 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "dimple_cut",
+        "band_cut",
         "frame_tool"
       ],
       "suppressed": false
@@ -7624,27 +7861,27 @@
       "op": "sketch",
       "params": {
         "plane": "XY",
-        "offset": 8.2,
+        "offset": 7.8,
         "entities": [
           {
             "kind": "circle",
-            "r": 6.5,
-            "x": -68.75,
-            "y": -2.6,
+            "r": 5.5,
+            "x": -69.086,
+            "y": -3.6,
             "mode": "add"
           },
           {
             "kind": "circle",
-            "r": 3,
-            "x": -68.75,
-            "y": -2.6,
+            "r": 2,
+            "x": -69.086,
+            "y": -3.6,
             "mode": "subtract"
           },
           {
             "kind": "slot",
             "length": 13,
             "height": 3.5,
-            "x": -64.0,
+            "x": -63.336,
             "y": -2.6,
             "rotation": 90,
             "mode": "add"
@@ -7652,14 +7889,14 @@
           {
             "kind": "circle",
             "r": 6.5,
-            "x": -51.25,
+            "x": -50.586,
             "y": -2.6,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 3,
-            "x": -51.25,
+            "x": -50.586,
             "y": -2.6,
             "mode": "subtract"
           },
@@ -7667,7 +7904,7 @@
             "kind": "rectangle",
             "w": 13.2,
             "h": 8,
-            "x": -51.25,
+            "x": -50.586,
             "y": 1.4,
             "mode": "subtract"
           },
@@ -7675,7 +7912,7 @@
             "kind": "slot",
             "length": 9.5,
             "height": 3.5,
-            "x": -56.0,
+            "x": -55.336,
             "y": -0.85,
             "rotation": 90,
             "mode": "add"
@@ -7684,17 +7921,17 @@
             "kind": "slot",
             "length": 13,
             "height": 3.5,
-            "x": -46.5,
+            "x": -45.836,
             "y": -2.6,
             "rotation": 90,
             "mode": "add"
           },
           {
             "kind": "slot",
-            "length": 15.5,
+            "length": 14.5,
             "height": 3.5,
-            "x": -38.5,
-            "y": -1.35,
+            "x": -37.836,
+            "y": -1.85,
             "rotation": 90,
             "mode": "add"
           },
@@ -7702,8 +7939,8 @@
             "kind": "slot",
             "length": 9,
             "height": 3.5,
-            "x": -37.75,
-            "y": 2.15,
+            "x": -37.586,
+            "y": 3.9,
             "rotation": 0,
             "mode": "add"
           }
@@ -7716,7 +7953,7 @@
       "id": "glyph_tool_0",
       "op": "extrude",
       "params": {
-        "amount": 3
+        "amount": 3.4
       },
       "inputs": [
         "glyph_sketch_0"
@@ -7728,33 +7965,33 @@
       "op": "sketch",
       "params": {
         "plane": "XY",
-        "offset": 8.2,
+        "offset": 7.8,
         "entities": [
           {
             "kind": "circle",
             "r": 6.5,
-            "x": -22.25,
+            "x": -22.086,
             "y": -2.6,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 3,
-            "x": -22.25,
+            "x": -22.086,
             "y": -2.6,
             "mode": "subtract"
           },
           {
             "kind": "circle",
             "r": 6.5,
-            "x": -4.75,
+            "x": -4.586,
             "y": -2.6,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 3,
-            "x": -4.75,
+            "x": -4.586,
             "y": -2.6,
             "mode": "subtract"
           },
@@ -7762,7 +7999,7 @@
             "kind": "rectangle",
             "w": 13.2,
             "h": 8,
-            "x": -4.75,
+            "x": -4.586,
             "y": -6.6,
             "mode": "subtract"
           },
@@ -7770,7 +8007,7 @@
             "kind": "slot",
             "length": 13,
             "height": 3.5,
-            "x": -9.5,
+            "x": -9.336,
             "y": -2.6,
             "rotation": 90,
             "mode": "add"
@@ -7779,7 +8016,7 @@
             "kind": "slot",
             "length": 7.5,
             "height": 3.5,
-            "x": 0.0,
+            "x": 0.164,
             "y": -5.35,
             "rotation": 90,
             "mode": "add"
@@ -7787,14 +8024,14 @@
           {
             "kind": "circle",
             "r": 6.5,
-            "x": 12.75,
+            "x": 12.914,
             "y": -2.6,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 3,
-            "x": 12.75,
+            "x": 12.914,
             "y": -2.6,
             "mode": "subtract"
           }
@@ -7807,7 +8044,7 @@
       "id": "glyph_tool_1",
       "op": "extrude",
       "params": {
-        "amount": 3
+        "amount": 3.4
       },
       "inputs": [
         "glyph_sketch_1"
@@ -7819,19 +8056,19 @@
       "op": "sketch",
       "params": {
         "plane": "XY",
-        "offset": 8.2,
+        "offset": 7.8,
         "entities": [
           {
             "kind": "circle",
             "r": 5.25,
-            "x": 29.0,
+            "x": 29.164,
             "y": -1.35,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 1.75,
-            "x": 29.0,
+            "x": 29.164,
             "y": -1.35,
             "mode": "subtract"
           },
@@ -7839,21 +8076,21 @@
             "kind": "rectangle",
             "w": 10.7,
             "h": 10,
-            "x": 29.0,
+            "x": 29.164,
             "y": -6.35,
             "mode": "subtract"
           },
           {
             "kind": "circle",
             "r": 5.25,
-            "x": 39.5,
+            "x": 39.664,
             "y": -1.35,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 1.75,
-            "x": 39.5,
+            "x": 39.664,
             "y": -1.35,
             "mode": "subtract"
           },
@@ -7861,7 +8098,7 @@
             "kind": "rectangle",
             "w": 10.7,
             "h": 10,
-            "x": 39.5,
+            "x": 39.664,
             "y": -6.35,
             "mode": "subtract"
           },
@@ -7869,7 +8106,7 @@
             "kind": "slot",
             "length": 13,
             "height": 3.5,
-            "x": 25.5,
+            "x": 25.664,
             "y": -2.6,
             "rotation": 90,
             "mode": "add"
@@ -7878,7 +8115,7 @@
             "kind": "slot",
             "length": 8.5,
             "height": 3.5,
-            "x": 34.25,
+            "x": 34.414,
             "y": -4.85,
             "rotation": 90,
             "mode": "add"
@@ -7887,7 +8124,7 @@
             "kind": "slot",
             "length": 8.5,
             "height": 3.5,
-            "x": 43.0,
+            "x": 43.164,
             "y": -4.85,
             "rotation": 90,
             "mode": "add"
@@ -7901,7 +8138,7 @@
       "id": "glyph_tool_2",
       "op": "extrude",
       "params": {
-        "amount": 3
+        "amount": 3.4
       },
       "inputs": [
         "glyph_sketch_2"
@@ -7913,46 +8150,889 @@
       "op": "sketch",
       "params": {
         "plane": "XY",
-        "offset": 8.2,
+        "offset": 7.8,
         "entities": [
           {
-            "kind": "slot",
-            "length": 13,
-            "height": 3.5,
-            "x": 51.0,
-            "y": -2.6,
-            "rotation": 90,
-            "mode": "add"
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              69.141,
+              -8.249
+            ],
+            "segments": [
+              {
+                "type": "arc",
+                "via": [
+                  66.261,
+                  -8.979
+                ],
+                "to": [
+                  63.273,
+                  -8.947
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  60.425,
+                  -8.111
+                ],
+                "to": [
+                  57.97,
+                  -6.429
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  56.197,
+                  -3.908
+                ],
+                "to": [
+                  55.339,
+                  -0.91
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  55.403,
+                  2.219
+                ],
+                "to": [
+                  56.397,
+                  5.136
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  56.961,
+                  6.045
+                ],
+                "to": [
+                  57.617,
+                  6.863
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  58.367,
+                  7.594
+                ],
+                "to": [
+                  59.216,
+                  8.244
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  60.398,
+                  8.919
+                ],
+                "to": [
+                  61.656,
+                  9.402
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  62.969,
+                  9.707
+                ],
+                "to": [
+                  64.32,
+                  9.846
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  64.632,
+                  9.872
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  64.944,
+                  9.899
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  65.228,
+                  9.874
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  65.511,
+                  9.848
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  66.05,
+                  9.81
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  66.589,
+                  9.771
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  68.004,
+                  9.478
+                ],
+                "to": [
+                  69.351,
+                  8.977
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  70.608,
+                  8.279
+                ],
+                "to": [
+                  71.75,
+                  7.395
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  73.78,
+                  4.533
+                ],
+                "to": [
+                  74.619,
+                  1.038
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  74.236,
+                  -2.536
+                ],
+                "to": [
+                  72.601,
+                  -5.64
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  73.204,
+                  -6.075
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  73.792,
+                  -6.562
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  74.373,
+                  -7.028
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  74.53,
+                  -7.288
+                ],
+                "to": [
+                  74.586,
+                  -7.682
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  74.586,
+                  -9.157
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  74.586,
+                  -10.631
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  73.196,
+                  -9.504
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  71.807,
+                  -8.377
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  69.566,
+                  -6.538
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  67.326,
+                  -4.7
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  66.532,
+                  -4.052
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  65.738,
+                  -3.405
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  65.23,
+                  -2.989
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  65.101,
+                  -2.76
+                ],
+                "to": [
+                  65.057,
+                  -2.407
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  65.057,
+                  -0.961
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  65.057,
+                  0.485
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  65.419,
+                  0.275
+                ],
+                "to": [
+                  65.86,
+                  -0.061
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  66.646,
+                  -0.72
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  68.319,
+                  -2.074
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  69.992,
+                  -3.428
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  70.241,
+                  -2.89
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  70.491,
+                  -2.351
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  70.697,
+                  -1.758
+                ],
+                "to": [
+                  70.86,
+                  -1.125
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  70.969,
+                  -0.482
+                ],
+                "to": [
+                  71.013,
+                  0.145
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  70.99,
+                  0.964
+                ],
+                "to": [
+                  70.894,
+                  1.762
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  70.716,
+                  2.545
+                ],
+                "to": [
+                  70.445,
+                  3.321
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  70.06,
+                  4.081
+                ],
+                "to": [
+                  69.555,
+                  4.806
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  68.957,
+                  5.454
+                ],
+                "to": [
+                  68.29,
+                  5.982
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  66.621,
+                  6.719
+                ],
+                "to": [
+                  64.766,
+                  6.94
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  62.928,
+                  6.631
+                ],
+                "to": [
+                  61.314,
+                  5.778
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  59.655,
+                  3.728
+                ],
+                "to": [
+                  58.918,
+                  1.17
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  59.112,
+                  -1.499
+                ],
+                "to": [
+                  60.25,
+                  -3.882
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  61.056,
+                  -4.735
+                ],
+                "to": [
+                  62.023,
+                  -5.41
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  63.106,
+                  -5.872
+                ],
+                "to": [
+                  64.263,
+                  -6.087
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  64.945,
+                  -6.113
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  65.625,
+                  -6.087
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  66.033,
+                  -6.025
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  66.419,
+                  -6.016
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  66.846,
+                  -6.305
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  67.269,
+                  -6.657
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  68.26,
+                  -7.453
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  68.793,
+                  -7.903
+                ],
+                "to": [
+                  69.141,
+                  -8.249
+                ]
+              }
+            ]
           },
           {
-            "kind": "circle",
-            "r": 1.75,
-            "x": 51.0,
-            "y": 7.4,
-            "mode": "add"
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              49.914,
+              9.843
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  51.389,
+                  9.843
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  52.863,
+                  9.843
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  53.302,
+                  9.771
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  53.374,
+                  9.333
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  53.374,
+                  3.236
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  53.374,
+                  -2.861
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  52.846,
+                  -2.511
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  52.353,
+                  -2.09
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  51.502,
+                  -1.377
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  50.651,
+                  -0.663
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  50.104,
+                  -0.209
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  49.963,
+                  0.043
+                ],
+                "to": [
+                  49.914,
+                  0.428
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  49.914,
+                  5.136
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  49.914,
+                  9.843
+                ]
+              }
+            ]
           },
           {
-            "kind": "circle",
-            "r": 8.5,
-            "x": 65.75,
-            "y": -0.6,
-            "mode": "add"
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              49.914,
+              -1.954
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  50.444,
+                  -2.296
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  50.935,
+                  -2.715
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  51.786,
+                  -3.433
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  52.637,
+                  -4.15
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  53.182,
+                  -4.604
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  53.325,
+                  -4.855
+                ],
+                "to": [
+                  53.374,
+                  -5.243
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  53.374,
+                  -6.122
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  53.374,
+                  -7.001
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  52.85,
+                  -6.634
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  52.353,
+                  -6.212
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  51.531,
+                  -5.527
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  50.708,
+                  -4.842
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  50.13,
+                  -4.37
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  49.971,
+                  -4.107
+                ],
+                "to": [
+                  49.914,
+                  -3.712
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  49.914,
+                  -2.833
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  49.914,
+                  -1.954
+                ]
+              }
+            ]
           },
           {
-            "kind": "circle",
-            "r": 5,
-            "x": 65.75,
-            "y": -0.6,
-            "mode": "subtract"
-          },
-          {
-            "kind": "slot",
-            "length": 9,
-            "height": 3.5,
-            "x": 71.25,
-            "y": -6.1,
-            "rotation": -45,
-            "mode": "add"
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              49.914,
+              -6.094
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  50.392,
+                  -6.38
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  50.822,
+                  -6.751
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  51.701,
+                  -7.489
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  52.58,
+                  -8.226
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  53.06,
+                  -8.608
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  53.263,
+                  -8.835
+                ],
+                "to": [
+                  53.374,
+                  -9.1
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  51.672,
+                  -9.1
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  49.971,
+                  -9.1
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  49.971,
+                  -8.164
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  49.971,
+                  -7.228
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  49.943,
+                  -6.661
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  49.914,
+                  -6.094
+                ]
+              }
+            ]
           }
         ]
       },
@@ -7963,7 +9043,7 @@
       "id": "glyph_tool_3",
       "op": "extrude",
       "params": {
-        "amount": 3
+        "amount": 3.4
       },
       "inputs": [
         "glyph_sketch_3"
