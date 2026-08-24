@@ -9,12 +9,12 @@
     ],
     "holes": {
       "2.2": 4,
-      "2.6": 1,
+      "1.7": 1,
       "1.6": 4,
       "3.1": 4,
       "11.15": 1
     },
-    "tol": 0.3
+    "tol": 0.05
   },
   "features": [
     {
@@ -192,7 +192,7 @@
       "id": "shaft_bore",
       "op": "with_center_hole",
       "params": {
-        "radius": 2.6
+        "radius": 1.7
       },
       "inputs": [
         "gasket_recess_cut"

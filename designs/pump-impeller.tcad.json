@@ -8,6 +8,9 @@
       11
     ],
     "tip_radius": 25,
+    "holes": {
+      "1.5": 1
+    },
     "tol": 0.3
   },
   "features": [
@@ -204,56 +207,13 @@
       "suppressed": false
     },
     {
-      "id": "bore_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": -1,
-        "entities": [
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              2,
-              1.5
-            ],
-            "segments": [
-              {
-                "type": "arc",
-                "via": [
-                  -2.5,
-                  0
-                ],
-                "to": [
-                  2,
-                  -1.5
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "bore_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 13
-      },
-      "inputs": [
-        "bore_sketch"
-      ],
-      "suppressed": false
-    },
-    {
       "id": "impeller",
-      "op": "cut",
-      "params": {},
+      "op": "with_center_hole",
+      "params": {
+        "radius": 1.5
+      },
       "inputs": [
-        "body",
-        "bore_tool"
+        "body"
       ],
       "suppressed": false
     }
