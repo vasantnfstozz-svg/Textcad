@@ -4263,73 +4263,37 @@
         "entities": [
           {
             "kind": "slot",
-            "length": 18,
-            "height": 6,
-            "x": 27.054,
-            "y": 12.964,
+            "length": 58,
+            "height": 7,
+            "x": 45.993,
+            "y": 22.038,
             "rotation": 25.6,
             "mode": "add"
           },
           {
             "kind": "slot",
-            "length": 18,
-            "height": 6,
-            "x": -27.054,
-            "y": -12.964,
+            "length": 58,
+            "height": 7,
+            "x": -45.993,
+            "y": -22.038,
             "rotation": 25.6,
             "mode": "add"
           },
           {
             "kind": "slot",
-            "length": 18,
-            "height": 6,
-            "x": -27.054,
-            "y": 12.964,
+            "length": 58,
+            "height": 7,
+            "x": -45.993,
+            "y": 22.038,
             "rotation": -25.6,
             "mode": "add"
           },
           {
             "kind": "slot",
-            "length": 18,
-            "height": 6,
-            "x": 27.054,
-            "y": -12.964,
-            "rotation": -25.6,
-            "mode": "add"
-          },
-          {
-            "kind": "slot",
-            "length": 18,
-            "height": 6,
-            "x": 54.109,
-            "y": 25.927,
-            "rotation": 25.6,
-            "mode": "add"
-          },
-          {
-            "kind": "slot",
-            "length": 18,
-            "height": 6,
-            "x": -54.109,
-            "y": -25.927,
-            "rotation": 25.6,
-            "mode": "add"
-          },
-          {
-            "kind": "slot",
-            "length": 18,
-            "height": 6,
-            "x": -54.109,
-            "y": 25.927,
-            "rotation": -25.6,
-            "mode": "add"
-          },
-          {
-            "kind": "slot",
-            "length": 18,
-            "height": 6,
-            "x": 54.109,
-            "y": -25.927,
+            "length": 58,
+            "height": 7,
+            "x": 45.993,
+            "y": -22.038,
             "rotation": -25.6,
             "mode": "add"
           }

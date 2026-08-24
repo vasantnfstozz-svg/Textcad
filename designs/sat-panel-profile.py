@@ -92,16 +92,16 @@ for hx, hy in HEXES:
           for a in (90, 150, 210, 270, 330, 30)]
     hex_paths.append(rounded_path(vs))
 
-# capsule slots along the X arms (rotation in deg, s along each arm)
+# ONE long capsule slot per half-arm (user-sketched style): spans s 22..80
 ang = math.degrees(math.atan(S))
 ca, sa = math.cos(math.atan(S)), math.sin(math.atan(S))
 slots = []
-for s0 in (30, 60):
-    for dx, dy, rot in ((ca, sa, ang), (-ca, sa, -ang)):
-        for sgn in (1, -1):
-            slots.append({"kind": "slot", "length": 18, "height": 6,
-                          "x": round(sgn * s0 * dx, 3), "y": round(sgn * s0 * dy, 3),
-                          "rotation": round(rot, 2), "mode": "add"})
+S_MID = 51.0
+for dx, dy, rot in ((ca, sa, ang), (-ca, sa, -ang)):
+    for sgn in (1, -1):
+        slots.append({"kind": "slot", "length": 58, "height": 7,
+                      "x": round(sgn * S_MID * dx, 3), "y": round(sgn * S_MID * dy, 3),
+                      "rotation": round(rot, 2), "mode": "add"})
 
 print(f"# {len(tris)} tris, {len(hex_paths)} hexes, {len(slots)} slots")
 for k in range(0, len(tris), 10):
