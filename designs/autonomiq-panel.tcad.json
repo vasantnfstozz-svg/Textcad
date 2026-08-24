@@ -180,10 +180,10 @@
       "suppressed": false
     },
     {
-      "id": "blank",
+      "id": "base_extrude",
       "op": "extrude",
       "params": {
-        "amount": 10
+        "amount": 4.0
       },
       "inputs": [
         "outline_sketch"
@@ -191,58 +191,11 @@
       "suppressed": false
     },
     {
-      "id": "scoop_sketch",
+      "id": "tier1_sketch",
       "op": "sketch",
       "params": {
         "plane": "XY",
-        "offset": -1,
-        "entities": [
-          {
-            "kind": "circle",
-            "r": 60,
-            "x": 0,
-            "y": 108,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 60,
-            "x": 0,
-            "y": -108,
-            "mode": "add"
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "scoop_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 12
-      },
-      "inputs": [
-        "scoop_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "scoop_cut",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "blank",
-        "scoop_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "skim1_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 9.5,
+        "offset": 4.0,
         "entities": [
           {
             "kind": "path",
@@ -418,116 +371,44 @@
       "suppressed": false
     },
     {
-      "id": "skim1_tool",
+      "id": "tier1_extrude",
       "op": "extrude",
       "params": {
-        "amount": 2
+        "amount": 2.0
       },
       "inputs": [
-        "skim1_sketch"
+        "tier1_sketch"
       ],
       "suppressed": false
     },
     {
-      "id": "skim1_cut",
-      "op": "cut",
+      "id": "tier1_fuse",
+      "op": "fuse",
       "params": {},
       "inputs": [
-        "scoop_cut",
-        "skim1_tool"
+        "base_extrude",
+        "tier1_extrude"
       ],
       "suppressed": false
     },
     {
-      "id": "skim2_sketch",
+      "id": "tier2_sketch",
       "op": "sketch",
       "params": {
         "plane": "XY",
-        "offset": 9.2,
+        "offset": 6.0,
         "entities": [
           {
             "kind": "path",
             "mode": "add",
             "start": [
-              -96.0,
-              21.372
+              96.0,
+              -21.372
             ],
             "segments": [
               {
                 "type": "line",
                 "to": [
-                  -96.0,
-                  -21.372
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -95.391,
-                  -24.434
-                ],
-                "to": [
-                  -93.657,
-                  -27.029
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -77.029,
-                  -43.657
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -74.434,
-                  -45.391
-                ],
-                "to": [
-                  -71.372,
-                  -46.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  71.372,
-                  -46.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  74.434,
-                  -45.391
-                ],
-                "to": [
-                  77.029,
-                  -43.657
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  93.657,
-                  -27.029
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  95.391,
-                  -24.434
-                ],
-                "to": [
-                  96.0,
-                  -21.372
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
                   96.0,
                   21.372
                 ]
@@ -546,37 +427,37 @@
               {
                 "type": "line",
                 "to": [
-                  77.029,
-                  43.657
+                  90.029,
+                  30.657
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  74.434,
-                  45.391
+                  87.434,
+                  32.391
                 ],
                 "to": [
-                  71.372,
-                  46.0
+                  84.372,
+                  33.0
                 ]
               },
               {
                 "type": "line",
                 "to": [
-                  -71.372,
-                  46.0
+                  -84.372,
+                  33.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  -74.434,
-                  45.391
+                  -87.434,
+                  32.391
                 ],
                 "to": [
-                  -77.029,
-                  43.657
+                  -90.029,
+                  30.657
                 ]
               },
               {
@@ -595,31 +476,81 @@
                 "to": [
                   -96.0,
                   21.372
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -96.0,
+                  -21.372
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -95.391,
+                  -24.434
+                ],
+                "to": [
+                  -93.657,
+                  -27.029
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -90.029,
+                  -30.657
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -87.434,
+                  -32.391
+                ],
+                "to": [
+                  -84.372,
+                  -33.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  84.372,
+                  -33.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  87.434,
+                  -32.391
+                ],
+                "to": [
+                  90.029,
+                  -30.657
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  93.657,
+                  -27.029
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  95.391,
+                  -24.434
+                ],
+                "to": [
+                  96.0,
+                  -21.372
                 ]
               }
             ]
-          },
-          {
-            "kind": "circle",
-            "r": 68,
-            "x": 0,
-            "y": 108,
-            "mode": "subtract"
-          },
-          {
-            "kind": "circle",
-            "r": 68,
-            "x": 0,
-            "y": -108,
-            "mode": "subtract"
-          },
-          {
-            "kind": "rectangle",
-            "w": 210,
-            "h": 40,
-            "x": 0,
-            "y": 0,
-            "mode": "subtract"
           }
         ]
       },
@@ -627,208 +558,114 @@
       "suppressed": false
     },
     {
-      "id": "skim2_tool",
+      "id": "tier2_extrude",
       "op": "extrude",
       "params": {
-        "amount": 2
+        "amount": 2.0
       },
       "inputs": [
-        "skim2_sketch"
+        "tier2_sketch"
       ],
       "suppressed": false
     },
     {
-      "id": "skim2_cut",
-      "op": "cut",
+      "id": "tier2_fuse",
+      "op": "fuse",
       "params": {},
       "inputs": [
-        "skim1_cut",
-        "skim2_tool"
+        "tier1_fuse",
+        "tier2_extrude"
       ],
       "suppressed": false
     },
     {
-      "id": "skim3_sketch",
+      "id": "podium_sketch",
       "op": "sketch",
       "params": {
         "plane": "XY",
-        "offset": 8.9,
+        "offset": 8.0,
         "entities": [
           {
             "kind": "path",
             "mode": "add",
             "start": [
-              -96.0,
-              21.372
+              88.0,
+              -12.0
             ],
             "segments": [
               {
                 "type": "line",
                 "to": [
-                  -96.0,
-                  -21.372
+                  88.0,
+                  12.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  -95.391,
-                  -24.434
+                  85.657,
+                  17.657
                 ],
                 "to": [
-                  -93.657,
-                  -27.029
+                  80.0,
+                  20.0
                 ]
               },
               {
                 "type": "line",
                 "to": [
-                  -77.029,
-                  -43.657
+                  -80.0,
+                  20.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  -74.434,
-                  -45.391
+                  -85.657,
+                  17.657
                 ],
                 "to": [
-                  -71.372,
-                  -46.0
+                  -88.0,
+                  12.0
                 ]
               },
               {
                 "type": "line",
                 "to": [
-                  71.372,
-                  -46.0
+                  -88.0,
+                  -12.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  74.434,
-                  -45.391
+                  -85.657,
+                  -17.657
                 ],
                 "to": [
-                  77.029,
-                  -43.657
+                  -80.0,
+                  -20.0
                 ]
               },
               {
                 "type": "line",
                 "to": [
-                  93.657,
-                  -27.029
+                  80.0,
+                  -20.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  95.391,
-                  -24.434
+                  85.657,
+                  -17.657
                 ],
                 "to": [
-                  96.0,
-                  -21.372
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  96.0,
-                  21.372
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  95.391,
-                  24.434
-                ],
-                "to": [
-                  93.657,
-                  27.029
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  77.029,
-                  43.657
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  74.434,
-                  45.391
-                ],
-                "to": [
-                  71.372,
-                  46.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -71.372,
-                  46.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -74.434,
-                  45.391
-                ],
-                "to": [
-                  -77.029,
-                  43.657
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -93.657,
-                  27.029
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -95.391,
-                  24.434
-                ],
-                "to": [
-                  -96.0,
-                  21.372
+                  88.0,
+                  -12.0
                 ]
               }
             ]
-          },
-          {
-            "kind": "circle",
-            "r": 68,
-            "x": 0,
-            "y": 108,
-            "mode": "subtract"
-          },
-          {
-            "kind": "circle",
-            "r": 68,
-            "x": 0,
-            "y": -108,
-            "mode": "subtract"
-          },
-          {
-            "kind": "rectangle",
-            "w": 210,
-            "h": 66,
-            "x": 0,
-            "y": 0,
-            "mode": "subtract"
           }
         ]
       },
@@ -836,23 +673,23 @@
       "suppressed": false
     },
     {
-      "id": "skim3_tool",
+      "id": "podium_extrude",
       "op": "extrude",
       "params": {
-        "amount": 2
+        "amount": 1.3000000000000007
       },
       "inputs": [
-        "skim3_sketch"
+        "podium_sketch"
       ],
       "suppressed": false
     },
     {
-      "id": "skim3_cut",
-      "op": "cut",
+      "id": "podium_fuse",
+      "op": "fuse",
       "params": {},
       "inputs": [
-        "skim2_cut",
-        "skim3_tool"
+        "tier2_fuse",
+        "podium_extrude"
       ],
       "suppressed": false
     },
@@ -2084,7 +1921,7 @@
       "id": "lockup_tool_0",
       "op": "extrude",
       "params": {
-        "amount": 0.7
+        "amount": 0.6999999999999993
       },
       "inputs": [
         "lockup_sketch_0"
@@ -2295,7 +2132,7 @@
       "id": "lockup_tool_1",
       "op": "extrude",
       "params": {
-        "amount": 0.7
+        "amount": 0.6999999999999993
       },
       "inputs": [
         "lockup_sketch_1"
@@ -2303,662 +2140,278 @@
       "suppressed": false
     },
     {
-      "id": "lockup_fuse",
+      "id": "pyrA_base_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 6.0,
+        "entities": [
+          {
+            "kind": "polygon",
+            "mode": "add",
+            "points": [
+              [
+                31.0,
+                39.5
+              ],
+              [
+                27.0,
+                43.5
+              ],
+              [
+                23.0,
+                39.5
+              ],
+              [
+                27.0,
+                35.5
+              ]
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "pyrA_top_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 8.5,
+        "entities": [
+          {
+            "kind": "polygon",
+            "mode": "add",
+            "points": [
+              [
+                27.8,
+                39.5
+              ],
+              [
+                27.0,
+                40.3
+              ],
+              [
+                26.2,
+                39.5
+              ],
+              [
+                27.0,
+                38.7
+              ]
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "pyrA_loft",
+      "op": "loft",
+      "params": {},
+      "inputs": [
+        "pyrA_base_sketch",
+        "pyrA_top_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pyrA_row",
+      "op": "linear_pattern",
+      "params": {
+        "count": 5,
+        "dx": 12.0
+      },
+      "inputs": [
+        "pyrA_loft"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pyrA_west_seed",
+      "op": "mirror",
+      "params": {
+        "plane": "YZ"
+      },
+      "inputs": [
+        "pyrA_loft"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pyrA_row_west",
+      "op": "linear_pattern",
+      "params": {
+        "count": 5,
+        "dx": -12.0
+      },
+      "inputs": [
+        "pyrA_west_seed"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pyrA_row_south",
+      "op": "mirror",
+      "params": {
+        "plane": "XZ"
+      },
+      "inputs": [
+        "pyrA_row"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pyrA_row_sw",
+      "op": "mirror",
+      "params": {
+        "plane": "XZ"
+      },
+      "inputs": [
+        "pyrA_row_west"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pyrB_base_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 8.0,
+        "entities": [
+          {
+            "kind": "polygon",
+            "mode": "add",
+            "points": [
+              [
+                -80.8,
+                26.5
+              ],
+              [
+                -84.0,
+                29.7
+              ],
+              [
+                -87.2,
+                26.5
+              ],
+              [
+                -84.0,
+                23.3
+              ]
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "pyrB_top_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 9.8,
+        "entities": [
+          {
+            "kind": "polygon",
+            "mode": "add",
+            "points": [
+              [
+                -83.3,
+                26.5
+              ],
+              [
+                -84.0,
+                27.2
+              ],
+              [
+                -84.7,
+                26.5
+              ],
+              [
+                -84.0,
+                25.8
+              ]
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "pyrB_loft",
+      "op": "loft",
+      "params": {},
+      "inputs": [
+        "pyrB_base_sketch",
+        "pyrB_top_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pyrB_row",
+      "op": "linear_pattern",
+      "params": {
+        "count": 17,
+        "dx": 10.5
+      },
+      "inputs": [
+        "pyrB_loft"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pyrB_row_south",
+      "op": "mirror",
+      "params": {
+        "plane": "XZ"
+      },
+      "inputs": [
+        "pyrB_row"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "ziggurat_fuse",
       "op": "fuse",
       "params": {},
       "inputs": [
-        "skim3_cut",
+        "podium_fuse",
         "lockup_tool_0",
-        "lockup_tool_1"
+        "lockup_tool_1",
+        "pyrA_row",
+        "pyrA_row_west",
+        "pyrA_row_south",
+        "pyrA_row_sw",
+        "pyrB_row",
+        "pyrB_row_south"
       ],
       "suppressed": false
     },
     {
-      "id": "rowA_sketch_0",
+      "id": "scoop_sketch",
       "op": "sketch",
       "params": {
         "plane": "XY",
-        "offset": 8.0,
+        "offset": -1,
         "entities": [
           {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              -37.614,
-              23.3
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  -35.536,
-                  26.9
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -35.536,
-                  28.5
-                ],
-                "to": [
-                  -36.922,
-                  29.3
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -41.078,
-                  29.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -42.464,
-                  28.5
-                ],
-                "to": [
-                  -42.464,
-                  26.9
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -40.386,
-                  23.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -39.0,
-                  22.5
-                ],
-                "to": [
-                  -37.614,
-                  23.3
-                ]
-              }
-            ]
+            "kind": "circle",
+            "r": 60,
+            "x": 0,
+            "y": 108,
+            "mode": "add"
           },
           {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              -27.386,
-              29.7
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  -29.464,
-                  26.1
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -29.464,
-                  24.5
-                ],
-                "to": [
-                  -28.078,
-                  23.7
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -23.922,
-                  23.7
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -22.536,
-                  24.5
-                ],
-                "to": [
-                  -22.536,
-                  26.1
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -24.614,
-                  29.7
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -26.0,
-                  30.5
-                ],
-                "to": [
-                  -27.386,
-                  29.7
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              -11.614,
-              23.3
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  -9.536,
-                  26.9
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -9.536,
-                  28.5
-                ],
-                "to": [
-                  -10.922,
-                  29.3
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -15.078,
-                  29.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -16.464,
-                  28.5
-                ],
-                "to": [
-                  -16.464,
-                  26.9
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -14.386,
-                  23.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -13.0,
-                  22.5
-                ],
-                "to": [
-                  -11.614,
-                  23.3
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              -1.386,
-              29.7
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  -3.464,
-                  26.1
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -3.464,
-                  24.5
-                ],
-                "to": [
-                  -2.078,
-                  23.7
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  2.078,
-                  23.7
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  3.464,
-                  24.5
-                ],
-                "to": [
-                  3.464,
-                  26.1
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  1.386,
-                  29.7
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  0.0,
-                  30.5
-                ],
-                "to": [
-                  -1.386,
-                  29.7
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              14.386,
-              23.3
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  16.464,
-                  26.9
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  16.464,
-                  28.5
-                ],
-                "to": [
-                  15.078,
-                  29.3
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  10.922,
-                  29.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  9.536,
-                  28.5
-                ],
-                "to": [
-                  9.536,
-                  26.9
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  11.614,
-                  23.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  13.0,
-                  22.5
-                ],
-                "to": [
-                  14.386,
-                  23.3
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              24.614,
-              29.7
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  22.536,
-                  26.1
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  22.536,
-                  24.5
-                ],
-                "to": [
-                  23.922,
-                  23.7
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  28.078,
-                  23.7
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  29.464,
-                  24.5
-                ],
-                "to": [
-                  29.464,
-                  26.1
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  27.386,
-                  29.7
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  26.0,
-                  30.5
-                ],
-                "to": [
-                  24.614,
-                  29.7
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              40.386,
-              23.3
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  42.464,
-                  26.9
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  42.464,
-                  28.5
-                ],
-                "to": [
-                  41.078,
-                  29.3
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  36.922,
-                  29.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  35.536,
-                  28.5
-                ],
-                "to": [
-                  35.536,
-                  26.9
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  37.614,
-                  23.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  39.0,
-                  22.5
-                ],
-                "to": [
-                  40.386,
-                  23.3
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              -40.386,
-              -23.3
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  -42.464,
-                  -26.9
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -42.464,
-                  -28.5
-                ],
-                "to": [
-                  -41.078,
-                  -29.3
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -36.922,
-                  -29.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -35.536,
-                  -28.5
-                ],
-                "to": [
-                  -35.536,
-                  -26.9
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -37.614,
-                  -23.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -39.0,
-                  -22.5
-                ],
-                "to": [
-                  -40.386,
-                  -23.3
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              -24.614,
-              -29.7
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  -22.536,
-                  -26.1
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -22.536,
-                  -24.5
-                ],
-                "to": [
-                  -23.922,
-                  -23.7
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -28.078,
-                  -23.7
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -29.464,
-                  -24.5
-                ],
-                "to": [
-                  -29.464,
-                  -26.1
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -27.386,
-                  -29.7
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -26.0,
-                  -30.5
-                ],
-                "to": [
-                  -24.614,
-                  -29.7
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              -14.386,
-              -23.3
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  -16.464,
-                  -26.9
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -16.464,
-                  -28.5
-                ],
-                "to": [
-                  -15.078,
-                  -29.3
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -10.922,
-                  -29.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -9.536,
-                  -28.5
-                ],
-                "to": [
-                  -9.536,
-                  -26.9
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -11.614,
-                  -23.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -13.0,
-                  -22.5
-                ],
-                "to": [
-                  -14.386,
-                  -23.3
-                ]
-              }
-            ]
+            "kind": "circle",
+            "r": 60,
+            "x": 0,
+            "y": -108,
+            "mode": "add"
           }
         ]
       },
@@ -2966,1230 +2419,23 @@
       "suppressed": false
     },
     {
-      "id": "rowA_tool_0",
+      "id": "scoop_tool",
       "op": "extrude",
       "params": {
-        "amount": 3
+        "amount": 12
       },
       "inputs": [
-        "rowA_sketch_0"
+        "scoop_sketch"
       ],
       "suppressed": false
     },
     {
-      "id": "rowA_sketch_1",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 8.0,
-        "entities": [
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              1.386,
-              -29.7
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  3.464,
-                  -26.1
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  3.464,
-                  -24.5
-                ],
-                "to": [
-                  2.078,
-                  -23.7
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -2.078,
-                  -23.7
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -3.464,
-                  -24.5
-                ],
-                "to": [
-                  -3.464,
-                  -26.1
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -1.386,
-                  -29.7
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -0.0,
-                  -30.5
-                ],
-                "to": [
-                  1.386,
-                  -29.7
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              11.614,
-              -23.3
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  9.536,
-                  -26.9
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  9.536,
-                  -28.5
-                ],
-                "to": [
-                  10.922,
-                  -29.3
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  15.078,
-                  -29.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  16.464,
-                  -28.5
-                ],
-                "to": [
-                  16.464,
-                  -26.9
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  14.386,
-                  -23.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  13.0,
-                  -22.5
-                ],
-                "to": [
-                  11.614,
-                  -23.3
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              27.386,
-              -29.7
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  29.464,
-                  -26.1
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  29.464,
-                  -24.5
-                ],
-                "to": [
-                  28.078,
-                  -23.7
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  23.922,
-                  -23.7
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  22.536,
-                  -24.5
-                ],
-                "to": [
-                  22.536,
-                  -26.1
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  24.614,
-                  -29.7
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  26.0,
-                  -30.5
-                ],
-                "to": [
-                  27.386,
-                  -29.7
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              37.614,
-              -23.3
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  35.536,
-                  -26.9
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  35.536,
-                  -28.5
-                ],
-                "to": [
-                  36.922,
-                  -29.3
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  41.078,
-                  -29.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  42.464,
-                  -28.5
-                ],
-                "to": [
-                  42.464,
-                  -26.9
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  40.386,
-                  -23.3
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  39.0,
-                  -22.5
-                ],
-                "to": [
-                  37.614,
-                  -23.3
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "rowA_tool_1",
-      "op": "extrude",
-      "params": {
-        "amount": 3
-      },
-      "inputs": [
-        "rowA_sketch_1"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "rowA_cut",
+      "id": "scoop_cut",
       "op": "cut",
       "params": {},
       "inputs": [
-        "lockup_fuse",
-        "rowA_tool_0",
-        "rowA_tool_1"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "rowB_sketch_0",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 7.7,
-        "entities": [
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              -41.386,
-              38.9
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  -41.905,
-                  38.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -41.905,
-                  36.4
-                ],
-                "to": [
-                  -40.52,
-                  35.6
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -39.48,
-                  35.6
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -38.095,
-                  36.4
-                ],
-                "to": [
-                  -38.095,
-                  38.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -38.614,
-                  38.9
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -40.0,
-                  39.7
-                ],
-                "to": [
-                  -41.386,
-                  38.9
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              -28.614,
-              36.1
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  -28.095,
-                  37.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -28.095,
-                  38.6
-                ],
-                "to": [
-                  -29.48,
-                  39.4
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -30.52,
-                  39.4
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -31.905,
-                  38.6
-                ],
-                "to": [
-                  -31.905,
-                  37.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -31.386,
-                  36.1
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -30.0,
-                  35.3
-                ],
-                "to": [
-                  -28.614,
-                  36.1
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              31.386,
-              36.1
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  31.905,
-                  37.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  31.905,
-                  38.6
-                ],
-                "to": [
-                  30.52,
-                  39.4
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  29.48,
-                  39.4
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  28.095,
-                  38.6
-                ],
-                "to": [
-                  28.095,
-                  37.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  28.614,
-                  36.1
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  30.0,
-                  35.3
-                ],
-                "to": [
-                  31.386,
-                  36.1
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              38.614,
-              38.9
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  38.095,
-                  38.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  38.095,
-                  36.4
-                ],
-                "to": [
-                  39.48,
-                  35.6
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  40.52,
-                  35.6
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  41.905,
-                  36.4
-                ],
-                "to": [
-                  41.905,
-                  38.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  41.386,
-                  38.9
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  40.0,
-                  39.7
-                ],
-                "to": [
-                  38.614,
-                  38.9
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              -38.614,
-              -38.9
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  -38.095,
-                  -38.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -38.095,
-                  -36.4
-                ],
-                "to": [
-                  -39.48,
-                  -35.6
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -40.52,
-                  -35.6
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -41.905,
-                  -36.4
-                ],
-                "to": [
-                  -41.905,
-                  -38.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -41.386,
-                  -38.9
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -40.0,
-                  -39.7
-                ],
-                "to": [
-                  -38.614,
-                  -38.9
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              -31.386,
-              -36.1
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  -31.905,
-                  -37.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -31.905,
-                  -38.6
-                ],
-                "to": [
-                  -30.52,
-                  -39.4
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -29.48,
-                  -39.4
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -28.095,
-                  -38.6
-                ],
-                "to": [
-                  -28.095,
-                  -37.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -28.614,
-                  -36.1
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -30.0,
-                  -35.3
-                ],
-                "to": [
-                  -31.386,
-                  -36.1
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              28.614,
-              -36.1
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  28.095,
-                  -37.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  28.095,
-                  -38.6
-                ],
-                "to": [
-                  29.48,
-                  -39.4
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  30.52,
-                  -39.4
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  31.905,
-                  -38.6
-                ],
-                "to": [
-                  31.905,
-                  -37.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  31.386,
-                  -36.1
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  30.0,
-                  -35.3
-                ],
-                "to": [
-                  28.614,
-                  -36.1
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              41.386,
-              -38.9
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  41.905,
-                  -38.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  41.905,
-                  -36.4
-                ],
-                "to": [
-                  40.52,
-                  -35.6
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  39.48,
-                  -35.6
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  38.095,
-                  -36.4
-                ],
-                "to": [
-                  38.095,
-                  -38.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  38.614,
-                  -38.9
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  40.0,
-                  -39.7
-                ],
-                "to": [
-                  41.386,
-                  -38.9
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "rowB_tool_0",
-      "op": "extrude",
-      "params": {
-        "amount": 3
-      },
-      "inputs": [
-        "rowB_sketch_0"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "rowB_cut",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "rowA_cut",
-        "rowB_tool_0"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "dots_sketch_0",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 8.3,
-        "entities": [
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": -71.5,
-            "y": 42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": -65.0,
-            "y": 42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": -58.5,
-            "y": 42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": -52.0,
-            "y": 42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": -45.5,
-            "y": 42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": -39.0,
-            "y": 42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": -32.5,
-            "y": 42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": 32.5,
-            "y": 42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": 39.0,
-            "y": 42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": 45.5,
-            "y": 42.5,
-            "mode": "add"
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "dots_tool_0",
-      "op": "extrude",
-      "params": {
-        "amount": 3
-      },
-      "inputs": [
-        "dots_sketch_0"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "dots_sketch_1",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 8.3,
-        "entities": [
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": 52.0,
-            "y": 42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": 58.5,
-            "y": 42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": 65.0,
-            "y": 42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": 71.5,
-            "y": 42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": -71.5,
-            "y": -42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": -65.0,
-            "y": -42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": -58.5,
-            "y": -42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": -52.0,
-            "y": -42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": -45.5,
-            "y": -42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": -39.0,
-            "y": -42.5,
-            "mode": "add"
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "dots_tool_1",
-      "op": "extrude",
-      "params": {
-        "amount": 3
-      },
-      "inputs": [
-        "dots_sketch_1"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "dots_sketch_2",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 8.3,
-        "entities": [
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": -32.5,
-            "y": -42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": 32.5,
-            "y": -42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": 39.0,
-            "y": -42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": 45.5,
-            "y": -42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": 52.0,
-            "y": -42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": 58.5,
-            "y": -42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": 65.0,
-            "y": -42.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.5,
-            "x": 71.5,
-            "y": -42.5,
-            "mode": "add"
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "dots_tool_2",
-      "op": "extrude",
-      "params": {
-        "amount": 3
-      },
-      "inputs": [
-        "dots_sketch_2"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "dots_cut",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "rowB_cut",
-        "dots_tool_0",
-        "dots_tool_1",
-        "dots_tool_2"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "bracket_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 7.7,
-        "entities": [
-          {
-            "kind": "slot",
-            "length": 28,
-            "height": 5.2,
-            "x": 70,
-            "y": 34,
-            "rotation": 0,
-            "mode": "add"
-          },
-          {
-            "kind": "slot",
-            "length": 14,
-            "height": 5.2,
-            "x": 84,
-            "y": 27,
-            "rotation": 90,
-            "mode": "add"
-          },
-          {
-            "kind": "slot",
-            "length": 28,
-            "height": 5.2,
-            "x": 70,
-            "y": -34,
-            "rotation": 0,
-            "mode": "add"
-          },
-          {
-            "kind": "slot",
-            "length": 14,
-            "height": 5.2,
-            "x": 84,
-            "y": -27,
-            "rotation": 90,
-            "mode": "add"
-          },
-          {
-            "kind": "slot",
-            "length": 28,
-            "height": 5.2,
-            "x": -70,
-            "y": 34,
-            "rotation": 0,
-            "mode": "add"
-          },
-          {
-            "kind": "slot",
-            "length": 14,
-            "height": 5.2,
-            "x": -84,
-            "y": 27,
-            "rotation": 90,
-            "mode": "add"
-          },
-          {
-            "kind": "slot",
-            "length": 28,
-            "height": 5.2,
-            "x": -70,
-            "y": -34,
-            "rotation": 0,
-            "mode": "add"
-          },
-          {
-            "kind": "slot",
-            "length": 14,
-            "height": 5.2,
-            "x": -84,
-            "y": -27,
-            "rotation": 90,
-            "mode": "add"
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "bracket_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 3
-      },
-      "inputs": [
-        "bracket_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "bracket_cut",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "dots_cut",
-        "bracket_tool"
+        "ziggurat_fuse",
+        "scoop_tool"
       ],
       "suppressed": false
     },
@@ -4203,29 +2449,29 @@
           {
             "kind": "circle",
             "r": 2.1,
-            "x": 84,
-            "y": 34,
+            "x": 88.5,
+            "y": 38.0,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 2.1,
-            "x": 84,
-            "y": -34,
+            "x": 88.5,
+            "y": -38.0,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 2.1,
-            "x": -84,
-            "y": 34,
+            "x": -88.5,
+            "y": 38.0,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 2.1,
-            "x": -84,
-            "y": -34,
+            "x": -88.5,
+            "y": -38.0,
             "mode": "add"
           }
         ]
@@ -4249,7 +2495,7 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "bracket_cut",
+        "scoop_cut",
         "hole_tool"
       ],
       "suppressed": false
