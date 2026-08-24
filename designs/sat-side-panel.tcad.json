@@ -1,0 +1,1744 @@
+{
+  "name": "sat-side-panel",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      208,
+      108,
+      10
+    ],
+    "holes": {
+      "2.25": 6
+    },
+    "tol": 0.3
+  },
+  "features": [
+    {
+      "id": "blank",
+      "op": "plate",
+      "params": {
+        "width": 208,
+        "depth": 108,
+        "thickness": 10
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "blank_seat",
+      "op": "move",
+      "params": {
+        "z": 5
+      },
+      "inputs": [
+        "blank"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "scallop_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 40,
+            "x": 52,
+            "y": 86,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 40,
+            "x": -52,
+            "y": 86,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 40,
+            "x": 52,
+            "y": -86,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 40,
+            "x": -52,
+            "y": -86,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 30,
+            "x": 127,
+            "y": 0,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 30,
+            "x": -127,
+            "y": 0,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "scallop_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12
+      },
+      "inputs": [
+        "scallop_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "scallop_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "blank_seat",
+        "scallop_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "chamfer_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "rectangle",
+            "w": 16,
+            "h": 16,
+            "x": 104,
+            "y": 54,
+            "rotation": 45,
+            "mode": "add"
+          },
+          {
+            "kind": "rectangle",
+            "w": 16,
+            "h": 16,
+            "x": -104,
+            "y": 54,
+            "rotation": 45,
+            "mode": "add"
+          },
+          {
+            "kind": "rectangle",
+            "w": 16,
+            "h": 16,
+            "x": -104,
+            "y": -54,
+            "rotation": 45,
+            "mode": "add"
+          },
+          {
+            "kind": "rectangle",
+            "w": 16,
+            "h": 16,
+            "x": 104,
+            "y": -54,
+            "rotation": 45,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "chamfer_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12
+      },
+      "inputs": [
+        "chamfer_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "corner_chamfer_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "scallop_cut",
+        "chamfer_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "tri_sketch_0",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 3.5,
+        "entities": [
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -40,
+                -29.513
+              ],
+              [
+                -46.441,
+                -40.669
+              ],
+              [
+                -33.559,
+                -40.669
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -32,
+                -39.769
+              ],
+              [
+                -25.559,
+                -28.613
+              ],
+              [
+                -38.441,
+                -28.613
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -24,
+                -29.513
+              ],
+              [
+                -30.441,
+                -40.669
+              ],
+              [
+                -17.559,
+                -40.669
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -16,
+                -39.769
+              ],
+              [
+                -9.559,
+                -28.613
+              ],
+              [
+                -22.441,
+                -28.613
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -8,
+                -29.513
+              ],
+              [
+                -14.441,
+                -40.669
+              ],
+              [
+                -1.559,
+                -40.669
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                0,
+                -39.769
+              ],
+              [
+                6.441,
+                -28.613
+              ],
+              [
+                -6.441,
+                -28.613
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                8,
+                -29.513
+              ],
+              [
+                1.559,
+                -40.669
+              ],
+              [
+                14.441,
+                -40.669
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                16,
+                -39.769
+              ],
+              [
+                22.441,
+                -28.613
+              ],
+              [
+                9.559,
+                -28.613
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                24,
+                -29.513
+              ],
+              [
+                17.559,
+                -40.669
+              ],
+              [
+                30.441,
+                -40.669
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                32,
+                -39.769
+              ],
+              [
+                38.441,
+                -28.613
+              ],
+              [
+                25.559,
+                -28.613
+              ]
+            ],
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "tri_tool_0",
+      "op": "extrude",
+      "params": {
+        "amount": 7
+      },
+      "inputs": [
+        "tri_sketch_0"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "tri_sketch_1",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 3.5,
+        "entities": [
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                40,
+                -29.513
+              ],
+              [
+                33.559,
+                -40.669
+              ],
+              [
+                46.441,
+                -40.669
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -88,
+                -25.913
+              ],
+              [
+                -81.559,
+                -14.756
+              ],
+              [
+                -94.441,
+                -14.756
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -80,
+                -15.656
+              ],
+              [
+                -86.441,
+                -26.813
+              ],
+              [
+                -73.559,
+                -26.813
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -72,
+                -25.913
+              ],
+              [
+                -65.559,
+                -14.756
+              ],
+              [
+                -78.441,
+                -14.756
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -16,
+                -15.656
+              ],
+              [
+                -22.441,
+                -26.813
+              ],
+              [
+                -9.559,
+                -26.813
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                16,
+                -15.656
+              ],
+              [
+                9.559,
+                -26.813
+              ],
+              [
+                22.441,
+                -26.813
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                72,
+                -25.913
+              ],
+              [
+                78.441,
+                -14.756
+              ],
+              [
+                65.559,
+                -14.756
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                80,
+                -15.656
+              ],
+              [
+                73.559,
+                -26.813
+              ],
+              [
+                86.441,
+                -26.813
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                88,
+                -25.913
+              ],
+              [
+                94.441,
+                -14.756
+              ],
+              [
+                81.559,
+                -14.756
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -88,
+                -1.8
+              ],
+              [
+                -94.441,
+                -12.956
+              ],
+              [
+                -81.559,
+                -12.956
+              ]
+            ],
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "tri_tool_1",
+      "op": "extrude",
+      "params": {
+        "amount": 7
+      },
+      "inputs": [
+        "tri_sketch_1"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "tri_sketch_2",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 3.5,
+        "entities": [
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -80,
+                -12.056
+              ],
+              [
+                -73.559,
+                -0.9
+              ],
+              [
+                -86.441,
+                -0.9
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -72,
+                -1.8
+              ],
+              [
+                -78.441,
+                -12.956
+              ],
+              [
+                -65.559,
+                -12.956
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -64,
+                -12.056
+              ],
+              [
+                -57.559,
+                -0.9
+              ],
+              [
+                -70.441,
+                -0.9
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -56,
+                -1.8
+              ],
+              [
+                -62.441,
+                -12.956
+              ],
+              [
+                -49.559,
+                -12.956
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -48,
+                -12.056
+              ],
+              [
+                -41.559,
+                -0.9
+              ],
+              [
+                -54.441,
+                -0.9
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                48,
+                -12.056
+              ],
+              [
+                54.441,
+                -0.9
+              ],
+              [
+                41.559,
+                -0.9
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                56,
+                -1.8
+              ],
+              [
+                49.559,
+                -12.956
+              ],
+              [
+                62.441,
+                -12.956
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                64,
+                -12.056
+              ],
+              [
+                70.441,
+                -0.9
+              ],
+              [
+                57.559,
+                -0.9
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                72,
+                -1.8
+              ],
+              [
+                65.559,
+                -12.956
+              ],
+              [
+                78.441,
+                -12.956
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                80,
+                -12.056
+              ],
+              [
+                86.441,
+                -0.9
+              ],
+              [
+                73.559,
+                -0.9
+              ]
+            ],
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "tri_tool_2",
+      "op": "extrude",
+      "params": {
+        "amount": 7
+      },
+      "inputs": [
+        "tri_sketch_2"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "tri_sketch_3",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 3.5,
+        "entities": [
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                88,
+                -1.8
+              ],
+              [
+                81.559,
+                -12.956
+              ],
+              [
+                94.441,
+                -12.956
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -88,
+                1.8
+              ],
+              [
+                -81.559,
+                12.956
+              ],
+              [
+                -94.441,
+                12.956
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -80,
+                12.056
+              ],
+              [
+                -86.441,
+                0.9
+              ],
+              [
+                -73.559,
+                0.9
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -72,
+                1.8
+              ],
+              [
+                -65.559,
+                12.956
+              ],
+              [
+                -78.441,
+                12.956
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -64,
+                12.056
+              ],
+              [
+                -70.441,
+                0.9
+              ],
+              [
+                -57.559,
+                0.9
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -56,
+                1.8
+              ],
+              [
+                -49.559,
+                12.956
+              ],
+              [
+                -62.441,
+                12.956
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -48,
+                12.056
+              ],
+              [
+                -54.441,
+                0.9
+              ],
+              [
+                -41.559,
+                0.9
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                48,
+                12.056
+              ],
+              [
+                41.559,
+                0.9
+              ],
+              [
+                54.441,
+                0.9
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                56,
+                1.8
+              ],
+              [
+                62.441,
+                12.956
+              ],
+              [
+                49.559,
+                12.956
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                64,
+                12.056
+              ],
+              [
+                57.559,
+                0.9
+              ],
+              [
+                70.441,
+                0.9
+              ]
+            ],
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "tri_tool_3",
+      "op": "extrude",
+      "params": {
+        "amount": 7
+      },
+      "inputs": [
+        "tri_sketch_3"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "tri_sketch_4",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 3.5,
+        "entities": [
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                72,
+                1.8
+              ],
+              [
+                78.441,
+                12.956
+              ],
+              [
+                65.559,
+                12.956
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                80,
+                12.056
+              ],
+              [
+                73.559,
+                0.9
+              ],
+              [
+                86.441,
+                0.9
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                88,
+                1.8
+              ],
+              [
+                94.441,
+                12.956
+              ],
+              [
+                81.559,
+                12.956
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -88,
+                25.913
+              ],
+              [
+                -94.441,
+                14.756
+              ],
+              [
+                -81.559,
+                14.756
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -80,
+                15.656
+              ],
+              [
+                -73.559,
+                26.813
+              ],
+              [
+                -86.441,
+                26.813
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -72,
+                25.913
+              ],
+              [
+                -78.441,
+                14.756
+              ],
+              [
+                -65.559,
+                14.756
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -16,
+                15.656
+              ],
+              [
+                -9.559,
+                26.813
+              ],
+              [
+                -22.441,
+                26.813
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                16,
+                15.656
+              ],
+              [
+                22.441,
+                26.813
+              ],
+              [
+                9.559,
+                26.813
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                72,
+                25.913
+              ],
+              [
+                65.559,
+                14.756
+              ],
+              [
+                78.441,
+                14.756
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                80,
+                15.656
+              ],
+              [
+                86.441,
+                26.813
+              ],
+              [
+                73.559,
+                26.813
+              ]
+            ],
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "tri_tool_4",
+      "op": "extrude",
+      "params": {
+        "amount": 7
+      },
+      "inputs": [
+        "tri_sketch_4"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "tri_sketch_5",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 3.5,
+        "entities": [
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                88,
+                25.913
+              ],
+              [
+                81.559,
+                14.756
+              ],
+              [
+                94.441,
+                14.756
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -40,
+                29.513
+              ],
+              [
+                -33.559,
+                40.669
+              ],
+              [
+                -46.441,
+                40.669
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -32,
+                39.769
+              ],
+              [
+                -38.441,
+                28.613
+              ],
+              [
+                -25.559,
+                28.613
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -24,
+                29.513
+              ],
+              [
+                -17.559,
+                40.669
+              ],
+              [
+                -30.441,
+                40.669
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -16,
+                39.769
+              ],
+              [
+                -22.441,
+                28.613
+              ],
+              [
+                -9.559,
+                28.613
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                -8,
+                29.513
+              ],
+              [
+                -1.559,
+                40.669
+              ],
+              [
+                -14.441,
+                40.669
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                0,
+                39.769
+              ],
+              [
+                -6.441,
+                28.613
+              ],
+              [
+                6.441,
+                28.613
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                8,
+                29.513
+              ],
+              [
+                14.441,
+                40.669
+              ],
+              [
+                1.559,
+                40.669
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                16,
+                39.769
+              ],
+              [
+                9.559,
+                28.613
+              ],
+              [
+                22.441,
+                28.613
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                24,
+                29.513
+              ],
+              [
+                30.441,
+                40.669
+              ],
+              [
+                17.559,
+                40.669
+              ]
+            ],
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "tri_tool_5",
+      "op": "extrude",
+      "params": {
+        "amount": 7
+      },
+      "inputs": [
+        "tri_sketch_5"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "tri_sketch_6",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 3.5,
+        "entities": [
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                32,
+                39.769
+              ],
+              [
+                25.559,
+                28.613
+              ],
+              [
+                38.441,
+                28.613
+              ]
+            ],
+            "mode": "add"
+          },
+          {
+            "kind": "polygon",
+            "points": [
+              [
+                40,
+                29.513
+              ],
+              [
+                46.441,
+                40.669
+              ],
+              [
+                33.559,
+                40.669
+              ]
+            ],
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "tri_tool_6",
+      "op": "extrude",
+      "params": {
+        "amount": 7
+      },
+      "inputs": [
+        "tri_sketch_6"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "isogrid_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "corner_chamfer_cut",
+        "tri_tool_0",
+        "tri_tool_1",
+        "tri_tool_2",
+        "tri_tool_3",
+        "tri_tool_4",
+        "tri_tool_5",
+        "tri_tool_6"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "boss_pocket_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 3.5,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 11,
+            "x": 0,
+            "y": 0,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "boss_pocket_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 7
+      },
+      "inputs": [
+        "boss_pocket_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "boss_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "isogrid_cut",
+        "boss_pocket_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "boss_bolt_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 8.8,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 1.5,
+            "x": 14,
+            "y": 0,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.5,
+            "x": 7,
+            "y": 12.124,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.5,
+            "x": -7,
+            "y": 12.124,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.5,
+            "x": -14,
+            "y": 0,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.5,
+            "x": -7,
+            "y": -12.124,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.5,
+            "x": 7,
+            "y": -12.124,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "boss_bolt_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 2.5
+      },
+      "inputs": [
+        "boss_bolt_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "boss_bolt_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "boss_cut",
+        "boss_bolt_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "arm_dimple",
+      "op": "disc",
+      "params": {
+        "radius": 1.25,
+        "thickness": 2.5
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "arm_dimple_seat",
+      "op": "move",
+      "params": {
+        "x": 21.644,
+        "y": 10.371,
+        "z": 10
+      },
+      "inputs": [
+        "arm_dimple"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "arm_dimple_row",
+      "op": "linear_pattern",
+      "params": {
+        "count": 5,
+        "dx": 14.429,
+        "dy": 6.914
+      },
+      "inputs": [
+        "arm_dimple_seat"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "arm_dimples_diag1",
+      "op": "polar_pattern",
+      "params": {
+        "count": 2
+      },
+      "inputs": [
+        "arm_dimple_row"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "arm_dimples_diag2",
+      "op": "mirror",
+      "params": {
+        "plane": "YZ"
+      },
+      "inputs": [
+        "arm_dimples_diag1"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "arm_dimples_all",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "arm_dimples_diag1",
+        "arm_dimples_diag2"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "arm_dimple_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "boss_bolt_cut",
+        "arm_dimples_all"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "mount_hole_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 2.25,
+            "x": 95,
+            "y": 45,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.25,
+            "x": -95,
+            "y": 45,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.25,
+            "x": -95,
+            "y": -45,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.25,
+            "x": 95,
+            "y": -45,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.25,
+            "x": 0,
+            "y": 48,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.25,
+            "x": 0,
+            "y": -48,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "mount_hole_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12
+      },
+      "inputs": [
+        "mount_hole_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "sat_panel",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "arm_dimple_cut",
+        "mount_hole_tool"
+      ],
+      "suppressed": false
+    }
+  ]
+}
