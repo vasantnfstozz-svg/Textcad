@@ -5,10 +5,11 @@
     "size": [
       80,
       80,
-      6
+      18
     ],
     "holes": {
-      "8.0": 1,
+      "4.0": 1,
+      "7.0": 1,
       "2.2": 4
     },
     "tol": 0.3
@@ -37,13 +38,108 @@
       "suppressed": false
     },
     {
-      "id": "inlet_hole",
-      "op": "with_center_hole",
+      "id": "inlet_boss",
+      "op": "disc",
       "params": {
-        "radius": 8
+        "radius": 10,
+        "thickness": 13
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "inlet_boss_seat",
+      "op": "move",
+      "params": {
+        "z": 11.5
       },
       "inputs": [
-        "cover_seat"
+        "inlet_boss"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "outlet_boss",
+      "op": "disc",
+      "params": {
+        "radius": 6,
+        "thickness": 13
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "outlet_boss_seat",
+      "op": "move",
+      "params": {
+        "x": 28,
+        "y": 29,
+        "z": 11.5
+      },
+      "inputs": [
+        "outlet_boss"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cover_body",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "cover_seat",
+        "inlet_boss_seat",
+        "outlet_boss_seat"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "inlet_bore",
+      "op": "with_center_hole",
+      "params": {
+        "radius": 7
+      },
+      "inputs": [
+        "cover_body"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "outlet_bore_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 4,
+            "x": 28,
+            "y": 29,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "outlet_bore_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 20
+      },
+      "inputs": [
+        "outlet_bore_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "outlet_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "inlet_bore",
+        "outlet_bore_tool"
       ],
       "suppressed": false
     },
@@ -79,7 +175,7 @@
             "kind": "circle",
             "r": 2.2,
             "x": 31.5,
-            "y": 18,
+            "y": 14,
             "mode": "add"
           }
         ]
@@ -103,7 +199,7 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "inlet_hole",
+        "outlet_cut",
         "bolt_tool"
       ],
       "suppressed": false

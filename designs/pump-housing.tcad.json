@@ -9,7 +9,9 @@
     ],
     "holes": {
       "2.2": 4,
-      "2.6": 1
+      "2.6": 1,
+      "1.6": 4,
+      "11.15": 1
     },
     "tol": 0.3
   },
@@ -98,18 +100,25 @@
               {
                 "type": "line",
                 "to": [
-                  40,
+                  28,
                   33
                 ]
               },
               {
                 "type": "line",
                 "to": [
-                  40,
+                  28,
                   25.5
                 ]
               }
             ]
+          },
+          {
+            "kind": "circle",
+            "r": 6,
+            "x": 28,
+            "y": 29,
+            "mode": "add"
           }
         ]
       },
@@ -149,6 +158,104 @@
       "suppressed": false
     },
     {
+      "id": "motor_cs_drill",
+      "op": "disc",
+      "params": {
+        "radius": 1.6,
+        "thickness": 8
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "cs_drill_seat",
+      "op": "move",
+      "params": {
+        "x": 15.5,
+        "y": 15.5,
+        "z": 3
+      },
+      "inputs": [
+        "motor_cs_drill"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "motor_cs_sink",
+      "op": "cone",
+      "params": {
+        "bottom_radius": 1.55,
+        "top_radius": 4.2,
+        "height": 2.65
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "cs_sink_seat",
+      "op": "move",
+      "params": {
+        "x": 15.5,
+        "y": 15.5,
+        "z": 3.675
+      },
+      "inputs": [
+        "motor_cs_sink"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cs_cutter",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "cs_drill_seat",
+        "cs_sink_seat"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cs_pattern",
+      "op": "polar_pattern",
+      "params": {
+        "count": 4
+      },
+      "inputs": [
+        "cs_cutter"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "motor_mount_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "shaft_bore",
+        "cs_pattern"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pilot_pocket_tool",
+      "op": "disc",
+      "params": {
+        "radius": 11.15,
+        "thickness": 4.6
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "pilot_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "motor_mount_cut",
+        "pilot_pocket_tool"
+      ],
+      "suppressed": false
+    },
+    {
       "id": "bolt_sketch",
       "op": "sketch",
       "params": {
@@ -180,7 +287,7 @@
             "kind": "circle",
             "r": 2.2,
             "x": 31.5,
-            "y": 18,
+            "y": 14,
             "mode": "add"
           }
         ]
@@ -204,7 +311,7 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "shaft_bore",
+        "pilot_cut",
         "bolt_tool"
       ],
       "suppressed": false
