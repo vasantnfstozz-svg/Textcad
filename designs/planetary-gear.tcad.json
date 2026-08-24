@@ -1,0 +1,177 @@
+{
+  "name": "planetary-gear",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      null,
+      null,
+      10
+    ],
+    "symmetry": 9,
+    "tip_radius": 14.56,
+    "holes": {
+      "2.1": 1
+    },
+    "tol": 0.3
+  },
+  "features": [
+    {
+      "id": "blank",
+      "op": "disc",
+      "params": {
+        "radius": 14.56,
+        "thickness": 10
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "blank_seat",
+      "op": "move",
+      "params": {
+        "z": 5
+      },
+      "inputs": [
+        "blank"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "space_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              15.977,
+              4.354
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  14.048,
+                  3.828
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  12.92,
+                  2.706
+                ],
+                "to": [
+                  11.666,
+                  2.021
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  8.966,
+                  1.553
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  9.1,
+                  0
+                ],
+                "to": [
+                  8.966,
+                  -1.553
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  11.666,
+                  -2.021
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  12.92,
+                  -2.706
+                ],
+                "to": [
+                  14.048,
+                  -3.828
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  15.977,
+                  -4.354
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  16.56,
+                  0
+                ],
+                "to": [
+                  15.977,
+                  4.354
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "space_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12
+      },
+      "inputs": [
+        "space_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "space_pattern",
+      "op": "polar_pattern",
+      "params": {
+        "count": 9
+      },
+      "inputs": [
+        "space_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "teeth_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "blank_seat",
+        "space_pattern"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "gear",
+      "op": "with_center_hole",
+      "params": {
+        "radius": 2.1
+      },
+      "inputs": [
+        "teeth_cut"
+      ],
+      "suppressed": false
+    }
+  ]
+}

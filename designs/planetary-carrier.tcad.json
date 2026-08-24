@@ -1,0 +1,146 @@
+{
+  "name": "planetary-carrier",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      62,
+      62,
+      10
+    ],
+    "symmetry": 3,
+    "holes": {
+      "2.1": 4
+    },
+    "tol": 0.3
+  },
+  "features": [
+    {
+      "id": "body",
+      "op": "disc",
+      "params": {
+        "radius": 31,
+        "thickness": 10
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "body_seat",
+      "op": "move",
+      "params": {
+        "z": 5
+      },
+      "inputs": [
+        "body"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "window_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              9.193,
+              7.713
+            ],
+            "segments": [
+              {
+                "type": "arc",
+                "via": [
+                  6,
+                  10.392
+                ],
+                "to": [
+                  2.084,
+                  11.818
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  3.126,
+                  17.727
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  9,
+                  15.588
+                ],
+                "to": [
+                  13.789,
+                  11.57
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "window_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12
+      },
+      "inputs": [
+        "window_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "window_pattern",
+      "op": "polar_pattern",
+      "params": {
+        "count": 3
+      },
+      "inputs": [
+        "window_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "windows_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "body_seat",
+        "window_pattern"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pin_holes",
+      "op": "with_bolt_circle",
+      "params": {
+        "count": 3,
+        "bolt_radius": 2.1,
+        "pitch_circle_dia": 50.4
+      },
+      "inputs": [
+        "windows_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "carrier",
+      "op": "with_center_hole",
+      "params": {
+        "radius": 2.1
+      },
+      "inputs": [
+        "pin_holes"
+      ],
+      "suppressed": false
+    }
+  ]
+}

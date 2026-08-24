@@ -1,0 +1,160 @@
+{
+  "name": "planetary-ring",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      96,
+      96,
+      10
+    ],
+    "symmetry": 27,
+    "tip_radius": 48,
+    "tol": 0.3
+  },
+  "features": [
+    {
+      "id": "blank",
+      "op": "disc",
+      "params": {
+        "radius": 48,
+        "thickness": 10
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "blank_seat",
+      "op": "move",
+      "params": {
+        "z": 5
+      },
+      "inputs": [
+        "blank"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "bore",
+      "op": "with_center_hole",
+      "params": {
+        "radius": 35.84
+      },
+      "inputs": [
+        "blank_seat"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "space_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              34.24,
+              2.616
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  35.736,
+                  2.73
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  37.906,
+                  2.294
+                ],
+                "to": [
+                  40.085,
+                  1.428
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  40.11,
+                  0
+                ],
+                "to": [
+                  40.085,
+                  -1.428
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  37.906,
+                  -2.294
+                ],
+                "to": [
+                  35.736,
+                  -2.73
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  34.24,
+                  -2.616
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  34.34,
+                  0
+                ],
+                "to": [
+                  34.24,
+                  2.616
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "space_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12
+      },
+      "inputs": [
+        "space_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "space_pattern",
+      "op": "polar_pattern",
+      "params": {
+        "count": 27
+      },
+      "inputs": [
+        "space_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "ring_gear",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "bore",
+        "space_pattern"
+      ],
+      "suppressed": false
+    }
+  ]
+}
