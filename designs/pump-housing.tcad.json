@@ -3,15 +3,17 @@
   "spec": {
     "n_solids": 1,
     "size": [
-      80,
-      80,
+      88,
+      88,
       16
     ],
     "holes": {
+      "4.0": 1,
       "2.2": 4,
       "2.6": 1,
       "1.6": 4,
-      "11.15": 1
+      "11.15": 1,
+      "4.4": 1
     },
     "tol": 0.3
   },
@@ -20,8 +22,8 @@
       "id": "block",
       "op": "plate",
       "params": {
-        "width": 80,
-        "depth": 80,
+        "width": 88,
+        "depth": 88,
         "thickness": 16
       },
       "inputs": [],
@@ -96,29 +98,8 @@
                   0,
                   33
                 ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  28,
-                  33
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  28,
-                  25.5
-                ]
               }
             ]
-          },
-          {
-            "kind": "circle",
-            "r": 6,
-            "x": 28,
-            "y": 29,
-            "mode": "add"
           }
         ]
       },
@@ -256,6 +237,119 @@
       "suppressed": false
     },
     {
+      "id": "oring_groove_tool",
+      "op": "tube",
+      "params": {
+        "outer_radius": 38.5,
+        "inner_radius": 34.5,
+        "height": 4.5
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "oring_groove_seat",
+      "op": "move",
+      "params": {
+        "z": 16
+      },
+      "inputs": [
+        "oring_groove_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "oring_groove_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "pilot_cut",
+        "oring_groove_seat"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "outlet_drill",
+      "op": "disc",
+      "params": {
+        "radius": 4,
+        "thickness": 42
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "outlet_drill_lay",
+      "op": "rotate",
+      "params": {
+        "axis": "Y",
+        "angle_deg": 90
+      },
+      "inputs": [
+        "outlet_drill"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "outlet_drill_seat",
+      "op": "move",
+      "params": {
+        "x": 23,
+        "y": 28,
+        "z": 8.9
+      },
+      "inputs": [
+        "outlet_drill_lay"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "outlet_tap_bore",
+      "op": "disc",
+      "params": {
+        "radius": 4.4,
+        "thickness": 10
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "outlet_tap_lay",
+      "op": "rotate",
+      "params": {
+        "axis": "Y",
+        "angle_deg": 90
+      },
+      "inputs": [
+        "outlet_tap_bore"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "outlet_tap_seat",
+      "op": "move",
+      "params": {
+        "x": 39,
+        "y": 28,
+        "z": 8.9
+      },
+      "inputs": [
+        "outlet_tap_lay"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "outlet_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "oring_groove_cut",
+        "outlet_drill_seat",
+        "outlet_tap_seat"
+      ],
+      "suppressed": false
+    },
+    {
       "id": "bolt_sketch",
       "op": "sketch",
       "params": {
@@ -265,29 +359,29 @@
           {
             "kind": "circle",
             "r": 2.2,
-            "x": -31.5,
-            "y": 31.5,
+            "x": -35.5,
+            "y": 35.5,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 2.2,
-            "x": -31.5,
-            "y": -31.5,
+            "x": -35.5,
+            "y": -35.5,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 2.2,
-            "x": 31.5,
-            "y": -31.5,
+            "x": 35.5,
+            "y": -35.5,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 2.2,
-            "x": 31.5,
-            "y": 14,
+            "x": 35.5,
+            "y": 35.5,
             "mode": "add"
           }
         ]
@@ -311,7 +405,7 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "pilot_cut",
+        "outlet_cut",
         "bolt_tool"
       ],
       "suppressed": false

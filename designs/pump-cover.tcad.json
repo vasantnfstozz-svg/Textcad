@@ -3,12 +3,11 @@
   "spec": {
     "n_solids": 1,
     "size": [
-      80,
-      80,
+      88,
+      88,
       18
     ],
     "holes": {
-      "4.0": 1,
       "7.0": 1,
       "2.2": 4
     },
@@ -19,8 +18,8 @@
       "id": "cover_plate",
       "op": "plate",
       "params": {
-        "width": 80,
-        "depth": 80,
+        "width": 88,
+        "depth": 88,
         "thickness": 6
       },
       "inputs": [],
@@ -59,36 +58,12 @@
       "suppressed": false
     },
     {
-      "id": "outlet_boss",
-      "op": "disc",
-      "params": {
-        "radius": 6,
-        "thickness": 13
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "outlet_boss_seat",
-      "op": "move",
-      "params": {
-        "x": 28,
-        "y": 29,
-        "z": 11.5
-      },
-      "inputs": [
-        "outlet_boss"
-      ],
-      "suppressed": false
-    },
-    {
       "id": "cover_body",
       "op": "fuse",
       "params": {},
       "inputs": [
         "cover_seat",
-        "inlet_boss_seat",
-        "outlet_boss_seat"
+        "inlet_boss_seat"
       ],
       "suppressed": false
     },
@@ -104,46 +79,6 @@
       "suppressed": false
     },
     {
-      "id": "outlet_bore_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": -1,
-        "entities": [
-          {
-            "kind": "circle",
-            "r": 4,
-            "x": 28,
-            "y": 29,
-            "mode": "add"
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "outlet_bore_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 20
-      },
-      "inputs": [
-        "outlet_bore_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "outlet_cut",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "inlet_bore",
-        "outlet_bore_tool"
-      ],
-      "suppressed": false
-    },
-    {
       "id": "bolt_sketch",
       "op": "sketch",
       "params": {
@@ -153,29 +88,29 @@
           {
             "kind": "circle",
             "r": 2.2,
-            "x": -31.5,
-            "y": 31.5,
+            "x": -35.5,
+            "y": 35.5,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 2.2,
-            "x": -31.5,
-            "y": -31.5,
+            "x": -35.5,
+            "y": -35.5,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 2.2,
-            "x": 31.5,
-            "y": -31.5,
+            "x": 35.5,
+            "y": -35.5,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 2.2,
-            "x": 31.5,
-            "y": 14,
+            "x": 35.5,
+            "y": 35.5,
             "mode": "add"
           }
         ]
@@ -199,7 +134,7 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "outlet_cut",
+        "inlet_bore",
         "bolt_tool"
       ],
       "suppressed": false
