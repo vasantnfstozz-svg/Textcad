@@ -1,0 +1,49 @@
+{
+  "name": "planetary-spacer",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      12,
+      12,
+      10
+    ],
+    "holes": {
+      "2.2": 1
+    },
+    "tol": 0.3
+  },
+  "features": [
+    {
+      "id": "body",
+      "op": "disc",
+      "params": {
+        "radius": 6,
+        "thickness": 10
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "body_seat",
+      "op": "move",
+      "params": {
+        "z": 5
+      },
+      "inputs": [
+        "body"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "spacer",
+      "op": "with_center_hole",
+      "params": {
+        "radius": 2.2
+      },
+      "inputs": [
+        "body_seat"
+      ],
+      "suppressed": false
+    }
+  ]
+}

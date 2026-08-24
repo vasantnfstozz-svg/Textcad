@@ -3,12 +3,15 @@
   "spec": {
     "n_solids": 1,
     "size": [
-      96,
-      96,
+      106,
+      106,
       10
     ],
-    "symmetry": 27,
-    "tip_radius": 48,
+    "symmetry": 3,
+    "tip_radius": 53,
+    "holes": {
+      "2.2": 3
+    },
     "tol": 0.3
   },
   "features": [
@@ -16,7 +19,7 @@
       "id": "blank",
       "op": "disc",
       "params": {
-        "radius": 48,
+        "radius": 53,
         "thickness": 10
       },
       "inputs": [],
@@ -147,12 +150,66 @@
       "suppressed": false
     },
     {
-      "id": "ring_gear",
+      "id": "ring_teeth",
       "op": "cut",
       "params": {},
       "inputs": [
         "bore",
         "space_pattern"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "mount_hole_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 2.2,
+            "x": 47.676,
+            "y": -5.572,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.2,
+            "x": -19.012,
+            "y": 44.075,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.2,
+            "x": -28.664,
+            "y": -38.501,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "mount_hole_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12
+      },
+      "inputs": [
+        "mount_hole_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "ring_gear",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "ring_teeth",
+        "mount_hole_tool"
       ],
       "suppressed": false
     }

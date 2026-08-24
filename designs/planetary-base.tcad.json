@@ -1,0 +1,95 @@
+{
+  "name": "planetary-base",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      110,
+      110,
+      10
+    ],
+    "holes": {
+      "1.65": 4
+    },
+    "tol": 0.3
+  },
+  "features": [
+    {
+      "id": "plate",
+      "op": "plate",
+      "params": {
+        "width": 110,
+        "depth": 110,
+        "thickness": 10
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "plate_seat",
+      "op": "move",
+      "params": {
+        "z": 5
+      },
+      "inputs": [
+        "plate"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "nut_groove_tool",
+      "op": "tube",
+      "params": {
+        "outer_radius": 32.2,
+        "inner_radius": 18.2,
+        "height": 6
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "nut_groove_seat",
+      "op": "move",
+      "params": {
+        "z": 8
+      },
+      "inputs": [
+        "nut_groove_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "nut_groove_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "plate_seat",
+        "nut_groove_seat"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "axle_tap_hole",
+      "op": "with_center_hole",
+      "params": {
+        "radius": 1.65
+      },
+      "inputs": [
+        "nut_groove_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "ring_tap_holes",
+      "op": "with_bolt_circle",
+      "params": {
+        "count": 3,
+        "bolt_radius": 1.65,
+        "pitch_circle_dia": 96
+      },
+      "inputs": [
+        "axle_tap_hole"
+      ],
+      "suppressed": false
+    }
+  ]
+}
