@@ -1,50 +1,46 @@
 {
-  "name": "pump-housing",
+  "name": "pump-gasket",
   "spec": {
     "n_solids": 1,
     "size": [
-      80,
-      80,
-      18
+      73.6,
+      73.6,
+      1.5
     ],
     "holes": {
-      "2.2": 4,
-      "2.6": 1,
-      "1.6": 4,
-      "3.1": 4,
-      "11.15": 1
+      "2.25": 4
     },
     "tol": 0.3
   },
   "features": [
     {
-      "id": "block",
+      "id": "sheet",
       "op": "plate",
       "params": {
-        "width": 80,
-        "depth": 80,
-        "thickness": 18
+        "width": 73.6,
+        "depth": 73.6,
+        "thickness": 1.5
       },
       "inputs": [],
       "suppressed": false
     },
     {
-      "id": "block_seat",
+      "id": "sheet_seat",
       "op": "move",
       "params": {
-        "z": 9
+        "z": 0.75
       },
       "inputs": [
-        "block"
+        "sheet"
       ],
       "suppressed": false
     },
     {
-      "id": "volute_sketch",
+      "id": "cavity_sketch",
       "op": "sketch",
       "params": {
         "plane": "XY",
-        "offset": 6,
+        "offset": -1,
         "entities": [
           {
             "kind": "path",
@@ -127,172 +123,23 @@
       "suppressed": false
     },
     {
-      "id": "volute_tool",
+      "id": "cavity_tool",
       "op": "extrude",
       "params": {
-        "amount": 12.5
+        "amount": 3.5
       },
       "inputs": [
-        "volute_sketch"
+        "cavity_sketch"
       ],
       "suppressed": false
     },
     {
-      "id": "volute_pocket",
+      "id": "cavity_cut",
       "op": "cut",
       "params": {},
       "inputs": [
-        "block_seat",
-        "volute_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "gasket_recess_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 17,
-        "entities": [
-          {
-            "kind": "rectangle",
-            "w": 74,
-            "h": 74,
-            "x": 0,
-            "y": 0,
-            "mode": "add"
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "gasket_recess_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 1.2
-      },
-      "inputs": [
-        "gasket_recess_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "gasket_recess_cut",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "volute_pocket",
-        "gasket_recess_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "shaft_bore",
-      "op": "with_center_hole",
-      "params": {
-        "radius": 2.6
-      },
-      "inputs": [
-        "gasket_recess_cut"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "motor_screw_drill",
-      "op": "disc",
-      "params": {
-        "radius": 1.6,
-        "thickness": 10
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "screw_drill_seat",
-      "op": "move",
-      "params": {
-        "x": 15.5,
-        "y": 15.5,
-        "z": 4
-      },
-      "inputs": [
-        "motor_screw_drill"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "motor_cbore",
-      "op": "disc",
-      "params": {
-        "radius": 3.1,
-        "thickness": 3.4
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "cbore_seat",
-      "op": "move",
-      "params": {
-        "x": 15.5,
-        "y": 15.5,
-        "z": 4.5
-      },
-      "inputs": [
-        "motor_cbore"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "screw_cutter",
-      "op": "fuse",
-      "params": {},
-      "inputs": [
-        "screw_drill_seat",
-        "cbore_seat"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "screw_pattern",
-      "op": "polar_pattern",
-      "params": {
-        "count": 4
-      },
-      "inputs": [
-        "screw_cutter"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "motor_mount_cut",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "shaft_bore",
-        "screw_pattern"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "pilot_pocket_tool",
-      "op": "disc",
-      "params": {
-        "radius": 11.15,
-        "thickness": 4.6
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "pilot_cut",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "motor_mount_cut",
-        "pilot_pocket_tool"
+        "sheet_seat",
+        "cavity_tool"
       ],
       "suppressed": false
     },
@@ -305,28 +152,28 @@
         "entities": [
           {
             "kind": "circle",
-            "r": 2.2,
+            "r": 2.25,
             "x": -31.5,
             "y": 31.5,
             "mode": "add"
           },
           {
             "kind": "circle",
-            "r": 2.2,
+            "r": 2.25,
             "x": -31.5,
             "y": -31.5,
             "mode": "add"
           },
           {
             "kind": "circle",
-            "r": 2.2,
+            "r": 2.25,
             "x": 31.5,
             "y": -31.5,
             "mode": "add"
           },
           {
             "kind": "circle",
-            "r": 2.2,
+            "r": 2.25,
             "x": 31.5,
             "y": 14,
             "mode": "add"
@@ -340,7 +187,7 @@
       "id": "bolt_tool",
       "op": "extrude",
       "params": {
-        "amount": 20
+        "amount": 3.5
       },
       "inputs": [
         "bolt_sketch"
@@ -348,11 +195,11 @@
       "suppressed": false
     },
     {
-      "id": "housing",
+      "id": "gasket",
       "op": "cut",
       "params": {},
       "inputs": [
-        "pilot_cut",
+        "cavity_cut",
         "bolt_tool"
       ],
       "suppressed": false
