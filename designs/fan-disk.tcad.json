@@ -1,0 +1,171 @@
+{
+  "name": "fan-disk",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      110,
+      110,
+      10
+    ],
+    "symmetry": 14,
+    "tip_radius": 55,
+    "holes": {
+      "11.0": 1
+    },
+    "tol": 0.3
+  },
+  "features": [
+    {
+      "id": "disk",
+      "op": "disc",
+      "params": {
+        "radius": 55,
+        "thickness": 10
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "disk_seat",
+      "op": "move",
+      "params": {
+        "z": 5
+      },
+      "inputs": [
+        "disk"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "window_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              14.873,
+              1.95
+            ],
+            "segments": [
+              {
+                "type": "arc",
+                "via": [
+                  22.979,
+                  5.717
+                ],
+                "to": [
+                  30.103,
+                  12.013
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  35.548,
+                  20.798
+                ],
+                "to": [
+                  38.449,
+                  31.964
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  31.594,
+                  38.753
+                ],
+                "to": [
+                  23.564,
+                  44.099
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  25.448,
+                  32.511
+                ],
+                "to": [
+                  24.068,
+                  21.904
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  20.061,
+                  12.759
+                ],
+                "to": [
+                  13.974,
+                  5.452
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  14.529,
+                  3.728
+                ],
+                "to": [
+                  14.873,
+                  1.95
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "window_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12
+      },
+      "inputs": [
+        "window_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "window_ring",
+      "op": "polar_pattern",
+      "params": {
+        "count": 14
+      },
+      "inputs": [
+        "window_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "windows_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "disk_seat",
+        "window_ring"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "fan_disk",
+      "op": "with_center_hole",
+      "params": {
+        "radius": 11
+      },
+      "inputs": [
+        "windows_cut"
+      ],
+      "suppressed": false
+    }
+  ]
+}
