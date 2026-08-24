@@ -79,6 +79,38 @@ export function actionTracePng() {
   inp.click();
 }
 
+export function actionImportStl() {
+  if (modalGuard()) return;
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.stl,model/stl';
+  inp.onchange = async () => {
+    const f = inp.files[0];
+    if (!f) return;
+    const dataUrl = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = rej;
+      r.readAsDataURL(f);
+    });
+    const out = await postJSON('/api/import-stl', {
+      stl_base64: dataUrl,
+      feature_id: (f.name.replace(/\.[^.]*$/, '').replace(/[^\w-]+/g, '-')
+                   .slice(0, 24) || 'imported-stl'),
+    }, 'importing STL…');
+    if (out && !out.error) {
+      loadMesh(out.features.length === 1);   // fit on the very first body
+      const i = out.import_info || {};
+      bus.emit('msg', 'bot',
+        `Imported "${f.name}" as body "${i.feature_id}" — ` +
+        `${(i.size_mm || []).join('×')}mm, ${i.triangles} triangles. ` +
+        `Move / Cut / Fuse it like any other body (units read as mm — ` +
+        `edit the feature's scale if it came in the wrong size).`);
+    }
+  };
+  inp.click();
+}
+
 export async function actionOpen() {
   const list = await getJSON('/api/designs');
   const el = document.getElementById('libList');

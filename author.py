@@ -59,6 +59,9 @@ OP_NOTES = {
     "extrude": "Pulls the sketch normal to its plane. both = symmetric (BOTH ways).",
     "cut": "First input MINUS the rest (by tree order). Keep body first.",
     "sketch": "offset shifts the plane along its normal (mm).",
+    "import_stl": "Imports an EXISTING .stl file (UI upload or absolute path). "
+                  "Only use when the user names a real file — NEVER invent a "
+                  "filename. STL units read as mm; scale resizes on import.",
 }
 
 

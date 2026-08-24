@@ -19,14 +19,22 @@ hole/pattern helpers (which cut tall cutters along Z) work regardless of scale.
 """
 
 from __future__ import annotations
+import functools
 import math
+import os
+import re
+import struct
+import tempfile
+from pathlib import Path
 from build123d import (
     Box, Cylinder, Sphere, Cone, Pos, PolarLocations, Locations,
     BuildSketch, RegularPolygon, BuildLine, Polyline, Spline, make_face,
-    trace, extrude, revolve, Axis, Plane, Part,
+    trace, extrude, revolve, Axis, Plane, Part, Mesher, Solid,
     mirror as _b3d_mirror, scale as _b3d_scale,
     fillet as _b3d_fillet, chamfer as _b3d_chamfer, offset as _b3d_offset,
 )
+from OCP.BRep import BRep_Tool
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
 
 _AXES = {"X": Axis.X, "Y": Axis.Y, "Z": Axis.Z}
 _PLANES = {"XY": Plane.XY, "XZ": Plane.XZ, "YZ": Plane.YZ}
@@ -276,6 +284,123 @@ def shell_out(part: Part, thickness: float, open_face: str = "top") -> Part:
 
 
 # ---------------------------------------------------------------------------
+# Mesh import (STL from outside sources)
+# ---------------------------------------------------------------------------
+
+IMPORTS_DIR = Path(__file__).parent / "imports"   # UI uploads land here
+MAX_STL_TRIANGLES = 20_000                        # keeps rebuild + display usable
+
+
+def _stl_triangles(data: bytes) -> tuple[str, int]:
+    """('ascii'|'binary', triangle count) without a full parse. ASCII is
+    detected by content, not just the 'solid' prefix — some binary exporters
+    put 'solid' in the 80-byte header too, so the size formula decides."""
+    head = data[:80].lstrip()
+    if head.startswith(b"solid") and b"facet" in data:
+        return "ascii", data.count(b"facet normal")
+    if len(data) >= 84:
+        (n,) = struct.unpack_from("<I", data, 80)
+        if len(data) >= 84 + 50 * n:
+            return "binary", n
+    if head.startswith(b"solid"):
+        return "ascii", 0
+    raise ValueError("import_stl: not an STL file (neither binary nor ascii STL)")
+
+
+def _ascii_stl_to_binary(data: bytes) -> bytes:
+    """lib3mf's STL reader only accepts BINARY STL — ascii files fail with a
+    cryptic 'Reading from a stream was not possible'. Convert up front."""
+    verts = re.findall(
+        rb"vertex\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)\s+([-+0-9.eE]+)", data)
+    if not verts or len(verts) % 3:
+        raise ValueError("import_stl: malformed ascii STL "
+                         "(vertex count is not a multiple of 3)")
+    out = bytearray(b"\0" * 80)
+    out += struct.pack("<I", len(verts) // 3)
+    for i in range(0, len(verts), 3):
+        out += struct.pack("<3f", 0.0, 0.0, 0.0)   # normals recomputed on read
+        for v in verts[i:i + 3]:
+            out += struct.pack("<3f", float(v[0]), float(v[1]), float(v[2]))
+        out += struct.pack("<H", 0)
+    return bytes(out)
+
+
+@functools.lru_cache(maxsize=8)
+def _read_stl_solids(path_str: str, mtime_ns: int, size: int) -> tuple:
+    """Read + repair an STL into a tuple of closed Solids. Cached on
+    (path, mtime, size): Document.rebuild() re-evaluates every feature on
+    every edit, and re-parsing a 20k-triangle mesh each time would crawl.
+    Downstream ops never mutate OCCT shapes, so sharing the cached Solids
+    across rebuilds is safe."""
+    data = Path(path_str).read_bytes()
+    fmt, ntri = _stl_triangles(data)
+    if ntri == 0:
+        raise ValueError("import_stl: the file contains no triangles")
+    if ntri > MAX_STL_TRIANGLES:
+        raise ValueError(
+            f"import_stl: mesh has {ntri:,} triangles — the limit is "
+            f"{MAX_STL_TRIANGLES:,} so rebuilds stay interactive. Decimate it "
+            "in a mesh tool (Blender/MeshLab) and re-export.")
+    if fmt == "ascii":
+        data = _ascii_stl_to_binary(data)
+    # lib3mf reads real files only — hand it the (possibly converted) bytes
+    tmp = tempfile.NamedTemporaryFile(suffix=".stl", delete=False)
+    try:
+        tmp.write(data)
+        tmp.close()
+        try:
+            shapes = Mesher().read(tmp.name)
+        except Exception as e:   # lib3mf errors do NOT derive from RuntimeError
+            raise ValueError(f"import_stl: could not read the STL ({e})") from e
+    finally:
+        tmp.close()
+        os.unlink(tmp.name)
+
+    solids, open_shells = [], 0
+    for shp in shapes:
+        for sh in shp.shells():
+            if not BRep_Tool.IsClosed_s(sh.wrapped):
+                open_shells += 1
+                continue
+            sol = Solid(BRepBuilderAPI_MakeSolid(sh.wrapped).Solid())
+            if sol.volume < 0:               # inverted winding — flip it
+                sol = Solid(sol.wrapped.Reversed())
+            solids.append(sol)
+    if open_shells:
+        raise ValueError(
+            f"import_stl: the mesh is not watertight ({open_shells} open "
+            f"shell(s), {len(solids)} closed) — a solid needs a fully closed "
+            "surface. Repair it in a mesh tool and re-export.")
+    if not solids:
+        raise ValueError("import_stl: no solid found in the mesh")
+    return tuple(solids)
+
+
+def import_stl(file: str, scale: float = 1.0) -> Part:
+    """Import an external STL mesh file as a solid body. `file` is an absolute
+    path, or the name of a file in the imports/ folder (where UI uploads
+    land). Watertight meshes only, up to 20,000 triangles; the triangles
+    become a faceted solid. STL units are read as mm; `scale` resizes on
+    import (e.g. 25.4 for a file modeled in inches)."""
+    if not isinstance(file, str) or not file.strip():
+        raise ValueError("import_stl: file must be a filename or path")
+    if not isinstance(scale, (int, float)) or scale <= 0:
+        raise ValueError("import_stl: scale must be a positive number")
+    path = Path(file)
+    if not path.is_absolute():
+        path = IMPORTS_DIR / file
+    if not path.is_file():
+        raise ValueError(f"import_stl: file not found: {path}")
+    st = path.stat()
+    solids = _read_stl_solids(str(path), st.st_mtime_ns, st.st_size)
+    # NOTE: Part(solid.wrapped) reports volume 0 (probed) — never wrap that way.
+    part = solids[0] if len(solids) == 1 else (Part() + list(solids))
+    if scale != 1.0:
+        part = _b3d_scale(part, by=float(scale))
+    return part
+
+
+# ---------------------------------------------------------------------------
 # Registry — the exact names exposed to the LLM's script namespace
 # ---------------------------------------------------------------------------
 
@@ -299,6 +424,7 @@ EXPORTS = {
     "fillet": fillet_edges,
     "chamfer": chamfer_edges,
     "shell": shell_out,
+    "import_stl": import_stl,
 }
 
 
@@ -319,8 +445,14 @@ def _signature(fn) -> str:
 
 if __name__ == "__main__":
     import inspector
+    from build123d import export_stl as _export_stl
+
+    # import_stl needs a real file: round-trip a box through STL
+    _selftest_stl = Path(tempfile.gettempdir()) / "_blocks_selftest.stl"
+    _export_stl(Box(20, 10, 5), str(_selftest_stl))
 
     cases = {
+        "import_stl (box roundtrip)": import_stl(str(_selftest_stl)),
         "plate":        plate(40, 30, 5),
         "disc":         disc(20, 8),
         "ball":         ball(15),

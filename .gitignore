@@ -7,3 +7,6 @@ _studio_mesh.stl
 # the design LIBRARY is user work — back it up (root-level .tcad.json are
 # self-test artifacts and stay ignored)
 !designs/*.tcad.json
+# uploaded import files are user work too: designs reference them by name,
+# so a backup without them would not rebuild
+!imports/*.stl

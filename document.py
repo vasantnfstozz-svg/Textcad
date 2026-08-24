@@ -47,6 +47,7 @@ CREATORS = {name: blocks.EXPORTS[name] for name in
             ("plate", "disc", "ball", "cone", "tube", "polygon_plate",
              "hex_plate", "revolve_profile", "curved_blade")}
 CREATORS["sketch"] = sk.make_sketch     # produces a 2D Sketch, not a solid
+CREATORS["import_stl"] = blocks.import_stl   # external mesh file -> solid body
 
 # modifiers: exactly one upstream Part + numeric/string params
 MODIFIERS = {

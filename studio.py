@@ -31,8 +31,15 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import build123d as b3d
+from OCP.BRep import BRep_Tool
+from OCP.BRepAdaptor import BRepAdaptor_Surface
+from OCP.GeomAbs import GeomAbs_SurfaceType
+from OCP.TopAbs import TopAbs_Orientation, TopAbs_ShapeEnum
+from OCP.TopExp import TopExp_Explorer
+from OCP.TopoDS import TopoDS
 
 import author
+import blocks
 import imgtrace
 import sketch as sketchlib
 import sketch_trim as trimlib
@@ -284,6 +291,12 @@ class TracePngReq(BaseModel):
     connect_pieces: bool = False     # weld disjoint art into one piece
 
 
+class ImportStlReq(BaseModel):
+    stl_base64: str                  # data-URL or bare base64 of the .stl
+    feature_id: str = "imported-stl"
+    scale: float = 1.0               # 1 = STL units are mm
+
+
 class RemoveReq(BaseModel):
     feature_id: str
 
@@ -453,6 +466,53 @@ def _mesh_tol(part, denom: float = 900.0, floor: float = 0.05) -> float:
         return 0.2
 
 
+# Bodies with more faces than this are treated as imported triangle meshes:
+# their raw triangle faces merge into ONE pickable "MESH" face (id -1) and
+# skip BRepMesh entirely. Probed on a 10k-triangle sphere: the classic
+# per-face path takes 25-50s PER REQUEST vs ~2s for the fast path — and 10k
+# individual face-meta entries are useless for picking anyway. Real BREP
+# faces on such a body (e.g. a cylinder wall cut into an imported mesh) still
+# get the classic individually-tagged treatment.
+MESH_MODE_FACES = 400
+MESH_FACE_ID = -1
+
+
+def _triangle_pts(face) -> list | None:
+    """The 3 corner points of a pure-triangle face wound to its OUTWARD
+    normal, or None for anything richer. Pure OCP — no BRepMesh.
+
+    Winding must come from the plane axis + orientation flag: the raw vertex
+    walk order is NOT reliable (probed on a lib3mf sphere: 296 of 1258
+    triangles came out inverted, which backface-culls them into holes)."""
+    pts, seen = [], set()
+    vexp = TopExp_Explorer(face.wrapped, TopAbs_ShapeEnum.TopAbs_VERTEX)
+    while vexp.More():
+        p = BRep_Tool.Pnt_s(TopoDS.Vertex_s(vexp.Current()))
+        key = (round(p.X(), 6), round(p.Y(), 6), round(p.Z(), 6))
+        if key not in seen:
+            if len(pts) == 3:
+                return None
+            seen.add(key)
+            pts.append(key)
+        vexp.Next()
+    if len(pts) != 3:
+        return None
+    surf = BRepAdaptor_Surface(face.wrapped)
+    if surf.GetType() != GeomAbs_SurfaceType.GeomAbs_Plane:
+        return None                # 3-vertex CURVED face — classic path
+    ax = surf.Plane().Axis().Direction()
+    nx, ny, nz = ax.X(), ax.Y(), ax.Z()
+    if face.wrapped.Orientation() == TopAbs_Orientation.TopAbs_REVERSED:
+        nx, ny, nz = -nx, -ny, -nz
+    (x0, y0, z0), (x1, y1, z1), (x2, y2, z2) = pts
+    cx = (y1 - y0) * (z2 - z0) - (z1 - z0) * (y2 - y0)
+    cy = (z1 - z0) * (x2 - x0) - (x1 - x0) * (z2 - z0)
+    cz = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0)
+    if cx * nx + cy * ny + cz * nz < 0:
+        pts = [pts[0], pts[2], pts[1]]
+    return pts
+
+
 def _tagged_mesh(part, body_id: str | None = None) -> dict:
     """Face-tagged mesh of ONE solid: triangles carry the index of the OCCT
     face they came from, plus per-face and per-edge metadata for picking.
@@ -463,7 +523,35 @@ def _tagged_mesh(part, body_id: str | None = None) -> dict:
     tol = _mesh_tol(part)
     positions, indices, face_ids, faces_meta = [], [], [], []
     base = 0
-    for fi, face in enumerate(part.faces()):
+    all_faces = part.faces()
+    mesh_mode = len(all_faces) > MESH_MODE_FACES
+    rich_faces = list(enumerate(all_faces))     # faces that get full tagging
+
+    if mesh_mode:
+        rich_faces, tri_count = [], 0
+        for fi, face in enumerate(all_faces):
+            pts = _triangle_pts(face)
+            if pts is None:
+                rich_faces.append((fi, face))
+                continue
+            for p in pts:
+                positions += [round(p[0], 4), round(p[1], 4), round(p[2], 4)]
+                face_ids.append(MESH_FACE_ID)
+            indices += [base, base + 1, base + 2]
+            base += 3
+            tri_count += 1
+        if tri_count:
+            try:
+                area = round(part.area, 2)
+            except Exception:
+                area = None
+            info = {"id": MESH_FACE_ID, "type": "MESH", "planar": False,
+                    "area": area, "triangles": tri_count}
+            if body_id is not None:
+                info["body"] = body_id
+            faces_meta.append(info)
+
+    for fi, face in rich_faces:
         try:
             verts, tris = face.tessellate(tol)
         except Exception:
@@ -499,8 +587,16 @@ def _tagged_mesh(part, body_id: str | None = None) -> dict:
                 pass
         faces_meta.append(info)
 
+    # In mesh mode, sampling 15k+ triangle edges would choke both server and
+    # viewer (wireframe soup) — only the rich faces' edges are outlines. A
+    # shared edge may appear once per face; drawing it twice is invisible.
+    if mesh_mode:
+        edge_list = [e for _, face in rich_faces for e in face.edges()]
+    else:
+        edge_list = part.edges()
+
     edges_meta = []
-    for ei, edge in enumerate(part.edges()):
+    for ei, edge in enumerate(edge_list):
         gt = str(edge.geom_type).replace("GeomType.", "")
         n = 2 if gt == "LINE" else 40
         try:
@@ -720,6 +816,52 @@ def trace_png(req: TracePngReq):
         return {"error": str(e), **_doc_json()}
     _rebuild_and_mesh()
     return {**_doc_json(), "trace_info": {**info, "feature_id": fid}}
+
+
+@app.post("/api/import-stl")
+def import_stl_file(req: ImportStlReq):
+    """Upload an STL from an outside source, get an import_stl feature holding
+    it as a solid body — then Move / Cut / Fuse it like any other body. The
+    file is saved into imports/ so the feature tree stays a small JSON recipe
+    that rebuilds from disk."""
+    _snapshot()
+    saved_new = None
+    try:
+        data = base64.b64decode(req.stl_base64.split(",")[-1])
+        blocks.IMPORTS_DIR.mkdir(exist_ok=True)
+        stem = re.sub(r"[^\w-]+", "-", req.feature_id).strip("-")[:40] or "imported"
+        fname, n = f"{stem}.stl", 2
+        # same name + same bytes -> reuse the file; different bytes -> suffix
+        while (blocks.IMPORTS_DIR / fname).exists() \
+                and (blocks.IMPORTS_DIR / fname).read_bytes() != data:
+            fname, n = f"{stem}-{n}.stl", n + 1
+        if not (blocks.IMPORTS_DIR / fname).exists():
+            (blocks.IMPORTS_DIR / fname).write_bytes(data)
+            saved_new = blocks.IMPORTS_DIR / fname
+        # validate BEFORE adding a feature — a bad file must not leave a
+        # broken node in the tree (this also primes the read cache)
+        part = blocks.import_stl(fname, req.scale)
+        fid, n = req.feature_id, 2
+        while any(f.id == fid for f in _doc().features):
+            fid = f"{req.feature_id}-{n}"
+            n += 1
+        _doc().add(fid, "import_stl", {"file": fname, "scale": req.scale}, [])
+    except Exception as e:        # decode/read/mesh errors -> honest message
+        _entry()["history"].pop()
+        if saved_new is not None:
+            try:
+                saved_new.unlink()
+            except OSError:
+                pass
+        return {"error": str(e), **_doc_json()}
+    _rebuild_and_mesh()
+    triangles = blocks._stl_triangles(data)[1]
+    bb = part.bounding_box()
+    return {**_doc_json(), "import_info": {
+        "feature_id": fid, "file": fname, "triangles": triangles,
+        "size_mm": [round(bb.size.X, 2), round(bb.size.Y, 2),
+                    round(bb.size.Z, 2)],
+        "volume_mm3": round(part.volume, 1)}}
 
 
 @app.post("/api/feature/remove")

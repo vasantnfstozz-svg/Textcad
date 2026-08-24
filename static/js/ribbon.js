@@ -5,7 +5,7 @@ import { S } from './state.js';
 import { bus } from './bus.js';
 import { OP_ICONS, TOOL_NAMES } from './icons.js';
 import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport,
-         actionUndo, actionSpec, actionTracePng, loadSample,
+         actionUndo, actionSpec, actionTracePng, actionImportStl, loadSample,
          modalGuard } from './dialogs.js';
 import { openSketchEditor, finishSketch, cancelSketch,
          setSketchTool, sketchModify, editSketch } from './sketcher.js';
@@ -52,6 +52,7 @@ const ACTIONS = {
   settings: { icon: '⚙', name: 'Settings', fn: openSettings },
   newsketch: { icon: '✎', name: 'Create Sketch', fn: startSketch },
   trace_png: { icon: '🖼', name: 'Trace PNG', fn: actionTracePng },
+  import_stl_file: { icon: '📥', name: 'Import STL', fn: actionImportStl },
   finish_sketch: { icon: '✓', name: 'Finish Sketch', fn: finishSketch },
   cancel_sketch: { icon: '✕', name: 'Cancel Sketch', fn: cancelSketch },
   look_at: { icon: '⌖', name: 'Look At', fn: lookAtSketch },
@@ -71,12 +72,14 @@ const ACTIONS = {
 // Create tab beside the sketch-consuming ops (Extrude/Revolve/Loft/Sweep).
 const TABS = {
   File: [
-    ['Design', [{ a: 'new' }, { a: 'open' }, { a: 'save' }, { a: 'export' }]],
+    ['Design', [{ a: 'new' }, { a: 'open' }, { a: 'save' },
+                { a: 'import_stl_file' }, { a: 'export' }]],
     ['Examples', [{ a: 'ex_flange' }, { a: 'ex_impeller' }, { a: 'ex_compressor' }]],
     ['Preferences', [{ a: 'settings' }]],
   ],
   Create: [
     ['Create', [{ a: 'newsketch' }, { a: 'trace_png' },
+                { a: 'import_stl_file' },
                 'extrude', 'revolve', 'loft', 'sweep']],
     ['Primitives', ['plate', 'disc', 'ball', 'cone', 'tube', 'polygon_plate',
                     'hex_plate']],
