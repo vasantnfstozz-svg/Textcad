@@ -1,0 +1,158 @@
+{
+  "name": "pump-impeller",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      50,
+      50,
+      11
+    ],
+    "tip_radius": 25,
+    "tol": 0.3
+  },
+  "features": [
+    {
+      "id": "base_disc",
+      "op": "disc",
+      "params": {
+        "radius": 25,
+        "thickness": 3
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "base_disc_seat",
+      "op": "move",
+      "params": {
+        "z": 1.5
+      },
+      "inputs": [
+        "base_disc"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "hub",
+      "op": "disc",
+      "params": {
+        "radius": 7,
+        "thickness": 7
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "hub_seat",
+      "op": "move",
+      "params": {
+        "z": 3.5
+      },
+      "inputs": [
+        "hub"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "blade",
+      "op": "curved_blade",
+      "params": {
+        "inner_radius": 6,
+        "outer_radius": 24.8,
+        "inlet_angle_deg": 30,
+        "exit_angle_deg": 50,
+        "height": 8.5,
+        "thickness": 2.5
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "blade_seat",
+      "op": "move",
+      "params": {
+        "z": 2.5
+      },
+      "inputs": [
+        "blade"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "blade_ring",
+      "op": "polar_pattern",
+      "params": {
+        "count": 6
+      },
+      "inputs": [
+        "blade_seat"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "body",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "base_disc_seat",
+        "hub_seat",
+        "blade_ring"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "bore_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              2,
+              1.5
+            ],
+            "segments": [
+              {
+                "type": "arc",
+                "via": [
+                  -2.5,
+                  0
+                ],
+                "to": [
+                  2,
+                  -1.5
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "bore_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 13
+      },
+      "inputs": [
+        "bore_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "impeller",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "body",
+        "bore_tool"
+      ],
+      "suppressed": false
+    }
+  ]
+}

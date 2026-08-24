@@ -1,0 +1,213 @@
+{
+  "name": "pump-housing",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      80,
+      80,
+      16
+    ],
+    "holes": {
+      "2.2": 4,
+      "2.6": 1
+    },
+    "tol": 0.3
+  },
+  "features": [
+    {
+      "id": "block",
+      "op": "plate",
+      "params": {
+        "width": 80,
+        "depth": 80,
+        "thickness": 16
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "block_seat",
+      "op": "move",
+      "params": {
+        "z": 8
+      },
+      "inputs": [
+        "block"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "volute_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 4,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              9.349,
+              25.686
+            ],
+            "segments": [
+              {
+                "type": "arc",
+                "via": [
+                  24.873,
+                  12.947
+                ],
+                "to": [
+                  27.77,
+                  -7.441
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  15.828,
+                  -24.845
+                ],
+                "to": [
+                  -5.238,
+                  -29.709
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -24.496,
+                  -18.796
+                ],
+                "to": [
+                  -31.463,
+                  2.754
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -21.816,
+                  23.808
+                ],
+                "to": [
+                  0,
+                  33
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  40,
+                  33
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  40,
+                  25.5
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "volute_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12.5
+      },
+      "inputs": [
+        "volute_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "volute_pocket",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "block_seat",
+        "volute_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "shaft_bore",
+      "op": "with_center_hole",
+      "params": {
+        "radius": 2.6
+      },
+      "inputs": [
+        "volute_pocket"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "bolt_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 2.2,
+            "x": -31.5,
+            "y": 31.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.2,
+            "x": -31.5,
+            "y": -31.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.2,
+            "x": 31.5,
+            "y": -31.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.2,
+            "x": 31.5,
+            "y": 18,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "bolt_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 18
+      },
+      "inputs": [
+        "bolt_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "housing",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "shaft_bore",
+        "bolt_tool"
+      ],
+      "suppressed": false
+    }
+  ]
+}

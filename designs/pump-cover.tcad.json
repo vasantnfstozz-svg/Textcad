@@ -1,0 +1,112 @@
+{
+  "name": "pump-cover",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      80,
+      80,
+      6
+    ],
+    "holes": {
+      "8.0": 1,
+      "2.2": 4
+    },
+    "tol": 0.3
+  },
+  "features": [
+    {
+      "id": "cover_plate",
+      "op": "plate",
+      "params": {
+        "width": 80,
+        "depth": 80,
+        "thickness": 6
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "cover_seat",
+      "op": "move",
+      "params": {
+        "z": 3
+      },
+      "inputs": [
+        "cover_plate"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "inlet_hole",
+      "op": "with_center_hole",
+      "params": {
+        "radius": 8
+      },
+      "inputs": [
+        "cover_seat"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "bolt_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 2.2,
+            "x": -31.5,
+            "y": 31.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.2,
+            "x": -31.5,
+            "y": -31.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.2,
+            "x": 31.5,
+            "y": -31.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.2,
+            "x": 31.5,
+            "y": 18,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "bolt_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 8
+      },
+      "inputs": [
+        "bolt_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cover",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "inlet_hole",
+        "bolt_tool"
+      ],
+      "suppressed": false
+    }
+  ]
+}
