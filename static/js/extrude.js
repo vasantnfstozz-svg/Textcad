@@ -101,6 +101,35 @@ const debounce = fn => { clearTimeout(timer); timer = setTimeout(fn, 200); };
 const feats = () => (S.lastDoc && S.lastDoc.features) || [];
 const isSketch = f => f.op === 'sketch' || f.op === 'sketch_on_face';
 const solids = () => feats().filter(f => f.volume != null && !f.suppressed);
+
+/* The body a solid feature has BECOME: follow solid-producing consumers down
+   the tree (a cut/fillet/pattern of X is the current state of X). Inputs
+   always reference earlier features, so the walk strictly advances. */
+function latestDescendant(id) {
+  let cur = id;
+  for (;;) {
+    const next = [...feats()].reverse().find(f =>
+      f.volume != null && !f.suppressed && (f.inputs || []).includes(cur));
+    if (!next) return cur;
+    cur = next.id;
+  }
+}
+
+/* Fusion parity: Join/Cut applies to the body the sketch LIVES ON — a
+   face sketch targets its parent body (walked to its current state), a
+   plane sketch defaults to the NEWEST solid. Defaulting to the first body
+   in the tree cut the raw stock instead of the part the user was looking
+   at (reported 2026-08-24 on the sat-side-panel design). */
+function defaultTarget(profileId) {
+  const bods = solids();
+  const sk = feats().find(f => f.id === profileId);
+  if (sk && sk.op === 'sketch_on_face' && (sk.inputs || []).length) {
+    const cur = latestDescendant(sk.inputs[0]);
+    if (bods.some(b => b.id === cur)) return cur;
+  }
+  const tip = [...bods].pop();
+  return tip ? tip.id : null;
+}
 function uid(base) {
   const ex = new Set(feats().map(f => f.id));
   let n = 1; while (ex.has(base + n)) n++; return base + n;
@@ -186,7 +215,7 @@ export function openExtrude(preProfile) {
            opId: null, opType: null, opTarget: null, profileId: preProfile };
     fill('exProfile', st.sketches, preProfile);
     g('exProfile').disabled = false;
-    fill('exTarget', bods.map(b => b.id), bods[0] ? bods[0].id : null);
+    fill('exTarget', bods.map(b => b.id), defaultTarget(preProfile));
     // start tiny — the solid should grow when YOU pull the arrow, not jump to
     // a big default the moment the panel opens
     g('exDir').value = 'one'; g('exDist').value = '1'; g('exDist2').value = '10';
@@ -608,6 +637,9 @@ async function apply() {
 async function changeProfile() {
   await teardown();
   st.profileId = g('exProfile').value;
+  // the combine target follows the profile: a different sketch may live on a
+  // different body (same rule as on open)
+  fill('exTarget', solids().map(b => b.id), defaultTarget(st.profileId));
   loadMesh();
   createPreview();
 }
