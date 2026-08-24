@@ -32,6 +32,11 @@ were each learned from a correction — do not regress them.
 6. **Operations compose.** Join/Cut/Intersect are separate features in the
    tree (fuse/cut/intersect with a target body) so everything stays editable.
    Pulling a face defaults to Join; dragging INTO the body + Cut = pocket.
+   **The combine target defaults to the body the input lives on** — a face
+   sketch targets the sketch's parent body walked to its CURRENT state
+   (latest solid descendant), a plane sketch the newest solid. NEVER the
+   first body in the tree (2026-08-24: that default cut the raw stock
+   instead of the user's panel, and re-defaults must follow profile changes).
 7. **Failures speak.** If a preview feature fails to build, say WHY in the
    chat immediately (warnIfFailed pattern) — never just a red dot.
 8. **Contextual modes.** Entering a mode (sketch) swaps the ribbon to a green
