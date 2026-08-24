@@ -1,15 +1,20 @@
-"""autonomiq-sat-panel — the sat-side-panel structure the user loves,
-with a company-logo pyramid at its heart.
+"""autonomiq-sat-panel v2 — the wordmark-plaque layout the user picked,
+rebuilt with the OFFICIAL lockup and the requested fixes.
 
-Base: designs/sat-side-panel.tcad.json feature tree, UNCHANGED except the
-center medallion (boss pocket + bolt ring) and the X-slots are removed to
-clear the stage. In their place:
-  - circular arena pocket (floor z=5.5) carved into the 10mm face
-  - a TRUE 4-facet diamond pyramid (loft) rising from the arena floor
-    back up to a flat cap at z=9.3
-  - the compact iQ brand mark (segmented i + magnifier Q from the
-    official SVG) raised 0.7 on the cap, apex flush with the face at 10.0
-Small, centered, symmetric — the plate stays the hero.
+User feedback on v1 (2026-08-24):
+  - lettering structure wrong  -> use the real SVG lockup (big word + iQ
+    mark only, NO small "autonomous manufacturing" tagline paths)
+  - triangles too small        -> side 14mm (was 10.1), same interlocked
+    A/V row pattern, fewer of them
+  - stripes/outline detailing  -> rim pinstripe groove following the whole
+    silhouette + striped plaque frame (moat / raised ledge / moat)
+  - long sides have the scallop "pyramid cut" edge, short sides don't
+    -> twin r15 scallops per short side with a centre cusp, mirroring the
+    long-side twin r40 scallops
+Plate: 208 x 108 x 10 stealth octagon, 6 mounting holes, 2-fold symmetric.
+
+z-stack (mm): tri floor 3.5 | plaque floor 8.4 | grooves 9.2 | ledge 9.4 |
+              face + lockup 10.0
 
 Run:  python designs/autonomiq-sat-panel.py           -> preview + checks
       python designs/autonomiq-sat-panel.py --build   -> STEP + tcad.json
@@ -23,10 +28,45 @@ from PIL import Image, ImageDraw
 
 ROOT = r"c:\Users\VasanSeenivasan\Desktop\textcad"
 SVG_FILE = ROOT + r"\designs\autonomIQ-Logo_cmyk.svg"
-KEEP = set(range(0, 6)) | {29, 30, 31, 32, 33}
+KEEP = set(range(0, 6)) | {29, 30, 31, 32, 33}   # big word + Q + i, NO tagline
 
-Z_FLOOR, Z_CAP, Z_TOP = 5.5, 9.3, 10.0
-ARENA_R, HD_BASE, HD_CAP = 21.0, 18.0, 11.0
+# ------------------------------------------------------------------ layout
+Z_TRI, Z_PLAQ, Z_GROOVE, Z_LEDGE, Z_TOP = 3.5, 8.4, 9.2, 9.4, 10.0
+HALF_W, HALF_H = 104.0, 54.0
+CR_CX, CR_CY, CR_R = 90.0, 40.0, 14.0            # corner-round arc
+SCALLOPS = ([(sx * 52.0, sy * 86.0, 40.0) for sx in (1, -1) for sy in (1, -1)]
+            + [(sx * 113.0, sy * 22.0, 15.0) for sx in (1, -1) for sy in (1, -1)])
+RIM_D1, RIM_D2 = 3.0, 4.2                        # rim pinstripe offsets
+HOLES = [(94, 44), (-94, 44), (-94, -44), (94, -44), (0, 46), (0, -46)]
+HOLE_R = 2.25
+DIMPLE = (84.0, 40.0)                            # + 2-fold pattern, r1.25
+
+# plaque: pocket > moat > raised ledge stripe > moat > lockup (flush at 10)
+POCKET_W, POCKET_H, POCKET_R = 148.0, 35.0, 5.5
+LEDGE_OW, LEDGE_OH, LEDGE_OR = 132.6, 31.8, 4.3
+LEDGE_IW, LEDGE_IH, LEDGE_IR = 129.2, 28.4, 2.6
+LOCKUP_W = 126.0
+
+# triangles: interlocked A/V rows, exact scale-up (x1.385) of the v1 rhythm
+TRI_A, TRI_RR = 14.0, 1.1
+P = 11.08                    # horizontal pitch inside a cluster
+YA, YV = 32.0, 27.0          # top band: apex-up row high, apex-down row low
+
+
+def tri(cx, cy, ang):
+    """(cx, cy, apex-direction deg): 90=up 270=down 0=right 180=left."""
+    return (cx, cy, ang)
+
+
+TOP_BAND = ([tri(0, YV, 270), tri(P, YA, 90), tri(-P, YA, 90),
+             tri(2 * P, YV, 270), tri(-2 * P, YV, 270)]
+            + [t for bx in (61.0, -61.0)
+               for t in (tri(bx - P, YA, 90), tri(bx, YV, 270),
+                         tri(bx + P, YA, 90))])
+SIDE_R = [tri(84, -P, 180), tri(89, 0, 0), tri(84, P, 180)]
+SIDE_L = [(-x, y, (180 - a) % 360) for x, y, a in SIDE_R]
+TRIS = (TOP_BAND + [(-x, -y, (a + 180) % 360) for x, y, a in TOP_BAND]
+        + SIDE_R + SIDE_L)
 
 
 # --------------------------------------------------- SVG helpers (v5 copy)
@@ -133,102 +173,210 @@ def _decimate(pts, min_d=0.12):
     return out
 
 
-def load_iq_mark(max_width, max_reach):
-    """The compact iQ mark: the RIGHT cluster of the lockup (segmented i +
-    magnifier Q), scaled so the mark's corners stay on the pyramid cap:
-    |x|+|y| <= max_reach for every point (diamond cap), width <= max_width."""
+def load_lockup_grouped(target_width):
     ds = re.findall(r'[\s"]d="([^"]+)"', open(SVG_FILE, encoding="utf-8").read())
     groups = [parse_d(d) for idx, d in enumerate(ds) if idx in KEEP]
-    allx = [p[0] for g in groups for s in g for p in s]
-    x0, x1 = min(allx), max(allx)
-    cut = x0 + 0.78 * (x1 - x0)   # word ends at 0.772; i at 0.79, Q at 0.836
-    iq = [g for g in groups
-          if min(p[0] for s in g for p in s) > cut]
-    pts = [p for g in iq for s in g for p in s]
-    mx0, mx1 = min(p[0] for p in pts), max(p[0] for p in pts)
-    my0, my1 = min(p[1] for p in pts), max(p[1] for p in pts)
-    w, h = mx1 - mx0, my1 - my0
-    cx, cy = (mx0 + mx1) / 2, (my0 + my1) / 2
-    # diamond-cap constraint: (w/2 + h/2) * s <= max_reach
-    s = min(max_width / w, 2 * max_reach / (w + h))
+    allpts = [p for g in groups for s in g for p in s]
+    xs = [p[0] for p in allpts]
+    ys = [p[1] for p in allpts]
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    s = target_width / (x1 - x0)
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     grouped = []
-    for g in iq:
+    for g in groups:
         subs = [[((p[0] - cx) * s, (p[1] - cy) * s) for p in sub] for sub in g]
         flags = [any(j != i and point_in_poly(sub[0], subs[j])
                      for j in range(len(subs)))
                  for i, sub in enumerate(subs)]
-        ordered = ([(sub, False) for sub, hh in zip(subs, flags) if not hh]
-                   + [(sub, True) for sub, hh in zip(subs, flags) if hh])
+        ordered = ([(sub, False) for sub, h in zip(subs, flags) if not h]
+                   + [(sub, True) for sub, h in zip(subs, flags) if h])
         ents = []
         for sub, hole in ordered:
-            pp = _decimate(_ccw(sub))
+            pts = _decimate(_ccw(sub))
             ents.append({"kind": "polygon",
-                         "points": [[round(p[0], 3), round(p[1], 3)] for p in pp],
+                         "points": [[round(p[0], 3), round(p[1], 3)] for p in pts],
                          "mode": "subtract" if hole else "add"})
         grouped.append(ents)
-    return grouped, w * s, h * s, len(iq)
+    return grouped, (y1 - y0) * s
 
 
-# --------------------------------------------- base tree: sat-side-panel
-base = json.load(open(ROOT + r"\designs\sat-side-panel.tcad.json"))
-DROP_TOOLS = {"xslot_sketch", "xslot_tool", "boss_pocket_sketch",
-              "boss_pocket_tool", "boss_bolt_sketch", "boss_bolt_tool"}
-DROP_CUTS = {"xslot_cut", "boss_cut", "boss_bolt_cut"}
+def rounded_path_e(verts, r):
+    n = len(verts)
+    corners = []
+    for i in range(n):
+        v, p, q = verts[i], verts[i - 1], verts[(i + 1) % n]
+        e_in = (v[0] - p[0], v[1] - p[1])
+        e_out = (q[0] - v[0], q[1] - v[1])
+        li, lo = math.hypot(*e_in), math.hypot(*e_out)
+        ui, uo = (e_in[0] / li, e_in[1] / li), (e_out[0] / lo, e_out[1] / lo)
+        ang = math.acos(max(-1, min(1, -(ui[0] * uo[0] + ui[1] * uo[1]))))
+        t = r / math.tan(ang / 2)
+        b = (uo[0] - ui[0], uo[1] - ui[1])
+        lb = math.hypot(*b)
+        b = (b[0] / lb, b[1] / lb)
+        dd = r / math.sin(ang / 2)
+        corners.append(((v[0] - ui[0] * t, v[1] - ui[1] * t),
+                        (v[0] + b[0] * (dd - r), v[1] + b[1] * (dd - r)),
+                        (v[0] + uo[0] * t, v[1] + uo[1] * t)))
+    first = corners[0][2]
+
+    def q3(v):
+        return [round(v[0], 3), round(v[1], 3)]
+    segs = []
+    for i in list(range(1, n)) + [0]:
+        a_in, via, a_out = corners[i]
+        segs.append({"type": "line", "to": q3(a_in)})
+        segs.append({"type": "arc", "via": q3(via),
+                     "to": q3(first if i == 0 else a_out)})
+    return {"kind": "path", "mode": "add", "start": q3(first), "segments": segs}
 
 
-def resolve(fid, remap):
-    while fid in remap:
-        fid = remap[fid]
-    return fid
+def rrect(w, h, r):
+    return rounded_path_e([(w / 2, -h / 2), (w / 2, h / 2),
+                           (-w / 2, h / 2), (-w / 2, -h / 2)], r)
 
 
-remap = {}
-by_id = {ft["id"]: ft for ft in base["features"]}
-for fid in DROP_CUTS:
-    remap[fid] = by_id[fid]["inputs"][0]
+def tri_path(cx, cy, ang):
+    rc = TRI_A / math.sqrt(3)
+    verts = [(cx + rc * math.cos(math.radians(ang + k * 120)),
+              cy + rc * math.sin(math.radians(ang + k * 120)))
+             for k in range(3)]
+    return rounded_path_e(verts, TRI_RR)
 
+
+def oct_path(d):
+    """The plate outline (rect + r14 corner rounds) offset d inward."""
+    x, y, r = HALF_W - d, HALF_H - d, CR_R - d
+    c = r * math.sqrt(0.5)
+    # walk CW from top-left; corner arcs stay tangent to both edges at any d
+    return {"kind": "path", "mode": "add", "start": [-CR_CX, y], "segments": [
+        {"type": "line", "to": [CR_CX, y]},
+        {"type": "arc", "via": [CR_CX + c, CR_CY + c], "to": [x, CR_CY]},
+        {"type": "line", "to": [x, -CR_CY]},
+        {"type": "arc", "via": [CR_CX + c, -CR_CY - c], "to": [CR_CX, -y]},
+        {"type": "line", "to": [-CR_CX, -y]},
+        {"type": "arc", "via": [-CR_CX - c, -CR_CY - c], "to": [-x, -CR_CY]},
+        {"type": "line", "to": [-x, CR_CY]},
+        {"type": "arc", "via": [-CR_CX - c, CR_CY + c], "to": [-CR_CX, y]},
+    ]}
+
+
+def scallop_circles(d):
+    return [{"kind": "circle", "r": r + d, "x": cx, "y": cy, "mode": "add"}
+            for cx, cy, r in SCALLOPS]
+
+
+# ------------------------------------------------------------- sanity gates
+def inside(x, y, d=0.0):
+    """Point at least d inside the plate silhouette."""
+    if abs(x) > HALF_W - d or abs(y) > HALF_H - d:
+        return False
+    if abs(x) > CR_CX and abs(y) > CR_CY and \
+            math.hypot(abs(x) - CR_CX, abs(y) - CR_CY) > CR_R - d:
+        return False
+    return all(math.hypot(x - cx, y - cy) >= r + d for cx, cy, r in SCALLOPS)
+
+
+tri_paths = [tri_path(*t) for t in TRIS]
+tri_pts = [(p[0], p[1]) for tp in tri_paths
+           for p in [tp["start"]] + [s["to"] for s in tp["segments"]]]
+for x, y in tri_pts:
+    assert inside(x, y, 1.4), f"triangle point ({x:.1f},{y:.1f}) too near edge"
+    # forbidden zone = rim groove ring widened 1.2 each way
+    assert not (inside(x, y, RIM_D1 - 1.2) and not inside(x, y, RIM_D2 + 1.2)), \
+        f"triangle point ({x:.1f},{y:.1f}) hits the rim groove"
+    assert abs(x) > POCKET_W / 2 + 1.2 or abs(y) > POCKET_H / 2 + 1.2, \
+        f"triangle point ({x:.1f},{y:.1f}) hits the plaque pocket"
+for hx, hy in HOLES:
+    assert inside(hx, hy, HOLE_R + 1.5), f"hole ({hx},{hy}) too near edge"
+    for a in range(12):
+        ex = hx + HOLE_R * math.cos(a * 30 * math.pi / 180)
+        ey = hy + HOLE_R * math.sin(a * 30 * math.pi / 180)
+        assert not (inside(ex, ey, RIM_D1 - 1.0)
+                    and not inside(ex, ey, RIM_D2 + 1.0)), \
+            f"hole ({hx},{hy}) crosses the rim groove"
+
+lockup_groups, LH = load_lockup_grouped(LOCKUP_W)
+assert LOCKUP_W / 2 <= LEDGE_IW / 2 - 1.4 and LH / 2 <= LEDGE_IH / 2 - 1.4, \
+    f"lockup {LOCKUP_W:.0f}x{LH:.1f} does not fit ledge {LEDGE_IW}x{LEDGE_IH}"
+
+# ------------------------------------------------------------- feature tree
 F = []
-for ft in base["features"]:
-    if ft["id"] in DROP_TOOLS or ft["id"] in DROP_CUTS:
-        continue
-    nf = {"id": ft["id"], "op": ft["op"], "params": dict(ft["params"]),
-          "inputs": [resolve(i, remap) for i in ft.get("inputs", [])]}
-    F.append(nf)
-
-# clearance check: nearest triangle-pocket point vs the arena radius
-tri_pts = []
-for ft in F:
-    if ft["id"].startswith("tri_sketch"):
-        for e in ft["params"]["entities"]:
-            tri_pts.append(tuple(e["start"]))
-            tri_pts += [tuple(s["to"]) for s in e["segments"]]
-min_tri = min(math.hypot(x, y) for x, y in tri_pts)
-assert min_tri > ARENA_R + 1.5, f"arena {ARENA_R} too big: tri at {min_tri:.1f}"
 
 
 def f(id, op, params, inputs=[]):
     F.append({"id": id, "op": op, "params": params, "inputs": inputs})
 
 
-def diamond(hd):
-    return [[hd, 0], [0, hd], [-hd, 0], [0, -hd]]
+f("blank", "plate", {"width": 208, "depth": 108, "thickness": 10})
+f("blank_seat", "move", {"z": 5}, ["blank"])
+f("scallop_sketch", "sketch", {"plane": "XY", "offset": -1,
+                               "entities": scallop_circles(0)})
+f("scallop_tool", "extrude", {"amount": 12}, ["scallop_sketch"])
+f("scallop_cut", "cut", {}, ["blank_seat", "scallop_tool"])
 
+CORNER = []
+for sx in (1, -1):
+    for sy in (1, -1):
+        c = CR_R * math.sqrt(0.5)
+        CORNER.append({"kind": "path", "mode": "add",
+                       "start": [sx * CR_CX, sy * HALF_H],
+                       "segments": [
+                           {"type": "arc",
+                            "via": [sx * (CR_CX + c), sy * (CR_CY + c)],
+                            "to": [sx * HALF_W, sy * CR_CY]},
+                           {"type": "line", "to": [sx * (HALF_W + 4), sy * CR_CY]},
+                           {"type": "line",
+                            "to": [sx * (HALF_W + 4), sy * (HALF_H + 4)]},
+                           {"type": "line",
+                            "to": [sx * CR_CX, sy * (HALF_H + 4)]}]})
+f("corner_round_sketch", "sketch", {"plane": "XY", "offset": -1,
+                                    "entities": CORNER})
+f("corner_round_tool", "extrude", {"amount": 12}, ["corner_round_sketch"])
+f("corner_round_cut", "cut", {}, ["scallop_cut", "corner_round_tool"])
 
-last = F[-1]["id"]          # sat_panel (mount holes already cut)
-f("arena_sketch", "sketch", {"plane": "XY", "offset": Z_FLOOR, "entities": [
-    {"kind": "circle", "r": ARENA_R, "x": 0, "y": 0, "mode": "add"}]})
-f("arena_tool", "extrude", {"amount": Z_TOP - Z_FLOOR + 1}, ["arena_sketch"])
-f("arena_cut", "cut", {}, [last, "arena_tool"])
+# rim pinstripe: (silhouette-3.0 minus silhouette-4.2) ring, 0.8 deep
+f("rimA_sketch", "sketch", {"plane": "XY", "offset": Z_GROOVE,
+                            "entities": [oct_path(RIM_D1)]})
+f("rimA_tool", "extrude", {"amount": 1.6}, ["rimA_sketch"])
+f("rimA_circ_sketch", "sketch", {"plane": "XY", "offset": Z_GROOVE - 0.2,
+                                 "entities": scallop_circles(RIM_D1)})
+f("rimA_circ_tool", "extrude", {"amount": 2.0}, ["rimA_circ_sketch"])
+f("rimA_slab", "cut", {}, ["rimA_tool", "rimA_circ_tool"])
+f("rimB_sketch", "sketch", {"plane": "XY", "offset": Z_GROOVE - 0.1,
+                            "entities": [oct_path(RIM_D2)]})
+f("rimB_tool", "extrude", {"amount": 1.8}, ["rimB_sketch"])
+f("rimB_circ_sketch", "sketch", {"plane": "XY", "offset": Z_GROOVE - 0.3,
+                                 "entities": scallop_circles(RIM_D2)})
+f("rimB_circ_tool", "extrude", {"amount": 2.2}, ["rimB_circ_sketch"])
+f("rimB_slab", "cut", {}, ["rimB_tool", "rimB_circ_tool"])
+f("rim_ring", "cut", {}, ["rimA_slab", "rimB_slab"])
+f("rim_groove_cut", "cut", {}, ["corner_round_cut", "rim_ring"])
 
-f("pyr_base_sketch", "sketch", {"plane": "XY", "offset": Z_FLOOR,
-    "entities": [{"kind": "polygon", "mode": "add", "points": diamond(HD_BASE)}]})
-f("pyr_cap_sketch", "sketch", {"plane": "XY", "offset": Z_CAP,
-    "entities": [{"kind": "polygon", "mode": "add", "points": diamond(HD_CAP)}]})
-f("logo_pyramid", "loft", {}, ["pyr_base_sketch", "pyr_cap_sketch"])
+# triangle pockets, batched <= 10 entities per sketch
+tri_ids = []
+for n in range(0, len(tri_paths), 10):
+    f(f"tri_sketch_{n // 10}", "sketch",
+      {"plane": "XY", "offset": Z_TRI, "entities": tri_paths[n:n + 10]})
+    f(f"tri_tool_{n // 10}", "extrude", {"amount": 7}, [f"tri_sketch_{n // 10}"])
+    tri_ids.append(f"tri_tool_{n // 10}")
+f("tri_cut", "cut", {}, ["rim_groove_cut"] + tri_ids)
 
-mark_groups, MW, MH, n_iq = load_iq_mark(11.0, HD_CAP - 1.5)
+# plaque pocket + raised ledge stripe + flush lockup
+f("plaque_sketch", "sketch", {"plane": "XY", "offset": Z_PLAQ,
+                              "entities": [rrect(POCKET_W, POCKET_H, POCKET_R)]})
+f("plaque_tool", "extrude", {"amount": Z_TOP - Z_PLAQ + 1}, ["plaque_sketch"])
+f("plaque_cut", "cut", {}, ["tri_cut", "plaque_tool"])
+
+ledge_inner = rrect(LEDGE_IW, LEDGE_IH, LEDGE_IR)
+ledge_inner["mode"] = "subtract"
+f("ledge_sketch", "sketch", {"plane": "XY", "offset": Z_PLAQ,
+                             "entities": [rrect(LEDGE_OW, LEDGE_OH, LEDGE_OR),
+                                          ledge_inner]})
+f("ledge_tool", "extrude", {"amount": Z_LEDGE - Z_PLAQ}, ["ledge_sketch"])
+
 batches, batch = [], []
-for g in mark_groups:
+for g in lockup_groups:
     if len(batch) + len(g) > 10:
         batches.append(batch)
         batch = []
@@ -236,117 +384,97 @@ for g in mark_groups:
 batches.append(batch)
 mark_ids = []
 for n, b in enumerate(batches):
-    f(f"iq_mark_sketch_{n}", "sketch", {"plane": "XY", "offset": Z_CAP,
-                                        "entities": b})
-    f(f"iq_mark_tool_{n}", "extrude", {"amount": Z_TOP - Z_CAP},
-      [f"iq_mark_sketch_{n}"])
-    mark_ids.append(f"iq_mark_tool_{n}")
+    f(f"lockup_sketch_{n}", "sketch", {"plane": "XY", "offset": Z_PLAQ,
+                                       "entities": b})
+    f(f"lockup_tool_{n}", "extrude", {"amount": Z_TOP - Z_PLAQ},
+      [f"lockup_sketch_{n}"])
+    mark_ids.append(f"lockup_tool_{n}")
+
+# corner dimples (polar + ONE mirror + fuse: never mirror a mirror)
+f("corner_dimple", "disc", {"radius": 1.25, "thickness": 2.5})
+f("corner_dimple_seat", "move", {"x": DIMPLE[0], "y": DIMPLE[1], "z": 10},
+  ["corner_dimple"])
+f("corner_dimples_diag1", "polar_pattern", {"count": 2}, ["corner_dimple_seat"])
+f("corner_dimples_diag2", "mirror", {"plane": "YZ"}, ["corner_dimples_diag1"])
+f("corner_dimples_all", "fuse", {}, ["corner_dimples_diag1",
+                                     "corner_dimples_diag2"])
+f("corner_dimple_cut", "cut", {}, ["plaque_cut", "corner_dimples_all"])
+
+f("mount_hole_sketch", "sketch", {"plane": "XY", "offset": -1, "entities": [
+    {"kind": "circle", "r": HOLE_R, "x": hx, "y": hy, "mode": "add"}
+    for hx, hy in HOLES]})
+f("mount_hole_tool", "extrude", {"amount": 12}, ["mount_hole_sketch"])
+f("mount_hole_cut", "cut", {}, ["corner_dimple_cut", "mount_hole_tool"])
 
 f("autonomiq_sat_panel", "fuse", {},
-  ["arena_cut", "logo_pyramid"] + mark_ids)
+  ["mount_hole_cut", "ledge_tool"] + mark_ids)
 
+# no symmetry claim: the 126mm wordmark is intentionally not 180-deg symmetric
 tree = {"name": "autonomiq-sat-panel", "features": F,
-        "spec": {"n_solids": 1, "size": [208, 108, 10], "symmetry": 2,
+        "spec": {"n_solids": 1, "size": [208, 108, 10],
                  "holes": {"2.25": 6}, "tol": 0.3}}
 open(ROOT + r"\designs\autonomiq-sat-panel-tree.json", "w").write(json.dumps(tree))
 
 # ------------------------------------------------------------- preview
-S = 6.0
-W, HT = int(224 * S), int(120 * S)
-EH = 240
-img = Image.new("RGB", (W, HT + EH), (18, 24, 32))
+S = 4.0
+W, HT = int(216 * S), int(116 * S)
+img = Image.new("RGB", (W, HT), (18, 24, 32))
 d = ImageDraw.Draw(img)
+BG, C_FACE, C_GROOVE = (18, 24, 32), (176, 180, 186), (110, 116, 124)
+C_POCKET, C_LEDGE, C_MARK = (120, 126, 134), (198, 202, 208), (240, 242, 245)
+C_TRI, C_HOLE, C_DIMP = (76, 82, 90), (35, 39, 45), (140, 146, 153)
+
+for py in range(HT):
+    my = 58.0 - (py + 0.5) / S
+    for px_i in range(W):
+        mx = (px_i + 0.5) / S - 108.0
+        if not inside(mx, my):
+            continue
+        in_ring = inside(mx, my, RIM_D1) and not inside(mx, my, RIM_D2)
+        img.putpixel((px_i, py), C_GROOVE if in_ring else C_FACE)
 
 
 def px(p):
     return (W / 2 + p[0] * S, HT / 2 - p[1] * S)
 
 
-C_FACE = (176, 180, 186)
-C_POCKET = (86, 92, 100)
-C_FLOOR = (70, 76, 84)
-C_CAP = (205, 209, 215)
-C_MARK = (240, 242, 245)
-C_HOLE = (40, 44, 50)
-BG = (18, 24, 32)
+def rr_box(w, h):
+    return [px((-w / 2, h / 2)), px((w / 2, -h / 2))]
 
-# plate silhouette: rect minus scallops (from the base tree's own entities)
-d.rectangle([px((-104, 54)), px((104, -54))], fill=C_FACE)
-for ft in base["features"]:
-    if ft["id"] == "scallop_sketch":
-        for e in ft["params"]["entities"]:
-            d.ellipse([px((e["x"] - e["r"], e["y"] + e["r"])),
-                       px((e["x"] + e["r"], e["y"] - e["r"]))], fill=BG)
-for ft in F:
-    if ft["id"].startswith("tri_sketch"):
-        for e in ft["params"]["entities"]:
-            pts = [tuple(e["start"])] + [tuple(s["to"]) for s in e["segments"]]
-            d.polygon([px(p) for p in pts], fill=C_POCKET)
-for ft in base["features"]:
-    if ft["id"] == "mount_hole_sketch":
-        for e in ft["params"]["entities"]:
-            d.ellipse([px((e["x"] - e["r"], e["y"] + e["r"])),
-                       px((e["x"] + e["r"], e["y"] - e["r"]))], fill=C_HOLE)
 
-# center: arena, pyramid facets, cap, mark
-d.ellipse([px((-ARENA_R, ARENA_R)), px((ARENA_R, -ARENA_R))], fill=C_FLOOR)
-E, N, Wd, Sd = (HD_BASE, 0), (0, HD_BASE), (-HD_BASE, 0), (0, -HD_BASE)
-d.polygon([px(E), px(N), px((0, HD_CAP)), px((HD_CAP, 0))], fill=(205, 209, 215))
-d.polygon([px(N), px(Wd), px((-HD_CAP, 0)), px((0, HD_CAP))], fill=(180, 184, 190))
-d.polygon([px(Wd), px(Sd), px((0, -HD_CAP)), px((-HD_CAP, 0))], fill=(120, 126, 134))
-d.polygon([px(Sd), px(E), px((HD_CAP, 0)), px((0, -HD_CAP))], fill=(150, 156, 163))
-d.polygon([px((HD_CAP, 0)), px((0, HD_CAP)), px((-HD_CAP, 0)), px((0, -HD_CAP))],
-          fill=C_CAP)
-for grp in mark_groups:
+d.rounded_rectangle(rr_box(POCKET_W, POCKET_H), radius=POCKET_R * S,
+                    fill=C_POCKET)
+d.rounded_rectangle(rr_box(LEDGE_OW, LEDGE_OH), radius=LEDGE_OR * S,
+                    fill=C_LEDGE)
+d.rounded_rectangle(rr_box(LEDGE_IW, LEDGE_IH), radius=LEDGE_IR * S,
+                    fill=C_POCKET)
+for grp in lockup_groups:
     for e in grp:
         d.polygon([px(tuple(p)) for p in e["points"]],
-                  fill=C_MARK if e["mode"] == "add" else C_CAP)
-
-# section through y=0
-ZS, Y0 = 18.0, HT + EH - 30
-
-
-def pxe(x, z):
-    return (W / 2 + x * S * 1.6, Y0 - z * ZS)
-
-
-def sec_z(x):
-    ax = abs(x)
-    if ax > 104:
-        return 0
-    if ax > ARENA_R:
-        return Z_TOP
-    if ax > HD_BASE:
-        return Z_FLOOR
-    if ax <= MW / 2:
-        top = Z_TOP           # mark region (schematic)
-    else:
-        top = Z_CAP
-    if ax <= HD_CAP:
-        return top
-    return Z_FLOOR + (Z_CAP - Z_FLOOR) * (HD_BASE - ax) / (HD_BASE - HD_CAP)
-
-
-sil = [pxe(-104, 0)]
-xx = -104.0
-while xx <= 104.0:
-    sil.append(pxe(xx, sec_z(xx)))
-    xx += 0.2
-sil.append(pxe(104, 0))
-d.polygon(sil, fill=(150, 155, 162))
-for z, lab in ((Z_FLOOR, "5.5"), (Z_CAP, "9.3"), (Z_TOP, "10.0")):
-    d.line([pxe(-110, z), pxe(110, z)], fill=(70, 78, 90), width=1)
-    d.text((pxe(-118, z)[0], pxe(-118, z)[1] - 5), lab, fill=(200, 205, 212))
-d.text((W / 2 - 200, HT + 8),
-       "SECTION AT Y=0 - logo pyramid rising from the arena, z in mm",
-       fill=(255, 120, 80))
+                  fill=C_MARK if e["mode"] == "add" else C_POCKET)
+for tp in tri_paths:
+    pts = [tuple(tp["start"])]
+    for s in tp["segments"]:
+        if "via" in s:
+            pts.append(tuple(s["via"]))
+        pts.append(tuple(s["to"]))
+    d.polygon([px(p) for p in pts], fill=C_TRI)
+for hx, hy in HOLES:
+    d.ellipse([px((hx - HOLE_R, hy + HOLE_R)), px((hx + HOLE_R, hy - HOLE_R))],
+              fill=C_HOLE)
+for sx in (1, -1):
+    for sy in (1, -1):
+        cx, cy = sx * DIMPLE[0], sy * DIMPLE[1]
+        d.ellipse([px((cx - 1.25, cy + 1.25)), px((cx + 1.25, cy - 1.25))],
+                  fill=C_DIMP)
 
 out = ROOT + r"\designs\autonomiq-sat-panel-preview.png"
 img.save(out)
 print(f"preview: {out}")
-print(f"tree: {len(F)} features | iQ mark: {n_iq} groups, "
-      f"{MW:.1f} x {MH:.1f} mm | arena r{ARENA_R} (nearest tri {min_tri:.1f}) "
-      f"| pyramid hd {HD_BASE}->{HD_CAP}, z {Z_FLOOR}->{Z_CAP}, mark to {Z_TOP}")
+print(f"tree: {len(F)} features | lockup {LOCKUP_W:.0f} x {LH:.1f} mm, "
+      f"{len(lockup_groups)} glyph groups in {len(batches)} sketches | "
+      f"{len(TRIS)} triangles side {TRI_A} | "
+      f"plaque {POCKET_W}x{POCKET_H} ledge {LEDGE_OW}x{LEDGE_OH}")
 
 # ------------------------------------------------------------- build
 if "--build" in sys.argv:
