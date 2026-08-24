@@ -101,9 +101,11 @@ export function actionImportStl() {
     if (out && !out.error) {
       loadMesh(out.features.length === 1);   // fit on the very first body
       const i = out.import_info || {};
+      const bodies = i.bodies > 1 ? `${i.bodies} bodies` : 'a body';
       bus.emit('msg', 'bot',
-        `Imported "${f.name}" as body "${i.feature_id}" — ` +
-        `${(i.size_mm || []).join('×')}mm, ${i.triangles} triangles. ` +
+        `Imported "${f.name}" as ${bodies} in feature "${i.feature_id}" — ` +
+        `${(i.size_mm || []).join('×')}mm, ${i.triangles} triangles` +
+        (i.repair ? ` (${i.repair})` : '') + `. ` +
         `Move / Cut / Fuse it like any other body (units read as mm — ` +
         `edit the feature's scale if it came in the wrong size).`);
     }

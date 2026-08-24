@@ -29,7 +29,7 @@ from pathlib import Path
 from build123d import (
     Box, Cylinder, Sphere, Cone, Pos, PolarLocations, Locations,
     BuildSketch, RegularPolygon, BuildLine, Polyline, Spline, make_face,
-    trace, extrude, revolve, Axis, Plane, Part, Mesher, Solid,
+    trace, extrude, revolve, Axis, Plane, Part, Mesher, Solid, Compound,
     mirror as _b3d_mirror, scale as _b3d_scale,
     fillet as _b3d_fillet, chamfer as _b3d_chamfer, offset as _b3d_offset,
 )
@@ -325,25 +325,11 @@ def _ascii_stl_to_binary(data: bytes) -> bytes:
     return bytes(out)
 
 
-@functools.lru_cache(maxsize=8)
-def _read_stl_solids(path_str: str, mtime_ns: int, size: int) -> tuple:
-    """Read + repair an STL into a tuple of closed Solids. Cached on
-    (path, mtime, size): Document.rebuild() re-evaluates every feature on
-    every edit, and re-parsing a 20k-triangle mesh each time would crawl.
-    Downstream ops never mutate OCCT shapes, so sharing the cached Solids
-    across rebuilds is safe."""
-    data = Path(path_str).read_bytes()
-    fmt, ntri = _stl_triangles(data)
-    if ntri == 0:
-        raise ValueError("import_stl: the file contains no triangles")
-    if ntri > MAX_STL_TRIANGLES:
-        raise ValueError(
-            f"import_stl: mesh has {ntri:,} triangles — the limit is "
-            f"{MAX_STL_TRIANGLES:,} so rebuilds stay interactive. Decimate it "
-            "in a mesh tool (Blender/MeshLab) and re-export.")
-    if fmt == "ascii":
-        data = _ascii_stl_to_binary(data)
-    # lib3mf reads real files only — hand it the (possibly converted) bytes
+def _stl_bytes_to_solids(data: bytes) -> tuple[list, int]:
+    """One binary STL through lib3mf into closed Solids. Returns
+    (solids, open_shell_count). A shape that is already a valid positive
+    Solid is taken AS-IS — exploding it per shell would split a hollow part
+    into an outer solid plus a phantom cavity solid."""
     tmp = tempfile.NamedTemporaryFile(suffix=".stl", delete=False)
     try:
         tmp.write(data)
@@ -358,6 +344,12 @@ def _read_stl_solids(path_str: str, mtime_ns: int, size: int) -> tuple:
 
     solids, open_shells = [], 0
     for shp in shapes:
+        try:
+            if isinstance(shp, Solid) and shp.volume > 0 and shp.is_valid():
+                solids.append(shp)
+                continue
+        except Exception:
+            pass
         for sh in shp.shells():
             if not BRep_Tool.IsClosed_s(sh.wrapped):
                 open_shells += 1
@@ -366,6 +358,59 @@ def _read_stl_solids(path_str: str, mtime_ns: int, size: int) -> tuple:
             if sol.volume < 0:               # inverted winding — flip it
                 sol = Solid(sol.wrapped.Reversed())
             solids.append(sol)
+    return solids, open_shells
+
+
+@functools.lru_cache(maxsize=8)
+def _read_stl_solids(path_str: str, mtime_ns: int, size: int) -> tuple:
+    """Read (+ auto-repair) an STL into (tuple of closed Solids, report dict).
+    Cached on (path, mtime, size): Document.rebuild() re-evaluates every
+    feature on every edit, and re-parsing a big mesh each time would crawl.
+    Downstream ops never mutate OCCT shapes, so sharing the cached Solids
+    across rebuilds is safe.
+
+    Clean meshes under MAX_STL_TRIANGLES go straight to the kernel. Anything
+    dirty (duplicated interface walls, pinched edges, too dense) goes through
+    meshrepair's heal/split/remesh/decimate pipeline first — feeding a broken
+    mesh straight to OCCT produced a 6-minute read returning an EMPTY invalid
+    solid (probed on a real Fusion assembly export)."""
+    import meshrepair
+
+    data = Path(path_str).read_bytes()
+    fmt, ntri = _stl_triangles(data)
+    if ntri == 0:
+        raise ValueError("import_stl: the file contains no triangles")
+    if ntri > meshrepair.MAX_INPUT_TRIANGLES:
+        raise ValueError(
+            f"import_stl: mesh has {ntri:,} triangles — beyond the "
+            f"{meshrepair.MAX_INPUT_TRIANGLES:,} import limit even for "
+            "auto-repair. Decimate it in a mesh tool (Blender/MeshLab) "
+            "and re-export.")
+    if fmt == "ascii":
+        data = _ascii_stl_to_binary(data)
+
+    verts, faces = meshrepair.parse_binary_stl(data)
+    boundary, overshared = meshrepair.edge_counts(faces)
+    dupes = bool(meshrepair.duplicate_triangles(faces).any())
+    report = {"input_triangles": ntri, "output_triangles": ntri,
+              "healed_wall_triangles": 0, "remeshed_bodies": 0,
+              "repaired": False}
+
+    if ntri <= MAX_STL_TRIANGLES and not (boundary or overshared or dupes):
+        pieces = [data]
+    else:
+        try:
+            pieces, rep = meshrepair.repair_stl_mesh(data)
+        except ValueError as e:
+            raise ValueError(f"import_stl: {e}") from e
+        report.update(rep)
+        report["repaired"] = True
+
+    solids, open_shells = [], 0
+    for piece in pieces:
+        s, o = _stl_bytes_to_solids(piece)
+        solids.extend(s)
+        open_shells += o
     if open_shells:
         raise ValueError(
             f"import_stl: the mesh is not watertight ({open_shells} open "
@@ -373,31 +418,49 @@ def _read_stl_solids(path_str: str, mtime_ns: int, size: int) -> tuple:
             "surface. Repair it in a mesh tool and re-export.")
     if not solids:
         raise ValueError("import_stl: no solid found in the mesh")
-    return tuple(solids)
+    report["bodies"] = len(solids)
+    return tuple(solids), report
 
 
-def import_stl(file: str, scale: float = 1.0) -> Part:
-    """Import an external STL mesh file as a solid body. `file` is an absolute
-    path, or the name of a file in the imports/ folder (where UI uploads
-    land). Watertight meshes only, up to 20,000 triangles; the triangles
-    become a faceted solid. STL units are read as mm; `scale` resizes on
-    import (e.g. 25.4 for a file modeled in inches)."""
+def _resolve_stl_path(file: str) -> Path:
     if not isinstance(file, str) or not file.strip():
         raise ValueError("import_stl: file must be a filename or path")
-    if not isinstance(scale, (int, float)) or scale <= 0:
-        raise ValueError("import_stl: scale must be a positive number")
     path = Path(file)
     if not path.is_absolute():
         path = IMPORTS_DIR / file
     if not path.is_file():
         raise ValueError(f"import_stl: file not found: {path}")
+    return path
+
+
+def import_stl(file: str, scale: float = 1.0) -> Part:
+    """Import an external STL mesh file as a solid body. `file` is an absolute
+    path, or the name of a file in the imports/ folder (where UI uploads
+    land). The triangles become a faceted solid; broken meshes (duplicated
+    interface walls, pinched edges, too dense) are auto-repaired via
+    meshrepair — meshes with actual holes are refused. STL units are read as
+    mm; `scale` resizes on import (e.g. 25.4 for a file modeled in inches)."""
+    if not isinstance(scale, (int, float)) or scale <= 0:
+        raise ValueError("import_stl: scale must be a positive number")
+    path = _resolve_stl_path(file)
     st = path.stat()
-    solids = _read_stl_solids(str(path), st.st_mtime_ns, st.st_size)
-    # NOTE: Part(solid.wrapped) reports volume 0 (probed) — never wrap that way.
-    part = solids[0] if len(solids) == 1 else (Part() + list(solids))
+    solids, _report = _read_stl_solids(str(path), st.st_mtime_ns, st.st_size)
+    # NOTE: Part(solid.wrapped) reports volume 0 (probed) — never wrap that
+    # way. Multi-body imports become a Compound, NOT a fuse: assembly exports
+    # overlap/touch, and fusing two 10k-triangle meshes can hang the kernel.
+    part = solids[0] if len(solids) == 1 else Compound(children=list(solids))
     if scale != 1.0:
         part = _b3d_scale(part, by=float(scale))
     return part
+
+
+def import_stl_report(file: str) -> dict:
+    """The repair/import report for an STL (free: served from the same cache
+    as import_stl). Keys: input_triangles, output_triangles, bodies,
+    healed_wall_triangles, remeshed_bodies, repaired."""
+    path = _resolve_stl_path(file)
+    st = path.stat()
+    return _read_stl_solids(str(path), st.st_mtime_ns, st.st_size)[1]
 
 
 # ---------------------------------------------------------------------------

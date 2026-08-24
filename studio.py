@@ -855,10 +855,25 @@ def import_stl_file(req: ImportStlReq):
                 pass
         return {"error": str(e), **_doc_json()}
     _rebuild_and_mesh()
-    triangles = blocks._stl_triangles(data)[1]
+    rep = blocks.import_stl_report(fname)
+    repair_note = None
+    if rep.get("repaired"):
+        steps = []
+        if rep.get("healed_wall_triangles"):
+            steps.append(f"merged {rep['healed_wall_triangles']} coincident "
+                         "wall triangles")
+        if rep.get("remeshed_bodies"):
+            steps.append(f"remeshed {rep['remeshed_bodies']} defective "
+                         "bod" + ("y" if rep["remeshed_bodies"] == 1 else "ies"))
+        if rep["output_triangles"] < rep["input_triangles"]:
+            steps.append(f"decimated {rep['input_triangles']:,} → "
+                         f"{rep['output_triangles']:,} triangles")
+        repair_note = "auto-repaired: " + ", ".join(steps) if steps else None
     bb = part.bounding_box()
     return {**_doc_json(), "import_info": {
-        "feature_id": fid, "file": fname, "triangles": triangles,
+        "feature_id": fid, "file": fname,
+        "triangles": rep["output_triangles"], "bodies": rep.get("bodies"),
+        "repair": repair_note,
         "size_mm": [round(bb.size.X, 2), round(bb.size.Y, 2),
                     round(bb.size.Z, 2)],
         "volume_mm3": round(part.volume, 1)}}

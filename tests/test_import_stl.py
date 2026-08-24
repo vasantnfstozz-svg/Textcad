@@ -46,10 +46,11 @@ ASCII_TET = "solid tet\n" + "".join(
     + " endloop\nendfacet\n" for tri in TET) + "endsolid tet\n"
 
 
-def box_tris(ox=0.0, s=5.0):
-    """12 watertight triangles of an s-cube at x-offset ox."""
-    P = [(ox, 0, 0), (ox + s, 0, 0), (ox + s, s, 0), (ox, s, 0),
-         (ox, 0, s), (ox + s, 0, s), (ox + s, s, s), (ox, s, s)]
+def box_tris(ox=0.0, s=5.0, oy=0.0, oz=0.0):
+    """12 watertight triangles of an s-cube at offset (ox, oy, oz)."""
+    P = [(ox, oy, oz), (ox + s, oy, oz), (ox + s, oy + s, oz),
+         (ox, oy + s, oz), (ox, oy, oz + s), (ox + s, oy, oz + s),
+         (ox + s, oy + s, oz + s), (ox, oy + s, oz + s)]
     F = [(0, 2, 1), (0, 3, 2), (4, 5, 6), (4, 6, 7), (0, 1, 5), (0, 5, 4),
          (1, 2, 6), (1, 6, 5), (2, 3, 7), (2, 7, 6), (3, 0, 4), (3, 4, 7)]
     return [(P[a], P[b], P[c]) for a, b, c in F]
@@ -117,8 +118,9 @@ def test_empty_ascii_friendly_error(tmp_path):
         blocks.import_stl(str(p))
 
 
-def test_triangle_cap(tmp_path):
-    n = blocks.MAX_STL_TRIANGLES + 1
+def test_input_triangle_cap(tmp_path):
+    import meshrepair
+    n = meshrepair.MAX_INPUT_TRIANGLES + 1
     p = tmp_path / "big.stl"
     with open(p, "wb") as f:          # valid size formula, degenerate content
         f.write(b"\0" * 80)
@@ -126,6 +128,37 @@ def test_triangle_cap(tmp_path):
         f.write(b"\0" * (50 * n))
     with pytest.raises(ValueError, match="limit"):
         blocks.import_stl(str(p))
+
+
+# ---------------------------------------------------------------------------
+# Auto-repair of broken real-world meshes (the "liquid piston" class:
+# Fusion assembly exports with coincident walls and pinched edges)
+# ---------------------------------------------------------------------------
+
+def test_repair_duplicated_interface_walls(tmp_path):
+    """Two boxes stacked with a duplicated interface wall (box_tris makes the
+    shared face's triangles exact duplicates) heal into ONE body."""
+    p = tmp_path / "stacked.stl"
+    write_binary_stl(p, box_tris() + box_tris(oz=5.0))
+    part = blocks.import_stl(str(p))
+    assert inspector.health(part) == []
+    assert part.volume == pytest.approx(250, rel=1e-6)
+    rep = blocks.import_stl_report(str(p))
+    assert rep["repaired"] and rep["healed_wall_triangles"] == 4
+    assert rep["bodies"] == 1
+
+
+def test_repair_pinched_mesh_via_remesh(tmp_path):
+    """Two boxes touching along one vertical edge (edge shared by 4 triangles
+    = non-manifold pinch) get voxel-remeshed into a healthy solid with the
+    right volume."""
+    p = tmp_path / "pinched.stl"
+    write_binary_stl(p, box_tris() + box_tris(ox=5.0, oy=5.0))
+    part = blocks.import_stl(str(p))
+    assert inspector.health(part) == []
+    assert part.volume == pytest.approx(250, rel=0.05)   # voxel-res tolerance
+    rep = blocks.import_stl_report(str(p))
+    assert rep["repaired"] and rep["remeshed_bodies"] >= 1
 
 
 def test_scale_param(tmp_path):
