@@ -1,0 +1,753 @@
+{
+  "name": "planetary-assembly",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      96,
+      96,
+      null
+    ],
+    "tol": 0.3
+  },
+  "features": [
+    {
+      "id": "sun_blank",
+      "op": "disc",
+      "params": {
+        "radius": 14.56,
+        "thickness": 10
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "sun_seat",
+      "op": "move",
+      "params": {
+        "z": 5
+      },
+      "inputs": [
+        "sun_blank"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "sun_space_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              15.977,
+              4.354
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  14.048,
+                  3.828
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  12.92,
+                  2.706
+                ],
+                "to": [
+                  11.666,
+                  2.021
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  8.966,
+                  1.553
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  9.1,
+                  0
+                ],
+                "to": [
+                  8.966,
+                  -1.553
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  11.666,
+                  -2.021
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  12.92,
+                  -2.706
+                ],
+                "to": [
+                  14.048,
+                  -3.828
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  15.977,
+                  -4.354
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  16.56,
+                  0
+                ],
+                "to": [
+                  15.977,
+                  4.354
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "sun_space_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12
+      },
+      "inputs": [
+        "sun_space_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "sun_space_pattern",
+      "op": "polar_pattern",
+      "params": {
+        "count": 9
+      },
+      "inputs": [
+        "sun_space_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "sun_gear",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "sun_seat",
+        "sun_space_pattern"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "sun_pos",
+      "op": "move",
+      "params": {
+        "z": 9.5
+      },
+      "inputs": [
+        "sun_gear"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "planet_blank",
+      "op": "disc",
+      "params": {
+        "radius": 14.56,
+        "thickness": 10
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "planet_seat",
+      "op": "move",
+      "params": {
+        "z": 5
+      },
+      "inputs": [
+        "planet_blank"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "planet_space_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              15.977,
+              4.354
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  14.048,
+                  3.828
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  12.92,
+                  2.706
+                ],
+                "to": [
+                  11.666,
+                  2.021
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  8.966,
+                  1.553
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  9.1,
+                  0
+                ],
+                "to": [
+                  8.966,
+                  -1.553
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  11.666,
+                  -2.021
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  12.92,
+                  -2.706
+                ],
+                "to": [
+                  14.048,
+                  -3.828
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  15.977,
+                  -4.354
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  16.56,
+                  0
+                ],
+                "to": [
+                  15.977,
+                  4.354
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "planet_space_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12
+      },
+      "inputs": [
+        "planet_space_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "planet_space_pattern",
+      "op": "polar_pattern",
+      "params": {
+        "count": 9
+      },
+      "inputs": [
+        "planet_space_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "planet_gear",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "planet_seat",
+        "planet_space_pattern"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "planet_pos",
+      "op": "move",
+      "params": {
+        "x": 25.2,
+        "z": 9.5
+      },
+      "inputs": [
+        "planet_gear"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "planets",
+      "op": "polar_pattern",
+      "params": {
+        "count": 3
+      },
+      "inputs": [
+        "planet_pos"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "ring_blank",
+      "op": "disc",
+      "params": {
+        "radius": 48,
+        "thickness": 10
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "ring_seat",
+      "op": "move",
+      "params": {
+        "z": 5
+      },
+      "inputs": [
+        "ring_blank"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "ring_bore",
+      "op": "with_center_hole",
+      "params": {
+        "radius": 35.84
+      },
+      "inputs": [
+        "ring_seat"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "ring_space_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              34.24,
+              2.616
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  35.736,
+                  2.73
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  37.906,
+                  2.294
+                ],
+                "to": [
+                  40.085,
+                  1.428
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  40.11,
+                  0
+                ],
+                "to": [
+                  40.085,
+                  -1.428
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  37.906,
+                  -2.294
+                ],
+                "to": [
+                  35.736,
+                  -2.73
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  34.24,
+                  -2.616
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  34.34,
+                  0
+                ],
+                "to": [
+                  34.24,
+                  2.616
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "ring_space_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12
+      },
+      "inputs": [
+        "ring_space_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "ring_space_pattern",
+      "op": "polar_pattern",
+      "params": {
+        "count": 27
+      },
+      "inputs": [
+        "ring_space_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "ring_gear",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "ring_bore",
+        "ring_space_pattern"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "ring_mesh",
+      "op": "rotate",
+      "params": {
+        "axis": "Z",
+        "angle_deg": 7.4667
+      },
+      "inputs": [
+        "ring_gear"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "ring_pos",
+      "op": "move",
+      "params": {
+        "z": 9.5
+      },
+      "inputs": [
+        "ring_mesh"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "carrier_body",
+      "op": "disc",
+      "params": {
+        "radius": 31,
+        "thickness": 10
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "carrier_seat",
+      "op": "move",
+      "params": {
+        "z": 5
+      },
+      "inputs": [
+        "carrier_body"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "carrier_window_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": -1,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              9.193,
+              7.713
+            ],
+            "segments": [
+              {
+                "type": "arc",
+                "via": [
+                  6,
+                  10.392
+                ],
+                "to": [
+                  2.084,
+                  11.818
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  3.126,
+                  17.727
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  9,
+                  15.588
+                ],
+                "to": [
+                  13.789,
+                  11.57
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "carrier_window_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12
+      },
+      "inputs": [
+        "carrier_window_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "carrier_window_pattern",
+      "op": "polar_pattern",
+      "params": {
+        "count": 3
+      },
+      "inputs": [
+        "carrier_window_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "carrier",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "carrier_seat",
+        "carrier_window_pattern"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "center_shank",
+      "op": "disc",
+      "params": {
+        "radius": 2.15,
+        "thickness": 23.2
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "center_shank_seat",
+      "op": "move",
+      "params": {
+        "z": 8.4
+      },
+      "inputs": [
+        "center_shank"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "center_head",
+      "op": "hex_plate",
+      "params": {
+        "across_flats": 7,
+        "thickness": 2.8
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "center_head_seat",
+      "op": "move",
+      "params": {
+        "z": 19
+      },
+      "inputs": [
+        "center_head"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "center_bolt",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "center_shank_seat",
+        "center_head_seat"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "planet_shank",
+      "op": "disc",
+      "params": {
+        "radius": 2.15,
+        "thickness": 23.2
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "planet_shank_seat",
+      "op": "move",
+      "params": {
+        "z": 8.4
+      },
+      "inputs": [
+        "planet_shank"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "planet_head",
+      "op": "hex_plate",
+      "params": {
+        "across_flats": 7,
+        "thickness": 2.8
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "planet_head_seat",
+      "op": "move",
+      "params": {
+        "z": 19
+      },
+      "inputs": [
+        "planet_head"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "planet_bolt",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "planet_shank_seat",
+        "planet_head_seat"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "planet_bolt_pos",
+      "op": "move",
+      "params": {
+        "x": 25.2
+      },
+      "inputs": [
+        "planet_bolt"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "planet_bolts",
+      "op": "polar_pattern",
+      "params": {
+        "count": 3
+      },
+      "inputs": [
+        "planet_bolt_pos"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "assembly",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "sun_pos",
+        "planets",
+        "ring_pos",
+        "carrier",
+        "center_bolt",
+        "planet_bolts"
+      ],
+      "suppressed": false
+    }
+  ]
+}
