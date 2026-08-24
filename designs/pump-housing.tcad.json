@@ -8,12 +8,10 @@
       16
     ],
     "holes": {
-      "4.0": 1,
       "2.2": 4,
       "2.6": 1,
       "1.6": 4,
-      "11.15": 1,
-      "4.4": 1
+      "11.15": 1
     },
     "tol": 0.3
   },
@@ -51,52 +49,52 @@
             "kind": "path",
             "mode": "add",
             "start": [
-              9.349,
-              25.686
+              9.387,
+              25.789
             ],
             "segments": [
               {
                 "type": "arc",
                 "via": [
-                  24.873,
-                  12.947
+                  25.181,
+                  13.109
                 ],
                 "to": [
-                  27.77,
-                  -7.441
+                  28.334,
+                  -7.592
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  15.828,
-                  -24.845
+                  16.268,
+                  -25.536
                 ],
                 "to": [
-                  -5.238,
-                  -29.709
+                  -5.422,
+                  -30.748
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  -24.496,
-                  -18.796
+                  -25.52,
+                  -19.582
                 ],
                 "to": [
-                  -31.463,
-                  2.754
+                  -32.985,
+                  2.886
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  -21.816,
-                  23.808
+                  -23.008,
+                  25.109
                 ],
                 "to": [
                   0,
-                  33
+                  35
                 ]
               }
             ]
@@ -237,119 +235,6 @@
       "suppressed": false
     },
     {
-      "id": "oring_groove_tool",
-      "op": "tube",
-      "params": {
-        "outer_radius": 38.5,
-        "inner_radius": 34.5,
-        "height": 4.5
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "oring_groove_seat",
-      "op": "move",
-      "params": {
-        "z": 16
-      },
-      "inputs": [
-        "oring_groove_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "oring_groove_cut",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "pilot_cut",
-        "oring_groove_seat"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "outlet_drill",
-      "op": "disc",
-      "params": {
-        "radius": 4,
-        "thickness": 42
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "outlet_drill_lay",
-      "op": "rotate",
-      "params": {
-        "axis": "Y",
-        "angle_deg": 90
-      },
-      "inputs": [
-        "outlet_drill"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "outlet_drill_seat",
-      "op": "move",
-      "params": {
-        "x": 23,
-        "y": 28,
-        "z": 8.9
-      },
-      "inputs": [
-        "outlet_drill_lay"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "outlet_tap_bore",
-      "op": "disc",
-      "params": {
-        "radius": 4.4,
-        "thickness": 10
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "outlet_tap_lay",
-      "op": "rotate",
-      "params": {
-        "axis": "Y",
-        "angle_deg": 90
-      },
-      "inputs": [
-        "outlet_tap_bore"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "outlet_tap_seat",
-      "op": "move",
-      "params": {
-        "x": 39,
-        "y": 28,
-        "z": 8.9
-      },
-      "inputs": [
-        "outlet_tap_lay"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "outlet_cut",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "oring_groove_cut",
-        "outlet_drill_seat",
-        "outlet_tap_seat"
-      ],
-      "suppressed": false
-    },
-    {
       "id": "bolt_sketch",
       "op": "sketch",
       "params": {
@@ -405,7 +290,7 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "outlet_cut",
+        "pilot_cut",
         "bolt_tool"
       ],
       "suppressed": false
