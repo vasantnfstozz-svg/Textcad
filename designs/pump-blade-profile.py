@@ -10,8 +10,8 @@ import math
 
 R_IN, R_OUT = 6.0, 24.4
 BETA_IN, BETA_OUT = 30.0, 50.0        # deg from radial
-T_NOSE, T_MID, T_EXIT = 1.2, 2.5, 1.0
-TAPER_IN_END, TAPER_OUT_START = 10.0, 18.0   # r where inlet taper ends / exit taper starts
+T_NOSE, T_MID, T_EXIT = 1.2, 2.5, 0.6
+TAPER_IN_END, TAPER_OUT_START = 10.0, 16.0   # r where inlet taper ends / exit taper starts
 
 def thickness(r):
     if r <= TAPER_IN_END:
