@@ -5,12 +5,13 @@
     "size": [
       88,
       88,
-      16
+      18
     ],
     "holes": {
       "2.2": 4,
       "2.6": 1,
       "1.6": 4,
+      "3.1": 4,
       "11.15": 1
     },
     "tol": 0.3
@@ -22,7 +23,7 @@
       "params": {
         "width": 88,
         "depth": 88,
-        "thickness": 16
+        "thickness": 18
       },
       "inputs": [],
       "suppressed": false
@@ -31,7 +32,7 @@
       "id": "block_seat",
       "op": "move",
       "params": {
-        "z": 8
+        "z": 9
       },
       "inputs": [
         "block"
@@ -43,7 +44,7 @@
       "op": "sketch",
       "params": {
         "plane": "XY",
-        "offset": 4,
+        "offset": 6,
         "entities": [
           {
             "kind": "path",
@@ -137,70 +138,69 @@
       "suppressed": false
     },
     {
-      "id": "motor_cs_drill",
+      "id": "motor_screw_drill",
       "op": "disc",
       "params": {
         "radius": 1.6,
-        "thickness": 8
+        "thickness": 10
       },
       "inputs": [],
       "suppressed": false
     },
     {
-      "id": "cs_drill_seat",
+      "id": "screw_drill_seat",
       "op": "move",
       "params": {
         "x": 15.5,
         "y": 15.5,
-        "z": 3
+        "z": 4
       },
       "inputs": [
-        "motor_cs_drill"
+        "motor_screw_drill"
       ],
       "suppressed": false
     },
     {
-      "id": "motor_cs_sink",
-      "op": "cone",
+      "id": "motor_cbore",
+      "op": "disc",
       "params": {
-        "bottom_radius": 1.55,
-        "top_radius": 4.2,
-        "height": 2.65
+        "radius": 3.1,
+        "thickness": 3.4
       },
       "inputs": [],
       "suppressed": false
     },
     {
-      "id": "cs_sink_seat",
+      "id": "cbore_seat",
       "op": "move",
       "params": {
         "x": 15.5,
         "y": 15.5,
-        "z": 3.675
+        "z": 4.5
       },
       "inputs": [
-        "motor_cs_sink"
+        "motor_cbore"
       ],
       "suppressed": false
     },
     {
-      "id": "cs_cutter",
+      "id": "screw_cutter",
       "op": "fuse",
       "params": {},
       "inputs": [
-        "cs_drill_seat",
-        "cs_sink_seat"
+        "screw_drill_seat",
+        "cbore_seat"
       ],
       "suppressed": false
     },
     {
-      "id": "cs_pattern",
+      "id": "screw_pattern",
       "op": "polar_pattern",
       "params": {
         "count": 4
       },
       "inputs": [
-        "cs_cutter"
+        "screw_cutter"
       ],
       "suppressed": false
     },
@@ -210,7 +210,7 @@
       "params": {},
       "inputs": [
         "shaft_bore",
-        "cs_pattern"
+        "screw_pattern"
       ],
       "suppressed": false
     },
@@ -278,7 +278,7 @@
       "id": "bolt_tool",
       "op": "extrude",
       "params": {
-        "amount": 18
+        "amount": 20
       },
       "inputs": [
         "bolt_sketch"
