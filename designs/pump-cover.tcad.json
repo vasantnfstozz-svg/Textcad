@@ -3,13 +3,13 @@
   "spec": {
     "n_solids": 1,
     "size": [
-      88,
-      88,
-      6.5
+      80,
+      80,
+      18
     ],
     "holes": {
-      "7.625": 1,
-      "4.4": 1,
+      "4.0": 1,
+      "7.0": 1,
       "2.2": 4
     },
     "tol": 0.3
@@ -19,8 +19,8 @@
       "id": "cover_plate",
       "op": "plate",
       "params": {
-        "width": 88,
-        "depth": 88,
+        "width": 80,
+        "depth": 80,
         "thickness": 6
       },
       "inputs": [],
@@ -38,24 +38,46 @@
       "suppressed": false
     },
     {
-      "id": "seal_rib",
-      "op": "tube",
+      "id": "inlet_boss",
+      "op": "disc",
       "params": {
-        "outer_radius": 39.5,
-        "inner_radius": 36.5,
-        "height": 1.5
+        "radius": 10,
+        "thickness": 13
       },
       "inputs": [],
       "suppressed": false
     },
     {
-      "id": "seal_rib_seat",
+      "id": "inlet_boss_seat",
       "op": "move",
       "params": {
-        "z": 0.25
+        "z": 11.5
       },
       "inputs": [
-        "seal_rib"
+        "inlet_boss"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "outlet_boss",
+      "op": "disc",
+      "params": {
+        "radius": 6,
+        "thickness": 13
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "outlet_boss_seat",
+      "op": "move",
+      "params": {
+        "x": 28,
+        "y": 29,
+        "z": 11.5
+      },
+      "inputs": [
+        "outlet_boss"
       ],
       "suppressed": false
     },
@@ -65,15 +87,16 @@
       "params": {},
       "inputs": [
         "cover_seat",
-        "seal_rib_seat"
+        "inlet_boss_seat",
+        "outlet_boss_seat"
       ],
       "suppressed": false
     },
     {
-      "id": "inlet_tap_hole",
+      "id": "inlet_bore",
       "op": "with_center_hole",
       "params": {
-        "radius": 7.625
+        "radius": 7
       },
       "inputs": [
         "cover_body"
@@ -81,17 +104,17 @@
       "suppressed": false
     },
     {
-      "id": "outlet_tap_sketch",
+      "id": "outlet_bore_sketch",
       "op": "sketch",
       "params": {
         "plane": "XY",
-        "offset": -2,
+        "offset": -1,
         "entities": [
           {
             "kind": "circle",
-            "r": 4.4,
-            "x": -1.5,
-            "y": 30,
+            "r": 4,
+            "x": 28,
+            "y": 29,
             "mode": "add"
           }
         ]
@@ -100,13 +123,13 @@
       "suppressed": false
     },
     {
-      "id": "outlet_tap_tool",
+      "id": "outlet_bore_tool",
       "op": "extrude",
       "params": {
-        "amount": 10
+        "amount": 20
       },
       "inputs": [
-        "outlet_tap_sketch"
+        "outlet_bore_sketch"
       ],
       "suppressed": false
     },
@@ -115,8 +138,8 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "inlet_tap_hole",
-        "outlet_tap_tool"
+        "inlet_bore",
+        "outlet_bore_tool"
       ],
       "suppressed": false
     },
@@ -125,34 +148,34 @@
       "op": "sketch",
       "params": {
         "plane": "XY",
-        "offset": -2,
+        "offset": -1,
         "entities": [
           {
             "kind": "circle",
             "r": 2.2,
-            "x": -35.5,
-            "y": 35.5,
+            "x": -31.5,
+            "y": 31.5,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 2.2,
-            "x": -35.5,
-            "y": -35.5,
+            "x": -31.5,
+            "y": -31.5,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 2.2,
-            "x": 35.5,
-            "y": -35.5,
+            "x": 31.5,
+            "y": -31.5,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 2.2,
-            "x": 35.5,
-            "y": 35.5,
+            "x": 31.5,
+            "y": 14,
             "mode": "add"
           }
         ]
@@ -164,7 +187,7 @@
       "id": "bolt_tool",
       "op": "extrude",
       "params": {
-        "amount": 10
+        "amount": 8
       },
       "inputs": [
         "bolt_sketch"
