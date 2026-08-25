@@ -1,43 +1,40 @@
-"""cam-cover-upper v1 — the FINNED BILLET UPPER COVER on its own, blown up
-to fill the 220 x 120 x 12 steel stock. The workpiece outline IS the cover
-silhouette (lobed bolt flange), not a rectangle: this is the part, not a
-relief of it.
+"""cam-cover-upper v2 — the finned billet cover, SCALED TO THE BOX and built
+UP instead of hogged out. Three changes from v1 (df159cb), all asked for:
 
-WHY IT GETS TWICE AS FAITHFUL AS THE PLAQUE
-  Dropping the second cover frees the whole plate for one part, so plan scale
-  jumps 0.32 -> 0.4565 (1:2.19) and the Z budget goes from 4.0mm of relief to
-  the full 11.4mm of stock. Squash factor vs true scale: 2.2x flat, where the
-  pair plaque was 4.4x. Two consequences worth having:
-    * the fin pitch lands on 4.2mm = TRUE SCALE for a ~9mm cast fin, cut with
-      the user's D2 (2.4 slot / 1.8 rib), no stylising
-    * the bolt flange can be a real 5.5mm-thick LIP (true scale of a 12mm
-      flange) with the finned body standing 6.4mm above it — the actual
-      section of a cam cover, not a plateau on a plate
+  1. FILLS THE STOCK. 210 x 110 out of the 220 x 120 blank, 5mm parting
+     trench all round, no offcut. This is a deliberate NON-UNIFORM scale:
+     the real cover is 3.17:1 and the box is 1.91:1, so the part comes out
+     stubbier than the engine part. Length 1:2.19 as in v1, width 1:1.32.
+     Flagged once; the user asked for the box twice.
+  2. NO ROUNDED LOBES, SQUARE-ISH CORNERS. v1's R11.5 ends and its 14
+     bulging bolt-boss lobes are gone. The outline is a near-rectangular
+     plate, CORNER_R 5 on a 110-wide part, and the bolts are plain holes in
+     a flat 13mm perimeter band - which is what the reference photo shows.
+  3. THE FINS ARE EXTRUSIONS, NOT CUTS. The part is now additive: base
+     plate -> raised deck platform -> 19 raised fin ribs -> 3 raised cam
+     bosses, ONE fuse, and the only cuts left are holes. Every raised
+     element sinks EMBED into its parent first (coplanar faces are the
+     classic fuse trap in this codebase).
 
-  Length is the binding constraint: 210 long keeps a 5mm parting gap in X.
-  Width follows at 66.2 (true proportion, never stretched to fill the box).
-  The part is pushed to the -Y edge so the leftover is ONE usable
-  210 x 48.8 offcut instead of two useless 27mm strips.
+  Same finished solid either way - a milled fin IS the material left
+  between two passes - so the CAM does not change: skim the top to 11.4,
+  mill the deck to 9.0 leaving the ribs, drop the flange band to 7.0.
 
-  Real dims approximate (~460 x 145 x 55 from the reference photos). Only
-  SCALE / REAL_* change if a measured drawing turns up.
-
-Z STACK  (face skimmed 0.6 off the raw stock)
-  11.4  body top = fin deck + cam boss tops           (highest)
-   8.6  fin valleys (fins 2.8 deep = true scale of a 6mm fin)
-   6.0  cam boss counterbores (D16)
-   5.0  bolt flange lip top -> body stands 6.4 proud
-   3.0  cam boss bores (D8)
-   2.0  bolt hole floors (D4.6, blind - 2mm of steel left)
+Z STACK
+  11.4  fin tops + cam boss tops   (0.6 under the raw stock = the skim)
+   9.0  deck floor between the fins (fins stand 2.4 proud)
+   7.0  perimeter flange band -> the deck platform stands 2.0 above it
+   6.0  cam boss counterbores (D14)
+   3.5  cam boss bores (D7)
+   3.0  bolt hole floors (D5, blind - 3mm of steel left)
    1.5  outline trench floor (NOT modelled - machining note)
 
 VACUUM  every cut is a blind pocket. The outline is the one through feature
-        and it is machined as a trench to z1.5 leaving a ~1.5mm skin, so the
-        part and the waste frame stay one piece until the bench.
+        and it is a ~6mm contour trench to z1.5 with a 1.5mm skin.
 
-TOOLING D6 to hog the flange ring where it is wide (the lobes), D5 or D4 in
-        the 5.5mm-wide straight stretches, D3 to finish corners (r>=1.5),
-        D2 for the fin slots. Boss bores are 8.4 deep - peck them.
+TOOLING D6 to hog the deck and the flange band, D3 to finish (all inner
+        corners >= R4), D2 for the 2.4mm gaps between fins - two passes at
+        +-0.2, 2.4 deep, so 4 step-downs in steel.
 
 Run:  python designs/cam-cover-upper.py           -> preview + checks
       python designs/cam-cover-upper.py --build   -> STEP + tcad.json
@@ -55,47 +52,45 @@ if ROOT not in sys.path:
 
 # ------------------------------------------------------------------- stock
 STOCK_L, STOCK_W, STOCK_T = 220.0, 120.0, 12.0
-PART_GAP = 5.0                    # parting trench width at the tight end
+PART_GAP = 5.0                    # parting trench, all four sides
 
 # --------------------------------------------------------------- z levels
 Z_TOP = 12.0
-Z_FACE = 11.4                     # 0.6 cleanup skim (warped stock)
-Z_FIN = 8.6                       # fin valleys, 2.8 deep
+Z_FIN = 11.4                      # fin + boss tops; 0.6 skim off the stock
+Z_DECK = 9.0                      # deck floor between fins
+Z_FLANGE = 7.0                    # perimeter flange band
 Z_BOSS_CB = 6.0
-Z_FLANGE = 5.0                    # bolt flange lip
-Z_BOSS_BORE = 3.0
-Z_BOLT = 2.0
-Z_TRENCH = 1.5                    # documented, not modelled
+Z_BOSS_BORE = 3.5
+Z_BOLT = 3.0
+Z_TRENCH = 1.5
+EMBED = 0.2                       # raised features sink this into the parent
 
-# ---------------------------------------------------- cover, real -> stock
+# --------------------------------------------------- outline: FILL THE BOX
 REAL_L, REAL_W, REAL_H = 460.0, 145.0, 55.0
 COVER_L = STOCK_L - 2 * PART_GAP            # 210.0
-SCALE = COVER_L / REAL_L                    # 0.4565
-COVER_W = round(REAL_W * SCALE, 1)          # 66.2
+COVER_W = STOCK_W - 2 * PART_GAP            # 110.0
+CORNER_R = 5.0                              # was 11.5 + lobes; user said no
+SCALE_L = COVER_L / REAL_L                  # 0.4565
+SCALE_W = COVER_W / REAL_W                  # 0.7586  <- the deliberate stretch
 
-LOBE_R = round(16.25 * SCALE, 2)            # real D32.5 bolt boss -> 7.42
-LOBE_OUT = round(3.15 * SCALE, 2)           # boss centre outboard of the wall
-WAIST = round(COVER_W - 2 * (LOBE_R + LOBE_OUT), 2)     # 48.5
-END_R = 11.5
-N_BOLT = 7                                  # per side, 14 total
-BOLT_X0 = 84.0
-BOLT_R = 2.3                                # D4.6 blind bolt hole
+# ----------------------------------------------------- flange + bolt holes
+FB = 13.0                                   # flat perimeter band width
+BOLT_R = 2.5                                # D5 blind
+N_BOLT_SIDE, N_BOLT_END = 9, 3
+BOLT_SIDE_X0 = 95.0
+BOLT_END_Y = (0.0, 26.0, -26.0)
 
-FW = round(12.0 * SCALE, 1)                 # flange lip width, true 12mm
-BODY_L = round(COVER_L - 2 * FW, 1)         # 199.0
-BODY_W = round(WAIST - 2 * FW, 1)           # 37.5
-BODY_R = END_R - FW
-
-FIN_N, FIN_W, FIN_PITCH, FIN_R = 8, 2.4, 4.2, 1.0       # 4.2 = true pitch
-FIN_X = BODY_L / 2 - 3.5
-FIN_MIN_SEG = 13.0
-BOSS_X = (-60.0, 0.0, 60.0)
-BOSS_R, BOSS_CB_R, BOSS_BORE_R = 12.5, 8.0, 4.0
-BOSS_CLR = 1.8                              # fin -> boss wall
-
-# part pushed to the -Y edge so the offcut is one usable strip
-PART_Y = round(-STOCK_W / 2 + PART_GAP + COVER_W / 2, 2)
-OFFCUT_W = round(STOCK_W / 2 - (PART_Y + COVER_W / 2) - PART_GAP, 1)
+# ------------------------------------------------------------- deck + fins
+DECK_L = round(COVER_L - 2 * FB, 1)         # 184.0
+DECK_W = round(COVER_W - 2 * FB, 1)         # 84.0
+DECK_R = 4.0
+FIN_N, FIN_RIB, FIN_PITCH, FIN_R = 19, 1.8, 4.2, 0.8
+FIN_GAP = round(FIN_PITCH - FIN_RIB, 2)     # 2.4 = what the D2 cuts
+FIN_X = DECK_L / 2 - 4.0                    # 88.0
+FIN_MIN_SEG = 12.0
+BOSS_X = (-60.0, 0.0, 60.0)                 # same journals as the lower cover
+BOSS_R, BOSS_CB_R, BOSS_BORE_R = 12.0, 7.0, 3.5
+BOSS_CLR = 1.8
 
 TOOL_MIN = 2.0
 
@@ -157,18 +152,24 @@ def circ(cx, cy, r, mode="add"):
             "y": round(cy, 3), "mode": mode}
 
 
-# --------------------------------------------------------- cover geometry
-BOLT_X = [round(-BOLT_X0 + 2 * BOLT_X0 * i / (N_BOLT - 1), 3)
-          for i in range(N_BOLT)]
-BOLT_Y = round(WAIST / 2 + LOBE_OUT, 3)
+# ------------------------------------------------------------ bolt pattern
+BOLT_Y = round(COVER_W / 2 - FB / 2, 2)      # 48.5, centre of the band
+BOLT_END_X = round(COVER_L / 2 - FB / 2, 2)  # 98.5
+BOLTS = []
+for _i in range(N_BOLT_SIDE):
+    _bx = round(-BOLT_SIDE_X0 + 2 * BOLT_SIDE_X0 * _i / (N_BOLT_SIDE - 1), 3)
+    BOLTS += [(_bx, BOLT_Y), (_bx, -BOLT_Y)]
+for _by in BOLT_END_Y:
+    BOLTS += [(BOLT_END_X, _by), (-BOLT_END_X, _by)]
 
 
-def fin_segments():
-    """Lengthwise fin slots, broken around the three cam bosses."""
-    segs = []
-    half = FIN_W / 2
+# ------------------------------------------------------------------- fins
+def fin_ribs():
+    """The RAISED ribs (not the gaps), broken around the three cam bosses."""
+    out = []
+    half = FIN_RIB / 2
     for i in range(FIN_N):
-        y = (i - (FIN_N - 1) / 2) * FIN_PITCH
+        y = round((i - (FIN_N - 1) / 2) * FIN_PITCH, 3)
         blocked = []
         for bx in BOSS_X:
             dy = max(0.0, abs(y) - half)
@@ -181,17 +182,17 @@ def fin_segments():
         x = -FIN_X
         for b0, b1 in blocked:
             if b0 - x >= FIN_MIN_SEG:
-                segs.append((x, b0, y))
+                out.append((round(x, 3), round(b0, 3), y, half))
             x = max(x, b1)
         if FIN_X - x >= FIN_MIN_SEG:
-            segs.append((x, FIN_X, y))
-    return [(round(a, 3), round(b, 3), round(y, 3), half) for a, b, y in segs]
+            out.append((round(x, 3), round(FIN_X, 3), y, half))
+    return out
 
 
-FINS = fin_segments()
+FINS = fin_ribs()
 
 
-# ---------------------------------------------------------- height field
+# ------------------------------------------------------------ height field
 def _sdf_rr(x, y, cx, cy, w, h, r):
     qx = abs(x - cx) - (w / 2 - r)
     qy = abs(y - cy) - (h / 2 - r)
@@ -199,91 +200,84 @@ def _sdf_rr(x, y, cx, cy, w, h, r):
             + min(max(qx, qy), 0.0) - r)
 
 
-def in_cover(x, y):
-    if _sdf_rr(x, y, 0, PART_Y, COVER_L, WAIST, END_R) <= 0:
-        return True
-    for bx in BOLT_X:
-        for s in (1, -1):
-            if math.hypot(x - bx, y - (PART_Y + s * BOLT_Y)) <= LOBE_R:
-                return True
-    return False
-
-
 def top_z(x, y):
-    """Finished height at (x, y) — 0 = air. Drives the section view AND
-    double-checks the cut order the tree builds."""
-    if not in_cover(x, y):
+    """Finished height at (x, y); 0 = air. Drives the section view and is
+    probed by the gates, so drawing and tree cannot silently disagree."""
+    if _sdf_rr(x, y, 0, 0, COVER_L, COVER_W, CORNER_R) > 0:
         return 0.0
-    for bx in BOLT_X:                                   # blind bolt holes
-        for s in (1, -1):
-            if math.hypot(x - bx, y - (PART_Y + s * BOLT_Y)) <= BOLT_R:
-                return Z_BOLT
-    if _sdf_rr(x, y, 0, PART_Y, BODY_L, BODY_W, BODY_R) > 0:
-        return Z_FLANGE                                 # flange lip
-    for bx in BOSS_X:                                   # cam bosses
-        d = math.hypot(x - bx, y - PART_Y)
+    for bx, by in BOLTS:
+        if math.hypot(x - bx, y - by) <= BOLT_R:
+            return Z_BOLT
+    if _sdf_rr(x, y, 0, 0, DECK_L, DECK_W, DECK_R) > 0:
+        return Z_FLANGE
+    for bx in BOSS_X:
+        d = math.hypot(x - bx, y)
         if d <= BOSS_BORE_R:
             return Z_BOSS_BORE
         if d <= BOSS_CB_R:
             return Z_BOSS_CB
         if d <= BOSS_R:
-            return Z_FACE
-    for a, b, fy, h in FINS:                            # fin valleys
-        if a <= x <= b and abs(y - (PART_Y + fy)) <= h:
             return Z_FIN
-    return Z_FACE
+    for a, b, fy, h in FINS:
+        if a <= x <= b and abs(y - fy) <= h:
+            return Z_FIN
+    return Z_DECK
 
 
 # ------------------------------------------------------------ sanity gates
 assert COVER_L + 2 * PART_GAP <= STOCK_L, "no parting gap in X"
-assert PART_Y - COVER_W / 2 >= -STOCK_W / 2 + PART_GAP - 0.01, "off the stock"
-assert PART_Y + COVER_W / 2 + PART_GAP <= STOCK_W / 2, "offcut math"
-assert OFFCUT_W >= 40.0, f"offcut {OFFCUT_W} not worth keeping"
-assert abs(WAIST + 2 * (LOBE_R + LOBE_OUT) - COVER_W) < 0.02, "lobe math"
-assert abs(COVER_W / REAL_W - SCALE) < 0.002, "width is not true proportion"
+assert COVER_W + 2 * PART_GAP <= STOCK_W, "no parting gap in Y"
+assert CORNER_R <= 6.0, "corners are meant to read SQUARE, not rounded"
+assert CORNER_R >= 3.0, "corner tighter than a D6 rougher"
+# the box fill is deliberate and non-uniform - keep the fact visible
+assert SCALE_W > SCALE_L, "width should be stretched, that is the whole ask"
 
-# flange lobes sit on the straight flange, clear of the end radii, and each
-# keeps real wall around its bolt hole
-assert BOLT_X0 + LOBE_R <= COVER_L / 2 - END_R, "outer lobe hits the end arc"
-assert LOBE_R - BOLT_R >= 4.0, "bolt hole wall too thin"
-assert min(BOLT_X[i + 1] - BOLT_X[i] for i in range(N_BOLT - 1)) \
-    >= 2 * LOBE_R + 3.0, "lobes merge into a scalloped strip"
-assert BOLT_R * 2 >= 4.0, "bolt hole smaller than a sane drill"
+# the flange band carries its bolts with real wall on both sides
+assert FB >= 2 * BOLT_R + 6.0, f"flange band {FB} too narrow for D{2*BOLT_R}"
+for bx, by in BOLTS:
+    assert -_sdf_rr(bx, by, 0, 0, COVER_L, COVER_W, CORNER_R) >= BOLT_R + 3.0, \
+        f"bolt ({bx},{by}) too close to the outline"
+    assert _sdf_rr(bx, by, 0, 0, DECK_L, DECK_W, DECK_R) >= BOLT_R + 2.0, \
+        f"bolt ({bx},{by}) breaks into the deck"
+for _j, _p in enumerate(BOLTS):
+    for _q in BOLTS[_j + 1:]:
+        assert math.hypot(_p[0] - _q[0], _p[1] - _q[1]) >= 2 * BOLT_R + 5.0, \
+            f"bolts {_p} and {_q} too close"
 
-# body / fins / bosses
-assert FW >= 4.0, "flange lip too narrow to machine beside"
-assert (BODY_W - ((FIN_N - 1) * FIN_PITCH + FIN_W)) / 2 >= 2.5, \
-    "fin field leaves no rail on the body top"
-assert FIN_PITCH - FIN_W >= 1.5, "fin ribs thinner than 1.5mm"
-assert FIN_W >= TOOL_MIN + 0.4, "fin slot narrower than tool + 2 passes"
-assert FIN_X + 3.0 <= BODY_L / 2 + 0.01, "fins run off the body"
-assert len(FINS) == FIN_N * (len(BOSS_X) + 1), \
-    f"{len(FINS)} fin segments, want {FIN_N * (len(BOSS_X) + 1)}"
+# deck, fins, bosses
+assert DECK_R >= 3.0, "deck corner tighter than a D6 rougher"
+FIN_SPAN = (FIN_N - 1) * FIN_PITCH + FIN_RIB
+assert (DECK_W - FIN_SPAN) / 2 >= 2.5, f"fin field {FIN_SPAN} too wide"
+assert FIN_RIB >= 1.5, "fin ribs thinner than 1.5mm"
+assert FIN_GAP >= TOOL_MIN + 0.4, "gap between fins narrower than tool+2 passes"
+assert (Z_FIN - Z_DECK) / FIN_RIB <= 2.0, "fin ribs too slender for their height"
+assert FIN_X + 4.0 <= DECK_L / 2 + 0.01, "fins run off the deck"
+assert len(FINS) > FIN_N, "fins are not being broken around the bosses"
+assert min(b - a for a, b, _, _ in FINS) >= FIN_MIN_SEG - 1e-6
 for bx in BOSS_X:
-    assert abs(bx) + BOSS_R + 3.0 <= BODY_L / 2, f"boss {bx} off the body"
-assert BOSS_R + 2.5 <= BODY_W / 2 + BOSS_R, "boss check"
-assert (BODY_W / 2 - BOSS_R) >= 4.0, "boss leaves no rail on the body"
+    assert abs(bx) + BOSS_R + 3.0 <= DECK_L / 2, f"boss {bx} off the deck"
+assert BOSS_R + 3.0 <= DECK_W / 2, "boss leaves no deck around it"
 assert BOSS_R - BOSS_CB_R >= 3.5 and BOSS_CB_R - BOSS_BORE_R >= 3.0, \
     "boss steps too small to read"
 assert min(BOSS_X[i + 1] - BOSS_X[i] for i in range(len(BOSS_X) - 1)) \
     >= 2 * BOSS_R + 8.0, "bosses too close"
 
-# z stack: monotone, and nothing leaves less than 1.5mm of steel
-assert Z_FACE > Z_FIN > Z_BOSS_CB > Z_FLANGE > Z_BOSS_BORE > Z_BOLT > Z_TRENCH
-assert Z_TOP - Z_FACE >= 0.5, "face skim below the stock cleanup allowance"
+# z stack
+assert Z_FIN > Z_DECK > Z_FLANGE > Z_BOSS_CB > Z_BOSS_BORE > Z_BOLT > Z_TRENCH
+assert Z_TOP - Z_FIN >= 0.5, "no stock cleanup allowance left on top"
 assert Z_BOLT >= 1.5 and Z_BOSS_BORE >= 1.5, "blind floor too thin"
-assert abs((Z_FACE - Z_FIN) - round(6.0 * SCALE, 1)) <= 0.3, \
-    "fin depth drifted off true scale"
-assert abs(Z_FLANGE - round(11.0 * SCALE, 1)) <= 0.5, \
-    "flange lip drifted off true scale"
-assert Z_FACE - Z_FLANGE >= 5.0, "body does not stand proud enough to read"
+assert Z_FIN - Z_DECK >= 2.0, "fins too short to read"
+assert Z_DECK - Z_FLANGE >= 1.5, "deck platform does not stand proud"
+assert EMBED > 0.05, "raised features must sink into their parent before fusing"
 
-# the height field must agree with the design at a few known probes
-assert top_z(0, PART_Y) == Z_BOSS_BORE, "centre boss bore"
-assert top_z(30, PART_Y) in (Z_FACE, Z_FIN), "mid-body"
-assert top_z(0, PART_Y + COVER_W / 2 - 1.0) == Z_FLANGE, "flange lip"
-assert top_z(0, PART_Y + COVER_W / 2 + 3.0) == 0.0, "outside the outline"
-assert top_z(BOLT_X[0], PART_Y + BOLT_Y) == Z_BOLT, "bolt hole"
+# probes against the intent
+assert top_z(0, 0) == Z_BOSS_BORE, "centre boss bore"
+assert top_z(30, 0) == Z_FIN, "a fin rib on the centreline"
+assert top_z(30, FIN_PITCH / 2) == Z_DECK, "the gap between two fins"
+assert top_z(0, COVER_W / 2 - FB - 3.0) == Z_DECK, "deck just inside the band"
+assert top_z(0, COVER_W / 2 - 2.0) == Z_FLANGE, "flange band"
+assert top_z(0, COVER_W / 2 + 3.0) == 0.0, "outside the outline"
+assert top_z(*BOLTS[0]) == Z_BOLT, "bolt hole"
 
 
 # ------------------------------------------------------------ feature tree
@@ -294,11 +288,12 @@ def f(id, op, params, inputs=[]):
     F.append({"id": id, "op": op, "params": params, "inputs": inputs})
 
 
-def tool(name, z, ents, over=1.0):
-    f(f"{name}_sk", "sketch", {"plane": "XY", "offset": z, "entities": ents})
-    f(f"{name}_tl", "extrude", {"amount": round(Z_TOP - z + over, 3)},
-      [f"{name}_sk"])
-    return f"{name}_tl"
+def raise_(name, z_from, z_to, ents):
+    """A RAISED element: sketch at (z_from - EMBED) and pull it up to z_to."""
+    z0 = round(z_from - EMBED, 3)
+    f(f"{name}_sk", "sketch", {"plane": "XY", "offset": z0, "entities": ents})
+    f(name, "extrude", {"amount": round(z_to - z0, 3)}, [f"{name}_sk"])
+    return name
 
 
 PREV = None
@@ -306,84 +301,66 @@ PREV = None
 
 def cut(name, z, ents, over=1.0):
     global PREV
-    t = tool(name + "_c", z, ents, over)
-    f(name, "cut", {}, [PREV, t])
+    f(f"{name}_c_sk", "sketch", {"plane": "XY", "offset": z, "entities": ents})
+    f(f"{name}_c_tl", "extrude", {"amount": round(Z_TOP - z + over, 3)},
+      [f"{name}_c_sk"])
+    f(name, "cut", {}, [PREV, f"{name}_c_tl"])
     PREV = name
 
 
-# 1. the blank IS the cover footprint: waist + a lobe row per side, fused
-f("waist_sk", "sketch", {"plane": "XY", "offset": 0, "entities":
-  [rbox(0, PART_Y, COVER_L, WAIST, END_R)]})
-f("waist", "extrude", {"amount": Z_TOP}, ["waist_sk"])
-blank_ids = ["waist"]
-for s, side in ((1, "top"), (-1, "bot")):
-    f(f"lobes_{side}_sk", "sketch", {"plane": "XY", "offset": 0, "entities":
-      [circ(bx, PART_Y + s * BOLT_Y, LOBE_R) for bx in BOLT_X]})
-    f(f"lobes_{side}", "extrude", {"amount": Z_TOP}, [f"lobes_{side}_sk"])
-    blank_ids.append(f"lobes_{side}")
-f("blank", "fuse", {}, blank_ids)
-PREV = "blank"
+# ---- additive half: base plate, raised deck, raised fins, raised bosses
+f("base_sk", "sketch", {"plane": "XY", "offset": 0, "entities":
+  [rbox(0, 0, COVER_L, COVER_W, CORNER_R)]})
+f("base_plate", "extrude", {"amount": Z_FLANGE}, ["base_sk"])
+parts = ["base_plate"]
 
-# 2. face skim — a plain stock-sized rectangle takes 0.6 off everything
-STOCK_RECT = rbox(0, 0, STOCK_L + 10, STOCK_W + 10, 0.001)
-cut("face_skim", Z_FACE, [STOCK_RECT])
+parts.append(raise_("deck_platform", Z_FLANGE, Z_DECK,
+                    [rbox(0, 0, DECK_L, DECK_W, DECK_R)]))
 
-# 3. bolt flange: drop everything OUTSIDE the body down to the lip. The tool
-#    is (stock slab minus body) — outside the cover outline there is already
-#    no material, so this cuts exactly the flange ring and nothing else.
-f("flange_slab_sk", "sketch", {"plane": "XY", "offset": Z_FLANGE,
-                               "entities": [STOCK_RECT]})
-f("flange_slab", "extrude", {"amount": round(Z_TOP - Z_FLANGE + 1, 3)},
-  ["flange_slab_sk"])
-f("body_blank_sk", "sketch", {"plane": "XY", "offset": Z_FLANGE, "entities":
-  [rbox(0, PART_Y, BODY_L, BODY_W, BODY_R)]})
-f("body_blank", "extrude", {"amount": round(Z_TOP - Z_FLANGE + 1, 3)},
-  ["body_blank_sk"])
-f("flange_ring", "cut", {}, ["flange_slab", "body_blank"])
-f("bolt_flange", "cut", {}, [PREV, "flange_ring"])
-PREV = "bolt_flange"
+fin_ents = [rrect(a, b, y - h, y + h, FIN_R) for a, b, y, h in FINS]
+for i in range(0, len(fin_ents), 8):
+    parts.append(raise_(f"fin_ribs_{i // 8}", Z_DECK, Z_FIN,
+                        fin_ents[i:i + 8]))
 
-# 4. fin slots (8 per sketch)
-fin_ents = [rrect(a, b, PART_Y + y - h, PART_Y + y + h, FIN_R)
-            for a, b, y, h in FINS]
-fin_tools = [tool(f"fins_{i // 8}", Z_FIN, fin_ents[i:i + 8])
-             for i in range(0, len(fin_ents), 8)]
-f("fins", "cut", {}, [PREV] + fin_tools)
-PREV = "fins"
+parts.append(raise_("cam_bosses", Z_DECK, Z_FIN,
+                    [circ(bx, 0, BOSS_R) for bx in BOSS_X]))
 
-# 5. cam bosses: D16 counterbore then D8 bore
-cut("boss_counterbores", Z_BOSS_CB,
-    [circ(bx, PART_Y, BOSS_CB_R) for bx in BOSS_X])
-cut("boss_bores", Z_BOSS_BORE,
-    [circ(bx, PART_Y, BOSS_BORE_R) for bx in BOSS_X])
+f("cover_body", "fuse", {}, parts)
+PREV = "cover_body"
 
-# 6. blind bolt holes, one sketch per flange side (7 each)
+# ---- subtractive half: nothing but holes
+cut("boss_counterbores", Z_BOSS_CB, [circ(bx, 0, BOSS_CB_R) for bx in BOSS_X])
+cut("boss_bores", Z_BOSS_BORE, [circ(bx, 0, BOSS_BORE_R) for bx in BOSS_X])
 bolt_ids = []
-for s, side in ((1, "top"), (-1, "bot")):
-    bolt_ids.append(tool(f"bolt_holes_{side}", Z_BOLT,
-                         [circ(bx, PART_Y + s * BOLT_Y, BOLT_R)
-                          for bx in BOLT_X]))
+for i in range(0, len(BOLTS), 8):
+    f(f"bolt_holes_{i // 8}_sk", "sketch", {"plane": "XY", "offset": Z_BOLT,
+      "entities": [circ(bx, by, BOLT_R) for bx, by in BOLTS[i:i + 8]]})
+    f(f"bolt_holes_{i // 8}", "extrude",
+      {"amount": round(Z_TOP - Z_BOLT + 1, 3)}, [f"bolt_holes_{i // 8}_sk"])
+    bolt_ids.append(f"bolt_holes_{i // 8}")
 f("cam_cover_upper", "cut", {}, [PREV] + bolt_ids)
 
+N_ADD = len(parts)
+N_CUT = sum(1 for x in F if x["op"] == "cut")
 for _feat in F:
     if _feat["op"] == "sketch":
         _n = len(_feat["params"]["entities"])
         assert _n <= 10, f"sketch {_feat['id']} has {_n} entities (max 10)"
 
 tree = {"name": "cam-cover-upper", "features": F,
-        "spec": {"n_solids": 1, "size": [COVER_L, COVER_W, Z_FACE],
+        "spec": {"n_solids": 1, "size": [COVER_L, COVER_W, Z_FIN],
                  "tol": 0.3}}
 open(ROOT + r"\designs\cam-cover-upper-tree.json", "w").write(json.dumps(tree))
 
 
 # ----------------------------------------------------------------- preview
 S = 5.0
-SEC_H, SEC_Y, SEC_Z = 54.0, 2.4, 4.0   # section band: height, x and z blowup
+SEC_H, SEC_Y, SEC_Z = 50.0, 1.4, 3.4
 W = int(STOCK_L * S)
 HT = int((STOCK_W + SEC_H) * S)
 img = Image.new("RGB", (W, HT), (12, 15, 20))
 dr = ImageDraw.Draw(img)
-Y0 = STOCK_W * S                  # top of the section band, in px
+Y0 = STOCK_W * S
 
 
 def px(p):
@@ -391,12 +368,12 @@ def px(p):
 
 
 def col(z):
-    t = max(0.0, min(1.0, (z - 1.0) / (Z_FACE - 1.0)))
-    lo_, hi_ = (36, 40, 48), (200, 204, 210)
+    t = max(0.0, min(1.0, (z - 2.0) / (Z_FIN - 2.0)))
+    lo_, hi_ = (38, 42, 50), (202, 206, 212)
     return tuple(int(lo_[i] + (hi_[i] - lo_[i]) * (t ** 0.8)) for i in range(3))
 
 
-def sample_rr(cx, cy, w, h, r, n=10):
+def sample_rr(cx, cy, w, h, r, n=8):
     pts = []
     for sx, sy, a0 in ((1, 1, 0.0), (-1, 1, math.pi / 2),
                        (-1, -1, math.pi), (1, -1, 3 * math.pi / 2)):
@@ -415,96 +392,72 @@ def disc(cx, cy, r, z):
     dr.ellipse([px((cx - r, cy + r)), px((cx + r, cy - r))], fill=col(z))
 
 
-# stock, then the part top-down
 dr.rectangle([px((-STOCK_L / 2, STOCK_W / 2)),
               px((STOCK_L / 2, -STOCK_W / 2))], fill=(26, 30, 36))
-box(0, PART_Y, COVER_L, WAIST, END_R, Z_FLANGE)
-for bx in BOLT_X:
-    for s in (1, -1):
-        disc(bx, PART_Y + s * BOLT_Y, LOBE_R, Z_FLANGE)
-box(0, PART_Y, BODY_L, BODY_W, BODY_R, Z_FACE)
+box(0, 0, COVER_L, COVER_W, CORNER_R, Z_FLANGE)
+box(0, 0, DECK_L, DECK_W, DECK_R, Z_DECK)
 for a, b, y, h in FINS:
-    box((a + b) / 2, PART_Y + y, b - a, 2 * h, FIN_R, Z_FIN)
+    box((a + b) / 2, y, b - a, 2 * h, FIN_R, Z_FIN)
 for bx in BOSS_X:
-    disc(bx, PART_Y, BOSS_R, Z_FACE)
-    disc(bx, PART_Y, BOSS_CB_R, Z_BOSS_CB)
-    disc(bx, PART_Y, BOSS_BORE_R, Z_BOSS_BORE)
-for bx in BOLT_X:
-    for s in (1, -1):
-        disc(bx, PART_Y + s * BOLT_Y, BOLT_R, Z_BOLT)
+    disc(bx, 0, BOSS_R, Z_FIN)
+    disc(bx, 0, BOSS_CB_R, Z_BOSS_CB)
+    disc(bx, 0, BOSS_BORE_R, Z_BOSS_BORE)
+for bx, by in BOLTS:
+    disc(bx, by, BOLT_R, Z_BOLT)
 
-# section line + the offcut strip
 SEC_X = -30.0
-dr.line([px((SEC_X, PART_Y - COVER_W / 2 - 6)),
-         px((SEC_X, PART_Y + COVER_W / 2 + 6))], fill=(226, 96, 72), width=2)
-oy = PART_Y + COVER_W / 2 + PART_GAP
-dr.rectangle([px((-COVER_L / 2, oy + OFFCUT_W)), px((COVER_L / 2, oy))],
-             outline=(96, 104, 116), width=2)
+RED = (226, 96, 72)
+dr.line([px((SEC_X, -COVER_W / 2 - 4)), px((SEC_X, COVER_W / 2 + 4))],
+        fill=RED, width=2)
 
-# --- section A-A: sample the height field across the width at SEC_X
+base = HT - 14
 dr.rectangle([(0, Y0), (W, HT)], fill=(18, 22, 28))
-base = HT - 16
-prof = []
-n = 900
-for i in range(n + 1):
-    y = PART_Y - COVER_W / 2 - 4 + (COVER_W + 8) * i / n
-    prof.append((y, top_z(SEC_X, y)))
+n = 1600
+prof = [(-COVER_W / 2 - 3 + (COVER_W + 6) * i / n) for i in range(n + 1)]
+prof = [(u, top_z(SEC_X, u)) for u in prof]
 
 
-def spx(y, z):
-    return (W / 2 + (y - PART_Y) * S * SEC_Y, base - z * S * SEC_Z)
+def spx(u, z):
+    return (W / 2 + u * S * SEC_Y, base - z * S * SEC_Z)
 
 
-pts = [spx(prof[0][0], 0)]
-for y, z in prof:
-    pts.append(spx(y, z))
-pts.append(spx(prof[-1][0], 0))
+pts = [spx(prof[0][0], 0)] + [spx(u, z) for u, z in prof] \
+    + [spx(prof[-1][0], 0)]
 dr.polygon(pts, fill=(150, 156, 166))
 dr.line([spx(prof[0][0], 0), spx(prof[-1][0], 0)], fill=(96, 104, 116),
         width=2)
 
 try:
     FN = ImageFont.truetype("arial.ttf", 14)
-    FS = ImageFont.truetype("arial.ttf", 12)
 except OSError:
-    FN = FS = ImageFont.load_default()
+    FN = ImageFont.load_default()
 dr.text((14, Y0 + 12), f"SECTION A-A   across the width at x={SEC_X:.0f}"
-        f"   (width x{SEC_Y:.1f}, height x{SEC_Z:.1f})", font=FN,
-        fill=(226, 96, 72))
-dr.text(px((SEC_X, PART_Y + COVER_W / 2 + 9)), "A", font=FN,
-        fill=(226, 96, 72), anchor="mm")
-dr.text(px((SEC_X, PART_Y - COVER_W / 2 - 9)), "A", font=FN,
-        fill=(226, 96, 72), anchor="mm")
-dr.text(px((0, oy + OFFCUT_W - 8)),
-        f"OFFCUT  {COVER_L:.0f} x {OFFCUT_W:.0f} - keep for the lower cover",
-        font=FS, fill=(150, 158, 170), anchor="mm")
-for bx, lab in ((BOSS_X[0], "CAM BOSS"), (BOSS_X[2], "CAM BOSS")):
-    dr.text(px((bx, PART_Y - BOSS_R - 5.5)), lab, font=FS,
-            fill=(236, 239, 243), anchor="mm")
-dr.text(px((0, oy + 7)),
-        f"BOLT FLANGE LIP {FW} WIDE, TOP z{Z_FLANGE}  -  {2*N_BOLT} BLIND"
-        f" D{2*BOLT_R} HOLES", font=FS, fill=(198, 204, 214), anchor="mm")
+        f"   (width x{SEC_Y:.1f}, height x{SEC_Z:.1f})   -   {FIN_N} RAISED"
+        f" FIN RIBS {FIN_RIB} WIDE x {Z_FIN-Z_DECK:.1f} TALL, {FIN_GAP} GAPS",
+        font=FN, fill=RED)
+for s in (1, -1):
+    dr.text(px((SEC_X, s * (COVER_W / 2 + 8))), "A", font=FN, fill=RED,
+            anchor="mm")
 
 out = ROOT + r"\designs\cam-cover-upper-preview.png"
 img.save(out)
 
 # ------------------------------------------------------------------- report
 print(f"preview: {out}")
-print(f"part {COVER_L} x {COVER_W} x {Z_FACE} from {STOCK_L}x{STOCK_W}x"
-      f"{STOCK_T}; parting trench {PART_GAP} wide to z{Z_TRENCH}")
-print(f"scale {SCALE:.4f} = 1:{1/SCALE:.2f} in plan | Z 1:"
-      f"{REAL_H/Z_FACE:.2f} -> {(REAL_H/Z_FACE)*SCALE:.2f}x flatter than"
-      f" true (the pair plaque was 4.4x)")
-print(f"offcut left: {COVER_L:.0f} x {OFFCUT_W} at +Y")
-print(f"flange lip {FW} wide, top z{Z_FLANGE}; body {BODY_L} x {BODY_W}"
-      f" standing {Z_FACE - Z_FLANGE:.1f} proud")
-print(f"fins: {FIN_N} slots {FIN_W} wide / rib {FIN_PITCH-FIN_W:.1f} /"
-      f" pitch {FIN_PITCH} (true scale {6.0*SCALE:.1f} deep ->"
-      f" {Z_FACE-Z_FIN}) -> {len(FINS)} segments")
-print(f"bosses: {len(BOSS_X)} x D{2*BOSS_R} at x={BOSS_X},"
-      f" cb D{2*BOSS_CB_R} z{Z_BOSS_CB}, bore D{2*BOSS_BORE_R} z{Z_BOSS_BORE}")
-print(f"bolts: {2*N_BOLT} blind D{2*BOLT_R} to z{Z_BOLT}")
-print(f"features: {len(F)} | through features: 0 (outline is a trench)")
+print(f"part {COVER_L} x {COVER_W} x {Z_FIN} FILLS the {STOCK_L}x{STOCK_W}"
+      f" blank ({PART_GAP} trench all round, no offcut)")
+print(f"scale: length 1:{1/SCALE_L:.2f}  width 1:{1/SCALE_W:.2f}"
+      f"  -> aspect {COVER_L/COVER_W:.2f}:1 vs the real"
+      f" {REAL_L/REAL_W:.2f}:1 (stretched on purpose)")
+print(f"corners R{CORNER_R} (was R11.5 + 14 bulging lobes); flange band {FB}"
+      f" wide at z{Z_FLANGE} with {len(BOLTS)} blind D{2*BOLT_R} holes")
+print(f"deck {DECK_L} x {DECK_W} at z{Z_DECK}; {FIN_N} RAISED ribs"
+      f" {FIN_RIB} wide x {Z_FIN-Z_DECK:.1f} tall, pitch {FIN_PITCH},"
+      f" {FIN_GAP} gaps -> {len(FINS)} rib solids")
+print(f"bosses: {len(BOSS_X)} x D{2*BOSS_R} raised, cb D{2*BOSS_CB_R}"
+      f" z{Z_BOSS_CB}, bore D{2*BOSS_BORE_R} z{Z_BOSS_BORE}")
+print(f"features: {len(F)} | {N_ADD} solids FUSED, only {N_CUT} cuts"
+      f" (holes only) | through features: 0")
 
 
 # --------------------------------------------------------------------- build
