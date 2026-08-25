@@ -43,6 +43,8 @@ RING_D1, RING_D2, RING_Z = 3.0, 4.2, 11.4    # pinstripe groove, 0.6 deep
 # ------------------------------------------------------------ main cavity
 CAV_D, CAV_Z = 5.6, 3.0        # wall thickness / cavity floor (9 deep)
 CAV_Y0 = -22.0                 # cavity starts where the keypad platform ends
+CLIP_R = 5.0                   # cutter fillet where the straight cavity edge
+RIM_R = 1.2                    # meets the walls / outer top-rim fillet
 
 # ---------------------------------------------------------------- keypad
 # MakerMind RBS11089: rigid 3x4 telephone keypad, 70 x 52 x 10, hard keys.
@@ -70,11 +72,11 @@ RIM_TOP = 9.0
 STRAP = [(-14.0, 15.0), (-14.0, 49.0)]            # M3 strap pilot holes
 STRAP_R = 1.25
 
-SD_C = (25.5, 35.5)                               # module center
+SD_C = (25.0, 35.5)                               # module center
 SD_HOLE_P, SD_PIL_R, SD_TOP = (19.0, 37.0), 2.75, 7.0
 SD_HOLE_R = 0.8                                   # M2 pilot
-SD_TABS = [(32.0, 40.0, 14.0, 20.0, 1.5),         # bridge outer pillars
-           (32.0, 40.0, 51.0, 57.0, 1.5)]         # into the cavity wall
+# (v4 wall tabs removed: they made sharp internal wall junctions — the
+# outer pillars are free-standing now with >= 2mm cutter gap to the wall)
 
 OLED_C = (0.0, 77.5)
 OLED_HOLE_P, OLED_PIL_R, OLED_TOP = 23.5, 2.75, 9.5
@@ -101,7 +103,7 @@ C_BATT, C_SD, C_BUZZ = (48.5, 26.5, 17.5), (42.0, 24.0), 12.0
 # into the cavity floor around its pillars (pillars keep a 0.75 collar)
 ESP_FOOT = (-26.5, 26.5, -19.5, 9.5, 2.5, 2.0)    # 53 x 29
 OLED_FOOT = (-14.25, 14.25, 63.25, 91.75, 2.5, 2.0)   # 28.5 sq
-SD_FOOT = (13.0, 38.0, 14.0, 57.0, 2.5, 2.0)      # 25 x 43
+SD_FOOT = (12.5, 37.5, 14.0, 57.0, 2.5, 2.0)      # 25 x 43
 COLLAR = 0.75
 
 ESP_HOLES = [(ESP_C[0] + sx * ESP_HOLE_P[0] / 2,
@@ -206,17 +208,29 @@ def rounded_path_e(verts, r):
     return outline_path(verts, [r] * len(verts))
 
 
+def cavity_geo():
+    """Cavity boundary: outline offset CAV_D, clipped flat at CAV_Y0, with
+    CLIP_R cutter fillets at the two clip corners (no sharp internal
+    corners anywhere on the pocket wall)."""
+    ov = offset_verts(VERTS, CAV_D)
+    orr = [r - CAV_D for r in RADII]
+
+    def clip_pt(a, b):
+        t = (CAV_Y0 - a[1]) / (b[1] - a[1])
+        return (a[0] + (b[0] - a[0]) * t, CAV_Y0)
+    pr = clip_pt(ov[0], ov[1])          # right slant crosses the clip line
+    pl = clip_pt(ov[6], ov[7])          # left slant crosses the clip line
+    verts = [pr] + ov[1:7] + [pl]
+    radii = [CLIP_R] + orr[1:7] + [CLIP_R]
+    return verts, radii
+
+
 def rrect(x0, x1, y0, y1, r):
     return rounded_path_e([(x1, y0), (x1, y1), (x0, y1), (x0, y0)], r)
 
 
 def circ(cx, cy, r, mode="add"):
     return {"kind": "circle", "r": r, "x": cx, "y": cy, "mode": mode}
-
-
-def poly(pts):
-    return {"kind": "polygon", "mode": "add",
-            "points": [[round(x, 3), round(y, 3)] for x, y in pts]}
 
 
 # ------------------------------------------------------------- sanity gates
@@ -256,9 +270,7 @@ ISLAND_CIRCLES = ([(x, y, ESP_PIL_R) for x, y in ESP_HOLES]
 for cx_, cy_, r in ISLAND_CIRCLES:
     lo = min(sdf(cx_ + r * math.cos(a * math.pi / 6),
                  cy_ + r * math.sin(a * math.pi / 6)) for a in range(12))
-    fused = any(t[0] - 0.1 <= cx_ <= t[1] + 0.1 and t[2] <= cy_ <= t[3]
-                for t in SD_TABS)
-    assert lo >= CAV_D + 2.0 or fused, f"island ({cx_},{cy_}) near wall {lo:.2f}"
+    assert lo >= CAV_D + 2.0, f"island ({cx_},{cy_}) near wall {lo:.2f}"
 
 # island-to-island / island-to-platform gaps (>= 2.0 for the cutter);
 # the 0.5-deep locating seats are exempt (cosmetic step only)
@@ -332,7 +344,9 @@ def f(id, op, params, inputs=[]):
 
 f("outline_sketch", "sketch", {"plane": "XY", "offset": 0,
                                "entities": [outline_path(VERTS, RADII)]})
-f("body", "extrude", {"amount": T}, ["outline_sketch"])
+f("body_raw", "extrude", {"amount": T}, ["outline_sketch"])
+# hand-comfort: round the outer top rim before any pocket is cut
+f("body", "fillet", {"radius": RIM_R, "edges": "top"}, ["body_raw"])
 
 prev = "body"
 
@@ -360,19 +374,14 @@ pocket("tail_fold_scoop", SCOOP_T[4], [rr(SCOOP_T)])
 pocket("tail_notch", NOTCH[4], [rr(NOTCH)])
 
 # ---- first cut: the weight-reduction cavity, islands left standing
-f("cav_sketch", "sketch", {"plane": "XY", "offset": CAV_Z, "entities":
-  [outline_path(offset_verts(VERTS, CAV_D), [r - CAV_D for r in RADII])]})
-f("cav_tool0", "extrude", {"amount": T - CAV_Z + 1}, ["cav_sketch"])
-f("cav_clip_sketch", "sketch", {"plane": "XY", "offset": CAV_Z - 1,
-  "entities": [poly([(-60, -120), (60, -120), (60, CAV_Y0), (-60, CAV_Y0)])]})
-f("cav_clip_tool", "extrude", {"amount": T - CAV_Z + 3}, ["cav_clip_sketch"])
-f("cav_clipped", "cut", {}, ["cav_tool0", "cav_clip_tool"])
+f("cav_sketch", "sketch", {"plane": "XY", "offset": CAV_Z,
+                           "entities": [outline_path(*cavity_geo())]})
+f("cav_tool", "extrude", {"amount": T - CAV_Z + 1}, ["cav_sketch"])
 
 isl1 = ([rrect(*t) for t in BATT_RIMS]
         + [circ(x, y, ESP_PIL_R) for x, y in ESP_HOLES]
         + [circ(x, y, SD_PIL_R) for x, y in SD_HOLES])
-isl2 = ([rrect(*t) for t in SD_TABS]
-        + [circ(x, y, OLED_PIL_R) for x, y in OLED_HOLES]
+isl2 = ([circ(x, y, OLED_PIL_R) for x, y in OLED_HOLES]
         + [circ(x, y, BUZZ_PIL_R) for x, y in BUZZ_PIL]
         + [circ(x, y, LORA_PIL_R) for x, y in LORA_PIL])
 f("isl1_sketch", "sketch", {"plane": "XY", "offset": CAV_Z - 1,
@@ -381,7 +390,7 @@ f("isl1_tool", "extrude", {"amount": T - CAV_Z + 3}, ["isl1_sketch"])
 f("isl2_sketch", "sketch", {"plane": "XY", "offset": CAV_Z - 1,
                             "entities": isl2})
 f("isl2_tool", "extrude", {"amount": T - CAV_Z + 3}, ["isl2_sketch"])
-f("cav_neg", "cut", {}, ["cav_clipped", "isl1_tool", "isl2_tool"])
+f("cav_neg", "cut", {}, ["cav_tool", "isl1_tool", "isl2_tool"])
 f("main_cavity", "cut", {}, [prev, "cav_neg"])
 prev = "main_cavity"
 
@@ -391,8 +400,8 @@ pocket("esp_pillar_trim", ESP_TOP,
 pocket("batt_rim_trim", RIM_TOP,
        [rrect(x0 - 1, x1 + 1, y0 - 0.5, y1 + 0.5, r)
         for x0, x1, y0, y1, r in BATT_RIMS])
-pocket("sd_shelf_trim", SD_TOP,
-       [rrect(12.5, 40.0, 13.5, 20.5, 1.5), rrect(12.5, 40.0, 50.5, 57.5, 1.5)])
+pocket("sd_pillar_trim", SD_TOP,
+       [circ(x, y, SD_PIL_R + 1.0) for x, y in SD_HOLES])
 pocket("oled_pillar_trim", OLED_TOP,
        [circ(x, y, OLED_PIL_R + 1.0) for x, y in OLED_HOLES])
 # buzzer clamp pillars stay full height (z12)
@@ -409,13 +418,9 @@ pocket("esp_foot", ESP_FOOT[4],
 pocket("oled_foot", OLED_FOOT[4],
        [rr(OLED_FOOT)] + [circ(x, y, OLED_PIL_R + COLLAR, "subtract")
                           for x, y in OLED_HOLES], top=CAV_Z + 0.5)
-sd_tab_subs = [dict(rrect(x0 - COLLAR, x1 + COLLAR, y0 - COLLAR,
-                          y1 + COLLAR, r), mode="subtract")
-               for x0, x1, y0, y1, r in SD_TABS]
 pocket("sd_foot", SD_FOOT[4],
        [rr(SD_FOOT)] + [circ(x, y, SD_PIL_R + COLLAR, "subtract")
-                        for x, y in SD_HOLES] + sd_tab_subs,
-       top=CAV_Z + 0.5)
+                        for x, y in SD_HOLES], top=CAV_Z + 0.5)
 pocket("lora_foot", LORA_FOOT[4],
        [rr(LORA_FOOT)] + [circ(x, y, LORA_PIL_R + COLLAR, "subtract")
                           for x, y in LORA_PIL], top=CAV_Z + 0.5)
@@ -487,10 +492,8 @@ def poly_mask(verts, radii):
 
 
 d.polygon([px(p) for p in sample_outline(VERTS, RADII)], fill=C_FACE)
-# cavity region = offset silhouette clipped to y >= CAV_Y0
-cav_m = poly_mask(offset_verts(VERTS, CAV_D), [r - CAV_D for r in RADII])
-ImageDraw.Draw(cav_m).rectangle([px((-60, CAV_Y0)), px((60, -120))], fill=0)
-img.paste(Image.new("RGB", (W, HT), C_CAV), (0, 0), cav_m)
+# cavity region: clipped offset silhouette with filleted clip corners
+img.paste(Image.new("RGB", (W, HT), C_CAV), (0, 0), poly_mask(*cavity_geo()))
 # pinstripe ring band on the remaining face
 ring_m = poly_mask(offset_verts(VERTS, RING_D1), [r - RING_D1 for r in RADII])
 ImageDraw.Draw(ring_m).polygon(
@@ -522,8 +525,6 @@ for t in (ESP_FOOT, OLED_FOOT, SD_FOOT, LORA_FOOT):
     rbox((t[0], t[1], t[2], t[3], t[5]), C_SEAT)
 # islands
 for t in BATT_RIMS:
-    rbox(t, C_ISL)
-for t in SD_TABS:
     rbox(t, C_ISL)
 for pts, r in ((ESP_HOLES, ESP_PIL_R), (SD_HOLES, SD_PIL_R),
                (OLED_HOLES, OLED_PIL_R), (BUZZ_PIL, BUZZ_PIL_R),
@@ -567,6 +568,9 @@ print(f"pillars: ESP 4x D{2*ESP_PIL_R} top z{ESP_TOP} M2.5 | OLED 4x "
 print("slot boxes: 0.5-deep footprint outlines in the cavity floor for "
       "ESP32 / OLED / microSD / LoRa (pillar collars kept) + battery + "
       "buzzer seats")
+print(f"machinable corners: cavity clip corners r{CLIP_R}, outer top rim "
+      f"fillet r{RIM_R}, SD wall tabs removed (free pillars, 2mm gaps), "
+      "every pocket corner r>=1.5")
 print(f"keypad: MakerMind RBS11089 3x4 rigid {KEY_W}x{KEY_L}x10, recess "
       f"2.0 deep + 4x M2 pilots pitch {KEY_HOLE_P} (VERIFY) | LoRa Ra-02 "
       f"{C_LORA} on seat + 2x D{2*LORA_PIL_R} M2 clamp pillars (VERIFY)")

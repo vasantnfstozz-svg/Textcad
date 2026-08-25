@@ -177,13 +177,25 @@
       "suppressed": false
     },
     {
-      "id": "body",
+      "id": "body_raw",
       "op": "extrude",
       "params": {
         "amount": 12.0
       },
       "inputs": [
         "outline_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "body",
+      "op": "fillet",
+      "params": {
+        "radius": 1.2,
+        "edges": "top"
+      },
+      "inputs": [
+        "body_raw"
       ],
       "suppressed": false
     },
@@ -719,8 +731,8 @@
             "kind": "path",
             "mode": "add",
             "start": [
-              28.389,
-              -90.469
+              36.204,
+              -17.533
             ],
             "segments": [
               {
@@ -834,37 +846,37 @@
               {
                 "type": "line",
                 "to": [
-                  -28.389,
-                  -90.469
+                  -36.204,
+                  -17.533
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  -26.955,
-                  -93.273
+                  -34.574,
+                  -20.719
                 ],
                 "to": [
-                  -24.014,
-                  -94.4
+                  -31.232,
+                  -22.0
                 ]
               },
               {
                 "type": "line",
                 "to": [
-                  24.014,
-                  -94.4
+                  31.232,
+                  -22.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  26.955,
-                  -93.273
+                  34.574,
+                  -20.719
                 ],
                 "to": [
-                  28.389,
-                  -90.469
+                  36.204,
+                  -17.533
                 ]
               }
             ]
@@ -875,68 +887,13 @@
       "suppressed": false
     },
     {
-      "id": "cav_tool0",
+      "id": "cav_tool",
       "op": "extrude",
       "params": {
         "amount": 10.0
       },
       "inputs": [
         "cav_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "cav_clip_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 2.0,
-        "entities": [
-          {
-            "kind": "polygon",
-            "mode": "add",
-            "points": [
-              [
-                -60,
-                -120
-              ],
-              [
-                60,
-                -120
-              ],
-              [
-                60,
-                -22.0
-              ],
-              [
-                -60,
-                -22.0
-              ]
-            ]
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "cav_clip_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 12.0
-      },
-      "inputs": [
-        "cav_clip_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "cav_clipped",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "cav_tool0",
-        "cav_clip_tool"
       ],
       "suppressed": false
     },
@@ -1142,28 +1099,28 @@
           {
             "kind": "circle",
             "r": 2.75,
-            "x": 35.0,
+            "x": 34.5,
             "y": 54.0,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 2.75,
-            "x": 35.0,
+            "x": 34.5,
             "y": 17.0,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 2.75,
-            "x": 16.0,
+            "x": 15.5,
             "y": 54.0,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 2.75,
-            "x": 16.0,
+            "x": 15.5,
             "y": 17.0,
             "mode": "add"
           }
@@ -1190,170 +1147,6 @@
         "plane": "XY",
         "offset": 2.0,
         "entities": [
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              40.0,
-              15.5
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  40.0,
-                  18.5
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  39.561,
-                  19.561
-                ],
-                "to": [
-                  38.5,
-                  20.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  33.5,
-                  20.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  32.439,
-                  19.561
-                ],
-                "to": [
-                  32.0,
-                  18.5
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  32.0,
-                  15.5
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  32.439,
-                  14.439
-                ],
-                "to": [
-                  33.5,
-                  14.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  38.5,
-                  14.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  39.561,
-                  14.439
-                ],
-                "to": [
-                  40.0,
-                  15.5
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              40.0,
-              52.5
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  40.0,
-                  55.5
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  39.561,
-                  56.561
-                ],
-                "to": [
-                  38.5,
-                  57.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  33.5,
-                  57.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  32.439,
-                  56.561
-                ],
-                "to": [
-                  32.0,
-                  55.5
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  32.0,
-                  52.5
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  32.439,
-                  51.439
-                ],
-                "to": [
-                  33.5,
-                  51.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  38.5,
-                  51.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  39.561,
-                  51.439
-                ],
-                "to": [
-                  40.0,
-                  52.5
-                ]
-              }
-            ]
-          },
           {
             "kind": "circle",
             "r": 2.75,
@@ -1431,7 +1224,7 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "cav_clipped",
+        "cav_tool",
         "isl1_tool",
         "isl2_tool"
       ],
@@ -1706,175 +1499,39 @@
       "suppressed": false
     },
     {
-      "id": "sd_shelf_trim_sketch",
+      "id": "sd_pillar_trim_sketch",
       "op": "sketch",
       "params": {
         "plane": "XY",
         "offset": 7.0,
         "entities": [
           {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              40.0,
-              15.0
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  40.0,
-                  19.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  39.561,
-                  20.061
-                ],
-                "to": [
-                  38.5,
-                  20.5
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  14.0,
-                  20.5
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  12.939,
-                  20.061
-                ],
-                "to": [
-                  12.5,
-                  19.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  12.5,
-                  15.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  12.939,
-                  13.939
-                ],
-                "to": [
-                  14.0,
-                  13.5
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  38.5,
-                  13.5
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  39.561,
-                  13.939
-                ],
-                "to": [
-                  40.0,
-                  15.0
-                ]
-              }
-            ]
+            "kind": "circle",
+            "r": 3.75,
+            "x": 34.5,
+            "y": 54.0,
+            "mode": "add"
           },
           {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              40.0,
-              52.0
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  40.0,
-                  56.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  39.561,
-                  57.061
-                ],
-                "to": [
-                  38.5,
-                  57.5
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  14.0,
-                  57.5
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  12.939,
-                  57.061
-                ],
-                "to": [
-                  12.5,
-                  56.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  12.5,
-                  52.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  12.939,
-                  50.939
-                ],
-                "to": [
-                  14.0,
-                  50.5
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  38.5,
-                  50.5
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  39.561,
-                  50.939
-                ],
-                "to": [
-                  40.0,
-                  52.0
-                ]
-              }
-            ]
+            "kind": "circle",
+            "r": 3.75,
+            "x": 34.5,
+            "y": 17.0,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 3.75,
+            "x": 15.5,
+            "y": 54.0,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 3.75,
+            "x": 15.5,
+            "y": 17.0,
+            "mode": "add"
           }
         ]
       },
@@ -1882,23 +1539,23 @@
       "suppressed": false
     },
     {
-      "id": "sd_shelf_trim_tool",
+      "id": "sd_pillar_trim_tool",
       "op": "extrude",
       "params": {
         "amount": 6.0
       },
       "inputs": [
-        "sd_shelf_trim_sketch"
+        "sd_pillar_trim_sketch"
       ],
       "suppressed": false
     },
     {
-      "id": "sd_shelf_trim",
+      "id": "sd_pillar_trim",
       "op": "cut",
       "params": {},
       "inputs": [
         "batt_rim_trim",
-        "sd_shelf_trim_tool"
+        "sd_pillar_trim_tool"
       ],
       "suppressed": false
     },
@@ -1958,7 +1615,7 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "sd_shelf_trim",
+        "sd_pillar_trim",
         "oled_pillar_trim_tool"
       ],
       "suppressed": false
@@ -2415,79 +2072,79 @@
             "kind": "path",
             "mode": "add",
             "start": [
-              38.0,
+              37.5,
               16.0
             ],
             "segments": [
               {
                 "type": "line",
                 "to": [
-                  38.0,
+                  37.5,
                   55.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  37.414,
+                  36.914,
                   56.414
                 ],
                 "to": [
-                  36.0,
+                  35.5,
                   57.0
                 ]
               },
               {
                 "type": "line",
                 "to": [
-                  15.0,
+                  14.5,
                   57.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  13.586,
+                  13.086,
                   56.414
                 ],
                 "to": [
-                  13.0,
+                  12.5,
                   55.0
                 ]
               },
               {
                 "type": "line",
                 "to": [
-                  13.0,
+                  12.5,
                   16.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  13.586,
+                  13.086,
                   14.586
                 ],
                 "to": [
-                  15.0,
+                  14.5,
                   14.0
                 ]
               },
               {
                 "type": "line",
                 "to": [
-                  36.0,
+                  35.5,
                   14.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  37.414,
+                  36.914,
                   14.586
                 ],
                 "to": [
-                  38.0,
+                  37.5,
                   16.0
                 ]
               }
@@ -2496,194 +2153,30 @@
           {
             "kind": "circle",
             "r": 3.5,
-            "x": 35.0,
+            "x": 34.5,
             "y": 54.0,
             "mode": "subtract"
           },
           {
             "kind": "circle",
             "r": 3.5,
-            "x": 35.0,
+            "x": 34.5,
             "y": 17.0,
             "mode": "subtract"
           },
           {
             "kind": "circle",
             "r": 3.5,
-            "x": 16.0,
+            "x": 15.5,
             "y": 54.0,
             "mode": "subtract"
           },
           {
             "kind": "circle",
             "r": 3.5,
-            "x": 16.0,
+            "x": 15.5,
             "y": 17.0,
             "mode": "subtract"
-          },
-          {
-            "kind": "path",
-            "mode": "subtract",
-            "start": [
-              40.75,
-              14.75
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  40.75,
-                  19.25
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  40.311,
-                  20.311
-                ],
-                "to": [
-                  39.25,
-                  20.75
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  32.75,
-                  20.75
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  31.689,
-                  20.311
-                ],
-                "to": [
-                  31.25,
-                  19.25
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  31.25,
-                  14.75
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  31.689,
-                  13.689
-                ],
-                "to": [
-                  32.75,
-                  13.25
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  39.25,
-                  13.25
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  40.311,
-                  13.689
-                ],
-                "to": [
-                  40.75,
-                  14.75
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "subtract",
-            "start": [
-              40.75,
-              51.75
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  40.75,
-                  56.25
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  40.311,
-                  57.311
-                ],
-                "to": [
-                  39.25,
-                  57.75
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  32.75,
-                  57.75
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  31.689,
-                  57.311
-                ],
-                "to": [
-                  31.25,
-                  56.25
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  31.25,
-                  51.75
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  31.689,
-                  50.689
-                ],
-                "to": [
-                  32.75,
-                  50.25
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  39.25,
-                  50.25
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  40.311,
-                  50.689
-                ],
-                "to": [
-                  40.75,
-                  51.75
-                ]
-              }
-            ]
           }
         ]
       },
@@ -2911,28 +2404,28 @@
           {
             "kind": "circle",
             "r": 0.8,
-            "x": 35.0,
+            "x": 34.5,
             "y": 54.0,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 0.8,
-            "x": 35.0,
+            "x": 34.5,
             "y": 17.0,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 0.8,
-            "x": 16.0,
+            "x": 15.5,
             "y": 54.0,
             "mode": "add"
           },
           {
             "kind": "circle",
             "r": 0.8,
-            "x": 16.0,
+            "x": 15.5,
             "y": 17.0,
             "mode": "add"
           }
