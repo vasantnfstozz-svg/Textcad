@@ -33,52 +33,65 @@ ROOT = r"c:\Users\VasanSeenivasan\Desktop\textcad"
 
 # ------------------------------------------------------------------ outline
 T = 12.0                                     # stock/shell thickness
-L2 = 91.0                                    # half length (182 total)
+L2 = 100.0                                   # half length (200 total)
 GRIP2, HEAD2, TOP2 = 33.0, 45.0, 37.0        # half widths: grip/head/top
-VERTS = [(GRIP2, -L2), (HEAD2, 3.0), (HEAD2, 53.0), (TOP2, L2),
-         (-TOP2, L2), (-HEAD2, 53.0), (-HEAD2, 3.0), (-GRIP2, -L2)]  # CCW
+VERTS = [(GRIP2, -L2), (HEAD2, 12.0), (HEAD2, 62.0), (TOP2, L2),
+         (-TOP2, L2), (-HEAD2, 62.0), (-HEAD2, 12.0), (-GRIP2, -L2)]  # CCW
 RADII = [10.0, 22.0, 22.0, 18.0, 18.0, 22.0, 22.0, 10.0]
 RING_D1, RING_D2, RING_Z = 3.0, 4.2, 11.4    # pinstripe groove, 0.6 deep
 
 # ------------------------------------------------------------ main cavity
 CAV_D, CAV_Z = 5.6, 3.0        # wall thickness / cavity floor (9 deep)
-CAV_Y0 = -31.0                 # cavity starts where the keypad platform ends
+CAV_Y0 = -22.0                 # cavity starts where the keypad platform ends
 
-# ------------------------------------------------------------------ keypad
-KEY_W, KEY_L = 52.0, 52.0     # generic 3x3 membrane — VERIFY vs ordered pad
-KEYPAD = (-(KEY_W + 1) / 2, (KEY_W + 1) / 2, -84.0, -84.0 + KEY_L + 1,
-          10.8, 3.0)                              # 53 x 53, 1.2 deep
-TRENCH = (-9.0, 9.0, -82.0, -33.0, 7.8, 3.0)      # tail bed under the pad
-SCOOP_T = (-9.0, 9.0, -82.0, -74.0, 6.0, 2.0)     # 180-deg fold room
-NOTCH = (-9.0, 9.0, -34.0, -25.0, 6.0, 2.0)       # rib pass-through
+# ---------------------------------------------------------------- keypad
+# MakerMind RBS11089: rigid 3x4 telephone keypad, 70 x 52 x 10, hard keys.
+# Recess only 2 deep (platform stays solid), body rides 8 proud + keys.
+KEY_W, KEY_L = 52.0, 70.0
+KEY_HOLE_P, KEY_HOLE_R = (47.0, 65.0), 0.8   # M2 pilots — VERIFY vs part
+KEYPAD = (-(KEY_W + 1) / 2, (KEY_W + 1) / 2, -93.0, -93.0 + KEY_L + 1,
+          10.0, 3.0)                              # 53 x 71, 2.0 deep
+KEY_C = (0.0, (KEYPAD[2] + KEYPAD[3]) / 2)
+TRENCH = (-9.0, 9.0, -91.0, -24.0, 7.8, 3.0)      # wire bed under the pad
+SCOOP_T = (-9.0, 9.0, -91.0, -83.0, 6.0, 2.0)     # solder-tail fold room
+NOTCH = (-9.0, 9.0, -25.0, -16.0, 6.0, 2.0)       # rib pass-through
 
 # ------------------------------------------------------- pillars & seats
-ESP_C = (0.0, -14.0)                              # board center
+ESP_C = (0.0, -5.0)                               # board center
 ESP_HOLE_P, ESP_PIL_R, ESP_TOP = (47.0, 23.0), 3.5, 7.0
 ESP_HOLE_R = 1.0                                  # M2.5 pilot
-USB = (26.0, 49.0, -21.0, -7.0, 5.5, 2.0)         # breaches the right wall
+USB = (26.0, 49.0, -12.0, 2.0, 5.5, 2.0)          # breaches the right wall
 
-BATT_C = (-14.0, 23.0)                            # seat center
-BATT_SEAT = (-39.5, 11.5, 8.5, 37.5, 2.5, 3.0)    # 51 x 29, 0.5 deep
-BATT_RIMS = [(-36.0, 8.0, 3.5, 8.5, 2.0),         # x0,x1,y0,y1,r — top z9
-             (-36.0, 8.0, 37.5, 42.5, 2.0)]
+BATT_C = (-14.0, 32.0)                            # seat center
+BATT_SEAT = (-39.5, 11.5, 17.5, 46.5, 2.5, 3.0)   # 51 x 29, 0.5 deep
+BATT_RIMS = [(-36.0, 8.0, 12.5, 17.5, 2.0),       # x0,x1,y0,y1,r — top z9
+             (-36.0, 8.0, 46.5, 51.5, 2.0)]
 RIM_TOP = 9.0
-STRAP = [(-14.0, 6.0), (-14.0, 40.0)]             # M3 strap pilot holes
+STRAP = [(-14.0, 15.0), (-14.0, 49.0)]            # M3 strap pilot holes
 STRAP_R = 1.25
 
-SD_C = (25.5, 26.5)                               # module center
+SD_C = (25.5, 35.5)                               # module center
 SD_HOLE_P, SD_PIL_R, SD_TOP = (19.0, 37.0), 2.75, 7.0
 SD_HOLE_R = 0.8                                   # M2 pilot
-SD_TABS = [(32.0, 40.0, 5.0, 11.0, 1.5),          # bridge outer pillars
-           (32.0, 40.0, 42.0, 48.0, 1.5)]         # into the cavity wall
+SD_TABS = [(32.0, 40.0, 14.0, 20.0, 1.5),         # bridge outer pillars
+           (32.0, 40.0, 51.0, 57.0, 1.5)]         # into the cavity wall
 
-OLED_C = (0.0, 68.5)
+OLED_C = (0.0, 77.5)
 OLED_HOLE_P, OLED_PIL_R, OLED_TOP = 23.5, 2.75, 9.5
 OLED_HOLE_R = 0.8                                 # M2 pilot
 
-BUZZ = (25.0, 67.0, 6.5)                          # cx, cy, r — seat 0.5 deep
-BUZZ_PIL = [(25.0, 56.5), (25.0, 77.5)]           # clamp pillars, top z12
+BUZZ = (25.0, 76.0, 6.5)                          # cx, cy, r — seat 0.5 deep
+BUZZ_PIL = [(25.0, 65.5), (25.0, 86.5)]           # clamp pillars, top z12
 BUZZ_PIL_R, BUZZ_HOLE_R = 3.25, 0.8               # M2 pilot
+
+# LoRa transmitter left of the display: Ai-Thinker Ra-02 (SX1278),
+# 17.2 x 16.2 x 3.2, castellated (no holes) -> seat + clamp pillars
+# like the buzzer. PARAMETRIC — verify vs the module ordered.
+C_LORA = (17.2, 16.2)
+LORA_C = (-24.5, 76.0)
+LORA_FOOT = (-33.5, -15.5, 67.4, 84.6, 2.5, 2.0)  # 18 x 17.2, 0.5 deep
+LORA_PIL = [(-24.5, 63.5), (-24.5, 88.5)]         # clamp pillars, top z12
+LORA_PIL_R, LORA_HOLE_R = 3.25, 0.8               # M2 pilot
 
 # researched component sizes (for the fit gates)
 C_ESP, C_OLED = (52.0, 28.0), (27.3, 27.3)
@@ -86,9 +99,9 @@ C_BATT, C_SD, C_BUZZ = (48.5, 26.5, 17.5), (42.0, 24.0), 12.0
 
 # visible footprint "slot boxes": 0.5-deep outlines of every component cut
 # into the cavity floor around its pillars (pillars keep a 0.75 collar)
-ESP_FOOT = (-26.5, 26.5, -28.5, 0.5, 2.5, 2.0)    # 53 x 29
-OLED_FOOT = (-14.25, 14.25, 54.25, 82.75, 2.5, 2.0)   # 28.5 sq
-SD_FOOT = (13.0, 38.0, 5.0, 48.0, 2.5, 2.0)       # 25 x 43
+ESP_FOOT = (-26.5, 26.5, -19.5, 9.5, 2.5, 2.0)    # 53 x 29
+OLED_FOOT = (-14.25, 14.25, 63.25, 91.75, 2.5, 2.0)   # 28.5 sq
+SD_FOOT = (13.0, 38.0, 14.0, 57.0, 2.5, 2.0)      # 25 x 43
 COLLAR = 0.75
 
 ESP_HOLES = [(ESP_C[0] + sx * ESP_HOLE_P[0] / 2,
@@ -99,6 +112,9 @@ SD_HOLES = [(SD_C[0] + sx * SD_HOLE_P[0] / 2, SD_C[1] + sy * SD_HOLE_P[1] / 2)
 OLED_HOLES = [(OLED_C[0] + sx * OLED_HOLE_P / 2,
                OLED_C[1] + sy * OLED_HOLE_P / 2)
               for sx in (1, -1) for sy in (1, -1)]
+KEY_HOLES = [(KEY_C[0] + sx * KEY_HOLE_P[0] / 2,
+              KEY_C[1] + sy * KEY_HOLE_P[1] / 2)
+             for sx in (1, -1) for sy in (1, -1)]
 
 
 # --------------------------------------------------- rounded outline helpers
@@ -235,7 +251,8 @@ for x0, x1, y0, y1, *_ in (BATT_SEAT,):
 ISLAND_CIRCLES = ([(x, y, ESP_PIL_R) for x, y in ESP_HOLES]
                   + [(x, y, SD_PIL_R) for x, y in SD_HOLES]
                   + [(x, y, OLED_PIL_R) for x, y in OLED_HOLES]
-                  + [(x, y, BUZZ_PIL_R) for x, y in BUZZ_PIL])
+                  + [(x, y, BUZZ_PIL_R) for x, y in BUZZ_PIL]
+                  + [(x, y, LORA_PIL_R) for x, y in LORA_PIL])
 for cx_, cy_, r in ISLAND_CIRCLES:
     lo = min(sdf(cx_ + r * math.cos(a * math.pi / 6),
                  cy_ + r * math.sin(a * math.pi / 6)) for a in range(12))
@@ -273,7 +290,20 @@ for (hx, hy), (rx0, rx1, ry0, ry1, _) in zip(STRAP, BATT_RIMS):
 for bx, by in BUZZ_PIL:
     assert math.hypot(bx - BUZZ[0], by - BUZZ[1]) - BUZZ[2] - BUZZ_PIL_R \
         >= 0.2, "buzzer seat undercuts a clamp pillar"
+for bx, by in LORA_PIL:
+    dy = max(LORA_FOOT[2] - by, by - LORA_FOOT[3])
+    assert dy - LORA_PIL_R >= 0.2, "lora seat undercuts a clamp pillar"
 assert USB[1] > HEAD2 + 1.5, "usb gap must breach the wall"
+
+# keypad: screw pilots inside the recess, clear of the wire trench
+assert LORA_FOOT[1] - LORA_FOOT[0] >= C_LORA[0] + 0.5
+assert LORA_FOOT[3] - LORA_FOOT[2] >= C_LORA[1] + 0.5
+for hx, hy in KEY_HOLES:
+    assert KEYPAD[0] + 1.2 <= hx - KEY_HOLE_R and \
+        hx + KEY_HOLE_R <= KEYPAD[1] - 1.2, f"key pilot ({hx},{hy}) x"
+    assert KEYPAD[2] + 1.2 <= hy - KEY_HOLE_R and \
+        hy + KEY_HOLE_R <= KEYPAD[3] - 1.2, f"key pilot ({hx},{hy}) y"
+    assert abs(hx) - KEY_HOLE_R >= TRENCH[1] + 1.0, "key pilot in trench"
 
 # footprint slot boxes: fit their component, stay inside the cavity floor,
 # clear of the keypad platform and the battery rims/seat
@@ -284,7 +314,8 @@ assert SD_FOOT[1] - SD_FOOT[0] >= C_SD[1] + 0.5
 assert SD_FOOT[3] - SD_FOOT[2] >= C_SD[0] + 0.5
 for name, (x0, x1, y0, y1, z, r) in {"esp_foot": ESP_FOOT,
                                      "oled_foot": OLED_FOOT,
-                                     "sd_foot": SD_FOOT}.items():
+                                     "sd_foot": SD_FOOT,
+                                     "lora_foot": LORA_FOOT}.items():
     for cx_, cy_ in ((x0, y0), (x0, y1), (x1, y0), (x1, y1)):
         assert sdf(cx_, cy_) >= CAV_D + 0.2, f"{name} corner ({cx_},{cy_})"
     assert y0 >= CAV_Y0 + 2.0, f"{name} reaches the keypad platform"
@@ -320,8 +351,10 @@ def rr(p):
     return rrect(p[0], p[1], p[2], p[3], p[5] if len(p) > 5 else p[4])
 
 
-# keypad platform (unchanged from v2)
+# keypad platform: shallow recess (rigid pad, keys ride proud), M2 pilots
 pocket("keypad_recess", KEYPAD[4], [rr(KEYPAD)])
+pocket("keypad_pilots", KEYPAD[4] - 4.0,
+       [circ(x, y, KEY_HOLE_R) for x, y in KEY_HOLES], top=KEYPAD[4] + 0.5)
 pocket("tail_trench", TRENCH[4], [rr(TRENCH)])
 pocket("tail_fold_scoop", SCOOP_T[4], [rr(SCOOP_T)])
 pocket("tail_notch", NOTCH[4], [rr(NOTCH)])
@@ -340,7 +373,8 @@ isl1 = ([rrect(*t) for t in BATT_RIMS]
         + [circ(x, y, SD_PIL_R) for x, y in SD_HOLES])
 isl2 = ([rrect(*t) for t in SD_TABS]
         + [circ(x, y, OLED_PIL_R) for x, y in OLED_HOLES]
-        + [circ(x, y, BUZZ_PIL_R) for x, y in BUZZ_PIL])
+        + [circ(x, y, BUZZ_PIL_R) for x, y in BUZZ_PIL]
+        + [circ(x, y, LORA_PIL_R) for x, y in LORA_PIL])
 f("isl1_sketch", "sketch", {"plane": "XY", "offset": CAV_Z - 1,
                             "entities": isl1})
 f("isl1_tool", "extrude", {"amount": T - CAV_Z + 3}, ["isl1_sketch"])
@@ -358,7 +392,7 @@ pocket("batt_rim_trim", RIM_TOP,
        [rrect(x0 - 1, x1 + 1, y0 - 0.5, y1 + 0.5, r)
         for x0, x1, y0, y1, r in BATT_RIMS])
 pocket("sd_shelf_trim", SD_TOP,
-       [rrect(12.5, 40.0, 4.5, 11.5, 1.5), rrect(12.5, 40.0, 41.5, 48.5, 1.5)])
+       [rrect(12.5, 40.0, 13.5, 20.5, 1.5), rrect(12.5, 40.0, 50.5, 57.5, 1.5)])
 pocket("oled_pillar_trim", OLED_TOP,
        [circ(x, y, OLED_PIL_R + 1.0) for x, y in OLED_HOLES])
 # buzzer clamp pillars stay full height (z12)
@@ -382,6 +416,9 @@ pocket("sd_foot", SD_FOOT[4],
        [rr(SD_FOOT)] + [circ(x, y, SD_PIL_R + COLLAR, "subtract")
                         for x, y in SD_HOLES] + sd_tab_subs,
        top=CAV_Z + 0.5)
+pocket("lora_foot", LORA_FOOT[4],
+       [rr(LORA_FOOT)] + [circ(x, y, LORA_PIL_R + COLLAR, "subtract")
+                          for x, y in LORA_PIL], top=CAV_Z + 0.5)
 
 # ---- screw pilot pipes
 pocket("esp_pilots", CAV_Z,
@@ -390,8 +427,9 @@ pocket("sd_pilots", CAV_Z,
        [circ(x, y, SD_HOLE_R) for x, y in SD_HOLES], top=SD_TOP + 0.5)
 pocket("oled_pilots", OLED_TOP - 4.0,
        [circ(x, y, OLED_HOLE_R) for x, y in OLED_HOLES], top=OLED_TOP + 0.5)
-pocket("buzzer_pilots", T - 5.0,
-       [circ(x, y, BUZZ_HOLE_R) for x, y in BUZZ_PIL], top=T + 0.5)
+pocket("clamp_pilots", T - 5.0,
+       [circ(x, y, BUZZ_HOLE_R) for x, y in BUZZ_PIL]
+       + [circ(x, y, LORA_HOLE_R) for x, y in LORA_PIL], top=T + 0.5)
 pocket("strap_pilots", RIM_TOP - 4.0,
        [circ(x, y, STRAP_R) for x, y in STRAP], top=RIM_TOP + 0.5)
 
@@ -411,12 +449,12 @@ f("ring_band", "cut", {}, ["ringA_tool", "ringB_tool"])
 f("esp32_remote", "cut", {}, [prev, "ring_band"])
 
 tree = {"name": "esp32-remote", "features": F,
-        "spec": {"n_solids": 1, "size": [90, 182, 12], "tol": 0.3}}
+        "spec": {"n_solids": 1, "size": [90, 200, 12], "tol": 0.3}}
 open(ROOT + r"\designs\esp32-remote-tree.json", "w").write(json.dumps(tree))
 
 # ------------------------------------------------------------- preview
 S = 4.0
-W, HT = int(106 * S), int(192 * S)
+W, HT = int(106 * S), int(210 * S)
 img = Image.new("RGB", (W, HT), (18, 24, 32))
 d = ImageDraw.Draw(img)
 C_FACE, C_RING = (176, 180, 186), (110, 116, 124)
@@ -480,7 +518,7 @@ rbox((NOTCH[0], NOTCH[1], NOTCH[2], NOTCH[3], NOTCH[5]), C_SEAT)
 rbox((BATT_SEAT[0], BATT_SEAT[1], BATT_SEAT[2], BATT_SEAT[3], BATT_SEAT[5]),
      C_SEAT)
 dot(BUZZ[0], BUZZ[1], BUZZ[2], C_SEAT)
-for t in (ESP_FOOT, OLED_FOOT, SD_FOOT):
+for t in (ESP_FOOT, OLED_FOOT, SD_FOOT, LORA_FOOT):
     rbox((t[0], t[1], t[2], t[3], t[5]), C_SEAT)
 # islands
 for t in BATT_RIMS:
@@ -488,7 +526,8 @@ for t in BATT_RIMS:
 for t in SD_TABS:
     rbox(t, C_ISL)
 for pts, r in ((ESP_HOLES, ESP_PIL_R), (SD_HOLES, SD_PIL_R),
-               (OLED_HOLES, OLED_PIL_R), (BUZZ_PIL, BUZZ_PIL_R)):
+               (OLED_HOLES, OLED_PIL_R), (BUZZ_PIL, BUZZ_PIL_R),
+               (LORA_PIL, LORA_PIL_R)):
     for hx, hy in pts:
         dot(hx, hy, r, C_ISL)
 # usb gap
@@ -496,7 +535,8 @@ rbox((USB[0], USB[1], USB[2], USB[3], USB[5]), C_HOLE)
 # pilot holes
 for pts, r in ((ESP_HOLES, ESP_HOLE_R), (SD_HOLES, SD_HOLE_R),
                (OLED_HOLES, OLED_HOLE_R), (BUZZ_PIL, BUZZ_HOLE_R),
-               (STRAP, STRAP_R)):
+               (LORA_PIL, LORA_HOLE_R), (STRAP, STRAP_R),
+               (KEY_HOLES, KEY_HOLE_R)):
     for hx, hy in pts:
         dot(hx, hy, max(r, 1.0), C_HOLE)
 
@@ -506,9 +546,10 @@ try:
 except OSError:
     FNT = FNT_S = ImageFont.load_default()
 LABELS = [((0, OLED_C[1]), "OLED"), ((BUZZ[0], BUZZ[1]), "BZR"),
+          ((LORA_C[0], LORA_C[1]), "LoRa"),
           ((SD_C[0], SD_C[1]), "microSD"), ((BATT_C[0], BATT_C[1]),
-          "9V BATTERY"), ((0, ESP_C[1]), "ESP32"), ((41, -14), "USB"),
-          ((0, -57.5), "3x3 KEYPAD"), ((0, -78), "tail fold")]
+          "9V BATTERY"), ((0, ESP_C[1]), "ESP32"), ((41, -5), "USB"),
+          ((0, KEY_C[1]), "3x4 KEYPAD"), ((0, -87), "tail fold")]
 for (lx, ly), s in LABELS:
     d.text(px((lx, ly)), s, font=FNT_S if len(s) < 6 else FNT,
            fill=C_TXT, anchor="mm")
@@ -516,7 +557,7 @@ for (lx, ly), s in LABELS:
 out = ROOT + r"\designs\esp32-remote-preview.png"
 img.save(out)
 print(f"preview: {out}")
-print(f"tree: {len(F)} features | shell 182 x 90 (grip 66, top 74) x 12")
+print(f"tree: {len(F)} features | shell {2*L2:.0f} x 90 (grip 66, top 74) x 12")
 print(f"cavity: floor z{CAV_Z} ({T - CAV_Z} deep), wall {CAV_D}, from "
       f"y{CAV_Y0} up | keypad platform stays solid")
 print(f"pillars: ESP 4x D{2*ESP_PIL_R} top z{ESP_TOP} M2.5 | OLED 4x "
@@ -524,8 +565,11 @@ print(f"pillars: ESP 4x D{2*ESP_PIL_R} top z{ESP_TOP} M2.5 | OLED 4x "
       f"z{SD_TOP} M2 (outer pair wall-tabbed) | buzzer 2x D{2*BUZZ_PIL_R} "
       f"top z{T} M2 clamp | battery seat 0.5 + rims z{RIM_TOP} M3 straps")
 print("slot boxes: 0.5-deep footprint outlines in the cavity floor for "
-      "ESP32 / OLED / microSD (pillar collars kept), battery + buzzer "
-      "seats already were")
+      "ESP32 / OLED / microSD / LoRa (pillar collars kept) + battery + "
+      "buzzer seats")
+print(f"keypad: MakerMind RBS11089 3x4 rigid {KEY_W}x{KEY_L}x10, recess "
+      f"2.0 deep + 4x M2 pilots pitch {KEY_HOLE_P} (VERIFY) | LoRa Ra-02 "
+      f"{C_LORA} on seat + 2x D{2*LORA_PIL_R} M2 clamp pillars (VERIFY)")
 
 # ------------------------------------------------------------- build
 if "--build" in sys.argv:
