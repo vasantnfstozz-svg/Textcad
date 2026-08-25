@@ -109,6 +109,8 @@ ESP_FOOT = (-26.5, 26.5, -19.5, 9.5, 2.5, 2.0)    # 53 x 29
 OLED_FOOT = (-14.25, 14.25, 63.25, 91.75, 2.5, 2.0)   # 28.5 sq
 SD_FOOT = (12.8, 37.8, 14.0, 57.0, 2.5, 2.0)      # 25 x 43
 SCAL_ESP, SCAL_OLED, SCAL_SD = 5.0, 4.25, 4.5     # scallop radii at pillars
+FILLET_TIP = 1.2               # blend arc where a scallop meets an edge —
+                               # every junction is tangent, no pointed tips
 
 ESP_HOLES = [(ESP_C[0] + sx * ESP_HOLE_P[0] / 2,
               ESP_C[1] + sy * ESP_HOLE_P[1] / 2)
@@ -235,6 +237,77 @@ def rrect(x0, x1, y0, y1, r):
 
 def circ(cx, cy, r, mode="add"):
     return {"kind": "circle", "r": r, "x": cx, "y": cy, "mode": mode}
+
+
+def _arc_via(c, r, p_from, p_to, cw):
+    """Midpoint of the arc around c from p_from to p_to (cw/ccw)."""
+    a0 = math.atan2(p_from[1] - c[1], p_from[0] - c[0])
+    a1 = math.atan2(p_to[1] - c[1], p_to[0] - c[0])
+    sweep = (a0 - a1) % (2 * math.pi) if cw else (a1 - a0) % (2 * math.pi)
+    mid = a0 - sweep / 2 if cw else a0 + sweep / 2
+    return (c[0] + r * math.cos(mid), c[1] + r * math.sin(mid))
+
+
+def scalloped_box(foot, holes, scal_r, r_f=FILLET_TIP):
+    """One smooth slot-box path: straight edges, a concave scallop around
+    the pillar at each corner, and tangent r_f blend arcs at every
+    scallop/edge junction — zero pointed tips on the outline."""
+    x0, x1, y0, y1, *_ = foot
+    cx_, cy_ = (x0 + x1) / 2, (y0 + y1) / 2
+    K = scal_r + r_f
+
+    def pick(sx, sy):
+        return next((hx, hy) for hx, hy in holes
+                    if (hx > cx_) == (sx > 0) and (hy > cy_) == (sy > 0))
+
+    def leg(root, off):
+        d2 = K * K - off * off
+        assert d2 > (r_f + 0.2) ** 2, "tip blend does not reach the edge"
+        return root, math.sqrt(d2)
+
+    def corner(sx, sy):
+        p = pick(sx, sy)
+        ex = x1 - r_f if sx > 0 else x0 + r_f      # vertical blend line
+        ey = y1 - r_f if sy > 0 else y0 + r_f      # horizontal blend line
+        _, sv = leg(p, ex - p[0])                  # offset along the v-edge
+        _, sh = leg(p, ey - p[1])                  # offset along the h-edge
+        c_v = (ex, p[1] - sy * sv)                 # blend centre on the v-edge
+        c_h = (p[0] - sx * sh, ey)                 # blend centre on the h-edge
+        t_v = (x1 if sx > 0 else x0, c_v[1])       # tangent foot on the v-edge
+        t_h = (c_h[0], y1 if sy > 0 else y0)       # tangent foot on the h-edge
+
+        def on_pillar(c):
+            f = r_f / K
+            return (c[0] + (p[0] - c[0]) * f, c[1] + (p[1] - c[1]) * f)
+        # traveling CCW: BR/TL corners arrive on the h-edge and leave on the
+        # v-edge; TR/BL corners arrive on the v-edge and leave on the h-edge
+        if sx * sy < 0:
+            cin, tin, cout, tout = c_h, t_h, c_v, t_v
+        else:
+            cin, tin, cout, tout = c_v, t_v, c_h, t_h
+        q_in, q_out = on_pillar(cin), on_pillar(cout)
+        return [("line", tin),
+                ("arc", cin, r_f, tin, q_in, False),
+                ("arc", p, scal_r, q_in, q_out, True),
+                ("arc", cout, r_f, q_out, tout, False)], tout
+
+    parts = [corner(1, -1), corner(1, 1), corner(-1, 1), corner(-1, -1)]
+    start = parts[-1][1]        # BL exit foot on the bottom edge
+    segs = [s for part, _ in parts for s in part]
+
+    def q3(p):
+        return [round(p[0], 3), round(p[1], 3)]
+    out = []
+    for s in segs:
+        if s[0] == "line":
+            out.append({"type": "line", "to": q3(s[1])})
+        else:
+            _, c, r, p_from, p_to, cw = s
+            out.append({"type": "arc",
+                        "via": q3(_arc_via(c, r, p_from, p_to, cw)),
+                        "to": q3(p_to)})
+    return {"kind": "path", "mode": "add", "start": q3(start),
+            "segments": out}
 
 
 # ------------------------------------------------------------- sanity gates
@@ -439,14 +512,11 @@ pocket("buzzer_seat", 2.5, [circ(BUZZ[0], BUZZ[1], BUZZ[2])], top=CAV_Z + 0.5)
 # ---- footprint slot boxes: every component outline visible in the block,
 # 0.5 deep around the pillars (subtracted collars keep the bases intact)
 pocket("esp_foot", ESP_FOOT[4],
-       [rr(ESP_FOOT)] + [circ(x, y, SCAL_ESP, "subtract")
-                         for x, y in ESP_HOLES], top=CAV_Z + 0.5)
+       [scalloped_box(ESP_FOOT, ESP_HOLES, SCAL_ESP)], top=CAV_Z + 0.5)
 pocket("oled_foot", OLED_FOOT[4],
-       [rr(OLED_FOOT)] + [circ(x, y, SCAL_OLED, "subtract")
-                          for x, y in OLED_HOLES], top=CAV_Z + 0.5)
+       [scalloped_box(OLED_FOOT, OLED_HOLES, SCAL_OLED)], top=CAV_Z + 0.5)
 pocket("sd_foot", SD_FOOT[4],
-       [rr(SD_FOOT)] + [circ(x, y, SCAL_SD, "subtract")
-                        for x, y in SD_HOLES], top=CAV_Z + 0.5)
+       [scalloped_box(SD_FOOT, SD_HOLES, SCAL_SD)], top=CAV_Z + 0.5)
 # LoRa clamp pillars stand fully OUTSIDE this box -> plain smooth rrect
 pocket("lora_foot", LORA_FOOT[4], [rr(LORA_FOOT)], top=CAV_Z + 0.5)
 
@@ -600,10 +670,10 @@ print("slot boxes: 0.5-deep footprint outlines in the cavity floor for "
 print(f"machinable corners: cavity clip corners r{CLIP_R}, outer top rim "
       f"fillet r{RIM_R}, SD wall tabs removed (free pillars, 2mm gaps), "
       "every pocket corner r>=1.5")
-print("curved slot boxes: boundaries scallop AROUND the pillars (nothing "
-      "wraps behind them; junction tips convex = millable); LoRa + buzzer "
-      f"pillars fully outside their boxes; usb gap r{USB[5]}, keypad holes "
-      f"D{2*KEY_HOLE_R}")
+print("curved slot boxes: boundaries scallop AROUND the pillars, every "
+      f"scallop/edge junction blended tangent r{FILLET_TIP} (no pointed "
+      f"tips); LoRa + buzzer pillars fully outside their boxes; usb gap "
+      f"r{USB[5]}, keypad holes D{2*KEY_HOLE_R}")
 print(f"keypad: MakerMind RBS11089 3x4 rigid {KEY_W}x{KEY_L}x10, recess "
       f"2.0 deep + 4x M2 pilots pitch {KEY_HOLE_P} (VERIFY) | LoRa Ra-02 "
       f"{C_LORA} on seat + 2x D{2*LORA_PIL_R} M2 clamp pillars (VERIFY)")
