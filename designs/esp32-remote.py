@@ -84,6 +84,13 @@ BUZZ_PIL_R, BUZZ_HOLE_R = 3.25, 0.8               # M2 pilot
 C_ESP, C_OLED = (52.0, 28.0), (27.3, 27.3)
 C_BATT, C_SD, C_BUZZ = (48.5, 26.5, 17.5), (42.0, 24.0), 12.0
 
+# visible footprint "slot boxes": 0.5-deep outlines of every component cut
+# into the cavity floor around its pillars (pillars keep a 0.75 collar)
+ESP_FOOT = (-26.5, 26.5, -28.5, 0.5, 2.5, 2.0)    # 53 x 29
+OLED_FOOT = (-14.25, 14.25, 54.25, 82.75, 2.5, 2.0)   # 28.5 sq
+SD_FOOT = (13.0, 38.0, 5.0, 48.0, 2.5, 2.0)       # 25 x 43
+COLLAR = 0.75
+
 ESP_HOLES = [(ESP_C[0] + sx * ESP_HOLE_P[0] / 2,
               ESP_C[1] + sy * ESP_HOLE_P[1] / 2)
              for sx in (1, -1) for sy in (1, -1)]
@@ -268,6 +275,22 @@ for bx, by in BUZZ_PIL:
         >= 0.2, "buzzer seat undercuts a clamp pillar"
 assert USB[1] > HEAD2 + 1.5, "usb gap must breach the wall"
 
+# footprint slot boxes: fit their component, stay inside the cavity floor,
+# clear of the keypad platform and the battery rims/seat
+assert ESP_FOOT[1] - ESP_FOOT[0] >= C_ESP[0] + 0.5
+assert ESP_FOOT[3] - ESP_FOOT[2] >= C_ESP[1] + 0.5
+assert OLED_FOOT[1] - OLED_FOOT[0] >= C_OLED[0] + 0.5
+assert SD_FOOT[1] - SD_FOOT[0] >= C_SD[1] + 0.5
+assert SD_FOOT[3] - SD_FOOT[2] >= C_SD[0] + 0.5
+for name, (x0, x1, y0, y1, z, r) in {"esp_foot": ESP_FOOT,
+                                     "oled_foot": OLED_FOOT,
+                                     "sd_foot": SD_FOOT}.items():
+    for cx_, cy_ in ((x0, y0), (x0, y1), (x1, y0), (x1, y1)):
+        assert sdf(cx_, cy_) >= CAV_D + 0.2, f"{name} corner ({cx_},{cy_})"
+    assert y0 >= CAV_Y0 + 2.0, f"{name} reaches the keypad platform"
+assert ESP_FOOT[3] <= BATT_RIMS[0][2] - 2.0, "esp foot hits the strap rim"
+assert SD_FOOT[0] >= BATT_SEAT[1] + 1.0, "sd foot overlaps the battery seat"
+
 # ------------------------------------------------------------- feature tree
 F = []
 
@@ -343,6 +366,22 @@ pocket("oled_pillar_trim", OLED_TOP,
 # ---- locating seats (0.5 deep spots in the cavity floor)
 pocket("batt_seat", BATT_SEAT[4], [rr(BATT_SEAT)], top=CAV_Z + 0.5)
 pocket("buzzer_seat", 2.5, [circ(BUZZ[0], BUZZ[1], BUZZ[2])], top=CAV_Z + 0.5)
+
+# ---- footprint slot boxes: every component outline visible in the block,
+# 0.5 deep around the pillars (subtracted collars keep the bases intact)
+pocket("esp_foot", ESP_FOOT[4],
+       [rr(ESP_FOOT)] + [circ(x, y, ESP_PIL_R + COLLAR, "subtract")
+                         for x, y in ESP_HOLES], top=CAV_Z + 0.5)
+pocket("oled_foot", OLED_FOOT[4],
+       [rr(OLED_FOOT)] + [circ(x, y, OLED_PIL_R + COLLAR, "subtract")
+                          for x, y in OLED_HOLES], top=CAV_Z + 0.5)
+sd_tab_subs = [dict(rrect(x0 - COLLAR, x1 + COLLAR, y0 - COLLAR,
+                          y1 + COLLAR, r), mode="subtract")
+               for x0, x1, y0, y1, r in SD_TABS]
+pocket("sd_foot", SD_FOOT[4],
+       [rr(SD_FOOT)] + [circ(x, y, SD_PIL_R + COLLAR, "subtract")
+                        for x, y in SD_HOLES] + sd_tab_subs,
+       top=CAV_Z + 0.5)
 
 # ---- screw pilot pipes
 pocket("esp_pilots", CAV_Z,
@@ -441,6 +480,8 @@ rbox((NOTCH[0], NOTCH[1], NOTCH[2], NOTCH[3], NOTCH[5]), C_SEAT)
 rbox((BATT_SEAT[0], BATT_SEAT[1], BATT_SEAT[2], BATT_SEAT[3], BATT_SEAT[5]),
      C_SEAT)
 dot(BUZZ[0], BUZZ[1], BUZZ[2], C_SEAT)
+for t in (ESP_FOOT, OLED_FOOT, SD_FOOT):
+    rbox((t[0], t[1], t[2], t[3], t[5]), C_SEAT)
 # islands
 for t in BATT_RIMS:
     rbox(t, C_ISL)
@@ -482,6 +523,9 @@ print(f"pillars: ESP 4x D{2*ESP_PIL_R} top z{ESP_TOP} M2.5 | OLED 4x "
       f"D{2*OLED_PIL_R} top z{OLED_TOP} M2 | SD 4x D{2*SD_PIL_R} top "
       f"z{SD_TOP} M2 (outer pair wall-tabbed) | buzzer 2x D{2*BUZZ_PIL_R} "
       f"top z{T} M2 clamp | battery seat 0.5 + rims z{RIM_TOP} M3 straps")
+print("slot boxes: 0.5-deep footprint outlines in the cavity floor for "
+      "ESP32 / OLED / microSD (pillar collars kept), battery + buzzer "
+      "seats already were")
 
 # ------------------------------------------------------------- build
 if "--build" in sys.argv:
