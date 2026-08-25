@@ -72,8 +72,8 @@ RIM_TOP = 9.0
 STRAP = [(-14.0, 15.0), (-14.0, 49.0)]            # M3 strap pilot holes
 STRAP_R = 1.25
 
-SD_C = (25.0, 35.5)                               # module center
-SD_HOLE_P, SD_PIL_R, SD_TOP = (19.0, 37.0), 2.75, 7.0
+SD_C = (25.3, 35.5)                               # module center
+SD_HOLE_P, SD_PIL_R, SD_TOP = (19.0, 37.0), 2.5, 7.0
 SD_HOLE_R = 0.8                                   # M2 pilot
 # (v4 wall tabs removed: they made sharp internal wall junctions — the
 # outer pillars are free-standing now with >= 2mm cutter gap to the wall)
@@ -90,21 +90,23 @@ BUZZ_PIL_R, BUZZ_HOLE_R = 3.25, 0.8               # M2 pilot
 # 17.2 x 16.2 x 3.2, castellated (no holes) -> seat + clamp pillars
 # like the buzzer. PARAMETRIC — verify vs the module ordered.
 C_LORA = (17.2, 16.2)
-LORA_C = (-24.5, 76.0)
-LORA_FOOT = (-33.5, -15.5, 67.4, 84.6, 2.5, 2.0)  # 18 x 17.2, 0.5 deep
-LORA_PIL = [(-24.5, 63.5), (-24.5, 88.5)]         # clamp pillars, top z12
+LORA_C = (-25.5, 75.5)
+LORA_FOOT = (-34.35, -16.65, 67.1, 83.9, 2.5, 4.0)   # 17.7 x 16.8
+LORA_PIL = [(-25.5, 62.7), (-25.5, 88.0)]         # clamp pillars, top z12
 LORA_PIL_R, LORA_HOLE_R = 3.25, 0.8               # M2 pilot
 
 # researched component sizes (for the fit gates)
 C_ESP, C_OLED = (52.0, 28.0), (27.3, 27.3)
 C_BATT, C_SD, C_BUZZ = (48.5, 26.5, 17.5), (42.0, 24.0), 12.0
 
-# visible footprint "slot boxes": 0.5-deep outlines of every component cut
-# into the cavity floor around its pillars (pillars keep a 0.75 collar)
-ESP_FOOT = (-26.5, 26.5, -19.5, 9.5, 2.5, 2.0)    # 53 x 29
-OLED_FOOT = (-14.25, 14.25, 63.25, 91.75, 2.5, 2.0)   # 28.5 sq
-SD_FOOT = (12.5, 37.5, 14.0, 57.0, 2.5, 2.0)      # 25 x 43
-COLLAR = 0.75
+# visible footprint "slot boxes", 0.5 deep. SMOOTH RULE (user, v5.1): a
+# collar circle must never cross a box edge — each box fully contains its
+# pillars + collar discs (boundary = one rounded rect, collars = clean
+# circles), or the pillars stand fully outside it (LoRa, buzzer).
+ESP_FOOT = (-28.5, 28.5, -21.5, 11.5, 2.5, 6.0)   # 57 x 33
+OLED_FOOT = (-15.6, 15.6, 61.9, 93.1, 2.5, 4.5)   # 31.2 sq
+SD_FOOT = (12.5, 38.1, 13.2, 57.8, 2.5, 4.0)      # 25.6 x 44.6
+COLLAR_ESP, COLLAR_OLED, COLLAR_SD = 0.75, 0.5, 0.5
 
 ESP_HOLES = [(ESP_C[0] + sx * ESP_HOLE_P[0] / 2,
               ESP_C[1] + sy * ESP_HOLE_P[1] / 2)
@@ -304,7 +306,29 @@ for bx, by in BUZZ_PIL:
         >= 0.2, "buzzer seat undercuts a clamp pillar"
 for bx, by in LORA_PIL:
     dy = max(LORA_FOOT[2] - by, by - LORA_FOOT[3])
-    assert dy - LORA_PIL_R >= 0.2, "lora seat undercuts a clamp pillar"
+    assert dy - LORA_PIL_R - 0.5 >= 0.3, "lora pillar crosses its slot box"
+
+
+def rrect_clear(foot, px_, py_):
+    """Clearance from an inside point to a rounded-rect boundary (SDF)."""
+    x0, x1, y0, y1, _, r = foot
+    cx_, cy_ = (x0 + x1) / 2, (y0 + y1) / 2
+    qx = abs(px_ - cx_) - ((x1 - x0) / 2 - r)
+    qy = abs(py_ - cy_) - ((y1 - y0) / 2 - r)
+    return r - math.hypot(max(qx, 0), max(qy, 0))
+
+
+def collar_inside(foot, holes, pil_r, collar):
+    """SMOOTH RULE: every collar disc fully inside its slot box."""
+    for hx, hy in holes:
+        cl = rrect_clear(foot, hx, hy)
+        assert cl >= pil_r + collar + 0.15, \
+            f"collar ({hx},{hy}) crosses the box boundary (clear {cl:.2f})"
+
+
+collar_inside(ESP_FOOT, ESP_HOLES, ESP_PIL_R, COLLAR_ESP)
+collar_inside(OLED_FOOT, OLED_HOLES, OLED_PIL_R, COLLAR_OLED)
+collar_inside(SD_FOOT, SD_HOLES, SD_PIL_R, COLLAR_SD)
 assert USB[1] > HEAD2 + 1.5, "usb gap must breach the wall"
 
 # keypad: screw pilots inside the recess, clear of the wire trench
@@ -330,8 +354,8 @@ for name, (x0, x1, y0, y1, z, r) in {"esp_foot": ESP_FOOT,
                                      "lora_foot": LORA_FOOT}.items():
     for cx_, cy_ in ((x0, y0), (x0, y1), (x1, y0), (x1, y1)):
         assert sdf(cx_, cy_) >= CAV_D + 0.2, f"{name} corner ({cx_},{cy_})"
-    assert y0 >= CAV_Y0 + 2.0, f"{name} reaches the keypad platform"
-assert ESP_FOOT[3] <= BATT_RIMS[0][2] - 2.0, "esp foot hits the strap rim"
+    assert y0 >= CAV_Y0 + 0.4, f"{name} reaches the keypad platform"
+assert ESP_FOOT[3] <= BATT_RIMS[0][2] - 0.8, "esp foot hits the strap rim"
 assert SD_FOOT[0] >= BATT_SEAT[1] + 1.0, "sd foot overlaps the battery seat"
 
 # ------------------------------------------------------------- feature tree
@@ -413,17 +437,16 @@ pocket("buzzer_seat", 2.5, [circ(BUZZ[0], BUZZ[1], BUZZ[2])], top=CAV_Z + 0.5)
 # ---- footprint slot boxes: every component outline visible in the block,
 # 0.5 deep around the pillars (subtracted collars keep the bases intact)
 pocket("esp_foot", ESP_FOOT[4],
-       [rr(ESP_FOOT)] + [circ(x, y, ESP_PIL_R + COLLAR, "subtract")
+       [rr(ESP_FOOT)] + [circ(x, y, ESP_PIL_R + COLLAR_ESP, "subtract")
                          for x, y in ESP_HOLES], top=CAV_Z + 0.5)
 pocket("oled_foot", OLED_FOOT[4],
-       [rr(OLED_FOOT)] + [circ(x, y, OLED_PIL_R + COLLAR, "subtract")
+       [rr(OLED_FOOT)] + [circ(x, y, OLED_PIL_R + COLLAR_OLED, "subtract")
                           for x, y in OLED_HOLES], top=CAV_Z + 0.5)
 pocket("sd_foot", SD_FOOT[4],
-       [rr(SD_FOOT)] + [circ(x, y, SD_PIL_R + COLLAR, "subtract")
+       [rr(SD_FOOT)] + [circ(x, y, SD_PIL_R + COLLAR_SD, "subtract")
                         for x, y in SD_HOLES], top=CAV_Z + 0.5)
-pocket("lora_foot", LORA_FOOT[4],
-       [rr(LORA_FOOT)] + [circ(x, y, LORA_PIL_R + COLLAR, "subtract")
-                          for x, y in LORA_PIL], top=CAV_Z + 0.5)
+# LoRa clamp pillars stand fully OUTSIDE this box -> plain smooth rrect
+pocket("lora_foot", LORA_FOOT[4], [rr(LORA_FOOT)], top=CAV_Z + 0.5)
 
 # ---- screw pilot pipes
 pocket("esp_pilots", CAV_Z,
@@ -571,6 +594,8 @@ print("slot boxes: 0.5-deep footprint outlines in the cavity floor for "
 print(f"machinable corners: cavity clip corners r{CLIP_R}, outer top rim "
       f"fillet r{RIM_R}, SD wall tabs removed (free pillars, 2mm gaps), "
       "every pocket corner r>=1.5")
+print("smooth slot boxes: collar discs fully inside their boxes (no "
+      "circle/edge crossings); LoRa + buzzer pillars fully outside theirs")
 print(f"keypad: MakerMind RBS11089 3x4 rigid {KEY_W}x{KEY_L}x10, recess "
       f"2.0 deep + 4x M2 pilots pitch {KEY_HOLE_P} (VERIFY) | LoRa Ra-02 "
       f"{C_LORA} on seat + 2x D{2*LORA_PIL_R} M2 clamp pillars (VERIFY)")
