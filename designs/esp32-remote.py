@@ -1,27 +1,37 @@
-"""esp32-remote v1 — remote-style bottom shell (no top cover) milled from
+"""esp32-remote v2 — remote-style bottom shell (no top cover) milled from
 the 220x120x12 steel stock. Vacuum table rules: every cut is a blind
 pocket; the outline is machined as a trench with a ~1.5mm skin and the
 part is freed/deburred after. Model = the finished shell.
 
+v2 changes (user feedback 2026-08-25):
+  - screw fixing for every part that has holes: ESP32 4x M2.5 pilot,
+    OLED 4x M2 pilot on corner pads in the wire pit, microSD 4x M2
+    pilot, 9V battery 2x M3 strap anchors. Keypad = adhesive,
+    buzzer = friction fit (no holes on those parts).
+  - 4x4 keypad -> generic 3x3 membrane (~52 x 52, PARAMETRIC — verify
+    against the pad ordered; standard 3x4/4x4 are all 69x77-class)
+  - bottom grip narrowed to 66 ("handy"), head 90, top cut to 74
+  - overall shortened 208 -> 182
+
 Component pockets (dims researched online 2026-08-25):
   ESP32 DevKit V1 30-pin   52 x 28      -> slot 54 x 30 floor z5, pin
-                                           trenches z2, USB gap out the
-                                           right wall, finger scoop left
-  4x4 membrane keypad      69 x 77 x 1  -> recess 70 x 78, 1.2 deep; tail
-                                           exits the keypad BOTTOM edge ->
-                                           fold scoop + trench under the
-                                           pad routes it up to the ESP32
-  0.96" OLED SSD1306       27.3 sq      -> recess 29 x 29 z9.5 on a 2mm
-                                           ledge, wire pit 25 x 25 z4
+                                           trenches z2 (40 long, clear of
+                                           the corner holes), USB gap out
+                                           the right wall, finger scoop,
+                                           4x M2.5 pilots pitch 47 x 23
+  3x3 membrane keypad      ~52 x 52 x 1 -> recess 53 x 53, 1.2 deep; tail
+                                           exits the BOTTOM edge -> fold
+                                           scoop + under-pad trench routes
+                                           it up to the ESP32
+  0.96" OLED SSD1306       27.3 sq      -> recess 29 x 29 z9.5, wire pit
+                                           25 x 25 z4 with 4 corner pads
+                                           + M2 pilots pitch 23.5
   9V PP3 battery           48.5x26.5x17.5 -> bay 50 x 28 floor z2.5, lies
-                                           flat, sticks 8 above the face
-                                           (grip to remove; no cover)
+                                           flat, sticks 8 above the face,
+                                           M3 strap anchors both ends
   microSD SPI module       42 x 24 x 5  -> pocket 25 x 43 floor z5 + card
-                                           finger scoop at the top end
+                                           scoop, 4x M2 pilots pitch 19x37
   active buzzer            D12 x 9.5    -> D13 pocket floor z2.5 (flush)
-
-Face detail: rim pinstripe groove (offset 3.0..4.2, 0.6 deep) like the
-sat-panel — interrupted only by the USB gap.
 
 Run:  python designs/esp32-remote.py           -> preview + checks
       python designs/esp32-remote.py --build   -> STEP + tcad.json
@@ -36,37 +46,56 @@ ROOT = r"c:\Users\VasanSeenivasan\Desktop\textcad"
 
 # ------------------------------------------------------------------ outline
 T = 12.0                                     # stock/shell thickness
-L2, W2, W2T, TAPER_Y = 104.0, 47.0, 39.0, 55.0
-VERTS = [(W2, -L2), (W2, TAPER_Y), (W2T, L2),
-         (-W2T, L2), (-W2, TAPER_Y), (-W2, -L2)]      # CCW
-RADII = [18.0, 30.0, 26.0, 26.0, 30.0, 18.0]
+L2 = 91.0                                    # half length (182 total)
+GRIP2, HEAD2, TOP2 = 33.0, 45.0, 37.0        # half widths: grip/head/top
+VERTS = [(GRIP2, -L2), (HEAD2, 3.0), (HEAD2, 53.0), (TOP2, L2),
+         (-TOP2, L2), (-HEAD2, 53.0), (-HEAD2, 3.0), (-GRIP2, -L2)]  # CCW
+RADII = [10.0, 22.0, 22.0, 18.0, 18.0, 22.0, 22.0, 10.0]
 RING_D1, RING_D2, RING_Z = 3.0, 4.2, 11.4    # pinstripe groove, 0.6 deep
 
 # ------------------------------------------------------------------ pockets
 # (x0, x1, y0, y1, floor z, corner r) — face is z12, cuts go floor -> top
-KEYPAD = (-35.0, 35.0, -96.0, -18.0, 10.8, 3.0)   # 70 x 78, 1.2 deep
-TRENCH = (-11.0, 11.0, -94.0, -20.0, 7.8, 3.0)    # tail bed under the pad
-SCOOP_T = (-11.0, 11.0, -94.0, -86.0, 6.0, 2.0)   # 180-deg fold room
-NOTCH = (-11.0, 11.0, -22.0, -12.0, 6.0, 2.0)     # rib pass-through
-ESP = (-27.0, 27.0, -15.0, 15.0, 5.0, 3.0)        # 54 x 30
-PIN_Y, PIN_W, PIN_L, PIN_Z = 12.5, 5.0, 48.0, 2.0  # 2 trenches under headers
-USB = (26.0, 49.0, -7.0, 7.0, 5.5, 2.0)           # breaches the right wall
-BATT = (-39.0, 11.0, 19.0, 47.0, 2.5, 4.0)        # 50 x 28
-SD = (14.0, 39.0, 19.0, 62.0, 5.0, 3.0)           # 25 x 43
-SD_SCOOP = (26.5, 63.5, 6.0)                      # card-end finger scoop
-ESP_SCOOP = (-27.0, 0.0, 6.0)                     # board-lift finger scoop
-BUZZ = (27.0, 84.0, 6.5, 2.5)                     # cx, cy, r, floor
-OLED = (-14.5, 14.5, 66.0, 95.0, 9.5, 2.0)        # 29 x 29 bezel recess
-OPIT = (-12.5, 12.5, 68.0, 93.0, 4.0, 2.0)        # wire pit, 2mm ledge
+KEY_W, KEY_L = 52.0, 52.0     # generic 3x3 membrane — VERIFY vs ordered pad
+KEYPAD = (-(KEY_W + 1) / 2, (KEY_W + 1) / 2, -84.0, -84.0 + KEY_L + 1,
+          10.8, 3.0)                              # 53 x 53, 1.2 deep
+TRENCH = (-9.0, 9.0, -82.0, -33.0, 7.8, 3.0)      # tail bed under the pad
+SCOOP_T = (-9.0, 9.0, -82.0, -74.0, 6.0, 2.0)     # 180-deg fold room
+NOTCH = (-9.0, 9.0, -34.0, -25.0, 6.0, 2.0)       # rib pass-through
+ESP = (-27.0, 27.0, -28.0, 2.0, 5.0, 3.0)         # 54 x 30, center y -13
+PIN_Y, PIN_W, PIN_L, PIN_Z = 12.5, 5.0, 40.0, 2.0  # header-pin trenches
+ESP_HOLE_P, ESP_HOLE_R = (47.0, 23.0), 1.0        # M2.5 pilot, pitch 47x23
+USB = (26.0, 49.0, -20.0, -6.0, 5.5, 2.0)         # breaches the right wall
+BATT = (-39.0, 11.0, 7.0, 35.0, 2.5, 4.0)         # 50 x 28, center (-14, 21)
+STRAP = [(-14.0, 4.5), (-14.0, 38.0)]             # M3 strap anchor holes
+STRAP_R, STRAP_Z = 1.25, 7.0                      # pilot r, hole floor
+SD = (14.0, 39.0, 7.0, 50.0, 5.0, 3.0)            # 25 x 43, center (26.5, 28.5)
+SD_HOLE_P, SD_HOLE_R = (19.0, 37.0), 0.8          # M2 pilot, pitch 19x37
+SD_SCOOP = (26.5, 51.5, 6.0)                      # card-end finger scoop
+ESP_SCOOP = (-27.0, -13.0, 6.0)                   # board-lift finger scoop
+BUZZ = (26.5, 70.0, 6.5, 2.5)                     # cx, cy, r, floor
+OLED = (-14.5, 14.5, 54.0, 83.0, 9.5, 2.0)        # 29 x 29, center y 68.5
+OPIT = (-12.5, 12.5, 56.0, 81.0, 4.0, 2.0)        # wire pit
+OLED_HOLE_P, OLED_HOLE_R = 23.5, 0.8              # M2 pilot, pitch 23.5 sq
+PAD_R = 2.75                                      # corner pad (island) r
 
 # researched component sizes (for the fit gates)
-C_ESP, C_KEY, C_OLED = (52.0, 28.0), (69.0, 77.0), (27.3, 27.3)
+C_ESP, C_OLED = (52.0, 28.0), (27.3, 27.3)
 C_BATT, C_SD, C_BUZZ = (48.5, 26.5, 17.5), (42.0, 24.0), 12.0
+
+ESP_C = (0.0, (ESP[2] + ESP[3]) / 2)
+SD_C = ((SD[0] + SD[1]) / 2, (SD[2] + SD[3]) / 2)
+OLED_C = (0.0, (OLED[2] + OLED[3]) / 2)
+ESP_HOLES = [(sx * ESP_HOLE_P[0] / 2, ESP_C[1] + sy * ESP_HOLE_P[1] / 2)
+             for sx in (1, -1) for sy in (1, -1)]
+SD_HOLES = [(SD_C[0] + sx * SD_HOLE_P[0] / 2, SD_C[1] + sy * SD_HOLE_P[1] / 2)
+            for sx in (1, -1) for sy in (1, -1)]
+OLED_HOLES = [(sx * OLED_HOLE_P / 2, OLED_C[1] + sy * OLED_HOLE_P / 2)
+              for sx in (1, -1) for sy in (1, -1)]
 
 
 # --------------------------------------------------- rounded outline helpers
 def _corner_geo(verts, radii):
-    """Per corner: tangent-in, arc-via, tangent-out, center, r, adj normals."""
+    """Per corner: tangent-in, arc-via, tangent-out, center, r."""
     n = len(verts)
     out = []
     for i in range(n):
@@ -157,25 +186,27 @@ def rrect(x0, x1, y0, y1, r):
     return rounded_path_e([(x1, y0), (x1, y1), (x0, y1), (x0, y0)], r)
 
 
-def circ(cx, cy, r):
-    return {"kind": "circle", "r": r, "x": cx, "y": cy, "mode": "add"}
+def circ(cx, cy, r, mode="add"):
+    return {"kind": "circle", "r": r, "x": cx, "y": cy, "mode": mode}
 
 
 # ------------------------------------------------------------- sanity gates
 # stock fit: outline + 4mm trench all around must fit the 220 x 120 plate
-assert 2 * L2 + 8 <= 220 and 2 * W2 + 8 <= 120, "does not fit the steel stock"
+assert 2 * L2 + 8 <= 220 and 2 * HEAD2 + 8 <= 120, "does not fit the stock"
 
 # component fit (>= 0.5mm total slop each way)
 assert ESP[1] - ESP[0] >= C_ESP[0] + 0.5 and ESP[3] - ESP[2] >= C_ESP[1] + 0.5
-assert KEYPAD[1] - KEYPAD[0] >= C_KEY[0] + 0.5
-assert KEYPAD[3] - KEYPAD[2] >= C_KEY[1] + 0.5
-assert OLED[1] - OLED[0] >= C_OLED[0] + 0.5 and OLED[3] - OLED[2] >= C_OLED[1] + 0.5
-assert BATT[1] - BATT[0] >= C_BATT[0] + 0.5 and BATT[3] - BATT[2] >= C_BATT[1] + 0.5
+assert KEYPAD[1] - KEYPAD[0] >= KEY_W + 0.5
+assert KEYPAD[3] - KEYPAD[2] >= KEY_L + 0.5
+assert OLED[1] - OLED[0] >= C_OLED[0] + 0.5
+assert OLED[3] - OLED[2] >= C_OLED[1] + 0.5
+assert BATT[1] - BATT[0] >= C_BATT[0] + 0.5
+assert BATT[3] - BATT[2] >= C_BATT[1] + 0.5
 assert SD[1] - SD[0] >= C_SD[1] + 0.5 and SD[3] - SD[2] >= C_SD[0] + 0.5
 assert 2 * BUZZ[2] >= C_BUZZ + 0.5
 
-# every rectangular pocket keeps a wall to the outline AND stays clear of the
-# pinstripe ring (offset 4.2 + 1.2 sliver) — USB gap breaches on purpose
+# every pocket keeps a wall to the outline AND stays clear of the pinstripe
+# ring (offset 4.2 + 1.2 sliver) — the USB gap breaches on purpose
 WALL_MIN = RING_D2 + 1.2
 for name, (x0, x1, y0, y1, z, r) in {
         "keypad": KEYPAD, "esp": ESP, "batt": BATT, "sd": SD,
@@ -190,33 +221,51 @@ for name, (cx_, cy_, r) in {"sd_scoop": SD_SCOOP, "esp_scoop": ESP_SCOOP,
         ey = cy_ + r * math.sin(a * math.pi / 6)
         assert sdf(ex, ey) >= WALL_MIN, f"{name} edge ({ex:.1f},{ey:.1f})"
 
-# floors: nothing thinner than 2mm anywhere (vacuum + rigidity)
-assert min(KEYPAD[4] - 0, 1) or True
+# floors: nothing thinner than 2mm anywhere (vacuum + rigidity); pilot holes
+# leave 2mm skin (SD/ESP z2..floor, OLED pads z5.5..9.5, straps z7..12)
 for z in (KEYPAD[4], TRENCH[4], SCOOP_T[4], NOTCH[4], ESP[4], PIN_Z,
-          USB[4], BATT[4], SD[4], BUZZ[3], OLED[4], OPIT[4]):
+          USB[4], BATT[4], SD[4], BUZZ[3], OLED[4], OPIT[4], STRAP_Z):
     assert z >= 2.0, f"floor {z} too thin"
 
 # ribs between pockets
 assert ESP[2] - KEYPAD[3] == 3.0            # keypad -> esp rib
 assert NOTCH[2] < KEYPAD[3] and NOTCH[3] > ESP[2], "tail notch misses"
 assert TRENCH[3] >= NOTCH[2], "tail trench must reach the notch"
-assert BATT[2] - ESP[3] == 4.0 and SD[2] - ESP[3] == 4.0
+assert BATT[2] - ESP[3] == 5.0 and SD[2] - ESP[3] == 5.0
 assert SD[0] - BATT[1] == 3.0               # batt -> sd rib
 assert OLED[2] - SD[3] == 4.0
-# sd card scoop stays clear of the OLED recess laterally
 assert SD_SCOOP[0] - SD_SCOOP[2] - OLED[1] >= 5.0
-# buzzer clear of OLED recess and of the sd scoop
 assert BUZZ[0] - BUZZ[2] - OLED[1] >= 5.0
 assert BUZZ[1] - BUZZ[2] - (SD_SCOOP[1] + SD_SCOOP[2]) >= 5.0
-# trench/scoops nest inside their parents
 assert KEYPAD[0] < TRENCH[0] and TRENCH[1] < KEYPAD[1]
 assert TRENCH[2] >= KEYPAD[2] - 2.01 and SCOOP_T[2] >= TRENCH[2] - 0.01
-# usb gap actually reaches past the wall and into the esp pocket
-assert USB[1] > W2 + 1.5 and USB[0] < ESP[1]
-# pin trenches stay inside the esp pocket footprint
-assert PIN_L / 2 <= ESP[1] and PIN_Y + PIN_W / 2 <= ESP[3] + 0.01
-# oled wire pit leaves a 2mm bezel ledge
+assert USB[1] > HEAD2 + 1.5 and USB[0] < ESP[1]
+assert PIN_L / 2 <= ESP[1] and PIN_Y + PIN_W / 2 <= (ESP[3] - ESP[2]) / 2 + 0.01
 assert OPIT[0] - OLED[0] >= 2.0 and OLED[3] - OPIT[3] >= 2.0
+
+# screw holes: inside their pockets, clear of trenches/scoops/other cuts
+for hx, hy in ESP_HOLES:
+    assert ESP[0] + 1.2 <= hx - ESP_HOLE_R and hx + ESP_HOLE_R <= ESP[1] - 1.2
+    assert ESP[2] + 1.2 <= hy - ESP_HOLE_R and hy + ESP_HOLE_R <= ESP[3] - 1.2
+    assert abs(hx) - ESP_HOLE_R > PIN_L / 2, "esp hole inside pin trench"
+    assert math.hypot(hx - ESP_SCOOP[0], hy - ESP_SCOOP[1]) > \
+        ESP_SCOOP[2] + ESP_HOLE_R + 1.0, "esp hole in finger scoop"
+    assert not (USB[0] - ESP_HOLE_R < hx and USB[2] - ESP_HOLE_R < hy
+                < USB[3] + ESP_HOLE_R), "esp hole in usb gap"
+for hx, hy in SD_HOLES:
+    assert SD[0] + 1.2 <= hx - SD_HOLE_R and hx + SD_HOLE_R <= SD[1] - 1.2
+    assert SD[2] + 1.2 <= hy - SD_HOLE_R and hy + SD_HOLE_R <= SD[3] - 1.2
+for hx, hy in OLED_HOLES:
+    # pad must land on/inside the pit walls so it fuses to the frame corner
+    assert OPIT[0] - 0.5 <= hx <= OPIT[1] + 0.5
+    assert OPIT[2] - 0.5 <= hy <= OPIT[3] + 0.5
+    assert abs(hx) + OLED_HOLE_R <= OLED[1] - 1.0     # hole under the module
+for hx, hy in STRAP:
+    assert sdf(hx, hy) >= WALL_MIN + STRAP_R, f"strap ({hx},{hy}) near edge"
+    for x0, x1, y0, y1, *_ in (KEYPAD, ESP, BATT, SD, OLED, OPIT, USB):
+        assert not (x0 - STRAP_R < hx < x1 + STRAP_R
+                    and y0 - STRAP_R < hy < y1 + STRAP_R), \
+            f"strap hole ({hx},{hy}) hits a pocket"
 
 # ------------------------------------------------------------- feature tree
 F = []
@@ -233,12 +282,12 @@ f("body", "extrude", {"amount": T}, ["outline_sketch"])
 prev = "body"
 
 
-def pocket(name, z, ents):
+def pocket(name, z, ents, top=None):
     global prev
     f(f"{name}_sketch", "sketch", {"plane": "XY", "offset": z,
                                    "entities": ents})
-    f(f"{name}_tool", "extrude", {"amount": round(T - z + 1, 3)},
-      [f"{name}_sketch"])
+    amt = (T + 1 if top is None else top) - z
+    f(f"{name}_tool", "extrude", {"amount": round(amt, 3)}, [f"{name}_sketch"])
     f(name, "cut", {}, [prev, f"{name}_tool"])
     prev = name
 
@@ -253,17 +302,30 @@ pocket("tail_fold_scoop", SCOOP_T[4], [rr(SCOOP_T)])
 pocket("tail_notch", NOTCH[4], [rr(NOTCH)])
 pocket("esp_slot", ESP[4], [rr(ESP), circ(*ESP_SCOOP)])
 f("pins_sketch", "sketch", {"plane": "XY", "offset": PIN_Z, "entities": [
-    rrect(-PIN_L / 2, PIN_L / 2, s * PIN_Y - PIN_W / 2,
-          s * PIN_Y + PIN_W / 2, 1.5) for s in (1, -1)]})
+    rrect(-PIN_L / 2, PIN_L / 2, ESP_C[1] + s * PIN_Y - PIN_W / 2,
+          ESP_C[1] + s * PIN_Y + PIN_W / 2, 1.5) for s in (1, -1)]})
 f("pins_tool", "extrude", {"amount": ESP[4] - PIN_Z + 1}, ["pins_sketch"])
 f("pin_trenches", "cut", {}, [prev, "pins_tool"])
 prev = "pin_trenches"
+# ESP32 corner screw pilots (M2.5): 3 deep into the z5 floor, 2mm skin left
+pocket("esp_screw_pilots", PIN_Z,
+       [circ(hx, hy, ESP_HOLE_R) for hx, hy in ESP_HOLES], top=ESP[4] + 1)
 pocket("usb_gap", USB[4], [rr(USB)])
 pocket("battery_bay", BATT[4], [rr(BATT)])
+# M3 strap anchors flanking the bay (strap goes over the battery hump)
+pocket("strap_pilots", STRAP_Z,
+       [circ(hx, hy, STRAP_R) for hx, hy in STRAP])
 pocket("sd_pocket", SD[4], [rr(SD), circ(*SD_SCOOP)])
+pocket("sd_screw_pilots", PIN_Z,
+       [circ(hx, hy, SD_HOLE_R) for hx, hy in SD_HOLES], top=SD[4] + 1)
 pocket("buzzer_pocket", BUZZ[3], [circ(BUZZ[0], BUZZ[1], BUZZ[2])])
 pocket("oled_recess", OLED[4], [rr(OLED)])
-pocket("oled_wire_pit", OPIT[4], [rr(OPIT)])
+# wire pit with 4 corner pads (islands) left standing for the OLED screws
+pocket("oled_wire_pit", OPIT[4],
+       [rr(OPIT)] + [circ(hx, hy, PAD_R, "subtract") for hx, hy in OLED_HOLES])
+pocket("oled_screw_pilots", 5.5,
+       [circ(hx, hy, OLED_HOLE_R) for hx, hy in OLED_HOLES],
+       top=OLED[4] + 1)
 
 # rim pinstripe: (outline-3.0 minus outline-4.2) band, 0.6 deep
 f("ringA_sketch", "sketch", {"plane": "XY", "offset": RING_Z, "entities":
@@ -278,17 +340,17 @@ f("ring_band", "cut", {}, ["ringA_tool", "ringB_tool"])
 f("esp32_remote", "cut", {}, [prev, "ring_band"])
 
 tree = {"name": "esp32-remote", "features": F,
-        "spec": {"n_solids": 1, "size": [94, 208, 12], "tol": 0.3}}
+        "spec": {"n_solids": 1, "size": [90, 182, 12], "tol": 0.3}}
 open(ROOT + r"\designs\esp32-remote-tree.json", "w").write(json.dumps(tree))
 
 # ------------------------------------------------------------- preview
 S = 4.0
-W, HT = int(110 * S), int(218 * S)
+W, HT = int(106 * S), int(192 * S)
 img = Image.new("RGB", (W, HT), (18, 24, 32))
 d = ImageDraw.Draw(img)
 C_FACE, C_RING = (176, 180, 186), (110, 116, 124)
 C_SHALLOW, C_MID, C_DEEP = (150, 155, 162), (120, 126, 134), (86, 92, 100)
-C_PIT, C_TXT = (60, 66, 74), (240, 242, 245)
+C_PIT, C_TXT, C_HOLE = (60, 66, 74), (240, 242, 245), (30, 34, 40)
 
 
 def px(p):
@@ -322,36 +384,44 @@ def rbox(p, col):
                         radius=p[5] * S, fill=col)
 
 
+def dot(cx, cy, r, col):
+    d.ellipse([px((cx - r, cy + r)), px((cx + r, cy - r))], fill=col)
+
+
 rbox(KEYPAD, C_SHALLOW)
 rbox(TRENCH, C_MID)
 rbox(SCOOP_T, C_DEEP)
 rbox(NOTCH, C_DEEP)
 rbox(ESP, C_MID)
-d.ellipse([px((ESP_SCOOP[0] - 6, ESP_SCOOP[1] + 6)),
-           px((ESP_SCOOP[0] + 6, ESP_SCOOP[1] - 6))], fill=C_MID)
+dot(ESP_SCOOP[0], ESP_SCOOP[1], ESP_SCOOP[2], C_MID)
 for s in (1, -1):
-    d.rounded_rectangle([px((-PIN_L / 2, s * PIN_Y + PIN_W / 2)),
-                         px((PIN_L / 2, s * PIN_Y - PIN_W / 2))],
-                        radius=1.5 * S, fill=C_DEEP)
+    d.rounded_rectangle(
+        [px((-PIN_L / 2, ESP_C[1] + s * PIN_Y + PIN_W / 2)),
+         px((PIN_L / 2, ESP_C[1] + s * PIN_Y - PIN_W / 2))],
+        radius=1.5 * S, fill=C_DEEP)
 rbox(USB, C_PIT)
 rbox(BATT, C_DEEP)
 rbox(SD, C_MID)
-d.ellipse([px((SD_SCOOP[0] - 6, SD_SCOOP[1] + 6)),
-           px((SD_SCOOP[0] + 6, SD_SCOOP[1] - 6))], fill=C_MID)
-d.ellipse([px((BUZZ[0] - BUZZ[2], BUZZ[1] + BUZZ[2])),
-           px((BUZZ[0] + BUZZ[2], BUZZ[1] - BUZZ[2]))], fill=C_DEEP)
+dot(SD_SCOOP[0], SD_SCOOP[1], SD_SCOOP[2], C_MID)
+dot(BUZZ[0], BUZZ[1], BUZZ[2], C_DEEP)
 rbox(OLED, C_SHALLOW)
 rbox(OPIT, C_PIT)
+for hx, hy in OLED_HOLES:
+    dot(hx, hy, PAD_R, C_SHALLOW)
+for pts, r in ((ESP_HOLES, ESP_HOLE_R), (SD_HOLES, SD_HOLE_R),
+               (OLED_HOLES, OLED_HOLE_R), (STRAP, STRAP_R)):
+    for hx, hy in pts:
+        dot(hx, hy, max(r, 1.0), C_HOLE)
 
 try:
     FNT = ImageFont.truetype("arial.ttf", 13)
     FNT_S = ImageFont.truetype("arial.ttf", 11)
 except OSError:
     FNT = FNT_S = ImageFont.load_default()
-LABELS = [((0, 80.5), "OLED 0.96\""), ((27, 84), "BZR"),
-          ((26.5, 40.5), "microSD"), ((-14, 33), "9V BATTERY"),
-          ((0, 0), "ESP32 DEVKIT"), ((40, 0), "USB"),
-          ((0, -57), "4x4 KEYPAD"), ((0, -90), "tail fold")]
+LABELS = [((0, OLED_C[1]), "OLED 0.96\""), ((BUZZ[0], BUZZ[1]), "BZR"),
+          ((SD_C[0], SD_C[1]), "microSD"), ((-14, 21), "9V BATTERY"),
+          ((0, ESP_C[1]), "ESP32 DEVKIT"), ((40, -13), "USB"),
+          ((0, -57.5), "3x3 KEYPAD"), ((0, -78), "tail fold")]
 for (lx, ly), s in LABELS:
     d.text(px((lx, ly)), s, font=FNT_S if len(s) < 5 else FNT,
            fill=C_TXT, anchor="mm")
@@ -359,10 +429,13 @@ for (lx, ly), s in LABELS:
 out = ROOT + r"\designs\esp32-remote-preview.png"
 img.save(out)
 print(f"preview: {out}")
-print(f"tree: {len(F)} features | shell 208 x 94 (top 78) x 12")
-print("z-stack: pins 2 | batt/buzz floor 2.5 | wire pit 4 | esp/sd floor 5 "
-      "| usb 5.5 | notch/fold 6 | tail bed 7.8 | oled 9.5 | keypad 10.8 "
-      "| ring 11.4 | face 12")
+print(f"tree: {len(F)} features | shell 182 x 90 (grip 66, top 74) x 12")
+print("z-stack: pins/pilots 2 | batt/buzz floor 2.5 | wire pit 4 | esp/sd "
+      "floor 5 | usb 5.5 | oled pilots 5.5 | notch/fold 6 | strap pilots 7 "
+      "| tail bed 7.8 | oled 9.5 | keypad 10.8 | ring 11.4 | face 12")
+print(f"screws: ESP32 4x M2.5 pitch {ESP_HOLE_P}, OLED 4x M2 pitch "
+      f"{OLED_HOLE_P} on D{2*PAD_R} pads, microSD 4x M2 pitch {SD_HOLE_P}, "
+      f"battery 2x M3 straps at {STRAP} | keypad adhesive, buzzer friction")
 print("heights above face: 9V battery +8.0, everything else at or below")
 
 # ------------------------------------------------------------- build
