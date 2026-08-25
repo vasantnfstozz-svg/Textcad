@@ -25,7 +25,6 @@ Run:  python designs/esp32-remote.py           -> preview + checks
 """
 import json
 import math
-import re
 import sys
 
 from PIL import Image, ImageDraw, ImageFont
@@ -59,24 +58,8 @@ KEY_HOLE_P, KEY_HOLE_R = (47.0, 65.0), 1.0   # 2mm holes — VERIFY vs part
 KEYPAD = (-(KEY_W + 1) / 2, (KEY_W + 1) / 2, -93.0, -93.0 + KEY_L + 1,
           10.0, 3.0)                              # 53 x 71, 2.0 deep
 KEY_C = (0.0, (KEYPAD[2] + KEYPAD[3]) / 2)
-# v7: the wire bed no longer runs the pad's whole length — it only spans the
-# pad's upper third (a rigid keypad's lead exits its back/edge and the body
-# rides 8 proud, so wires can also cross the platform top: there is no top
-# cover). That frees the recess floor south of it for the logo engraving.
-TRENCH = (-9.0, 9.0, -46.0, CAV_Y0, 7.8, 3.0)     # wire bed under the pad
-SCOOP_T = (-9.0, 9.0, -46.0, -38.0, 6.0, 2.0)     # connector well, 4 deep
-
-# ------------------------------------------------------- logo engraving
-# The official autonomIQ lockup (big word + iQ mark only — the "autonomous
-# manufacturing" tagline paths are dropped) engraved into the cleared floor
-# of the keypad recess. Engraved, not raised: the keypad has to sit flat.
-SVG_FILE = ROOT + r"\designs\autonomIQ-Logo_cmyk.svg"
-LOGO_KEEP = set(range(0, 6)) | {29, 30, 31, 32, 33}   # a u o n o m + Q i t
-LOGO_W, LOGO_CY, LOGO_DEEP = 46.0, -70.0, 0.6
-# measured reachability at this size: D1.0 leaves 23.5% of the artwork
-# uncut (letters blob together), D0.8 -> 5.3%, D0.6 -> 2.0%. So the
-# engraving needs a D0.8-or-smaller cutter / V-bit, not a general end mill.
-LOGO_TOOL_D = 0.8
+TRENCH = (-9.0, 9.0, -91.0, CAV_Y0, 7.8, 3.0)     # wire bed under the pad
+SCOOP_T = (-9.0, 9.0, -91.0, -83.0, 6.0, 2.0)     # solder-tail fold room
 # v6 (user, "sharp edges in the keyboard start"): the recess and the wire
 # trench both END on the cavity wall line — their old rounded-rect corners
 # ran TANGENT to it, leaving zero-angle knife cusps, and the old rib notch
@@ -413,171 +396,6 @@ def scalloped_box(foot, holes, scal_r, r_f=FILLET_TIP):
     return path_from_segs(start, [s for part, _ in parts for s in part])
 
 
-# ------------------------------------------------- SVG lockup (sat-panel v2
-# loader, unchanged: it is the one that produced the approved lockup)
-def parse_d(d):
-    tok = re.findall(r"[MmCcLlHhVvZz]|-?\d+\.?\d*(?:e-?\d+)?", d)
-    subs, cur, pos, start = [], None, (0.0, 0.0), (0.0, 0.0)
-    i = 0
-
-    def num(k):
-        return float(tok[k])
-    while i < len(tok):
-        t = tok[i]
-        if t in "Mm":
-            rel = t == "m"
-            x, y = num(i + 1), num(i + 2)
-            pos = (pos[0] + x, pos[1] + y) if rel else (x, y)
-            start = pos
-            cur = [pos]
-            subs.append(cur)
-            i += 3
-            while i + 1 < len(tok) and re.match(r"-?\d", tok[i]):
-                x, y = num(i), num(i + 1)
-                pos = (pos[0] + x, pos[1] + y) if rel else (x, y)
-                cur.append(pos)
-                i += 2
-        elif t in "Cc":
-            rel = t == "c"
-            i += 1
-            while i + 5 < len(tok) and re.match(r"-?\d", tok[i]):
-                if rel:
-                    c1 = (pos[0] + num(i), pos[1] + num(i + 1))
-                    c2 = (pos[0] + num(i + 2), pos[1] + num(i + 3))
-                    p1 = (pos[0] + num(i + 4), pos[1] + num(i + 5))
-                else:
-                    c1 = (num(i), num(i + 1))
-                    c2 = (num(i + 2), num(i + 3))
-                    p1 = (num(i + 4), num(i + 5))
-                p0 = pos
-                for tt in (0.2, 0.4, 0.6, 0.8, 1.0):
-                    x = ((1 - tt) ** 3 * p0[0] + 3 * (1 - tt) ** 2 * tt * c1[0]
-                         + 3 * (1 - tt) * tt ** 2 * c2[0] + tt ** 3 * p1[0])
-                    y = ((1 - tt) ** 3 * p0[1] + 3 * (1 - tt) ** 2 * tt * c1[1]
-                         + 3 * (1 - tt) * tt ** 2 * c2[1] + tt ** 3 * p1[1])
-                    cur.append((x, y))
-                pos = p1
-                i += 6
-        elif t in "Ll":
-            rel = t == "l"
-            i += 1
-            while i + 1 < len(tok) and re.match(r"-?\d", tok[i]):
-                x, y = num(i), num(i + 1)
-                pos = (pos[0] + x, pos[1] + y) if rel else (x, y)
-                cur.append(pos)
-                i += 2
-        elif t in "Hh":
-            rel = t == "h"
-            i += 1
-            while i < len(tok) and re.match(r"-?\d", tok[i]):
-                x = num(i)
-                pos = (pos[0] + x if rel else x, pos[1])
-                cur.append(pos)
-                i += 1
-        elif t in "Vv":
-            rel = t == "v"
-            i += 1
-            while i < len(tok) and re.match(r"-?\d", tok[i]):
-                y = num(i)
-                pos = (pos[0], pos[1] + y if rel else y)
-                cur.append(pos)
-                i += 1
-        else:
-            pos = start
-            i += 1
-    return subs
-
-
-def point_in_poly(p, poly):
-    x, y = p
-    inside = False
-    for i in range(len(poly)):
-        x1, y1 = poly[i - 1]
-        x2, y2 = poly[i]
-        if (y1 > y) != (y2 > y):
-            xt = x1 + (y - y1) / (y2 - y1) * (x2 - x1)
-            if x < xt:
-                inside = not inside
-    return inside
-
-
-def _ccw(pts):
-    a = sum((pts[i][0] - pts[i - 1][0]) * (pts[i][1] + pts[i - 1][1])
-            for i in range(len(pts)))
-    return pts if a < 0 else pts[::-1]
-
-
-def _decimate(pts, min_d=0.12):
-    out = [pts[0]]
-    for p in pts[1:]:
-        if math.hypot(p[0] - out[-1][0], p[1] - out[-1][1]) >= min_d:
-            out.append(p)
-    if math.hypot(out[0][0] - out[-1][0], out[0][1] - out[-1][1]) < min_d \
-            and len(out) > 3:
-        out.pop()
-    return out
-
-
-def load_lockup_grouped(target_width, cy):
-    """Glyph groups (outline entities first, hole entities after) scaled to
-    target_width and centred on (0, cy)."""
-    ds = re.findall(r'[\s"]d="([^"]+)"', open(SVG_FILE, encoding="utf-8").read())
-    groups = [parse_d(d) for idx, d in enumerate(ds) if idx in LOGO_KEEP]
-    allpts = [p for g in groups for s in g for p in s]
-    xs = [p[0] for p in allpts]
-    ys = [p[1] for p in allpts]
-    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
-    s = target_width / (x1 - x0)
-    ox, oy = (x0 + x1) / 2, (y0 + y1) / 2
-    grouped = []
-    for g in groups:
-        subs = [[((p[0] - ox) * s, (p[1] - oy) * s + cy) for p in sub]
-                for sub in g]
-        flags = [any(j != i and point_in_poly(sub[0], subs[j])
-                     for j in range(len(subs)))
-                 for i, sub in enumerate(subs)]
-        ordered = ([(sub, False) for sub, h in zip(subs, flags) if not h]
-                   + [(sub, True) for sub, h in zip(subs, flags) if h])
-        ents = []
-        for sub, hole in ordered:
-            pts = _decimate(_ccw(sub))
-            ents.append({"kind": "polygon",
-                         "points": [[round(p[0], 3), round(p[1], 3)]
-                                    for p in pts],
-                         "mode": "subtract" if hole else "add"})
-        grouped.append(ents)
-    return grouped, (y1 - y0) * s
-
-
-LOGO_GROUPS, LOGO_H = load_lockup_grouped(LOGO_W, LOGO_CY)
-
-
-def logo_reach_miss(tool_d, px_mm=20.0):
-    """Fraction of the engraved artwork a round cutter of tool_d CANNOT
-    reach (morphological opening test) — the objective "will this engrave
-    legibly" check. Strokes narrower than the tool come back as misses."""
-    from PIL import ImageFilter
-    pad = 4
-    w = int(LOGO_W * px_mm) + 2 * pad
-    h = int(LOGO_H * px_mm) + 2 * pad
-    im = Image.new("L", (w, h), 0)
-    dr = ImageDraw.Draw(im)
-
-    def to_px(p):
-        return (pad + (p[0] + LOGO_W / 2) * px_mm,
-                pad + (LOGO_H / 2 - (p[1] - LOGO_CY)) * px_mm)
-    for grp in LOGO_GROUPS:
-        for e in grp:
-            dr.polygon([to_px(p) for p in e["points"]],
-                       fill=255 if e["mode"] == "add" else 0)
-    k = 2 * int(round(tool_d / 2 * px_mm)) + 1          # square approx of Ø
-    opened = im.filter(ImageFilter.MinFilter(k)).filter(ImageFilter.MaxFilter(k))
-    a_, b_ = im.tobytes(), opened.tobytes()
-    ink = sum(1 for v in a_ if v > 127)
-    miss = sum(1 for v, o in zip(a_, b_) if v > 127 and o <= 127)
-    return miss / max(ink, 1), ink / (px_mm * px_mm)
-
-
 # ------------------------------------------------------------- sanity gates
 assert 2 * L2 + 8 <= 220 and 2 * HEAD2 + 8 <= 120, "does not fit the stock"
 
@@ -687,23 +505,6 @@ flare_ok("trench", TRENCH[0], TRENCH[1], CAV_Y0, TR_FLARE)
 # the flares must not reach each other or the keypad screw pilots
 assert TRENCH[1] + TR_FLARE + 2.0 <= KEYPAD[1], "trench flare hits the recess wall"
 
-# logo engraving: inside the CLEARED part of the recess floor (south of the
-# wire bed), clear of the recess walls and the keypad screw pilots
-LOGO_BOX = (-LOGO_W / 2, LOGO_W / 2, LOGO_CY - LOGO_H / 2, LOGO_CY + LOGO_H / 2)
-assert LOGO_BOX[0] >= KEYPAD[0] + 2.5 and LOGO_BOX[1] <= KEYPAD[1] - 2.5, \
-    "logo too wide for the keypad recess"
-assert LOGO_BOX[2] >= KEYPAD[2] + 2.5, "logo runs off the recess floor"
-assert LOGO_BOX[3] <= TRENCH[2] - 2.0, "logo runs into the wire bed"
-for hx, hy in KEY_HOLES:
-    dx = max(LOGO_BOX[0] - hx, 0, hx - LOGO_BOX[1])
-    dy = max(LOGO_BOX[2] - hy, 0, hy - LOGO_BOX[3])
-    assert math.hypot(dx, dy) - KEY_HOLE_R >= 1.5, \
-        f"logo crowds the keypad pilot ({hx},{hy})"
-assert LOGO_DEEP + 1.0 <= T - KEYPAD[4], "engraving too deep for the platform"
-LOGO_MISS, LOGO_AREA = logo_reach_miss(LOGO_TOOL_D)
-assert LOGO_MISS < 0.08, \
-    f"a D{LOGO_TOOL_D} cutter cannot reach {LOGO_MISS:.1%} of the artwork"
-
 # keypad: screw pilots inside the recess, clear of the wire trench
 assert LORA_FOOT[1] - LORA_FOOT[0] >= C_LORA[0] + 0.5
 assert LORA_FOOT[3] - LORA_FOOT[2] >= C_LORA[1] + 0.5
@@ -772,19 +573,7 @@ pocket("keypad_recess", KEYPAD[4], [path_from_segs(*KEY_PATH)])
 pocket("keypad_pilots", KEYPAD[4] - 4.0,
        [circ(x, y, KEY_HOLE_R) for x, y in KEY_HOLES], top=KEYPAD[4] + 0.5)
 pocket("tail_trench", TRENCH[4], [path_from_segs(*TR_PATH)])
-pocket("connector_well", SCOOP_T[4], [rr(SCOOP_T)])
-
-# ---- autonomIQ lockup engraved into the cleared recess floor (glyph groups
-# batched <= 10 sketch entities, each group's holes kept with its outline)
-LOGO_BATCHES, _b = [], []
-for _g in LOGO_GROUPS:
-    if len(_b) + len(_g) > 10:
-        LOGO_BATCHES.append(_b)
-        _b = []
-    _b += _g
-LOGO_BATCHES.append(_b)
-for _n, _batch in enumerate(LOGO_BATCHES):
-    pocket(f"logo_{_n}", KEYPAD[4] - LOGO_DEEP, _batch, top=KEYPAD[4] + 0.5)
+pocket("tail_fold_scoop", SCOOP_T[4], [rr(SCOOP_T)])
 
 # ---- first cut: the weight-reduction cavity, islands left standing
 f("cav_sketch", "sketch", {"plane": "XY", "offset": CAV_Z,
@@ -934,10 +723,6 @@ def paste_clipped(color, pts):
 paste_clipped(C_ISL, sample_segs(*KEY_PATH))
 paste_clipped(C_MID, sample_segs(*TR_PATH))
 rbox((SCOOP_T[0], SCOOP_T[1], SCOOP_T[2], SCOOP_T[3], SCOOP_T[5]), C_SEAT)
-for grp in LOGO_GROUPS:                 # engraved lockup on the recess floor
-    for e in grp:
-        d.polygon([px(tuple(p)) for p in e["points"]],
-                  fill=C_SEAT if e["mode"] == "add" else C_ISL)
 # seats
 rbox((BATT_SEAT[0], BATT_SEAT[1], BATT_SEAT[2], BATT_SEAT[3], BATT_SEAT[5]),
      C_SEAT)
@@ -975,7 +760,7 @@ LABELS = [((0, OLED_C[1]), "OLED"), ((BUZZ[0], BUZZ[1]), "BZR"),
           ((LORA_C[0], LORA_C[1]), "LoRa"),
           ((SD_C[0], SD_C[1]), "microSD"), ((BATT_C[0], BATT_C[1]),
           "9V BATTERY"), ((0, ESP_C[1]), "ESP32"), ((41, -5), "USB"),
-          ((0, -35), "3x4 KEYPAD")]
+          ((0, KEY_C[1]), "3x4 KEYPAD"), ((0, -87), "tail fold")]
 for (lx, ly), s in LABELS:
     d.text(px((lx, ly)), s, font=FNT_S if len(s) < 6 else FNT,
            fill=C_TXT, anchor="mm")
@@ -1002,11 +787,6 @@ print("curved slot boxes: boundaries scallop AROUND the pillars, every "
       f"scallop/edge junction blended tangent r{FILLET_TIP} (no pointed "
       f"tips); LoRa + buzzer pillars fully outside their boxes; usb gap "
       f"r{USB[5]}, keypad holes D{2*KEY_HOLE_R}")
-print(f"logo: autonomIQ lockup (word + iQ mark, no tagline) engraved "
-      f"{LOGO_DEEP} deep in the recess floor, {LOGO_W} x {LOGO_H:.1f} mm at "
-      f"(0,{LOGO_CY}) | {len(LOGO_GROUPS)} glyph groups in "
-      f"{len(LOGO_BATCHES)} sketches | D{LOGO_TOOL_D} cutter misses "
-      f"{LOGO_MISS:.1%} of the {LOGO_AREA:.0f} mm2 artwork")
 print(f"keypad: MakerMind RBS11089 3x4 rigid {KEY_W}x{KEY_L}x10, recess "
       f"2.0 deep + 4x M2 pilots pitch {KEY_HOLE_P} (VERIFY) | LoRa Ra-02 "
       f"{C_LORA} on seat + 2x D{2*LORA_PIL_R} M2 clamp pillars (VERIFY)")
