@@ -325,28 +325,28 @@
         "entities": [
           {
             "kind": "circle",
-            "r": 1.0,
+            "r": 1.5,
             "x": 23.5,
             "y": -25.0,
             "mode": "add"
           },
           {
             "kind": "circle",
-            "r": 1.0,
+            "r": 1.5,
             "x": 23.5,
             "y": -90.0,
             "mode": "add"
           },
           {
             "kind": "circle",
-            "r": 1.0,
+            "r": 1.5,
             "x": -23.5,
             "y": -25.0,
             "mode": "add"
           },
           {
             "kind": "circle",
-            "r": 1.0,
+            "r": 1.5,
             "x": -23.5,
             "y": -90.0,
             "mode": "add"
@@ -2409,28 +2409,28 @@
         "entities": [
           {
             "kind": "circle",
-            "r": 1.0,
+            "r": 1.5,
             "x": 23.5,
             "y": 6.5,
             "mode": "add"
           },
           {
             "kind": "circle",
-            "r": 1.0,
+            "r": 1.5,
             "x": 23.5,
             "y": -16.5,
             "mode": "add"
           },
           {
             "kind": "circle",
-            "r": 1.0,
+            "r": 1.5,
             "x": -23.5,
             "y": 6.5,
             "mode": "add"
           },
           {
             "kind": "circle",
-            "r": 1.0,
+            "r": 1.5,
             "x": -23.5,
             "y": -16.5,
             "mode": "add"
@@ -2688,121 +2688,6 @@
       "inputs": [
         "clamp_pilots",
         "strap_pilots_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "usb_gap_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 5.5,
-        "entities": [
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              49.0,
-              -8.0
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  49.0,
-                  -2.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  47.828,
-                  0.828
-                ],
-                "to": [
-                  45.0,
-                  2.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  30.0,
-                  2.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  27.172,
-                  0.828
-                ],
-                "to": [
-                  26.0,
-                  -2.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  26.0,
-                  -8.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  27.172,
-                  -10.828
-                ],
-                "to": [
-                  30.0,
-                  -12.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  45.0,
-                  -12.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  47.828,
-                  -10.828
-                ],
-                "to": [
-                  49.0,
-                  -8.0
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "usb_gap_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 7.5
-      },
-      "inputs": [
-        "usb_gap_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "usb_gap",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "strap_pilots",
-        "usb_gap_tool"
       ],
       "suppressed": false
     },
@@ -3175,7 +3060,7 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "usb_gap",
+        "strap_pilots",
         "ring_band"
       ],
       "suppressed": false

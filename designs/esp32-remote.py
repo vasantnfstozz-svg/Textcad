@@ -54,7 +54,7 @@ OPEN_OVER = 4.0                # how far a pocket that opens into the cavity
 # MakerMind RBS11089: rigid 3x4 telephone keypad, 70 x 52 x 10, hard keys.
 # Recess only 2 deep (platform stays solid), body rides 8 proud + keys.
 KEY_W, KEY_L = 52.0, 70.0
-KEY_HOLE_P, KEY_HOLE_R = (47.0, 65.0), 1.0   # 2mm holes — VERIFY vs part
+KEY_HOLE_P, KEY_HOLE_R = (47.0, 65.0), 1.5   # D3 holes — VERIFY vs part
 KEYPAD = (-(KEY_W + 1) / 2, (KEY_W + 1) / 2, -93.0, -93.0 + KEY_L + 1,
           10.0, 3.0)                              # 53 x 71, 2.0 deep
 KEY_C = (0.0, (KEYPAD[2] + KEYPAD[3]) / 2)
@@ -71,8 +71,10 @@ KEY_FLARE, TR_FLARE = 3.0, 4.0
 # ------------------------------------------------------- pillars & seats
 ESP_C = (0.0, -5.0)                               # board center
 ESP_HOLE_P, ESP_PIL_R, ESP_TOP = (47.0, 23.0), 3.5, 7.0
-ESP_HOLE_R = 1.0                                  # M2.5 pilot
-USB = (26.0, 49.0, -12.0, 2.0, 5.5, 4.0)          # breaches the wall, r4 curves
+ESP_HOLE_R = 1.5                                  # D3 hole (was D2)
+# v8: the USB wall gap is DELETED on user request — the wall is unbroken now
+# (so the ESP32's USB socket is enclosed: flash it before final assembly, or
+# over-the-air)
 
 BATT_C = (-13.8, 32.0)                            # seat center
 # v6: seat pulled 1mm off BOTH rims and 1mm inside the cavity wall — its
@@ -494,7 +496,11 @@ def scallop_ok(foot, holes, pil_r, scal_r):
 scallop_ok(ESP_FOOT, ESP_HOLES, ESP_PIL_R, SCAL_ESP)
 scallop_ok(OLED_FOOT, OLED_HOLES, OLED_PIL_R, SCAL_OLED)
 scallop_ok(SD_FOOT, SD_HOLES, SD_PIL_R, SCAL_SD)
-assert USB[1] > HEAD2 + 1.5, "usb gap must breach the wall"
+# every pilot must leave a real collar of steel in its pillar/platform
+assert ESP_PIL_R - ESP_HOLE_R >= 1.0, "esp pilot leaves no pillar wall"
+assert SD_PIL_R - SD_HOLE_R >= 1.0, "sd pilot leaves no pillar wall"
+assert OLED_PIL_R - OLED_HOLE_R >= 1.0, "oled pilot leaves no pillar wall"
+assert BUZZ_PIL_R - BUZZ_HOLE_R >= 1.0, "clamp pilot leaves no pillar wall"
 
 # the keypad recess and the wire trench END on the cavity wall line, so
 # their flares must be tangent to its straight run (no cusp, no new notch)
@@ -636,9 +642,6 @@ pocket("clamp_pilots", T - 5.0,
 pocket("strap_pilots", RIM_TOP - 4.0,
        [circ(x, y, STRAP_R) for x, y in STRAP], top=RIM_TOP + 0.5)
 
-# ---- usb gap through the right wall
-pocket("usb_gap", USB[4], [rr(USB)])
-
 # ---- rim pinstripe: (outline-3.0 minus outline-4.2) band, 0.6 deep
 f("ringA_sketch", "sketch", {"plane": "XY", "offset": RING_Z, "entities":
   [outline_path(offset_verts(VERTS, RING_D1),
@@ -741,8 +744,6 @@ for pts, r in ((ESP_HOLES, ESP_PIL_R), (SD_HOLES, SD_PIL_R),
                (LORA_PIL, LORA_PIL_R)):
     for hx, hy in pts:
         dot(hx, hy, r, C_ISL)
-# usb gap
-rbox((USB[0], USB[1], USB[2], USB[3], USB[5]), C_HOLE)
 # pilot holes
 for pts, r in ((ESP_HOLES, ESP_HOLE_R), (SD_HOLES, SD_HOLE_R),
                (OLED_HOLES, OLED_HOLE_R), (BUZZ_PIL, BUZZ_HOLE_R),
@@ -759,7 +760,7 @@ except OSError:
 LABELS = [((0, OLED_C[1]), "OLED"), ((BUZZ[0], BUZZ[1]), "BZR"),
           ((LORA_C[0], LORA_C[1]), "LoRa"),
           ((SD_C[0], SD_C[1]), "microSD"), ((BATT_C[0], BATT_C[1]),
-          "9V BATTERY"), ((0, ESP_C[1]), "ESP32"), ((41, -5), "USB"),
+          "9V BATTERY"), ((0, ESP_C[1]), "ESP32"),
           ((0, KEY_C[1]), "3x4 KEYPAD"), ((0, -87), "tail fold")]
 for (lx, ly), s in LABELS:
     d.text(px((lx, ly)), s, font=FNT_S if len(s) < 6 else FNT,
@@ -771,7 +772,7 @@ print(f"preview: {out}")
 print(f"tree: {len(F)} features | shell {2*L2:.0f} x 90 (grip 66, top 74) x 12")
 print(f"cavity: floor z{CAV_Z} ({T - CAV_Z} deep), wall {CAV_D}, from "
       f"y{CAV_Y0} up | keypad platform stays solid")
-print(f"pillars: ESP 4x D{2*ESP_PIL_R} top z{ESP_TOP} M2.5 | OLED 4x "
+print(f"pillars: ESP 4x D{2*ESP_PIL_R} top z{ESP_TOP} D{2*ESP_HOLE_R} | OLED 4x "
       f"D{2*OLED_PIL_R} top z{OLED_TOP} M2 | SD 4x D{2*SD_PIL_R} top "
       f"z{SD_TOP} M2 (free-standing) | buzzer 2x D{2*BUZZ_PIL_R} "
       f"top z{T} M2 clamp | battery seat 0.5 + rims z{RIM_TOP} M3 straps")
@@ -785,10 +786,10 @@ print("outer top rim: SQUARE (no chamfer tooling) — only the vertical "
       "corners are radiused, which the cutter does anyway")
 print("curved slot boxes: boundaries scallop AROUND the pillars, every "
       f"scallop/edge junction blended tangent r{FILLET_TIP} (no pointed "
-      f"tips); LoRa + buzzer pillars fully outside their boxes; usb gap "
-      f"r{USB[5]}, keypad holes D{2*KEY_HOLE_R}")
+      f"tips); LoRa + buzzer pillars fully outside their boxes; NO usb gap "
+      f"(wall unbroken); esp + keypad holes D{2*KEY_HOLE_R}")
 print(f"keypad: MakerMind RBS11089 3x4 rigid {KEY_W}x{KEY_L}x10, recess "
-      f"2.0 deep + 4x M2 pilots pitch {KEY_HOLE_P} (VERIFY) | LoRa Ra-02 "
+      f"2.0 deep + 4x D{2*KEY_HOLE_R} pilots pitch {KEY_HOLE_P} (VERIFY) | LoRa Ra-02 "
       f"{C_LORA} on seat + 2x D{2*LORA_PIL_R} M2 clamp pillars (VERIFY)")
 
 # ------------------------------------------------------------- build
