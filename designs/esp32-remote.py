@@ -84,8 +84,11 @@ BATT_SEAT = (-38.4, 10.8, 18.4, 45.6, 2.5, 3.0)   # 49.2 x 27.2, 0.5 deep
 BATT_RIMS = [(-36.0, 8.0, 12.5, 17.5, 2.0),       # x0,x1,y0,y1,r — top z9
              (-36.0, 8.0, 46.5, 51.5, 2.0)]
 RIM_TOP = 9.0
-STRAP = [(-14.0, 15.0), (-14.0, 49.0)]            # M3 strap pilot holes
-STRAP_R = 1.25
+STRAP = [(-14.0, 15.0), (-14.0, 49.0)]            # strap pilot holes
+# M2, not M3: the rims are only 5.0 wide, so an M3 tap drill (D2.5) left
+# 1.25mm walls (1.0 after tapping) — the thinnest web in the part and the
+# one place a fastener pulls. D1.6 gives 1.7, matching the SD pillars.
+STRAP_R = 0.8
 
 SD_C = (25.3, 35.5)                               # module center
 SD_HOLE_P, SD_PIL_R, SD_TOP = (19.0, 37.0), 2.5, 7.0
@@ -124,8 +127,11 @@ ESP_FOOT = (-26.5, 26.5, -19.5, 9.5, 2.5, 2.0)    # 53 x 29
 OLED_FOOT = (-14.25, 14.25, 63.25, 91.75, 2.5, 2.0)   # 28.5 sq
 SD_FOOT = (12.8, 37.8, 14.0, 57.0, 2.5, 2.0)      # 25 x 43
 SCAL_ESP, SCAL_OLED, SCAL_SD = 5.0, 4.25, 4.5     # scallop radii at pillars
-FILLET_TIP = 1.2               # blend arc where a scallop meets an edge —
-                               # every junction is tangent, no pointed tips
+# blend arc where a scallop meets a box edge. These blends are CONCAVE in
+# the material (the cut turns convex there), so they are governed by the
+# r >= 1.5 internal-corner minimum — at the old 1.2 a D3 cutter left ~7.4mm2
+# of steel standing at the 24 junctions. Audit finding, 2026-08-25.
+FILLET_TIP = 1.5
 
 ESP_HOLES = [(ESP_C[0] + sx * ESP_HOLE_P[0] / 2,
               ESP_C[1] + sy * ESP_HOLE_P[1] / 2)
@@ -466,7 +472,10 @@ for cx_, cy_, r in ISLAND_CIRCLES:
 # strap pilots centred on the rims
 for (hx, hy), (rx0, rx1, ry0, ry1, _) in zip(STRAP, BATT_RIMS):
     assert rx0 + STRAP_R + 1.0 <= hx <= rx1 - STRAP_R - 1.0
-    assert ry0 + STRAP_R - 0.01 <= hy <= ry1 - STRAP_R + 0.01
+    # the old gate only checked CONTAINMENT (+-0.01), so it happily allowed a
+    # 1.0mm web; the wall each side of the pilot must clear the 1.5 minimum
+    assert hy - STRAP_R - ry0 >= 1.5 and ry1 - hy - STRAP_R >= 1.5, \
+        f"strap pilot ({hx},{hy}) leaves a thin rim web"
 # buzzer seat clear of its own clamp pillars
 for bx, by in BUZZ_PIL:
     assert math.hypot(bx - BUZZ[0], by - BUZZ[1]) - BUZZ[2] - BUZZ_PIL_R \
@@ -775,7 +784,8 @@ print(f"cavity: floor z{CAV_Z} ({T - CAV_Z} deep), wall {CAV_D}, from "
 print(f"pillars: ESP 4x D{2*ESP_PIL_R} top z{ESP_TOP} D{2*ESP_HOLE_R} | OLED 4x "
       f"D{2*OLED_PIL_R} top z{OLED_TOP} M2 | SD 4x D{2*SD_PIL_R} top "
       f"z{SD_TOP} M2 (free-standing) | buzzer 2x D{2*BUZZ_PIL_R} "
-      f"top z{T} M2 clamp | battery seat 0.5 + rims z{RIM_TOP} M3 straps")
+      f"top z{T} M2 clamp | battery seat 0.5 + rims z{RIM_TOP} "
+      f"D{2*STRAP_R} straps")
 print("slot boxes: 0.5-deep footprint outlines in the cavity floor for "
       "ESP32 / OLED / microSD / LoRa + battery + buzzer seats")
 print(f"machinable corners: cavity clip corners r{CLIP_R}, keypad recess "
