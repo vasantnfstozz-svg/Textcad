@@ -648,99 +648,1650 @@
       "suppressed": false
     },
     {
-      "id": "esp_slot_sketch",
+      "id": "cav_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 3.0,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              28.56,
+              -81.557
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  39.268,
+                  2.322
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  39.367,
+                  3.358
+                ],
+                "to": [
+                  39.4,
+                  4.399
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  39.4,
+                  50.709
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  39.312,
+                  52.408
+                ],
+                "to": [
+                  39.048,
+                  54.088
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  34.529,
+                  75.555
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  30.208,
+                  82.629
+                ],
+                "to": [
+                  22.395,
+                  85.4
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -22.395,
+                  85.4
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -30.208,
+                  82.629
+                ],
+                "to": [
+                  -34.529,
+                  75.555
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -39.048,
+                  54.088
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -39.312,
+                  52.408
+                ],
+                "to": [
+                  -39.4,
+                  50.709
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -39.4,
+                  4.399
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -39.367,
+                  3.358
+                ],
+                "to": [
+                  -39.268,
+                  2.322
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -28.56,
+                  -81.557
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -27.103,
+                  -84.302
+                ],
+                "to": [
+                  -24.195,
+                  -85.4
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  24.195,
+                  -85.4
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  27.103,
+                  -84.302
+                ],
+                "to": [
+                  28.56,
+                  -81.557
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "cav_tool0",
+      "op": "extrude",
+      "params": {
+        "amount": 10.0
+      },
+      "inputs": [
+        "cav_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cav_clip_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 2.0,
+        "entities": [
+          {
+            "kind": "polygon",
+            "mode": "add",
+            "points": [
+              [
+                -60,
+                -120
+              ],
+              [
+                60,
+                -120
+              ],
+              [
+                60,
+                -31.0
+              ],
+              [
+                -60,
+                -31.0
+              ]
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "cav_clip_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12.0
+      },
+      "inputs": [
+        "cav_clip_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cav_clipped",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "cav_tool0",
+        "cav_clip_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "isl1_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 2.0,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              8.0,
+              5.5
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  8.0,
+                  6.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  7.414,
+                  7.914
+                ],
+                "to": [
+                  6.0,
+                  8.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -34.0,
+                  8.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -35.414,
+                  7.914
+                ],
+                "to": [
+                  -36.0,
+                  6.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -36.0,
+                  5.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -35.414,
+                  4.086
+                ],
+                "to": [
+                  -34.0,
+                  3.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  6.0,
+                  3.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  7.414,
+                  4.086
+                ],
+                "to": [
+                  8.0,
+                  5.5
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              8.0,
+              39.5
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  8.0,
+                  40.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  7.414,
+                  41.914
+                ],
+                "to": [
+                  6.0,
+                  42.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -34.0,
+                  42.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -35.414,
+                  41.914
+                ],
+                "to": [
+                  -36.0,
+                  40.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -36.0,
+                  39.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -35.414,
+                  38.086
+                ],
+                "to": [
+                  -34.0,
+                  37.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  6.0,
+                  37.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  7.414,
+                  38.086
+                ],
+                "to": [
+                  8.0,
+                  39.5
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "circle",
+            "r": 3.5,
+            "x": 23.5,
+            "y": -2.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 3.5,
+            "x": 23.5,
+            "y": -25.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 3.5,
+            "x": -23.5,
+            "y": -2.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 3.5,
+            "x": -23.5,
+            "y": -25.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.75,
+            "x": 35.0,
+            "y": 45.0,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.75,
+            "x": 35.0,
+            "y": 8.0,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.75,
+            "x": 16.0,
+            "y": 45.0,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.75,
+            "x": 16.0,
+            "y": 8.0,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "isl1_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12.0
+      },
+      "inputs": [
+        "isl1_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "isl2_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 2.0,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              40.0,
+              6.5
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  40.0,
+                  9.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  39.561,
+                  10.561
+                ],
+                "to": [
+                  38.5,
+                  11.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  33.5,
+                  11.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  32.439,
+                  10.561
+                ],
+                "to": [
+                  32.0,
+                  9.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  32.0,
+                  6.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  32.439,
+                  5.439
+                ],
+                "to": [
+                  33.5,
+                  5.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  38.5,
+                  5.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  39.561,
+                  5.439
+                ],
+                "to": [
+                  40.0,
+                  6.5
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              40.0,
+              43.5
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  40.0,
+                  46.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  39.561,
+                  47.561
+                ],
+                "to": [
+                  38.5,
+                  48.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  33.5,
+                  48.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  32.439,
+                  47.561
+                ],
+                "to": [
+                  32.0,
+                  46.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  32.0,
+                  43.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  32.439,
+                  42.439
+                ],
+                "to": [
+                  33.5,
+                  42.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  38.5,
+                  42.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  39.561,
+                  42.439
+                ],
+                "to": [
+                  40.0,
+                  43.5
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "circle",
+            "r": 2.75,
+            "x": 11.75,
+            "y": 80.25,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.75,
+            "x": 11.75,
+            "y": 56.75,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.75,
+            "x": -11.75,
+            "y": 80.25,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.75,
+            "x": -11.75,
+            "y": 56.75,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 3.25,
+            "x": 25.0,
+            "y": 56.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 3.25,
+            "x": 25.0,
+            "y": 77.5,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "isl2_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 12.0
+      },
+      "inputs": [
+        "isl2_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cav_neg",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "cav_clipped",
+        "isl1_tool",
+        "isl2_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "main_cavity",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "tail_notch",
+        "cav_neg"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "esp_pillar_trim_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 7.0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 4.5,
+            "x": 23.5,
+            "y": -2.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 4.5,
+            "x": 23.5,
+            "y": -25.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 4.5,
+            "x": -23.5,
+            "y": -2.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 4.5,
+            "x": -23.5,
+            "y": -25.5,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "esp_pillar_trim_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 6.0
+      },
+      "inputs": [
+        "esp_pillar_trim_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "esp_pillar_trim",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "main_cavity",
+        "esp_pillar_trim_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "batt_rim_trim_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 9.0,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              9.0,
+              5.0
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  9.0,
+                  7.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  8.414,
+                  8.414
+                ],
+                "to": [
+                  7.0,
+                  9.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -35.0,
+                  9.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -36.414,
+                  8.414
+                ],
+                "to": [
+                  -37.0,
+                  7.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -37.0,
+                  5.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -36.414,
+                  3.586
+                ],
+                "to": [
+                  -35.0,
+                  3.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  7.0,
+                  3.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  8.414,
+                  3.586
+                ],
+                "to": [
+                  9.0,
+                  5.0
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              9.0,
+              39.0
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  9.0,
+                  41.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  8.414,
+                  42.414
+                ],
+                "to": [
+                  7.0,
+                  43.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -35.0,
+                  43.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -36.414,
+                  42.414
+                ],
+                "to": [
+                  -37.0,
+                  41.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -37.0,
+                  39.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -36.414,
+                  37.586
+                ],
+                "to": [
+                  -35.0,
+                  37.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  7.0,
+                  37.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  8.414,
+                  37.586
+                ],
+                "to": [
+                  9.0,
+                  39.0
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "batt_rim_trim_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 4.0
+      },
+      "inputs": [
+        "batt_rim_trim_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "batt_rim_trim",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "esp_pillar_trim",
+        "batt_rim_trim_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "sd_shelf_trim_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 7.0,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              40.0,
+              6.0
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  40.0,
+                  10.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  39.561,
+                  11.061
+                ],
+                "to": [
+                  38.5,
+                  11.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  14.0,
+                  11.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  12.939,
+                  11.061
+                ],
+                "to": [
+                  12.5,
+                  10.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  12.5,
+                  6.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  12.939,
+                  4.939
+                ],
+                "to": [
+                  14.0,
+                  4.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  38.5,
+                  4.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  39.561,
+                  4.939
+                ],
+                "to": [
+                  40.0,
+                  6.0
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              40.0,
+              43.0
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  40.0,
+                  47.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  39.561,
+                  48.061
+                ],
+                "to": [
+                  38.5,
+                  48.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  14.0,
+                  48.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  12.939,
+                  48.061
+                ],
+                "to": [
+                  12.5,
+                  47.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  12.5,
+                  43.0
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  12.939,
+                  41.939
+                ],
+                "to": [
+                  14.0,
+                  41.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  38.5,
+                  41.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  39.561,
+                  41.939
+                ],
+                "to": [
+                  40.0,
+                  43.0
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "sd_shelf_trim_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 6.0
+      },
+      "inputs": [
+        "sd_shelf_trim_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "sd_shelf_trim",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "batt_rim_trim",
+        "sd_shelf_trim_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "oled_pillar_trim_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 9.5,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 3.75,
+            "x": 11.75,
+            "y": 80.25,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 3.75,
+            "x": 11.75,
+            "y": 56.75,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 3.75,
+            "x": -11.75,
+            "y": 80.25,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 3.75,
+            "x": -11.75,
+            "y": 56.75,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "oled_pillar_trim_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 3.5
+      },
+      "inputs": [
+        "oled_pillar_trim_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "oled_pillar_trim",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "sd_shelf_trim",
+        "oled_pillar_trim_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "batt_seat_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 2.5,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              11.5,
+              11.5
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  11.5,
+                  34.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  10.621,
+                  36.621
+                ],
+                "to": [
+                  8.5,
+                  37.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -36.5,
+                  37.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -38.621,
+                  36.621
+                ],
+                "to": [
+                  -39.5,
+                  34.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -39.5,
+                  11.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -38.621,
+                  9.379
+                ],
+                "to": [
+                  -36.5,
+                  8.5
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  8.5,
+                  8.5
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  10.621,
+                  9.379
+                ],
+                "to": [
+                  11.5,
+                  11.5
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "batt_seat_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 1.0
+      },
+      "inputs": [
+        "batt_seat_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "batt_seat",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "oled_pillar_trim",
+        "batt_seat_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "buzzer_seat_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 2.5,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 6.5,
+            "x": 25.0,
+            "y": 67.0,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "buzzer_seat_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 1.0
+      },
+      "inputs": [
+        "buzzer_seat_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "buzzer_seat",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "batt_seat",
+        "buzzer_seat_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "esp_pilots_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 3.0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 1.0,
+            "x": 23.5,
+            "y": -2.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.0,
+            "x": 23.5,
+            "y": -25.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.0,
+            "x": -23.5,
+            "y": -2.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.0,
+            "x": -23.5,
+            "y": -25.5,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "esp_pilots_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 4.5
+      },
+      "inputs": [
+        "esp_pilots_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "esp_pilots",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "buzzer_seat",
+        "esp_pilots_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "sd_pilots_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 3.0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 35.0,
+            "y": 45.0,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 35.0,
+            "y": 8.0,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 16.0,
+            "y": 45.0,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 16.0,
+            "y": 8.0,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "sd_pilots_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 4.5
+      },
+      "inputs": [
+        "sd_pilots_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "sd_pilots",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "esp_pilots",
+        "sd_pilots_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "oled_pilots_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 5.5,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 11.75,
+            "y": 80.25,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 11.75,
+            "y": 56.75,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": -11.75,
+            "y": 80.25,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": -11.75,
+            "y": 56.75,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "oled_pilots_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 4.5
+      },
+      "inputs": [
+        "oled_pilots_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "oled_pilots",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "sd_pilots",
+        "oled_pilots_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "buzzer_pilots_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 7.0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 25.0,
+            "y": 56.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 25.0,
+            "y": 77.5,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "buzzer_pilots_tool",
+      "op": "extrude",
+      "params": {
+        "amount": 5.5
+      },
+      "inputs": [
+        "buzzer_pilots_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "buzzer_pilots",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "oled_pilots",
+        "buzzer_pilots_tool"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "strap_pilots_sketch",
       "op": "sketch",
       "params": {
         "plane": "XY",
         "offset": 5.0,
         "entities": [
           {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              27.0,
-              -25.0
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  27.0,
-                  -1.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  26.121,
-                  1.121
-                ],
-                "to": [
-                  24.0,
-                  2.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -24.0,
-                  2.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -26.121,
-                  1.121
-                ],
-                "to": [
-                  -27.0,
-                  -1.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -27.0,
-                  -25.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -26.121,
-                  -27.121
-                ],
-                "to": [
-                  -24.0,
-                  -28.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  24.0,
-                  -28.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  26.121,
-                  -27.121
-                ],
-                "to": [
-                  27.0,
-                  -25.0
-                ]
-              }
-            ]
+            "kind": "circle",
+            "r": 1.25,
+            "x": -14.0,
+            "y": 6.0,
+            "mode": "add"
           },
           {
             "kind": "circle",
-            "r": 6.0,
-            "x": -27.0,
-            "y": -13.0,
+            "r": 1.25,
+            "x": -14.0,
+            "y": 40.0,
             "mode": "add"
           }
         ]
@@ -749,281 +2300,23 @@
       "suppressed": false
     },
     {
-      "id": "esp_slot_tool",
+      "id": "strap_pilots_tool",
       "op": "extrude",
       "params": {
-        "amount": 8.0
+        "amount": 4.5
       },
       "inputs": [
-        "esp_slot_sketch"
+        "strap_pilots_sketch"
       ],
       "suppressed": false
     },
     {
-      "id": "esp_slot",
+      "id": "strap_pilots",
       "op": "cut",
       "params": {},
       "inputs": [
-        "tail_notch",
-        "esp_slot_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "pins_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 2.0,
-        "entities": [
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              20.0,
-              -1.5
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  20.0,
-                  0.5
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  19.561,
-                  1.561
-                ],
-                "to": [
-                  18.5,
-                  2.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -18.5,
-                  2.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -19.561,
-                  1.561
-                ],
-                "to": [
-                  -20.0,
-                  0.5
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -20.0,
-                  -1.5
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -19.561,
-                  -2.561
-                ],
-                "to": [
-                  -18.5,
-                  -3.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  18.5,
-                  -3.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  19.561,
-                  -2.561
-                ],
-                "to": [
-                  20.0,
-                  -1.5
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              20.0,
-              -26.5
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  20.0,
-                  -24.5
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  19.561,
-                  -23.439
-                ],
-                "to": [
-                  18.5,
-                  -23.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -18.5,
-                  -23.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -19.561,
-                  -23.439
-                ],
-                "to": [
-                  -20.0,
-                  -24.5
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -20.0,
-                  -26.5
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -19.561,
-                  -27.561
-                ],
-                "to": [
-                  -18.5,
-                  -28.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  18.5,
-                  -28.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  19.561,
-                  -27.561
-                ],
-                "to": [
-                  20.0,
-                  -26.5
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "pins_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 4.0
-      },
-      "inputs": [
-        "pins_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "pin_trenches",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "esp_slot",
-        "pins_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "esp_screw_pilots_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 2.0,
-        "entities": [
-          {
-            "kind": "circle",
-            "r": 1.0,
-            "x": 23.5,
-            "y": -1.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.0,
-            "x": 23.5,
-            "y": -24.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.0,
-            "x": -23.5,
-            "y": -1.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.0,
-            "x": -23.5,
-            "y": -24.5,
-            "mode": "add"
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "esp_screw_pilots_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 4.0
-      },
-      "inputs": [
-        "esp_screw_pilots_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "esp_screw_pilots",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "pin_trenches",
-        "esp_screw_pilots_tool"
+        "buzzer_pilots",
+        "strap_pilots_tool"
       ],
       "suppressed": false
     },
@@ -1039,79 +2332,79 @@
             "mode": "add",
             "start": [
               49.0,
-              -18.0
+              -19.0
             ],
             "segments": [
               {
                 "type": "line",
                 "to": [
                   49.0,
-                  -8.0
+                  -9.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
                   48.414,
-                  -6.586
+                  -7.586
                 ],
                 "to": [
                   47.0,
-                  -6.0
+                  -7.0
                 ]
               },
               {
                 "type": "line",
                 "to": [
                   28.0,
-                  -6.0
+                  -7.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
                   26.586,
-                  -6.586
+                  -7.586
                 ],
                 "to": [
                   26.0,
-                  -8.0
+                  -9.0
                 ]
               },
               {
                 "type": "line",
                 "to": [
                   26.0,
-                  -18.0
+                  -19.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
                   26.586,
-                  -19.414
+                  -20.414
                 ],
                 "to": [
                   28.0,
-                  -20.0
+                  -21.0
                 ]
               },
               {
                 "type": "line",
                 "to": [
                   47.0,
-                  -20.0
+                  -21.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
                   48.414,
-                  -19.414
+                  -20.414
                 ],
                 "to": [
                   49.0,
-                  -18.0
+                  -19.0
                 ]
               }
             ]
@@ -1137,712 +2430,8 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "esp_screw_pilots",
-        "usb_gap_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "battery_bay_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 2.5,
-        "entities": [
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              11.0,
-              11.0
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  11.0,
-                  31.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  9.828,
-                  33.828
-                ],
-                "to": [
-                  7.0,
-                  35.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -35.0,
-                  35.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -37.828,
-                  33.828
-                ],
-                "to": [
-                  -39.0,
-                  31.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -39.0,
-                  11.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -37.828,
-                  8.172
-                ],
-                "to": [
-                  -35.0,
-                  7.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  7.0,
-                  7.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  9.828,
-                  8.172
-                ],
-                "to": [
-                  11.0,
-                  11.0
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "battery_bay_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 10.5
-      },
-      "inputs": [
-        "battery_bay_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "battery_bay",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "usb_gap",
-        "battery_bay_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "strap_pilots_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 7.0,
-        "entities": [
-          {
-            "kind": "circle",
-            "r": 1.25,
-            "x": -14.0,
-            "y": 4.5,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 1.25,
-            "x": -14.0,
-            "y": 38.0,
-            "mode": "add"
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "strap_pilots_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 6.0
-      },
-      "inputs": [
-        "strap_pilots_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "strap_pilots",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "battery_bay",
-        "strap_pilots_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "sd_pocket_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 5.0,
-        "entities": [
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              39.0,
-              10.0
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  39.0,
-                  47.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  38.121,
-                  49.121
-                ],
-                "to": [
-                  36.0,
-                  50.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  17.0,
-                  50.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  14.879,
-                  49.121
-                ],
-                "to": [
-                  14.0,
-                  47.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  14.0,
-                  10.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  14.879,
-                  7.879
-                ],
-                "to": [
-                  17.0,
-                  7.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  36.0,
-                  7.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  38.121,
-                  7.879
-                ],
-                "to": [
-                  39.0,
-                  10.0
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "circle",
-            "r": 6.0,
-            "x": 26.5,
-            "y": 51.5,
-            "mode": "add"
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "sd_pocket_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 8.0
-      },
-      "inputs": [
-        "sd_pocket_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "sd_pocket",
-      "op": "cut",
-      "params": {},
-      "inputs": [
         "strap_pilots",
-        "sd_pocket_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "sd_screw_pilots_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 2.0,
-        "entities": [
-          {
-            "kind": "circle",
-            "r": 0.8,
-            "x": 36.0,
-            "y": 47.0,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 0.8,
-            "x": 36.0,
-            "y": 10.0,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 0.8,
-            "x": 17.0,
-            "y": 47.0,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 0.8,
-            "x": 17.0,
-            "y": 10.0,
-            "mode": "add"
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "sd_screw_pilots_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 4.0
-      },
-      "inputs": [
-        "sd_screw_pilots_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "sd_screw_pilots",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "sd_pocket",
-        "sd_screw_pilots_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "buzzer_pocket_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 2.5,
-        "entities": [
-          {
-            "kind": "circle",
-            "r": 6.5,
-            "x": 26.5,
-            "y": 70.0,
-            "mode": "add"
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "buzzer_pocket_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 10.5
-      },
-      "inputs": [
-        "buzzer_pocket_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "buzzer_pocket",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "sd_screw_pilots",
-        "buzzer_pocket_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "oled_recess_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 9.5,
-        "entities": [
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              14.5,
-              56.0
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  14.5,
-                  81.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  13.914,
-                  82.414
-                ],
-                "to": [
-                  12.5,
-                  83.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -12.5,
-                  83.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -13.914,
-                  82.414
-                ],
-                "to": [
-                  -14.5,
-                  81.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -14.5,
-                  56.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -13.914,
-                  54.586
-                ],
-                "to": [
-                  -12.5,
-                  54.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  12.5,
-                  54.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  13.914,
-                  54.586
-                ],
-                "to": [
-                  14.5,
-                  56.0
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "oled_recess_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 3.5
-      },
-      "inputs": [
-        "oled_recess_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "oled_recess",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "buzzer_pocket",
-        "oled_recess_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "oled_wire_pit_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 4.0,
-        "entities": [
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              12.5,
-              58.0
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  12.5,
-                  79.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  11.914,
-                  80.414
-                ],
-                "to": [
-                  10.5,
-                  81.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -10.5,
-                  81.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -11.914,
-                  80.414
-                ],
-                "to": [
-                  -12.5,
-                  79.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -12.5,
-                  58.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -11.914,
-                  56.586
-                ],
-                "to": [
-                  -10.5,
-                  56.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  10.5,
-                  56.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  11.914,
-                  56.586
-                ],
-                "to": [
-                  12.5,
-                  58.0
-                ]
-              }
-            ]
-          },
-          {
-            "kind": "circle",
-            "r": 2.75,
-            "x": 11.75,
-            "y": 80.25,
-            "mode": "subtract"
-          },
-          {
-            "kind": "circle",
-            "r": 2.75,
-            "x": 11.75,
-            "y": 56.75,
-            "mode": "subtract"
-          },
-          {
-            "kind": "circle",
-            "r": 2.75,
-            "x": -11.75,
-            "y": 80.25,
-            "mode": "subtract"
-          },
-          {
-            "kind": "circle",
-            "r": 2.75,
-            "x": -11.75,
-            "y": 56.75,
-            "mode": "subtract"
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "oled_wire_pit_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 9.0
-      },
-      "inputs": [
-        "oled_wire_pit_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "oled_wire_pit",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "oled_recess",
-        "oled_wire_pit_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "oled_screw_pilots_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 5.5,
-        "entities": [
-          {
-            "kind": "circle",
-            "r": 0.8,
-            "x": 11.75,
-            "y": 80.25,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 0.8,
-            "x": 11.75,
-            "y": 56.75,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 0.8,
-            "x": -11.75,
-            "y": 80.25,
-            "mode": "add"
-          },
-          {
-            "kind": "circle",
-            "r": 0.8,
-            "x": -11.75,
-            "y": 56.75,
-            "mode": "add"
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "oled_screw_pilots_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 5.0
-      },
-      "inputs": [
-        "oled_screw_pilots_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "oled_screw_pilots",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "oled_wire_pit",
-        "oled_screw_pilots_tool"
+        "usb_gap_tool"
       ],
       "suppressed": false
     },
@@ -2215,7 +2804,7 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "oled_screw_pilots",
+        "usb_gap",
         "ring_band"
       ],
       "suppressed": false
