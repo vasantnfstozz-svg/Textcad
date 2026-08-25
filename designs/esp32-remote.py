@@ -50,7 +50,7 @@ RIM_R = 1.2                    # meets the walls / outer top-rim fillet
 # MakerMind RBS11089: rigid 3x4 telephone keypad, 70 x 52 x 10, hard keys.
 # Recess only 2 deep (platform stays solid), body rides 8 proud + keys.
 KEY_W, KEY_L = 52.0, 70.0
-KEY_HOLE_P, KEY_HOLE_R = (47.0, 65.0), 0.8   # M2 pilots — VERIFY vs part
+KEY_HOLE_P, KEY_HOLE_R = (47.0, 65.0), 1.0   # 2mm holes — VERIFY vs part
 KEYPAD = (-(KEY_W + 1) / 2, (KEY_W + 1) / 2, -93.0, -93.0 + KEY_L + 1,
           10.0, 3.0)                              # 53 x 71, 2.0 deep
 KEY_C = (0.0, (KEYPAD[2] + KEYPAD[3]) / 2)
@@ -62,7 +62,7 @@ NOTCH = (-9.0, 9.0, -25.0, -16.0, 6.0, 2.0)       # rib pass-through
 ESP_C = (0.0, -5.0)                               # board center
 ESP_HOLE_P, ESP_PIL_R, ESP_TOP = (47.0, 23.0), 3.5, 7.0
 ESP_HOLE_R = 1.0                                  # M2.5 pilot
-USB = (26.0, 49.0, -12.0, 2.0, 5.5, 2.0)          # breaches the right wall
+USB = (26.0, 49.0, -12.0, 2.0, 5.5, 4.0)          # breaches the wall, r4 curves
 
 BATT_C = (-14.0, 32.0)                            # seat center
 BATT_SEAT = (-39.5, 11.5, 17.5, 46.5, 2.5, 3.0)   # 51 x 29, 0.5 deep
@@ -99,14 +99,16 @@ LORA_PIL_R, LORA_HOLE_R = 3.25, 0.8               # M2 pilot
 C_ESP, C_OLED = (52.0, 28.0), (27.3, 27.3)
 C_BATT, C_SD, C_BUZZ = (48.5, 26.5, 17.5), (42.0, 24.0), 12.0
 
-# visible footprint "slot boxes", 0.5 deep. SMOOTH RULE (user, v5.1): a
-# collar circle must never cross a box edge — each box fully contains its
-# pillars + collar discs (boundary = one rounded rect, collars = clean
-# circles), or the pillars stand fully outside it (LoRa, buzzer).
-ESP_FOOT = (-28.5, 28.5, -21.5, 11.5, 2.5, 6.0)   # 57 x 33
-OLED_FOOT = (-15.6, 15.6, 61.9, 93.1, 2.5, 4.5)   # 31.2 sq
-SD_FOOT = (12.5, 38.1, 13.2, 57.8, 2.5, 4.0)      # 25.6 x 44.6
-COLLAR_ESP, COLLAR_OLED, COLLAR_SD = 0.75, 0.5, 0.5
+# visible footprint "slot boxes", 0.5 deep, at COMPONENT size. CURVE RULE
+# (user, v5.2): the box must never wrap BEHIND a pillar — where a pillar
+# meets the outline, the boundary curves around it as a concave scallop
+# (subtract circle poking past the edges; junction corners are convex
+# material tips, which a cutter follows fine). Pillars outside their box
+# (LoRa, buzzer) stay fully clear of it.
+ESP_FOOT = (-26.5, 26.5, -19.5, 9.5, 2.5, 2.0)    # 53 x 29
+OLED_FOOT = (-14.25, 14.25, 63.25, 91.75, 2.5, 2.0)   # 28.5 sq
+SD_FOOT = (12.8, 37.8, 14.0, 57.0, 2.5, 2.0)      # 25 x 43
+SCAL_ESP, SCAL_OLED, SCAL_SD = 5.0, 4.25, 4.5     # scallop radii at pillars
 
 ESP_HOLES = [(ESP_C[0] + sx * ESP_HOLE_P[0] / 2,
               ESP_C[1] + sy * ESP_HOLE_P[1] / 2)
@@ -309,26 +311,26 @@ for bx, by in LORA_PIL:
     assert dy - LORA_PIL_R - 0.5 >= 0.3, "lora pillar crosses its slot box"
 
 
-def rrect_clear(foot, px_, py_):
-    """Clearance from an inside point to a rounded-rect boundary (SDF)."""
-    x0, x1, y0, y1, _, r = foot
-    cx_, cy_ = (x0 + x1) / 2, (y0 + y1) / 2
-    qx = abs(px_ - cx_) - ((x1 - x0) / 2 - r)
-    qy = abs(py_ - cy_) - ((y1 - y0) / 2 - r)
-    return r - math.hypot(max(qx, 0), max(qy, 0))
-
-
-def collar_inside(foot, holes, pil_r, collar):
-    """SMOOTH RULE: every collar disc fully inside its slot box."""
+def scallop_ok(foot, holes, pil_r, scal_r):
+    """CURVE RULE: each pillar scallop keeps a cutter moat around the
+    pillar, pokes cleanly PAST both nearby box edges (nothing wraps behind
+    the pillar), and swallows the nearest sharp box corner (no slivers)."""
+    x0, x1, y0, y1, *_ = foot
+    assert scal_r >= pil_r + 1.2, "scallop moat too tight for a cutter"
     for hx, hy in holes:
-        cl = rrect_clear(foot, hx, hy)
-        assert cl >= pil_r + collar + 0.15, \
-            f"collar ({hx},{hy}) crosses the box boundary (clear {cl:.2f})"
+        dx = min(hx - x0, x1 - hx)
+        dy = min(hy - y0, y1 - hy)
+        assert scal_r >= dx + 0.4, f"scallop ({hx},{hy}) traps an x-strip"
+        assert scal_r >= dy + 0.4, f"scallop ({hx},{hy}) traps a y-strip"
+        ncx = x0 if hx - x0 < x1 - hx else x1
+        ncy = y0 if hy - y0 < y1 - hy else y1
+        assert math.hypot(hx - ncx, hy - ncy) <= scal_r - 0.2, \
+            f"scallop ({hx},{hy}) leaves a corner sliver"
 
 
-collar_inside(ESP_FOOT, ESP_HOLES, ESP_PIL_R, COLLAR_ESP)
-collar_inside(OLED_FOOT, OLED_HOLES, OLED_PIL_R, COLLAR_OLED)
-collar_inside(SD_FOOT, SD_HOLES, SD_PIL_R, COLLAR_SD)
+scallop_ok(ESP_FOOT, ESP_HOLES, ESP_PIL_R, SCAL_ESP)
+scallop_ok(OLED_FOOT, OLED_HOLES, OLED_PIL_R, SCAL_OLED)
+scallop_ok(SD_FOOT, SD_HOLES, SD_PIL_R, SCAL_SD)
 assert USB[1] > HEAD2 + 1.5, "usb gap must breach the wall"
 
 # keypad: screw pilots inside the recess, clear of the wire trench
@@ -437,13 +439,13 @@ pocket("buzzer_seat", 2.5, [circ(BUZZ[0], BUZZ[1], BUZZ[2])], top=CAV_Z + 0.5)
 # ---- footprint slot boxes: every component outline visible in the block,
 # 0.5 deep around the pillars (subtracted collars keep the bases intact)
 pocket("esp_foot", ESP_FOOT[4],
-       [rr(ESP_FOOT)] + [circ(x, y, ESP_PIL_R + COLLAR_ESP, "subtract")
+       [rr(ESP_FOOT)] + [circ(x, y, SCAL_ESP, "subtract")
                          for x, y in ESP_HOLES], top=CAV_Z + 0.5)
 pocket("oled_foot", OLED_FOOT[4],
-       [rr(OLED_FOOT)] + [circ(x, y, OLED_PIL_R + COLLAR_OLED, "subtract")
+       [rr(OLED_FOOT)] + [circ(x, y, SCAL_OLED, "subtract")
                           for x, y in OLED_HOLES], top=CAV_Z + 0.5)
 pocket("sd_foot", SD_FOOT[4],
-       [rr(SD_FOOT)] + [circ(x, y, SD_PIL_R + COLLAR_SD, "subtract")
+       [rr(SD_FOOT)] + [circ(x, y, SCAL_SD, "subtract")
                         for x, y in SD_HOLES], top=CAV_Z + 0.5)
 # LoRa clamp pillars stand fully OUTSIDE this box -> plain smooth rrect
 pocket("lora_foot", LORA_FOOT[4], [rr(LORA_FOOT)], top=CAV_Z + 0.5)
@@ -546,6 +548,10 @@ rbox((BATT_SEAT[0], BATT_SEAT[1], BATT_SEAT[2], BATT_SEAT[3], BATT_SEAT[5]),
 dot(BUZZ[0], BUZZ[1], BUZZ[2], C_SEAT)
 for t in (ESP_FOOT, OLED_FOOT, SD_FOOT, LORA_FOOT):
     rbox((t[0], t[1], t[2], t[3], t[5]), C_SEAT)
+for pts, r in ((ESP_HOLES, SCAL_ESP), (OLED_HOLES, SCAL_OLED),
+               (SD_HOLES, SCAL_SD)):
+    for hx, hy in pts:
+        dot(hx, hy, r, C_CAV)
 # islands
 for t in BATT_RIMS:
     rbox(t, C_ISL)
@@ -594,8 +600,10 @@ print("slot boxes: 0.5-deep footprint outlines in the cavity floor for "
 print(f"machinable corners: cavity clip corners r{CLIP_R}, outer top rim "
       f"fillet r{RIM_R}, SD wall tabs removed (free pillars, 2mm gaps), "
       "every pocket corner r>=1.5")
-print("smooth slot boxes: collar discs fully inside their boxes (no "
-      "circle/edge crossings); LoRa + buzzer pillars fully outside theirs")
+print("curved slot boxes: boundaries scallop AROUND the pillars (nothing "
+      "wraps behind them; junction tips convex = millable); LoRa + buzzer "
+      f"pillars fully outside their boxes; usb gap r{USB[5]}, keypad holes "
+      f"D{2*KEY_HOLE_R}")
 print(f"keypad: MakerMind RBS11089 3x4 rigid {KEY_W}x{KEY_L}x10, recess "
       f"2.0 deep + 4x M2 pilots pitch {KEY_HOLE_P} (VERIFY) | LoRa Ra-02 "
       f"{C_LORA} on seat + 2x D{2*LORA_PIL_R} M2 clamp pillars (VERIFY)")
