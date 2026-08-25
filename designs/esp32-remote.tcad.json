@@ -177,25 +177,13 @@
       "suppressed": false
     },
     {
-      "id": "body_raw",
+      "id": "body",
       "op": "extrude",
       "params": {
         "amount": 12.0
       },
       "inputs": [
         "outline_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "body",
-      "op": "fillet",
-      "params": {
-        "radius": 1.2,
-        "edges": "top"
-      },
-      "inputs": [
-        "body_raw"
       ],
       "suppressed": false
     },
@@ -224,25 +212,39 @@
               {
                 "type": "arc",
                 "via": [
-                  25.621,
+                  27.379,
                   -22.879
                 ],
                 "to": [
-                  23.5,
+                  29.5,
                   -22.0
                 ]
               },
               {
                 "type": "line",
                 "to": [
-                  -23.5,
+                  29.5,
+                  -18.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -29.5,
+                  -18.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -29.5,
                   -22.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  -25.621,
+                  -27.379,
                   -22.879
                 ],
                 "to": [
@@ -394,36 +396,50 @@
                 "type": "line",
                 "to": [
                   9.0,
-                  -27.0
+                  -26.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  8.121,
-                  -24.879
+                  10.172,
+                  -23.172
                 ],
                 "to": [
-                  6.0,
-                  -24.0
+                  13.0,
+                  -22.0
                 ]
               },
               {
                 "type": "line",
                 "to": [
-                  -6.0,
-                  -24.0
+                  13.0,
+                  -18.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -13.0,
+                  -18.0
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -13.0,
+                  -22.0
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  -8.121,
-                  -24.879
+                  -10.172,
+                  -23.172
                 ],
                 "to": [
                   -9.0,
-                  -27.0
+                  -26.0
                 ]
               },
               {
@@ -602,121 +618,6 @@
       "inputs": [
         "tail_trench",
         "tail_fold_scoop_tool"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "tail_notch_sketch",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 6.0,
-        "entities": [
-          {
-            "kind": "path",
-            "mode": "add",
-            "start": [
-              9.0,
-              -23.0
-            ],
-            "segments": [
-              {
-                "type": "line",
-                "to": [
-                  9.0,
-                  -18.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  8.414,
-                  -16.586
-                ],
-                "to": [
-                  7.0,
-                  -16.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -7.0,
-                  -16.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -8.414,
-                  -16.586
-                ],
-                "to": [
-                  -9.0,
-                  -18.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  -9.0,
-                  -23.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  -8.414,
-                  -24.414
-                ],
-                "to": [
-                  -7.0,
-                  -25.0
-                ]
-              },
-              {
-                "type": "line",
-                "to": [
-                  7.0,
-                  -25.0
-                ]
-              },
-              {
-                "type": "arc",
-                "via": [
-                  8.414,
-                  -24.414
-                ],
-                "to": [
-                  9.0,
-                  -23.0
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "tail_notch_tool",
-      "op": "extrude",
-      "params": {
-        "amount": 7.0
-      },
-      "inputs": [
-        "tail_notch_sketch"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "tail_notch",
-      "op": "cut",
-      "params": {},
-      "inputs": [
-        "tail_fold_scoop",
-        "tail_notch_tool"
       ],
       "suppressed": false
     },
@@ -1235,7 +1136,7 @@
       "op": "cut",
       "params": {},
       "inputs": [
-        "tail_notch",
+        "tail_fold_scoop",
         "cav_neg"
       ],
       "suppressed": false
@@ -1631,80 +1532,80 @@
             "kind": "path",
             "mode": "add",
             "start": [
-              11.5,
-              20.5
+              10.8,
+              21.4
             ],
             "segments": [
               {
                 "type": "line",
                 "to": [
-                  11.5,
-                  43.5
+                  10.8,
+                  42.6
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  10.621,
-                  45.621
+                  9.921,
+                  44.721
                 ],
                 "to": [
-                  8.5,
-                  46.5
+                  7.8,
+                  45.6
                 ]
               },
               {
                 "type": "line",
                 "to": [
-                  -36.5,
-                  46.5
+                  -35.4,
+                  45.6
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  -38.621,
-                  45.621
+                  -37.521,
+                  44.721
                 ],
                 "to": [
-                  -39.5,
-                  43.5
+                  -38.4,
+                  42.6
                 ]
               },
               {
                 "type": "line",
                 "to": [
-                  -39.5,
-                  20.5
+                  -38.4,
+                  21.4
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  -38.621,
-                  18.379
+                  -37.521,
+                  19.279
                 ],
                 "to": [
-                  -36.5,
-                  17.5
+                  -35.4,
+                  18.4
                 ]
               },
               {
                 "type": "line",
                 "to": [
-                  8.5,
-                  17.5
+                  7.8,
+                  18.4
                 ]
               },
               {
                 "type": "arc",
                 "via": [
-                  10.621,
-                  18.379
+                  9.921,
+                  19.279
                 ],
                 "to": [
-                  11.5,
-                  20.5
+                  10.8,
+                  21.4
                 ]
               }
             ]

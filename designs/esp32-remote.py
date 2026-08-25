@@ -44,7 +44,11 @@ RING_D1, RING_D2, RING_Z = 3.0, 4.2, 11.4    # pinstripe groove, 0.6 deep
 CAV_D, CAV_Z = 5.6, 3.0        # wall thickness / cavity floor (9 deep)
 CAV_Y0 = -22.0                 # cavity starts where the keypad platform ends
 CLIP_R = 5.0                   # cutter fillet where the straight cavity edge
-RIM_R = 1.2                    # meets the walls / outer top-rim fillet
+                               # meets the walls
+# v6: NO outer top-rim fillet — the user has no chamfer/ball tooling for it,
+# so the outer top corners stay SQUARE (the vertical corners are milled).
+OPEN_OVER = 4.0                # how far a pocket that opens into the cavity
+                               # over-runs the wall line (kills coincidence)
 
 # ---------------------------------------------------------------- keypad
 # MakerMind RBS11089: rigid 3x4 telephone keypad, 70 x 52 x 10, hard keys.
@@ -54,9 +58,15 @@ KEY_HOLE_P, KEY_HOLE_R = (47.0, 65.0), 1.0   # 2mm holes — VERIFY vs part
 KEYPAD = (-(KEY_W + 1) / 2, (KEY_W + 1) / 2, -93.0, -93.0 + KEY_L + 1,
           10.0, 3.0)                              # 53 x 71, 2.0 deep
 KEY_C = (0.0, (KEYPAD[2] + KEYPAD[3]) / 2)
-TRENCH = (-9.0, 9.0, -91.0, -24.0, 7.8, 3.0)      # wire bed under the pad
+TRENCH = (-9.0, 9.0, -91.0, CAV_Y0, 7.8, 3.0)     # wire bed under the pad
 SCOOP_T = (-9.0, 9.0, -91.0, -83.0, 6.0, 2.0)     # solder-tail fold room
-NOTCH = (-9.0, 9.0, -25.0, -16.0, 6.0, 2.0)       # rib pass-through
+# v6 (user, "sharp edges in the keyboard start"): the recess and the wire
+# trench both END on the cavity wall line — their old rounded-rect corners
+# ran TANGENT to it, leaving zero-angle knife cusps, and the old rib notch
+# crossed it with 90-deg tips. Both now open into the cavity through convex
+# flare fillets, so the material flows wall -> arc -> cavity wall smoothly.
+KEY_FLARE, TR_FLARE = 3.0, 4.0
+# (the rib notch is gone: with the recess open to the cavity there is no rib)
 
 # ------------------------------------------------------- pillars & seats
 ESP_C = (0.0, -5.0)                               # board center
@@ -64,8 +74,11 @@ ESP_HOLE_P, ESP_PIL_R, ESP_TOP = (47.0, 23.0), 3.5, 7.0
 ESP_HOLE_R = 1.0                                  # M2.5 pilot
 USB = (26.0, 49.0, -12.0, 2.0, 5.5, 4.0)          # breaches the wall, r4 curves
 
-BATT_C = (-14.0, 32.0)                            # seat center
-BATT_SEAT = (-39.5, 11.5, 17.5, 46.5, 2.5, 3.0)   # 51 x 29, 0.5 deep
+BATT_C = (-13.8, 32.0)                            # seat center
+# v6: seat pulled 1mm off BOTH rims and 1mm inside the cavity wall — its
+# edges used to sit exactly ON the rim walls (tangent cusps in the 0.5 step)
+# and 0.1 OUTSIDE the cavity wall (a sliver undercut at the wall base)
+BATT_SEAT = (-38.4, 10.8, 18.4, 45.6, 2.5, 3.0)   # 49.2 x 27.2, 0.5 deep
 BATT_RIMS = [(-36.0, 8.0, 12.5, 17.5, 2.0),       # x0,x1,y0,y1,r — top z9
              (-36.0, 8.0, 46.5, 51.5, 2.0)]
 RIM_TOP = 9.0
@@ -186,20 +199,17 @@ def offset_verts(verts, d):
     return out
 
 
-GEO = _corner_geo(VERTS, RADII)
-
-
-def sdf(x, y):
-    """Clearance from (x, y) to the rounded outline (positive = inside)."""
+def _clear(verts, geo, x, y):
+    """Clearance from (x, y) to a rounded CONVEX CCW polygon (+ = inside)."""
     cl = math.inf
-    n = len(VERTS)
+    n = len(verts)
     for i in range(n):
-        a, b = VERTS[i], VERTS[(i + 1) % n]
+        a, b = verts[i], verts[(i + 1) % n]
         dx, dy = b[0] - a[0], b[1] - a[1]
         ll = math.hypot(dx, dy)
         nx, ny = dy / ll, -dx / ll
         cl = min(cl, nx * (a[0] - x) + ny * (a[1] - y))
-    for g in GEO:
+    for g in geo:
         # nearest boundary is this corner's arc only when the direction from
         # the arc center lies inside the arc's CCW angular span (< 180 deg)
         px_, py_ = x - g["c"][0], y - g["c"][1]
@@ -208,6 +218,14 @@ def sdf(x, y):
         if ix * py_ - iy * px_ >= 0 and px_ * oy - py_ * ox >= 0:
             cl = min(cl, g["r"] - math.hypot(px_, py_))
     return cl
+
+
+GEO = _corner_geo(VERTS, RADII)
+
+
+def sdf(x, y):
+    """Clearance from (x, y) to the rounded outline (positive = inside)."""
+    return _clear(VERTS, GEO, x, y)
 
 
 def rounded_path_e(verts, r):
@@ -231,6 +249,15 @@ def cavity_geo():
     return verts, radii
 
 
+CAV_V, CAV_R = cavity_geo()
+CAV_GEO = _corner_geo(CAV_V, CAV_R)
+
+
+def cav_clear(x, y):
+    """Clearance from (x, y) to the cavity boundary (positive = inside)."""
+    return _clear(CAV_V, CAV_GEO, x, y)
+
+
 def rrect(x0, x1, y0, y1, r):
     return rounded_path_e([(x1, y0), (x1, y1), (x0, y1), (x0, y0)], r)
 
@@ -246,6 +273,79 @@ def _arc_via(c, r, p_from, p_to, cw):
     sweep = (a0 - a1) % (2 * math.pi) if cw else (a1 - a0) % (2 * math.pi)
     mid = a0 - sweep / 2 if cw else a0 + sweep / 2
     return (c[0] + r * math.cos(mid), c[1] + r * math.sin(mid))
+
+
+def path_from_segs(start, segs):
+    """Segment list -> sketch path entity. seg = ('line', to) or
+    ('arc', centre, radius, from, to, clockwise)."""
+    def q3(p):
+        return [round(p[0], 3), round(p[1], 3)]
+    out = []
+    for s in segs:
+        if s[0] == "line":
+            out.append({"type": "line", "to": q3(s[1])})
+        else:
+            _, c, r, p_from, p_to, cw = s
+            out.append({"type": "arc",
+                        "via": q3(_arc_via(c, r, p_from, p_to, cw)),
+                        "to": q3(p_to)})
+    return {"kind": "path", "mode": "add", "start": q3(start),
+            "segments": out}
+
+
+def sample_segs(start, segs, n=8):
+    """Polyline sample of a segment list (preview only)."""
+    pts = [start]
+    for s in segs:
+        if s[0] == "line":
+            pts.append(s[1])
+        else:
+            _, c, r, p_from, p_to, cw = s
+            a0 = math.atan2(p_from[1] - c[1], p_from[0] - c[0])
+            a1 = math.atan2(p_to[1] - c[1], p_to[0] - c[0])
+            sweep = ((a0 - a1) % (2 * math.pi) if cw
+                     else (a1 - a0) % (2 * math.pi))
+            for k in range(1, n + 1):
+                a = a0 - sweep * k / n if cw else a0 + sweep * k / n
+                pts.append((c[0] + r * math.cos(a), c[1] + r * math.sin(a)))
+    return pts
+
+
+def flared_path(x0, x1, y0, y_open, r_bot, fl, over=OPEN_OVER):
+    """A pocket whose NORTH end OPENS into the cavity at y_open. Its side
+    walls run into the cavity's south wall through convex `fl` fillets that
+    are TANGENT to that wall, so the remaining material flows side-wall ->
+    arc -> cavity-wall with no cusp and no 90-deg tip; the cut over-runs
+    `over` past the line so no coincident face is left behind. CCW."""
+    assert y_open - fl > y0 + r_bot + 1.0, "flare eats the whole side wall"
+    y_top = y_open + over
+    segs = [("line", (x1, y_open - fl)),
+            ("arc", (x1 + fl, y_open - fl), fl,
+             (x1, y_open - fl), (x1 + fl, y_open), True),
+            ("line", (x1 + fl, y_top)),
+            ("line", (x0 - fl, y_top)),
+            ("line", (x0 - fl, y_open)),
+            ("arc", (x0 - fl, y_open - fl), fl,
+             (x0 - fl, y_open), (x0, y_open - fl), True),
+            ("line", (x0, y0 + r_bot)),
+            ("arc", (x0 + r_bot, y0 + r_bot), r_bot,
+             (x0, y0 + r_bot), (x0 + r_bot, y0), False),
+            ("line", (x1 - r_bot, y0)),
+            ("arc", (x1 - r_bot, y0 + r_bot), r_bot,
+             (x1 - r_bot, y0), (x1, y0 + r_bot), False)]
+    return (x1, y0 + r_bot), segs
+
+
+def flare_ok(name, x0, x1, y_open, fl, over=OPEN_OVER):
+    """Both flare tangents must land on the STRAIGHT run of the cavity's
+    south wall (1mm spare), and the over-run must stay inside the cavity —
+    otherwise the flare would bite a fresh notch into the wall."""
+    for x in (x1 + fl, x0 - fl):
+        edge = 1.0 if x > 0 else -1.0
+        assert cav_clear(x + edge, y_open + 1.0) >= 0.99, \
+            f"{name} flare tangent x={x:.2f} runs off the cavity south edge"
+        assert cav_clear(x, y_open + over) >= 1.0, \
+            f"{name} over-run corner ({x:.2f},{y_open + over}) leaves cavity"
 
 
 def scalloped_box(foot, holes, scal_r, r_f=FILLET_TIP):
@@ -293,21 +393,7 @@ def scalloped_box(foot, holes, scal_r, r_f=FILLET_TIP):
 
     parts = [corner(1, -1), corner(1, 1), corner(-1, 1), corner(-1, -1)]
     start = parts[-1][1]        # BL exit foot on the bottom edge
-    segs = [s for part, _ in parts for s in part]
-
-    def q3(p):
-        return [round(p[0], 3), round(p[1], 3)]
-    out = []
-    for s in segs:
-        if s[0] == "line":
-            out.append({"type": "line", "to": q3(s[1])})
-        else:
-            _, c, r, p_from, p_to, cw = s
-            out.append({"type": "arc",
-                        "via": q3(_arc_via(c, r, p_from, p_to, cw)),
-                        "to": q3(p_to)})
-    return {"kind": "path", "mode": "add", "start": q3(start),
-            "segments": out}
+    return path_from_segs(start, [s for part, _ in parts for s in part])
 
 
 # ------------------------------------------------------------- sanity gates
@@ -335,7 +421,11 @@ for cx_, cy_ in ((KEYPAD[0], KEYPAD[2]), (KEYPAD[0], KEYPAD[3]),
     assert sdf(cx_, cy_) >= WALL_MIN, f"keypad corner ({cx_},{cy_})"
 for x0, x1, y0, y1, *_ in (BATT_SEAT,):
     for cx_, cy_ in ((x0, y0), (x0, y1), (x1, y0), (x1, y1)):
-        assert sdf(cx_, cy_) >= WALL_MIN, f"batt seat corner ({cx_},{cy_})"
+        assert sdf(cx_, cy_) >= CAV_D + 0.8, \
+            f"batt seat corner ({cx_},{cy_}) undercuts the cavity wall"
+# the 0.5-deep seat must not touch the rim islands (tangent cusps there)
+assert BATT_SEAT[2] - BATT_RIMS[0][3] >= 0.8, "batt seat kisses the south rim"
+assert BATT_RIMS[1][2] - BATT_SEAT[3] >= 0.8, "batt seat kisses the north rim"
 
 # islands: inside the cavity (edge >= CAV_D + 2 from silhouette) or
 # deliberately fused into the wall (edge reaches past the wall inner face)
@@ -406,6 +496,15 @@ scallop_ok(OLED_FOOT, OLED_HOLES, OLED_PIL_R, SCAL_OLED)
 scallop_ok(SD_FOOT, SD_HOLES, SD_PIL_R, SCAL_SD)
 assert USB[1] > HEAD2 + 1.5, "usb gap must breach the wall"
 
+# the keypad recess and the wire trench END on the cavity wall line, so
+# their flares must be tangent to its straight run (no cusp, no new notch)
+assert KEYPAD[3] == CAV_Y0, "keypad recess must end exactly on the cavity line"
+assert TRENCH[3] == CAV_Y0, "wire trench must end exactly on the cavity line"
+flare_ok("keypad", KEYPAD[0], KEYPAD[1], CAV_Y0, KEY_FLARE)
+flare_ok("trench", TRENCH[0], TRENCH[1], CAV_Y0, TR_FLARE)
+# the flares must not reach each other or the keypad screw pilots
+assert TRENCH[1] + TR_FLARE + 2.0 <= KEYPAD[1], "trench flare hits the recess wall"
+
 # keypad: screw pilots inside the recess, clear of the wire trench
 assert LORA_FOOT[1] - LORA_FOOT[0] >= C_LORA[0] + 0.5
 assert LORA_FOOT[3] - LORA_FOOT[2] >= C_LORA[1] + 0.5
@@ -443,9 +542,8 @@ def f(id, op, params, inputs=[]):
 
 f("outline_sketch", "sketch", {"plane": "XY", "offset": 0,
                                "entities": [outline_path(VERTS, RADII)]})
-f("body_raw", "extrude", {"amount": T}, ["outline_sketch"])
-# hand-comfort: round the outer top rim before any pocket is cut
-f("body", "fillet", {"radius": RIM_R, "edges": "top"}, ["body_raw"])
+# v6: no top-rim fillet — outer corners stay SQUARE (no chamfer tooling)
+f("body", "extrude", {"amount": T}, ["outline_sketch"])
 
 prev = "body"
 
@@ -464,13 +562,18 @@ def rr(p):
     return rrect(p[0], p[1], p[2], p[3], p[5] if len(p) > 5 else p[4])
 
 
-# keypad platform: shallow recess (rigid pad, keys ride proud), M2 pilots
-pocket("keypad_recess", KEYPAD[4], [rr(KEYPAD)])
+# keypad platform: shallow recess (rigid pad, keys ride proud), M2 pilots.
+# The recess and the wire trench OPEN into the cavity through tangent
+# flares (v6) — no cusps at the keyboard start, and no rib notch needed.
+KEY_PATH = flared_path(KEYPAD[0], KEYPAD[1], KEYPAD[2], CAV_Y0,
+                       KEYPAD[5], KEY_FLARE)
+TR_PATH = flared_path(TRENCH[0], TRENCH[1], TRENCH[2], CAV_Y0,
+                      TRENCH[5], TR_FLARE)
+pocket("keypad_recess", KEYPAD[4], [path_from_segs(*KEY_PATH)])
 pocket("keypad_pilots", KEYPAD[4] - 4.0,
        [circ(x, y, KEY_HOLE_R) for x, y in KEY_HOLES], top=KEYPAD[4] + 0.5)
-pocket("tail_trench", TRENCH[4], [rr(TRENCH)])
+pocket("tail_trench", TRENCH[4], [path_from_segs(*TR_PATH)])
 pocket("tail_fold_scoop", SCOOP_T[4], [rr(SCOOP_T)])
-pocket("tail_notch", NOTCH[4], [rr(NOTCH)])
 
 # ---- first cut: the weight-reduction cavity, islands left standing
 f("cav_sketch", "sketch", {"plane": "XY", "offset": CAV_Z,
@@ -607,11 +710,19 @@ def dot(cx, cy, r, col):
     d.ellipse([px((cx - r, cy + r)), px((cx + r, cy - r))], fill=col)
 
 
-# platform features
-rbox((KEYPAD[0], KEYPAD[1], KEYPAD[2], KEYPAD[3], KEYPAD[5]), C_ISL)
-rbox((TRENCH[0], TRENCH[1], TRENCH[2], TRENCH[3], TRENCH[5]), C_MID)
+# platform features — the flared cuts are clipped at the cavity line (their
+# over-run north of it lands in air the cavity already removed)
+def paste_clipped(color, pts):
+    m = Image.new("L", (W, HT), 0)
+    md_ = ImageDraw.Draw(m)
+    md_.polygon([px(p) for p in pts], fill=255)
+    md_.rectangle([px((-60, 130)), px((60, CAV_Y0))], fill=0)
+    img.paste(Image.new("RGB", (W, HT), color), (0, 0), m)
+
+
+paste_clipped(C_ISL, sample_segs(*KEY_PATH))
+paste_clipped(C_MID, sample_segs(*TR_PATH))
 rbox((SCOOP_T[0], SCOOP_T[1], SCOOP_T[2], SCOOP_T[3], SCOOP_T[5]), C_SEAT)
-rbox((NOTCH[0], NOTCH[1], NOTCH[2], NOTCH[3], NOTCH[5]), C_SEAT)
 # seats
 rbox((BATT_SEAT[0], BATT_SEAT[1], BATT_SEAT[2], BATT_SEAT[3], BATT_SEAT[5]),
      C_SEAT)
@@ -662,14 +773,16 @@ print(f"cavity: floor z{CAV_Z} ({T - CAV_Z} deep), wall {CAV_D}, from "
       f"y{CAV_Y0} up | keypad platform stays solid")
 print(f"pillars: ESP 4x D{2*ESP_PIL_R} top z{ESP_TOP} M2.5 | OLED 4x "
       f"D{2*OLED_PIL_R} top z{OLED_TOP} M2 | SD 4x D{2*SD_PIL_R} top "
-      f"z{SD_TOP} M2 (outer pair wall-tabbed) | buzzer 2x D{2*BUZZ_PIL_R} "
+      f"z{SD_TOP} M2 (free-standing) | buzzer 2x D{2*BUZZ_PIL_R} "
       f"top z{T} M2 clamp | battery seat 0.5 + rims z{RIM_TOP} M3 straps")
 print("slot boxes: 0.5-deep footprint outlines in the cavity floor for "
-      "ESP32 / OLED / microSD / LoRa (pillar collars kept) + battery + "
-      "buzzer seats")
-print(f"machinable corners: cavity clip corners r{CLIP_R}, outer top rim "
-      f"fillet r{RIM_R}, SD wall tabs removed (free pillars, 2mm gaps), "
-      "every pocket corner r>=1.5")
+      "ESP32 / OLED / microSD / LoRa + battery + buzzer seats")
+print(f"machinable corners: cavity clip corners r{CLIP_R}, keypad recess "
+      f"r{KEY_FLARE} + trench r{TR_FLARE} flares tangent into the cavity "
+      "wall (no cusp at the keyboard start, rib notch gone), battery seat "
+      "off the rims/wall, every pocket corner r>=1.5")
+print("outer top rim: SQUARE (no chamfer tooling) — only the vertical "
+      "corners are radiused, which the cutter does anyway")
 print("curved slot boxes: boundaries scallop AROUND the pillars, every "
       f"scallop/edge junction blended tangent r{FILLET_TIP} (no pointed "
       f"tips); LoRa + buzzer pillars fully outside their boxes; usb gap "
