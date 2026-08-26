@@ -11,6 +11,7 @@ import { cancelExtrude } from './extrude.js';
 
 const featDialog = () => document.getElementById('featDialog');
 const libDialog = () => document.getElementById('libDialog');
+const exDialog = () => document.getElementById('exDialog');
 const specDialog = () => document.getElementById('specDialog');
 
 /* ---------------- one command at a time ----------------
@@ -143,6 +144,77 @@ export async function actionUndo() {
   if (!doc.error) { loadMesh(true); bus.emit('msg', 'bot', '↶ Undone.'); }
 }
 
+/* The Examples gallery: the designs the user actually built in this tool,
+   grouped, with a thumbnail each. It replaces three hardcoded sample buttons —
+   a 97-feature satellite panel and a four-part pump answer "show me what this
+   does" far better than a demo flange, and they were previously buried in
+   File > Open among the scratch files. */
+export async function actionExamples() {
+  const dlg = exDialog();
+  const host = document.getElementById('exList');
+  host.innerHTML = '<div class="exempty">loading…</div>';
+  dlg.showModal();
+  let data;
+  try { data = await getJSON('/api/examples'); }
+  catch (e) { data = { groups: [] }; }
+  host.innerHTML = '';
+  if (!data.groups || !data.groups.length) {
+    host.innerHTML = '<div class="exempty">No examples catalogued yet ' +
+      '(designs/examples.json).</div>';
+    return;
+  }
+  for (const g of data.groups) {
+    const h = document.createElement('div');
+    h.className = 'exgroup';
+    h.innerHTML = `<b>${g.group}</b><span>${g.blurb || ''}</span>`;
+    host.appendChild(h);
+    const grid = document.createElement('div');
+    grid.className = 'exgrid';
+    for (const d of g.designs) grid.appendChild(exampleCard(d, dlg));
+    host.appendChild(grid);
+  }
+}
+
+function exampleCard(d, dlg) {
+  const card = document.createElement('button');
+  card.className = 'excard';
+  card.dataset.file = d.file;
+  card.title = `${d.description || d.title}\n\n${d.features} features`;
+  const thumb = document.createElement('div');
+  thumb.className = 'exthumb';
+  if (d.preview) {
+    const img = document.createElement('img');
+    img.src = `/api/design-preview/${d.file}`;
+    img.alt = d.title;
+    img.loading = 'lazy';
+    thumb.appendChild(img);
+  } else {
+    // nothing rendered on disk yet: say what the design is made of rather
+    // than showing an empty box
+    thumb.classList.add('noimg');
+    thumb.textContent = (d.ops && d.ops.length ? d.ops : ['design'])
+      .slice(0, 3).join(' · ');
+  }
+  const body = document.createElement('div');
+  body.className = 'exbody';
+  body.innerHTML =
+    `<div class="extitle">${d.title || d.file}</div>` +
+    `<div class="exdesc">${d.description || ''}</div>` +
+    `<div class="exmeta">${d.features} features</div>`;
+  card.append(thumb, body);
+  card.onclick = async () => {
+    dlg.close();
+    clearMesh();
+    const doc = await postJSON(`/api/open/${d.file}`, {},
+                              `opening ${d.title || d.file}…`);
+    if (doc.error) return;
+    await loadMesh(true, true);
+    bus.emit('msg', 'bot', `Opened "${doc.name}" — ` +
+      `${(doc.features || []).length} features. ${d.description || ''}`);
+  };
+  return card;
+}
+
 export async function loadSample(name) {
   const doc = await postJSON('/api/sample/' + name, {},
     name === 'compressor' ? 'building compressor (slow)…' : 'building…');
@@ -245,6 +317,7 @@ export function initDialogs() {
   };
 
   document.getElementById('libClose').onclick = () => libDialog().close();
+  document.getElementById('exClose').onclick = () => exDialog().close();
 
   document.getElementById('specForm').onsubmit = async e => {
     if (e.submitter && e.submitter.value === 'cancel') return;

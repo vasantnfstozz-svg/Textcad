@@ -304,6 +304,38 @@ export function openExtrudeEdit(fid) {
   placeArrow();
   setupGhost();
   setExtrudeArrowAmount(original.flip ? -original.amount : original.amount);
+  isolateFor(f.id).then(() => loadMesh());   // downstream waits for OK/Cancel
+}
+
+/* ------------- editing in isolation (same trick as edit-sketch) -------------
+   Editing an extrude in the MIDDLE of a tree rebuilt everything below it on
+   every keystroke: `esp_pillar_trim_tool` is feature 23 of 73, so each value
+   change paid for 49 downstream features — 5.4 s a keystroke (user, 2026-08-26:
+   "its taking a lot of times, when i am changing the values").
+
+   So park the rollback bar on the feature that APPLIES this extrude (its
+   boolean, if it has one — otherwise the extrude itself) while the panel is
+   open. Everything downstream is skipped, the change is instant, and the one
+   full rebuild happens when the panel closes. The bar goes on the BOOLEAN, not
+   on the extrude, so what you see is the pocket applied to the body rather than
+   a floating tool prism. */
+let isoActive = false;
+
+function boolOf(fid) {
+  return feats().find(x => COMBINER_LABEL[x.op]
+                           && (x.inputs || []).includes(fid));
+}
+
+async function isolateFor(fid) {
+  const comb = boolOf(fid);
+  isoActive = true;
+  await postJSON('/api/rollback', { feature_id: (comb || { id: fid }).id });
+}
+
+async function releaseIso() {
+  if (!isoActive) return;
+  isoActive = false;
+  await postJSON('/api/rollback', { feature_id: null });
 }
 
 function params() {
@@ -542,6 +574,7 @@ const isOk = f => f && f.status === 'ok';
 async function push(pr) {
   const doc = await postJSON('/api/feature/params',
     { feature_id: st.extrudeId, params: pr });
+  warnIfSplit(doc);
   return { doc, f: featOf(doc) };
 }
 
@@ -595,6 +628,26 @@ async function settleValid(pr) {
 }
 
 /* one full apply pass. Serialized by apply() so it always finishes. */
+/* A cut that stops short of the material it used to reach leaves loose pieces:
+   reducing a pillar-trim from 6 to 2 mm sliced a band out of four pillars and
+   left their caps floating (user, 2026-08-26: "it created a new body"). The
+   geometry is real, so we do not block it — but the moment it happens the panel
+   has to say so, while the user still has the value in their hand. */
+let saidPieces = 0;
+function warnIfSplit(doc) {
+  if (!doc || !doc.features) return;
+  const n = doc.result_pieces || 0;
+  if (n > 1 && n !== saidPieces) {
+    saidPieces = n;
+    bus.emit('msg', 'bot', `⚠ At this distance the part falls into ${n} ` +
+      `separate pieces — the cut is slicing THROUGH material instead of ` +
+      `clearing it, so ${n - 1} loose piece(s) are left behind. Extend the ` +
+      `distance past the material to trim it away cleanly.`);
+  } else if (n <= 1) {
+    saidPieces = 0;
+  }
+}
+
 async function applyOnce() {
   clampBoxValues();                           // analytic barrier — one rebuild
   const pr = params();
@@ -661,6 +714,7 @@ async function cancel() {
     st = null; panel().style.display = 'none';
     await postJSON('/api/feature/params',
       { feature_id: extrudeId, params: original });
+    await releaseIso();
     loadMesh();
     return;
   }
@@ -671,10 +725,12 @@ async function cancel() {
 async function ok() {
   releaseModal();
   const editing = st && st.editing;
-  if (st && !editing && !st.extrudeId) {
+  if (st && ((!editing && !st.extrudeId) || editing)) {
     // OK must COMMIT the panel's values even if the user never dragged the
     // arrow or touched an input (reported 2026-08-21: traced-logo sketch
     // "could not extrude" — OK with the default distance did nothing).
+    // EDIT mode needs it too: typing a value and pressing OK inside the input
+    // debounce window dropped the change silently.
     await apply();
   }
   const created = st && st.extrudeId;
@@ -682,6 +738,8 @@ async function ok() {
   endExtrudeGhost();
   endTaperRing();
   st = null; panel().style.display = 'none';
+  await releaseIso();                 // the one full rebuild, now
+  loadMesh();
   bus.emit('msg', 'bot', editing
     ? 'Extrude updated — the change is in the feature tree.'
     : created
@@ -696,6 +754,7 @@ async function ok() {
 export function cancelExtrude() {
   releaseModal();
   cancelProfilePick();               // a pending "pick a profile" dies with us
+  releaseIso();                      // never leave the rollback bar parked
   if (!st && panel().style.display === 'none') return;
   endExtrudeArrow();
   endExtrudeGhost();

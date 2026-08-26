@@ -121,9 +121,12 @@ def test_clicking_a_pocket_floor_reveals_the_cut_and_names_its_sketch(
     assert click_face(page, server, body, face), "could not click the floor"
 
     st = page.evaluate(STATE)
-    assert st["revealed"] == "pocket"                 # the cut that made it
+    # the cut folds onto its tool's row (one operation, one row), so THAT is
+    # the row a picked pocket face reveals
+    assert st["revealed"] == "pocket_tool"
+    # pocket_tool IS the revealed row (it carries the cut), so the rest of the
+    # chain is just its sketch
     assert "pocket_sketch" in st["chain"]             # "which sketch is that"
-    assert "pocket_tool" in st["chain"]               # "what extrude"
     assert "pocket_sketch" in st["panel"]
     assert "pocket_tool" in st["panel"]
     assert not page.errors, page.errors

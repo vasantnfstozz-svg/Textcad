@@ -1,0 +1,381 @@
+{
+  "groups": [
+    {
+      "group": "Enclosures",
+      "blurb": "Cases and housings milled from plate stock",
+      "designs": [
+        {
+          "file": "esp32-remote",
+          "title": "ESP32 remote shell",
+          "description": "Remote-control bottom shell for ESP32 + OLED + LoRa + keypad + 9V + SD, cut from 220x120x12 steel. Blind pockets only \u2014 the mill holds the stock by vacuum, so through-cuts would break it loose.",
+          "features": 73,
+          "ops": [
+            "sketch",
+            "extrude",
+            "cut"
+          ],
+          "preview": true
+        },
+        {
+          "file": "oneplus_7_pro_case",
+          "title": "OnePlus 7 Pro case",
+          "description": "Phone case built from stacked plates with camera and port cutouts.",
+          "features": 22,
+          "ops": [
+            "plate",
+            "move",
+            "cut",
+            "sketch"
+          ],
+          "preview": false
+        }
+      ]
+    },
+    {
+      "group": "Company plaques",
+      "blurb": "Showcase pieces for milling tests",
+      "designs": [
+        {
+          "file": "autonomiq-sat-panel",
+          "title": "autonomIQ satellite panel",
+          "description": "Satellite side panel carrying the official autonomIQ lockup on a raised plaque, with 14 mm triangle rows and scalloped edges. The largest tree here at 97 features.",
+          "features": 97,
+          "ops": [
+            "sketch",
+            "extrude",
+            "cut",
+            "loft"
+          ],
+          "preview": true
+        },
+        {
+          "file": "autonomiq-panel",
+          "title": "autonomIQ showcase plate",
+          "description": "208x108x10 stealth octagon with terraced tiers rising to the official lockup \u2014 built to test SimplyMill end to end.",
+          "features": 35,
+          "ops": [
+            "sketch",
+            "extrude",
+            "fuse",
+            "mirror"
+          ],
+          "preview": true
+        },
+        {
+          "file": "sat-side-panel",
+          "title": "Satellite side panel (early)",
+          "description": "The earlier side-panel layout, before the lockup plaque and scallops went on.",
+          "features": 41,
+          "ops": [
+            "sketch",
+            "extrude",
+            "cut",
+            "move"
+          ],
+          "preview": false
+        },
+        {
+          "file": "cam-cover-plaque",
+          "title": "Porsche cam covers (pair)",
+          "description": "Both flat-six camshaft covers \u2014 billet finned upper and cast ribbed lower \u2014 as a 1:3.1 relief on one steel blank. Plan view is true to the real part; height never could be, so it became a relief.",
+          "features": 82,
+          "ops": [
+            "sketch",
+            "extrude",
+            "cut",
+            "fuse"
+          ],
+          "preview": true
+        },
+        {
+          "file": "cam-cover-upper",
+          "title": "Cam cover \u2014 upper",
+          "description": "The billet finned cover as its own part at 1:2.19, outline cut to the cover silhouette.",
+          "features": 30,
+          "ops": [
+            "sketch",
+            "extrude",
+            "cut",
+            "fuse"
+          ],
+          "preview": true
+        },
+        {
+          "file": "cam-cover-lower",
+          "title": "Cam cover \u2014 lower",
+          "description": "The cast ribbed cover, the matching half of the pair.",
+          "features": 29,
+          "ops": [
+            "sketch",
+            "extrude",
+            "cut",
+            "fuse"
+          ],
+          "preview": true
+        },
+        {
+          "file": "rocky-keychain",
+          "title": "Rocky keychain",
+          "description": "Traced from a PNG: the figure and a raised rim above a recessed field, with ROCKY / BALBOA engraved as channels into the floor.",
+          "features": 8,
+          "ops": [
+            "sketch",
+            "extrude",
+            "cut"
+          ],
+          "preview": false
+        },
+        {
+          "file": "spiderman-logo",
+          "title": "Spider-man logo",
+          "description": "Traced logo turned into a milled relief.",
+          "features": 14,
+          "ops": [
+            "sketch",
+            "extrude",
+            "polar_pattern",
+            "fuse"
+          ],
+          "preview": false
+        }
+      ]
+    },
+    {
+      "group": "Aerospace",
+      "blurb": "Parts for the 220x120x12 vacuum-held steel stock",
+      "designs": [
+        {
+          "file": "isogrid-panel",
+          "title": "Isogrid panel",
+          "description": "Triangular isogrid stiffening pockets \u2014 the design that actually suits a vacuum table, since every pocket has a solid floor.",
+          "features": 37,
+          "ops": [
+            "sketch",
+            "extrude",
+            "cut",
+            "move"
+          ],
+          "preview": false
+        },
+        {
+          "file": "wing-rib",
+          "title": "Wing rib",
+          "description": "Lightening holes and flanged cutouts in a classic rib profile.",
+          "features": 11,
+          "ops": [
+            "sketch",
+            "extrude",
+            "cut"
+          ],
+          "preview": false
+        },
+        {
+          "file": "x-frame",
+          "title": "X-frame bracket",
+          "description": "Cross-braced structural frame with pocketed webs.",
+          "features": 19,
+          "ops": [
+            "sketch",
+            "extrude",
+            "cut"
+          ],
+          "preview": false
+        },
+        {
+          "file": "fan-disk",
+          "title": "Fan disk",
+          "description": "Bladed disk built from a polar pattern.",
+          "features": 7,
+          "ops": [
+            "disc",
+            "move",
+            "sketch",
+            "extrude"
+          ],
+          "preview": false
+        }
+      ]
+    },
+    {
+      "group": "Centrifugal pump",
+      "blurb": "A four-part 2.5D demo pump for a 3-axis mill",
+      "designs": [
+        {
+          "file": "pump-housing",
+          "title": "Pump housing",
+          "description": "Volute, channel and sump cut into one block, with a 1 mm gasket recess around the whole cavity and flat motor counterbores.",
+          "features": 21,
+          "ops": [
+            "cut",
+            "move",
+            "sketch",
+            "extrude"
+          ],
+          "preview": false
+        },
+        {
+          "file": "pump-impeller",
+          "title": "Pump impeller",
+          "description": "Six backswept blades (30 to 50 degrees) on a hub, tapered from a rounded nose to sharp inlet and outlet edges, \u00d83 press-fit bore.",
+          "features": 10,
+          "ops": [
+            "move",
+            "disc",
+            "sketch",
+            "extrude"
+          ],
+          "preview": false
+        },
+        {
+          "file": "pump-cover",
+          "title": "Pump cover",
+          "description": "The clamping cover with the axial inlet.",
+          "features": 14,
+          "ops": [
+            "move",
+            "disc",
+            "sketch",
+            "extrude"
+          ],
+          "preview": false
+        },
+        {
+          "file": "pump-gasket",
+          "title": "Pump gasket",
+          "description": "A 1.5 mm sheet gasket cut to the exact cavity outline \u2014 printable 1:1 as a rubber-cutting template.",
+          "features": 8,
+          "ops": [
+            "sketch",
+            "extrude",
+            "cut",
+            "plate"
+          ],
+          "preview": false
+        }
+      ]
+    },
+    {
+      "group": "Planetary gear set",
+      "blurb": "A full gear train, part by part",
+      "designs": [
+        {
+          "file": "planetary-assembly",
+          "title": "Planetary assembly",
+          "description": "The whole train placed together: ring, sun, planets, carrier and base \u2014 64 features.",
+          "features": 64,
+          "ops": [
+            "move",
+            "disc",
+            "polar_pattern",
+            "cut"
+          ],
+          "preview": false
+        },
+        {
+          "file": "planetary-ring",
+          "title": "Ring gear",
+          "description": "Internal-tooth ring.",
+          "features": 10,
+          "ops": [
+            "sketch",
+            "extrude",
+            "cut",
+            "disc"
+          ],
+          "preview": false
+        },
+        {
+          "file": "planetary-gear",
+          "title": "Planet gear",
+          "description": "One planet, patterned into the carrier.",
+          "features": 7,
+          "ops": [
+            "disc",
+            "move",
+            "sketch",
+            "extrude"
+          ],
+          "preview": false
+        },
+        {
+          "file": "planetary-carrier",
+          "title": "Carrier",
+          "description": "Carrier plate with planet posts.",
+          "features": 8,
+          "ops": [
+            "disc",
+            "move",
+            "sketch",
+            "extrude"
+          ],
+          "preview": false
+        },
+        {
+          "file": "planetary-base",
+          "title": "Base plate",
+          "description": "Mounting base for the train.",
+          "features": 7,
+          "ops": [
+            "move",
+            "plate",
+            "tube",
+            "cut"
+          ],
+          "preview": false
+        }
+      ]
+    },
+    {
+      "group": "Simple parts",
+      "blurb": "Small pieces, good for a first look at the tree",
+      "designs": [
+        {
+          "file": "flange-100",
+          "title": "Flange \u00d8100",
+          "description": "Disc, centre bore and a six-bolt circle \u2014 three features, the smallest complete tree.",
+          "features": 3,
+          "ops": [
+            "disc",
+            "with_center_hole",
+            "with_bolt_circle"
+          ],
+          "preview": false
+        },
+        {
+          "file": "hex-nut-M16",
+          "title": "Hex nut M16",
+          "description": "Hex plate with a centre hole.",
+          "features": 2,
+          "ops": [
+            "hex_plate",
+            "with_center_hole"
+          ],
+          "preview": false
+        },
+        {
+          "file": "bottle_cap_28mm",
+          "title": "Bottle cap 28 mm",
+          "description": "Revolved cap profile.",
+          "features": 5,
+          "ops": [
+            "revolve_profile",
+            "plate",
+            "move",
+            "polar_pattern"
+          ],
+          "preview": false
+        },
+        {
+          "file": "water_bottle_750ml",
+          "title": "Water bottle 750 ml",
+          "description": "A single revolve \u2014 the whole bottle from one profile.",
+          "features": 1,
+          "ops": [
+            "revolve_profile"
+          ],
+          "preview": false
+        }
+      ]
+    }
+  ]
+}

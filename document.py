@@ -34,6 +34,8 @@ import re
 
 import build123d as b3d
 from build123d import Pos
+from OCP.TopAbs import TopAbs_ShapeEnum
+from OCP.TopExp import TopExp_Explorer
 
 import blocks
 import inspector
@@ -132,6 +134,27 @@ DELETE_MODES = ("auto", "cascade", "strict")
 # ---------------------------------------------------------------------------
 
 CACHE_MAX = 400          # entries; a part is a shape handle, not a mesh
+
+
+def n_solids(part) -> int:
+    """How many SEPARATE lumps this shape is. 0.4 ms for a 73-feature design.
+
+    A part that falls into two pieces is the failure this project cares about
+    most: shorten the plate under a boss and the boss floats, sever a plate with
+    a slot and it becomes two halves — and OCCT is perfectly happy either way.
+    inspector.health() reports such a result as clean, so without this the tree
+    stayed green while the design silently stopped being one part."""
+    if part is None:
+        return 0
+    try:
+        exp = TopExp_Explorer(part.wrapped, TopAbs_ShapeEnum.TopAbs_SOLID)
+    except Exception:
+        return 0
+    n = 0
+    while exp.More():
+        n += 1
+        exp.Next()
+    return n
 
 
 def _canon_number(v):
@@ -233,6 +256,7 @@ class Feature:
     status: str = "stale"
     problems: list = field(default_factory=list)
     volume: float | None = None
+    pieces: int | None = None      # separate lumps in this feature's solid
 
 
 @dataclass
@@ -494,8 +518,8 @@ class Document:
             self._cache[sig] = hit
         return hit
 
-    def _cache_put(self, sig: str, part, problems, volume) -> None:
-        self._cache[sig] = (part, list(problems), volume)
+    def _cache_put(self, sig: str, part, problems, volume, pieces=None) -> None:
+        self._cache[sig] = (part, list(problems), volume, pieces)
         while len(self._cache) > CACHE_MAX:
             self._cache.pop(next(iter(self._cache)))     # oldest out
 
@@ -534,8 +558,8 @@ class Document:
             if hit is not None:
                 # identical inputs -> identical geometry: skip the build AND
                 # the health check, which together are most of a rebuild
-                part, problems, volume = hit
-                f.problems, f.volume = list(problems), volume
+                part, problems, volume, pieces = hit
+                f.problems, f.volume, f.pieces = list(problems), volume, pieces
                 f.status = "ok" if not problems else "failed"
                 self._parts[f.id] = part
                 if f.status == "failed":
@@ -551,19 +575,23 @@ class Document:
                     area = getattr(part, "area", 0.0)
                     f.problems = [] if area > 0 else ["sketch is empty"]
                     f.volume = None
+                    f.pieces = None
                     f.status = "ok" if not f.problems else "failed"
                 else:
                     f.problems = inspector.health(part)
                     f.volume = round(part.volume, 2)
+                    f.pieces = n_solids(part)
                     f.status = "ok" if not f.problems else "failed"
                 self._parts[f.id] = part
-                self._cache_put(sigs[f.id], part, f.problems, f.volume)
+                self._cache_put(sigs[f.id], part, f.problems, f.volume,
+                                f.pieces)
             except Exception as e:
                 f.status, f.problems, f.volume = "failed", [repr(e)], None
+                f.pieces = None
                 self._parts[f.id] = None
                 # cache the FAILURE too: a broken parameter must not cost a
                 # full re-evaluation on every rebuild while the user fixes it
-                self._cache_put(sigs[f.id], None, f.problems, None)
+                self._cache_put(sigs[f.id], None, f.problems, None, None)
             if f.status == "failed":
                 ok = False
 
@@ -662,6 +690,44 @@ class Document:
             out.append(f.id)
         return out
 
+    def _check_pieces(self) -> list:
+        """Name the feature that broke the part into pieces.
+
+        A feature is called out when its solid has MORE lumps than the body it
+        was built from: that is the moment a boss stopped touching the part, or
+        a cut severed it. Legitimately multi-body designs (an assembly, two
+        plates fused apart) still report — the count is the point, and it is
+        never an error, because "two pieces" is sometimes exactly what the user
+        wants. It just must not be silent."""
+        notes = []
+        for f in self.features:
+            if f.suppressed or f.pieces is None or f.pieces <= 1:
+                continue
+            # Only BODY-shaping features can "break the part": an extrude of a
+            # sketch holding 8 pilot circles is 8 prisms by design, and warning
+            # about it buried the real signal (esp32-remote reported a dozen
+            # notes, all of them tool prisms doing exactly their job).
+            if f.op not in COMBINERS and f.op not in MODIFIERS:
+                continue
+            if f.op in sk.SKETCH_PRODUCERS or f.op in ("extrude", "revolve",
+                                                       "loft", "sweep"):
+                continue
+            base = None
+            for dep in f.inputs:                # the body it was built from
+                d = next((x for x in self.features if x.id == dep), None)
+                if d is not None and d.pieces:
+                    base = d.pieces
+                    break
+            if base is not None and f.pieces <= base:
+                continue                        # it was already in pieces
+            notes.append(
+                f"'{f.id}' ({f.op}) leaves the part in {f.pieces} separate "
+                f"pieces" + (f" (its input was {base})" if base else "") +
+                " — something in it no longer touches the rest. Not an error "
+                "if you meant it; a detached boss or a cut right through "
+                "usually is not.")
+        return notes
+
     def _check_dangling(self):
         """A leaf body that is NOT the displayed result can be a silent trap —
         chaining a modifier to the wrong upstream feature quietly drops the real
@@ -669,7 +735,7 @@ class Document:
         (Two leaves mid-build, e.g. base + wall before a fuse, are legitimate
         and now BOTH render — but until they are combined the earlier ones are
         still 'not the result', so we flag them so the state is never silent.)"""
-        self.warnings = []
+        self.warnings = self._check_pieces()
         rf = self._result_feature()
         if rf is None:
             return

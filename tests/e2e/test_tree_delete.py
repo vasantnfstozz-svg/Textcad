@@ -89,8 +89,8 @@ def test_deleting_a_mid_chain_cut_reconnects_the_rest(page, server, fresh_doc):
     page.on("dialog", lambda d: d.accept())
     click_delete(page, "p0")
     page.wait_for_function(
-        "() => document.querySelectorAll('#tree .node').length === 5",
-        timeout=15000)
+        "() => ![...document.querySelectorAll('#tree .node')]"
+        ".some(n => n.dataset.fid === 'p0_tool')", timeout=15000)
 
     d = doc(server)
     p1 = next(f for f in d["features"] if f["id"] == "p1")
@@ -106,7 +106,6 @@ def test_cancelling_the_confirm_changes_nothing(page, server, fresh_doc):
     click_delete(page, "p0_sketch")
     page.wait_for_timeout(1200)
     assert len(ids(server)) == 8
-    assert page.locator("#tree .node").count() == 8
     assert not page.errors, page.errors
 
 
@@ -128,12 +127,12 @@ def test_one_undo_restores_the_whole_group(page, server, fresh_doc):
     page.on("dialog", lambda d: d.accept())
     click_delete(page, "p0")
     page.wait_for_function(
-        "() => document.querySelectorAll('#tree .node').length === 5",
-        timeout=15000)
+        "() => ![...document.querySelectorAll('#tree .node')]"
+        ".some(n => n.dataset.fid === 'p0_tool')", timeout=15000)
     page.keyboard.press("Control+z")
     page.wait_for_function(
-        "() => document.querySelectorAll('#tree .node').length === 8",
-        timeout=15000)
+        "() => [...document.querySelectorAll('#tree .node')]"
+        ".some(n => n.dataset.fid === 'p0_tool')", timeout=15000)
     assert ids(server) == ["outline", "body", "p0_sketch", "p0_tool", "p0",
                            "p1_sketch", "p1_tool", "p1"]
     assert doc(server)["ok"]

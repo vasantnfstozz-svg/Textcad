@@ -462,6 +462,78 @@ section; tick them THERE too when done)
     indices stay in range, that edges lie on the part, and that a small bore
     does not degenerate into a polygon. Confirmed visually as well.
 
+- **R20 (2026-08-26): the user's own designs belong in the Examples tab.**
+  User's words: "i designed water pump and esp32 remote and some box company
+  logo with manz cuts, like this did manz things, collect all those design put
+  it under in the examble tab". File > Examples held three hardcoded code
+  samples while 27 real designs sat unlisted in File > Open beside t-washer and
+  my-part-3. SHIPPED: a grouped gallery (Enclosures / Company plaques /
+  Aerospace / Centrifugal pump / Planetary gear set / Simple parts), 27 designs,
+  665 features, each tile with a thumbnail, a description and its feature count.
+  - The catalog is DATA: designs/examples.json (group -> title -> description),
+    served by /api/examples, which reads the feature count from the .tcad.json
+    itself so a card can never drift, and drops an entry whose file is gone
+    rather than showing a tile that fails to open.
+  - Descriptions come from the project memories, so they say what the part IS:
+    blind pockets only because the mill holds by vacuum, the cam covers as a
+    1:3.1 relief because height never scales to the stock, the pump gasket
+    printable 1:1 as a cutting template.
+  - Thumbnails: 6 designs already had the user's own CAM-style renders from
+    their generator scripts (untouched); the other 21 were rendered from the
+    live viewport at 480x270. /api/design-preview serves them because designs/
+    is not statically served — with a test that ../studio and ../../etc/passwd
+    404 instead.
+  - Scratch (t-washer, untitled, my-part-*, mcp-*, popup-*) and intermediate
+    iterations stay out of the gallery but remain in File > Open.
+  - Tests: tests/test_examples_gallery.py (10) + tests/e2e/test_examples_tab.py
+    (4).
+
+- **R21 (2026-08-26): three things the user hit in one sitting.**
+  1. **"when i reduced extrude, it created a new body"** — reproduced exactly:
+     `esp_pillar_trim_sketch` sits at z=7 with four O9 circles and its tool
+     extrudes UP. At amount 6 the tool reaches z=13, past the top of the part,
+     and shaves the pillar tops off: ONE piece. At amount 2 it reaches only z=9,
+     so it removes a BAND out of each pillar and leaves four caps floating:
+     FIVE pieces. The fuse/cut still returns one Part (a compound), so
+     `inspector.health` called it clean and the tree stayed green.
+     FIX: every feature now carries a piece count (`Feature.pieces`, a raw
+     TopExp count — 0.4 ms for all 73 features), and the feature that broke the
+     part is NAMED in the warnings. Only body-shaping ops can report: an extrude
+     of a sketch holding 8 pilot circles is 8 prisms by design, and warning
+     about those buried the signal (esp32-remote produced a dozen such notes
+     before the guard, and reports zero now). The Extrude panel also says it
+     LIVE, while the value is still in the user's hand. Not blocked — severing
+     is sometimes intended — but never silent.
+  2. **"its taking a lot of times, when i am changing the values"** — that tool
+     is feature 23 of 73, so every keystroke rebuilt 49 downstream features:
+     5.4 s each. FIX: editing an extrude parks the rollback bar on the feature
+     that APPLIES it (its boolean), exactly as edit-sketch already does, so
+     downstream waits for OK. 5.4 s -> 1.9-3.4 s per change, and the full
+     rebuild happens once. The bar goes on the BOOLEAN, not the extrude, so the
+     preview is the pocket applied to the body rather than a floating prism.
+  3. **"i touched pillar top face, it got never selected"** — the edge-pick halo
+     was `fitRadius / 60`, a MILLIMETRE distance (~1.9 mm on a 220 mm part), so
+     any face under ~4 mm across sat entirely inside the halo of its own rim and
+     the edge won at EVERY zoom level. Measured on esp32-remote: 0 of 24 pillar
+     tops selectable. FIX: the halo is 5 SCREEN PIXELS, computed from the camera
+     at the hit depth. A/B on the same faces: pillar tops 0/12 -> 12/12, pilot
+     hole floors 0/20 -> 20/20, with a test that clicking ON a rim still picks
+     the edge.
+  4. **"why there is three [rows], i dont need the third one"** — the boolean
+     now folds onto its tool's row as a CUT / FUSE chip (Fusion shows an extrude
+     with a Cut operation as ONE timeline entry). esp32-remote reads as 53 rows
+     instead of 73, in sketch+extrude pairs, and clicking that row highlights
+     the POCKET instead of the whole body (its old row's output WAS the whole
+     body, which is what the user was complaining about). The feature itself
+     stays — it is what applies the pocket — and deleting the row still removes
+     the pair.
+  - Also fixed: OK in the Extrude panel dropped a typed value in EDIT mode if
+     pressed inside the input debounce window; and folding briefly broke
+     `revealFeature` for folded booleans (a picked pocket face highlighted
+     nothing) — `rowFor()` resolves a feature to the row that represents it now.
+  - Tests: tests/test_pieces_warning.py (7) +
+    tests/e2e/test_small_face_and_fold.py (5). Suite: 387 passed, 1 skipped.
+
 ## Confirmed root causes
 
 - **R1a — authoring treats sketch→extrude as a fallback, primitives as

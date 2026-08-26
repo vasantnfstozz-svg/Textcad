@@ -81,7 +81,7 @@ def ids(url):
 
 def empty_the_name_sketch(page, server):
     page.evaluate(BUILD)
-    page.wait_for_selector("#tree .nrow >> text=engrave")
+    page.wait_for_selector("#tree .nrow >> text=name_tool")
     page.evaluate(EDIT_SKETCH, "name_sk")
     page.wait_for_function(IN_SKETCH_MODE, timeout=15000)
     page.wait_for_timeout(800)

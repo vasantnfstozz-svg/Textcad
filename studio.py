@@ -152,6 +152,12 @@ def _doc_json() -> dict:
         "can_undo": len(e["history"]) > 0,
         "rollback": doc.rollback,
         "geom_version": getattr(doc, "_geom_version", ""),
+        # lumps in the displayed result: 2 means the design is not one part
+        "result_pieces": (doc._result_feature().pieces
+                          if doc._result_feature() else None),
+        # separate BODIES on screen (Fusion's Bodies folder), counted properly
+        # instead of inferred from how many warnings happen to exist
+        "bodies": len(doc.leaf_solid_ids()),
         "spec": doc.spec,
         "spec_problems": doc.spec_problems,
         "warnings": doc.warnings,
@@ -160,7 +166,7 @@ def _doc_json() -> dict:
         "features": [{
             "id": f.id, "op": f.op, "params": f.params, "inputs": f.inputs,
             "status": f.status, "problems": f.problems, "volume": f.volume,
-            "suppressed": f.suppressed,
+            "suppressed": f.suppressed, "pieces": f.pieces,
         } for f in doc.features],
     }
 
@@ -1195,6 +1201,55 @@ def save_design():
     path = DESIGNS / f"{safe}.tcad.json"
     doc.save(str(path))
     return {"saved": safe, **_doc_json()}
+
+
+@app.get("/api/examples")
+def get_examples():
+    """The curated gallery: the designs actually built in this tool, grouped.
+
+    Read from designs/examples.json so the list is data, not code — adding a
+    design to the gallery is an edit to that file. Entries whose .tcad.json has
+    gone are dropped rather than shown as dead tiles, and the feature count is
+    taken from the file itself so it cannot drift from the catalog."""
+    cat = DESIGNS / "examples.json"
+    if not cat.exists():
+        return {"groups": []}
+    try:
+        data = json.loads(cat.read_text(encoding="utf-8"))
+    except Exception as e:
+        return {"groups": [], "error": f"examples.json is malformed: {e}"}
+    groups = []
+    for g in data.get("groups", []):
+        designs = []
+        for d in g.get("designs", []):
+            path = DESIGNS / f"{d.get('file', '')}.tcad.json"
+            if not path.exists():
+                continue
+            try:
+                doc = json.loads(path.read_text(encoding="utf-8"))
+                feats = doc.get("features", [])
+            except Exception:
+                continue
+            designs.append({**d,
+                            "name": doc.get("name", d["file"]),
+                            "features": len(feats),
+                            "preview": (DESIGNS /
+                                        f"{d['file']}-preview.png").exists()})
+        if designs:
+            groups.append({"group": g.get("group", ""),
+                           "blurb": g.get("blurb", ""), "designs": designs})
+    return {"groups": groups}
+
+
+@app.get("/api/design-preview/{file}")
+def design_preview(file: str):
+    """Thumbnail for a gallery tile. designs/ is not statically served (it holds
+    the user's work, not web assets), so previews come through here."""
+    safe = re.sub(r"[^\w\-]", "", file)
+    png = DESIGNS / f"{safe}-preview.png"
+    if not png.exists():
+        return Response(status_code=404)
+    return Response(content=png.read_bytes(), media_type="image/png")
 
 
 @app.get("/api/designs")

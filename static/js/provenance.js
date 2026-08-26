@@ -13,7 +13,7 @@
 
 import { bus } from './bus.js';
 import { S } from './state.js';
-import { revealFeature } from './tree.js';
+import { revealFeature, rowFor } from './tree.js';
 import { showFeatureOverlay } from './viewport.js';
 
 let seq = 0;                 // only the newest pick may write to the panel
@@ -98,7 +98,8 @@ function render(mine, r) {
     link.title = `${step.op} — click to show it in the tree`;
     link.onclick = () => {
       revealFeature(step.id, chain.map(c => c.id));
-      showFeatureOverlay(step.id);       // and light it up in the viewport
+      // highlight the geometry of the row that actually represents it
+      showFeatureOverlay(rowFor(step.id));
     };
     const op = document.createElement('span');
     op.style.cssText = 'color:var(--dim);font-size:10.5px';

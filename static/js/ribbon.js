@@ -4,9 +4,7 @@
 import { S } from './state.js';
 import { bus } from './bus.js';
 import { OP_ICONS, TOOL_NAMES } from './icons.js';
-import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport,
-         actionUndo, actionSpec, actionTracePng, actionImportStl, loadSample,
-         modalGuard } from './dialogs.js';
+import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport, actionUndo, actionSpec, actionTracePng, actionImportStl, loadSample, modalGuard, actionExamples } from './dialogs.js';
 import { openSketchEditor, finishSketch, cancelSketch,
          setSketchTool, sketchModify, editSketch } from './sketcher.js';
 import { openSettings } from './settings.js';
@@ -62,6 +60,7 @@ const ACTIONS = {
   sk_duplicate: { icon: '⧉', name: 'Duplicate', fn: () => sketchModify('duplicate') },
   sk_offset: { icon: '⇢', name: 'Offset', fn: () => sketchModify('offset') },
   sk_scale: { icon: '⤢', name: 'Scale', fn: () => sketchModify('scale') },
+  examples:      { icon: '🗂', name: 'Examples',   fn: actionExamples },
   ex_flange:     { icon: '⚙', name: 'Flange',     fn: () => loadSample('flange') },
   ex_impeller:   { icon: '🌀', name: 'Impeller',   fn: () => loadSample('impeller') },
   ex_compressor: { icon: '💨', name: 'Compressor', fn: () => loadSample('compressor') },
@@ -74,7 +73,8 @@ const TABS = {
   File: [
     ['Design', [{ a: 'new' }, { a: 'open' }, { a: 'save' },
                 { a: 'import_stl_file' }, { a: 'export' }]],
-    ['Examples', [{ a: 'ex_flange' }, { a: 'ex_impeller' }, { a: 'ex_compressor' }]],
+    ['Examples', [{ a: 'examples' }, { a: 'ex_flange' },
+                  { a: 'ex_impeller' }, { a: 'ex_compressor' }]],
     ['Preferences', [{ a: 'settings' }]],
   ],
   Create: [

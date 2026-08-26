@@ -1179,6 +1179,16 @@ function clearPick() {
   document.getElementById('pickInfo').style.display = 'none';
 }
 
+/* How much model one screen pixel covers at a given depth (perspective). */
+function worldPerPixel(dist) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const h = Math.max(rect.height, 1);
+  return 2 * dist * Math.tan((camera.fov * Math.PI / 180) / 2) / h;
+}
+
+// how close to an edge (IN PIXELS) a click has to be to mean the edge
+const EDGE_PICK_PX = 5;
+
 function pickAt(e) {
   if (!bodyObjs.length && !sketchMeshes().length) return;
   const rect = renderer.domElement.getBoundingClientRect();
@@ -1186,11 +1196,19 @@ function pickAt(e) {
     ((e.clientX - rect.left) / rect.width) * 2 - 1,
     -((e.clientY - rect.top) / rect.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  raycaster.params.Line.threshold = fitRadius / 60;
 
-  const eHits = raycaster.intersectObjects(edgeLines, false);
   // ALL bodies are pickable, not just the displayed result
   const fHit = raycaster.intersectObjects(bodyMeshes(), false)[0];
+  // The edge halo must be a SCREEN distance, not a model distance. It was
+  // fitRadius/60 — about 1.9 mm on a 220 mm part — so every face smaller than
+  // ~4 mm across sat entirely inside the halo of its own rim and could never
+  // be clicked: the edge always won. That is why the top of a pillar "got
+  // never selected" (user report 2026-08-26). Five pixels means five pixels,
+  // whatever the part's size or the zoom.
+  const depth = fHit ? fHit.distance
+                     : camera.position.distanceTo(controls.target);
+  raycaster.params.Line.threshold = worldPerPixel(depth) * EDGE_PICK_PX;
+  const eHits = raycaster.intersectObjects(edgeLines, false);
   // a SKETCH PROFILE drawn on a face is COPLANAR with it — on a tie the
   // profile wins, or the rectangle you just sketched could never be picked
   // (clicking it always selected the whole face underneath)

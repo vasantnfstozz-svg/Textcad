@@ -12,6 +12,13 @@ import { fmtVol } from './settings.js';
 
 const treeEl = () => document.getElementById('tree');
 
+/* Booleans that ride on their tool's row (see renderDoc). Anything that wants
+   to point AT a feature has to ask this first: a folded boolean has no row of
+   its own, and face->feature attribution answers with exactly those ids, so
+   without this a picked pocket face highlighted nothing at all. */
+const FOLDED = {};
+export const rowFor = fid => FOLDED[fid] || fid;
+
 export function renderDoc(doc) {
   S.lastDoc = doc;
   document.getElementById('docTitle').innerHTML = `<b>${doc.name}</b>`;
@@ -29,11 +36,24 @@ export function renderDoc(doc) {
   const badge = document.getElementById('verifyBadge');
   const nWarn = (doc.warnings || []).length;
   if (!doc.features.length) { badge.className = 'none'; badge.textContent = 'empty'; }
-  else if (doc.ok && nWarn) {
+  else if (doc.ok && doc.result_pieces > 1) {
+    // the part fell into pieces: green tick, but SAY it (reducing an extrude
+    // until a boss floats used to read as "it created a new body")
+    badge.className = 'warn';
+    badge.textContent = `✓ built — ${doc.result_pieces} separate pieces`;
+    badge.title = (doc.warnings || []).join('\n');
+  }
+  else if (doc.ok && doc.bodies > 1) {
     // separate bodies are NORMAL (Fusion's Bodies folder) — say how many,
-    // don't cry "stray": the old wording read as an error on every boss
+    // don't cry "stray". Counted from the document now: it used to be
+    // "warnings + 1", so an unrelated note made the badge claim 13 bodies.
     badge.className = 'ok';
-    badge.textContent = `✓ verified — ${nWarn + 1} bodies`;
+    badge.textContent = `✓ verified — ${doc.bodies} bodies`;
+    badge.title = (doc.warnings || []).join('\n');
+  }
+  else if (doc.ok && nWarn) {
+    badge.className = 'ok';
+    badge.textContent = '✓ verified';
     badge.title = doc.warnings.join('\n');
   }
   else if (doc.ok) { badge.className = 'ok'; badge.textContent = '✓ verified'; badge.title = ''; }
@@ -55,6 +75,36 @@ export function renderDoc(doc) {
   // that consumed it (Extrude1 ▸ sketch1), not as a sibling row — the tree
   // then reads as design history, not a flat op list
   const isSk = f => f.op === 'sketch' || f.op === 'sketch_on_face';
+
+  /* Fusion shows an extrude with a Cut operation as ONE timeline entry. Our
+     tree stores it as three features — sketch, tool prism, boolean — and the
+     boolean's own row was both redundant and misleading: clicking it selected
+     the WHOLE body, because its output IS the whole body (user, 2026-08-26:
+     "if i am clicking the third whole body is being selected, i dont need the
+     third one").
+
+     So the boolean folds into its tool's row as a chip. The feature itself
+     stays exactly where it was — it is what actually applies the pocket, and
+     deleting the row still removes the whole group — but the tree now reads
+     the way the user builds: sketch, then extrude. */
+  const PULLED = new Set(['extrude', 'revolve', 'loft', 'sweep',
+                          'extrude_face']);
+  const foldedInto = FOLDED;    // boolean id -> the tool row it rides on
+  for (const k of Object.keys(foldedInto)) delete foldedInto[k];
+  const chipOn = {};            // tool id -> the boolean it applies
+  for (const f of doc.features) {
+    if (!['cut', 'fuse', 'intersect'].includes(f.op)) continue;
+    if ((f.inputs || []).length !== 2) continue;      // 3-input cut: ambiguous
+    const tool = doc.features.find(x => x.id === f.inputs[1]);
+    if (!tool || !PULLED.has(tool.op)) continue;
+    // only if that tool feeds NOTHING else — otherwise it is shared geometry
+    const others = doc.features.filter(
+      x => x.id !== f.id && (x.inputs || []).includes(tool.id));
+    if (others.length) continue;
+    foldedInto[f.id] = tool.id;
+    chipOn[tool.id] = f;
+  }
+
   const consumerOf = {};
   for (const f of doc.features)
     for (const d of f.inputs) {
@@ -70,11 +120,12 @@ export function renderDoc(doc) {
       + (S.selected === f.id ? ' sel' : '')
       + (rolled.has(f.id) ? ' rolledback' : '')
       + (hasKids ? ' haskids' : '') + (child ? ' child' : '');
-    node.appendChild(buildRow(doc, f));
+    node.appendChild(buildRow(doc, f, chipOn[f.id] || null));
     node.appendChild(buildBody(f));
     // '(after rollback bar)' is edit-isolation plumbing, not a user problem —
     // the dimmed row already says "not built right now"
-    const probs = f.problems
+    const own = chipOn[f.id] ? (chipOn[f.id].problems || []) : [];
+    const probs = [...f.problems, ...own]
       .filter(p => p !== '(suppressed)' && p !== '(after rollback bar)')
       .map(humanProblem);
     if (probs.length) {
@@ -84,6 +135,7 @@ export function renderDoc(doc) {
     el.appendChild(node);
   };
   for (const f of doc.features) {
+    if (foldedInto[f.id]) continue;          // rides on its tool's row
     if (consumerOf[f.id]) continue;          // renders with its consumer
     // creation order (user mandate R4): the sketch FIRST, its consumer below
     for (const d of f.inputs)
@@ -145,7 +197,7 @@ function renderWarnings(doc, el) {
   el.appendChild(w);
 }
 
-function buildRow(doc, f) {
+function buildRow(doc, f, chip = null) {
   const row = document.createElement('div'); row.className = 'nrow';
   row.innerHTML = `
     <span class="twisty" title="expand">▶</span>
@@ -153,6 +205,15 @@ function buildRow(doc, f) {
     <span class="nname">${f.id}</span>
     <span class="nop">${f.op}${f.inputs.length ? ' ← ' + f.inputs.join(', ') : ''}</span>
     <span class="nspacer"></span>`;
+  if (chip) {
+    // what this extrude DOES to the body it lands on — the folded boolean
+    const c = document.createElement('span');
+    c.className = 'nchip ' + chip.op;
+    c.textContent = chip.op;
+    c.title = `applied to the body by '${chip.id}' (${chip.op} ← ` +
+      `${(chip.inputs || []).join(', ')}). Deleting this row removes both.`;
+    row.querySelector('.nspacer').before(c);
+  }
   row.querySelector('.twisty').onclick = e => {
     e.stopPropagation();
     S.openNodes.has(f.id) ? S.openNodes.delete(f.id) : S.openNodes.add(f.id);
@@ -188,7 +249,8 @@ function buildRow(doc, f) {
     'anything that must go with it is listed first)',
     () => deleteFeature(f.id));
 
-  const dot = document.createElement('span'); dot.className = 'ndot ' + f.status;
+  const worst = chip && chip.status === 'failed' ? 'failed' : f.status;
+  const dot = document.createElement('span'); dot.className = 'ndot ' + worst;
   row.append(acts, dot);
   row.onclick = () => selectFeature(f.id);
   // Fusion's gesture: double-click a feature = edit it with its own tool
@@ -252,10 +314,12 @@ export function revealFeature(fid, related = []) {
   for (const n of el.querySelectorAll('.node.fromface, .node.fromface-rel'))
     n.classList.remove('fromface', 'fromface-rel');
   if (!fid) return null;                    // null = just clear the marks
+  fid = rowFor(fid);                        // a folded boolean has no row
   const node = el.querySelector(`.node[data-fid="${CSS.escape(fid)}"]`);
   for (const rid of related) {
-    if (rid === fid) continue;
-    const rn = el.querySelector(`.node[data-fid="${CSS.escape(rid)}"]`);
+    const r = rowFor(rid);
+    if (r === fid) continue;
+    const rn = el.querySelector(`.node[data-fid="${CSS.escape(r)}"]`);
     if (rn) rn.classList.add('fromface-rel');
   }
   if (!node) return null;
@@ -316,6 +380,13 @@ function buildBody(f) {
     const pr = document.createElement('div'); pr.className = 'prow';
     pr.innerHTML = `<span class="pname">volume</span>
                     <span class="pro">${fmtVol(f.volume)}</span>`;
+    body.appendChild(pr);
+  }
+  if (f.pieces > 1) {
+    const pr = document.createElement('div'); pr.className = 'prow';
+    pr.innerHTML = `<span class="pname">pieces</span>
+      <span class="pro warnval" title="this feature's solid is in ${f.pieces}
+      separate lumps — something does not touch the rest">${f.pieces}</span>`;
     body.appendChild(pr);
   }
   return body;
