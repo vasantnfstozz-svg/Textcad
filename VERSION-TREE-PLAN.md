@@ -1,7 +1,8 @@
 # Version tree — development sheet
 
-> **Status: P0–P4 shipped 2026-08-26; P5 planned.** Design agreed with the
-> user 2026-08-26. Each phase ships and is tested on its own.
+> **Status: P0–P5 shipped 2026-08-26 — the feature is complete**, except
+> per-version thumbnails, deferred with a reason (see P5). Design agreed with
+> the user 2026-08-26.
 
 ## The problem, in the user's words
 
@@ -326,11 +327,59 @@ asserted *no* `.history` existed under `designs/`, which was right for test
 isolation and wrong the moment real histories legitimately lived there. It now
 checks only for its own test slugs.
 
-### P5 — polish
+### P5 — diff and prune — **DONE** (thumbnails deferred)
 
-Structural diff between versions ("v9→v10: +6 features (logo)",
-"`keypad_recess.depth` 2.0→3.0"), per-version thumbnails reusing the existing
-preview pipeline, prune policy.
+**Diff between versions.** `diff_snapshots(base, target)` in `history.py`,
+`GET /api/versions/diff?target=v5[&base=v3]` (base defaults to the parent), and
+a `⇄` button per row in the panel that expands an inline explanation.
+
+The whole difficulty is summarising rather than dumping: a sketch's `entities`
+is a 1476-character list of points, so "from … to …" would bury the one number
+that actually moved. Scalars print exactly (`block.thickness: 16 → 18`);
+anything larger is described by shape. The first cut said
+`10 items -> 10 items` — a number that had not moved while the content had — so
+equal-length lists now report `10 items, 4 differ`, and that is pinned by a
+regression test.
+
+Rewiring is spelled out rather than flagged. Inserting features mid-chain
+silently re-points whatever consumed the old node, and on the real esp32-remote
+v14→v15 that is the interesting part:
+
+```
++6 features, 3 changed          vs v14
++ logo_0_sketch  sketch … + logo_1  cut
+tail_fold_scoop  inputs  tail_trench, … → logo_1, …
+isl1_sketch.entities     10 items, 4 differ
+```
+
+Diffs are fetched **on demand**, never precomputed for the list: answering one
+decompresses two snapshots, and the panel repaints whenever the document
+changes — the same reason `problems()` is shallow. The `⇄` button stops
+propagation so asking "what changed?" never restores the version, which has its
+own E2E test.
+
+**Prune.** `History.prune(keep=20, dry_run=True)` — **dry run by default**,
+because it is the one operation here that destroys user work. Never removable,
+whatever the limit says: the **starred** version (it is the user's answer to
+"which is my intended design"), the **current** one, every **branch point**
+(dropping one orphans a line of work) and every **leaf** (the tip of a line of
+work is the work). Removing a node re-points its children at its parent, the
+way dropping a commit from a chain does, so the tree stays connected. The
+protection is mutation-verified. Not wired to the UI or run anywhere: at 794 KB
+for 108 versions there is nothing to reclaim yet, and a one-click history
+delete is a liability, not a feature.
+
+**Thumbnails: DEFERRED, and the reason is not effort.** There is no server-side
+renderer — the preview PNGs in `designs/` are drawn by each design's own `.py`
+with PIL, not from geometry — so a thumbnail could only be captured from the
+browser canvas at the moment a version is minted. That means **none of the 108
+backfilled versions could ever have one**, and a gallery where 108 tiles are
+blank and a handful are not reads as broken rather than as partial. Worth doing
+only alongside a way to render an arbitrary snapshot headlessly; the labels
+carry the recognition load well in the meantime.
+
+Tests: 7 diff cases in `test_history.py`, 7 prune cases there, 5 diff-API cases
+in `test_version_api.py`, 2 panel cases in `test_version_panel.py`.
 
 ## Test matrix
 

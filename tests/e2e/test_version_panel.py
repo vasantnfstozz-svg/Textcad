@@ -161,3 +161,41 @@ def test_the_ribbon_button_opens_the_panel(page, server, fresh_doc):
     page.wait_for_timeout(1500)
     assert "collapsed" not in page.locator("#verPane").get_attribute("class")
     assert page.locator(".vrow").count() == 3
+
+
+def test_the_diff_button_explains_a_version_without_restoring_it(
+        page, server, fresh_doc):
+    """The row opens the version; the arrows button only explains it. They must
+    not be the same click — losing your place because you asked "what changed?"
+    would be its own small betrayal."""
+    _branched(server)
+    page.reload()
+    page.wait_for_function("() => !!window.__vp", timeout=20000)
+    _open_panel(page)
+    before = page.locator(".vrow.cur .vid").inner_text()
+
+    page.click('.vrow[data-vid="v2"] .vwhy')
+    page.wait_for_selector(".vdiff", timeout=15000)
+    page.wait_for_timeout(1200)
+    text = page.locator(".vdiff").inner_text()
+    assert "vs v1" in text, text
+    assert "big" in text, text                    # the hole v2 added
+    assert page.locator(".vrow.cur .vid").inner_text() == before, \
+        "asking what changed restored the version"
+
+    page.click('.vrow[data-vid="v2"] .vwhy')      # toggles shut
+    page.wait_for_timeout(600)
+    assert page.locator(".vdiff").count() == 0
+    assert not page.errors, page.errors
+
+
+def test_the_first_version_diff_says_there_is_nothing_before_it(
+        page, server, fresh_doc):
+    _branched(server)
+    page.reload()
+    page.wait_for_function("() => !!window.__vp", timeout=20000)
+    _open_panel(page)
+    page.click('.vrow[data-vid="v1"] .vwhy')
+    page.wait_for_selector(".vdiff", timeout=15000)
+    page.wait_for_timeout(1000)
+    assert "nothing before it" in page.locator(".vdiff").inner_text()

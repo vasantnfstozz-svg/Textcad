@@ -481,3 +481,13 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 .vstar.on { color: #e8c14a; }
 .vnote { color: var(--dim); font-size: 11px; padding: 6px 4px; line-height: 1.4; }
 .vprob { color: var(--fail); font-size: 11px; padding: 6px 4px; line-height: 1.4; }
+.vwhy { background: none; border: 0; padding: 0 2px; cursor: pointer;
+         color: var(--line); font-size: 11px; line-height: 1; flex: 0 0 auto; }
+.vrow:hover .vwhy { color: var(--dim); }
+.vwhy:hover { color: var(--accent); }
+.vdiff { font-size: 10.5px; line-height: 1.55; color: var(--text);
+         background: var(--panel2); border-left: 2px solid var(--accent2);
+         padding: 5px 7px; margin: 1px 0 4px 0; border-radius: 3px; }
+.vdiff .vdim { color: var(--dim); }
+.vdiff .vadd { color: var(--ok); }
+.vdiff .vdel { color: var(--fail); }

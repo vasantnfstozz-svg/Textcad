@@ -49,7 +49,7 @@ import sketch as sketchlib
 import sketch_trim as trimlib
 import sketch_snap as snaplib
 from document import Document
-from history import History, HistoryError
+from history import History, HistoryError, diff_snapshots
 import provenance
 from samples import SAMPLES, sample_flange, sample_impeller, sample_compressor  # noqa: F401 (re-export for tests)
 
@@ -1330,6 +1330,30 @@ def get_versions():
             "current": h.current(), "starred": h.starred(),
             "problems": h.problems(), "design_id": h.design_id,
             "name": h.name, "tree": h.tree_lines(), "unsaved": False}
+
+
+@app.get("/api/versions/diff")
+def version_diff(target: str, base: str | None = None):
+    """What changed in one version, against its parent by default.
+
+    On demand rather than precomputed for the whole list: answering it means
+    decompressing two snapshots, and the panel refreshes whenever the document
+    changes. The same reason problems() is shallow."""
+    h = _vhistory()
+    if h is None:
+        return {"error": "this design has no history yet — save it once first"}
+    try:
+        v = h.get(target)
+        frm = base or v.parent
+        if frm is None:
+            return {"target": target, "base": None, "added": [], "removed": [],
+                    "changed": [], "spec_changed": False, "renamed": None,
+                    "summary": "the first version — nothing before it to "
+                               "compare against"}
+        out = diff_snapshots(h.snapshot(frm), h.snapshot(target))
+    except HistoryError as e:
+        return {"error": str(e)}
+    return {"target": target, "base": frm, **out}
 
 
 @app.post("/api/versions/restore")

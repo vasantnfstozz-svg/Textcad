@@ -349,3 +349,54 @@ def test_histories_never_land_in_the_designs_library(client, saved):
     assert studio._history_root() != studio.DESIGNS
     for slug in (TMP, TMP + "-two"):
         assert not (studio.DESIGNS / f"{slug}.history").exists(),             f"a test wrote {slug}.history into the user's library"
+
+
+# -------------------------------------------------------------- the diff API ---
+
+def _mkchange(client):
+    """v1 (opened) -> v2 with a known, checkable difference."""
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    client.post("/api/feature/add", json={
+        "id": "extra", "op": "with_center_hole", "params": {"radius": 3},
+        "inputs": ["bolts"]})
+
+
+def test_the_diff_defaults_to_comparing_against_the_parent(client, saved):
+    _mkchange(client)
+    d = client.get("/api/versions/diff?target=v2").json()
+    assert d["base"] == "v1" and d["target"] == "v2"
+    assert [a["id"] for a in d["added"]] == ["extra"]
+    assert d["added"][0]["op"] == "with_center_hole"
+    ch = next(c for c in d["changed"] if c["id"] == "bore")
+    p = next(p for p in ch["params"] if p["param"] == "radius")
+    assert p["from"] == "15" and p["to"] == "11" and p["scalar"] is True
+    assert "+1 feature" in d["summary"] and "1 changed" in d["summary"]
+
+
+def test_the_diff_accepts_an_explicit_base(client, saved):
+    _mkchange(client)
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 12})
+    client.post("/api/save")                                  # v3
+    d = client.get("/api/versions/diff?target=v3&base=v1").json()
+    assert d["base"] == "v1"
+    ch = next(c for c in d["changed"] if c["id"] == "bore")
+    assert next(p for p in ch["params"] if p["param"] == "radius")["to"] == "12"
+
+
+def test_the_first_version_says_there_is_nothing_to_compare(client, saved):
+    d = client.get("/api/versions/diff?target=v1").json()
+    assert d["base"] is None
+    assert "nothing before it" in d["summary"]
+    assert d["added"] == [] and d["changed"] == []
+
+
+def test_diffing_an_unknown_version_is_a_clear_error(client, saved):
+    d = client.get("/api/versions/diff?target=v99").json()
+    assert "no version 'v99'" in d["error"]
+
+
+def test_the_diff_on_a_design_with_no_history_says_so(client):
+    d = client.get("/api/versions/diff?target=v1").json()
+    assert "no history yet" in d["error"]

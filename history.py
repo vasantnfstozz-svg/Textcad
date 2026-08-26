@@ -72,6 +72,104 @@ def content_hash(data: dict) -> str:
     return "sha1:" + hashlib.sha1(blob.encode("utf-8")).hexdigest()
 
 
+_SCALARS = (bool, int, float, str, type(None))
+
+
+def _describe(v) -> str:
+    """A value rendered short enough to sit in a UI row.
+
+    This is the whole difficulty of diffing designs: a sketch's `entities` is a
+    1476-character list of points, and a "from ... to ..." that dumps it buries
+    the one number that actually changed. Scalars print exactly; anything
+    bigger is described by SHAPE."""
+    if isinstance(v, _SCALARS):
+        s = f'"{v}"' if isinstance(v, str) else str(v)
+        return s if len(s) <= 40 else s[:37] + "..."
+    if isinstance(v, list):
+        return f"{len(v)} item{'' if len(v) == 1 else 's'}"
+    if isinstance(v, dict):
+        return f"{len(v)} key{'' if len(v) == 1 else 's'}"
+    return type(v).__name__
+
+
+def _change_note(a, b) -> str:
+    """How a NON-scalar value changed, in one phrase.
+
+    "10 items -> 10 items" is worse than useless — it reports a number that did
+    not move while the content did. For equal-length lists, count the elements
+    that actually differ."""
+    if isinstance(a, list) and isinstance(b, list):
+        if len(a) != len(b):
+            return f"{len(a)} -> {len(b)} items"
+        n = sum(1 for x, y in zip(a, b) if x != y)
+        return f"{len(a)} items, {n} differ"
+    if isinstance(a, dict) and isinstance(b, dict):
+        keys = sorted(set(a) | set(b))
+        n = sum(1 for k in keys if a.get(k) != b.get(k))
+        return f"{n} of {len(keys)} keys differ"
+    return f"{_describe(a)} -> {_describe(b)}"
+
+
+def diff_snapshots(base: dict, target: dict) -> dict:
+    """What changed between two recorded designs, as data a UI can render.
+
+    Compares intent, not geometry — this layer never builds anything. Feature
+    order is ignored on purpose: moving a node without changing it is not a
+    design change worth reporting."""
+    fa = {f["id"]: f for f in base.get("features", [])}
+    fb = {f["id"]: f for f in target.get("features", [])}
+    added = [{"id": i, "op": fb[i].get("op", "")} for i in fb if i not in fa]
+    removed = [{"id": i, "op": fa[i].get("op", "")} for i in fa if i not in fb]
+
+    changed = []
+    for i, b in fb.items():
+        a = fa.get(i)
+        if a is None or a == b:
+            continue
+        pa, pb = a.get("params") or {}, b.get("params") or {}
+        params = []
+        for k in sorted(set(pa) | set(pb)):
+            va, vb = pa.get(k), pb.get(k)
+            if va == vb:
+                continue
+            scalar = isinstance(va, _SCALARS) and isinstance(vb, _SCALARS)
+            params.append({"param": k, "scalar": scalar,
+                           "from": _describe(va), "to": _describe(vb),
+                           "note": None if scalar else _change_note(va, vb)})
+        entry = {"id": i, "op": b.get("op", ""), "params": params}
+        if a.get("op") != b.get("op"):
+            entry["op_from"] = a.get("op")
+        ia, ib = a.get("inputs") or [], b.get("inputs") or []
+        if ia != ib:
+            # WHICH rewiring, not just "something moved": inserting features
+            # mid-chain silently re-points the consumer below them, and that is
+            # exactly the kind of change worth seeing spelled out
+            entry["inputs_from"], entry["inputs_to"] = ia, ib
+        if bool(a.get("suppressed")) != bool(b.get("suppressed")):
+            entry["suppressed"] = bool(b.get("suppressed"))
+        changed.append(entry)
+
+    out = {"added": added, "removed": removed, "changed": changed,
+           "spec_changed": base.get("spec") != target.get("spec"),
+           "renamed": None}
+    if base.get("name") != target.get("name"):
+        out["renamed"] = [base.get("name"), target.get("name")]
+
+    bits = []
+    if added:
+        bits.append(f"+{len(added)} feature{'' if len(added) == 1 else 's'}")
+    if removed:
+        bits.append(f"-{len(removed)} feature{'' if len(removed) == 1 else 's'}")
+    if changed:
+        bits.append(f"{len(changed)} changed")
+    if out["spec_changed"]:
+        bits.append("spec")
+    if out["renamed"]:
+        bits.append("renamed")
+    out["summary"] = ", ".join(bits) if bits else "no change"
+    return out
+
+
 def _write_atomic(path: Path, blob: bytes) -> None:
     """Write via temp + os.replace, which is a genuine atomic overwrite on
     Windows too (probed, not assumed). A half-written index.json would cost the
@@ -444,6 +542,69 @@ class History:
         self.path = target
         self._save({**data, "name": new_slug})
         return self
+
+    # -- pruning -----------------------------------------------------------
+
+    def protected(self) -> set[str]:
+        """Versions prune may never touch, whatever the limit says.
+
+        * the STARRED one — it is the user's answer to "which is my intended
+          design", so it is the last thing that may be thrown away;
+        * the CURRENT one — it is on screen;
+        * every BRANCH POINT — dropping one would orphan a whole line of work;
+        * every LEAF — the tip of each line of work is the work.
+        """
+        keep = set(self.branch_points()) | set(self.leaves())
+        for v in (self.current(), self.starred()):
+            if v:
+                keep.add(v)
+        return keep
+
+    def prune(self, keep: int = 20, *, dry_run: bool = True) -> dict:
+        """Drop old middle-of-the-chain versions, keeping the newest `keep`.
+
+        Deleting a version does NOT delete what came after it: each removed
+        node's children are re-pointed at its parent, the way dropping a commit
+        from a chain works, so the tree stays connected and nothing is
+        orphaned. Only nodes with a single child can be removed at all, because
+        branch points are protected.
+
+        DRY RUN BY DEFAULT. This is the one operation here that destroys user
+        work, so it has to be asked for twice.
+        """
+        data = self._require()
+        vs = self.versions()
+        safe = self.protected()
+        recent = {v.id for v in vs[-keep:]} if keep > 0 else set()
+        doomed = [v for v in vs if v.id not in safe and v.id not in recent]
+
+        freed = 0
+        for v in doomed:
+            p = self._snap_path(v.id)
+            if p.exists():
+                freed += p.stat().st_size
+        out = {"removed": [v.id for v in doomed],
+               "kept": [v.id for v in vs if v not in doomed],
+               "freed_bytes": freed, "dry_run": dry_run}
+        if dry_run or not doomed:
+            return out
+
+        gone = {v.id for v in doomed}
+        parent_of = {v.id: v.parent for v in vs}
+
+        def surviving_parent(vid: str | None) -> str | None:
+            while vid in gone:
+                vid = parent_of.get(vid)
+            return vid
+
+        entries = [{**d, "parent": surviving_parent(d.get("parent"))}
+                   for d in data["versions"] if d["id"] not in gone]
+        self._save({**data, "versions": entries})
+        for v in doomed:                      # index first here on purpose: a
+            p = self._snap_path(v.id)         # crash leaves an orphan file, not
+            if p.exists():                    # an entry pointing at nothing
+                p.unlink()
+        return out
 
     # -- recovery ----------------------------------------------------------
 

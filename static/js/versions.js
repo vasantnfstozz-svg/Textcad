@@ -159,9 +159,58 @@ function row(v, depth, d) {
   meta.className = 'vmeta';
   meta.textContent = `${v.features}f`;
 
-  el.append(star, id, label, meta);
+  // "what changed here?" is fetched on demand, never precomputed for the whole
+  // list: answering it decompresses two snapshots, and this panel repaints
+  // whenever the document changes.
+  const why = document.createElement('button');
+  why.className = 'vwhy';
+  why.textContent = '⇄';
+  why.title = 'what changed in this version';
+  why.onclick = e => { e.stopPropagation(); toggleDiff(el, v); };
+
+  el.append(star, id, label, meta, why);
   el.onclick = () => restore(v);
   return el;
+}
+
+async function toggleDiff(row, v) {
+  const open = row.nextElementSibling &&
+               row.nextElementSibling.classList.contains('vdiff');
+  if (open) { row.nextElementSibling.remove(); return; }
+  const box = document.createElement('div');
+  box.className = 'vdiff';
+  box.style.marginLeft = row.style.marginLeft;
+  box.textContent = 'comparing…';
+  row.after(box);
+
+  let d;
+  try { d = await getJSON(`/api/versions/diff?target=${encodeURIComponent(v.id)}`); }
+  catch (e) { d = { error: 'the server did not answer' }; }
+  if (!box.isConnected) return;
+  if (d.error) { box.textContent = '⚠ ' + d.error; return; }
+
+  const rows = [];
+  const base = d.base ? `vs ${d.base}` : '';
+  rows.push(`<b>${d.summary}</b> <span class="vdim">${base}</span>`);
+  for (const a of d.added)
+    rows.push(`<span class="vadd">+ ${a.id}</span> <span class="vdim">${a.op}</span>`);
+  for (const r of d.removed)
+    rows.push(`<span class="vdel">− ${r.id}</span> <span class="vdim">${r.op}</span>`);
+  for (const c of d.changed) {
+    for (const p of c.params)
+      rows.push(`${c.id}<span class="vdim">.${p.param}</span> ` +
+        (p.scalar ? `${p.from} → ${p.to}`
+                  : `<span class="vdim">${p.note}</span>`));
+    if (c.op_from) rows.push(`${c.id} <span class="vdim">op</span> ${c.op_from} → ${c.op}`);
+    if (c.inputs_to)
+      rows.push(`${c.id} <span class="vdim">inputs</span> ` +
+                `${c.inputs_from.join(', ')} → ${c.inputs_to.join(', ')}`);
+    if (c.suppressed !== undefined)
+      rows.push(`${c.id} <span class="vdim">${c.suppressed ? 'suppressed' : 'unsuppressed'}</span>`);
+  }
+  if (d.spec_changed) rows.push('<span class="vdim">the spec changed</span>');
+  if (d.renamed) rows.push(`renamed ${d.renamed[0]} → ${d.renamed[1]}`);
+  box.innerHTML = rows.join('<br>');
 }
 
 async function rename(v) {

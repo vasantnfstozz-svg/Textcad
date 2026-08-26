@@ -210,7 +210,10 @@ def test_reset_in_a_dry_run_still_writes_nothing(repo, root):
 
 
 def test_a_design_with_no_git_history_is_reported_not_invented(repo, root):
-    rep = _run("esp32-remote-live-t2", repo, root)
+    """A synthetic slug rather than a real untracked scratch file: this test
+    once used esp32-remote-live-t2 and broke the moment that file got committed,
+    which made the test a hostage to what happens to be tracked."""
+    rep = _run("_no-such-design-has-ever-existed", repo, root)
     assert rep.status == "empty"
     assert "2026-08-05" in rep.reason, "the real limit is not explained"
     assert not list(root.iterdir()), "an empty design got a history dir"

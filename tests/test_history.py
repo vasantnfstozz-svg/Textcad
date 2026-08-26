@@ -489,3 +489,188 @@ def test_snapshots_are_actually_compressed(h, tmp_path):
     with gzip.open(tmp_path / "part.history" / f"{v.id}.json.gz",
                    "rt", encoding="utf-8") as fh:
         assert json.load(fh) == payload
+
+
+# --------------------------------------------------------------------- diff ---
+
+def _feat(fid, op="plate", **params):
+    return {"id": fid, "op": op, "params": params, "inputs": []}
+
+
+def _snap(*feats, name="part", spec=None):
+    return {"name": name, "spec": spec if spec is not None else {},
+            "features": list(feats)}
+
+
+def test_diff_names_what_was_added_and_removed():
+    from history import diff_snapshots
+    d = diff_snapshots(_snap(_feat("a"), _feat("b")),
+                       _snap(_feat("a"), _feat("c", op="disc")))
+    assert [x["id"] for x in d["added"]] == ["c"]
+    assert d["added"][0]["op"] == "disc"
+    assert [x["id"] for x in d["removed"]] == ["b"]
+    assert d["summary"] == "+1 feature, -1 feature"
+
+
+def test_diff_reports_a_scalar_change_exactly():
+    from history import diff_snapshots
+    d = diff_snapshots(_snap(_feat("a", thickness=16)),
+                       _snap(_feat("a", thickness=18)))
+    p = d["changed"][0]["params"][0]
+    assert p["param"] == "thickness" and p["scalar"] is True
+    assert p["from"] == "16" and p["to"] == "18" and p["note"] is None
+
+
+def test_a_big_value_is_summarised_not_dumped():
+    """The whole difficulty: a sketch's `entities` is a 1476-character list of
+    points. Printing it as from/to buries the one number that moved."""
+    from history import diff_snapshots
+    big_a = [{"x": i, "y": i} for i in range(400)]
+    big_b = [{"x": i, "y": i + (1 if i < 3 else 0)} for i in range(400)]
+    d = diff_snapshots(_snap(_feat("s", entities=big_a)),
+                       _snap(_feat("s", entities=big_b)))
+    p = d["changed"][0]["params"][0]
+    assert p["scalar"] is False
+    assert p["note"] == "400 items, 3 differ"
+    assert len(p["from"]) <= 40 and len(p["to"]) <= 40
+
+
+def test_an_equal_length_list_does_not_report_a_useless_number():
+    """REGRESSION: the first cut said "10 items -> 10 items", reporting a
+    number that did not move while the content did."""
+    from history import diff_snapshots
+    d = diff_snapshots(_snap(_feat("s", entities=[1, 2, 3])),
+                       _snap(_feat("s", entities=[1, 9, 3])))
+    note = d["changed"][0]["params"][0]["note"]
+    assert note == "3 items, 1 differ"
+    assert "3 items -> 3 items" not in note
+
+
+def test_a_length_change_reads_as_a_length_change():
+    from history import diff_snapshots
+    d = diff_snapshots(_snap(_feat("s", entities=[1])),
+                       _snap(_feat("s", entities=[1, 2])))
+    assert d["changed"][0]["params"][0]["note"] == "1 -> 2 items"
+
+
+def test_diff_spells_out_a_rewiring():
+    """Inserting features mid-chain silently re-points whatever consumed the
+    old node. A bare "inputs changed" would hide which."""
+    from history import diff_snapshots
+    a = _snap({"id": "cut", "op": "cut", "params": {}, "inputs": ["trench", "t"]})
+    b = _snap({"id": "cut", "op": "cut", "params": {}, "inputs": ["logo", "t"]})
+    c = diff_snapshots(a, b)["changed"][0]
+    assert c["inputs_from"] == ["trench", "t"]
+    assert c["inputs_to"] == ["logo", "t"]
+
+
+def test_diff_notices_op_suppression_spec_and_rename():
+    from history import diff_snapshots
+    a = _snap(_feat("a"), name="one", spec={"tol": 0.5})
+    b = _snap({"id": "a", "op": "disc", "params": {}, "inputs": [],
+               "suppressed": True}, name="two", spec={"tol": 0.1})
+    d = diff_snapshots(a, b)
+    ch = d["changed"][0]
+    assert ch["op_from"] == "plate" and ch["op"] == "disc"
+    assert ch["suppressed"] is True
+    assert d["spec_changed"] and d["renamed"] == ["one", "two"]
+    assert "spec" in d["summary"] and "renamed" in d["summary"]
+
+
+def test_identical_designs_diff_to_nothing():
+    from history import diff_snapshots
+    s = _snap(_feat("a", r=1), _feat("b", r=2))
+    d = diff_snapshots(s, json.loads(json.dumps(s)))
+    assert d["summary"] == "no change"
+    assert not d["added"] and not d["removed"] and not d["changed"]
+
+
+def test_reordering_alone_is_not_a_change():
+    """Moving a node without editing it is not a design change worth
+    reporting."""
+    from history import diff_snapshots
+    a, b = _feat("a", r=1), _feat("b", r=2)
+    assert diff_snapshots(_snap(a, b), _snap(b, a))["summary"] == "no change"
+
+
+def test_diff_runs_on_the_real_backfilled_library():
+    """Against actual recorded designs, not toys — this is where a value that
+    will not compare or serialise would show up."""
+    from history import History, diff_snapshots
+    h = History.for_design("designs", "esp32-remote")
+    if len(h.versions()) < 15:
+        pytest.skip("library not backfilled")
+    d = diff_snapshots(h.snapshot("v14"), h.snapshot("v15"))
+    assert d["summary"] == "+6 features, 3 changed"
+    assert any(c.get("inputs_from") for c in d["changed"]), "rewiring missed"
+    json.dumps(d)                       # must survive the API boundary
+
+
+# -------------------------------------------------------------------- prune ---
+
+def test_prune_is_dry_by_default(h):
+    _chain(h, 30)
+    out = h.prune(keep=5)
+    assert out["dry_run"] is True and out["removed"]
+    assert len(h.versions()) == 30, "a dry run deleted versions"
+    assert all((h.path / f"{v.id}.json.gz").exists() for v in h.versions())
+
+
+def test_prune_keeps_the_newest_and_drops_the_middle(h, tmp_path):
+    _chain(h, 30)
+    out = h.prune(keep=5, dry_run=False)
+    left = [v.id for v in h.versions()]
+    assert "v30" in left and "v29" in left and "v26" in left
+    assert "v10" not in left and out["freed_bytes"] > 0
+    assert History(tmp_path / "part.history").versions(), "index not written"
+
+
+def test_prune_never_drops_the_starred_version(h):
+    """It is the user's answer to 'which is my intended design' — the last
+    thing that may be thrown away."""
+    _chain(h, 30)
+    h.star("v2")
+    h.prune(keep=3, dry_run=False)
+    assert h.starred() == "v2"
+    assert "v2" in [v.id for v in h.versions()]
+    assert h.snapshot("v2")["features"], "starred payload deleted"
+
+
+def test_prune_never_drops_the_current_or_a_branch_point_or_a_leaf(h):
+    _chain(h, 20)
+    h.set_current("v5")
+    h.append(design(w=900), label="branch")        # v21, second child of v5
+    h.set_current("v8")
+    left = set(h.prune(keep=2, dry_run=False)["kept"])
+    assert "v8" in left, "the current version was pruned"
+    assert "v5" in left, "a branch point was pruned — its children orphaned"
+    assert {"v20", "v21"} <= left, "a leaf was pruned"
+
+
+def test_pruning_the_middle_keeps_the_tree_connected(h):
+    """Dropping a link must re-point its child at its parent, the way dropping
+    a commit from a chain does. An orphan would be unreachable."""
+    _chain(h, 12)
+    h.prune(keep=2, dry_run=False)
+    vs = h.versions()
+    ids = {v.id for v in vs}
+    for v in vs:
+        assert v.parent is None or v.parent in ids, f"{v.id} orphaned"
+    assert len(h.roots()) == 1, h.roots()
+    assert h.ancestors(vs[-1].id)[0] == vs[0].id
+
+
+def test_prune_deletes_the_snapshot_files_it_dropped(h):
+    _chain(h, 20)
+    out = h.prune(keep=3, dry_run=False)
+    for vid in out["removed"]:
+        assert not (h.path / f"{vid}.json.gz").exists(), f"{vid} left on disk"
+    for v in h.versions():
+        assert h.snapshot(v.id)["features"], f"{v.id} lost its payload"
+    assert not h.problems()
+
+
+def test_a_short_history_is_left_completely_alone(h):
+    _chain(h, 4)
+    out = h.prune(keep=20, dry_run=False)
+    assert out["removed"] == [] and len(h.versions()) == 4
