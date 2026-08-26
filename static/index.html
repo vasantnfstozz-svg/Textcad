@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=22">
+<link rel="stylesheet" href="/static/css/studio.css?v=24">
 </head>
 <body>
 
@@ -26,6 +26,14 @@
 <main>
   <div id="treePane">
     <div class="pane-title"><span>Feature tree</span><span id="featCount"></span></div>
+    <!-- Finding the one parameter you want in a 79-feature tree was the
+         real cost behind "so a user can edit whatever he want so easily
+         without much effort" — the dimensions were already editable. -->
+    <div id="treeFind">
+      <input id="treeFilter" placeholder="Find a feature or parameter…"
+             autocomplete="off" spellcheck="false">
+      <button id="treeFilterX" title="clear">&times;</button>
+    </div>
     <div id="tree"></div>
     <!-- Version tree. Collapsed to ONE always-visible line, because the whole
          complaint was "we do not know which is my intended design" — that has
@@ -238,6 +246,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=89"></script>
+<script type="module" src="/static/js/main.js?v=92"></script>
 </body>
 </html>

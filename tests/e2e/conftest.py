@@ -76,3 +76,35 @@ def page(server, browser):
     pg.errors = errs
     yield pg
     pg.close()
+
+
+# ---------------------------------------------------------------------------
+# The app no longer uses window.confirm()/prompt(): a native dialog steals OS
+# focus, freezes the page and cannot be styled, so every one of them is now an
+# in-app <dialog id="askDialog"> (static/js/ask.js). Tests have to CLICK it
+# rather than register page.on("dialog"), which would now wait forever.
+# ---------------------------------------------------------------------------
+
+def ask_text(page, timeout=15000):
+    """Wait for the ask dialog and return the question it is showing."""
+    page.wait_for_selector("#askDialog[open]", timeout=timeout)
+    return (page.locator("#askTitle").inner_text() + " "
+            + page.locator("#askBody").inner_text())
+
+
+def ask_ok(page, timeout=15000):
+    """Accept the in-app confirm (the old d.accept())."""
+    msg = ask_text(page, timeout)
+    page.click("#askOk")
+    page.wait_for_function("() => !document.getElementById('askDialog').open",
+                           timeout=timeout)
+    return msg
+
+
+def ask_cancel(page, timeout=15000):
+    """Dismiss the in-app confirm (the old d.dismiss())."""
+    msg = ask_text(page, timeout)
+    page.click("#askCancel")
+    page.wait_for_function("() => !document.getElementById('askDialog').open",
+                           timeout=timeout)
+    return msg

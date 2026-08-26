@@ -14,6 +14,8 @@ screen pixels now.
 import httpx
 import pytest
 
+from conftest import ask_ok
+
 pytest.importorskip("playwright.sync_api")
 
 # a plate with three small pillars on top: r=2 (Ø4) is the size that used to be
@@ -150,10 +152,10 @@ def test_clicking_that_row_highlights_the_pocket_not_the_whole_body(
 def test_deleting_the_folded_row_removes_the_boolean_too(page, server,
                                                          fresh_doc):
     build(page, server)
-    page.on("dialog", lambda d: d.accept())
     row = page.locator("#tree .node[data-fid='pocket_tool'] .nrow")
     row.hover()
     row.locator("button[title^='delete']").click()
+    ask_ok(page)
     page.wait_for_function(
         "() => ![...document.querySelectorAll('#tree .node')]"
         ".some(n => n.dataset.fid === 'pocket_tool')", timeout=20000)

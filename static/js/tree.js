@@ -20,6 +20,116 @@ const treeEl = () => document.getElementById('tree');
 const FOLDED = {};
 export const rowFor = fid => FOLDED[fid] || fid;
 
+
+/* ---------------- find (filter) ----------------
+   The dimensions in this tree were already editable; what was missing was any
+   way to LOCATE one. esp32-remote has 79 features with names like
+   `esp_pilots_sketch`, so "the hole in that pillar" meant scrolling and
+   guessing. This matches feature ids, ops, parameter names and their values,
+   and the shapes inside a sketch — type "hole", "pilot", "3" or "circle".
+
+   A node stays visible when it matches OR when anything nested under it does,
+   so a match is never hidden by a parent that did not match. */
+let findQ = '';
+
+/* The user thinks "hole"; the design says "pilots". Searching only the literal
+   names found nothing, which is the vocabulary gap behind "without much
+   effort". These synonyms come from STRUCTURE, not a word list: a circle is a
+   hole when something cuts with it, a cut is a pocket, a sketch feeding an
+   extrude is a profile. */
+function synonyms(f) {
+  const out = [];
+  if (f.op === 'cut') out.push('hole', 'pocket', 'remove', 'subtract');
+  if (f.op === 'fuse') out.push('join', 'add', 'boss');
+  if (f.op === 'extrude') out.push('height', 'depth', 'thickness', 'boss',
+                                   'pillar');
+  if (f.op === 'sketch') out.push('profile', 'shape');
+  for (const e of (f.params || {}).entities || []) {
+    if (e.kind === 'circle') out.push('hole', 'bore', 'round', 'dia');
+    if (e.kind === 'rectangle') out.push('square', 'slot', 'box');
+    if (e.kind === 'slot') out.push('slot', 'oval');
+  }
+  return out;
+}
+
+function haystack(f) {
+  const bits = [f.id, f.op, ...synonyms(f)];
+  for (const [k, v] of Object.entries(f.params || {})) {
+    bits.push(k);
+    if (Array.isArray(v) && k === 'entities') {
+      for (const e of v) {
+        bits.push(e.kind || '');
+        for (const [ek, ev] of Object.entries(e)) {
+          if (typeof ev === 'number' || typeof ev === 'string') {
+            bits.push(ek, String(ev));
+            if (/(^|_)r$|radius/i.test(ek) && typeof ev === 'number') {
+              bits.push('diameter', String(round4(ev * 2)));   // people type Ø
+            }
+          }
+        }
+      }
+    } else if (typeof v === 'number' || typeof v === 'string'
+               || typeof v === 'boolean') {
+      bits.push(String(v));
+      if (/(^|_)r$|radius/i.test(k) && typeof v === 'number') {
+        bits.push('diameter', String(round4(v * 2)));
+      }
+    }
+  }
+  return bits.join(' ').toLowerCase();
+}
+
+export function applyTreeFilter(q) {
+  findQ = (q || '').trim().toLowerCase();
+  const box = document.getElementById('treeFind');
+  if (box) box.classList.toggle('on', !!findQ);
+  const el = treeEl();
+  el.querySelectorAll('.findnone').forEach(n => n.remove());
+  const nodes = [...el.querySelectorAll('.node[data-fid]')];
+  if (!findQ) {
+    nodes.forEach(n => n.classList.remove('nomatch', 'hit'));
+    return;
+  }
+  const byId = new Map((S.lastDoc?.features || []).map(f => [f.id, f]));
+  const hit = new Set();
+  for (const n of nodes) {
+    const f = byId.get(n.dataset.fid);
+    if (f && haystack(f).includes(findQ)) hit.add(n);
+  }
+  let shown = 0;
+  for (const n of nodes) {
+    const self = hit.has(n);
+    const deep = self || [...n.querySelectorAll('.node[data-fid]')]
+      .some(c => hit.has(c));
+    n.classList.toggle('nomatch', !deep);
+    n.classList.toggle('hit', self);
+    if (self) {
+      shown++;
+      n.classList.add('open');            // a hit opens so its rows are visible
+      S.openNodes.add(n.dataset.fid);
+    }
+  }
+  if (!shown) {
+    const p = document.createElement('div');
+    p.className = 'findnone';
+    p.textContent = `Nothing matches "${q}".`;
+    el.appendChild(p);
+  }
+}
+
+export function initTreeFind() {
+  const inp = document.getElementById('treeFilter');
+  if (!inp) return;
+  inp.oninput = () => applyTreeFilter(inp.value);
+  inp.onkeydown = e => {
+    if (e.key === 'Escape') { inp.value = ''; applyTreeFilter(''); inp.blur(); }
+    e.stopPropagation();          // Del/arrows here must not drive the tree
+  };
+  document.getElementById('treeFilterX').onclick = () => {
+    inp.value = ''; applyTreeFilter(''); inp.focus();
+  };
+}
+
 export function renderDoc(doc) {
   S.lastDoc = doc;
   document.getElementById('docTitle').innerHTML = `<b>${doc.name}</b>`;
@@ -146,6 +256,7 @@ export function renderDoc(doc) {
   }
   renderWarnings(doc, el);
   renderSpecRow(doc, el);
+  if (findQ) applyTreeFilter(findQ);
 }
 bus.on('doc-updated', renderDoc);
 bus.on('settings-changed', () => { if (S.lastDoc) renderDoc(S.lastDoc); });

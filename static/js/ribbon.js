@@ -4,7 +4,7 @@
 import { S } from './state.js';
 import { bus } from './bus.js';
 import { OP_ICONS, TOOL_NAMES } from './icons.js';
-import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport, actionUndo, actionSpec, actionTracePng, actionImportStl, loadSample, modalGuard, actionExamples } from './dialogs.js';
+import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport, actionUndo, actionRedo, actionSpec, actionTracePng, actionImportStl, loadSample, modalGuard, actionExamples } from './dialogs.js';
 import { openSketchEditor, finishSketch, cancelSketch,
          setSketchTool, sketchModify, editSketch } from './sketcher.js';
 import { openSettings } from './settings.js';
@@ -44,6 +44,7 @@ const ACTIONS = {
   save:    { icon: '💾', name: 'Save',        fn: actionSave },
   export:  { icon: '⬇', name: 'Export STEP', fn: actionExport },
   undo:    { icon: '↶', name: 'Undo',        fn: actionUndo },
+  redo:    { icon: '↷', name: 'Redo',        fn: actionRedo },
   spec:    { icon: '✓', name: 'Spec',        fn: actionSpec },
   select:  { icon: '◉', name: 'Select',
              fn: () => document.getElementById('vSelect').click() },
@@ -97,7 +98,7 @@ const TABS = {
   Inspect: [
     ['Select', [{ a: 'select' }]],
     ['Verify', [{ a: 'spec' }]],
-    ['History', [{ a: 'undo' }, { a: 'versions' }]],
+    ['History', [{ a: 'undo' }, { a: 'redo' }, { a: 'versions' }]],
   ],
 };
 const TAB_ORDER = ['File', 'Create', 'Modify', 'Inspect'];

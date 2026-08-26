@@ -22,6 +22,8 @@ Locked in here:
 import httpx
 import pytest
 
+from conftest import ask_cancel, ask_ok
+
 pytest.importorskip("playwright.sync_api")
 
 # a body, plus a "name" sketch that feeds an engraved pocket — the shape an AI
@@ -95,8 +97,8 @@ def test_emptying_a_sketch_then_finishing_offers_to_delete_it(page, server,
                                                               fresh_doc):
     empty_the_name_sketch(page, server)
     seen = []
-    page.on("dialog", lambda d: (seen.append(d.message), d.accept()))
     page.evaluate(FINISH)
+    seen.append(ask_ok(page))
     page.wait_for_function(f"() => !({IN_SKETCH_MODE})()", timeout=15000)
 
     assert seen, "finishing an emptied sketch must ASK, not refuse silently"
@@ -111,8 +113,8 @@ def test_emptying_a_sketch_then_finishing_offers_to_delete_it(page, server,
 def test_declining_keeps_the_sketch_open_not_a_dead_end(page, server,
                                                         fresh_doc):
     empty_the_name_sketch(page, server)
-    page.on("dialog", lambda d: d.dismiss())
     page.evaluate(FINISH)
+    ask_cancel(page)
     page.wait_for_timeout(800)
     assert page.evaluate(IN_SKETCH_MODE)          # still editing, on purpose
     assert len(ids(server)) == 5                  # nothing deleted

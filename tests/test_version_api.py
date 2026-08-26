@@ -77,7 +77,27 @@ def test_saving_records_a_version(client, saved):
     r = client.post("/api/save").json()
     assert r["version"] == "v2"
     assert [v["id"] for v in _versions(client)["versions"]] == ["v1", "v2"]
-    assert _hist().get("v2").label == "saved"
+    # the edit above was made BY HAND, so the version says so rather than the
+    # bare "saved" it used to — that is what lets the AI tell the work apart
+    assert _hist().get("v2").label == "manual changes (1 edit)"
+    assert _hist().get("v2").author == "you"
+
+
+def test_a_tool_commit_is_not_relabelled_as_a_manual_nudge(client, saved):
+    """Only parameter edits the user typed count as "manual". A tool commit is
+    the user's work too, but it already has a truthful label of its own, and
+    the save straight after changes nothing — so it dedupes rather than
+    renaming that version."""
+    client.post("/api/feature/add", json={
+        "id": "extra", "op": "with_center_hole", "params": {"radius": 3},
+        "inputs": ["bolts"]})                       # a TOOL commit, not a nudge
+    assert _hist().get("v2").source == "tool:with_center_hole"
+    assert _hist().get("v2").author == "you"
+
+    r = client.post("/api/save").json()
+    assert r["version"] == "v2", "an unchanged save minted a version"
+    assert [v["id"] for v in _versions(client)["versions"]] == ["v1", "v2"]
+    assert "manual" not in _hist().get("v2").label
 
 
 def test_a_tool_commit_records_a_version(client, saved):
@@ -400,3 +420,91 @@ def test_diffing_an_unknown_version_is_a_clear_error(client, saved):
 def test_the_diff_on_a_design_with_no_history_says_so(client):
     d = client.get("/api/versions/diff?target=v1").json()
     assert "no history yet" in d["error"]
+
+
+# ------------------------------------------------- who made it, and undo/redo ---
+
+def test_manual_edits_are_recorded_as_the_users_own_work(client, saved):
+    """User (2026-08-26): "if there is a design v5 and i am doing manually some
+    changes over there, it should be saved as a manual change ... so ai can
+    recognize the manual changes"."""
+    for r in (11, 12, 13):
+        client.post("/api/edit", json={"feature_id": "bore",
+                                       "param": "radius", "value": r})
+    client.post("/api/save")
+    v = _hist().get("v2")
+    assert v.author == "you"
+    assert v.source == "manual"
+    assert v.label == "manual changes (3 edits)"
+
+
+def test_an_ai_change_is_recorded_as_the_ais(client, saved, monkeypatch):
+    monkeypatch.setattr(studio, "chat_intent", lambda *a, **k: {
+        "action": "edit", "feature_id": "bore", "param": "radius", "value": 4})
+    client.post("/api/chat", json={"message": "set the bore to 4"})
+    v = _hist().get("v2")
+    assert v.author == "ai" and v.source == "ai"
+    assert "AI" in v.label
+
+
+def test_backfilled_versions_are_marked_as_coming_from_git():
+    from history import _author_of
+    assert _author_of("backfill:git") == "git"
+    assert _author_of("ai") == "ai"
+    for s in ("save", "manual", "open", "tool:extrude", ""):
+        assert _author_of(s) == "you", s
+
+
+def test_the_hand_edit_count_resets_after_it_is_recorded(client, saved):
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    client.post("/api/save")
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 12})
+    client.post("/api/save")
+    assert _hist().get("v3").label == "manual changes (1 edit)", \
+        "the counter kept accumulating across versions"
+
+
+def test_undo_and_redo_walk_both_ways(client, saved):
+    def radius():
+        return client.get("/api/doc").json()["features"][1]["params"]["radius"]
+
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 9})
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 7})
+    assert radius() == 7
+    client.post("/api/undo")
+    assert radius() == 9
+    client.post("/api/undo")
+    assert radius() == 15
+    d = client.post("/api/redo").json()
+    assert d["features"][1]["params"]["radius"] == 9
+    assert d["can_redo"] is True and d["can_undo"] is True
+    client.post("/api/redo")
+    assert radius() == 7
+    assert "nothing to redo" in client.post("/api/redo").json()["error"]
+
+
+def test_a_new_edit_after_undo_ends_the_redo_line(client, saved):
+    """Standard editor behaviour: undo, then do something else, and the branch
+    you undid is gone. The VERSION tree is what keeps that recoverable."""
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 9})
+    client.post("/api/undo")
+    assert client.get("/api/doc").json()["can_redo"] is True
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 22})
+    d = client.get("/api/doc").json()
+    assert d["can_redo"] is False
+    assert "nothing to redo" in client.post("/api/redo").json()["error"]
+
+
+def test_redo_is_per_tab(client, saved):
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 9})
+    client.post("/api/undo")
+    client.post("/api/new", json={"name": "_test-versions-two"})
+    assert client.get("/api/doc").json()["can_redo"] is False
+    assert "nothing to redo" in client.post("/api/redo").json()["error"]

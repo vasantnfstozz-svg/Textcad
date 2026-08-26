@@ -17,6 +17,8 @@ Locks in, through the browser:
 import httpx
 import pytest
 
+from conftest import ask_cancel, ask_ok
+
 pytest.importorskip("playwright.sync_api")
 
 # a base body plus two pockets — the shape author.py emits for every design
@@ -69,8 +71,8 @@ def test_deleting_a_consumed_sketch_asks_then_deletes_the_group(page, server,
                                                                 fresh_doc):
     build(page, server)
     seen = []
-    page.on("dialog", lambda d: (seen.append(d.message), d.accept()))
     click_delete(page, "p0_sketch")
+    seen.append(ask_ok(page))
     page.wait_for_function(
         "() => !document.querySelector('#tree .nname[data-x], #tree') || "
         "![...document.querySelectorAll('#tree .nname')]"
@@ -86,8 +88,8 @@ def test_deleting_a_consumed_sketch_asks_then_deletes_the_group(page, server,
 
 def test_deleting_a_mid_chain_cut_reconnects_the_rest(page, server, fresh_doc):
     build(page, server)
-    page.on("dialog", lambda d: d.accept())
     click_delete(page, "p0")
+    ask_ok(page)
     page.wait_for_function(
         "() => ![...document.querySelectorAll('#tree .node')]"
         ".some(n => n.dataset.fid === 'p0_tool')", timeout=15000)
@@ -102,8 +104,8 @@ def test_deleting_a_mid_chain_cut_reconnects_the_rest(page, server, fresh_doc):
 
 def test_cancelling_the_confirm_changes_nothing(page, server, fresh_doc):
     build(page, server)
-    page.on("dialog", lambda d: d.dismiss())
     click_delete(page, "p0_sketch")
+    ask_cancel(page)
     page.wait_for_timeout(1200)
     assert len(ids(server)) == 8
     assert not page.errors, page.errors
@@ -111,10 +113,10 @@ def test_cancelling_the_confirm_changes_nothing(page, server, fresh_doc):
 
 def test_del_key_deletes_the_selected_feature(page, server, fresh_doc):
     build(page, server)
-    page.on("dialog", lambda d: d.accept())
     page.locator("#tree .node", has=page.locator(
         ".nname", has_text="p1")).first.locator(".nrow").first.click()
     page.keyboard.press("Delete")
+    ask_ok(page)
     page.wait_for_function(
         "() => ![...document.querySelectorAll('#tree .nname')]"
         ".some(e => e.textContent === 'p1')", timeout=15000)
@@ -124,8 +126,8 @@ def test_del_key_deletes_the_selected_feature(page, server, fresh_doc):
 
 def test_one_undo_restores_the_whole_group(page, server, fresh_doc):
     build(page, server)
-    page.on("dialog", lambda d: d.accept())
     click_delete(page, "p0")
+    ask_ok(page)
     page.wait_for_function(
         "() => ![...document.querySelectorAll('#tree .node')]"
         ".some(n => n.dataset.fid === 'p0_tool')", timeout=15000)

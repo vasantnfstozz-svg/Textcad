@@ -89,6 +89,39 @@ description: Diagnosis playbook for TextCAD Studio problems — server won't sta
    face.outer_wire().edges()]` — a non-LINE entry on a visually straight edge
    is the tell.
 
+## Found 2026-08-26 (all four cost real time)
+
+9. **"The webserver crashes many times."** It was `dev.py`. It watched the
+   WHOLE repo, and `designs/` holds the `.py` generator scripts — so editing a
+   design restarted the backend and took every open tab with it. `reload_excludes`
+   looks like the fix and is NOT: without **watchfiles** installed, uvicorn
+   falls back to `statreload`, which polls every `*.py` under `reload_dirs` and
+   **ignores the excludes entirely** (measured on uvicorn 0.51.0 — exclusions
+   set, design edit, still reloaded). `watchfiles` is now a requirement and
+   `dev.py` refuses to start without it. Verify with: touch a
+   `designs/*.py` (must NOT reload), touch `studio.py` (must reload).
+
+10. **A rebuild that takes 20 s is almost never the geometry.** On esp32-remote
+    `inspector.health()` was 14.5 s of a 22.5 s rebuild — 65% — because the
+    rebuild calls it once per feature and it called `measure()`, which takes a
+    full topology census (every face's geom_type, cylinder radii, a max-radius
+    scan over every vertex, area, centre of mass, edge/vertex counts) of which
+    health reads NOTHING. Profile before optimising: wrap `inspector.health`,
+    `Document._eval`, `n_solids` and `inspector.verify` with timers and print
+    the split. `health()` must never go back through `measure()` — there is a
+    regression guard in tests/test_rebuild_speed.py.
+
+11. **`is_valid` is the single most expensive check** (~270 ms on a large
+    solid). The rebuild runs it on the RESULT only; intermediates use
+    `health(part, check_valid=False)`. If a rebuild suddenly gets slow again,
+    check nobody re-enabled it per feature.
+
+12. **Every dialog appeared in the top-left corner.** `* { margin: 0 }` in the
+    CSS reset overrides the UA stylesheet's `margin: auto` on `dialog:modal`,
+    which is what centres a modal. `dialog` now sets `position: fixed;
+    inset: 0; margin: auto` explicitly. If a new dialog is stuck in the corner,
+    that rule got lost.
+
 ## Diagnosis discipline
 Read the actual log/traceback BEFORE forming a fix. Reproduce via TestClient
 or a scratch script. Add a regression test for every real bug fixed.

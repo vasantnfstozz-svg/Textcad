@@ -170,6 +170,20 @@ def diff_snapshots(base: dict, target: dict) -> dict:
     return out
 
 
+def _author_of(source: str) -> str:
+    """Who a version came from, inferred from how it was recorded.
+
+    The user needs this on the tree ("that version should save all those
+    things, so ai can recognize the manual changes"), and so does the AI: told
+    that v6 was hand-edited, it can ask what changed instead of overwriting
+    work it did not make."""
+    if source.startswith("backfill"):
+        return "git"
+    if source == "ai":
+        return "ai"
+    return "you"
+
+
 def _write_atomic(path: Path, blob: bytes) -> None:
     """Write via temp + os.replace, which is a genuine atomic overwrite on
     Windows too (probed, not assumed). A half-written index.json would cost the
@@ -196,6 +210,7 @@ class Version:
     spec: dict = field(default_factory=dict)
     commit: str | None = None
     rebuildable: bool | None = None
+    author: str = ""          # "you" | "ai" | "git" — WHO made this version
 
     @classmethod
     def from_data(cls, d: dict) -> "Version":
@@ -463,7 +478,7 @@ class History:
     def append(self, snapshot: dict, *, label: str = "", source: str = "",
                parent: str | None = None, use_current_as_parent: bool = True,
                spec: dict | None = None, commit: str | None = None,
-               rebuildable: bool | None = None,
+               rebuildable: bool | None = None, author: str = "",
                created: str | None = None) -> Version:
         """Record a version and make it current.
 
@@ -489,7 +504,8 @@ class History:
         v = Version(id=vid, parent=parent, created=created or _now(),
                     label=label, source=source, hash=h,
                     features=len(snapshot.get("features", [])),
-                    spec=spec or {}, commit=commit, rebuildable=rebuildable)
+                    spec=spec or {}, commit=commit, rebuildable=rebuildable,
+                    author=author or _author_of(source))
 
         # snapshot FIRST, then the index (invariant 3)
         self.path.mkdir(parents=True, exist_ok=True)

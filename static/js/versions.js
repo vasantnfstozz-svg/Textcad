@@ -156,6 +156,16 @@ function row(v, depth, d) {
     rename(v);
   };
 
+  // WHO made it. The user asked for manual work to be distinguishable "so ai
+  // can recognize the manual changes" — and it has to be visible to them too.
+  const who = document.createElement('span');
+  who.className = 'vwho ' + (v.author || 'you');
+  who.textContent = v.author === 'ai' ? 'AI'
+                  : v.author === 'git' ? 'git' : 'you';
+  who.title = v.author === 'ai' ? 'the AI made this version'
+            : v.author === 'git' ? 'imported from a git commit'
+            : 'you made this version by hand';
+
   const meta = document.createElement('span');
   meta.className = 'vmeta';
   meta.textContent = `${v.features}f`;
@@ -169,7 +179,7 @@ function row(v, depth, d) {
   why.title = 'what changed in this version';
   why.onclick = e => { e.stopPropagation(); toggleDiff(el, v); };
 
-  el.append(star, id, label, meta, why);
+  el.append(star, id, label, who, meta, why);
   el.onclick = () => restore(v);
   return el;
 }

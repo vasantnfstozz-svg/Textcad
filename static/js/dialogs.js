@@ -170,6 +170,14 @@ export async function actionUndo() {
   if (!doc.error) { loadMesh(true); bus.emit('msg', 'bot', '↶ Undone.'); }
 }
 
+/* Undo without redo makes trying something out a one-way trip — you can
+   retreat but never return, so people stop experimenting (user: "it can be
+   easily undo and redo in that feature tree"). */
+export async function actionRedo() {
+  const doc = await postJSON('/api/redo', {}, 'redoing…');
+  if (!doc.error) { loadMesh(true); bus.emit('msg', 'bot', '↷ Redone.'); }
+}
+
 /* The Examples gallery: the designs the user actually built in this tool,
    grouped, with a thumbnail each. It replaces three hardcoded sample buttons —
    a 97-feature satellite panel and a four-part pump answer "show me what this

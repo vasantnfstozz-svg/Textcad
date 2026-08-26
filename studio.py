@@ -127,7 +127,8 @@ def _new_tab(doc: Document, source: str | None = None,
     STATE["seq"] += 1
     tid = f"t{STATE['seq']}"
     STATE["docs"][tid] = {"doc": doc, "ok": False, "rebuild_ms": None,
-                          "history": [], "source": source}
+                          "history": [], "redo": [], "source": source,
+                          "hand_edits": 0}
     if activate:
         STATE["active"] = tid
     return tid
@@ -156,10 +157,15 @@ def _doc() -> Document:
 
 def _snapshot() -> None:
     """Push the active design's intent onto ITS undo stack. Call BEFORE any
-    mutation (edit/add/remove/suppress/spec)."""
+    mutation (edit/add/remove/suppress/spec).
+
+    A new edit ends the redo line, exactly as in every editor: once you undo
+    three steps and then do something else, the branch you undid is gone. The
+    version tree is what keeps that recoverable, not this stack."""
     e = _entry()
     e["history"].append(e["doc"].to_data())
     del e["history"][:-MAX_HISTORY]
+    e.setdefault("redo", []).clear()
 
 
 def _rebuild_and_mesh() -> None:
@@ -235,6 +241,15 @@ def _measured(e: dict) -> dict:
     return out
 
 
+def _hand_edit() -> None:
+    """Mark that the USER changed this design by hand.
+
+    Counted rather than flagged so the version can say how much: "manual
+    changes (7 edits)" is a far better label than "saved" when the point is to
+    tell the AI's work apart from the user's."""
+    _entry()["hand_edits"] = _entry().get("hand_edits", 0) + 1
+
+
 def _record_version(label: str, source: str) -> dict:
     """Mint a version of the active design at a MEANINGFUL moment.
 
@@ -252,10 +267,18 @@ def _record_version(label: str, source: str) -> dict:
     if h is None:
         return {}
     e = _entry()
+    hand = e.get("hand_edits", 0)
+    # Hand edits that were never versioned on their own ride into this one, so
+    # say so: a version recorded after the user nudged seven parameters is
+    # THEIR work, whatever triggered the recording.
+    if hand and source in ("save", "open"):
+        label = f"manual changes ({hand} edit{'' if hand == 1 else 's'})"
+        source = "manual"
     try:
         h.init(_slug_of_active() or "")
         v = h.append(e["doc"].to_data(), label=label, source=source,
                      rebuildable=bool(e.get("ok")), spec=_measured(e))
+        e["hand_edits"] = 0
         return {"version": v.id}
     except HistoryError as ex:
         return {"history_error": str(ex)}
@@ -269,6 +292,7 @@ def _doc_json() -> dict:
         "ok": e["ok"],
         "rebuild_ms": e["rebuild_ms"],
         "can_undo": len(e["history"]) > 0,
+        "can_redo": len(e.get("redo") or []) > 0,
         "rollback": doc.rollback,
         "geom_version": getattr(doc, "_geom_version", ""),
         # lumps in the displayed result: 2 means the design is not one part
@@ -1026,6 +1050,7 @@ def get_feature_mesh(feature_id: str):
 
 @app.post("/api/edit")
 def edit(req: EditReq):
+    _hand_edit()
     _snapshot()
     try:
         _doc().edit(req.feature_id, req.param, req.value)
@@ -1095,6 +1120,7 @@ def sketch_trim_apply(req: TrimReq):
 def edit_params(req: ParamsReq):
     """Set several params of one feature in a single rebuild — used by the
     sketch editor (reopen a committed sketch, redraw, save all entities)."""
+    _hand_edit()
     _snapshot()
     try:
         f = _doc().get(req.feature_id)
@@ -1254,6 +1280,7 @@ def rename_feature(req: RenameReq):
     """Fusion's browser rename: the id is rewritten everywhere it is
     referenced (inputs, rollback bar, part cache). Geometry is untouched,
     so no rebuild — the snapshot still makes it undoable."""
+    _hand_edit()
     _snapshot()
     try:
         _doc().rename(req.feature_id, req.name)
@@ -1265,6 +1292,7 @@ def rename_feature(req: RenameReq):
 
 @app.post("/api/feature/suppress")
 def suppress_feature(req: SuppressReq):
+    _hand_edit()
     _snapshot()
     try:
         _doc().get(req.feature_id).suppressed = req.suppressed
@@ -1282,6 +1310,7 @@ def set_spec(req: SpecReq):
     (e.g. actually wanting 9 blades) instead of fighting the verifier."""
     known = {"size", "volume", "holes", "n_solids", "symmetry", "tip_radius",
              "com", "require_manifold", "tol", "vol_tol"}
+    _hand_edit()
     _snapshot()
     doc = _doc()
     doc.spec = {k: v for k, v in req.spec.items()
@@ -1299,12 +1328,42 @@ def undo():
     data = e["history"].pop()
     old_doc = e["doc"]
     try:
-        e["doc"] = Document.from_data(data)
+        rebuilt = Document.from_data(data)
     except ValueError as err:
         return {"error": f"undo failed: {err}", **_doc_json()}
+    # what we are leaving becomes the thing redo puts back
+    e.setdefault("redo", []).append(old_doc.to_data())
+    del e["redo"][:-MAX_HISTORY]
+    e["doc"] = rebuilt
     # The rebuild cache is process-wide (content-addressed), so the restored
     # document already inherits it; this keeps the link explicit for a document
     # that was given a private cache.
+    e["doc"]._cache = old_doc._cache
+    e["doc"]._spec_cache = old_doc._spec_cache
+    _rebuild_and_mesh()
+    return _doc_json()
+
+
+@app.post("/api/redo")
+def redo():
+    """Step forward again after an undo.
+
+    User (2026-08-26): "whatever i am doing in that manual design, it can be
+    easily undo and redo in that feature tree". Undo alone makes trying
+    something out a one-way trip -- you can retreat but not return, so people
+    stop experimenting."""
+    e = _entry()
+    if not e.get("redo"):
+        return {"error": "nothing to redo", **_doc_json()}
+    data = e["redo"].pop()
+    old_doc = e["doc"]
+    try:
+        rebuilt = Document.from_data(data)
+    except ValueError as err:
+        return {"error": f"redo failed: {err}", **_doc_json()}
+    e["history"].append(old_doc.to_data())      # ...and redo is undoable again
+    del e["history"][:-MAX_HISTORY]
+    e["doc"] = rebuilt
     e["doc"]._cache = old_doc._cache
     e["doc"]._spec_cache = old_doc._spec_cache
     _rebuild_and_mesh()

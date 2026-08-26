@@ -5,11 +5,11 @@ import { bus } from './bus.js';
 import { S } from './state.js';
 import { getJSON, isBusy } from './api.js';
 import { initViewport, loadMesh } from './viewport.js';
-import './tree.js';            // subscribes to doc-updated
+import { initTreeFind } from './tree.js';  // + the find box
 import './provenance.js';     // face pick -> which feature made it
 import './doctabs.js';         // subscribes to doc-updated
 import { initChat, addMsg } from './chat.js';
-import { initDialogs, actionUndo } from './dialogs.js';
+import { initDialogs, actionUndo, actionRedo } from './dialogs.js';
 import { initSketcher } from './sketcher.js';
 import { initRibbon } from './ribbon.js';
 import { initSplitters } from './splitters.js';
@@ -26,13 +26,19 @@ initExtrude();
 initRibbon();
 initSplitters();
 initVersions();   // version tree under the feature tree
+initTreeFind();   // the feature-tree find box
 
 /* keyboard shortcuts */
 window.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'z'
-      && document.activeElement.tagName !== 'INPUT') {
-    e.preventDefault(); actionUndo();
-  }
+  if (document.activeElement.tagName === 'INPUT') return;
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod) return;
+  const k = e.key.toLowerCase();
+  // Ctrl+Shift+Z and Ctrl+Y are both "redo" — Windows apps use Ctrl+Y, the
+  // rest of the world Ctrl+Shift+Z, and guessing wrong is a silent no-op.
+  if (k === 'z' && e.shiftKey) { e.preventDefault(); actionRedo(); }
+  else if (k === 'y') { e.preventDefault(); actionRedo(); }
+  else if (k === 'z') { e.preventDefault(); actionUndo(); }
 });
 
 /* live watcher: if a design arrives from outside (e.g. an AI over MCP) or the
