@@ -23,6 +23,7 @@ import json
 import os
 import re
 import webbrowser
+from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -48,6 +49,7 @@ import sketch as sketchlib
 import sketch_trim as trimlib
 import sketch_snap as snaplib
 from document import Document
+from history import History, HistoryError
 import provenance
 from samples import SAMPLES, sample_flange, sample_impeller, sample_compressor  # noqa: F401 (re-export for tests)
 
@@ -154,6 +156,84 @@ def _tabs_json() -> list[dict]:
     return [{"id": tid, "name": e["doc"].name, "ok": e["ok"],
              "active": tid == STATE["active"]}
             for tid, e in STATE["docs"].items()]
+
+
+# ---------------------------------------------------------------------------
+# Version history — VERSION-TREE-PLAN.md P2
+# ---------------------------------------------------------------------------
+# NAMING TRAP: a tab entry's "history" key is the UNDO stack — in memory, per
+# tab, capped, gone on restart. The VERSION tree below is a different thing
+# living on disk under designs/<slug>.history/. Undo is for the last few
+# keystrokes; versions are for putting v3 back on screen next week. Nothing
+# here touches the undo stack.
+
+def _slug_of_active() -> str | None:
+    """The library slug of the active tab, or None for anything unsaved.
+
+    A version tree is keyed to a file, so an untitled scratch design has no
+    history until it is saved — "no history dir until first version"."""
+    src = _entry().get("source") or ""
+    return src[5:] if src.startswith("file:") else None
+
+
+HISTORY_ROOT_ENV = "TEXTCAD_HISTORY_ROOT"
+
+
+def _history_root() -> Path:
+    """Where version histories live: beside the designs they belong to, unless
+    overridden.
+
+    The override is not a nicety. /api/open now creates <slug>.history/ as a
+    side effect, so a test that merely opens flange-100 would leave a directory
+    behind inside designs/ — which is tracked USER WORK. tests/conftest.py
+    points this at a throwaway path for every test."""
+    override = os.environ.get(HISTORY_ROOT_ENV)
+    return Path(override) if override else DESIGNS
+
+
+def _vhistory() -> History | None:
+    slug = _slug_of_active()
+    return History.for_design(_history_root(), slug) if slug else None
+
+
+def _measured(e: dict) -> dict:
+    """Cheap facts about the build, stored with the version so two versions can
+    be compared later without rebuilding either. Nothing here may cost geometry
+    work — it runs on every recorded version."""
+    out: dict = {"features": len(e["doc"].features), "ok": bool(e.get("ok"))}
+    try:
+        f = e["doc"]._result_feature()
+        if f is not None and f.volume is not None:
+            out["volume"] = f.volume
+    except Exception:                       # never break a save over metadata
+        pass
+    return out
+
+
+def _record_version(label: str, source: str) -> dict:
+    """Mint a version of the active design at a MEANINGFUL moment.
+
+    Deliberately NOT wired to /api/edit, /api/feature/params, /api/spec,
+    /api/feature/suppress or /api/rollback. The user chose "meaningful moments,
+    not every nudge", so a slider drag stays undo's business and then rides
+    into the next recorded version along with everything else it was part of —
+    history.py's hash dedupe means a save after five tweaks records ONE
+    version. That IS the coalescing.
+
+    Never raises into an endpoint. The design change already succeeded; a
+    sidecar file that cannot be written must not make it look otherwise, so the
+    fault is reported alongside the result instead."""
+    h = _vhistory()
+    if h is None:
+        return {}
+    e = _entry()
+    try:
+        h.init(_slug_of_active() or "")
+        v = h.append(e["doc"].to_data(), label=label, source=source,
+                     rebuildable=bool(e.get("ok")), spec=_measured(e))
+        return {"version": v.id}
+    except HistoryError as ex:
+        return {"history_error": str(ex)}
 
 
 def _doc_json() -> dict:
@@ -272,6 +352,15 @@ def chat_intent(message: str, feedback: str | None = None) -> dict:
 # ---------------------------------------------------------------------------
 # Request models
 # ---------------------------------------------------------------------------
+
+class VersionReq(BaseModel):
+    id: str | None = None            # None = unpin, for the star
+
+
+class LabelReq(BaseModel):
+    id: str
+    label: str = ""
+
 
 class EditReq(BaseModel):
     feature_id: str
@@ -1003,7 +1092,8 @@ def add_feature(req: FeatureReq):
         _entry()["history"].pop()
         return {"error": str(e), **_doc_json()}
     _rebuild_and_mesh()
-    return _doc_json()
+    return {**_record_version(f"{req.op} added", f"tool:{req.op}"),
+            **_doc_json()}
 
 
 @app.post("/api/trace-png")
@@ -1027,7 +1117,8 @@ def trace_png(req: TracePngReq):
         _entry()["history"].pop()
         return {"error": str(e), **_doc_json()}
     _rebuild_and_mesh()
-    return {**_doc_json(), "trace_info": {**info, "feature_id": fid}}
+    return {**_record_version(f"traced {fid}", "tool:trace_png"),
+            **_doc_json(), "trace_info": {**info, "feature_id": fid}}
 
 
 @app.post("/api/import-stl")
@@ -1082,7 +1173,8 @@ def import_stl_file(req: ImportStlReq):
                          f"{rep['output_triangles']:,} triangles")
         repair_note = "auto-repaired: " + ", ".join(steps) if steps else None
     bb = part.bounding_box()
-    return {**_doc_json(), "import_info": {
+    return {**_record_version(f"imported {fname}", "tool:import_stl"),
+            **_doc_json(), "import_info": {
         "feature_id": fid, "file": fname,
         "triangles": rep["output_triangles"], "bodies": rep.get("bodies"),
         "repair": repair_note,
@@ -1128,7 +1220,8 @@ def remove_feature(req: RemoveReq):
     _rebuild_and_mesh()
     if not _doc().features and MESH_PATH.exists():
         MESH_PATH.unlink()                  # last feature gone -> empty viewport
-    return {**_doc_json(), "remove_plan": plan}
+    return {**_record_version(f"deleted {req.feature_id}", "tool:delete"),
+            **_doc_json(), "remove_plan": plan}
 
 
 @app.post("/api/feature/rename")
@@ -1218,7 +1311,99 @@ def save_design():
     # may have been saved under a new name) so opening that design later comes
     # back HERE instead of cloning the tab
     _entry()["source"] = f"file:{safe}"
-    return {"saved": safe, **_doc_json()}
+    # AFTER the source is bound, so a first-ever save starts the history under
+    # the name it was just written as
+    return {"saved": safe, **_record_version("saved", "save"), **_doc_json()}
+
+
+@app.get("/api/versions")
+def get_versions():
+    """The design's version tree. Separate from /api/doc on purpose: the index
+    grows with every version and /api/doc is answered on every keystroke."""
+    h = _vhistory()
+    if h is None:
+        return {"versions": [], "current": None, "starred": None,
+                "problems": [], "unsaved": True,
+                "note": "this design has no history yet — save it once and its "
+                        "versions start being recorded"}
+    return {"versions": [asdict(v) for v in h.versions()],
+            "current": h.current(), "starred": h.starred(),
+            "problems": h.problems(), "design_id": h.design_id,
+            "name": h.name, "tree": h.tree_lines(), "unsaved": False}
+
+
+@app.post("/api/versions/restore")
+def restore_version(req: VersionReq):
+    """Put an old version back on screen, in THIS tab.
+
+    Three things it deliberately does not do:
+      * it does not write designs/<slug>.tcad.json — the user's saved design
+        stays as it is until they explicitly save (their decision);
+      * it does not truncate the tree — set_current() moves the marker, so the
+        NEXT edit branches off this version and v4..v10 survive;
+      * it does not lose what was on screen — the outgoing state goes on the
+        undo stack, so restoring is undoable like anything else.
+    """
+    h = _vhistory()
+    if h is None:
+        return {"error": "this design has no history yet — save it once first",
+                **_doc_json()}
+    if not req.id:
+        return {"error": "which version? pass an id like 'v3'", **_doc_json()}
+    try:
+        snap = h.snapshot(req.id)
+    except HistoryError as e:
+        return {"error": str(e), **_doc_json()}
+    try:
+        fresh = Document.from_data(snap)
+    except Exception as e:
+        # A version recorded before an op was renamed cannot be rebuilt by this
+        # build. It STAYS in the tree as a record: refusing to open it is far
+        # better than dropping it, and far better than a 500.
+        return {"error": f"{req.id} was recorded by an older build and this one "
+                         f"cannot open it ({e}). It is still in the history — "
+                         f"nothing was changed.", **_doc_json()}
+    e = _entry()
+    _snapshot()                                  # restoring is undoable
+    e["doc"] = fresh
+    _rebuild_and_mesh()
+    out = {"restored": req.id}
+    try:
+        h.set_current(req.id)
+    except HistoryError as ex:
+        out["history_error"] = str(ex)
+    return {**out, **_doc_json()}
+
+
+@app.post("/api/versions/star")
+def star_version(req: VersionReq):
+    """Pin the one version the user actually means, or unpin with id=null.
+
+    This is the answer to "we do not know which is my intended design".
+    Recency cannot answer it — v10 is not automatically better than v7 — so
+    exactly one version per design carries the mark."""
+    h = _vhistory()
+    if h is None:
+        return {"error": "this design has no history yet — save it once first"}
+    try:
+        h.star(req.id)
+    except HistoryError as e:
+        return {"error": str(e)}
+    return {"starred": h.starred()}
+
+
+@app.post("/api/versions/label")
+def label_version(req: LabelReq):
+    """Rename a version. Auto-labels say what happened ("saved", "extrude
+    added"); this is how a version gets called "the one for the mill"."""
+    h = _vhistory()
+    if h is None:
+        return {"error": "this design has no history yet — save it once first"}
+    try:
+        h.relabel(req.id, req.label)
+    except HistoryError as e:
+        return {"error": str(e)}
+    return {"labelled": req.id, "label": req.label}
 
 
 @app.get("/api/examples")
@@ -1308,7 +1493,8 @@ def open_design(file: str):
     if tid is None:
         _new_tab(fresh, source=f"file:{file}")
         _rebuild_and_mesh()
-        return {"tab_reused": False, "reloaded": False, **_doc_json()}
+        return {"tab_reused": False, "reloaded": False,
+                **_record_version(f"opened {file}", "open"), **_doc_json()}
     e = STATE["docs"][tid]
     STATE["active"] = tid
     if e["doc"].to_data() == fresh.to_data():
@@ -1318,7 +1504,11 @@ def open_design(file: str):
     del e["history"][:-MAX_HISTORY]
     e["doc"] = fresh
     _rebuild_and_mesh()
-    return {"tab_reused": True, "reloaded": True, **_doc_json()}
+    # the OUTGOING tab state is deliberately NOT recorded: it was never saved,
+    # the undo stack already holds it, and minting versions for scratch states
+    # is the version-explosion the user ruled out
+    return {"tab_reused": True, "reloaded": True,
+            **_record_version("reloaded from disk", "open"), **_doc_json()}
 
 
 @app.post("/api/sample/{name}")
@@ -1419,6 +1609,7 @@ def chat(req: ChatReq):
         said = plan["summary"].replace("Delete ", "Deleted ", 1)
         return {"reply": f"{said} Rebuilt: {state}. Undo (Ctrl+Z) "
                          f"puts it all back.",
+                **_record_version(f"AI deleted {fid}", "ai"),
                 "remove_plan": plan, **_doc_json()}
 
     for _ in range(2):                       # one repair retry, same philosophy
@@ -1435,6 +1626,9 @@ def chat(req: ChatReq):
         state = "PASS" if _entry()["ok"] else "FAILED verification"
         return {"reply": f"Set {intent['feature_id']}.{intent['param']} = "
                          f"{intent['value']} — rebuilt: {state}.",
+                **_record_version(
+                    f"AI set {intent['feature_id']}.{intent['param']}"
+                    f" = {intent['value']}", "ai"),
                 **_doc_json()}
     return {"reply": "I couldn't map that to an editable parameter — click "
                      "the value in the tree instead.", **_doc_json()}

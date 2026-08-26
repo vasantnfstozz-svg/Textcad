@@ -1,7 +1,7 @@
 # Version tree — development sheet
 
-> **Status: P0 + P1 shipped 2026-08-26; P2–P5 planned.** Design agreed with
-> the user 2026-08-26. Each phase ships and is tested on its own.
+> **Status: P0 + P1 + P2 shipped 2026-08-26; P3–P5 planned.** Design agreed
+> with the user 2026-08-26. Each phase ships and is tested on its own.
 
 ## The problem, in the user's words
 
@@ -184,12 +184,57 @@ Still owed by P2, deliberately not done here: `design_id` is currently only in
 it belongs with the server wiring, not with a storage layer that must not know
 what a Document is. `rename()` covers the rename case until then.
 
-### P2 — server wiring
+### P2 — server wiring — **DONE**
 
-Auto-version policy at the agreed moments; `GET /api/versions`,
-`POST /api/versions/{id}/restore`, `POST /api/versions/{id}/star`,
-`POST /api/versions/label`. Restore loads into the active tab and sets
-`current`; it does **not** write `.tcad.json`.
+`GET /api/versions`, `POST /api/versions/restore`, `POST /api/versions/star`,
+`POST /api/versions/label`. Versions live under `_history_root()` — `designs/`
+in production, overridable by `TEXTCAD_HISTORY_ROOT`.
+
+**Where a version IS minted** (9 hook sites): design opened, design reloaded
+because its file changed, save, `feature/add` (a tool commit), `feature/remove`,
+`trace-png`, `import-stl`, an AI edit, an AI delete.
+
+**Where it deliberately is NOT:** `/api/edit`, `/api/feature/params`,
+`/api/spec`, `/api/feature/suppress`, `/api/feature/rename`, `/api/rollback`,
+`/api/undo`. Those stay undo's business and then ride into the next recorded
+version together — a save after five tweaks records ONE version holding all
+five, which is the coalescing the user asked for. An AI edit *is* recorded even
+though a hand-dragged slider is not: the user asked for it in words, so it is a
+moment. That asymmetry is the decision, not an oversight.
+
+Restore: loads the snapshot into the SAME tab, pushes the outgoing state onto
+the undo stack (so restoring is undoable), sets `current` so the next edit
+branches — and does **not** write `.tcad.json`. A version this build cannot
+open (an op renamed since) fails with a real explanation and stays in the tree;
+it is never dropped and never a 500.
+
+`_record_version()` never raises into an endpoint. A design edit that succeeded
+must not look like it failed because a sidecar file is unwritable, so the fault
+comes back as `history_error` alongside the normal result.
+
+**Test-pollution seam, worth knowing about:** `/api/open` now creates
+`<slug>.history/` as a side effect, so without a guard any test that opened
+`flange-100` would leave a directory inside tracked user work.
+`tests/conftest.py` has an **autouse** fixture pointing `TEXTCAD_HISTORY_ROOT`
+at a throwaway path for every test, and `test_version_api.py` ends with a guard
+on the guard.
+
+Tests: `tests/test_version_api.py`, **28**. Verified live end to end as well:
+open → v1; a bare edit records nothing; save → v2; restore v1 puts the old
+geometry back; edit+save from there → v3 with **parent v1**, v2 untouched;
+star v2. Final tree from the live server:
+
+```
+   v1  opened flange-100
+ ★   v2  saved
+*    v3  saved
+```
+
+Still not done, and no longer needed the way the plan assumed: `design_id` is
+in `index.json` only. There is **no design-rename endpoint in the app at all**
+(`/api/feature/rename` renames a feature, not the design), so a design's slug
+cannot currently change and the fork-on-rename problem has no way to occur.
+`History.rename()` is built and unit-tested, ready for the day rename lands.
 
 ### P3 — UI
 

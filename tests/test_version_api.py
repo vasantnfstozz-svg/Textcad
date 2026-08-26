@@ -1,0 +1,345 @@
+"""P2 of VERSION-TREE-PLAN.md — the version tree wired into the server.
+
+Two things being pinned here, and they pull in opposite directions:
+
+* versions are minted at MEANINGFUL moments (open / save / tool commit / AI
+  edit) and NOT on every parameter nudge — the user's own decision, because a
+  version list that grows on every slider drag is the tab explosion again;
+* nothing is ever silently lost — a nudge that was not versioned still rides
+  into the next recorded version, and restore never overwrites the saved file.
+"""
+import json
+
+import pytest
+from fastapi.testclient import TestClient
+
+import studio
+from history import History
+
+TMP = "_test-versions"
+
+
+def _design_path(slug=TMP):
+    return studio.DESIGNS / f"{slug}.tcad.json"
+
+
+@pytest.fixture()
+def client():
+    studio.STATE["docs"].clear()
+    studio.STATE["active"] = None
+    studio.STATE["seq"] = 0
+    studio._new_tab(studio.sample_flange())
+    studio._rebuild_and_mesh()
+    yield TestClient(studio.app)
+    # designs/ is tracked user work; the history root is redirected by the
+    # autouse fixture in conftest, but the design FILE is real
+    for slug in (TMP, TMP + "-two"):
+        p = _design_path(slug)
+        if p.exists():
+            p.unlink()
+
+
+@pytest.fixture()
+def saved(client):
+    """A design in the library, opened in a tab, with v1 already recorded."""
+    doc = studio.sample_flange()
+    doc.name = TMP
+    doc.save(str(_design_path()))
+    client.post(f"/api/open/{TMP}")
+    return TMP
+
+
+def _hist(slug=TMP):
+    return History.for_design(studio._history_root(), slug)
+
+
+def _versions(client):
+    return client.get("/api/versions").json()
+
+
+# ------------------------------------------------ versions ARE minted here ---
+
+def test_opening_a_design_records_its_first_version(client, saved):
+    d = _versions(client)
+    assert d["unsaved"] is False
+    assert [v["id"] for v in d["versions"]] == ["v1"]
+    assert d["current"] == "v1"
+    assert d["versions"][0]["source"] == "open"
+    assert TMP in d["versions"][0]["label"]
+    assert d["versions"][0]["features"] == 3
+    assert d["versions"][0]["rebuildable"] is True
+    assert d["versions"][0]["spec"]["volume"] > 0
+
+
+def test_saving_records_a_version(client, saved):
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    r = client.post("/api/save").json()
+    assert r["version"] == "v2"
+    assert [v["id"] for v in _versions(client)["versions"]] == ["v1", "v2"]
+    assert _hist().get("v2").label == "saved"
+
+
+def test_a_tool_commit_records_a_version(client, saved):
+    r = client.post("/api/feature/add", json={
+        "id": "extra", "op": "with_center_hole", "params": {"radius": 3},
+        "inputs": ["bolts"]}).json()
+    assert r["version"] == "v2"
+    assert _hist().get("v2").source == "tool:with_center_hole"
+    assert "with_center_hole added" in _hist().get("v2").label
+
+
+def test_deleting_a_feature_records_a_version(client, saved):
+    r = client.post("/api/feature/remove",
+                    json={"feature_id": "bolts", "mode": "auto"}).json()
+    assert "error" not in r, r.get("error")
+    assert r.get("version") == "v2"
+    assert _hist().get("v2").source == "tool:delete"
+
+
+def test_an_ai_edit_records_a_version(client, saved, monkeypatch):
+    """An AI edit is a discrete thing the user asked for in words, so it counts
+    as a moment — unlike a hand-dragged slider."""
+    monkeypatch.setattr(studio, "chat_intent", lambda *a, **k: {
+        "action": "edit", "feature_id": "bore", "param": "radius", "value": 9})
+    r = client.post("/api/chat", json={"message": "make the bore 9"}).json()
+    assert r["version"] == "v2"
+    v = _hist().get("v2")
+    assert v.source == "ai" and "bore.radius" in v.label
+
+
+def test_a_first_save_starts_the_history_under_the_new_name(client):
+    """A design with no file has no history; saving creates one, keyed to the
+    name it was just written as."""
+    assert _versions(client)["unsaved"] is True
+    studio._doc().name = TMP
+    r = client.post("/api/save").json()
+    assert r["saved"] == TMP and r["version"] == "v1"
+    assert _versions(client)["unsaved"] is False
+
+
+# -------------------------------------------- and NOT minted for the nudges ---
+
+def test_a_parameter_edit_alone_records_nothing(client, saved):
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 12})
+    assert [v["id"] for v in _versions(client)["versions"]] == ["v1"]
+
+
+def test_a_spec_change_alone_records_nothing(client, saved):
+    client.post("/api/spec", json={"spec": {"n_solids": 1, "tol": 0.5}})
+    assert [v["id"] for v in _versions(client)["versions"]] == ["v1"]
+
+
+def test_a_burst_of_nudges_coalesces_into_one_version(client, saved):
+    """The coalescing the user asked for, and the reason not versioning a nudge
+    loses nothing: five tweaks then a save is ONE version holding all five."""
+    for r in (5, 6, 7, 8, 9):
+        client.post("/api/edit", json={"feature_id": "bore",
+                                       "param": "radius", "value": r})
+    client.post("/api/save")
+    vs = _versions(client)["versions"]
+    assert [v["id"] for v in vs] == ["v1", "v2"]
+    assert _hist().snapshot("v2")["features"][1]["params"]["radius"] == 9
+
+
+def test_reopening_an_unchanged_design_records_nothing_new(client, saved):
+    for _ in range(5):
+        client.post(f"/api/open/{saved}")
+    assert [v["id"] for v in _versions(client)["versions"]] == ["v1"]
+
+
+def test_reopening_a_CHANGED_file_records_the_new_state(client, saved):
+    data = json.loads(_design_path().read_text(encoding="utf-8"))
+    data["features"][1]["params"]["radius"] = 7
+    _design_path().write_text(json.dumps(data), encoding="utf-8")
+    r = client.post(f"/api/open/{saved}").json()
+    assert r["reloaded"] is True and r["version"] == "v2"
+    assert _hist().get("v2").label == "reloaded from disk"
+
+
+# -------------------------------------------------------------- the listing ---
+
+def test_an_unsaved_design_says_so_instead_of_looking_broken(client):
+    d = _versions(client)
+    assert d["unsaved"] is True and d["versions"] == []
+    assert "save it once" in d["note"]
+    assert d["problems"] == []
+
+
+def test_the_listing_carries_the_tree_and_the_markers(client, saved):
+    client.post("/api/feature/add", json={
+        "id": "x", "op": "with_center_hole", "params": {"radius": 2},
+        "inputs": ["bolts"]})
+    client.post("/api/versions/star", json={"id": "v1"})
+    d = _versions(client)
+    assert d["current"] == "v2" and d["starred"] == "v1"
+    assert d["design_id"].startswith("d_")
+    assert len(d["tree"]) == 2
+
+
+# ----------------------------------------------------------------- restore ---
+
+def test_restore_puts_the_old_design_back_in_the_same_tab(client, saved):
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    client.post("/api/save")                              # v2
+    tabs_before = len(client.get("/api/tabs").json()["tabs"])
+
+    d = client.post("/api/versions/restore", json={"id": "v1"}).json()
+    assert d["restored"] == "v1"
+    assert d["features"][1]["params"]["radius"] == 15     # v1's value
+    assert len(d["tabs"]) == tabs_before, "restore opened a tab"
+    assert _versions(client)["current"] == "v1"
+
+
+def test_restore_does_not_overwrite_the_saved_design(client, saved):
+    """The user's decision: .tcad.json is untouched until they explicitly
+    save. Restoring v1 must not quietly demote the file to v1."""
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    client.post("/api/save")
+    on_disk = _design_path().read_text(encoding="utf-8")
+
+    client.post("/api/versions/restore", json={"id": "v1"})
+    assert _design_path().read_text(encoding="utf-8") == on_disk
+
+
+def test_editing_after_a_restore_BRANCHES(client, saved):
+    """The core promise, end to end through HTTP: go back, change something,
+    and the versions you came from are still there."""
+    for r in (11, 12, 13):
+        client.post("/api/edit", json={"feature_id": "bore",
+                                       "param": "radius", "value": r})
+        client.post("/api/save")
+    assert [v["id"] for v in _versions(client)["versions"]] == \
+        ["v1", "v2", "v3", "v4"]
+
+    client.post("/api/versions/restore", json={"id": "v2"})
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 99})
+    r = client.post("/api/save").json()
+
+    assert r["version"] == "v5"
+    h = _hist()
+    assert h.get("v5").parent == "v2"
+    for old in ("v3", "v4"):
+        assert h.snapshot(old)["features"], f"{old} was destroyed"
+    assert sorted(h.children("v2")) == ["v3", "v5"]
+
+
+def test_restore_is_undoable(client, saved):
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    client.post("/api/save")
+    client.post("/api/versions/restore", json={"id": "v1"})
+    d = client.post("/api/undo").json()
+    assert d["features"][1]["params"]["radius"] == 11, \
+        "restoring threw away what was on screen"
+
+
+def test_restoring_an_unknown_version_is_a_clear_error(client, saved):
+    d = client.post("/api/versions/restore", json={"id": "v99"}).json()
+    assert "no version 'v99'" in d["error"]
+    assert d["features"], "the document was disturbed by a failed restore"
+
+
+def test_restore_needs_an_id(client, saved):
+    d = client.post("/api/versions/restore", json={}).json()
+    assert "which version" in d["error"]
+
+
+def test_a_version_this_build_cannot_open_fails_honestly(client, saved):
+    """A version recorded before an op was renamed. It must stay in the tree as
+    a record and refuse to open with a real explanation — not a 500, and not
+    quietly dropped."""
+    h = _hist()
+    h.append({"name": TMP, "spec": {},
+              "features": [{"id": "old", "op": "op_from_a_past_build",
+                            "params": {}, "inputs": []}]},
+             label="pre-rename", source="test")
+    d = client.post("/api/versions/restore", json={"id": "v2"}).json()
+    assert "cannot open it" in d["error"] and "still in the history" in d["error"]
+    assert [v["id"] for v in _versions(client)["versions"]] == ["v1", "v2"]
+    assert d["features"], "the live design was damaged by a failed restore"
+
+
+def test_restore_on_a_design_with_no_history_says_so(client):
+    d = client.post("/api/versions/restore", json={"id": "v1"}).json()
+    assert "no history yet" in d["error"]
+
+
+# -------------------------------------------------------- star and relabel ---
+
+def test_starring_pins_exactly_one_version(client, saved):
+    client.post("/api/save")
+    client.post("/api/feature/add", json={
+        "id": "x", "op": "with_center_hole", "params": {"radius": 2},
+        "inputs": ["bolts"]})
+    assert client.post("/api/versions/star",
+                       json={"id": "v1"}).json()["starred"] == "v1"
+    assert client.post("/api/versions/star",
+                       json={"id": "v2"}).json()["starred"] == "v2"
+    assert client.post("/api/versions/star",
+                       json={"id": None}).json()["starred"] is None
+
+
+def test_starring_an_unknown_version_is_refused(client, saved):
+    d = client.post("/api/versions/star", json={"id": "v42"}).json()
+    assert "no version" in d["error"]
+    assert _versions(client)["starred"] is None
+
+
+def test_the_star_survives_a_restore(client, saved):
+    """Starring says 'this is the one I mean'; wandering around the tree must
+    not un-say it."""
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    client.post("/api/save")
+    client.post("/api/versions/star", json={"id": "v2"})
+    client.post("/api/versions/restore", json={"id": "v1"})
+    d = _versions(client)
+    assert d["starred"] == "v2" and d["current"] == "v1"
+
+
+def test_relabelling_a_version(client, saved):
+    r = client.post("/api/versions/label",
+                    json={"id": "v1", "label": "the one for the mill"}).json()
+    assert r["labelled"] == "v1"
+    assert _hist().get("v1").label == "the one for the mill"
+
+
+def test_relabelling_an_unknown_version_is_refused(client, saved):
+    d = client.post("/api/versions/label",
+                    json={"id": "v9", "label": "x"}).json()
+    assert "no version" in d["error"]
+
+
+# ---------------------------------------------------- broken history on disk ---
+
+def test_a_corrupt_index_is_reported_and_does_not_break_editing(client, saved):
+    """A sidecar file the server cannot write must not make a successful design
+    edit look like a failure."""
+    idx = _hist().path / "index.json"
+    idx.write_text("{ broken", encoding="utf-8")
+
+    d = _versions(client)
+    assert d["versions"] == [] and any("unreadable" in p
+                                       for p in d["problems"])
+
+    r = client.post("/api/edit", json={"feature_id": "bore",
+                                       "param": "radius", "value": 12}).json()
+    assert r["features"][1]["params"]["radius"] == 12, "the edit was lost"
+    r = client.post("/api/save").json()
+    assert r["saved"] == TMP, "the save failed because of a sidecar file"
+    assert "history_error" in r and "unreadable" in r["history_error"]
+    assert idx.read_text(encoding="utf-8") == "{ broken", \
+        "the corrupt index was clobbered"
+
+
+def test_histories_never_land_in_the_designs_library(client, saved):
+    """Guard on the guard: the autouse fixture redirects HISTORY_ROOT, and if
+    it ever stops working this test fails instead of a directory silently
+    appearing inside tracked user work."""
+    assert studio._history_root() != studio.DESIGNS
+    assert not list(studio.DESIGNS.glob("*.history"))
