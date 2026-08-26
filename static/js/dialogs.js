@@ -125,8 +125,9 @@ export async function actionOpen() {
       <span class="meta">${d.features} features</span>`;
     item.onclick = async () => {
       libDialog().close();
-      await postJSON('/api/open/' + d.file, {}, 'opening…');   // new tab
+      const doc = await postJSON('/api/open/' + d.file, {}, 'opening…');
       loadMesh(true);
+      if (!doc.error) openedMsg(doc);
     };
     el.appendChild(item);
   }
@@ -190,6 +191,20 @@ export async function actionExamples() {
   }
 }
 
+/* Opening a design REUSES its tab (studio.py `_find_tab`), so the message has
+   to say what actually happened — three "Opened flange-100" lines above a
+   single flange-100 tab is exactly the confusion this change set out to end. */
+function openedMsg(doc, extra = '') {
+  const n = (doc.features || []).length;
+  const what = doc.reloaded
+    ? `Reloaded "${doc.name}" from disk — ${n} features (Undo restores what the `
+      + `tab had before).`
+    : doc.tab_reused
+      ? `Switched to "${doc.name}" — already open, ${n} features.`
+      : `Opened "${doc.name}" — ${n} features.`;
+  bus.emit('msg', 'bot', extra ? `${what} ${extra}` : what);
+}
+
 function exampleCard(d, dlg) {
   const card = document.createElement('button');
   card.className = 'excard';
@@ -224,8 +239,7 @@ function exampleCard(d, dlg) {
                               `opening ${d.title || d.file}…`);
     if (doc.error) return;
     await loadMesh(true, true);
-    bus.emit('msg', 'bot', `Opened "${doc.name}" — ` +
-      `${(doc.features || []).length} features. ${d.description || ''}`);
+    openedMsg(doc, d.description || '');
   };
   return card;
 }
@@ -234,8 +248,8 @@ export async function loadSample(name) {
   const doc = await postJSON('/api/sample/' + name, {},
     name === 'compressor' ? 'building compressor (slow)…' : 'building…');
   loadMesh(true);
-  bus.emit('msg', 'bot', `Opened example "${doc.name}" in a new tab. Expand a ` +
-    `feature and click a blue value to edit, or tell me what to change.`);
+  openedMsg(doc, 'Expand a feature and click a blue value to edit, or tell ' +
+                 'me what to change.');
 }
 
 /* ---------------- Add Feature dialog ---------------- */

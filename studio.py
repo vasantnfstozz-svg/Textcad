@@ -90,14 +90,28 @@ MAX_HISTORY = 25
 MAX_TABS = 12
 
 
-def _new_tab(doc: Document) -> str:
-    """Open a document in a new tab and make it active."""
+def _new_tab(doc: Document, source: str | None = None) -> str:
+    """Open a document in a new tab and make it active.
+
+    `source` records WHERE the design came from ("file:esp32-remote",
+    "sample:flange") so a later open of the same thing can reuse this tab
+    instead of cloning it. Keyed on origin rather than doc.name on purpose:
+    two designs can carry the same name, and renaming one must not orphan
+    its tab."""
     STATE["seq"] += 1
     tid = f"t{STATE['seq']}"
     STATE["docs"][tid] = {"doc": doc, "ok": False, "rebuild_ms": None,
-                          "history": []}
+                          "history": [], "source": source}
     STATE["active"] = tid
     return tid
+
+
+def _find_tab(source: str) -> str | None:
+    """The tab already holding this design, or None."""
+    for tid, e in STATE["docs"].items():
+        if e.get("source") == source:
+            return tid
+    return None
 
 
 def _entry() -> dict:
@@ -1200,6 +1214,10 @@ def save_design():
     safe = re.sub(r"[^\w\-]+", "-", doc.name).strip("-") or "untitled"
     path = DESIGNS / f"{safe}.tcad.json"
     doc.save(str(path))
+    # bind this tab to the file it just wrote (it may not have had a source, or
+    # may have been saved under a new name) so opening that design later comes
+    # back HERE instead of cloning the tab
+    _entry()["source"] = f"file:{safe}"
     return {"saved": safe, **_doc_json()}
 
 
@@ -1268,23 +1286,59 @@ def list_designs():
 
 @app.post("/api/open/{file}")
 def open_design(file: str):
-    """Open from the library — in a NEW tab."""
+    """Open from the library, REUSING this design's tab if it already has one.
+
+    This used to make a new tab every time, unconditionally. The design loop is
+    "regenerate the script -> POST /api/open/<name> -> look at it in 3D", so ten
+    iterations left ten identically-named tabs and no way to tell which was
+    which (user, 2026-08-26: "we do not know which is my intended design").
+
+    The FILE is the source of truth here, so a tab whose design has moved on is
+    reloaded rather than left stale — that refresh is the entire point of the
+    loop. The state the tab held is pushed onto its undo stack first, so
+    reloading can never silently discard unsaved work.
+
+    If the file matches what the tab already shows, only the switch happens: a
+    97-feature design costs ~45 s to rebuild and it would buy nothing."""
     path = DESIGNS / f"{file}.tcad.json"
     if not path.exists():
         return {"error": f"no saved design '{file}'"}
-    _new_tab(Document.load(str(path)))
+    fresh = Document.load(str(path))
+    tid = _find_tab(f"file:{file}")
+    if tid is None:
+        _new_tab(fresh, source=f"file:{file}")
+        _rebuild_and_mesh()
+        return {"tab_reused": False, "reloaded": False, **_doc_json()}
+    e = STATE["docs"][tid]
+    STATE["active"] = tid
+    if e["doc"].to_data() == fresh.to_data():
+        e["mesh_stale"] = True
+        return {"tab_reused": True, "reloaded": False, **_doc_json()}
+    e["history"].append(e["doc"].to_data())
+    del e["history"][:-MAX_HISTORY]
+    e["doc"] = fresh
     _rebuild_and_mesh()
-    return _doc_json()
+    return {"tab_reused": True, "reloaded": True, **_doc_json()}
 
 
 @app.post("/api/sample/{name}")
 def load_sample(name: str):
-    """Open an example — in a NEW tab."""
+    """Open a built-in example, reusing its tab if it is already open.
+
+    No reload branch here, unlike a library design: a sample has no file that
+    can move on, so an already-open one is simply switched to, edits and all.
+    Clicking Flange twice must not give you two flanges, and must not throw
+    away what you did to the first one either. File > New gets a clean one."""
     if name not in SAMPLES:
         return {"error": f"unknown sample '{name}'"}
-    _new_tab(SAMPLES[name]())
+    tid = _find_tab(f"sample:{name}")
+    if tid is not None:
+        STATE["active"] = tid
+        STATE["docs"][tid]["mesh_stale"] = True
+        return {"tab_reused": True, **_doc_json()}
+    _new_tab(SAMPLES[name](), source=f"sample:{name}")
     _rebuild_and_mesh()
-    return _doc_json()
+    return {"tab_reused": False, **_doc_json()}
 
 
 @app.get("/api/sketch/kinds")

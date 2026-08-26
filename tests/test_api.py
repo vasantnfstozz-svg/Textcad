@@ -115,10 +115,21 @@ def test_switch_tab_restores_old_design_without_rebuild(client):
     assert d["features"][0]["status"] == "ok"
 
 
-def test_examples_and_library_open_in_new_tabs(client):
-    client.post("/api/save")
+def test_library_open_gives_a_new_tab_only_for_a_DIFFERENT_design(client):
+    """Opening from the library must not replace the design you are working on
+    — but it must not clone a tab either. Before the tab-reuse change (P0 of
+    VERSION-TREE-PLAN.md) every open made a new tab unconditionally, so ten
+    iterations of one design left ten identical tabs.
+
+    Saving binds the tab to the file it wrote, so re-opening that name comes
+    back HERE. tests/test_tab_reuse.py covers the rest of the matrix."""
+    client.post("/api/save")                      # this tab is now flange-100
+    d = client.post("/api/open/hex-nut-M16").json()
+    assert len(d["tabs"]) == 2            # a DIFFERENT design -> new tab
+    assert d["tab_reused"] is False
     d = client.post("/api/open/flange-100").json()
-    assert len(d["tabs"]) == 2            # library open -> new tab
+    assert len(d["tabs"]) == 2            # back to the first tab, not a third
+    assert d["tab_reused"] is True and d["name"] == "flange-100"
 
 
 def test_close_tab_activates_neighbor_and_never_zero(client):

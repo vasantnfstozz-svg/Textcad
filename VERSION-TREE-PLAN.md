@@ -1,7 +1,7 @@
 # Version tree — development sheet
 
-> **Status: PLANNED, nothing built yet.** Design agreed with the user
-> 2026-08-26. Phases P0–P5 below; each ships and is tested on its own.
+> **Status: P0 shipped 2026-08-26; P1–P5 planned.** Design agreed with the
+> user 2026-08-26. Each phase ships and is tested on its own.
 
 ## The problem, in the user's words
 
@@ -103,11 +103,34 @@ lacks it** and must keep loading unchanged.
 
 Each phase is independently shippable and independently tested.
 
-### P0 — tab reuse (quick win, ~20 lines)
+### P0 — tab reuse — **DONE**
 
-`/api/open/{file}` switches to the existing tab if that design is already open
-instead of cloning it; same for `/api/sample`. Fixes most of the day-to-day
-pain on its own, and needs none of the version machinery.
+`_new_tab(doc, source=...)` now records where a design came from
+(`file:<slug>` / `sample:<name>`) and `_find_tab(source)` looks it up, keyed on
+**origin rather than `doc.name`** — two designs can share a name, and renaming
+must not orphan a tab. `/api/save` binds its tab to the file it just wrote, so
+saving then re-opening lands back in the same tab.
+
+Two behaviours that were NOT obvious up front and are worth keeping in mind for
+P2:
+
+- **Reuse must not mean stale.** The design loop exists to show a file that has
+  *changed*, so `/api/open` reloads a tab whose design has moved on, pushing
+  what the tab held onto its undo stack first — a refresh can never silently
+  discard unsaved work. If the file matches what the tab already shows it only
+  switches: `autonomiq-sat-panel` costs ~45 s to rebuild and re-opening an
+  identical file must not pay that for nothing.
+- **Samples have no file that can move on**, so an already-open sample is
+  switched to as the user left it, edits included. File > New gets a clean one.
+
+The response carries `tab_reused` / `reloaded`, and the chat message says which
+actually happened — three "Opened flange-100" lines above a single flange-100
+tab was the very confusion this set out to end.
+
+Tests: `tests/test_tab_reuse.py` (11), plus `test_api.py`'s old
+"opens in new tabs" test rewritten to the new intent. Verified live in the
+browser: three gallery opens of one design → one tab; a different design still
+gets its own.
 
 ### P1 — `history.py`, the storage core — **NO UI**
 
