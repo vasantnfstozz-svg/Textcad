@@ -53,12 +53,15 @@ def test_unknown_op_and_duplicate_id_rejected():
         doc.add("a", "disc", {"radius": 5, "thickness": 2})
 
 
-def test_remove_refuses_when_depended_on():
+def test_remove_heals_the_tree_by_default_strict_still_refuses():
+    # default (Fusion parity): mid-tree deletes work, dependents reconnect.
+    # Full coverage lives in tests/test_delete_repair.py.
     doc = flange_doc()
-    with pytest.raises(ValueError):
-        doc.remove("body")
-    doc.remove("bolts")                    # leaf is fine
+    doc.remove("bore")
+    assert doc.get("bolts").inputs == ["body"]
     assert len(doc.features) == 2
+    with pytest.raises(ValueError):        # the old contract, on demand
+        flange_doc().remove("body", mode="strict")
 
 
 def test_rename_rewrites_references_everywhere():

@@ -6,6 +6,7 @@ import { S } from './state.js';
 import { getJSON, isBusy } from './api.js';
 import { initViewport, loadMesh } from './viewport.js';
 import './tree.js';            // subscribes to doc-updated
+import './provenance.js';     // face pick -> which feature made it
 import './doctabs.js';         // subscribes to doc-updated
 import { initChat, addMsg } from './chat.js';
 import { initDialogs, actionUndo } from './dialogs.js';

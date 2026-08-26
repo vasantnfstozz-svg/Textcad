@@ -47,7 +47,7 @@ def test_cut_targets_the_sketched_body(page, fresh_doc, server):
     page.wait_for_timeout(2000)
 
     # user flow: Select, click the sketch profile, Extrude
-    page.click("#vSelect")
+    page.evaluate("() => window.__vp.setPickMode(true)")     # picking on (default; explicit so the test cannot flip it off)
     page.wait_for_timeout(300)
     # on the circle profile — away from the center-hole rim (r=2) and the
     # sketch outline (r=6), both of which grab line-picks

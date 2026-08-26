@@ -245,6 +245,223 @@ section; tick them THERE too when done)
   the user's exact tree. The honest-refusal path stays for genuinely
   broken results.
 
+- **R15 (2026-08-25): an AI-authored tree cannot be edited by DELETING.**
+  User's words: "once design was desiened bz ai, it comes with perfectly
+  fraature tree right, lets say if i want to modify that, or if i want delete
+  the some sketch or extrude its not working, i cant delete the sketch".
+  Reproduced on designs/esp32-remote.tcad.json (73 features): `remove()`
+  refused any feature with a dependent — "cannot remove 'outline_sketch':
+  used by ['body']" — and since every AI design is one chain
+  (sketch -> extrude tool -> cut -> ...), **72 of the 73 features were
+  undeletable**; only the last node could go. FIXED same day, Fusion-style:
+  deleting now REPAIRS the history around the node instead of refusing.
+  - `Document.remove(id, mode="auto"|"cascade"|"strict")` + `remove_plan()`
+    (a dry run). "auto" reconnects each dependent to the deleted node's own
+    upstream body (the pass-through a suppress would give), cascades only the
+    dependents that cannot be reconnected (a sketch and a solid are never
+    interchangeable), and sweeps the TOOL geometry a delete orphans, so
+    killing a pocket's cut does not leave its prism floating. Real bodies
+    survive: deleting a fuse keeps both of its inputs (a fuse has no tool
+    slot), exactly like Fusion.
+  - `/api/feature/remove` takes `mode` + `dry_run` and returns the plan; the
+    tree's x button dry-runs first and CONFIRMS with the names of everything
+    that goes with it (rule 7: never a silent surprise). Del deletes the
+    selected feature. One Ctrl+Z restores the whole group.
+  - Chat can delete too ({"action":"delete"}), but refuses plans over
+    CHAT_DELETE_LIMIT (6) features and points at the tree instead — a chat
+    line is a poor place to approve demolishing a design.
+  - Tests: tests/test_delete_repair.py (19, incl. volume proof that deleting
+    a pocket gives the material back) + tests/e2e/test_tree_delete.py (5,
+    real browser: confirm text, reconnect, cancel, Del key, undo).
+  - Still open from the same report ("if i want to modify that"): a param the
+    AI never emitted cannot be ADDED from the tree (only existing params are
+    listed, and `edit()` rejects unknown keys). Extrudes are covered by Edit
+    Feature; fillet/shell/pattern params are not. Needs an op-schema-driven
+    param row in the tree body.
+
+- **R16 (2026-08-25): selecting a surface must point at the feature that made
+  it.** User's words: "when the design is loaded [...] if i am selecting a
+  surface in the design, it should go to the or highlight the feature tree,
+  which sketch is that and what extrude we have over there, it should be
+  robust, dont try some simple parts, we have manz examble like this remote and
+  impeller trz those examble". SHIPPED as `provenance.py` +
+  `/api/face-feature` + `static/js/provenance.js` (Fusion's *Find in
+  Timeline*; the forward direction, feature -> highlighted geometry, already
+  existed).
+  - THE RULE (every clause was probed, not reasoned): a face is a trimmed
+    survivor, and later features can only trim a face, never grow it. So the
+    creator is the EARLIEST ancestor feature whose own cached solid had a face
+    that (1) is the same surface type, (2) lies on the same infinite surface
+    (orientation-canonical key — a cutting tool's cylinder and the hole it
+    leaves share one key), (3) whose bounding box CONTAINS the queried face's
+    box, and (4) really contains an interior point of it. Clause 3 is the
+    discriminator: esp32-remote has 490 coplanar planar faces, so 1+2+4 alone
+    is not an identity.
+  - Answers with BOTH `origin` (where the geometry came from — a pocket's tool
+    extrude, whose sketch is the profile drawn) and `applied_by` (the cut/fuse
+    that put it in this body, which is what the tree reveals), plus the sketch
+    and extrude behind it. The tree row is flashed AND scrolled into view; the
+    rest of the chain is tinted; the pick panel lists it with clickable links.
+    Selection (`S.selected`) is deliberately NOT touched — it aims the tools.
+  - Face picking now defaults ON (Fusion parity rule 2: there is no "Select
+    mode" in Fusion). It defaulted OFF, so on a freshly loaded design clicking
+    a surface did nothing whatsoever — indistinguishable from broken, and it
+    made this feature undiscoverable. `__vp.setPickMode(on)` added so tests set
+    the mode instead of toggling it blind.
+  - VERIFIED on the designs the user named, every face, not samples:
+    esp32-remote 623/623 attributed, pump-impeller 65/65, with four invariants
+    checked per face (coverage, the feature is a real ancestor, no EARLIER
+    feature also hosts the face, and asking twice agrees). Blade faces trace to
+    `blade_sketch`/`blade_solid` via `blade_ring` (the polar pattern), pocket
+    floors to their `*_tool` extrude applied by the `*` cut, and a top face
+    that survived 25 cuts still belongs to `body`, not to the last cut.
+  - PERFORMANCE: 581 ms -> 13.6 ms per click on esp32-remote. Two real bugs
+    behind that: the index cache compared `id(...)` values with `is` (two equal
+    ints are not the same object), so the whole index was rebuilt on EVERY
+    query; and the walk ran twice, once for `origin` and once for `applied_by`.
+  - THE BUG UNIT TESTS COULD NOT SEE: `BRepBndLib.Add_s(face, box, True)`
+    measures a face's box from its TRIANGULATION when one exists. The viewport
+    tessellates every body it draws, so in the real app — and only there —
+    boxes shifted, clause 3 started failing, and attribution slid onto later
+    features (42 of the impeller's 65 faces collapsed onto the final fuse)
+    while every unit test stayed green. Fixed by demanding exact boxes
+    (`useTriangulation=False`, no measurable cost); locked in by tests that
+    MESH the body first and then demand identical answers.
+  - Tests: tests/test_face_provenance.py (17, impeller included) +
+    tests/e2e/test_face_to_feature.py (5, real browser clicks on real triangle
+    centroids — a face's centre is often not on the face at all).
+
+- **R17 (2026-08-25): the tree must show DIMENSIONS, not entity JSON — and let
+  you edit them.** User's words: "when click the feature, we dont need see to
+  entities, and all, also if i am having sketch of square, i have to see lenth,
+  in the feature tree, if i want change it i can do it in the feature tree
+  itself, like that i can edit all shape in the feature tree as well extrude[.]
+  another examble, lets saz we havre piller, i can able to change outer diameter
+  and inner diameter as well, all parameter, i can scnage it in the feature
+  tree, so it should be robust." (Screenshot: `lora_foot_sketch` expanded to a
+  wall of raw path JSON.)
+  - A sketch's `entities` no longer renders as JSON. Each shape becomes a card:
+    its kind, an add/subtract dropdown (a select, not a text box — "subtract"
+    typed into a text field is how holes get lost), and one editable row per
+    dimension the geometry actually reads: rectangle -> width/height, circle ->
+    radius, slot -> length (overall)/height, ellipse -> radius X/Y,
+    regular_polygon -> radius/sides, then x/y/angle. Editing a row sends the
+    whole `entities` array back through /api/edit, so it is one normal
+    parameter edit: verified, rebuilt, undoable.
+  - DIAMETERS everywhere a radius exists: round shapes get a "Ø diameter" row,
+    and any op param matching /(^|_)r$|radius/ gets a "Ø ..." sibling (a tube
+    shows Ø outer 40 / Ø inner 16 beside outer_radius 20 / inner_radius 8 —
+    the user's "piller"). Typing a diameter stores radius = Ø / 2.
+  - Coordinate-list shapes (`path`, `polygon`) have no dimensions to type, so
+    they show an honest summary — "8 segments · 17.7 × 16.8 mm" — plus an
+    "✎ edit shape" button into the sketch editor, instead of 40 coordinates.
+  - SINGLE SOURCE OF TRUTH: `sketch.ENTITY_FIELDS` / `ENTITY_COMMON` /
+    `ENTITY_DIAMETER` / `ENTITY_GEOMETRY` live next to `_entity()` (the only
+    other place that knows these field names) and reach the UI through
+    GET /api/sketch/kinds. `sketch.entity_kinds_in_code()` reads the kinds out
+    of `_entity`'s own source, and a test asserts the two agree in BOTH
+    directions — so a newly added entity kind cannot silently fall back to raw
+    JSON, and the catalog cannot list a kind the geometry rejects. A second
+    test bumps every declared field and asserts the built area changes, so a
+    mis-named key cannot ship a row that does nothing.
+  - P0 FOUND WHILE TESTING: build123d silently ABSOLUTISES a negative size —
+    `Rectangle(-5, 40)` builds exactly the same face as `Rectangle(5, 40)`
+    (probed). With dimensions now editable from the tree, a typo'd minus sign
+    would have quietly produced a different part with a green check beside it.
+    `sketch._validate_dims` now refuses any non-positive declared dimension,
+    naming the field the way the tree labels it. All 41 designs in designs/ were
+    scanned first: zero of them relied on the old behaviour.
+  - Tests: tests/test_shape_params.py (9) + tests/e2e/test_tree_shape_edit.py
+    (5, real browser: type 80 into `width` and the extruded volume doubles;
+    type 20 into `Ø diameter` and the stored radius becomes 10).
+
+- **R18 (2026-08-25): finishing or cancelling a sketch took ~10 s, and every
+  load was slow.** User's words: "when did some changes or even no chnages in
+  the sketch tab, when i am pressing finish or cancel sktch, whz does it take so
+  much time to rebuilding it, most of the times, it takse a lot of times to load
+  as well, solve this problem, make it more robust".
+  - MEASURED FIRST on esp32-remote (73 features): a full rebuild was 6.3 s, of
+    which only ~2.4 s was geometry — the rest was re-running `inspector.health`
+    on every feature. Opening a sketch sets the rollback bar (rebuild #1) and
+    closing it clears the bar (rebuild #2), so a sketch visit that changed
+    NOTHING cost ~10 s, plus ~2.3 s of re-tessellation per viewport refresh and
+    a 0.4 s STL export that nothing reads.
+  - FIX 1 — content-addressed rebuild. A feature's output is a pure function of
+    (op, params, input geometry), so each one gets a signature over its op, its
+    params and its INPUTS' signatures. Same signature -> the part, its problems
+    and its volume are all reused, skipping both the build and the health
+    check. Inputs are keyed by content rather than by name, so a rename costs
+    nothing and an upstream edit invalidates exactly what is downstream of it.
+    Failures are cached too, so a broken parameter does not re-cost a full
+    evaluation on every keystroke while the user fixes it.
+  - FIX 2 — the cache is PROCESS-WIDE. Signatures are content-addressed, so an
+    entry is valid for any document: reopening a design, switching tabs, or
+    undoing into a fresh Document all hit geometry already built.
+  - FIX 3 — numbers that mean the same must hash the same. The sketch editor
+    round-trips `y: -25.0` into `-25` and `offset: 6.0` into `6`; JSON keeps
+    those apart, so finishing an UNTOUCHED sketch changed the signature and
+    rebuilt every feature below it (13 s for a no-op). Integral floats collapse
+    to int and values round to 9 dp — OCCT's own tolerance is 1e-7 mm.
+  - FIX 4 — an unchanged sketch is not an edit. `sketcher.create()` compares
+    what the editor holds against what is saved (key-order-independent) and,
+    when identical, does not POST at all: no rebuild, and no pointless entry on
+    the undo stack.
+  - FIX 5 — the viewport stops re-fetching geometry it is already drawing. The
+    document carries a `geom_version` fingerprint; `loadMesh()` skips the fetch
+    and the three.js scene rebuild when it has not moved (`force` for imports
+    and tab switches). The 3.2 MB /api/model response is cached as BYTES by the
+    same fingerprint, and tessellation is cached process-wide by OCCT shape.
+  - FIX 6 — the STL export left the hot path. It cost ~0.4 s on every rebuild
+    and nothing in the UI reads it (the viewport is fed by /api/model); it is
+    written on demand when /api/mesh.stl is actually requested.
+  - RESULT, measured in a real browser on esp32-remote:
+    finish a sketch with no changes 10.7-13.6 s -> 0.5-2.2 s; cancel ~10 s ->
+    0.8-1.6 s; undo 5.8 s -> 0.6 s; reopen the same design 6.4 s -> 0.5 s;
+    repeat /api/model 0.57 s -> 0.01 s; a second tab of the same design 2.2 s
+    -> 0.3 s. A no-change rebuild of the document itself is 0.00 s.
+  - Tests: tests/test_rebuild_cache.py (12). Most of them are about STALENESS,
+    not speed — an upstream edit must reach the result, a cached rebuild must
+    match a cold one feature by feature, suppression/rollback/rename/undo must
+    all stay correct, and the cache must stay bounded.
+
+- **R19 (2026-08-25): switching tabs showed the WRONG design "for at least one
+  minute".** User's words: "when switching design tab also takes really a lot of
+  times to load the design [...] if i am switching to esp32 design tab, when for
+  atleast one minue i am just seeing t washer only, its making me so irriteting
+  [...] there are many delay cases like this are in the software solve these
+  issues as well".
+  - The tab switch itself was never the problem. Profiling it found the real
+    one, which was making EVERY view of a part slow: `_tagged_mesh` meshed each
+    of esp32-remote's 254 faces separately (`face.tessellate`, **8.8 s**) and
+    then sampled all 609 edges off their curves at 41 points each (**2.5 s**).
+    A third of a second of that was one line of my own: keying edges by
+    `TShape().This()`, which costs 1.3 ms per call.
+  - FIX — mesh the solid ONCE (`BRepMesh_IncrementalMesh`, angular tolerance
+    0.35 rad) and read each face's slice of that triangulation, and take each
+    edge's polyline from the same mesh (`PolygonOnTriangulation`). This is not
+    only ~20x faster, it is BETTER geometry: independently meshed faces do not
+    share nodes along their common edges, so the old shell was full of hairline
+    cracks, and the outlines now sit exactly on the silhouette.
+    `_tagged_mesh` 12.0 s -> **0.61 s**, payload 3.2 MB -> **0.63 MB**.
+  - The angular tolerance was measured, not guessed: at 0.35 rad the smallest
+    hole in esp32-remote (r=0.8 mm) still gets 37 segments around it.
+  - FIX — the viewport no longer shows the previous design while the next one
+    loads. Clicking a tab empties the viewport immediately, dims the tab, and
+    shows "opening <name>…"; a forced load (tab switch, import, open) always
+    puts up the busy overlay, because that is the one case where the wait is
+    long enough to read as "nothing happened".
+  - MEASURED in a browser with t-washer and esp32-remote both open: the old
+    part leaves the screen in **1-7 ms** and the new one is fully up at
+    **68-208 ms**.
+  - WINDING IS THE RISK in this change: a REVERSED face's triangles wind the
+    other way, and getting it wrong turns the part inside out under backface
+    culling — which no triangle count would catch. tests/test_mesh_pipeline.py
+    (11) checks the mesh as geometry instead: SIGNED volume via the divergence
+    theorem (inside-out fails, and it must match the solid's volume within 2%),
+    surface area, bounding box, that every face keeps a pickable id, that
+    indices stay in range, that edges lie on the part, and that a small bore
+    does not degenerate into a polygon. Confirmed visually as well.
+
 ## Confirmed root causes
 
 - **R1a — authoring treats sketch→extrude as a fallback, primitives as

@@ -48,7 +48,7 @@ def test_ok_with_untouched_defaults_extrudes(page, fresh_doc, server):
     page.wait_for_timeout(2500)
 
     # the user flow: Select mode, click the ring of the profile, Extrude, OK
-    page.click("#vSelect")
+    page.evaluate("() => window.__vp.setPickMode(true)")     # picking on (default; explicit so the test cannot flip it off)
     page.wait_for_timeout(300)
     pt = page.evaluate(TO_SCREEN, [0, -17, 0])       # inside the donut ring
     page.mouse.click(pt["x"], pt["y"])

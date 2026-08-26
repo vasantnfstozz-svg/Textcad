@@ -208,7 +208,7 @@ def test_sketch_profile_is_pickable_over_the_face_below(dome_with_rect_sketch):
     """Clicking INSIDE the drawn rectangle must select the PROFILE, not the
     circular face it sits on (they are coplanar — the profile wins the tie)."""
     page = dome_with_rect_sketch
-    page.click("#vSelect")                          # ◉ Select mode
+    page.evaluate("() => window.__vp.setPickMode(true)")     # picking on (default; explicit so the test cannot flip it off)                          # ◉ Select mode
     inside = page.evaluate(TO_SCREEN, [5, 5, 10])   # inside rect AND circle
     page.mouse.click(inside["x"], inside["y"], button="left")
     page.wait_for_timeout(300)
@@ -300,7 +300,7 @@ def test_cut_a_pocket_through_the_real_ui(face_sketch_via_real_click):
     page.wait_for_timeout(400)
 
     inside = page.evaluate(TO_SCREEN, [10, 5, 10])   # pick the circle profile
-    page.click("#vSelect")
+    page.evaluate("() => window.__vp.setPickMode(true)")     # picking on (default; explicit so the test cannot flip it off)
     page.mouse.click(inside["x"], inside["y"], button="left")
     page.wait_for_timeout(300)
     page.click("#ribbon .rbtn[title='extrude']")

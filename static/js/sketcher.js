@@ -1751,11 +1751,7 @@ function commitDrawDims() {
 
 async function create() {
   const clean = skEnts.filter(e => !e.ghostOpen);
-  if (!clean.length) {
-    bus.emit('msg', 'bot', '⚠ The sketch is empty — pick a shape and click ' +
-      'on the canvas to draw first.');
-    return;
-  }
+  if (!clean.length) { await finishEmpty(); return; }
   if (clean[0].mode === 'subtract') clean[0].mode = 'add';
   const entities = clean.map(e => {
     const o = { kind: e.kind, mode: e.mode };
@@ -1771,6 +1767,17 @@ async function create() {
     // edit-isolation triggers the one full rebuild with the new entities
     const params = skOnFace ? { entities }
       : { plane: skPlaneName, offset: skPlaneOffset, entities };
+    // NOTHING CHANGED? Then do not touch the document at all: no rebuild of
+    // everything downstream, and no pointless entry on the undo stack. Opening
+    // a sketch to look at it and pressing Finish is not an edit.
+    const saved = (S.lastDoc?.features || []).find(f => f.id === skEditId);
+    if (saved && sameSketch(saved.params, params)) {
+      exitMode();
+      loadMesh();
+      bus.emit('msg', 'bot', `Sketch "${skEditId}" closed — nothing changed.`);
+      skEditId = null;
+      return;
+    }
     const doc = await postJSON('/api/feature/params', {
       feature_id: skEditId, params }, 'updating sketch…');
     exitMode();
@@ -1815,6 +1822,70 @@ async function create() {
         `Revolve to turn it into a solid.`);
     }
   }
+}
+
+/* Is what the editor holds the same sketch that is already saved? Compared
+   with key order normalised (the editor rebuilds each entity object, so its
+   keys come out in a different order than they went in) and numbers compared
+   as numbers (-25 and -25.0 are the same place). */
+function stableJson(v) {
+  if (Array.isArray(v)) return '[' + v.map(stableJson).join(',') + ']';
+  if (v && typeof v === 'object')
+    return '{' + Object.keys(v).sort().map(k =>
+      JSON.stringify(k) + ':' + stableJson(v[k])).join(',') + '}';
+  if (typeof v === 'number') return String(Number(v.toFixed(9)));
+  return JSON.stringify(v);
+}
+
+function sameSketch(saved, next) {
+  if (!saved) return false;
+  if (stableJson(saved.entities || []) !== stableJson(next.entities || []))
+    return false;
+  if (next.plane !== undefined && saved.plane !== next.plane) return false;
+  if (next.offset !== undefined
+      && Number(saved.offset || 0) !== Number(next.offset || 0)) return false;
+  return true;
+}
+
+/* Finishing a sketch that has NOTHING left in it.
+
+   Deleting the last shape used to be a DEAD END: create() said "the sketch is
+   empty, draw first" and returned, and sketch mode owns the whole tab strip
+   (only the green contextual tab shows), so the only way out was Cancel —
+   which throws the deletion away. A user deleting a name from its own sketch
+   could therefore never save that deletion (report 2026-08-25).
+
+   An empty sketch is a real intent, so honour it: on a COMMITTED sketch it
+   means "this sketch should go" (confirmed, listing what goes with it, one
+   undo away), on a brand-new one it means "never mind". */
+async function finishEmpty() {
+  if (!skEditId) {                       // nothing was ever drawn: just leave
+    exitMode();
+    bus.emit('msg', 'bot', 'Sketch closed — nothing was drawn, so nothing ' +
+      'was created.');
+    return;
+  }
+  const fid = skEditId;
+  const dry = await postJSON('/api/feature/remove',
+    { feature_id: fid, dry_run: true }, 'checking dependencies…');
+  const plan = dry.remove_plan;
+  if (!plan) return;                     // error already shown; stay in sketch
+  if (!confirm(`You deleted every shape in "${fid}".\n\n${plan.summary}\n\n` +
+               `OK deletes the sketch. Cancel keeps it open so you can draw.`)) {
+    bus.emit('msg', 'bot', `Kept "${fid}" open — draw the new shapes, or ` +
+      `press Cancel Sketch to put the deleted ones back.`);
+    return;
+  }
+  skEditId = null;
+  await releaseIsolation();              // rollback bar off BEFORE the delete
+  exitMode();
+  const doc = await postJSON('/api/feature/remove', { feature_id: fid },
+                             'deleting…');
+  loadMesh();
+  if (!doc.error)
+    bus.emit('msg', 'bot',
+      ((doc.remove_plan && doc.remove_plan.summary) || `Deleted "${fid}".`)
+        .replace(/^Delete /, 'Deleted ') + ' Undo (Ctrl+Z) puts it back.');
 }
 
 /* Add one feature and verify it actually BUILT. On failure, remove every

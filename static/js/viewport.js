@@ -6,6 +6,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { bus } from './bus.js';
 import { S } from './state.js';
+import { setBusy, clearBusy } from './api.js';
 import { initSketch3D, sketch3DActive } from './sketch3d.js';
 import { SETTINGS } from './settings.js';
 import { gridStepFor, planeHalfFor, buildGridLines, patchFor,
@@ -26,7 +27,12 @@ let pickHl = null;               // orange overlay for a picked face/edge
 let MODEL = null;                // /api/model payload (faceId, faces, edges)
 let fitRadius = 100;
 const fitCenter = new THREE.Vector3();
-let pickMode = false;
+// Fusion parity rule 2 (select-then-command): clicking a face SELECTS it, with
+// no mode to enable first — Fusion has no "Select mode" button. It used to
+// default off, so on a freshly loaded design clicking a surface did nothing at
+// all, which is indistinguishable from broken (and made face->feature lookup
+// undiscoverable). The toggle stays, for turning picking OFF.
+let pickMode = true;
 let placeCb = null;              // when set, the next viewport click places a shape
 let planePickCb = null;          // when set, click an origin plane / face to sketch on
 const originPlanes = [];         // the 3 clickable origin planes during plane-pick
@@ -188,6 +194,16 @@ export function initViewport() {
                           sceneChildren: scene.children.length }),
     /* raycast at a WORLD point (e.g. a face centre) as if the user clicked
        there, and report what got picked — deterministic, no screen maths */
+    /* deterministic for tests: set the mode instead of toggling it, so a
+       test never depends on what the default happens to be */
+    setPickMode: (on) => {
+      pickMode = !!on;
+      const b = document.getElementById('vSelect');
+      if (b) b.classList.toggle('on', pickMode);
+      if (!pickMode) clearPick();
+      return pickMode;
+    },
+    getPickMode: () => pickMode,
     pickAtWorld: (world) => {
       const rect = renderer.domElement.getBoundingClientRect();
       const v = new THREE.Vector3(...world).project(camera);
@@ -204,12 +220,17 @@ export function initViewport() {
   document.getElementById('vTop').onclick = () => setView('top');
   document.getElementById('vFront').onclick = () => setView('front');
   document.getElementById('vIso').onclick = () => setView('iso');
-  document.getElementById('vSelect').onclick = e => {
-    pickMode = !pickMode;
-    e.target.classList.toggle('on', pickMode);
+  const paintPickMode = () => {
+    const b = document.getElementById('vSelect');
+    if (b) b.classList.toggle('on', pickMode);
     renderer.domElement.style.cursor = pickMode ? 'crosshair' : '';
+  };
+  document.getElementById('vSelect').onclick = () => {
+    pickMode = !pickMode;
+    paintPickMode();
     if (!pickMode) clearPick();
   };
+  paintPickMode();               // picking is ON by default — show it
 
   let downXY = null;
   renderer.domElement.addEventListener('pointerdown',
@@ -1020,14 +1041,33 @@ function sketchMeshes() {
    drop their payload. */
 let loadSeq = 0;
 
-export async function loadMesh(fit = false) {
+let drawnVersion = null;         // the geometry currently in the scene
+
+/* Re-fetching and re-rendering the model is the most expensive thing the UI
+   does (megabytes of triangles, plus a full three.js scene rebuild). Most calls
+   ask for geometry that is already on screen — finishing or cancelling a sketch
+   without changing anything, undoing back to the same state, switching tools.
+   The document carries a geometry fingerprint, so those cost nothing now.
+   `force` bypasses it for callers that must reload (imports, tab switches). */
+export async function loadMesh(fit = false, force = false) {
   const mine = ++loadSeq;
+  const version = S.lastDoc && S.lastDoc.geom_version;
+  if (!force && version && version === drawnVersion && bodyObjs.length) {
+    clearHighlight(); clearPick();
+    if (fit) { camera.updateProjectionMatrix(); setView('iso'); }
+    return;
+  }
   clearHighlight(); clearPick();
+  // A forced load means the whole document changed (a tab switch, an import,
+  // an opened design): say so, because it is the one case where the wait is
+  // long enough to look like nothing happened.
+  if (force) setBusy('loading the model…');
   try {
     const m = await (await fetch('/api/model?t=' + Date.now())).json();
     if (mine !== loadSeq) return;          // a newer load started meanwhile
     disposeModel();
     MODEL = null;
+    drawnVersion = version || null;
     addSketches(m.sketches);
     addBodies(m.bodies);          // sets mesh + MODEL for the result body
     if (!bodyObjs.length) {
@@ -1051,10 +1091,12 @@ export async function loadMesh(fit = false) {
       camera.updateProjectionMatrix(); setView('iso');
     }
   } catch (e) { /* no model yet */ }
+  finally { if (force) clearBusy(); }
 }
 
 export function clearMesh() {
   disposeModel(); MODEL = null; S.selected = null; clearHighlight();
+  drawnVersion = null;            // the scene no longer matches any document
 }
 
 function fitToObjects(objs) {
@@ -1163,7 +1205,9 @@ function pickAt(e) {
                eHits[0].object.userData.body);
   } else if (fHit) {
     const entry = bodyObjs.find(b => b.mesh === fHit.object);
-    if (entry) selectFace(entry.data.faceId[fHit.face.a], entry);
+    // the raycast hit point rides along: it is the best possible interior
+    // sample for asking WHICH FEATURE made this face (provenance.js)
+    if (entry) selectFace(entry.data.faceId[fHit.face.a], entry, fHit.point);
   }
 }
 
@@ -1171,6 +1215,7 @@ function pickAt(e) {
    remembers it for select-then-command tools (Extrude uses it directly) */
 function selectProfile(sketchId, meshObj) {
   clearPickHighlight();
+  bus.emit('face-picked', { clear: true });   // ...same for a profile pick
   S.pickedFace = null;
   S.pickedCurved = null;
   S.pickedProfile = { id: sketchId };
@@ -1188,7 +1233,7 @@ function selectProfile(sketchId, meshObj) {
   document.getElementById('pickInfo').appendChild(note);
 }
 
-function selectFace(fid, entry = null) {
+function selectFace(fid, entry = null, hitPoint = null) {
   clearPickHighlight();
   const m = (entry ? entry.data : MODEL);
   if (!m) return;
@@ -1222,6 +1267,15 @@ function selectFace(fid, entry = null) {
      ['area', (info.area ?? '?') + ' mm²'],
      info.radius != null ? ['radius', info.radius + ' mm'] : null,
      info.center ? ['center', info.center.join(', ')] : null]);
+  // ask WHO MADE THIS FACE (provenance.js listens) — a face pick is how the
+  // user navigates an AI-authored tree they did not build themselves
+  bus.emit('face-picked', {
+    body: info.body || (entry ? entry.id : null),
+    face: fid,
+    center: info.center || null,
+    area: info.area ?? null,
+    point: hitPoint ? [hitPoint.x, hitPoint.y, hitPoint.z] : null,
+  });
   if (info.center && isFlat) {                  // sketching needs a FLAT face
     const btn = document.createElement('button');
     btn.textContent = '✎ Sketch on this face';
@@ -1243,6 +1297,7 @@ function selectFace(fid, entry = null) {
    'edge 3' is ambiguous without it */
 function selectEdge(eid, bodyId = null) {
   clearPickHighlight();
+  bus.emit('face-picked', { clear: true });   // drop the face's "created by"
   S.pickedFace = null;                 // an edge pick is not a sketchable face
   S.pickedCurved = null;
   S.pickedProfile = null;

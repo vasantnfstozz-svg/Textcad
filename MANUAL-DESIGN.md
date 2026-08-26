@@ -162,6 +162,33 @@ polish. A fix is only "done" after ship-check (tests + live smoke test).
 
 ## DONE (history — moved verbatim from BACKLOG.md 2026-08-04)
 
+### P0 (2026-08-25): emptying a sketch was a DEAD END — the delete could never be saved
+User's words: "in my design i just want to delete a name, i clicked delete in
+the sketch mode, but i cant save the sketch, and go to the normal tab, because
+it says something."
+
+Root cause: `sketcher.create()` (Finish Sketch) bailed with "⚠ The sketch is
+empty — pick a shape and click on the canvas to draw first" and RETURNED without
+leaving sketch mode. Sketch mode owns the tab strip (only the green contextual
+tab renders, `ribbon.renderTabs`), so with the last shape deleted there was no
+way forward: Finish refused forever and Cancel discards the edit. Deleting the
+only content of a sketch was therefore unsaveable.
+
+Fix: `sketcher.finishEmpty()` — an empty sketch is a real intent.
+- A COMMITTED sketch (edit-sketch) means "this sketch should go": dry-run
+  `/api/feature/remove`, confirm with the plan's summary (it NAMES the extrude
+  and cut that go with it), release the edit-isolation rollback, leave sketch
+  mode, delete. One Ctrl+Z restores the whole group.
+- Declining the confirm keeps the sketch open to redraw (and says so) — never a
+  dead end in either direction.
+- A brand-new sketch with nothing drawn just leaves the mode.
+Built on the R15 delete-repair work (see FEATURE-TREE-PLAN.md).
+
+Verified: tests/e2e/test_sketch_empty_exit.py (3 — written RED first: the old
+code timed out waiting to leave sketch mode) + a live browser probe (delete the
+art, Finish, normal tabs back, plate intact at 40000 mm³, no console errors).
+Full e2e + sketch suites green (82).
+
 ### Fusion-parity sketch mode overhaul S0–S6 (2026-08-03) + follow-ups (2026-08-04)
 The whole workstream lives in [SKETCH-MODE-PLAN.md](SKETCH-MODE-PLAN.md) with
 per-step root causes, fixes, verification, and harness lessons. Headlines:

@@ -72,6 +72,14 @@ complete. Details + Done history: MANUAL-DESIGN.md.
   up too; ship-check now ends with `git push`. Still open: CI running
   pytest (heavy: build123d + playwright install per run — needs its own
   pass).
+- [ ] **A suppressed final boolean promotes its TOOL to the result.**
+  Suppress the last `cut` in a sketch->tool->cut chain and `result()`
+  walks back to the tool prism (a real solid, so it qualifies) instead
+  of the body the user is looking at — the viewport then shows the
+  cutting prism as the part. Found 2026-08-25 while testing the rebuild
+  cache (tests/test_rebuild_cache.py pins the current behaviour so a
+  fix is a deliberate change). Probably: prefer the last feature on the
+  result body's input[0] spine over any later stray solid.
 - [ ] **Assemblies/joints in Studio** (assembly.py exists; UI is single-part).
 - [ ] **Units/grid settings** — everything is implicitly mm; at least label it.
 - [ ] **AI-flow polish** (chat edits during rollback etc.) — parked until manual

@@ -33,10 +33,13 @@ from pydantic import BaseModel
 import build123d as b3d
 from OCP.BRep import BRep_Tool
 from OCP.BRepAdaptor import BRepAdaptor_Surface
+from OCP.BRepMesh import BRepMesh_IncrementalMesh
 from OCP.GeomAbs import GeomAbs_SurfaceType
 from OCP.TopAbs import TopAbs_Orientation, TopAbs_ShapeEnum
-from OCP.TopExp import TopExp_Explorer
+from OCP.TopExp import TopExp, TopExp_Explorer
+from OCP.TopLoc import TopLoc_Location
 from OCP.TopoDS import TopoDS
+from OCP.TopTools import TopTools_IndexedDataMapOfShapeListOfShape
 
 import author
 import blocks
@@ -45,11 +48,15 @@ import sketch as sketchlib
 import sketch_trim as trimlib
 import sketch_snap as snaplib
 from document import Document
+import provenance
 from samples import SAMPLES, sample_flange, sample_impeller, sample_compressor  # noqa: F401 (re-export for tests)
 
 ROOT = Path(__file__).parent
 STATIC = ROOT / "static"
 MESH_PATH = ROOT / "_studio_mesh.stl"
+# how much a CHAT "delete X" may take before it must be done deliberately in
+# the tree instead (a pocket group is 3 features; a whole design is not)
+CHAT_DELETE_LIMIT = 6
 DESIGNS = ROOT / "designs"
 DESIGNS.mkdir(exist_ok=True)
 
@@ -115,17 +122,18 @@ def _snapshot() -> None:
 
 
 def _rebuild_and_mesh() -> None:
+    """Rebuild the active document. The STL is NOT written here.
+
+    export_stl cost ~400 ms on every rebuild — on every parameter nudge, every
+    sketch open and close — and nothing in the UI reads it: the viewport is fed
+    by /api/model (JSON). It is written on demand now, when /api/mesh.stl is
+    actually asked for."""
     import time
     e = _entry()
     t0 = time.perf_counter()
     e["ok"] = e["doc"].rebuild()
     e["rebuild_ms"] = round((time.perf_counter() - t0) * 1000)
-    part = e["doc"].result()
-    if part is not None:
-        try:
-            b3d.export_stl(part, str(MESH_PATH))
-        except Exception:
-            pass
+    e["mesh_stale"] = True
 
 
 def _tabs_json() -> list[dict]:
@@ -143,6 +151,7 @@ def _doc_json() -> dict:
         "rebuild_ms": e["rebuild_ms"],
         "can_undo": len(e["history"]) > 0,
         "rollback": doc.rollback,
+        "geom_version": getattr(doc, "_geom_version", ""),
         "spec": doc.spec,
         "spec_problems": doc.spec_problems,
         "warnings": doc.warnings,
@@ -176,6 +185,7 @@ parametric CAD tool. You will be given the current design's feature tree as
 JSON and a user message. Respond with ONLY a JSON object, no prose:
 
 To edit one parameter: {"action":"edit","feature_id":"...","param":"...","value":<number-or-list>}
+To delete a feature:   {"action":"delete","feature_id":"..."}
 To design a NEW object from scratch (user describes something to create, not a
 change to the current one): {"action":"create","description":"<the user's full requirement, restated precisely>"}
 To answer a question:  {"action":"answer","text":"..."}
@@ -191,7 +201,12 @@ Rules:
   and the tree has a with_center_hole feature named "hub", the bore is
   hub.radius. "Blade count" is usually a polar_pattern's "count".
 - All lengths are mm, angles deg; convert if the user implies otherwise.
-- If the request is not a single-parameter edit, explain briefly via "answer"."""
+- "delete" is for "remove/delete/get rid of <feature>". Pick the feature the
+  user MEANS: a pocket the user names is usually the cut/extrude feature, not
+  its sketch. Dependent features are repaired automatically, so never refuse a
+  delete because something downstream uses it.
+- If the request is not a single-parameter edit or a delete, explain briefly
+  via "answer"."""
 
 
 def _make_model():
@@ -297,8 +312,22 @@ class ImportStlReq(BaseModel):
     scale: float = 1.0               # 1 = STL units are mm
 
 
+class FaceFeatureReq(BaseModel):
+    """A face the user picked in the viewport, as the tagged mesh describes it.
+    `face` is the face's index on that body (the mesh's faceId), `center`+`area`
+    let the backend notice a stale index after a rebuild, `point` is the raycast
+    hit (the best interior sample)."""
+    body: str | None = None
+    face: int | None = None
+    point: list | None = None
+    center: list | None = None
+    area: float | None = None
+
+
 class RemoveReq(BaseModel):
     feature_id: str
+    mode: str = "auto"          # auto (repair the history) | cascade | strict
+    dry_run: bool = False       # just report the plan, change nothing
 
 
 class RenameReq(BaseModel):
@@ -351,13 +380,9 @@ def switch_tab(req: TabReq):
     if req.id not in STATE["docs"]:
         return {"error": f"no tab '{req.id}'", **_doc_json()}
     STATE["active"] = req.id
-    # geometry is cached inside the Document — no rebuild needed on switch
-    part = _doc().result()
-    if part is not None:
-        try:
-            b3d.export_stl(part, str(MESH_PATH))
-        except Exception:
-            pass
+    # geometry is cached inside the Document — no rebuild needed on switch,
+    # and the STL is written only if something asks for /api/mesh.stl
+    _entry()["mesh_stale"] = True
     return _doc_json()
 
 
@@ -391,9 +416,25 @@ def new_design(req: NewReq):
 # Geometry for the viewport
 # ---------------------------------------------------------------------------
 
+def _ensure_mesh_file() -> bool:
+    """Write _studio_mesh.stl if the current result has not been exported yet."""
+    e = _entry()
+    if not e.get("mesh_stale", True) and MESH_PATH.exists():
+        return True
+    part = e["doc"].result()
+    if part is None:
+        return False
+    try:
+        b3d.export_stl(part, str(MESH_PATH))
+        e["mesh_stale"] = False
+        return True
+    except Exception:
+        return False
+
+
 @app.get("/api/mesh.stl")
 def get_mesh():
-    if MESH_PATH.exists():
+    if _ensure_mesh_file() and MESH_PATH.exists():
         return Response(MESH_PATH.read_bytes(), media_type="model/stl")
     return Response(status_code=404)
 
@@ -473,7 +514,24 @@ def _mesh_tol(part, denom: float = 900.0, floor: float = 0.05) -> float:
 # individual face-meta entries are useless for picking anyway. Real BREP
 # faces on such a body (e.g. a cylinder wall cut into an imported mesh) still
 # get the classic individually-tagged treatment.
+# One triangulation for the whole solid, instead of meshing every face on its
+# own. Per-face tessellation cost 8.8 s on esp32-remote's 254 faces and
+# 2.5 s more to sample its edges; the shared mesh does both in well under a
+# second AND is better geometry: independently meshed faces do not share the
+# nodes along their common edges, so the shell is full of hairline cracks.
+MESH_LINEAR_TOL = None          # set per part by _mesh_tol()
+MESH_ANGULAR_TOL = 0.35         # rad; ~37 segments around the smallest hole in
+                                # esp32-remote, measured, not guessed
+
 MESH_MODE_FACES = 400
+
+# Tessellation cache, process-wide. Triangulating esp32-remote's result body
+# costs ~2.2 s; the Part objects themselves are shared by the document rebuild
+# cache, so the same geometry reaching a second tab (or the same design opened
+# twice) is the SAME shape and must not be re-triangulated. Keyed by the OCCT
+# shape, and the entry keeps the Part alive so the key cannot be recycled.
+_MESH_CACHE: dict = {}
+_MESH_CACHE_MAX = 24
 MESH_FACE_ID = -1
 
 
@@ -511,6 +569,97 @@ def _triangle_pts(face) -> list | None:
     if cx * nx + cy * ny + cz * nz < 0:
         pts = [pts[0], pts[2], pts[1]]
     return pts
+
+
+def _shape_key(shape):
+    """Identity of a TopoDS shape, usable as a dict key.
+
+    hash() of a TopoDS_Shape is its underlying TShape, which is exactly the
+    identity we want and costs 1.5 us. (The first version also appended
+    `TShape().This()` for safety: that call takes 1.3 MILLIseconds, and the
+    1218 of them were 2.3 of the 3.2 s this function spent. Probed on
+    esp32-remote: the hash alone is unique across all 609 edges of a part and
+    stable across re-queries, and the key is only ever used within one part.)"""
+    return hash(getattr(shape, "wrapped", shape))
+
+
+def _face_triangles(face, tol):
+    """(vertices, triangles) for one face out of the SHARED triangulation.
+
+    Falls back to meshing the face alone if it has no triangulation (a face
+    BRepMesh refused). Triangle winding follows the face's orientation: a
+    REVERSED face's nodes wind the other way, and getting this wrong turns the
+    part inside out under backface culling."""
+    tf = face.wrapped
+    loc = TopLoc_Location()
+    tri = BRep_Tool.Triangulation_s(tf, loc)
+    if tri is None:
+        try:
+            verts, tris = face.tessellate(tol)
+            return [(v.X, v.Y, v.Z) for v in verts], tris
+        except Exception:
+            return None, None
+    trsf = loc.Transformation()
+    ident = loc.IsIdentity()
+    verts = []
+    for i in range(1, tri.NbNodes() + 1):
+        p = tri.Node(i)
+        if not ident:
+            p = p.Transformed(trsf)
+        verts.append((p.X(), p.Y(), p.Z()))
+    reversed_face = tf.Orientation() == TopAbs_Orientation.TopAbs_REVERSED
+    tris = []
+    for i in range(1, tri.NbTriangles() + 1):
+        a, b, c = tri.Triangle(i).Get()
+        if reversed_face:
+            b, c = c, b
+        tris.append((a - 1, b - 1, c - 1))
+    return verts, tris
+
+
+def _edge_polylines(part) -> dict:
+    """Every edge's polyline, taken from the shared triangulation.
+
+    Sampling each edge's curve instead cost 2.5 s on esp32-remote (609 edges,
+    41 points each); this is the mesh's own discretisation, already computed."""
+    out = {}
+    try:
+        emap = TopTools_IndexedDataMapOfShapeListOfShape()
+        TopExp.MapShapesAndAncestors_s(part.wrapped,
+                                       TopAbs_ShapeEnum.TopAbs_EDGE,
+                                       TopAbs_ShapeEnum.TopAbs_FACE, emap)
+    except Exception:
+        return out
+    for i in range(1, emap.Extent() + 1):
+        edge = TopoDS.Edge_s(emap.FindKey(i))
+        hosts = emap.FindFromIndex(i)
+        picks = [hosts.First()] if hosts.Extent() == 1 else [hosts.First(),
+                                                             hosts.Last()]
+        for pick in picks:
+            try:
+                f = TopoDS.Face_s(pick)
+                loc = TopLoc_Location()
+                tri = BRep_Tool.Triangulation_s(f, loc)
+                if tri is None:
+                    continue
+                pot = BRep_Tool.PolygonOnTriangulation_s(edge, tri, loc)
+                if pot is None:
+                    continue
+                trsf, ident = loc.Transformation(), loc.IsIdentity()
+                nodes = pot.Nodes()
+                poly = []
+                for k in range(1, nodes.Length() + 1):
+                    p = tri.Node(nodes.Value(k))
+                    if not ident:
+                        p = p.Transformed(trsf)
+                    poly.append([round(p.X(), 4), round(p.Y(), 4),
+                                 round(p.Z(), 4)])
+                if len(poly) >= 2:
+                    out[_shape_key(edge)] = poly
+                break
+            except Exception:
+                continue
+    return out
 
 
 def _tagged_mesh(part, body_id: str | None = None) -> dict:
@@ -551,13 +700,23 @@ def _tagged_mesh(part, body_id: str | None = None) -> dict:
                 info["body"] = body_id
             faces_meta.append(info)
 
-    for fi, face in rich_faces:
+    # Triangulate the whole solid ONCE; every face then reads its own slice of
+    # that mesh. Faces keep their own vertex ranges (face_ids stays per-vertex,
+    # which is what picking needs) but the triangles come from a single
+    # consistent mesh.
+    if rich_faces:
         try:
-            verts, tris = face.tessellate(tol)
+            BRepMesh_IncrementalMesh(part.wrapped, tol, False,
+                                     MESH_ANGULAR_TOL, True)
         except Exception:
+            pass
+
+    for fi, face in rich_faces:
+        verts, tris = _face_triangles(face, tol)
+        if verts is None:
             continue
         for v in verts:
-            positions += [round(v.X, 4), round(v.Y, 4), round(v.Z, 4)]
+            positions += [round(v[0], 4), round(v[1], 4), round(v[2], 4)]
             face_ids.append(fi)
         for t in tris:
             indices += [base + t[0], base + t[1], base + t[2]]
@@ -596,14 +755,21 @@ def _tagged_mesh(part, body_id: str | None = None) -> dict:
         edge_list = part.edges()
 
     edges_meta = []
+    edge_polys = _edge_polylines(part) if not mesh_mode else {}
     for ei, edge in enumerate(edge_list):
         gt = str(edge.geom_type).replace("GeomType.", "")
-        n = 2 if gt == "LINE" else 40
-        try:
-            pts = [edge @ (i / n) for i in range(n + 1)]
-            poly = [[round(p.X, 4), round(p.Y, 4), round(p.Z, 4)] for p in pts]
-        except Exception:
-            continue
+        # the polyline the shared mesh already computed for this edge: it costs
+        # nothing and follows the triangles exactly, so outlines sit on the
+        # silhouette instead of floating beside it
+        poly = edge_polys.get(_shape_key(edge))
+        if poly is None:
+            n = 2 if gt == "LINE" else 24
+            try:
+                pts = [edge @ (i / n) for i in range(n + 1)]
+                poly = [[round(p.X, 4), round(p.Y, 4), round(p.Z, 4)]
+                        for p in pts]
+            except Exception:
+                continue
         em = {"id": ei, "type": gt, "length": round(edge.length, 2),
               "points": poly}
         if body_id is not None:
@@ -628,21 +794,42 @@ def get_model():
 
     The top-level positions/indices/faceId/faces/edges keys still describe the
     RESULT body, so older callers keep working."""
-    doc = _doc()
+    e = _entry()
+    doc = e["doc"]
+    # The response is 3+ MB of triangles; re-serialising it for a viewport that
+    # already has this exact geometry is pure waste. Keyed by the document's
+    # geometry fingerprint, so any real change misses the cache.
+    version = getattr(doc, "_geom_version", "")
+    cached = e.get("model_json")
+    if version and cached and cached[0] == version:
+        return Response(content=cached[1], media_type="application/json")
+
     sketches = _sketches_json(doc)
     part = doc.result()
     result_id = doc._result_feature().id if doc._result_feature() else None
 
+    # Tessellation is the single most expensive thing in a viewport refresh
+    # (2.3-3.2 s for esp32-remote). The document's rebuild cache hands back the
+    # SAME Part object when a feature's inputs did not change, so identity is a
+    # sound cache key: same object -> same triangles.
     bodies = []
     for fid in doc.leaf_solid_ids():
         gp = doc._parts.get(fid)
         if gp is None:
             continue
-        try:
-            bodies.append({"id": fid, "result": fid == result_id,
-                           **_tagged_mesh(gp, body_id=fid)})
-        except Exception:
-            continue
+        key = (fid, hash(gp.wrapped))
+        hit = _MESH_CACHE.get(key)
+        if hit is not None and hit[0].wrapped.IsSame(gp.wrapped):
+            tagged = hit[1]
+        else:
+            try:
+                tagged = _tagged_mesh(gp, body_id=fid)
+            except Exception:
+                continue
+            _MESH_CACHE[key] = (gp, tagged)
+            while len(_MESH_CACHE) > _MESH_CACHE_MAX:
+                _MESH_CACHE.pop(next(iter(_MESH_CACHE)))
+        bodies.append({"id": fid, "result": fid == result_id, **tagged})
 
     result_mesh = next((b for b in bodies if b["result"]), None)
     if result_mesh is None and part is not None:
@@ -654,15 +841,20 @@ def get_model():
         except Exception:
             result_mesh = None
     if result_mesh is None:
-        return {"positions": [], "indices": [], "faceId": [], "faces": [],
-                "edges": [], "sketches": sketches, "bodies": bodies}
-
-    return {"positions": result_mesh["positions"],
-            "indices": result_mesh["indices"],
-            "faceId": result_mesh["faceId"],
-            "faces": result_mesh["faces"], "edges": result_mesh["edges"],
-            "sketches": sketches,
-            "bodies": bodies}
+        payload = {"positions": [], "indices": [], "faceId": [], "faces": [],
+                   "edges": [], "sketches": sketches, "bodies": bodies}
+    else:
+        payload = {"positions": result_mesh["positions"],
+                   "indices": result_mesh["indices"],
+                   "faceId": result_mesh["faceId"],
+                   "faces": result_mesh["faces"],
+                   "edges": result_mesh["edges"],
+                   "sketches": sketches,
+                   "bodies": bodies}
+    body = json.dumps(payload).encode("utf-8")
+    if version:
+        e["model_json"] = (version, body)
+    return Response(content=body, media_type="application/json")
 
 
 @app.get("/api/sketch-mesh/{feature_id}")
@@ -879,16 +1071,44 @@ def import_stl_file(req: ImportStlReq):
         "volume_mm3": round(part.volume, 1)}}
 
 
+@app.post("/api/face-feature")
+def face_feature(req: FaceFeatureReq):
+    """WHICH FEATURE MADE THIS FACE (Fusion's Find in Timeline).
+
+    Read-only: no snapshot, no rebuild, no document mutation — it walks the
+    per-feature solids already cached from the last rebuild. Deliberately does
+    NOT return the document (a 79-feature payload per click is waste); the
+    frontend only needs the attribution."""
+    try:
+        return provenance.attribute_face(
+            _doc(), body_id=req.body, face_index=req.face, point=req.point,
+            center=req.center, area=req.area)
+    except Exception as e:                  # OCP errors are NOT RuntimeError
+        return {"feature": None, "reason": f"attribution failed: {e!r}"}
+
+
 @app.post("/api/feature/remove")
 def remove_feature(req: RemoveReq):
+    """Delete a feature. `dry_run` returns the PLAN only, so the UI can show
+    what else goes with it and ask first; the same call without dry_run then
+    applies exactly that plan. The returned "remove_plan" is what the user is
+    told -- a delete never quietly takes more than the node they clicked."""
+    if req.dry_run:
+        try:
+            plan = _doc().remove_plan(req.feature_id, req.mode)
+        except (KeyError, ValueError) as e:
+            return {"error": str(e), **_doc_json()}
+        return {**_doc_json(), "remove_plan": plan}
     _snapshot()
     try:
-        _doc().remove(req.feature_id)
+        plan = _doc().remove(req.feature_id, req.mode)
     except (KeyError, ValueError) as e:
         _entry()["history"].pop()
         return {"error": str(e), **_doc_json()}
     _rebuild_and_mesh()
-    return _doc_json()
+    if not _doc().features and MESH_PATH.exists():
+        MESH_PATH.unlink()                  # last feature gone -> empty viewport
+    return {**_doc_json(), "remove_plan": plan}
 
 
 @app.post("/api/feature/rename")
@@ -939,10 +1159,16 @@ def undo():
     if not e["history"]:
         return {"error": "nothing to undo", **_doc_json()}
     data = e["history"].pop()
+    old_doc = e["doc"]
     try:
         e["doc"] = Document.from_data(data)
     except ValueError as err:
         return {"error": f"undo failed: {err}", **_doc_json()}
+    # The rebuild cache is process-wide (content-addressed), so the restored
+    # document already inherits it; this keeps the link explicit for a document
+    # that was given a private cache.
+    e["doc"]._cache = old_doc._cache
+    e["doc"]._spec_cache = old_doc._spec_cache
     _rebuild_and_mesh()
     return _doc_json()
 
@@ -1006,6 +1232,13 @@ def load_sample(name: str):
     return _doc_json()
 
 
+@app.get("/api/sketch/kinds")
+def sketch_kinds():
+    """Which dimensions each sketch shape has, so the feature tree can offer
+    real editable fields (width/height/diameter) instead of a JSON blob."""
+    return sketchlib.entity_schema()
+
+
 @app.get("/api/ops")
 def get_ops():
     """The legal operation catalog — feeds the UI's Add Feature dialog."""
@@ -1048,6 +1281,36 @@ def chat(req: ChatReq):
                          f"verified ({transcript[-1]}). Opened in a new tab; "
                          f"edit anything by clicking or asking.",
                 **_doc_json()}
+
+    if intent.get("action") == "delete":
+        fid = intent.get("feature_id")
+        if not fid:
+            return {"reply": "Which feature should I delete? Name it as it "
+                             "appears in the tree.", **_doc_json()}
+        try:                                 # look before leaping (dry run)
+            plan = _doc().remove_plan(fid)
+        except (KeyError, ValueError) as e:
+            return {"reply": f"I could not delete that: {e}", **_doc_json()}
+        if len(plan["deleted"]) > CHAT_DELETE_LIMIT:
+            # a chat message is a poor place to approve a demolition: show the
+            # damage and make the user do it deliberately in the tree
+            return {"reply": f"I did NOT touch the design: '{fid}' is holding "
+                             f"up most of it. {plan['summary']} If you really "
+                             f"want that, click the x on '{fid}' in the tree "
+                             f"and confirm.",
+                    "remove_plan": plan, **_doc_json()}
+        _snapshot()
+        try:
+            plan = _doc().remove(fid)
+        except (KeyError, ValueError) as e:
+            _entry()["history"].pop()
+            return {"reply": f"I could not delete that: {e}", **_doc_json()}
+        _rebuild_and_mesh()
+        state = "PASS" if _entry()["ok"] else "FAILED verification"
+        said = plan["summary"].replace("Delete ", "Deleted ", 1)
+        return {"reply": f"{said} Rebuilt: {state}. Undo (Ctrl+Z) "
+                         f"puts it all back.",
+                "remove_plan": plan, **_doc_json()}
 
     for _ in range(2):                       # one repair retry, same philosophy
         if intent.get("action") != "edit":

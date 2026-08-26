@@ -63,7 +63,7 @@ def test_every_body_is_pickable_and_reports_its_own_id(page, fresh_doc):
     """Clicking the OLD body must pick a face ON IT — previously ghosts were
     not in the raycast set at all, so only the newest body could be selected."""
     build_two_boxes(page)
-    page.evaluate("document.getElementById('vSelect').click()")
+    page.evaluate("() => window.__vp.setPickMode(true)")     # picking on (default; explicit so the test cannot flip it off)
     page.wait_for_timeout(300)
     for target in ("box1", "box2"):
         hit = page.evaluate("""async (target) => {

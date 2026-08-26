@@ -17,6 +17,7 @@ here is confirmed against build123d 0.11.1.
 
 from __future__ import annotations
 import math
+import re
 import build123d as b3d
 from build123d import (
     Rectangle, Circle, Ellipse, Polygon, SlotOverall, RegularPolygon,
@@ -50,9 +51,93 @@ def _to_bool(v, name: str) -> bool:
 # 2D entities -> a composite Sketch on a plane
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# What each entity kind is DIMENSIONED by
+#
+# The feature tree renders its editable rows from this, so a sketch shows
+# "width 40 / height 20" instead of a wall of raw JSON. It lives here, next to
+# _entity(), because that is the only other place that knows an entity's field
+# names — and a drift test asserts every kind _entity() accepts appears here.
+#
+# (key, label, unit). `unit` is a display hint only; everything is mm/deg.
+# ---------------------------------------------------------------------------
+
+ENTITY_FIELDS = {
+    "rectangle":       [("w", "width", "mm"), ("h", "height", "mm")],
+    "circle":          [("r", "radius", "mm")],
+    "ellipse":         [("rx", "radius X", "mm"), ("ry", "radius Y", "mm")],
+    "slot":            [("length", "length (overall)", "mm"),
+                        ("height", "height", "mm")],
+    "regular_polygon": [("radius", "radius", "mm"),
+                        ("sides", "sides", "count")],
+    # geometry lives in a coordinate list, not in dimensions: the tree shows a
+    # summary and sends the user to the sketch editor rather than 40 numbers
+    "polygon":         [],
+    "path":            [],
+}
+
+# every entity can be placed and turned
+ENTITY_COMMON = [("x", "x", "mm"), ("y", "y", "mm"),
+                 ("rotation", "angle", "deg")]
+
+# kinds where a DIAMETER row is offered next to the radius: a machinist reads a
+# bore as a diameter, and the user asked for exactly this ("i can able to change
+# outer diameter and inner diameter")
+ENTITY_DIAMETER = {"circle": "r", "regular_polygon": "radius"}
+
+# entities whose shape is a coordinate list -> what to count in the summary
+ENTITY_GEOMETRY = {"polygon": "points", "path": "segments"}
+
+
+def entity_schema() -> dict:
+    """JSON-safe description of every entity kind, for the UI."""
+    return {
+        "fields": {k: [{"key": a, "label": b, "unit": c} for a, b, c in v]
+                   for k, v in ENTITY_FIELDS.items()},
+        "common": [{"key": a, "label": b, "unit": c} for a, b, c in
+                   ENTITY_COMMON],
+        "diameter": ENTITY_DIAMETER,
+        "geometry": ENTITY_GEOMETRY,
+        "modes": ["add", "subtract"],
+    }
+
+
+def entity_kinds_in_code() -> set:
+    """The kinds _entity() actually accepts, read out of its own source. Used by
+    the drift test: a new kind must not reach users as raw JSON."""
+    import inspect
+    src = inspect.getsource(_entity)
+    return set(re.findall(r'k == "([a-z_]+)"', src))
+
+
+def _validate_dims(e: dict, k: str) -> None:
+    """Every declared dimension must be a POSITIVE number.
+
+    build123d silently absolutises a negative size: Rectangle(-5, 40) builds
+    the same face as Rectangle(5, 40) (probed). With dimensions now editable
+    straight from the feature tree, a typo'd minus sign would quietly give the
+    user a different part with a green check next to it — the one failure this
+    project refuses to allow. So refuse it here, naming the field the way the
+    tree labels it."""
+    for key, label, unit in ENTITY_FIELDS.get(k, []):
+        if key not in e:
+            continue
+        v = e[key]
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                raise ValueError(f"{k} {label} must be a number, got {e[key]!r}")
+        if v <= 0:
+            raise ValueError(f"{k} {label} must be greater than 0, got {v:g}"
+                             + (" (a negative size silently builds the "
+                                "positive one)" if v < 0 else ""))
+
+
 def _entity(e: dict):
     """One 2D primitive, positioned in the sketch plane's local coordinates."""
     k = e.get("kind")
+    _validate_dims(e, k)
     x, y = float(e.get("x", 0)), float(e.get("y", 0))
     rot = float(e.get("rotation", 0))
     if k == "rectangle":
