@@ -25,6 +25,7 @@ Run:  python designs/esp32-remote.py           -> preview + checks
 """
 import json
 import math
+import os
 import sys
 
 from PIL import Image, ImageDraw, ImageFont
@@ -70,7 +71,11 @@ KEY_FLARE, TR_FLARE = 3.0, 4.0
 
 # ------------------------------------------------------- pillars & seats
 ESP_C = (0.0, -5.0)                               # board center
-ESP_HOLE_P, ESP_PIL_R, ESP_TOP = (47.0, 23.0), 3.5, 7.0
+ESP_HOLE_P, ESP_PIL_R, ESP_TOP = (47.0, 23.0), 2.75, 7.0
+# v10 (user: the ESP pillars are too big): OD D7.0 -> D5.5, same as the
+# OLED pillars. The D3 pilot keeps a 1.25 collar, comfortably over the
+# 1.0 floor the gate below enforces, and the pillar is still 2x the
+# screw diameter.
 ESP_HOLE_R = 1.5                                  # D3 hole (was D2)
 # v8: the USB wall gap is DELETED on user request — the wall is unbroken now
 # (so the ESP32's USB socket is enclosed: flash it before final assembly, or
@@ -112,6 +117,163 @@ LORA_C = (-25.5, 75.5)
 LORA_FOOT = (-34.35, -16.65, 67.1, 83.9, 2.5, 4.0)   # 17.7 x 16.8
 LORA_PIL = [(-25.5, 62.7), (-25.5, 88.0)]         # clamp pillars, top z12
 LORA_PIL_R, LORA_HOLE_R = 3.25, 0.8               # M2 pilot
+
+
+# ------------------------------------------- company name in the wire slot
+# v10 (user): the name goes IN the long slot and runs PERPENDICULAR to the
+# old horizontal placement - i.e. ALONG the slot - and it has to come out of
+# a D2, the smallest bit on hand.
+#
+# That tool size is the whole design driver. The slot is 18 wide, so rotated
+# the name gets 63 x 14mm. Measured against logo_reach_miss (a morphological
+# opening: the fraction of the artwork a given cutter physically cannot get
+# into), at D2 and that size:
+#     Impact          4.3%      <- the only usable face
+#     Segoe UI Black 12.0%
+#     Arial Black    25.3%
+#     Arial Bold     98.3%,  Bahnschrift 100%,  Calibri Bold 98.4%
+# Normal-weight faces are not "a bit rough" at D2, they are uncuttable: the
+# bit is wider than their strokes. Impact is condensed AND heavy, which is
+# exactly what a long narrow slot and a fat cutter both want.
+#
+# This is also why the official SVG lockup is NOT used here (v7 engraved it
+# at D0.8 and it was reverted): its iQ mark and thin joins need a sub-1mm
+# cutter. Name as text, cut with the bit that exists.
+LOGO_WORD = "autonomIQ"
+LOGO_FONT = r"C:\Windows\Fonts\impact.ttf"
+# v10.1 (user: "the width is going like 12mm, scale it down to 11mm"):
+# ACROSS is now the driving dimension and the length follows from the
+# word's own aspect - so the name can never silently get wider again.
+LOGO_ACROSS = 11.0                        # across the slot (was 12.85)
+LOGO_SLOT_MAX = 14.0                      # what the 18-wide slot allows
+LOGO_DEEP = 0.8
+# The name must clear the solder-tail scoop at the slot's south end
+# (SCOOP_T floor z6.0 is BELOW the engraving, so an overlap would simply
+# delete the first letter - it did, caught in the v10 preview).
+LOGO_Y0, LOGO_Y1 = SCOOP_T[3], TRENCH[3]  # usable run of the slot
+LOGO_CY = round((LOGO_Y0 + LOGO_Y1) / 2, 2)
+# TOOL: the user has a D2. Measured with logo_reach_miss below, a D2
+# cannot reach ~10% of this artwork and - critically - what it loses is
+# the JOINS, so stems part from bowls and the word reads as a row of
+# lozenges (rendered and looked at, not guessed). A D1 misses <1% and is
+# clean. The geometry here is identical either way; only the cutter
+# changes, so the spec is D1 for the lettering pass alone and the D2
+# number is reported next to it.
+LOGO_TOOL_D = 1.0
+LOGO_TOOL_HAVE = 2.0                      # what is on the shelf today
+LOGO_MISS_MAX = 0.02
+
+
+def _logo_raster():
+    """The name drawn huge, cropped to ink, then ROTATED 90 so it runs along
+    the slot instead of across it."""
+    from PIL import ImageOps
+    font = ImageFont.truetype(LOGO_FONT, 400)
+    im = Image.new("L", (7000, 900), 255)
+    dd = ImageDraw.Draw(im)
+    x = 100
+    for ch in LOGO_WORD:
+        dd.text((x, 150), ch, font=font, fill=0)
+        x += dd.textlength(ch, font=font)
+    im = im.crop(ImageOps.invert(im).getbbox())
+    return im.rotate(90, expand=True, fillcolor=255)
+
+
+_LOGO_RASTER = _logo_raster()
+
+
+LOGO_LEN = round(LOGO_ACROSS * _LOGO_RASTER.size[1]
+                 / _LOGO_RASTER.size[0], 2)      # along the slot, derived
+
+
+def logo_reach_miss(tool_d, px_mm=20.0):
+    """Fraction of the engraved artwork a tool_d cutter cannot reach, by
+    morphological opening (v7's metric, kept so the numbers compare).
+    NOTE what it misses matters more than how much: losing 10% spread over
+    the letter JOINS destroys legibility, losing 1% at sharp corners does
+    not. Always render it and look."""
+    import cv2
+    import numpy as np
+    w0, h0 = _LOGO_RASTER.size
+    k = LOGO_LEN / h0
+    size = (max(1, int(w0 * k * px_mm)), int(h0 * k * px_mm))
+    art = (np.array(_LOGO_RASTER.resize(size, Image.LANCZOS))
+           < 128).astype(np.uint8)
+    r = max(1, int(round(tool_d * px_mm)))
+    r += 1 - r % 2
+    kel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (r, r))
+    reach = cv2.morphologyEx(art, cv2.MORPH_OPEN, kel)
+    return 1.0 - reach.sum() / art.sum()
+
+
+def _logo_entities():
+    """Traced polygons, placed at the slot centre. Counters ride in the same
+    sketch as their own letter - a stranded subtract would eat the floor."""
+    import io as _io
+    if ROOT not in sys.path:
+        sys.path.insert(0, ROOT)
+    import imgtrace
+    buf = _io.BytesIO()
+    _LOGO_RASTER.save(buf, format="PNG")
+    ents, info = imgtrace.image_to_entities(buf.getvalue(),
+                                            height_mm=LOGO_LEN, tol_mm=0.08)
+    for e in ents:
+        e["y"] = round(e["y"] + LOGO_CY, 3)
+    return ents, info["width_mm"]
+
+
+LOGO_ENTS, LOGO_ACROSS_MM = _logo_entities()
+LOGO_MISS = logo_reach_miss(LOGO_TOOL_D)
+LOGO_MISS_HAVE = logo_reach_miss(LOGO_TOOL_HAVE)
+
+
+def _logo_groups():
+    """One outer contour + its own counters per group, packed <=10/sketch."""
+    def ap(e):
+        return [(e["x"] + q[0], e["y"] + q[1]) for q in e["points"]]
+
+    def inside(pt, poly):
+        x, y = pt
+        hit, n = False, len(poly)
+        for i in range(n):
+            x0, y0 = poly[i]
+            x1, y1 = poly[(i + 1) % n]
+            if (y0 > y) != (y1 > y) and \
+                    x < x0 + (y - y0) * (x1 - x0) / (y1 - y0):
+                hit = not hit
+        return hit
+
+    def area(poly):
+        n = len(poly)
+        return abs(sum(poly[i][0] * poly[(i + 1) % n][1]
+                       - poly[(i + 1) % n][0] * poly[i][1]
+                       for i in range(n))) / 2
+    adds = [e for e in LOGO_ENTS if e["mode"] == "add"]
+    groups = [[a] for a in adds]
+    for sub in (e for e in LOGO_ENTS if e["mode"] == "subtract"):
+        pts = ap(sub)
+        ctr = (sum(q[0] for q in pts) / len(pts),
+               sum(q[1] for q in pts) / len(pts))
+        best = None
+        for i, a in enumerate(adds):
+            poly = ap(a)
+            if inside(ctr, poly):
+                ar = area(poly)
+                if best is None or ar < best[1]:
+                    best = (i, ar)
+        assert best is not None, "traced counter with no parent letter"
+        groups[best[0]].append(sub)
+    out, cur = [], []
+    for g in groups:
+        if cur and len(cur) + len(g) > 10:
+            out.append(cur)
+            cur = []
+        cur.extend(g)
+    return out + ([cur] if cur else [])
+
+
+LOGO_BATCHES = _logo_groups()
+
 
 # researched component sizes (for the fit gates)
 C_ESP, C_OLED = (52.0, 28.0), (27.3, 27.3)
@@ -547,6 +709,34 @@ for name, (x0, x1, y0, y1, z, r) in {"esp_foot": ESP_FOOT,
 assert ESP_FOOT[3] <= BATT_RIMS[0][2] - 0.8, "esp foot hits the strap rim"
 assert SD_FOOT[0] >= BATT_SEAT[1] + 1.0, "sd foot overlaps the battery seat"
 
+# ---- company-name engraving in the wire slot (v10)
+# it must run ALONG the slot, fit across it, and be cuttable by the D2
+assert abs(LOGO_ACROSS_MM - LOGO_ACROSS) <= 0.35, \
+    f"name came out {LOGO_ACROSS_MM} across, asked for {LOGO_ACROSS}"
+assert LOGO_ACROSS_MM <= LOGO_SLOT_MAX, "name wider than the slot allows"
+assert LOGO_ACROSS_MM + 4.0 <= TRENCH[1] - TRENCH[0], \
+    "name leaves under 2mm of slot wall on each side"
+# it must sit in the clear run of the slot, NORTH of the tail-fold scoop
+assert LOGO_Y0 + 3.0 <= LOGO_CY - LOGO_LEN / 2, \
+    f"name reaches into the tail-fold scoop (needs y >= {LOGO_Y0 + 3.0})"
+assert LOGO_CY + LOGO_LEN / 2 <= LOGO_Y1 - 3.0, \
+    "name runs past the slot into the cavity"
+assert SCOOP_T[0] >= TRENCH[0] and SCOOP_T[1] <= TRENCH[1], \
+    "scoop wider than the slot - re-derive the name's clear run"
+assert LOGO_MISS <= LOGO_MISS_MAX, (
+    f"the specified D{LOGO_TOOL_D} cannot reach {LOGO_MISS:.1%} of the"
+    f" artwork (limit {LOGO_MISS_MAX:.0%}) - use a smaller lettering cutter,"
+    f" a heavier/condensed face, or fewer characters")
+assert TRENCH[4] - LOGO_DEEP >= 5.0, "engraving leaves under 5mm of steel"
+assert LOGO_DEEP >= 0.5, "engraving too shallow to read in steel"
+# the keypad screw pilots live outside the slot, so they cannot be crowded,
+# but assert it rather than trusting the layout to stay put
+for _hx, _hy in KEY_HOLES:
+    assert abs(_hx) > TRENCH[1] + 0.5, "a keypad pilot sits inside the slot"
+for _b in LOGO_BATCHES:
+    assert len(_b) <= 10, "logo sketch batch over the 10-entity lint"
+
+
 # ------------------------------------------------------------- feature tree
 F = []
 
@@ -588,6 +778,11 @@ pocket("keypad_recess", KEYPAD[4], [path_from_segs(*KEY_PATH)])
 pocket("keypad_pilots", KEYPAD[4] - 4.0,
        [circ(x, y, KEY_HOLE_R) for x, y in KEY_HOLES], top=KEYPAD[4] + 0.5)
 pocket("tail_trench", TRENCH[4], [path_from_segs(*TR_PATH)])
+# the name, engraved into the slot floor only (the cutter spans just the
+# 0.8 below that floor, so nothing above the slot is touched)
+for _i, _batch in enumerate(LOGO_BATCHES):
+    pocket(f"logo_{_i}", round(TRENCH[4] - LOGO_DEEP, 3), _batch,
+           top=round(TRENCH[4] + 0.2, 3))
 pocket("tail_fold_scoop", SCOOP_T[4], [rr(SCOOP_T)])
 
 # ---- first cut: the weight-reduction cavity, islands left standing
@@ -734,6 +929,10 @@ def paste_clipped(color, pts):
 
 paste_clipped(C_ISL, sample_segs(*KEY_PATH))
 paste_clipped(C_MID, sample_segs(*TR_PATH))
+for _e in LOGO_ENTS:
+    d.polygon([px((_e['x'] + _q[0], _e['y'] + _q[1]))
+               for _q in _e['points']],
+              fill=C_HOLE if _e['mode'] == 'add' else C_MID)
 rbox((SCOOP_T[0], SCOOP_T[1], SCOOP_T[2], SCOOP_T[3], SCOOP_T[5]), C_SEAT)
 # seats
 rbox((BATT_SEAT[0], BATT_SEAT[1], BATT_SEAT[2], BATT_SEAT[3], BATT_SEAT[5]),
@@ -778,6 +977,13 @@ for (lx, ly), s in LABELS:
 out = ROOT + r"\designs\esp32-remote-preview.png"
 img.save(out)
 print(f"preview: {out}")
+print(f"name {LOGO_WORD!r} in {os.path.basename(LOGO_FONT)}: {LOGO_LEN} along x "
+      f"{LOGO_ACROSS_MM} across the slot, engraved {LOGO_DEEP} into the "
+      f"z{TRENCH[4]} floor, PERPENDICULAR (runs along the slot)")
+print(f"  lettering cutter D{LOGO_TOOL_D}: misses {LOGO_MISS:.1%}"
+      f" (limit {LOGO_MISS_MAX:.0%}) | the D{LOGO_TOOL_HAVE} on the shelf"
+      f" would miss {LOGO_MISS_HAVE:.1%} and break the letter joins")
+print(f"  {len(LOGO_ENTS)} traced polygons in {len(LOGO_BATCHES)} sketches; clear run of the slot y{LOGO_Y0}..{LOGO_Y1}")
 print(f"tree: {len(F)} features | shell {2*L2:.0f} x 90 (grip 66, top 74) x 12")
 print(f"cavity: floor z{CAV_Z} ({T - CAV_Z} deep), wall {CAV_D}, from "
       f"y{CAV_Y0} up | keypad platform stays solid")
