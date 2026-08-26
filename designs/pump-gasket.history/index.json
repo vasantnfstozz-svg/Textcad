@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_02a6774c5f3d",
+  "name": "pump-gasket",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T11:20:27+00:00",
+      "label": "water-pump v7: gasket seat in the housing + gasket as a 4th part",
+      "source": "backfill:git",
+      "hash": "sha1:79affe523ea494128bfc0416da0d05eca495336b",
+      "features": 8,
+      "spec": {},
+      "commit": "b82d34be2deb9e89b350718fe7781a6a46743cf9",
+      "rebuildable": null
+    }
+  ]
+}

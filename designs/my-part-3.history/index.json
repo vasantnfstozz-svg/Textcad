@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_707ba45ad759",
+  "name": "my-part-3",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-17T11:13:01+00:00",
+      "label": "Pause snapshot 2026-08-17: all 7 open tabs saved uniquely to designs/, pause+resume notes in BACKLOG and FEATURE-TREE-PLAN",
+      "source": "backfill:git",
+      "hash": "sha1:a8735e654c3975d29d87e217f01582aa42f4fcc5",
+      "features": 10,
+      "spec": {},
+      "commit": "d8efeb9e72b47b7500539b458189460ed42a4fa2",
+      "rebuildable": null
+    }
+  ]
+}

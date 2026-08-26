@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "design_id": "d_c9f27b3ab86f",
+  "name": "planetary-assembly",
+  "current": "v2",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T13:02:35+00:00",
+      "label": "planetary-assembly: all parts meshed + M4 hex screws in one design",
+      "source": "backfill:git",
+      "hash": "sha1:c6f9fab2971c85c9bc11b44db6e87eb5db2e9513",
+      "features": 43,
+      "spec": {},
+      "commit": "999c474b700788e93123385971338e6b1ee1a2b1",
+      "rebuildable": null
+    },
+    {
+      "id": "v2",
+      "parent": "v1",
+      "created": "2026-08-24T13:12:05+00:00",
+      "label": "planetary v2: base plate so the gearset stands and spins",
+      "source": "backfill:git",
+      "hash": "sha1:f3dfa086103b5482d0d140124b608ebdd581edef",
+      "features": 64,
+      "spec": {},
+      "commit": "506ad588a407a5bc8834aee1374ea454caf31e0f",
+      "rebuildable": null
+    }
+  ]
+}

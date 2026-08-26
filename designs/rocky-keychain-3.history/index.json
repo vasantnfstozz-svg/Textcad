@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_e3bdf3706a87",
+  "name": "rocky-keychain-3",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-19T13:18:01+00:00",
+      "label": "rocky-keychain-3: fourth design \u2014 one-fist ROCKY poster, front only (64x95x3)",
+      "source": "backfill:git",
+      "hash": "sha1:e761c5caa9670f1f55478bf92eb67af9bbd82221",
+      "features": 5,
+      "spec": {},
+      "commit": "923146c246829cf1bea39b057a4018be8c7a4903",
+      "rebuildable": null
+    }
+  ]
+}

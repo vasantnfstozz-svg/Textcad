@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "design_id": "d_47d084fc8c2e",
+  "name": "sat-side-panel",
+  "current": "v5",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T14:43:52+00:00",
+      "label": "sat-side-panel v1: X-braced satellite panel with shaped outline",
+      "source": "backfill:git",
+      "hash": "sha1:41783c4e3281dd44834ce7c368448113085dff5e",
+      "features": 39,
+      "spec": {},
+      "commit": "8be819b8ca87d3c57fa263bc91ae4f011e98373f",
+      "rebuildable": null
+    },
+    {
+      "id": "v2",
+      "parent": "v1",
+      "created": "2026-08-24T14:58:34+00:00",
+      "label": "sat-side-panel v2: machinable corner radii + real-part outline + 4 textures",
+      "source": "backfill:git",
+      "hash": "sha1:fc5476049d6e8c83bc0e8ac0c07080611e0a3ff9",
+      "features": 40,
+      "spec": {},
+      "commit": "7d89c2b239b9327ea52995d5e842fab8efe4481a",
+      "rebuildable": null
+    },
+    {
+      "id": "v3",
+      "parent": "v2",
+      "created": "2026-08-24T15:21:41+00:00",
+      "label": "sat-side-panel v3: the v1 panel the user liked, refreshed",
+      "source": "backfill:git",
+      "hash": "sha1:48625bd252df7f3d41468f13eb227ffe6963fde9",
+      "features": 34,
+      "spec": {},
+      "commit": "ff2f192703b513daa2c912ecfcc1b031ec1815f3",
+      "rebuildable": null
+    },
+    {
+      "id": "v4",
+      "parent": "v3",
+      "created": "2026-08-24T15:35:59+00:00",
+      "label": "sat-side-panel v4: user-sketched long X slots",
+      "source": "backfill:git",
+      "hash": "sha1:940212df53b23f3c439634089567fd593dd8b60a",
+      "features": 34,
+      "spec": {},
+      "commit": "2213fe41305d31c6f0d8c1eab05ff6d20883f3f6",
+      "rebuildable": null
+    },
+    {
+      "id": "v5",
+      "parent": "v4",
+      "created": "2026-08-24T15:43:55+00:00",
+      "label": "sat-side-panel v5: exact v1 structure + round corners + slots, nothing else",
+      "source": "backfill:git",
+      "hash": "sha1:5aff6cc111809635d3c05c8b90153529695304b0",
+      "features": 41,
+      "spec": {},
+      "commit": "cdea623d720f9df0e9069d0e8049c815eef527d5",
+      "rebuildable": null
+    }
+  ]
+}

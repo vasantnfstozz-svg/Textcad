@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_8e848e127b7e",
+  "name": "untitled",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-17T11:13:01+00:00",
+      "label": "Pause snapshot 2026-08-17: all 7 open tabs saved uniquely to designs/, pause+resume notes in BACKLOG and FEATURE-TREE-PLAN",
+      "source": "backfill:git",
+      "hash": "sha1:c2804eb7642be64d71fd255b0f5a029eb50f390a",
+      "features": 1,
+      "spec": {},
+      "commit": "d8efeb9e72b47b7500539b458189460ed42a4fa2",
+      "rebuildable": null
+    }
+  ]
+}

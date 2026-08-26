@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_1f27a8906836",
+  "name": "planetary-base",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T13:12:05+00:00",
+      "label": "planetary v2: base plate so the gearset stands and spins",
+      "source": "backfill:git",
+      "hash": "sha1:6d5d576774788b1aeeeb4fd5b7a480f63bfbc1cf",
+      "features": 7,
+      "spec": {},
+      "commit": "506ad588a407a5bc8834aee1374ea454caf31e0f",
+      "rebuildable": null
+    }
+  ]
+}

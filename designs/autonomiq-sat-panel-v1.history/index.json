@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_e24c280c6685",
+  "name": "autonomiq-sat-panel-v1",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T21:44:10+00:00",
+      "label": "autonomiq-sat-panel v1 (user-approved): official lockup plaque, 14mm triangles, 4-side scallops, rim pinstripe",
+      "source": "backfill:git",
+      "hash": "sha1:a032e7dc19b32c8cd5a0c45d31733b4f923c88ed",
+      "features": 46,
+      "spec": {},
+      "commit": "0cc6a8fe2b19e3ec8745294bcf90d90afc9acbc1",
+      "rebuildable": null
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_5e3646dca12a",
+  "name": "x-frame",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T15:09:43+00:00",
+      "label": "x-frame v1: the panel IS the X now",
+      "source": "backfill:git",
+      "hash": "sha1:8d48853120978f58d58536a35f3597e6c900301e",
+      "features": 19,
+      "spec": {},
+      "commit": "61a85eebd30339c79a10a38d5e26a1d8ccf0be97",
+      "rebuildable": null
+    }
+  ]
+}

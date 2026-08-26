@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "design_id": "d_e99156d6f563",
+  "name": "planetary-ring",
+  "current": "v2",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T12:54:28+00:00",
+      "label": "planetary-gearset v1: working steel planetary from the 220x120x12 block",
+      "source": "backfill:git",
+      "hash": "sha1:368ac5f9eda2526a43e603d317b0b34114704864",
+      "features": 7,
+      "spec": {},
+      "commit": "3e19064931978c2b3faa472abbd0a381ec20e0f0",
+      "rebuildable": null
+    },
+    {
+      "id": "v2",
+      "parent": "v1",
+      "created": "2026-08-24T13:12:05+00:00",
+      "label": "planetary v2: base plate so the gearset stands and spins",
+      "source": "backfill:git",
+      "hash": "sha1:0e3f11fbb0ff668578bca7bb20cffe2095719daa",
+      "features": 10,
+      "spec": {},
+      "commit": "506ad588a407a5bc8834aee1374ea454caf31e0f",
+      "rebuildable": null
+    }
+  ]
+}

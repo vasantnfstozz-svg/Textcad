@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_94168de82072",
+  "name": "t-washer",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-05T06:17:39+00:00",
+      "label": "GitHub backup: private remote Vasan0021/textcad; design library tracked; ship-check ends with push",
+      "source": "backfill:git",
+      "hash": "sha1:036ed98ff8b1aacf39d8837cc01183a861d79e6a",
+      "features": 2,
+      "spec": {},
+      "commit": "531d970eb228dae09ca473ac9eca754646bf1af3",
+      "rebuildable": null
+    }
+  ]
+}

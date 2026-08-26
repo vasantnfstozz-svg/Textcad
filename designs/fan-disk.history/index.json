@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_3607402b5b76",
+  "name": "fan-disk",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T12:43:16+00:00",
+      "label": "fan-disk v1: O110 turbofan fan display model",
+      "source": "backfill:git",
+      "hash": "sha1:0e9288cee602ed98a50c1a100c728af98098bdc6",
+      "features": 7,
+      "spec": {},
+      "commit": "f4091b98b6c8886d8571ef751e0774fdc25014cd",
+      "rebuildable": null
+    }
+  ]
+}

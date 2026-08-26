@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_4474745b250c",
+  "name": "planetary-gear",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T12:54:28+00:00",
+      "label": "planetary-gearset v1: working steel planetary from the 220x120x12 block",
+      "source": "backfill:git",
+      "hash": "sha1:ad040778c688a2a44dc230710a1573a63b5305ef",
+      "features": 7,
+      "spec": {},
+      "commit": "3e19064931978c2b3faa472abbd0a381ec20e0f0",
+      "rebuildable": null
+    }
+  ]
+}

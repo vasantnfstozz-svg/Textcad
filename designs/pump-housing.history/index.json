@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "design_id": "d_d2e7710b326b",
+  "name": "pump-housing",
+  "current": "v8",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T09:44:33+00:00",
+      "label": "water-pump v1: impeller + volute housing + cover (all 2.5D)",
+      "source": "backfill:git",
+      "hash": "sha1:1e15201726ee464f6705c727a3718077389228dc",
+      "features": 9,
+      "spec": {},
+      "commit": "31434c8068047a451020e116056598b5eadabb99",
+      "rebuildable": null
+    },
+    {
+      "id": "v2",
+      "parent": "v1",
+      "created": "2026-08-24T10:00:54+00:00",
+      "label": "water-pump v2: pipe stubs, round outlet, NEMA17 motor mount",
+      "source": "backfill:git",
+      "hash": "sha1:57511d77e82c0ffc41acced501236a1e53bd0132",
+      "features": 18,
+      "spec": {},
+      "commit": "f02c82d22a7c91796fdb187ee106c808c83fe5dd",
+      "rebuildable": null
+    },
+    {
+      "id": "v3",
+      "parent": "v2",
+      "created": "2026-08-24T10:22:42+00:00",
+      "label": "water-pump v3: O-ring sealed cover, side-drilled tangential outlet",
+      "source": "backfill:git",
+      "hash": "sha1:1d02e14e7488f52b9ba3875aee2dace7241814a8",
+      "features": 28,
+      "spec": {},
+      "commit": "3e63d7168a3eab35e1f34c6d2396c1d37ea63e7b",
+      "rebuildable": null
+    },
+    {
+      "id": "v4",
+      "parent": "v3",
+      "created": "2026-08-24T10:32:13+00:00",
+      "label": "water-pump v4: strictly top-down machining, rib+gasket seal, tapped fittings",
+      "source": "backfill:git",
+      "hash": "sha1:2020ad901175cff3296c30e06920e38f43c796b2",
+      "features": 18,
+      "spec": {},
+      "commit": "4f9d254bea43dcf9ab8c137101dd65e107d4b0c0",
+      "rebuildable": null
+    },
+    {
+      "id": "v5",
+      "parent": "v4",
+      "created": "2026-08-24T10:44:01+00:00",
+      "label": "water-pump v5: flat counterbores for the motor screws",
+      "source": "backfill:git",
+      "hash": "sha1:5214067c76291432f251633d547e96390a507d53",
+      "features": 18,
+      "spec": {},
+      "commit": "451671a147a9b526900ffe23671f8d6f28b4967e",
+      "rebuildable": null
+    },
+    {
+      "id": "v6",
+      "parent": "v5",
+      "created": "2026-08-24T10:48:46+00:00",
+      "label": "water-pump v6: back to the v2 design + flat motor counterbores",
+      "source": "backfill:git",
+      "hash": "sha1:6ba4e921170538dfffa0452268f8c3e53a768329",
+      "features": 18,
+      "spec": {},
+      "commit": "904a58caa1001d380fcbe2692095ad8705bfb9ac",
+      "rebuildable": null
+    },
+    {
+      "id": "v7",
+      "parent": "v6",
+      "created": "2026-08-24T11:20:27+00:00",
+      "label": "water-pump v7: gasket seat in the housing + gasket as a 4th part",
+      "source": "backfill:git",
+      "hash": "sha1:a1f79cb0a75b1d404589144a4f0bfa3347412d32",
+      "features": 21,
+      "spec": {},
+      "commit": "b82d34be2deb9e89b350718fe7781a6a46743cf9",
+      "rebuildable": null
+    },
+    {
+      "id": "v8",
+      "parent": "v7",
+      "created": "2026-08-24T12:01:32+00:00",
+      "label": "water-pump v9: plain round 3mm shaft connection",
+      "source": "backfill:git",
+      "hash": "sha1:901b2509aa9abbbfc8339b639353f2bf05321997",
+      "features": 21,
+      "spec": {},
+      "commit": "03a8284447cfc0166f7ed4b9162fb38d13ab790a",
+      "rebuildable": null
+    }
+  ]
+}

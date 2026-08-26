@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_a2ed5636af48",
+  "name": "rocky-keychain-2",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-18T20:06:36+00:00",
+      "label": "rocky-keychain-2: third design \u2014 illustrated victory pose, front only (58x88x3)",
+      "source": "backfill:git",
+      "hash": "sha1:e945d63c26788031c43c209a9541dfa63d1148f2",
+      "features": 5,
+      "spec": {},
+      "commit": "a921016d48d1afd3477f4bd0aeaaa861e5193e9c",
+      "rebuildable": null
+    }
+  ]
+}

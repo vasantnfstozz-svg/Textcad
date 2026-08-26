@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_2641b2fbf912",
+  "name": "rocky-balboa",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-18T14:26:25+00:00",
+      "label": "rocky-balboa: second keychain design from the 2006 poster (76x94x3)",
+      "source": "backfill:git",
+      "hash": "sha1:58040cded45d2a4ef7020ba6916e622bdc392ea6",
+      "features": 5,
+      "spec": {},
+      "commit": "109c6f011dbf2dc62a852ecef414fb4613b5f89d",
+      "rebuildable": null
+    }
+  ]
+}

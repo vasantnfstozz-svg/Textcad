@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_13a994d8946f",
+  "name": "wing-rib",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T12:36:52+00:00",
+      "label": "wing-rib v1: NACA 2412 machined wing rib for 220x120x12 steel stock",
+      "source": "backfill:git",
+      "hash": "sha1:1a7c4cfc830bafd25a2a2de72d94075ea4af7067",
+      "features": 11,
+      "spec": {},
+      "commit": "28b18287f9b4b0aa19888f26275cae884d02a194",
+      "rebuildable": null
+    }
+  ]
+}

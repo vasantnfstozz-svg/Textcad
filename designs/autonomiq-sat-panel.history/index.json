@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "design_id": "d_447af21b083d",
+  "name": "autonomiq-sat-panel",
+  "current": "v3",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T20:30:40+00:00",
+      "label": "autonomiq-sat-panel: sat-panel structure + iQ logo pyramid medallion",
+      "source": "backfill:git",
+      "hash": "sha1:c3ecaaf5ee6f9979bfd9d7ccb5e0e348bd134d5b",
+      "features": 41,
+      "spec": {},
+      "commit": "cbec7bb8dc9c89a9ed3779002d6348e9630ed023",
+      "rebuildable": null
+    },
+    {
+      "id": "v2",
+      "parent": "v1",
+      "created": "2026-08-24T21:44:10+00:00",
+      "label": "autonomiq-sat-panel v1 (user-approved): official lockup plaque, 14mm triangles, 4-side scallops, rim pinstripe",
+      "source": "backfill:git",
+      "hash": "sha1:336e0b31bc893d622c0b1894d411742c203c7d2d",
+      "features": 46,
+      "spec": {},
+      "commit": "0cc6a8fe2b19e3ec8745294bcf90d90afc9acbc1",
+      "rebuildable": null
+    },
+    {
+      "id": "v3",
+      "parent": "v2",
+      "created": "2026-08-26T10:44:04+00:00",
+      "label": "autonomiq-sat-panel v3: gear-tooth border, corner blades, vents, terraces",
+      "source": "backfill:git",
+      "hash": "sha1:bdddffcdee8a80e0960daace823a32df5a261290",
+      "features": 97,
+      "spec": {},
+      "commit": "fa9bc15fc651fc8cd726233dc11dd146db2b3366",
+      "rebuildable": null
+    }
+  ]
+}

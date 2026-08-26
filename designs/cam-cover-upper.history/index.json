@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "design_id": "d_baa91ff1cab6",
+  "name": "cam-cover-upper",
+  "current": "v2",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-25T10:58:49+00:00",
+      "label": "cam-cover-upper v1 (user-approved): the finned billet cover as its own part",
+      "source": "backfill:git",
+      "hash": "sha1:92f1e65af2010ade9a286e0cb3b7ed7f4348a0ef",
+      "features": 36,
+      "spec": {},
+      "commit": "df159cb1247ae4f1182ba9f91db5a175a3993130",
+      "rebuildable": null
+    },
+    {
+      "id": "v2",
+      "parent": "v1",
+      "created": "2026-08-25T12:11:51+00:00",
+      "label": "cam-cover-upper v2 (user-approved): fills the box, square corners, fins EXTRUDED",
+      "source": "backfill:git",
+      "hash": "sha1:1a05fdb9eac3222f842e6a42767d058c572d9037",
+      "features": 30,
+      "spec": {},
+      "commit": "5253e37ddcfd754c103699898469cc0e7f2cfa58",
+      "rebuildable": null
+    }
+  ]
+}

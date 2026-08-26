@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "design_id": "d_82b3ffc8228b",
+  "name": "pump-cover",
+  "current": "v5",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T09:44:33+00:00",
+      "label": "water-pump v1: impeller + volute housing + cover (all 2.5D)",
+      "source": "backfill:git",
+      "hash": "sha1:9c59b1471ed41fb84e2c1cd6e4cb5430d4814125",
+      "features": 6,
+      "spec": {},
+      "commit": "31434c8068047a451020e116056598b5eadabb99",
+      "rebuildable": null
+    },
+    {
+      "id": "v2",
+      "parent": "v1",
+      "created": "2026-08-24T10:00:54+00:00",
+      "label": "water-pump v2: pipe stubs, round outlet, NEMA17 motor mount",
+      "source": "backfill:git",
+      "hash": "sha1:dbd1d818de8ed333a032e66b05f307d168f00255",
+      "features": 14,
+      "spec": {},
+      "commit": "f02c82d22a7c91796fdb187ee106c808c83fe5dd",
+      "rebuildable": null
+    },
+    {
+      "id": "v3",
+      "parent": "v2",
+      "created": "2026-08-24T10:22:42+00:00",
+      "label": "water-pump v3: O-ring sealed cover, side-drilled tangential outlet",
+      "source": "backfill:git",
+      "hash": "sha1:e0220f2da7ab07eef8044606ffe93490eb7c84af",
+      "features": 9,
+      "spec": {},
+      "commit": "3e63d7168a3eab35e1f34c6d2396c1d37ea63e7b",
+      "rebuildable": null
+    },
+    {
+      "id": "v4",
+      "parent": "v3",
+      "created": "2026-08-24T10:32:13+00:00",
+      "label": "water-pump v4: strictly top-down machining, rib+gasket seal, tapped fittings",
+      "source": "backfill:git",
+      "hash": "sha1:2b7edb2b3b73a0066a16604ced40790799723618",
+      "features": 12,
+      "spec": {},
+      "commit": "4f9d254bea43dcf9ab8c137101dd65e107d4b0c0",
+      "rebuildable": null
+    },
+    {
+      "id": "v5",
+      "parent": "v4",
+      "created": "2026-08-24T10:48:46+00:00",
+      "label": "water-pump v6: back to the v2 design + flat motor counterbores",
+      "source": "backfill:git",
+      "hash": "sha1:dbd1d818de8ed333a032e66b05f307d168f00255",
+      "features": 14,
+      "spec": {},
+      "commit": "904a58caa1001d380fcbe2692095ad8705bfb9ac",
+      "rebuildable": null
+    }
+  ]
+}

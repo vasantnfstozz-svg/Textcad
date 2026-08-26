@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_fcbdb29a81b7",
+  "name": "planetary-spacer",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T13:12:05+00:00",
+      "label": "planetary v2: base plate so the gearset stands and spins",
+      "source": "backfill:git",
+      "hash": "sha1:b532dd48f46a40650f60b4021b1e9d2fe0c803d9",
+      "features": 3,
+      "spec": {},
+      "commit": "506ad588a407a5bc8834aee1374ea454caf31e0f",
+      "rebuildable": null
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_7773c13d0045",
+  "name": "water_bottle_750ml",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-05T06:17:39+00:00",
+      "label": "GitHub backup: private remote Vasan0021/textcad; design library tracked; ship-check ends with push",
+      "source": "backfill:git",
+      "hash": "sha1:b0a828c8b34562508a718978e728e7ece7b19e77",
+      "features": 1,
+      "spec": {},
+      "commit": "531d970eb228dae09ca473ac9eca754646bf1af3",
+      "rebuildable": null
+    }
+  ]
+}

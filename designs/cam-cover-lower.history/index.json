@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_47a77b1d2621",
+  "name": "cam-cover-lower",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-25T11:07:06+00:00",
+      "label": "cam-cover-lower v1 (user-approved): the cast ribbed half, matching pair to df159cb",
+      "source": "backfill:git",
+      "hash": "sha1:72c5822a36297be2305fa8c73f14c1057d30e3f4",
+      "features": 29,
+      "spec": {},
+      "commit": "0dbd289f9058d4334b109a49451f5448c2c97c70",
+      "rebuildable": null
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_795f2e4222ea",
+  "name": "isogrid-panel",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T14:27:10+00:00",
+      "label": "isogrid-panel v1: vacuum-table-safe aerospace panel, 210x110x10",
+      "source": "backfill:git",
+      "hash": "sha1:1ae327b514084b55560a5b5c37cc2be0519ae7d2",
+      "features": 37,
+      "spec": {},
+      "commit": "01d890e6db267816faa378102fc6a0f93d489e11",
+      "rebuildable": null
+    }
+  ]
+}

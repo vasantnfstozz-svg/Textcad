@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_8b2d9df75fed",
+  "name": "planetary-carrier",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T12:54:28+00:00",
+      "label": "planetary-gearset v1: working steel planetary from the 220x120x12 block",
+      "source": "backfill:git",
+      "hash": "sha1:d9b8f6d4e9754fbe5393a82ff7a5b3c2ba7e2984",
+      "features": 8,
+      "spec": {},
+      "commit": "3e19064931978c2b3faa472abbd0a381ec20e0f0",
+      "rebuildable": null
+    }
+  ]
+}

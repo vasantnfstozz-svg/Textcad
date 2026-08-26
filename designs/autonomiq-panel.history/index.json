@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "design_id": "d_7705aa6509dd",
+  "name": "autonomiq-panel",
+  "current": "v5",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T16:25:31+00:00",
+      "label": "autonomiq-panel v1: company showcase plate, DATRON-NEO style but denser",
+      "source": "backfill:git",
+      "hash": "sha1:238af07170d4fde48ad715c79e80619833ef0c12",
+      "features": 61,
+      "spec": {},
+      "commit": "847c747369bcf6295075cee13b1953ed43f99afa",
+      "rebuildable": null
+    },
+    {
+      "id": "v2",
+      "parent": "v1",
+      "created": "2026-08-24T16:59:44+00:00",
+      "label": "autonomiq-panel v2: real iQ logo from SVG, fixed font, staircase levels",
+      "source": "backfill:git",
+      "hash": "sha1:3227eb391d51e0c559c4873ea75563ac2756ca5b",
+      "features": 70,
+      "spec": {},
+      "commit": "bfcb3217df349a7a5660beeb0eee39225d77f570",
+      "rebuildable": null
+    },
+    {
+      "id": "v3",
+      "parent": "v2",
+      "created": "2026-08-24T17:16:03+00:00",
+      "label": "autonomiq-panel v3: real typeface raised lettering + alternating field",
+      "source": "backfill:git",
+      "hash": "sha1:eea4c6cb039b797bd50c8f1c8d2a5f74a421ed21",
+      "features": 66,
+      "spec": {},
+      "commit": "c2d4ff41887e5bad0540dc678a05374339cf4d39",
+      "rebuildable": null
+    },
+    {
+      "id": "v4",
+      "parent": "v3",
+      "created": "2026-08-24T19:09:32+00:00",
+      "label": "autonomiq-panel v4: user-approved preview built - official lockup panel",
+      "source": "backfill:git",
+      "hash": "sha1:164fd2f90b8adee4712a7e8e9d97708a1c7342fa",
+      "features": 40,
+      "spec": {},
+      "commit": "307e2bf268cc4909cc783586afeee25a9ff85f57",
+      "rebuildable": null
+    },
+    {
+      "id": "v5",
+      "parent": "v4",
+      "created": "2026-08-24T19:36:34+00:00",
+      "label": "autonomiq-panel v5: full-depth ziggurat + true pyramid field",
+      "source": "backfill:git",
+      "hash": "sha1:59edabf3b9063999549ce7bd4c9429a49a7c9ba5",
+      "features": 35,
+      "spec": {},
+      "commit": "8decc315056b3e64c36c63b0a6be6fcdef6f2a4e",
+      "rebuildable": null
+    }
+  ]
+}

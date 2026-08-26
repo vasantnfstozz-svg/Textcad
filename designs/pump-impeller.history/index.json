@@ -1,0 +1,57 @@
+{
+  "schema": 1,
+  "design_id": "d_95c7546b7e09",
+  "name": "pump-impeller",
+  "current": "v4",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-24T09:44:33+00:00",
+      "label": "water-pump v1: impeller + volute housing + cover (all 2.5D)",
+      "source": "backfill:git",
+      "hash": "sha1:e13d0fba3ccbdc1c42f94e7098390fc0e3ec972a",
+      "features": 11,
+      "spec": {},
+      "commit": "31434c8068047a451020e116056598b5eadabb99",
+      "rebuildable": null
+    },
+    {
+      "id": "v2",
+      "parent": "v1",
+      "created": "2026-08-24T11:37:46+00:00",
+      "label": "water-pump v8: tapered impeller blades (sharp inlet, thin exit)",
+      "source": "backfill:git",
+      "hash": "sha1:feac5638901c10572cec4a2e29be53c8097f9c28",
+      "features": 12,
+      "spec": {},
+      "commit": "4b1f7bbb22669ab270bb7d8cf5a60f9224803162",
+      "rebuildable": null
+    },
+    {
+      "id": "v3",
+      "parent": "v2",
+      "created": "2026-08-24T11:44:40+00:00",
+      "label": "water-pump v8.1: sharper blade trailing edge (1.0 -> 0.6mm)",
+      "source": "backfill:git",
+      "hash": "sha1:8b5cc0ee8e13e9127627e5de55a85602f2609b0a",
+      "features": 12,
+      "spec": {},
+      "commit": "00df2ec8bf2d913030d9d6491b2691c28b32405d",
+      "rebuildable": null
+    },
+    {
+      "id": "v4",
+      "parent": "v3",
+      "created": "2026-08-24T12:01:32+00:00",
+      "label": "water-pump v9: plain round 3mm shaft connection",
+      "source": "backfill:git",
+      "hash": "sha1:c7f3d1ff16e64264c942a4ef9d12d63514183aaa",
+      "features": 10,
+      "spec": {},
+      "commit": "03a8284447cfc0166f7ed4b9162fb38d13ab790a",
+      "rebuildable": null
+    }
+  ]
+}

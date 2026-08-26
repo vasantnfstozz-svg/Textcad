@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "design_id": "d_bcc75f7afbcc",
+  "name": "oneplus_7_pro_case",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-05T06:17:39+00:00",
+      "label": "GitHub backup: private remote Vasan0021/textcad; design library tracked; ship-check ends with push",
+      "source": "backfill:git",
+      "hash": "sha1:4b9f7e627bfeb3840b3fc16d04bb5133594dabb8",
+      "features": 22,
+      "spec": {},
+      "commit": "531d970eb228dae09ca473ac9eca754646bf1af3",
+      "rebuildable": null
+    }
+  ]
+}
