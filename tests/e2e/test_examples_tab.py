@@ -32,7 +32,11 @@ def test_the_gallery_lists_the_real_designs_in_groups(page, server, fresh_doc):
     esp = page.locator(".excard[data-file='esp32-remote']")
     assert "ESP32" in esp.locator(".extitle").inner_text()
     assert esp.locator(".exdesc").inner_text().strip()
-    assert "73 features" in esp.locator(".exmeta").inner_text().lower()
+    # the count must track the design, not a literal that dies every revision
+    n = next(d["features"] for g in httpx.get(f"{server}/api/examples",
+                                              timeout=10).json()["groups"]
+             for d in g["designs"] if d["file"] == "esp32-remote")
+    assert f"{n} features" in esp.locator(".exmeta").inner_text().lower()
     assert not page.errors, page.errors
 
 

@@ -154,10 +154,25 @@ export async function actionExamples() {
   const host = document.getElementById('exList');
   host.innerHTML = '<div class="exempty">loading…</div>';
   dlg.showModal();
-  let data;
+  /* Three DIFFERENT empty states, and they used to render as one lie: a
+     dead server made getJSON throw, the catch flattened it to {groups:[]},
+     and the dialog then blamed designs/examples.json — a file that was
+     perfectly fine. Say which one it actually is. */
+  let data, unreachable = false;
   try { data = await getJSON('/api/examples'); }
-  catch (e) { data = { groups: [] }; }
+  catch (e) { unreachable = true; data = { groups: [] }; }
   host.innerHTML = '';
+  if (unreachable) {
+    host.innerHTML = '<div class="exempty">Can’t reach the TextCAD ' +
+      'server, so nothing can load here — the gallery is served by it. ' +
+      'Is <b>studio.py</b> still running? Start it again, then reload this ' +
+      'page.</div>';
+    return;
+  }
+  if (data.error) {                       // backend parsed the catalog and failed
+    host.innerHTML = `<div class="exempty">${data.error}</div>`;
+    return;
+  }
   if (!data.groups || !data.groups.length) {
     host.innerHTML = '<div class="exempty">No examples catalogued yet ' +
       '(designs/examples.json).</div>';

@@ -100,7 +100,11 @@ def test_examples_endpoint_serves_the_groups(client):
     assert total >= 20
     esp = next(d for g in r["groups"] for d in g["designs"]
                if d["file"] == "esp32-remote")
-    assert esp["features"] == 73 and esp["title"] and esp["description"]
+    # NOT a hard-coded count: the point is that the API reports what the
+    # FILE says, so a design revision must never make this test fail.
+    on_disk = len(json.loads((DESIGNS / "esp32-remote.tcad.json")
+                             .read_text(encoding="utf-8"))["features"])
+    assert esp["features"] == on_disk and esp["title"] and esp["description"]
     assert esp["name"] == "esp32-remote"          # from the file, not the catalog
 
 
