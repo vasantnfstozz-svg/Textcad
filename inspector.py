@@ -193,29 +193,53 @@ def rotational_symmetry_order(solid, max_n: int = 24, rel_tol: float = 1e-3) -> 
 # Health — spec-free sanity. Catches broken output with NO ground truth needed.
 # ---------------------------------------------------------------------------
 
-def health(solid, require_manifold: bool = True) -> list[str]:
-    """Return problems that make a solid inherently unsound. Empty == healthy."""
+def _try(fn, default=None):
+    try:
+        return fn()
+    except Exception:
+        return default
+
+
+def health(solid, require_manifold: bool = True,
+           check_valid: bool = True) -> list[str]:
+    """Return problems that make a solid inherently unsound. Empty == healthy.
+
+    Computes ONLY the four facts it judges on, rather than calling measure().
+    measure() takes a full topology census — every face's geom_type, cylinder
+    radii, a max-radius scan over every vertex, area, centre of mass, edge and
+    vertex counts — and health looks at none of it. Measured on esp32-remote's
+    result solid: measure() costs ~630 ms a call and the parts health actually
+    reads cost ~320 ms, and health ran to 14.5 s of a 22.5 s rebuild (65%)
+    because the rebuild calls it once per feature.
+
+    `check_valid=False` skips OpenCASCADE's validity analysis, the single most
+    expensive check at ~270 ms on a large solid. The rebuild uses it for
+    INTERMEDIATE features and keeps the full check for the result — see
+    Document.rebuild."""
     solid = _as_solid(solid)
-    m = measure(solid)
     problems: list[str] = []
 
-    if m.get("volume") is None:
+    vol = _try(lambda: round(solid.volume, 3))
+    if vol is None:
         problems.append("volume could not be measured (degenerate/empty result)")
-    elif m["volume"] <= 0:
-        problems.append(f"non-positive volume ({m['volume']}) — empty solid")
+    elif vol <= 0:
+        problems.append(f"non-positive volume ({vol}) — empty solid")
 
-    if m.get("is_valid") is False:
+    if check_valid and _try(lambda: bool(solid.is_valid)) is False:
         problems.append("OpenCASCADE reports the solid is invalid")
 
-    if m.get("n_solids", 1) == 0:
+    if _try(lambda: len(solid.solids()), 1) == 0:
         problems.append("no solid present (empty compound)")
 
-    if require_manifold and m.get("is_manifold") is False:
+    if require_manifold and _try(lambda: bool(solid.is_manifold)) is False:
         # Known false negative: build123d 0.11 reports ANY solid containing a
         # spherical face as non-manifold (seam/pole artifact) even when OCCT's
         # BRepCheck (is_valid) passes. Don't fail sphere-bearing solids on
         # this flag alone.
-        has_sphere = "GeomType.SPHERE" in (m.get("face_types") or {})
+        # the face census is needed ONLY here, so it is paid for only when the
+        # manifold flag has already gone red
+        has_sphere = any(str(f.geom_type) == "GeomType.SPHERE"
+                         for f in _try(lambda: solid.faces(), []) or [])
         if not has_sphere:
             problems.append("solid is not manifold/watertight (open shell) — "
                             "not machinable/printable")

@@ -272,6 +272,7 @@ class Document:
     _cache: dict = field(default_factory=lambda: _SHARED_CACHE, repr=False)
     _spec_cache: tuple = field(default=None, repr=False)     # (sig, problems)
     _geom_version: str = field(default="", repr=False)       # what is drawable
+    _healing: bool = field(default=False, repr=False)         # heal re-entry guard
 
     # -- authoring ----------------------------------------------------------
     def add(self, id: str, op: str, params: dict | None = None,
@@ -578,7 +579,12 @@ class Document:
                     f.pieces = None
                     f.status = "ok" if not f.problems else "failed"
                 else:
-                    f.problems = inspector.health(part)
+                    # check_valid=False here: OpenCASCADE's validity analysis is
+                    # ~270 ms on a large solid, and the rebuild would pay it once
+                    # per feature. The RESULT still gets the full check, in the
+                    # deep-check pass right after this loop, so an invalid part
+                    # can never reach the user unreported.
+                    f.problems = inspector.health(part, check_valid=False)
                     f.volume = round(part.volume, 2)
                     f.pieces = n_solids(part)
                     f.status = "ok" if not f.problems else "failed"
@@ -602,6 +608,48 @@ class Document:
         self._geom_version = hashlib.sha1(json.dumps(
             [[f.id, sigs.get(f.id), f.suppressed] for f in self.features]
             + [self.rollback], default=str).encode("utf-8")).hexdigest()
+
+        # A cut tool that STOPS INSIDE the material does not clear it, it
+        # slices it, and whatever sat beyond the cut is left floating. The user
+        # has reported this three times as "changing the number creates a new
+        # body instead of changing the height", and a warning plainly is not a
+        # fix. `through` (extrude's through-all extent) is the cure, so apply it
+        # — but only where it demonstrably IS the cure.
+        if not self._healing:
+            fixed = self._heal_stranding_cuts()
+            if fixed:
+                self._healing = True
+                try:
+                    ok = self.rebuild()
+                finally:
+                    self._healing = False
+                by_id = {f.id: f for f in self.features}
+                movers = [by_id[t].inputs[0] for t in fixed
+                          if by_id.get(t) and by_id[t].inputs]
+                self.warnings = list(self.warnings) + [
+                    "Extended " + ", ".join(f"'{t}'" for t in fixed) +
+                    " to cut all the way through — at that distance the tool "
+                    "stopped inside the material and left loose pieces. "
+                    "'through' is now ticked on "
+                    + ("it" if len(fixed) == 1 else "them") +
+                    ", so the distance no longer changes anything: to raise or "
+                    "lower this, edit the OFFSET on "
+                    + ", ".join(f"'{m}'" for m in movers) +
+                    ". Untick 'through' for the old behaviour."]
+                return ok
+
+        # Deep check on the RESULT only. Intermediates were checked without
+        # OpenCASCADE validity above for speed; the part the user actually gets
+        # is validated in full, and a failure here is a real failure.
+        rf_deep = self._result_feature()
+        if rf_deep is not None and rf_deep.status == "ok":
+            part = self._parts.get(rf_deep.id)
+            if part is not None and not sk.is_sketch(part):
+                if inspector._try(lambda: bool(part.is_valid)) is False:
+                    rf_deep.problems = list(rf_deep.problems) + [
+                        "OpenCASCADE reports the solid is invalid"]
+                    rf_deep.status = "failed"
+                    ok = False
 
         self._check_dangling()
         self.spec_problems = []
@@ -689,6 +737,57 @@ class Document:
                 continue    # sketches render separately; failed parts flag themselves
             out.append(f.id)
         return out
+
+    def _heal_stranding_cuts(self) -> list[str]:
+        """Tick `through` on extrude tools whose cut strands material.
+
+        Only ever applied when it is PROVEN to be the fix: the cut must have
+        left more pieces than it was given, and switching the tool to
+        through-all must bring the count back to what it was. That test is what
+        makes this safe to do automatically — a cut that was MEANT to sever a
+        part stays severed when the tool is made longer, so it is never
+        "healed", and a pocket (a cut that legitimately stops inside) never
+        strands anything and so is never touched.
+
+        Returns the ids of the tools it changed."""
+        fixed: list[str] = []
+        by_id = {f.id: f for f in self.features}
+        for f in self.features:
+            if f.op != "cut" or f.suppressed or not f.pieces or f.pieces <= 1:
+                continue
+            base = self._parts.get(f.inputs[0]) if f.inputs else None
+            if base is None:
+                continue
+            base_pieces = n_solids(base)
+            if base_pieces is None or f.pieces <= base_pieces:
+                continue                       # already in pieces, or unchanged
+            for tid in f.inputs[1:]:
+                t = by_id.get(tid)
+                # "through" ABSENT means nobody has decided — that is the
+                # script-generated case this exists for. Present means the user
+                # decided, either way, and an explicit False is them saying no:
+                # the warning tells them to untick it for the old behaviour, so
+                # re-ticking it here would make that advice a lie.
+                if (t is None or t.op != "extrude" or t.suppressed
+                        or "through" in t.params):
+                    continue
+                try:
+                    probe = sk.extrude_sketch(
+                        **{**self._clean(t.params),
+                           "sketch": self._parts.get(t.inputs[0]),
+                           "through": True})
+                    trial = base
+                    for other in f.inputs[1:]:
+                        trial = trial - (probe if other == tid
+                                         else self._parts.get(other))
+                except Exception:
+                    continue
+                if n_solids(trial) == base_pieces:
+                    t.params["through"] = True     # the design is now correct,
+                    fixed.append(tid)              # not merely reported on
+        if fixed:
+            self._mark_stale()
+        return fixed
 
     def _check_pieces(self) -> list:
         """Name the feature that broke the part into pieces.
