@@ -33,6 +33,12 @@ complete. Details + Done history: MANUAL-DESIGN.md.
 
 ## To triage (dump new problems here if they don't clearly belong to a workstream file)
 
+- [ ] **Version tree per design** (agreed with the user 2026-08-26, planned in
+  [VERSION-TREE-PLAN.md](VERSION-TREE-PLAN.md), nothing built yet). Every design
+  edit spawns a new tab and overwrites the previous state, so after ten
+  iterations there are ten identical tabs and no way back to v3. P0 (tab reuse
+  in /api/open) is a ~20-line quick win that is worth doing on its own.
+
 - [ ] **autonomiq-sat-panel v3 needs a tooling pass** (audited 2026-08-26,
   after fa9bc15). The geometry verifies (1 manifold solid) but several new
   features model shapes a round cutter cannot make, which is the corner rule
