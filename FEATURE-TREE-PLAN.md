@@ -534,6 +534,37 @@ section; tick them THERE too when done)
   - Tests: tests/test_pieces_warning.py (7) +
     tests/e2e/test_small_face_and_fold.py (5). Suite: 387 passed, 1 skipped.
 
+- **R22 (2026-08-26): a cut must not be able to stop INSIDE the material.**
+  User, after R21 only warned about it: "if i am increasing or decreasing the
+  extrude value, it should increase or decrease, it should not create a new
+  body got it, i was trying with pillar, and still its happening again".
+  - R21 named the problem; it did not remove it. The cause is structural: a
+    cutting tool that ends inside material does not clear it, it SLICES it, and
+    whatever was above the cut is left loose. `esp_pillar_trim`'s sketch is at
+    z=7 and its tool goes UP, so 6 mm reaches z=13 (past the part, clean) while
+    4 mm reaches z=11 and takes a band out of four pillars.
+  - FIX: `through` on the extrude op — the standard CAD "through all" extent.
+    It ignores the distance, keeps the direction, runs THROUGH_MM (2 m) past
+    the part, and ignores taper (a 2 m tapered prism collapses). Offered in the
+    Extrude panel only when the operation is Cut, where it disables the
+    distance box, and toggleable straight from the tree, since the tree already
+    renders boolean params as real checkboxes.
+  - MEASURED on esp32-remote, distance vs through-all: at 6 mm both give one
+    piece; at 4 / 2 / 0.5 mm the distance extent gives FIVE pieces and
+    through-all gives one — with the same volume as the correct 6 mm cut, so it
+    is not just "whole", it is the right shape.
+  - What now moves the pillars: with `through` on, the distance stops
+    mattering, so the height comes from the SKETCH's offset — raise it and more
+    pillar survives (tested: offset 5 < 7 < 9 leaves increasing volume). The
+    live warning names both cures.
+  - Ruled out first: the rebuild cache was NOT lying. Cached and cold builds
+    agree exactly on volume and piece count for every value tested.
+    (A sweep that first looked like a cache bug turned out to be my own probe
+    leaking `through=True` through the params dicts `to_data()` shares.)
+  - Tests: tests/test_through_cut.py (14) — including that the original bug
+    still reproduces without the flag, that through-all holds at every
+    distance, and that the sketch offset is what raises and lowers the pillars.
+
 ## Confirmed root causes
 
 - **R1a — authoring treats sketch→extrude as a fallback, primitives as

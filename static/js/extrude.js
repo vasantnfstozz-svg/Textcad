@@ -261,7 +261,7 @@ export function openExtrudeEdit(fid) {
         flip: !!p.flip }
     : { amount: Number(p.amount) || 0, both: !!p.both,
         amount2: Number(p.amount2) || 0, taper: Number(p.taper) || 0,
-        flip: !!p.flip };
+        flip: !!p.flip, through: !!p.through };
   if (face) {
     st = { mode: 'face', editing: true, extrudeId: f.id, original,
            inputId: f.inputs[0],
@@ -286,6 +286,7 @@ export function openExtrudeEdit(fid) {
   g('exDist2').value = original.amount2 || 10;
   g('exTaper').value = original.taper;
   g('exFlip').checked = original.flip;
+  g('exThrough').checked = !!original.through;
   // Operation row: show what the tree ACTUALLY does with this extrude (the
   // downstream combiner, if any) — honest but locked in edit mode
   const comb = feats().find(x => COMBINER_LABEL[x.op]
@@ -342,19 +343,31 @@ function params() {
   const d = Number(g('exDist').value) || 0;
   const taper = Number(g('exTaper').value) || 0;
   const flip = g('exFlip').checked;
+  const through = g('exThrough').checked;
   if (st && st.mode === 'face')
     return { face_center: st.face.center, face_normal: st.face.normal,
              amount: d, taper, flip };
   const dir = g('exDir').value;
   const d2 = Number(g('exDist2').value) || 0;
-  if (dir === 'sym') return { amount: d, both: true, amount2: 0, taper, flip: false };
-  if (dir === 'two') return { amount: d, both: false, amount2: d2, taper, flip };
-  return { amount: d, both: false, amount2: 0, taper, flip };
+  if (dir === 'sym') return { amount: d, both: true, amount2: 0, taper,
+                              flip: false, through };
+  if (dir === 'two') return { amount: d, both: false, amount2: d2, taper, flip,
+                              through };
+  return { amount: d, both: false, amount2: 0, taper, flip, through };
 }
 
 function syncRows() {
   g('exDist2Row').style.display = g('exDir').value === 'two' ? '' : 'none';
   g('exTargetRow').style.display = g('exOp').value === 'new' ? 'none' : '';
+  // THROUGH ALL is a cut idea: a boss running 2 m past the part is useless,
+  // but a cut that stops inside the material is a bug factory — it slices the
+  // part and leaves whatever was above the cut floating loose.
+  const isCut = g('exOp').value === 'cut';
+  g('exThroughRow').style.display = isCut ? '' : 'none';
+  if (!isCut) g('exThrough').checked = false;
+  const thru = g('exThrough').checked;
+  g('exDist').disabled = thru;
+  g('exDist').title = thru ? 'not used — the cut runs all the way through' : '';
 }
 
 /* opening the tool builds NOTHING — just the arrow + ghost. The extrude
@@ -640,9 +653,11 @@ function warnIfSplit(doc) {
   if (n > 1 && n !== saidPieces) {
     saidPieces = n;
     bus.emit('msg', 'bot', `⚠ At this distance the part falls into ${n} ` +
-      `separate pieces — the cut is slicing THROUGH material instead of ` +
-      `clearing it, so ${n - 1} loose piece(s) are left behind. Extend the ` +
-      `distance past the material to trim it away cleanly.`);
+      `separate pieces — the cut stops INSIDE the material, so it slices ` +
+      `it instead of clearing it and leaves ${n - 1} loose piece(s). Two ` +
+      `fixes: tick "Through all" (then no distance can land inside the part), ` +
+      `and to raise or lower what is left, edit the SKETCH's offset — that is ` +
+      `the height the cut starts from.`);
   } else if (n <= 1) {
     saidPieces = 0;
   }
@@ -781,7 +796,7 @@ export function initExtrude() {
     }
     syncRows(); apply();
   };
-  for (const id of ['exDir', 'exTarget', 'exFlip'])
+  for (const id of ['exDir', 'exTarget', 'exFlip', 'exThrough'])
     g(id).onchange = () => { syncRows(); apply(); };
   for (const id of ['exDist', 'exDist2', 'exTaper'])
     g(id).oninput = () => debounce(apply);

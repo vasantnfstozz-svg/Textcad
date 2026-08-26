@@ -578,18 +578,41 @@ def extrude_face(solid, face_center: list, face_normal: list | None = None,
     return _tapered_extrude(face, a, float(taper or 0.0))
 
 
+# How far a "through all" cut reaches. Anything longer than the part is
+# equivalent — a cutting tool that overshoots removes exactly the same material
+# — and 2 m is far past any plate this tool works with while staying well inside
+# OCCT's comfortable range.
+THROUGH_MM = 2000.0
+
+
 def extrude_sketch(sketch, amount: float, both: bool = False,
-                   amount2: float = 0.0, taper: float = 0.0, flip: bool = False):
+                   amount2: float = 0.0, taper: float = 0.0, flip: bool = False,
+                   through: bool = False):
     """Pull a sketch straight, normal to its plane, into a solid (Fusion-style
     Extrude). Direction:
       * one side   : amount  (flip = extrude the other way)
       * symmetric  : both=True — extrude `amount` to EACH side
       * two sides  : amount one way + amount2 the opposite way
-    `taper` degrees tapers the walls (positive narrows as it extrudes)."""
+    `taper` degrees tapers the walls (positive narrows as it extrudes).
+
+    `through` = THROUGH ALL: ignore the distance and run far past the material,
+    keeping the direction. This is what a CUTTING tool almost always wants. A
+    tool that stops INSIDE material does not clear it — it slices it, and
+    whatever was above the cut is left as a loose piece. That is what happened
+    when a pillar trim was shortened from 6 mm to 2 mm: it took a band out of
+    four pillars and left their caps floating (user, 2026-08-26: "if i am
+    increasing or decreasing the extrude value, it should increase or decrease,
+    it should not create a new body"). With `through` the depth simply cannot
+    land inside the part, so the cut can only ever clear.
+
+    Taper is ignored for a through cut: a 2 m tapered prism collapses."""
     a = float(amount)
     if _to_bool(flip, "flip"):
         a = -a
     t = float(taper or 0.0)
+    if _to_bool(through, "through"):
+        a = THROUGH_MM if a >= 0 else -THROUGH_MM
+        t = 0.0
     if _to_bool(both, "both"):
         try:
             return _extrude(sketch, amount=a, both=True, taper=t)
