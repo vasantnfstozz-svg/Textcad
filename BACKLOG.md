@@ -33,6 +33,30 @@ complete. Details + Done history: MANUAL-DESIGN.md.
 
 ## To triage (dump new problems here if they don't clearly belong to a workstream file)
 
+- [ ] **autonomiq-sat-panel v3 needs a tooling pass** (audited 2026-08-26,
+  after fa9bc15). The geometry verifies (1 manifold solid) but several new
+  features model shapes a round cutter cannot make, which is the corner rule
+  the user keeps having to re-flag:
+  * **92 gear notches taper 3.20 -> 1.90mm over 2.9mm of depth and end in
+    SHARP corners** (4-point polygons, no arc segments; sharpest angle
+    76.9 deg). The widest cutter that fits the tip is D1.9, and it will
+    leave r0.95 there — so the notch bottoms come out semicircular, not
+    flat-with-corners as modelled. Either round the tips in the model to
+    the chosen cutter radius, or widen the tip so a sane bit fits.
+  * **Frame groove is 1.2mm wide** (PANEL_BW) and the trace slots 1.4,
+    vents 1.5, hatch stripes 2.0 — so the part currently needs a sub-1.5mm
+    cutter in several places. Decide the smallest bit that actually exists
+    and drive these widths from it, the way esp32-remote drives its
+    lettering off LOGO_TOOL_D.
+  * **Blade trailing edges close to 31.8 deg.** The blade is left standing
+    in an r7.8 arena pocket, so near the TE the gap between blade and arena
+    wall narrows to a wedge no round cutter can enter — the mill will
+    leave a fillet there, and a near-zero-thickness TE in steel is fragile
+    anyway. Blunt the TE to a real width.
+  Unlike the esp32 script (which gates LOGO_TOOL_D and a r>=1.5 internal
+  corner minimum), the sat-panel gates only check clearances and
+  collisions — no tool-size gate exists to catch any of this. Add one.
+
 - [ ] **P0 — clockwise polygons silently refuse to fuse** (found 2026-08-18
   designing rocky-keychain during the pause). A `polygon` sketch entity whose
   points run CLOCKWISE builds a face with a −Z normal; OCCT fuse then quietly
