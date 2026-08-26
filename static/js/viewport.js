@@ -130,11 +130,18 @@ export function initViewport() {
   pane.appendChild(renderer.domElement);
   buildControls(null);
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x223, 0.9));
-  const key = new THREE.DirectionalLight(0xffffff, 1.5);
+  // Three-light rig tuned for the grey body: a cool sky fill so the top faces
+  // lift off the dark background, a strong white key for the machined
+  // highlight, a blue rim for the edge separation that reads as "cool", and a
+  // soft opposite fill so faces turned away from the key are shaded rather
+  // than black.
+  scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a2f3a, 1.0));
+  const key = new THREE.DirectionalLight(0xffffff, 1.35);
   key.position.set(1, -1, 2); scene.add(key);
-  const rim = new THREE.DirectionalLight(0x88bbff, 0.5);
+  const rim = new THREE.DirectionalLight(0x9ec5ff, 0.55);
   rim.position.set(-2, 2, -1); scene.add(rim);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.32);
+  fill.position.set(-1, 1.5, 0.6); scene.add(fill);
   // the ground workplane is ADAPTIVE like the sketch grid (grid3d.js): cells
   // subdivide with zoom down to gridMm/10, and the plate is a finite,
   // model-sized square — a persistent Group whose children are rebuilt, so
@@ -965,7 +972,15 @@ function addBodies(bodies) {
     g.setIndex(b.indices);
     g.computeVertexNormals();
     const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-      color: 0x5ba7f7, metalness: 0.25, roughness: 0.42 }));
+      // Machined-metal grey (user, 2026-08-26: "i dont like the blue colour ...
+      // it should be grey ... make it more cool"). Metalness stays LOW on
+      // purpose: MeshStandardMaterial reflects an environment map, and there
+      // is none here, so a genuinely metallic value renders dark and muddy.
+      // Light neutral + low metal + medium roughness reads as bead-blasted
+      // aluminium under the three-light rig, and the blue rim light does the
+      // "cool" without tinting the part blue.
+      color: 0xc4cad3, metalness: 0.30, roughness: 0.44,
+      flatShading: false }));
     m.userData.body = b.id;
     scene.add(m);
     const entry = { id: b.id, result: !!b.result, mesh: m,
@@ -977,8 +992,10 @@ function addBodies(bodies) {
     for (const e of b.edges || []) {
       const eg = new THREE.BufferGeometry().setFromPoints(
         e.points.map(p => new THREE.Vector3(p[0], p[1], p[2])));
+      // near-black neutral: on a grey body the old dark BLUE edges read as a
+      // blue tint at a distance, which is what made the part look blue at all
       const line = new THREE.Line(eg, new THREE.LineBasicMaterial({
-        color: 0x0c2a4a, transparent: true, opacity: 0.55 }));
+        color: 0x232830, transparent: true, opacity: 0.68 }));
       line.userData.edgeId = e.id;
       line.userData.body = b.id;
       scene.add(line); edgeLines.push(line);

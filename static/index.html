@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=20">
+<link rel="stylesheet" href="/static/css/studio.css?v=22">
 </head>
 <body>
 
@@ -109,6 +109,25 @@
     <div class="row">
       <button value="cancel" formnovalidate>Cancel</button>
       <button class="primary" value="ok">Add feature</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ ask: the in-app replacement for prompt()/confirm() ============
+     User (2026-08-26): "simply a notification opens from a browser, ask the
+     name, it should not be like that ... it should be a proper tab". A native
+     prompt() steals focus, cannot be styled, and on some browsers reads as a
+     phishing warning. -->
+<dialog id="askDialog">
+  <form id="askForm" method="dialog">
+    <h3 id="askTitle">…</h3>
+    <p id="askBody"></p>
+    <label id="askLabel" for="askInput"></label>
+    <input id="askInput" autocomplete="off">
+    <div id="askHint"></div>
+    <div class="row">
+      <button value="cancel" id="askCancel" formnovalidate>Cancel</button>
+      <button class="primary" value="ok" id="askOk">OK</button>
     </div>
   </form>
 </dialog>
@@ -219,6 +238,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=87"></script>
+<script type="module" src="/static/js/main.js?v=89"></script>
 </body>
 </html>

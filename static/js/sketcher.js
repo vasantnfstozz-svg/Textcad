@@ -12,6 +12,7 @@
 // sketch3d.js renders its spec and converts pointer rays to plane points.
 
 import { S } from './state.js';
+import { askConfirm, askNumber } from './ask.js';
 import { bus } from './bus.js';
 import { postJSON } from './api.js';
 import { modalGuard } from './dialogs.js';
@@ -213,9 +214,18 @@ export function finishSketch() {
   if (scaleDrag) commitScale();          // keep the size the user is seeing
   create();
 }
-export function cancelSketch() {
-  if (skEnts.length && !confirm(
-    `Discard this sketch (${skEnts.length} shape${skEnts.length > 1 ? 's' : ''})?`)) return;
+export async function cancelSketch() {
+  // Nothing drawn -> just leave. Asking "are you sure?" about discarding an
+  // empty sketch was pure friction (user: "when nothing is there to sketch, i
+  // simply press cancel and a tab is opening from the browser").
+  if (skEnts.length) {
+    const n = skEnts.length;
+    const go = await askConfirm('Discard this sketch?', {
+      body: `${n} shape${n > 1 ? 's' : ''} will be thrown away.`,
+      ok: 'Discard', cancel: 'Keep editing', danger: true,
+    });
+    if (!go) return;
+  }
   exitMode();
 }
 
@@ -753,9 +763,12 @@ export function sketchModify(kind) {
   if (kind === 'duplicate') return modifySel(duplicateEntity);
   if (kind === 'scale') return scaleSel();
   if (kind === 'offset') {
-    const d = Number(prompt('Offset distance in mm (+ bigger / − smaller):', '5'));
-    if (!d) return;
-    modifySel(e => offsetEntity(e, d));
+    return askNumber('Offset', {
+      label: 'Distance in mm', value: 5,
+      body: 'Positive grows the shape outward, negative shrinks it inward.',
+      ok: 'Offset',
+      validate: v => Number(v) === 0 ? 'Zero would not move anything.' : null,
+    }).then(d => { if (d) modifySel(e => offsetEntity(e, d)); });
   }
 }
 
@@ -1870,8 +1883,11 @@ async function finishEmpty() {
     { feature_id: fid, dry_run: true }, 'checking dependencies…');
   const plan = dry.remove_plan;
   if (!plan) return;                     // error already shown; stay in sketch
-  if (!confirm(`You deleted every shape in "${fid}".\n\n${plan.summary}\n\n` +
-               `OK deletes the sketch. Cancel keeps it open so you can draw.`)) {
+  const go = await askConfirm(`"${fid}" has no shapes left`, {
+    body: `${plan.summary}\n\nDelete the sketch, or keep it open and draw the new shapes?`,
+    ok: 'Delete sketch', cancel: 'Keep it open', danger: true,
+  });
+  if (!go) {
     bus.emit('msg', 'bot', `Kept "${fid}" open — draw the new shapes, or ` +
       `press Cancel Sketch to put the deleted ones back.`);
     return;

@@ -174,3 +174,53 @@ def test_saving_binds_the_tab_so_a_later_open_comes_back_to_it(client):
 def test_opening_a_missing_design_still_errors(client):
     d = client.post("/api/open/no-such-design-at-all").json()
     assert "error" in d and "no saved design" in d["error"]
+
+
+# ------------------------------------------------ the AI must not steal focus ---
+
+def test_an_ai_design_opens_in_its_own_tab_without_stealing_the_current_one(
+        client, monkeypatch):
+    """User (2026-08-26): "when an ai is working a design and loading it ... even
+    my current tab is being taken for that design ... it should take a new tab
+    and that should not disturb other tabs".
+
+    Authoring takes a while, so yanking the viewport away mid-edit loses the
+    user's place. The design still gets its own tab — it just does not become
+    the active one."""
+    doc = studio.sample_flange()
+    doc.name = "ai-part"
+    monkeypatch.setattr(studio, "chat_intent",
+                        lambda *a, **k: {"action": "create",
+                                         "description": "a flange"})
+    monkeypatch.setattr(studio, "_make_model", lambda *a, **k: object())
+    monkeypatch.setattr(studio.author, "author_design",
+                        lambda *a, **k: (doc, ["verified"]))
+
+    mine = client.get("/api/doc").json()["active_tab"]
+    before = _tab_count(client)
+
+    d = client.post("/api/chat", json={"message": "design a flange"}).json()
+
+    assert _tab_count(client) == before + 1, "the AI design got no tab"
+    assert d["active_tab"] == mine, "the AI stole the tab I was working in"
+    assert d["new_tab"] != mine
+    assert "ai-part" in [t["name"] for t in d["tabs"]]
+    assert "own tab" in d["reply"] and "untouched" in d["reply"]
+
+
+def test_the_ai_tab_is_built_and_ready_when_you_switch_to_it(
+        client, monkeypatch):
+    """Handing the tab back must not leave the new design unbuilt — switching
+    to it should show geometry, not an empty viewport."""
+    doc = studio.sample_flange()
+    doc.name = "ai-built"
+    monkeypatch.setattr(studio, "chat_intent",
+                        lambda *a, **k: {"action": "create", "description": "x"})
+    monkeypatch.setattr(studio, "_make_model", lambda *a, **k: object())
+    monkeypatch.setattr(studio.author, "author_design",
+                        lambda *a, **k: (doc, ["verified"]))
+    d = client.post("/api/chat", json={"message": "design a flange"}).json()
+    tid = d["new_tab"]
+    switched = client.post("/api/tabs/switch", json={"id": tid}).json()
+    assert switched["name"] == "ai-built"
+    assert switched["ok"] is True and len(switched["features"]) == 3

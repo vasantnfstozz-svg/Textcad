@@ -16,6 +16,7 @@
 
 import { bus } from './bus.js';
 import { getJSON, postJSON } from './api.js';
+import { askText } from './ask.js';
 import { loadMesh } from './viewport.js';
 
 let open = false;
@@ -214,7 +215,12 @@ async function toggleDiff(row, v) {
 }
 
 async function rename(v) {
-  const name = prompt(`Name for ${v.id}:`, v.label || '');
+  const name = await askText(`Rename ${v.id}`, {
+    label: 'Version name', value: v.label || '',
+    body: 'Auto-labels say what happened; a name of your own says why '
+          + 'it matters -- "the one for the mill".',
+    ok: 'Rename',
+  });
   if (name === null) return;
   const r = await postJSON('/api/versions/label', { id: v.id, label: name });
   if (r.error) bus.emit('msg', 'bot', '⚠ ' + r.error);

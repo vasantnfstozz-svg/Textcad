@@ -5,6 +5,7 @@
 import { S } from './state.js';
 import { bus } from './bus.js';
 import { postJSON, getJSON } from './api.js';
+import { askText, askNumber } from './ask.js';
 import { OP_ICONS } from './icons.js';
 import { loadMesh, clearMesh, cancelPlanePick } from './viewport.js';
 import { cancelExtrude } from './extrude.js';
@@ -34,9 +35,28 @@ export function modalGuard() {
 
 /* ---------------- File actions ---------------- */
 
+/* A default that does not collide: "my-part", then "my-part-2", ... The user
+   asked for "some default name", and a default that is already taken is worse
+   than none — saving would silently land on somebody else's design. */
+async function freeDesignName(base = 'my-part') {
+  let taken = new Set();
+  try {
+    taken = new Set((await getJSON('/api/designs')).map(d => d.file));
+  } catch (e) { /* offline: the plain base is still a fine suggestion */ }
+  if (!taken.has(base)) return base;
+  for (let n = 2; n < 999; n++) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
+  return base;
+}
+
 export async function actionNew() {
-  const name = prompt('Name for the new design:', 'my-part');
-  if (name === null) return;
+  const name = await askText('New design', {
+    label: 'Name',
+    value: await freeDesignName(),
+    body: 'Opens in a new tab. The design you have open now stays open.',
+    ok: 'Create',
+    validate: v => v ? null : 'Give the design a name.',
+  });
+  if (!name) return;
   await postJSON('/api/new', { name });          // opens as a NEW TAB
   clearMesh();
   bus.emit('msg', 'bot', `Opened "${name}" in a new tab — the previous design ` +
@@ -55,7 +75,12 @@ export function actionTracePng() {
   inp.onchange = async () => {
     const f = inp.files[0];
     if (!f) return;
-    const h = prompt('Traced artwork height in mm:', '50');
+    const h = await askNumber('Trace image', {
+      label: 'Artwork height in mm',
+      value: 50, min: 0.1,
+      body: `Tracing ${f.name}. The width follows from the image's own aspect.`,
+      ok: 'Trace',
+    });
     if (h === null) return;
     const dataUrl = await new Promise((res, rej) => {
       const r = new FileReader();

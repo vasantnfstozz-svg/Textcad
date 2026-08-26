@@ -22,3 +22,6 @@ numpy>=1.26
 # development / tests
 pytest>=8.0
 httpx>=0.27
+# dev.py's auto-reload MUST skip designs/; without this uvicorn falls back
+# to statreload, which ignores reload_excludes and restarts on design edits
+watchfiles>=1.0

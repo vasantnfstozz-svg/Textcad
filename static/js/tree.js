@@ -2,6 +2,7 @@
 // suppress/delete/rollback actions, the spec verdict, and the status bar.
 
 import { bus } from './bus.js';
+import { askConfirm } from './ask.js';
 import { S } from './state.js';
 import { postJSON, getJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
@@ -273,8 +274,12 @@ export async function deleteFeature(fid) {
     { feature_id: fid, dry_run: true }, 'checking dependencies…');
   const plan = dry.remove_plan;
   if (!plan) return;                 // postJSON already showed the error
-  if (plan.deleted.length > 1
-      && !confirm(plan.summary + '\n\nDelete anyway?')) return;
+  if (plan.deleted.length > 1) {
+    const go = await askConfirm(`Delete ${plan.deleted.length} features?`, {
+      body: plan.summary, ok: 'Delete', danger: true,
+    });
+    if (!go) return;
+  }
   const doc = await postJSON('/api/feature/remove',
     { feature_id: fid }, 'deleting…');
   if (doc.error) return;

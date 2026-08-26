@@ -27,7 +27,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -80,6 +80,29 @@ async def _no_stale_assets(request, call_next):
     return resp
 
 
+@app.middleware("http")
+async def _never_die(request, call_next):
+    """Turn any unhandled endpoint exception into a JSON error.
+
+    An exception escaping an endpoint gives a bare 500 whose body the UI cannot
+    read, so the app looks dead even though the server is fine -- and OCP's
+    errors derive from Exception, not RuntimeError, so narrow `except` barriers
+    elsewhere do not catch them. The rule this project runs on is that a
+    failure must be reported, never silent and never fatal.
+    """
+    try:
+        return await call_next(request)
+    except Exception as e:                  # noqa: BLE001 - deliberate barrier
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(status_code=200, content={
+            "error": f"{type(e).__name__}: {e}",
+            "where": request.url.path,
+            "note": "The server is still running; nothing was changed. "
+                    "Undo (Ctrl+Z) if the design looks wrong.",
+        })
+
+
 app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
 
@@ -92,7 +115,8 @@ MAX_HISTORY = 25
 MAX_TABS = 12
 
 
-def _new_tab(doc: Document, source: str | None = None) -> str:
+def _new_tab(doc: Document, source: str | None = None,
+             activate: bool = True) -> str:
     """Open a document in a new tab and make it active.
 
     `source` records WHERE the design came from ("file:esp32-remote",
@@ -104,7 +128,8 @@ def _new_tab(doc: Document, source: str | None = None) -> str:
     tid = f"t{STATE['seq']}"
     STATE["docs"][tid] = {"doc": doc, "ok": False, "rebuild_ms": None,
                           "history": [], "source": source}
-    STATE["active"] = tid
+    if activate:
+        STATE["active"] = tid
     return tid
 
 
@@ -1597,13 +1622,21 @@ def chat(req: ChatReq):
         if doc is None:
             return {"reply": "I couldn't produce a verified design:\n"
                              + "\n".join(transcript), **_doc_json()}
-        _new_tab(doc)                             # AI designs open in a new tab
-        _rebuild_and_mesh()
+        # A NEW design goes in a NEW tab and must NOT steal the one the user is
+        # working in (user, 2026-08-26: "even my current tab is being taken for
+        # that design ... that should not disturb other tabs"). Authoring takes
+        # a while, and yanking the viewport away mid-edit loses their place.
+        was = STATE["active"]
+        tid = _new_tab(doc, activate=True)
+        _rebuild_and_mesh()                       # build it while it is active
         n = len(doc.features)
+        if was in STATE["docs"] and was != tid:
+            STATE["active"] = was                 # ...then hand the tab back
         return {"reply": f"Designed \"{doc.name}\" — {n} features, all "
-                         f"verified ({transcript[-1]}). Opened in a new tab; "
-                         f"edit anything by clicking or asking.",
-                **_doc_json()}
+                         f"verified ({transcript[-1]}). It is waiting in its "
+                         f"own tab; your current design is untouched. Click "
+                         f"the \"{doc.name}\" tab when you want it.",
+                "new_tab": tid, **_doc_json()}
 
     if intent.get("action") == "delete":
         fid = intent.get("feature_id")
@@ -1659,16 +1692,38 @@ def chat(req: ChatReq):
 
 
 if __name__ == "__main__":
+    import socket
     import uvicorn
     # Start EMPTY (user mandate 2026-08-05: the demo flange forced a
     # primitive-tree "disc with bolts" on every launch). Samples stay
     # available under File -> Examples; saved work under File -> Open.
     _new_tab(Document(name="untitled"))
     _rebuild_and_mesh()
-    url = "http://127.0.0.1:8123"
+    port = int(os.environ.get("TEXTCAD_PORT", "8123"))
+    url = f"http://127.0.0.1:{port}"
+
+    # Refuse to start a SECOND server on a port that already answers. On
+    # Windows two processes can both bind one port and replies then come from
+    # whichever bound last, which makes the app behave at random -- reads as
+    # "the server crashed" while a stale process quietly serves old code.
+    probe = socket.socket()
+    probe.settimeout(0.4)
+    already = probe.connect_ex(("127.0.0.1", port)) == 0
+    probe.close()
+    if already:
+        print(f"Something is already serving {url}.")
+        print("That is probably TextCAD Studio -- just open the tab.")
+        print("If it is stuck, close it first, or pick another port:")
+        print(f"  set TEXTCAD_PORT=8124 && python studio.py")
+        raise SystemExit(3)
+
     print(f"TextCAD Studio -> {url}")
-    try:
-        webbrowser.open(url)
-    except Exception:
-        pass
-    uvicorn.run(app, host="127.0.0.1", port=8123, log_level="warning")
+    # new=2 asks for a TAB in the existing window rather than a new window, and
+    # TEXTCAD_NO_BROWSER skips it entirely (user: "always keep one webbrowser,
+    # just open a new tab"). Restarting the server should not pile up windows.
+    if os.environ.get("TEXTCAD_NO_BROWSER") != "1":
+        try:
+            webbrowser.open(url, new=2)
+        except Exception:
+            pass
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
