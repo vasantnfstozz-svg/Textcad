@@ -1,6 +1,6 @@
 # Version tree — development sheet
 
-> **Status: P0–P3 shipped 2026-08-26; P4–P5 planned.** Design agreed with the
+> **Status: P0–P4 shipped 2026-08-26; P5 planned.** Design agreed with the
 > user 2026-08-26. Each phase ships and is tested on its own.
 
 ## The problem, in the user's words
@@ -276,22 +276,55 @@ are PARAMETER rows (`radius`, `thickness`) — so it passed no matter what
 restore did. It now reads `.node[data-fid]`, and asserts the "tiny" hole is
 present BEFORE the click so the check after it cannot pass by finding nothing.
 
-### P4 — git backfill, rocky → today
+### P4 — git backfill, rocky → today — **DONE**
 
-`git log --reverse -- designs/<slug>.tcad.json`, one version per commit,
-`git show <sha>:<path>` for each blob, identical blobs deduped, commit subject
-becomes the label, `source: "backfill:git"`, `commit: <sha>`. Linear parent
-chain. **Idempotent** — re-running skips shas already recorded. Dry-run first.
+`backfill.py`, kept separate from `history.py` (which must not know what git
+is) and from `studio.py` (which must not shell out). CLI:
+`python backfill.py [--dry-run] [--only SLUG …] [--reset]`.
 
-**Material available** (measured): rocky-keychain **24** commits,
-esp32-remote **15**, pump-housing **8**, autonomiq-panel **5**,
-autonomiq-sat-panel **3**, cam-cover-upper **2**, wing-rib **1**; 77 design
-commits since rocky overall. The commit subjects are descriptive
-("esp32-remote v9: fix two machinability defects…") so they make genuinely
-good version labels.
+**Result of the real run: 108 versions across 41 designs, 794 KB** — including
+rocky-keychain **24**, esp32-remote **15**, pump-housing **8**, sat-side-panel
+**5**, autonomiq-panel **5**, pump-cover **5**, pump-impeller **4**. Commit
+subjects became the labels, so the trees arrived readable rather than as
+`v1..v24`; each version keeps its commit sha and the commit's own timestamp.
 
-**Limit:** `designs/*.tcad.json` was only un-ignored on 2026-08-05, so nothing
-older has blob history. rocky (2026-08-18) is safely inside that window.
+**Two git traps, both hit for real and both now regression-tested:**
+
+1. `--reverse --follow` together return **ONE** commit for esp32-remote where
+   `--follow` alone returns 16 — `--follow` is a hack in the revision walker
+   and does not compose with `--reverse`. The first version of this module used
+   both and would have silently imported 1 of 15. Ordering is done in Python.
+2. `--follow` is not used **at all**, which is the worse of the two. For
+   `autonomiq-sat-panel.tcad.json` git's rename heuristic walks back into
+   `sat-side-panel.tcad.json` (5 commits) and on into `isogrid-panel.tcad.json`
+   — *different designs*, each with their own file, history and tree. Following
+   imported another design's commits under this one's name, and `git show
+   <sha>:<path>` then failed because those commits do not contain the path.
+   Plain path history gives 3 / 15 / 24 for sat-panel / esp32 / rocky, and
+   those are the right answers. Cost: a genuinely renamed design loses its
+   earlier life — an acceptable trade while the app has no rename.
+
+Safety: **non-destructive by default.** A history holding versions recorded
+from live editing is skipped with a reason, because git commits are *older* and
+appending them would build a chain that lies about the order; `--reset` exists
+for when git should be the only source. Idempotent on commit sha, so re-running
+adds only new commits. Designs with no git history are reported, naming the
+real limit (`designs/*.tcad.json` was only tracked from 2026-08-05).
+
+Tests: `tests/test_backfill.py`, **21**, run against this repo's real history —
+a mock would not have caught either trap. Both traps are mutation-verified.
+
+**A UI bug the backfill exposed.** `tree_lines()` and the panel indented per
+LINK, so rocky-keychain's linear chain of 24 became 24 nested levels — 253 px
+of margin, labels off the edge of a 320 px pane. Both now indent by
+`History.depths()`: a version's first child continues the trunk at the same
+level and only a second child steps right. A straight line of edits is not 24
+levels of anything. Max indent for rocky-keychain is now 0.
+
+The pollution guard in `test_version_api.py` also had to be narrowed: it
+asserted *no* `.history` existed under `designs/`, which was right for test
+isolation and wrong the moment real histories legitimately lived there. It now
+checks only for its own test slugs.
 
 ### P5 — polish
 

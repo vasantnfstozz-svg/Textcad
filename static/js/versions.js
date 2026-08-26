@@ -95,9 +95,14 @@ function paint(d) {
     if (!kids.has(k)) kids.set(k, []);
     kids.get(k).push(v.id);
   }
+  // Indent counts BRANCHES, not links: a version's first child continues the
+  // trunk at the same level and only a second child steps right. Per-link
+  // indenting looked fine until the git backfill produced rocky-keychain's
+  // linear chain of 24 -- as 24 nested levels the labels left the panel
+  // entirely. Same rule as History.depths(), so panel and CLI agree.
   const walk = (id, depth) => {
     el.appendChild(row(byId.get(id), depth, d));
-    for (const c of kids.get(id) || []) walk(c, depth + 1);
+    (kids.get(id) || []).forEach((c, i) => walk(c, i === 0 ? depth : depth + 1));
   };
   for (const r of kids.get('__root') || []) walk(r, 0);
 }

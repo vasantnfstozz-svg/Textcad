@@ -315,20 +315,44 @@ class History:
         took a different path."""
         return [v.id for v in self.versions() if len(self.children(v.id)) > 1]
 
-    def tree_lines(self) -> list[str]:
-        """Readable dump, for debugging and for the tests to assert against."""
-        out: list[str] = []
+    def depths(self) -> dict[str, int]:
+        """Indent level per version, counting BRANCHES rather than links.
+
+        A version's first child continues the trunk at the same level; only
+        a second or later child steps right. Indenting per link looked fine
+        on toy data and fell over on the real thing: the git backfill gave
+        rocky-keychain a linear chain of 24, which as 24 nested levels
+        pushed the labels clean out of a 320px panel. A straight line of
+        edits is not 24 levels of anything."""
+        out: dict[str, int] = {}
 
         def walk(vid: str, depth: int) -> None:
-            v = self.get(vid)
-            marks = ("*" if vid == self.current() else " ") + \
-                    ("★" if vid == self.starred() else " ")
-            out.append(f"{marks} {'  ' * depth}{vid}  {v.label}".rstrip())
-            for c in self.children(vid):
-                walk(c, depth + 1)
+            out[vid] = depth
+            for i, c in enumerate(self.children(vid)):
+                walk(c, depth if i == 0 else depth + 1)
 
         for r in self.roots():
             walk(r, 0)
+        return out
+
+    def tree_lines(self) -> list[str]:
+        """Readable dump, for debugging and for the tests to assert against.
+
+        Indented by depths(), so a linear history reads as a straight list
+        and only real branches step right."""
+        out: list[str] = []
+        depth = self.depths()
+
+        def walk(vid: str) -> None:
+            v = self.get(vid)
+            marks = ("*" if vid == self.current() else " ") + \
+                    ("★" if vid == self.starred() else " ")
+            out.append(f"{marks} {'  ' * depth[vid]}{vid}  {v.label}".rstrip())
+            for c in self.children(vid):
+                walk(c)
+
+        for r in self.roots():
+            walk(r)
         return out
 
     # -- writing -----------------------------------------------------------

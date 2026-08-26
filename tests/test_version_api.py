@@ -338,8 +338,14 @@ def test_a_corrupt_index_is_reported_and_does_not_break_editing(client, saved):
 
 
 def test_histories_never_land_in_the_designs_library(client, saved):
-    """Guard on the guard: the autouse fixture redirects HISTORY_ROOT, and if
-    it ever stops working this test fails instead of a directory silently
-    appearing inside tracked user work."""
+    """Guard on the guard: the autouse fixture redirects HISTORY_ROOT, and if it
+    ever stops working this test fails instead of a directory silently appearing
+    inside tracked user work.
+
+    It checks for THIS TEST'S slug specifically, not for any .history at all —
+    since the P4 backfill, designs/ legitimately holds the real designs'
+    histories, and a blanket "none may exist" would fail on the user's own
+    data."""
     assert studio._history_root() != studio.DESIGNS
-    assert not list(studio.DESIGNS.glob("*.history"))
+    for slug in (TMP, TMP + "-two"):
+        assert not (studio.DESIGNS / f"{slug}.history").exists(),             f"a test wrote {slug}.history into the user's library"

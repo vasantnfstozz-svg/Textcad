@@ -57,9 +57,11 @@ def test_the_panel_draws_the_branch(page, server, fresh_doc):
     ind = {v: page.locator(f'.vrow[data-vid="{v}"]')
                     .evaluate("e => parseInt(e.style.marginLeft) || 0")
            for v in ("v1", "v2", "v3")}
-    # v2 and v3 are SIBLINGS under v1 — that is the whole point of a tree
-    assert ind["v1"] == 0
-    assert ind["v2"] == ind["v3"] > ind["v1"], ind
+    # v1 -> v2 is a straight line, so v2 stays on the trunk; v3 is v1's SECOND
+    # child, so it steps right. Indenting every link instead buried
+    # rocky-keychain's linear 24 under 24 levels of margin.
+    assert ind["v1"] == 0 == ind["v2"], ind
+    assert ind["v3"] > ind["v2"], ind
     assert not page.errors, page.errors
 
 
