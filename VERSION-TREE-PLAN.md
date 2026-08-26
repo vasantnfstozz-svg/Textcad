@@ -1,7 +1,7 @@
 # Version tree — development sheet
 
-> **Status: P0 shipped 2026-08-26; P1–P5 planned.** Design agreed with the
-> user 2026-08-26. Each phase ships and is tested on its own.
+> **Status: P0 + P1 shipped 2026-08-26; P2–P5 planned.** Design agreed with
+> the user 2026-08-26. Each phase ships and is tested on its own.
 
 ## The problem, in the user's words
 
@@ -59,10 +59,13 @@ designs/
 `Document.to_data()` is already the right snapshot unit: `{name, spec,
 features[]}` — complete design intent, pure JSON, no build state.
 
-**Sizes measured, not guessed:** the largest design is `cam-cover-plaque` at
-202 KB, `autonomiq-sat-panel` 201 KB, `esp32-remote` 107 KB. 25 raw snapshots
-of the biggest ≈ 5 MB. Feature-tree JSON gzips roughly 10×, so **gzip from day
-one**, giving ~500 KB per design's full history.
+**Sizes measured, not guessed** (and the first estimate was too pessimistic):
+`cam-cover-plaque` 198 KB → **10.4 KB gzipped (19.1×)**, `autonomiq-sat-panel`
+196 → 11.6 KB (16.9×), `esp32-remote` 104 → 6.8 KB (15.3×), `rocky-balboa`
+167 → 13.8 KB (12.2×); 15.6× across the set. So 25 versions of the biggest
+design cost ~260 KB, not the ~5 MB first assumed — **a design's whole history
+is cheaper than one raw copy of it.** Small designs compress poorly in ratio
+terms (`flange-100` only 2.7×) but they are under 1 KB anyway.
 
 ### `index.json`
 
@@ -132,14 +135,54 @@ Tests: `tests/test_tab_reuse.py` (11), plus `test_api.py`'s old
 browser: three gallery opens of one design → one tab; a different design still
 gets its own.
 
-### P1 — `history.py`, the storage core — **NO UI**
+### P1 — `history.py`, the storage core — **DONE**
 
-Pure Python: `init`, `append`, `list`, `get`, `restore_data`, `star`,
-`set_current`, plus tree walking (children, ancestors, branch points). Atomic
-writes (temp + rename) so a crash mid-write cannot corrupt `index.json`.
+Pure Python, no HTTP and no `Document` import. `History(path)` /
+`History.for_design(dir, slug)` with: `init`, `append`, `versions`, `get`,
+`snapshot`, `current`/`set_current`, `star`/`starred`, `relabel`, `rename`,
+`repair`, `problems`, and tree walking — `children`, `roots`, `leaves`,
+`ancestors`, `branch_points`, `tree_lines`.
 
-**This phase is where robustness is won or lost.** Everything later is
-plumbing. It gets over-tested before any UI exists.
+Four invariants, each stated in the module docstring and each **verified by
+mutation testing** (break it in the source, confirm the suite goes red):
+
+| Invariant | Broken deliberately → |
+|---|---|
+| A version is recorded only when the content hash changes | 3 tests fail |
+| Editing from an old version BRANCHES, never truncates | 3 tests fail |
+| The snapshot is written before the index | 1 test fails |
+| A broken index is never overwritten | 3 tests fail |
+
+Details worth remembering:
+
+- **Dedupe is against the PARENT only**, not the whole tree. A→B→A is real
+  history — the design genuinely changed twice — so it records, while
+  re-opening the same design ten times records nothing.
+- **`parent` defaults to `current()`.** That single line is what makes
+  restore-then-edit branch instead of truncate; there is no separate "branch"
+  operation to forget to call.
+- **`_save()` persists, then adopts.** Every writer builds a new index dict and
+  hands it over; `self._data` only advances once the bytes are down, so a
+  failed write cannot leave a live `History` disagreeing with its own disk.
+- **Order matters for crash safety.** Snapshot first: a crash then leaves an
+  orphaned `.json.gz` (harmless garbage) instead of an index entry promising a
+  payload that never landed. The id of a never-indexed version is deliberately
+  reused — ids are monotonic over real versions, not over failed attempts.
+- **`repair()` is opt-in, never a silent fallback.** It rebuilds an index from
+  the snapshots on disk, and says in its return value that it made the chain
+  linear because the real parent links died with the index. Guessing is fine
+  when asked for and unacceptable by default.
+- **`rename()` moves the directory** and keeps `design_id`, so a renamed design
+  does not fork its history. Renaming onto an existing history is refused
+  rather than merged.
+
+Tests: `tests/test_history.py`, **39**.
+
+Still owed by P2, deliberately not done here: `design_id` is currently only in
+`index.json`. The plan has it in the `.tcad.json` too, which means touching
+`Document.to_data()`/`from_data()` — that changes every saved design file, so
+it belongs with the server wiring, not with a storage layer that must not know
+what a Document is. `rename()` covers the rename case until then.
 
 ### P2 — server wiring
 
