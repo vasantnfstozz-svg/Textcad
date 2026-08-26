@@ -1,0 +1,184 @@
+// versions.js — the per-design version tree (VERSION-TREE-PLAN.md P3)
+//
+// The problem this answers, in the user's words: "every time when we are
+// working in the changes, there is always a new tab will pop out with new
+// modified design, after some time there will be many tabs, we do not know
+// which is my intended design."
+//
+// P0 stopped the tabs multiplying. This is the other half: every recorded
+// version of the design, as a TREE (going back to v3 and editing branches off
+// it, it does not delete v4..v10), one click to put any of them back on
+// screen, and one star for "this is the one I actually mean" — because recency
+// cannot answer that. v10 is not automatically better than v7.
+//
+// Collapsed by default down to a single line, so the answer to "where am I"
+// is visible without opening anything and the feature tree keeps its space.
+
+import { bus } from './bus.js';
+import { getJSON, postJSON } from './api.js';
+import { loadMesh } from './viewport.js';
+
+let open = false;
+let seq = 0;                     // only the newest fetch may paint
+
+const pane = () => document.getElementById('verPane');
+const body = () => document.getElementById('verBody');
+const summary = () => document.getElementById('verSummary');
+
+export function initVersions() {
+  document.getElementById('verHead').onclick = () => {
+    open = !open;
+    pane().classList.toggle('collapsed', !open);
+    document.getElementById('verCaret').textContent = open ? '▾' : '▸';
+    if (open) refresh();
+  };
+  bus.on('doc-updated', doc => {
+    // Refresh when the panel is showing, and ALWAYS when the server says it
+    // just recorded something (`version`), reported a history fault, or
+    // restored — otherwise the one-line summary would quietly go stale while
+    // collapsed. Not on every keystroke beyond that: /api/versions is kept
+    // out of /api/doc precisely so it is not on the hot path.
+    if (open || doc.version || doc.history_error || doc.restored) refresh();
+  });
+  bus.on('versions-open', () => {
+    if (!open) document.getElementById('verHead').click();
+  });
+  refresh();
+}
+
+export async function refresh() {
+  const mine = ++seq;
+  let d;
+  try { d = await getJSON('/api/versions'); }
+  catch (e) { d = { unreachable: true }; }
+  if (mine !== seq) return;
+  paint(d);
+}
+
+function paint(d) {
+  summary().innerHTML = summaryText(d);
+  if (!open) return;
+  const el = body();
+  el.innerHTML = '';
+
+  if (d.unreachable) {
+    el.innerHTML = '<div class="vprob">Can’t reach the TextCAD server, so ' +
+      'the version list can’t load. Is <b>studio.py</b> still running?</div>';
+    return;
+  }
+  // Three different empty states, and they must never read the same — an
+  // unsaved design has no history YET, which is nothing like a broken one.
+  for (const p of d.problems || []) {
+    const w = document.createElement('div');
+    w.className = 'vprob';
+    w.textContent = '⚠ ' + p;
+    el.appendChild(w);
+  }
+  if (d.unsaved) {
+    el.insertAdjacentHTML('beforeend',
+      `<div class="vnote">${d.note || 'No history yet.'}</div>`);
+    return;
+  }
+  if (!(d.versions || []).length) {
+    el.insertAdjacentHTML('beforeend',
+      '<div class="vnote">No versions recorded yet.</div>');
+    return;
+  }
+
+  // Index by parent so the tree can be walked. A version whose parent is
+  // missing (a hand-edited index) is treated as a root rather than dropped —
+  // showing it detached beats hiding a version that exists.
+  const byId = new Map(d.versions.map(v => [v.id, v]));
+  const kids = new Map();
+  for (const v of d.versions) {
+    const k = v.parent && byId.has(v.parent) ? v.parent : '__root';
+    if (!kids.has(k)) kids.set(k, []);
+    kids.get(k).push(v.id);
+  }
+  const walk = (id, depth) => {
+    el.appendChild(row(byId.get(id), depth, d));
+    for (const c of kids.get(id) || []) walk(c, depth + 1);
+  };
+  for (const r of kids.get('__root') || []) walk(r, 0);
+}
+
+function summaryText(d) {
+  if (!d || d.unreachable) return '<span class="vprob">server?</span>';
+  if ((d.problems || []).length) return '<span class="vprob">⚠ problem</span>';
+  if (d.unsaved) return 'unsaved';
+  const n = (d.versions || []).length;
+  if (!n) return 'none yet';
+  const star = d.starred ? ` <span class="star">★ ${d.starred}</span>` : '';
+  return `${d.current || '—'} of ${n}${star}`;
+}
+
+function row(v, depth, d) {
+  const el = document.createElement('div');
+  el.className = 'vrow' + (v.id === d.current ? ' cur' : '') +
+                 (v.rebuildable === false ? ' dead' : '');
+  el.dataset.vid = v.id;
+  el.style.marginLeft = `${depth * 11}px`;
+  el.title = `${v.id} · ${v.label || '(no label)'}\n${v.created || ''}` +
+    `\n${v.features} features · via ${v.source || '?'}` +
+    (v.rebuildable === false ? '\nthis version did NOT verify when recorded'
+                             : '') +
+    '\n\nclick to put it back on screen · double-click the name to rename it';
+
+  const star = document.createElement('button');
+  star.className = 'vstar' + (v.id === d.starred ? ' on' : '');
+  star.textContent = v.id === d.starred ? '★' : '☆';
+  star.title = v.id === d.starred
+    ? 'this is the version you marked — click to unmark'
+    : 'mark this as the version you actually mean';
+  star.onclick = async e => {
+    e.stopPropagation();
+    const r = await postJSON('/api/versions/star',
+                             { id: v.id === d.starred ? null : v.id });
+    if (r.error) bus.emit('msg', 'bot', '⚠ ' + r.error);
+    refresh();
+  };
+
+  const id = document.createElement('span');
+  id.className = 'vid';
+  id.textContent = v.id;
+
+  const label = document.createElement('span');
+  label.className = 'vlabel';
+  label.textContent = v.label || '(no label)';
+  label.ondblclick = e => {
+    e.stopPropagation();
+    rename(v);
+  };
+
+  const meta = document.createElement('span');
+  meta.className = 'vmeta';
+  meta.textContent = `${v.features}f`;
+
+  el.append(star, id, label, meta);
+  el.onclick = () => restore(v);
+  return el;
+}
+
+async function rename(v) {
+  const name = prompt(`Name for ${v.id}:`, v.label || '');
+  if (name === null) return;
+  const r = await postJSON('/api/versions/label', { id: v.id, label: name });
+  if (r.error) bus.emit('msg', 'bot', '⚠ ' + r.error);
+  refresh();
+}
+
+async function restore(v) {
+  // No confirmation on purpose: this does NOT overwrite the saved .tcad.json,
+  // whatever was on screen goes onto the undo stack, and the versions you came
+  // from stay in the tree. Nothing here is destructive, so a dialog every time
+  // would just be in the way — the reply below says how to get back.
+  const doc = await postJSON('/api/versions/restore', { id: v.id },
+                             `opening ${v.id}…`);
+  if (doc.error) { bus.emit('msg', 'bot', '⚠ ' + doc.error); refresh(); return; }
+  await loadMesh(true, true);
+  bus.emit('msg', 'bot',
+    `Opened ${v.id} — ${v.label || 'no label'} (${v.features} features). ` +
+    `Editing from here starts a new branch, so the newer versions stay in the ` +
+    `list. Ctrl+Z puts back what was on screen.`);
+  refresh();
+}

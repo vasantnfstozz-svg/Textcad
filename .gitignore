@@ -10,3 +10,11 @@ _studio_mesh.stl
 # uploaded import files are user work too: designs reference them by name,
 # so a backup without them would not rebuild
 !imports/*.stl
+
+# Version histories are user work too (VERSION-TREE-PLAN.md): designs/<slug>.history/
+# holds index.json + gzipped snapshots, ~10 KB each. User's call 2026-08-26:
+# TRACK them, same reasoning as the design library above — losing v1..v9 to an
+# untracked directory would defeat the point of recording them. Nothing here
+# matches those names today; the explicit rule keeps it that way if a broader
+# *.json ignore ever lands.
+!designs/*.history/**

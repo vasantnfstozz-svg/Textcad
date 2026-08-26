@@ -15,6 +15,7 @@ import { initRibbon } from './ribbon.js';
 import { initSplitters } from './splitters.js';
 import { initSettings } from './settings.js';
 import { initExtrude } from './extrude.js';
+import { initVersions } from './versions.js';
 
 initSettings();          // load prefs before anything renders (fmtVol/fmtLen)
 initViewport();
@@ -24,6 +25,7 @@ initSketcher();
 initExtrude();
 initRibbon();
 initSplitters();
+initVersions();   // version tree under the feature tree
 
 /* keyboard shortcuts */
 window.addEventListener('keydown', e => {

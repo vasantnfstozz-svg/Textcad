@@ -1,7 +1,7 @@
 # Version tree — development sheet
 
-> **Status: P0 + P1 + P2 shipped 2026-08-26; P3–P5 planned.** Design agreed
-> with the user 2026-08-26. Each phase ships and is tested on its own.
+> **Status: P0–P3 shipped 2026-08-26; P4–P5 planned.** Design agreed with the
+> user 2026-08-26. Each phase ships and is tested on its own.
 
 ## The problem, in the user's words
 
@@ -236,10 +236,45 @@ in `index.json` only. There is **no design-rename endpoint in the app at all**
 cannot currently change and the fork-on-rename problem has no way to occur.
 `History.rename()` is built and unit-tested, ready for the day rename lands.
 
-### P3 — UI
+### P3 — UI — **DONE**
 
-Version tree panel: parent/child indentation, current and starred markers,
-click to restore, inline rename. E2E coverage.
+`static/js/versions.js` + a `#verPane` section at the BOTTOM of the left pane,
+under the feature tree.
+
+**Collapsed to one line by default**, and that line is the point: `v3 of 5 ★ v2`
+answers "which version am I on" without opening anything, which is the literal
+complaint. Expanded it takes at most 55% of the pane and scrolls itself, so the
+feature tree keeps its space. A **Versions** button in Inspect → History opens
+it, for discoverability.
+
+Each row: star toggle, id, label, feature count. Current row is outlined and
+underlined; the starred row shows a filled ★ (exactly one can). Children are
+indented under their parent, so a branch is visible as two siblings at the same
+depth. A version recorded as not verifying is struck through. Click a row to
+restore; double-click its label to rename.
+
+Restore has **no confirmation dialog, on purpose**: it does not overwrite
+`.tcad.json`, the outgoing state goes on the undo stack, and the versions you
+came from stay in the tree — nothing about it is destructive, so a prompt every
+time would just be in the way. The chat reply says how to get back instead.
+
+Refresh policy: on `doc-updated` only when the panel is open, or when the
+server's reply carried `version` / `history_error` / `restored`. Otherwise the
+collapsed summary would go stale while the panel stayed silent — and
+`/api/versions` is kept off `/api/doc` precisely so it is not on the hot path.
+
+**A P1 fix this phase forced:** `problems()` used to DECOMPRESS every snapshot
+to prove it readable. The panel calls it on every document change, so that was
+O(whole history) on a hot path — megabytes of gzip for a 100-version design.
+It is now shallow by default (a `stat` catches a missing snapshot; a corrupt
+one is caught the moment it is opened, where `snapshot()` already names it) with
+`deep=True` kept for the tests that assert corruption is detected.
+
+Tests: `tests/e2e/test_version_panel.py`, **7**. One of them started out
+**vacuous** and was caught: it asserted feature names via `.prow .pname`, which
+are PARAMETER rows (`radius`, `thickness`) — so it passed no matter what
+restore did. It now reads `.node[data-fid]`, and asserts the "tiny" hole is
+present BEFORE the click so the check after it cannot pass by finding nothing.
 
 ### P4 — git backfill, rocky → today
 
@@ -309,8 +344,11 @@ those time we will get new issues or bugs, so try those test case."*
 
 ## Open, decide before P3
 
-- Where the tree lives: right-hand panel beside the feature tree, or its own
-  dialog. (Feature tree already owns that space.)
+- ~~Where the tree lives.~~ **Decided: bottom of the left pane**, collapsed to
+  one line. A dialog was rejected — "which version am I on" has to be visible
+  without opening anything.
 - Prune policy — none, or keep-last-N-per-branch with starred always kept.
-- Should `.history/` be git-tracked? It is user work, which argues yes; it also
-  grows with every edit, which argues for gzip + prune first.
+- ~~Should `.history/` be git-tracked?~~ **Decided 2026-08-26: yes, track
+  everything.** Same reasoning as the design library — losing v1..v9 to an
+  untracked directory would defeat the point. `.gitignore` carries an explicit
+  `!designs/*.history/**` so a future broader ignore cannot silently drop them.

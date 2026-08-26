@@ -60,6 +60,8 @@ const ACTIONS = {
   sk_duplicate: { icon: '⧉', name: 'Duplicate', fn: () => sketchModify('duplicate') },
   sk_offset: { icon: '⇢', name: 'Offset', fn: () => sketchModify('offset') },
   sk_scale: { icon: '⤢', name: 'Scale', fn: () => sketchModify('scale') },
+  versions:      { icon: '⏱', name: 'Versions',
+                   fn: () => bus.emit('versions-open') },
   examples:      { icon: '🗂', name: 'Examples',   fn: actionExamples },
   ex_flange:     { icon: '⚙', name: 'Flange',     fn: () => loadSample('flange') },
   ex_impeller:   { icon: '🌀', name: 'Impeller',   fn: () => loadSample('impeller') },
@@ -95,7 +97,7 @@ const TABS = {
   Inspect: [
     ['Select', [{ a: 'select' }]],
     ['Verify', [{ a: 'spec' }]],
-    ['History', [{ a: 'undo' }]],
+    ['History', [{ a: 'undo' }, { a: 'versions' }]],
   ],
 };
 const TAB_ORDER = ['File', 'Create', 'Modify', 'Inspect'];

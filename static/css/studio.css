@@ -448,3 +448,36 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 .nchip.cut { color: #ff9d9d; background: rgba(255,120,120,.13); }
 .nchip.fuse { color: #9adf9a; background: rgba(120,220,120,.13); }
 .nchip.intersect { color: #9ac4ff; background: rgba(120,170,255,.13); }
+
+/* ---- version tree (VERSION-TREE-PLAN.md P3) ---------------------------- */
+/* Sits under the feature tree and stays out of its way: collapsed it is one
+   line, expanded it takes at most half the pane and scrolls itself. */
+#verPane { border-top: 1px solid var(--line); flex: 0 0 auto;
+           display: flex; flex-direction: column; max-height: 55%; }
+#verPane.collapsed #verBody { display: none; }
+#verHead { cursor: pointer; user-select: none; }
+#verHead:hover { background: var(--panel2); }
+#verCaret { color: var(--dim); font-size: 9px; margin-right: 2px; }
+/* .pane-title uppercases its children, which turns "v3" into "V3" — the ids
+   are lowercase everywhere else, so opt this one out */
+#verSummary { color: var(--dim); font-size: 10.5px; font-weight: 400;
+              text-transform: none; letter-spacing: 0; }
+#verSummary .star { color: #e8c14a; }
+#verBody { overflow-y: auto; padding: 2px 6px 8px 4px; }
+.vrow { display: flex; align-items: center; gap: 5px; padding: 3px 4px;
+        border-radius: 3px; cursor: pointer; font-size: 11.5px;
+        border: 1px solid transparent; }
+.vrow:hover { background: var(--panel3); }
+.vrow.cur { border-color: var(--accent2); background: var(--panel2); }
+.vrow .vid { color: var(--accent); font-weight: 600; flex: 0 0 auto; }
+.vrow.cur .vid { text-decoration: underline; }
+.vrow .vlabel { flex: 1; overflow: hidden; text-overflow: ellipsis;
+                white-space: nowrap; }
+.vrow .vmeta { color: var(--dim); font-size: 10px; flex: 0 0 auto; }
+.vrow.dead .vlabel { color: var(--dim); text-decoration: line-through; }
+.vstar { background: none; border: 0; padding: 0 2px; cursor: pointer;
+         color: var(--line); font-size: 12px; line-height: 1; }
+.vstar:hover { color: var(--dim); }
+.vstar.on { color: #e8c14a; }
+.vnote { color: var(--dim); font-size: 11px; padding: 6px 4px; line-height: 1.4; }
+.vprob { color: var(--fail); font-size: 11px; padding: 6px 4px; line-height: 1.4; }

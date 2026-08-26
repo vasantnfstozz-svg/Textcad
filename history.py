@@ -192,10 +192,18 @@ class History:
     def exists(self) -> bool:
         return self._data is not None
 
-    def problems(self) -> list[str]:
+    def problems(self, deep: bool = False) -> list[str]:
         """Plain-language faults. Empty when the history is healthy. Callers
         should surface these verbatim: a wrong explanation is worse than none,
-        and 'no versions yet' must never be shown for 'the file is corrupt'."""
+        and 'no versions yet' must never be shown for 'the file is corrupt'.
+
+        `deep` also DECOMPRESSES every snapshot to prove it is readable, which
+        is O(whole history) — 100 versions of a big design is megabytes of gzip.
+        The UI polls this whenever the document changes, so it asks for the
+        shallow check: a missing file is caught by a stat, and a snapshot that
+        is present but corrupt is caught the moment it is opened, where
+        `snapshot()` already raises a message naming it. Paying to re-verify
+        every version on every keystroke would be the wrong trade."""
         out = list(self._problems)
         if self._data is not None:
             for v in self._versions():
@@ -203,7 +211,7 @@ class History:
                 if not p.exists():
                     out.append(f"{v.id} is listed but its snapshot {p.name} is "
                                f"missing — that version cannot be opened.")
-                elif not self._readable(v.id):
+                elif deep and not self._readable(v.id):
                     out.append(f"{v.id}'s snapshot {p.name} is corrupt — the "
                                f"other versions are unaffected.")
         return out

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=17">
+<link rel="stylesheet" href="/static/css/studio.css?v=19">
 </head>
 <body>
 
@@ -27,6 +27,16 @@
   <div id="treePane">
     <div class="pane-title"><span>Feature tree</span><span id="featCount"></span></div>
     <div id="tree"></div>
+    <!-- Version tree. Collapsed to ONE always-visible line, because the whole
+         complaint was "we do not know which is my intended design" — that has
+         to be answerable without opening anything. -->
+    <div id="verPane" class="collapsed">
+      <div class="pane-title" id="verHead" title="click to show every recorded version of this design">
+        <span><span id="verCaret">▸</span> Versions</span>
+        <span id="verSummary"></span>
+      </div>
+      <div id="verBody"></div>
+    </div>
   </div>
 
   <div class="splitter" id="splitLeft" title="drag to resize · double-click to reset"></div>
@@ -209,6 +219,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=84"></script>
+<script type="module" src="/static/js/main.js?v=85"></script>
 </body>
 </html>

@@ -279,9 +279,12 @@ def test_one_corrupt_snapshot_does_not_take_the_others_with_it(h, tmp_path):
     assert reread.snapshot("v3")["features"]
     with pytest.raises(HistoryError, match="corrupt"):
         reread.snapshot("v2")
-    probs = reread.problems()
+    # the deep scan proves every payload decompresses; it costs the whole
+    # history, so callers on a hot path (the UI panel) use the shallow one
+    probs = reread.problems(deep=True)
     assert len(probs) == 1 and "v2" in probs[0]
     assert "unaffected" in probs[0]
+    assert reread.problems() == [],         "the shallow check decompressed snapshots it should not have"
 
 
 def test_a_missing_snapshot_is_named_not_guessed(h, tmp_path):
