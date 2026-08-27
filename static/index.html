@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=26">
+<link rel="stylesheet" href="/static/css/studio.css?v=27">
 </head>
 <body>
 
@@ -230,7 +230,14 @@
   </div>
   <div class="meout">
     <div id="meValue">—</div>
+    <!-- the EDITABLE half: shown only when the measurement maps to a single
+         param, so a read-only number never looks typeable -->
+    <div id="meEdit" style="display:none">
+      <input id="meInput" type="number" step="any" autocomplete="off">
+      <button class="primary" id="meApply">Set</button>
+    </div>
     <div id="meKind"></div>
+    <div id="meDriver" style="display:none"></div>
   </div>
   <div id="meRows"></div>
   <div id="meNote" style="display:none"></div>
@@ -273,6 +280,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=100"></script>
+<script type="module" src="/static/js/main.js?v=103"></script>
 </body>
 </html>

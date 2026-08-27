@@ -14,12 +14,15 @@
 // numbers is P1 (see MEASURE-PLAN.md); the panel already leaves room for it.
 
 import { bus } from './bus.js';
+import { postJSON } from './api.js';
 import { S } from './state.js';
-import { showDimension, clearDimension } from './viewport.js';
+import { showDimension, clearDimension, loadMesh } from './viewport.js';
 
 // the two selections, in click order
 let A = null, B = null;
 let busy = false;
+let last = null;          // the last measurement (carries .driver)
+let mine = false;         // true while OUR OWN edit is rebuilding the document
 
 const el = id => document.getElementById(id);
 const panel = () => el('measureDialog');
@@ -84,16 +87,26 @@ export function initMeasure() {
     render();
     run();
   });
-  // a rebuild invalidates face/edge indices (they are array positions), so a
-  // stale pair must be dropped rather than re-measured against new geometry
+  // A rebuild invalidates face/edge indices (they are array positions), so a
+  // stale pair must be dropped rather than re-measured against new geometry.
+  // EXCEPT after our own Set: the backend already re-measured this very
+  // selection and reported what it became, so dropping it here would blank the
+  // panel the instant the user's edit succeeded.
   bus.on('doc-updated', () => {
-    if (!isMeasuring()) return;
+    if (!isMeasuring() || mine) return;
     A = null; B = null; clearDimension(); render();
   });
   el('meCancel').onclick = cancelMeasure;
   el('meReset').onclick = () => {
     A = null; B = null; clearDimension(); render();
   };
+  el('meApply').onclick = applyEdit;
+  el('meInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); applyEdit(); }
+    // Esc in the box reverts the box, it does not close the tool — losing a
+    // whole selection to a stray Esc while typing is infuriating
+    if (e.key === 'Escape') { e.stopPropagation(); showEdit(last); }
+  });
   el('meSwap').onclick = () => {
     if (!B) return;
     const t = A; A = B; B = t;
@@ -169,6 +182,7 @@ function note(msg) {
 }
 
 function show(r, error) {
+  last = error ? null : r;
   el('meNote').style.display = 'none';
   const val = el('meValue'), rows = el('meRows');
   rows.innerHTML = '';
@@ -176,6 +190,7 @@ function show(r, error) {
     val.textContent = '—';
     val.classList.add('bad');
     note(error);
+    showEdit(null);
     clearDimension();
     return;
   }
@@ -183,11 +198,13 @@ function show(r, error) {
   if (!r) {
     val.textContent = '—';
     el('meKind').textContent = '';
+    showEdit(null);
     clearDimension();
     return;
   }
   val.textContent = r.label || '—';
   el('meKind').textContent = KIND_NAMES[r.kind] || r.kind || '';
+  showEdit(r);
   for (const [k, v] of (r.rows || [])) {
     const d = document.createElement('div');
     d.className = 'merow';
@@ -199,6 +216,67 @@ function show(r, error) {
   // draw what was actually measured (see viewport.showDimension)
   if (r.from && r.to) showDimension(r.from, r.to, r.label);
   else clearDimension();
+}
+
+/* ---------------------------------------------------- the editable half ----
+   A dimension is typeable ONLY when the backend resolved a driver: one param
+   that this number IS. Anything derived — the gap between two independent
+   features — stays read-only and says why, rather than the tool guessing which
+   side of the gap should move (MEASURE-PLAN.md). A missing box is a small
+   disappointment; a box that silently moves the wrong wall is not. */
+
+function showEdit(r) {
+  const row = el('meEdit'), who = el('meDriver');
+  const d = r && r.driver;
+  if (!d) {
+    row.style.display = 'none';
+    who.style.display = 'none';
+    return;
+  }
+  row.style.display = 'flex';
+  el('meInput').value = r.value;
+  who.style.display = 'block';
+  who.textContent = `drives ${d.label}`;
+}
+
+async function applyEdit() {
+  if (!last || !last.driver || busy) return;
+  const v = parseFloat(el('meInput').value);
+  if (!isFinite(v)) { note('Type a number first.'); return; }
+  let failed = null, warn = null;
+  busy = true;
+  try {
+    const body = { a: strip(A), value: v };
+    if (B) body.b = strip(B);
+    // postJSON (unlike the read path): this DOES mutate the document, so the
+    // busy overlay and the doc-updated broadcast are both wanted
+    mine = true;                       // this doc-updated is ours; keep A/B
+    const r = await postJSON('/api/measure/set', body);
+    if (r.error) failed = r.error;
+    else if (r.warning) warn = r.warning;
+  } catch (e) {
+    failed = 'could not apply that change';
+  } finally {
+    // Release BEFORE repainting. run() early-returns while `busy` is set, so
+    // re-reading inside this window silently did nothing and the panel kept
+    // showing the OLD dimension after a successful edit — the model had
+    // changed and the readout had not (caught in UI verification).
+    busy = false;
+  }
+  if (failed) { note(failed); mine = false; return; }
+  // RELOAD THE VIEWPORT. postJSON only broadcasts the document; every mutating
+  // tool reloads the mesh itself. Without this the readout said 30 mm and the
+  // status bar showed the new volume while the part on screen still drew the
+  // old hole, until the 3 s watcher happened to fire (caught in UI
+  // verification). It also clears the now-stale pick overlay, which was
+  // contradicting the readout with the pre-edit radius.
+  await loadMesh();
+  // Repaint from the REBUILT geometry rather than assuming the write landed
+  // where it was asked to (house rule 3). The backend verified it too; this is
+  // what the user actually sees.
+  await run();
+  if (warn) note('⚠ ' + warn);         // after run(), which clears the note
+  setTimeout(() => { mine = false; }, 0);
 }
 
 const KIND_NAMES = {

@@ -367,6 +367,284 @@ def _measure_two(a, b) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# P1 — which PARAM drives the number we just measured?
+#
+# A measured value falls into one of two kinds, and conflating them is the
+# whole risk of this feature (see MEASURE-PLAN.md):
+#
+#   DRIVEN   the number IS one param in the tree (a hole's diameter is the `r`
+#            of a circle entity). Editing it is exact and reversible.
+#   DERIVED  the number is a CONSEQUENCE of two independent literals (a pillar-
+#            to-wall gap). There is no single param to write, so P1 offers no
+#            edit box at all rather than guessing which side should move.
+#
+# No driver => read-only. A missing edit box is a small disappointment; an edit
+# box that silently moves the wrong wall is the failure this project exists to
+# prevent.
+
+# how close an entity must be, in its own sketch plane, to claim a picked face
+MATCH_TOL = 1e-3
+
+
+def _plane_cache(doc) -> dict:
+    """One sketch-plane cache per Document, alive across clicks.
+
+    Freshness is per ENTRY: each remembers the base Part it was derived from
+    and the params that shaped it, and is rebuilt when either changes — which
+    is exactly what a rebuild does (_mark_stale clears _parts, rebuild puts NEW
+    Part objects in). Same design as provenance._cache, for the same reason:
+    without it, resolving a driver cost 660 ms per click at 24 sketches
+    (measured), because every sketch_on_face re-resolved its named face over
+    the whole base solid."""
+    cache = getattr(doc, "_measure_planes", None)
+    if cache is None:
+        cache = {}
+        try:
+            doc._measure_planes = cache
+        except Exception:
+            return {}                  # uncacheable doc: correct, just slower
+    return cache
+
+
+def _plane_sig(feat) -> tuple:
+    """Everything about a sketch feature that changes where its plane sits."""
+    p = feat.params or {}
+    return (feat.op, p.get("plane"), p.get("offset"), p.get("face"),
+            tuple(p.get("face_center") or ()), tuple(p.get("face_normal") or ()))
+
+
+def _sketch_plane(doc, feat):
+    """The Plane a sketch feature's entity coordinates live in — the same plane
+    sketch.make_sketch / sketch_on_face place them on.
+
+    Derived from the CURRENT geometry, never stored on the feature: under the
+    offset method a sketch plane is stated as a depth from a face, so it moves
+    when the base changes. The cache above keys on that base, so it follows."""
+    base = doc._parts.get(feat.inputs[0]) if feat.inputs else None
+    sig = _plane_sig(feat)
+    cache = _plane_cache(doc)
+    hit = cache.get(feat.id)
+    if hit is not None and hit[0] is base and hit[1] == sig:
+        return hit[2]
+    plane = _build_plane(doc, feat, base)
+    cache[feat.id] = (base, sig, plane)
+    return plane
+
+
+def _build_plane(doc, feat, base):
+    import sketch as sk
+    p = feat.params or {}
+    try:
+        if feat.op == "sketch":
+            pl = sk._PLANES.get(p.get("plane", "XY"))
+        elif feat.op == "sketch_on_face":
+            if base is None:
+                return None
+            if p.get("face"):
+                picked = sk.named_face(base, p["face"])
+            elif p.get("face_center") is not None:
+                picked = sk.resolve_face(base, p["face_center"],
+                                         p.get("face_normal"))
+            else:
+                return None
+            pl = sk.face_sketch_plane(picked)
+        else:
+            return None
+        if pl is None:
+            return None
+        off = float(p.get("offset") or 0.0)
+        return pl.offset(off) if off else pl
+    except Exception:          # a sketch whose base failed to build
+        return None
+
+
+def _round_entities(feat):
+    """(index, entity, radius-key) for each entity dimensioned by a radius."""
+    import sketch as sk
+    for i, e in enumerate((feat.params or {}).get("entities") or []):
+        if not isinstance(e, dict):
+            continue
+        key = sk.ENTITY_DIAMETER.get(e.get("kind"))
+        if key is not None and isinstance(e.get(key), (int, float)):
+            yield i, e, key
+
+
+def _axis_offset(p, pos, direction) -> float:
+    """Perpendicular distance from point `p` to the line (pos, direction)."""
+    d = _sub(p, pos)
+    n = _norm(direction)
+    if n < 1e-9:
+        return _norm(d)
+    u = _scale(direction, 1.0 / n)
+    return _norm(_sub(d, _scale(u, _dot(d, u))))
+
+
+def _face_index_for(doc, shape, sel, body):
+    """Which tagged-mesh face index this pick should be attributed through.
+
+    A face pick is its own index. A circular EDGE borrows the bore wall it
+    bounds, so clicking the rim of a hole resolves the same driver as clicking
+    its wall — the user should not have to know which of the two the tool
+    prefers."""
+    if str(sel.get("kind")) == "face" and sel.get("id") is not None:
+        return int(sel["id"])
+    circ = _circle(shape)
+    if not circ:
+        return None
+    centre, radius, _ = circ
+    part = doc._parts.get(body) if body else None
+    if part is None:
+        part = doc.result()
+    if part is None:
+        return None
+    for i, f in enumerate(provenance.picked_faces(doc, body, part)):
+        fc = _circle(f)
+        if not fc:
+            continue
+        c2, r2, ax = fc
+        if abs(r2 - radius) > MATCH_TOL or not ax:
+            continue
+        if _axis_offset(centre, c2, ax) <= MATCH_TOL:
+            return i
+    return None
+
+
+def _diameter_driver(doc, shape, sel, body):
+    """The sketch entity whose radius drives this round face/edge, or None.
+
+    Which sketch to look in comes from provenance.attribute_face — the same
+    "which feature made this face" walk the pick panel already runs. That
+    matters for speed as much as for correctness: scanning every sketch instead
+    cost 660 ms per click at 24 sketches, because each sketch_on_face had to
+    re-resolve its named face over the whole base solid. Asking provenance
+    resolves exactly ONE plane.
+
+    Within that sketch the entity is matched in the sketch's OWN plane: its
+    (x, y) must coincide with the pick's centre projected into that plane, and
+    the radii must agree. Local Z is deliberately ignored, so a pocket's mouth
+    rim, its bottom rim and its bore wall all resolve to the same entity
+    (probed 2026-08-27).
+
+    Returns None unless the match is UNIQUE. Six identical holes at six
+    different positions still resolve, because position tells them apart; two
+    genuinely coincident entities do not, and read-only is then the honest
+    answer."""
+    from build123d import Vector
+    circ = _circle(shape)
+    if not circ:
+        return None
+    centre, radius, _axis = circ
+    fi = _face_index_for(doc, shape, sel, body)
+    if fi is None:
+        return None
+    att = provenance.attribute_face(doc, body_id=body, face_index=fi)
+    sid = att.get("sketch")
+    if not sid:
+        return None                    # e.g. a hole from a block op, not a sketch
+    try:
+        feat = doc.get(sid)
+    except KeyError:
+        return None
+    plane = _sketch_plane(doc, feat)
+    if plane is None:
+        return None
+    try:
+        loc = plane.to_local_coords(Vector(*centre))
+    except Exception:
+        return None
+    def hit(i, e, key):
+        return {
+            "feature": feat.id,
+            "path": ["entities", i, key],
+            "current": float(e[key]),
+            "transform": "half",       # a diameter is twice the stored radius
+            "label": f"{feat.id} · {e.get('kind')} #{i} {key}",
+            "drives": "diameter",
+        }
+
+    by_radius, by_position = [], []
+    for i, e, key in _round_entities(feat):
+        if abs(float(e[key]) - radius) > MATCH_TOL:
+            continue
+        by_radius.append(hit(i, e, key))
+        if (abs(float(e.get("x", 0) or 0) - loc.X) <= MATCH_TOL
+                and abs(float(e.get("y", 0) or 0) - loc.Y) <= MATCH_TOL):
+            by_position.append(hit(i, e, key))
+    if len(by_position) == 1:
+        return by_position[0]
+    # PATTERNED COPIES land nowhere near their seed entity, so position finds
+    # nothing — 5 of the 6 bores in a polar pattern were read-only while the
+    # seed alone was editable (probed 2026-08-27). But provenance has already
+    # proved this face came from THIS sketch, so if the sketch holds exactly one
+    # circle of this radius it is unambiguously the driver, wherever the copy
+    # sits. Editing it moves the whole pattern, which is what the seed means.
+    if len(by_radius) == 1:
+        return by_radius[0]
+    return None
+
+
+def resolve_driver(doc, shape_a, result: dict, sel_a: dict | None = None,
+                   body: str | None = None):
+    """The param behind a measurement, or None when it is derived/unmatched."""
+    try:
+        if result.get("kind") == "diameter":
+            return _diameter_driver(doc, shape_a, sel_a or {}, body)
+    except Exception:      # attribution/geometry trouble must not break a read
+        return None
+    return None
+
+
+def _to_param(transform: str, value: float, current: float) -> float:
+    """The stored param that produces `value` on screen."""
+    if transform == "half":
+        return value / 2.0
+    if transform == "signed":       # magnitude shown, sign preserved
+        return -abs(value) if current < 0 else abs(value)
+    return value
+
+
+def plan_set(doc, a: dict, b: dict | None, value: float) -> dict:
+    """Work out WHICH param to write and to what — without writing anything.
+
+    Split from the write so the caller can snapshot for undo first, and so a
+    request that cannot be honoured changes nothing at all."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return {"error": f"{value!r} is not a number"}
+    base = measure(doc, a, b)
+    if "error" in base:
+        return base
+    try:
+        shape_a, body_a = resolve(doc, a)
+    except ValueError as e:
+        return {"error": str(e)}
+    driver = resolve_driver(doc, shape_a, base, a, body_a)
+    if not driver:
+        return {"error": "this measurement is not driven by a single "
+                         "parameter, so it cannot be typed into — see the "
+                         "feature tree, or ask the AI designer to move it"}
+    new_param = _to_param(driver["transform"], value, driver["current"])
+    if new_param <= 0:
+        # sketch._validate_dims would reject it at rebuild anyway; refusing
+        # here means the document is never even touched
+        return {"error": f"a {driver['drives']} of {value:g} mm would need "
+                         f"{new_param:g} mm — dimensions must be positive"}
+    return {"driver": driver, "requested": _r(value),
+            "param": _r(new_param, 6), "was": _r(driver["current"], 6)}
+
+
+def write(doc, plan: dict) -> None:
+    """Apply a plan_set() result to the document. Caller rebuilds."""
+    feat = doc.get(plan["driver"]["feature"])
+    target = feat.params
+    path = plan["driver"]["path"]
+    for k in path[:-1]:
+        target = target[k]
+    target[path[-1]] = plan["param"]
+
+
+# ---------------------------------------------------------------------------
 # the entry point
 
 def measure(doc, a: dict, b: dict | None = None) -> dict:
@@ -382,6 +660,8 @@ def measure(doc, a: dict, b: dict | None = None) -> dict:
         if b is None:
             out = _measure_one(shape_a)
             out["a"] = {"body": body_a, "kind": a.get("kind"), "id": a.get("id")}
+            # is this number editable? (None => the readout stays read-only)
+            out["driver"] = resolve_driver(doc, shape_a, out, a, body_a)
             return out
         shape_b, body_b = resolve(doc, b)
         if (body_a == body_b and str(a.get("kind")) == str(b.get("kind"))

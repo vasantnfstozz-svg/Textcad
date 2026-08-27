@@ -1,7 +1,7 @@
 # Measure & drive — development sheet
 
-> **Status: P0 shipped 2026-08-27** (26 new tests, UI-verified in a real
-> browser). P1 next. Design agreed with the user 2026-08-27.
+> **Status: P0 + P1 shipped 2026-08-27** (39 new tests, both UI-verified in a
+> real browser). P2 next. Design agreed with the user 2026-08-27.
 
 ## The problem, in the user's words
 
@@ -74,7 +74,7 @@ becomes a different face. Therefore:
 | Phase | Ships | State |
 |---|---|---|
 | **P0** | Measure, read-only: diameter, length, distance, angle, thickness | **shipped** |
-| **P1** | Driven edits — diameter, depth, offset | — |
+| **P1** | Driven edits — **diameter** (depth/offset deferred, see below) | **shipped** |
 | **P2** | Derived edits — with the *which side moves* step | — |
 | **P3** | Pinned dimensions that survive rebuild | — |
 | **P4** | Named parameters (`wall_gap = 8`) | design only |
@@ -153,14 +153,52 @@ correct *value* and the wrong *meaning*.
 ```
 
 `transform: "half"` means the displayed diameter is twice the stored param.
-Resolution reuses [provenance.py](provenance.py)'s existing face→feature
-attribution, then matches the face's geometry against that feature's sketch
-entities. **No driver ⇒ no edit box** — a read-only number is correct and
-honest; a wrong edit box is not.
+**No driver ⇒ no edit box** — a read-only number is correct and honest; a wrong
+edit box is not.
 
-Writeback goes through the existing `/api/feature/params`
-([studio.py:1119](studio.py)) so undo, version recording and rebuild all work
-unchanged.
+**Resolution.** Which sketch to look in comes from
+[provenance.py](provenance.py)'s existing face→feature attribution; the entity
+inside it is then matched in the sketch's *own* plane (`Plane.to_local_coords`),
+comparing in-plane `x`/`y` and radius. Local Z is ignored, so a pocket's mouth
+rim, its bottom rim and its bore wall all resolve to the same entity. Six
+identical holes at six positions still resolve, because position tells them
+apart; two genuinely coincident entities do not, and read-only is the answer.
+
+A hole with no sketch behind it (`with_center_hole`, an imported STL) correctly
+reports its diameter and offers no edit box.
+
+**Writeback** is `POST /api/measure/set`, not `/api/feature/params`: the target
+is a *nested* path (`entities[2].r`) and the transform (diameter → radius) must
+live in one tested place rather than being recomputed in JS. It plans the write
+before touching anything — so a refusal leaves the document byte-identical and
+no undo entry behind — then snapshots, writes, rebuilds, and **re-measures the
+same selection**, returning `achieved` beside `requested`. Writing a param is
+not proof the geometry moved (house rule 3); if they disagree the panel says so
+and the edit is on the undo stack.
+
+### What P1 learned
+
+1. **Scanning every sketch cost 660 ms per click.** Resolving a
+   `sketch_on_face` plane means re-finding its named face over the whole base
+   solid, so doing it for all 24 sketches of a test design made a diameter
+   click take two thirds of a second. Asking provenance which sketch made the
+   face resolves exactly **one** plane: **96 ms**, and the planes are then
+   cached per rebuild the way `provenance._cache` caches faces.
+2. **Two bugs the tests could not see**, both caught in the browser:
+   - `applyEdit` set the module's `busy` flag and then called the re-read,
+     which early-returns on exactly that flag. The edit landed and the readout
+     kept showing the *old* diameter.
+   - nothing reloaded the mesh. `postJSON` only broadcasts the document; every
+     mutating tool calls `loadMesh()` itself. Without it the readout said
+     30 mm and the status bar showed the new volume while the viewport still
+     drew the old hole — and the stale pick panel sat underneath contradicting
+     the readout with the pre-edit radius.
+
+**Deferred from P1:** depth (extrude `amount`) and plane offset. Both are
+driven in principle, but the measured step only equals `amount` when the
+sketch plane coincides with the face being measured from, so each needs its own
+predicate before it can be offered honestly. Diameter had no such caveat, so it
+shipped first.
 
 ### P2 — Derived edits
 

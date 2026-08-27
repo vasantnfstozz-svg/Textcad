@@ -497,6 +497,12 @@ class MeasureReq(BaseModel):
     b: MeasureSel | None = None
 
 
+class MeasureSetReq(MeasureReq):
+    """Drive the geometry FROM the measured number: make this dimension
+    `value`. Only honoured when the measurement maps to a single param."""
+    value: float
+
+
 class RemoveReq(BaseModel):
     feature_id: str
     mode: str = "auto"          # auto (repair the history) | cascade | strict
@@ -1299,6 +1305,53 @@ def measure_selection(req: MeasureReq):
     the readout can say why instead of going blank (rule 7)."""
     return measurelib.measure(_doc(), req.a.model_dump(),
                               req.b.model_dump() if req.b else None)
+
+
+@app.post("/api/measure/set")
+def measure_set(req: MeasureSetReq):
+    """TYPE A DIMENSION AND THE MODEL FOLLOWS (the editable half of Measure).
+
+    Only a DRIVEN measurement — one that maps to a single param, like a hole's
+    diameter mapping to a circle entity's radius — can be written. A derived
+    one (the gap between two independent features) is refused with a reason
+    instead of guessing which side should move.
+
+    The write is planned before anything is touched, so a refusal leaves the
+    document byte-identical. Afterwards the SAME selection is measured again and
+    the achieved value reported next to the requested one: house rule 3, never
+    trust, always measure. Writing a param is not proof the geometry moved."""
+    plan = measurelib.plan_set(_doc(), req.a.model_dump(),
+                               req.b.model_dump() if req.b else None,
+                               req.value)
+    if "error" in plan:
+        return {**plan, **_doc_json()}
+    _hand_edit()
+    _snapshot()
+    try:
+        measurelib.write(_doc(), plan)
+        _doc()._mark_stale()
+    except (KeyError, ValueError, IndexError, TypeError) as e:
+        _entry()["history"].pop()          # the plan never landed
+        return {"error": f"could not apply that: {e}", **_doc_json()}
+    _rebuild_and_mesh()
+    # VERIFY: re-measure the same pick and say what the model actually became
+    after = measurelib.measure(_doc(), req.a.model_dump(),
+                               req.b.model_dump() if req.b else None)
+    achieved = after.get("value")
+    ok = (achieved is not None
+          and abs(float(achieved) - float(req.value)) <= 1e-4)
+    out = {"driver": plan["driver"], "requested": plan["requested"],
+           "param": plan["param"], "was": plan["was"],
+           "achieved": achieved, "verified": ok}
+    if not ok:
+        # the param changed but the dimension did not land where asked (a
+        # downstream feature overrode it, or the pick now resolves elsewhere)
+        out["warning"] = (
+            f"asked for {req.value:g} mm, the model now measures "
+            + (f"{achieved:g} mm" if achieved is not None
+               else "something else")
+            + " — the edit is on the undo stack")
+    return {**out, **_doc_json()}
 
 
 @app.post("/api/feature/remove")
