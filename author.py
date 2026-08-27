@@ -56,9 +56,22 @@ OP_NOTES = {
     "fillet": "vertical = the 4 upright corner edges (round a box's corners); "
               "radius must be < half the adjacent wall thickness.",
     "shell": "Hollows to walls of `thickness`; open_face removes that face.",
-    "extrude": "Pulls the sketch normal to its plane. both = symmetric (BOTH ways).",
+    "extrude": "Pulls the sketch normal to its plane, i.e. AWAY from the face a "
+               "face-sketch sits on. flip=true pulls the other way (INTO the "
+               "body = pocket/hole). through=true ignores the distance and runs "
+               "past the material — what a cutting tool almost always wants. "
+               "both = symmetric (BOTH ways).",
     "cut": "First input MINUS the rest (by tree order). Keep body first.",
-    "sketch": "offset shifts the plane along its normal (mm).",
+    "sketch": "For the BASE only (no body exists yet). offset shifts the plane "
+              "along its normal (mm).",
+    "sketch_on_face": 'Sketch on a face of an existing body — the offset method. '
+                      'Say WHICH face by name: face="top"|"bottom"|"+x"|"-x"|'
+                      '"+y"|"-y" (never compute a face_center yourself). '
+                      'offset shifts the plane along that FACE OUTWARD '
+                      'normal: NEGATIVE goes INTO the material (offset -3 = '
+                      '3mm below the top face), positive out into the air. '
+                      'The face is re-resolved every rebuild, so the sketch '
+                      'RIDES the face when upstream dimensions change.',
     "import_stl": "Imports an EXISTING .stl file (UI upload or absolute path). "
                   "Only use when the user names a real file — NEVER invent a "
                   "filename. STL units read as mm; scale resizes on import.",
@@ -207,11 +220,37 @@ SKETCH -> EXTRUDE IS THE PRIMARY WORKFLOW — required for logos, emblems,
 text-like artwork, plates with cutouts, brackets, and any flat/prismatic
 shape: make a "sketch" feature (a creator), then an "extrude"/"revolve"/
 "sweep" feature consuming it, or "loft" consuming two sketches.
+
+BASE FIRST, THEN SKETCH ON THE BASE — THE OFFSET METHOD
+(user mandate 2026-08-27; this is the single most important rule here)
+1. Build the BASE BODY first: base_sketch ("sketch", plane XY, offset 0) ->
+   base ("extrude"). That solid is the stock every later feature refers to.
+2. EVERY sketch after the base is a "sketch_on_face" whose input is the
+   CURRENT body (the newest solid — the latest cut/fuse result, not the raw
+   base), naming its face: {{"face":"top","offset":0,"entities":[...]}}.
+3. State depth as a DEPTH FROM THAT FACE, never as an absolute Z:
+   * pocket 3mm deep in the top   -> sketch_on_face face "top" offset 0,
+     then extrude {{"amount":3,"flip":true}}, then cut
+   * boss 4mm tall on the top     -> sketch_on_face face "top" offset 0,
+     then extrude {{"amount":4}}, then fuse
+   * hole right through           -> sketch_on_face face "top" offset 0,
+     then extrude {{"through":true,"flip":true}}, then cut
+   * something starting partway in (a pilot hole in a 3mm recess floor) ->
+     sketch_on_face face "top" offset -3, then extrude flip/through, cut
+   flip=true always means INTO the body, on EVERY face — top, bottom or a
+   side wall. A cut should use through=true unless the depth is the point;
+   a tool that stops inside material slices it and leaves loose pieces.
+4. NEVER write a "sketch" with a nonzero absolute offset once a body exists.
+   That is the banned old habit: it hardcodes an absolute Z, so changing the
+   base thickness leaves every feature floating at the wrong height and the
+   user has to re-derive dozens of numbers by hand. face+offset is exactly as
+   expressive and it RIDES the geometry. This is linted and REJECTED.
 FLAT-ARTWORK RECIPE (a logo IS 2D artwork extruded — never a pile of 3D
 primitives): base_sketch (the outline or backing shape) -> base_extrude
-(2-5mm) -> then EACH raised element: own sketch -> own extrude -> fuse with
-the base; EACH engraved/pierced element: own sketch -> own extrude -> cut
-from the base. Draw shapes at their final x/y in the sketch.
+(2-5mm) -> then EACH raised element: own sketch_on_face on the base "top" ->
+own extrude -> fuse with the base; EACH engraved/pierced element: own
+sketch_on_face on the base "top" -> own extrude (flip/through) -> cut from
+the base. Draw shapes at their final x/y in the sketch.
 HARD LIMITS (linted — trees breaking them are REJECTED before building):
 - a sketch may hold AT MOST 10 entities; split larger artwork into logical
   sketches (one per design element);
@@ -226,7 +265,13 @@ end-to-end, must exceed height), regular_polygon
 radius/sides, polygon points[[x,y]...], path {{"start":[x,y],"segments":[
 {{"type":"line","to":[x,y]}} or {{"type":"arc","via":[x,y],"to":[x,y]}}...]}}
 (auto-closes; use path for profiles mixing straight edges and arcs);
-mode "add" or "subtract"; first must be add). extrude params {{"amount":mm,"both":false}}; revolve {{"axis":"Z",
+mode "add" or "subtract"; first must be add).
+A sketch_on_face has ONE input (the body) and params
+{{"face":"top|bottom|+x|-x|+y|-y","offset":mm,"entities":[...]}} — same
+entities, and offset is measured from that face (negative = into the
+material). Do NOT send face_center/face_normal; the named face is resolved
+from the real geometry at every rebuild.
+extrude params {{"amount":mm,"flip":false,"through":false,"both":false}}; revolve {{"axis":"Z",
 "angle":360}} (draw the profile on XZ at positive X to revolve about Z). Sketch
 features have no volume — only the extrude/revolve/loft result is a solid.
 """
@@ -270,6 +315,27 @@ def lint_tree(features) -> list[str]:
                 f"consumer — that is a blob, not a design history. Record "
                 f"it as steps: base_sketch -> base_extrude, then each "
                 f"element as its own sketch -> extrude, fused or cut")
+    # THE OFFSET METHOD (user mandate 2026-08-27). Once a body exists, a
+    # sketch floating at an absolute Z is the banned old habit: it hardcodes
+    # the base thickness into every downstream feature, so 251 of the 274
+    # sketches authored before this rule broke the moment a base dimension
+    # changed. face+offset is exactly as expressive (any Z is reachable as an
+    # offset from a face) and it rides the geometry — so there is no
+    # legitimate reason left to write the absolute form.
+    import sketch as _sk
+    body_yet = False
+    for f in features:
+        if f.op == "sketch" and body_yet and float(f.params.get("offset") or 0):
+            problems.append(
+                f"sketch '{f.id}' floats at absolute Z (offset "
+                f"{f.params['offset']}) even though a body already exists — "
+                f"that hardcodes the base thickness and breaks the moment it "
+                f"changes. Use sketch_on_face on the current body instead: "
+                f'{{"face":"top","offset":<depth from that face, negative = '
+                f'into the material>}}, then extrude with flip/through and '
+                f"cut or fuse")
+        if f.op not in _sk.SKETCH_PRODUCERS:
+            body_yet = True
     generic = [f.id for f in features if _GENERIC_ID.match(f.id)]
     if generic:
         problems.append(

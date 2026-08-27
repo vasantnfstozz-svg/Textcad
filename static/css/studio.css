@@ -91,12 +91,14 @@ main { flex: 1; display: flex; min-height: 0; }
 .node { position: relative; }
 .node.suppressed > .nrow { opacity: .45; }
 .node.rolledback { opacity: .35; }
-/* a consumed sketch nests ABOVE the feature that used it (creation order:
-   sketch first, its extrude below — user mandate R4) */
+/* The SKETCH owns the row; what consumed it hangs UNDERNEATH (user mandate
+   2026-08-27: "first sketch and then extrude below that"). So the guide line
+   drops from the parent above and elbows into the child — it used to rise
+   from the child up to a parent below it. */
 .node.child { margin-left: 22px; }
-.node.child::before { content: ""; position: absolute; left: -9px; top: 50%;
-  bottom: -8px; width: 8px; border-left: 1px solid var(--line);
-  border-top: 1px solid var(--line); border-top-left-radius: 5px; }
+.node.child::before { content: ""; position: absolute; left: -9px; top: -8px;
+  bottom: 50%; width: 8px; border-left: 1px solid var(--line);
+  border-bottom: 1px solid var(--line); border-bottom-left-radius: 5px; }
 .nname input { width: 110px; font: inherit; background: var(--panel2);
   color: var(--text); border: 1px solid var(--accent); border-radius: 4px;
   padding: 1px 4px; }

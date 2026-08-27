@@ -57,6 +57,22 @@ were each learned from a correction — do not regress them.
    Never take the user to a flat 2D page they must leave to see their part.
    Corollary: any new "editor" belongs IN the viewport, not beside it.
 
+11. **BASE FIRST, THEN SKETCH ON THE BASE — the offset method (user mandate
+   2026-08-27).** Build the base body first, and every sketch after it is a
+   `sketch_on_face` on the CURRENT body, naming its face
+   (`face: "top"|"bottom"|"+x"|...`) with depth stated as an `offset` FROM
+   that face — negative into the material. `flip: true` always means INTO the
+   body, on every face; a cut wants `through: true` unless the depth is the
+   point. NEVER a `sketch` with a nonzero absolute offset once a body exists:
+   that hardcodes the base thickness, so changing it strands every downstream
+   feature (251 of the 274 sketches authored before this rule did exactly
+   that — the user: "the way you are drawing is not good for editing, people
+   will get confused"). face+offset is equally expressive and it RIDES the
+   geometry. Linted and REJECTED in author.py for AI/MCP-authored trees.
+12. **The tree reads sketch-first, consumer-below.** A sketch OWNS its group
+   row and what consumed it nests underneath (tree.js `sketchesOf`), because
+   that is the order the part was built in.
+
 ## Gizmo/drag mechanics (hard-won, in viewport.js)
 
 - Grab in a CAPTURE-phase pointerdown + `controls.enabled=false` so

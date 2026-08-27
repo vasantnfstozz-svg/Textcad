@@ -182,9 +182,11 @@ export function renderDoc(doc) {
       if (doc.rollback === f.id) past = true;
     }
   }
-  // Fusion grouping: a consumed sketch renders as a CHILD of the feature
-  // that consumed it (Extrude1 ▸ sketch1), not as a sibling row — the tree
-  // then reads as design history, not a flat op list
+  // Fusion grouping: a sketch and the feature that consumed it render as ONE
+  // group, not two sibling rows — the tree then reads as design history, not
+  // a flat op list. The SKETCH owns the group row and its consumer nests
+  // underneath (user mandate 2026-08-27: "first sketch and then extrude below
+  // that"), because that is the order the part was actually built in.
   const isSk = f => f.op === 'sketch' || f.op === 'sketch_on_face';
 
   /* Fusion shows an extrude with a Cut operation as ONE timeline entry. Our
@@ -216,12 +218,17 @@ export function renderDoc(doc) {
     chipOn[tool.id] = f;
   }
 
-  const consumerOf = {};
+  const consumerOf = {};        // sketch id -> the feature that consumed it
   for (const f of doc.features)
     for (const d of f.inputs) {
       const src = doc.features.find(x => x.id === d);
       if (src && isSk(src) && !(d in consumerOf)) consumerOf[d] = f.id;
     }
+  // consumer id -> its sketches, in build order. A loft eats two sketches, so
+  // the consumer hangs under the LAST of them and both sketches keep a row.
+  const sketchesOf = {};
+  for (const [skId, consId] of Object.entries(consumerOf))
+    (sketchesOf[consId] = sketchesOf[consId] || []).push(skId);
   const makeNode = (f, child) => {
     const node = document.createElement('div');
     node.dataset.fid = f.id;
@@ -245,14 +252,20 @@ export function renderDoc(doc) {
     }
     el.appendChild(node);
   };
+  const done = new Set();
   for (const f of doc.features) {
     if (foldedInto[f.id]) continue;          // rides on its tool's row
-    if (consumerOf[f.id]) continue;          // renders with its consumer
-    // creation order (user mandate R4): the sketch FIRST, its consumer below
-    for (const d of f.inputs)
-      if (consumerOf[d] === f.id)
-        makeNode(doc.features.find(x => x.id === d), true);
+    if (done.has(f.id)) continue;            // already nested under its sketch
     makeNode(f, false);
+    // a sketch owns the row; its consumer nests below it (once its LAST
+    // sketch has been drawn, so a loft does not appear twice)
+    const cons = consumerOf[f.id];
+    if (!cons) continue;
+    const sibs = sketchesOf[cons] || [];
+    if (sibs[sibs.length - 1] !== f.id) continue;   // wait for the last one
+    const cf = doc.features.find(x => x.id === cons);
+    if (cf && !foldedInto[cf.id]) { makeNode(cf, true); done.add(cf.id); }
+    else if (cf) done.add(cf.id);
   }
   renderWarnings(doc, el);
   renderSpecRow(doc, el);

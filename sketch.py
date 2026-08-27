@@ -249,6 +249,56 @@ def make_sketch(plane: str = "XY", offset: float = 0.0,
     return _as_sketch(pl * _compose(entities or []))
 
 
+# The six named directions an author can point at without inventing a
+# coordinate. The UI always has a real pick (a face center + normal from the
+# raycast), but a tree authored from TEXT does not — and "compute the top face
+# center yourself" is exactly where a number gets hallucinated. Same vocabulary
+# blocks.shell_out/fillet_edges already use.
+FACE_DIRS = {
+    "top": (0.0, 0.0, 1.0), "+z": (0.0, 0.0, 1.0),
+    "bottom": (0.0, 0.0, -1.0), "-z": (0.0, 0.0, -1.0),
+    "+x": (1.0, 0.0, 0.0), "-x": (-1.0, 0.0, 0.0),
+    "+y": (0.0, 1.0, 0.0), "-y": (0.0, -1.0, 0.0),
+    "front": (0.0, -1.0, 0.0), "back": (0.0, 1.0, 0.0),
+    "right": (1.0, 0.0, 0.0), "left": (-1.0, 0.0, 0.0),
+}
+
+
+def named_face(solid, name: str, align_tol: float = 0.001):
+    """The OUTERMOST flat face pointing in a named direction ("top", "+x",
+    "front"...). Used so a sketch can say WHICH face it lives on by name.
+
+    Only faces whose outward normal really points that way are candidates
+    (align > 1 - align_tol), and of those the one farthest along the direction
+    wins — so "top" on a part with a pocket is the outer top face, not the
+    pocket floor. Flatness is judged by face_plane(), so a dead-flat wall the
+    kernel stores as a BSPLINE (loft/sweep leave those) still counts."""
+    key = str(name).strip().lower()
+    if key not in FACE_DIRS:
+        raise ValueError(
+            f"face '{name}' is not a direction — use one of "
+            f"{sorted(set(FACE_DIRS))}, or give face_center/face_normal from "
+            f"an actual pick")
+    dx, dy, dz = FACE_DIRS[key]
+    best, best_reach = None, None
+    for f in solid.faces():
+        pl = face_plane(f)
+        if pl is None:
+            continue                       # genuinely curved: not sketchable
+        n = pl.z_dir
+        if n.X * dx + n.Y * dy + n.Z * dz < 1.0 - align_tol:
+            continue                       # not facing this way
+        c = f.center()
+        reach = c.X * dx + c.Y * dy + c.Z * dz
+        if best_reach is None or reach > best_reach:
+            best, best_reach = f, reach
+    if best is None:
+        raise ValueError(
+            f"this solid has no flat face pointing '{name}' — pick a different "
+            f"direction, or sketch on a principal plane")
+    return best
+
+
 def resolve_face(solid, face_center: list, face_normal: list | None = None):
     """Find the face of `solid` a user picked, by GEOMETRY (nearest center,
     same-facing normal) — so a stored pick survives parameter changes instead
@@ -351,21 +401,51 @@ def face_outline_2d(solid, face_center: list, face_normal: list | None = None):
             "frame": frame}
 
 
-def sketch_on_face(solid, face_center: list, face_normal: list | None = None,
-                   entities: list | None = None):
+def sketch_on_face(solid, face_center: list | None = None,
+                   face_normal: list | None = None,
+                   entities: list | None = None, offset: float = 0.0,
+                   face: str | None = None):
     """Draw a sketch ON a face of an existing solid (the Fusion workflow:
-    pick a face, sketch, extrude a boss/cut). The face is resolved by GEOMETRY
-    at every rebuild — the face whose center is nearest `face_center` (and whose
-    normal best matches `face_normal`) — so it survives parameter changes
-    instead of breaking like a stored face index would."""
-    face = resolve_face(solid, face_center, face_normal)
-    pl = face_plane(face)
+    pick a face, sketch, extrude a boss/cut). Two ways to say which face:
+
+      * face="top"|"bottom"|"+x"|"-x"|"+y"|"-y"|"front"|"back"|"left"|"right"
+        — the outermost flat face pointing that way (see named_face). This is
+        the AUTHORING path: no coordinates to compute, so none to get wrong.
+      * face_center (+ optional face_normal) — what the UI sends from a real
+        raycast pick. Resolved by GEOMETRY at every rebuild (nearest center,
+        best-matching normal) so it survives parameter changes instead of
+        breaking like a stored face index would.
+
+    `offset` shifts the sketch plane along the face's OUTWARD normal, so the
+    sign means the same thing on every face of the part (probed 2026-08-27):
+
+        offset < 0   INTO the material   (-3 = 3mm below the top face)
+        offset > 0   out into the air    (+2 = 2mm clear of the face)
+
+    This is the "offset method" (user mandate 2026-08-27): a pocket's plane is
+    stated as a depth FROM A FACE, never as an absolute Z. Change the base
+    thickness and the sketch rides with the face instead of being left behind
+    — which is exactly what hardcoded principal-plane offsets did to 251 of
+    the 274 sketches authored before this."""
+    if face:
+        # named direction ("top", "+x"): no coordinates to get wrong
+        picked = named_face(solid, face)
+    elif face_center is not None:
+        picked = resolve_face(solid, face_center, face_normal)
+    else:
+        raise ValueError(
+            'sketch_on_face needs either face="top"/"bottom"/"+x"/... or a '
+            'face_center from an actual pick')
+    pl = face_plane(picked)
     if pl is None:
         raise ValueError(
-            f"sketch_on_face: the picked face is {face.geom_type.name} and not "
+            f"sketch_on_face: the picked face is {picked.geom_type.name} and not "
             f"flat — a sketch needs a PLANAR face. For a slot/pocket in a curved "
             f"surface, sketch on a principal plane (offset to the surface) and "
             f"extrude-cut through the body instead.")
+    off = float(offset or 0.0)
+    if off:
+        pl = pl.offset(off)
     return _as_sketch(pl * _compose(entities or []))
 
 
