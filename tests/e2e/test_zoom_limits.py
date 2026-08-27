@@ -75,37 +75,84 @@ def test_zooming_over_empty_space_does_not_drag_the_model_out_of_frame(
     assert not page.errors, page.errors
 
 
-def test_the_wheel_zooms_exactly_as_orbitcontrols_ships_it(page, server,
-                                                          fresh_doc):
-    """The user's actual requirement: "bring back old method for zooming".
+WHEEL = """([dy, mode]) => document.querySelector('#viewer canvas').dispatchEvent(
+  new WheelEvent('wheel', {deltaY: -dy, deltaMode: mode, clientX: 400,
+                           clientY: 400, bubbles: true, cancelable: true}))"""
+DIST_N = ("() => +window.__vp.camera.position"
+          ".distanceTo(window.__vp.getControls().target).toFixed(4)")
 
-    Two attempts at being clever were reverted. The second one kept the DOLLY
-    RATE untouched (still x0.94 a notch) but moved the pivot onto the surface
-    under the cursor — and moving the pivot mid-zoom pans the view, so a single
-    notch swung the camera far further than a notch used to. The numbers looked
-    right while it felt wrong, which is why this test checks the pivot as well
-    as the rate."""
+
+def _one_notch(page, dy=100, mode=0):
+    page.click("#vFit")
+    page.wait_for_timeout(800)
+    before = page.evaluate(DIST_N)
+    page.evaluate(WHEEL, [dy, mode])
+    page.wait_for_timeout(300)
+    return page.evaluate(DIST_N) / before
+
+
+def test_one_wheel_click_is_one_notch_whatever_the_device_reports(
+        page, server, fresh_doc):
+    """three r160 scales its zoom by the RAW deltaY and ignores deltaMode, so
+    the same physical click zoomed differently on every mouse: measured x0.95 /
+    x0.88 / x0.86 for devices reporting 100 / 240 / 400, and Firefox's LINE
+    mode (deltaY 3) barely moved at all."""
     _load(page, server, "flange-100")
-    box = page.locator("#viewer").bounding_box()
-    cx = box["x"] + box["width"] / 2 + 120      # deliberately OFF-centre, over
-    cy = box["y"] + box["height"] / 2           # solid material
+    for dy, mode in ((100, 0), (120, 0), (240, 0), (400, 0), (3, 1)):
+        r = _one_notch(page, dy, mode)
+        assert abs(r - 0.95) < 0.002, f"deltaY={dy} mode={mode} gave {r:.4f}"
 
-    dist = "() => { const c = window.__vp.getControls();"            " return window.__vp.camera.position.distanceTo(c.target); }"
-    ratios, prev = [], page.evaluate(dist)
-    for _ in range(6):
-        page.mouse.move(cx, cy)
-        page.mouse.wheel(0, -120)
-        page.wait_for_timeout(200)
-        now = page.evaluate(dist)
-        ratios.append(round(now / prev, 3))
-        prev = now
 
-    # every notch the same proportional step: no acceleration, no lurch
-    assert len(set(ratios)) == 1, f"the zoom step is not constant: {ratios}"
-    assert 0.8 < ratios[0] < 1.0, ratios
-    # and the pivot stays put, so zooming never pans the view sideways
-    assert _drift(page) < 1e-6,         f"zooming moved the orbit target {_drift(page):.2f} mm — it will pan"
-    assert not page.errors, page.errors
+def test_a_trackpads_fine_scrolling_still_scales_down(page, server, fresh_doc):
+    """Capping at one notch must not turn a trackpad's small deltas into full
+    clicks — that would make it unusable."""
+    _load(page, server, "flange-100")
+    assert _one_notch(page, 8, 0) > 0.99, "a tiny trackpad delta zoomed a full notch"
+    assert _one_notch(page, 1, 1) > 0.97
+
+
+def test_zoom_does_not_explode_when_devicepixelratio_is_below_one(
+        browser, server, fresh_doc):
+    """THE BUG, and it is three's, not ours.
+
+        Math.pow(0.95, zoomSpeed * |delta| / (100 * (devicePixelRatio | 0)))
+
+    `| 0` TRUNCATES, so at any DPR under 1 — an ordinary browser zoomed out
+    below 100% — the divisor is 0 and it divides by zero. Reproduced at DPR
+    0.8 before the fix: one notch in went 192.44 -> 2.12 and one notch out
+    2.12 -> 6018.43, straight to both clamps. That is also the original
+    "the whole screen goes grey" report: with no floor, one click put the
+    camera exactly ON the target, inside the solid.
+    """
+    import httpx
+    httpx.post(f"{server}/api/sample/flange", timeout=180)
+    ctx = browser.new_context(viewport={"width": 1100, "height": 760},
+                              device_scale_factor=0.8)
+    page = ctx.new_page()
+    try:
+        page.goto(server)
+        page.wait_for_function("() => !!window.__vp", timeout=25000)
+        page.wait_for_function("() => window.__vp.bodyCount() > 0", timeout=60000)
+        page.wait_for_timeout(1500)
+        assert page.evaluate("() => window.devicePixelRatio | 0") == 0,             "this test needs a sub-1 DPR to mean anything"
+
+        page.click("#vFit")
+        page.wait_for_timeout(800)
+        before = page.evaluate(DIST_N)
+        page.evaluate(WHEEL, [100, 0])
+        page.wait_for_timeout(300)
+        r = page.evaluate(DIST_N) / before
+        assert abs(r - 0.95) < 0.002, f"one notch at DPR 0.8 gave {r:.4f}"
+
+        floor = page.evaluate("() => window.__vp.getFit().minDistance")
+        assert page.evaluate(DIST_N) > floor * 5, "a single notch hit the clamp"
+    finally:
+        ctx.close()
+
+
+def test_the_wheel_is_ours_not_orbitcontrols(page, server, fresh_doc):
+    _load(page, server, "flange-100")
+    assert page.evaluate(FIT)["ownWheel"] is True,         "OrbitControls is handling the wheel again — its scaling is device-dependent"
 
 
 def test_the_floor_clears_the_near_clip_plane(page, server, fresh_doc):

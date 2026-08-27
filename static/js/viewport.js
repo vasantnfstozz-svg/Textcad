@@ -83,6 +83,38 @@ function zoomFloor() {
   return Math.max(r / 40, (r / 100) * 3);
 }
 
+/* One physical notch, whatever the hardware says. deltaMode 1 is LINES
+   (Firefox sends ~3 per notch) and 2 is PAGES; deltaMode 0 is pixels, where a
+   notch is ~100 in Chrome but free-spinning and high-resolution wheels send
+   far more. Clamped so a fast flick cannot rocket across the model. */
+const ZOOM_PER_NOTCH = 0.95;          // matches three's default feel at DPR 1
+
+function wheelNotches(e) {
+  const per = e.deltaMode === 1 ? 3          // lines
+            : e.deltaMode === 2 ? 1          // pages
+            : 100;                           // pixels
+  // CAP AT ONE. A mouse click is one notch however big a number the device
+  // puts on it — measured, plausible mice report 100, 240 and 400 for the same
+  // physical click, which without this cap zoomed x0.95, x0.88 and x0.86. Fast
+  // spinning still zooms fast because it fires more EVENTS. The low floor keeps
+  // a trackpad's fine-grained stream smooth instead of stair-stepping.
+  const n = Math.abs(e.deltaY) / per;
+  return Math.min(Math.max(n, 0.05), 1);
+}
+
+function onWheelZoom(e) {
+  if (!controls || !controls.enabled) return;
+  e.preventDefault();
+  const offset = camera.position.clone().sub(controls.target);
+  const factor = Math.pow(ZOOM_PER_NOTCH,
+                          wheelNotches(e) * (e.deltaY < 0 ? 1 : -1));
+  const r = Math.min(Math.max(offset.length() * factor,
+                              controls.minDistance), controls.maxDistance);
+  camera.position.copy(controls.target).add(offset.setLength(r));
+  controls.update();
+  bus.emit('view-changed');
+}
+
 function buildControls(up) {
   const pos = camera.position.clone();
   const tgt = controls ? controls.target.clone() : new THREE.Vector3();
@@ -108,24 +140,29 @@ function buildControls(up) {
   // never dolly past the far clip plane — beyond it the whole scene (model,
   // grids, everything) is clipped to a black void that reads as a crash
   controls.maxDistance = camera.far * 0.85;
-  /* The wheel zooms EXACTLY as OrbitControls ships it — toward the orbit
-     target, at its own rate. Two attempts to be clever were reverted on
-     2026-08-27 and neither is coming back:
-
-       * `zoomToCursor = true` slid the target off into empty space when the
-         cursor was not over anything (47 mm of drift in five scrolls), and the
-         model left the frame.
-       * raycasting and easing the target onto the surface under the cursor
-         kept the target sane, but moving the pivot mid-zoom PANS the view, so
-         one notch swung the camera far further than a notch used to. The
-         dolly rate was untouched and still measured x0.93 per notch, which is
-         why the numbers looked fine while it felt wrong (user: "if i am moving
-         little mouse roller, if going so far ... bring back old method").
-
-     minDistance stays. It changes nothing about the feel — OrbitControls
-     clamps AFTER applying its scale, so every notch short of the limit is
-     identical — it only stops the camera collapsing onto the target. */
   controls.minDistance = zoomFloor();
+  /* WE own the wheel, not OrbitControls. three r160 computes its zoom step as
+
+         Math.pow(0.95, zoomSpeed * Math.abs(delta) / (100 * (devicePixelRatio|0)))
+
+     which has two faults. It scales by the RAW deltaY and ignores deltaMode, so
+     one notch means something different on every mouse and browser; measured
+     across plausible devices, one click ranged from x0.9985 to x0.8145 — an 8x
+     spread in how far a click travels. And `devicePixelRatio | 0` TRUNCATES: at
+     any DPR below 1 — a browser zoomed out below 100%, which is ordinary — it
+     becomes 0 and the expression divides by zero. Reproduced at DPR 0.8: one
+     notch in went 192.44 -> 2.12 and one notch out 2.12 -> 6018.43, i.e.
+     straight to the clamps ("it goes so far zoom and far back").
+
+     That divide-by-zero is also the original report. With no floor, dollyIn(0)
+     put the camera exactly ON the target — inside the solid — in a single
+     click, which is the full-screen grey wash, not the gradual creep it looked
+     like.
+
+     So the wheel is normalised here instead: deltaMode-aware, capped, and a
+     fixed ratio per notch regardless of device, browser or display scaling. */
+  controls.enableZoom = false;
+  renderer.domElement.addEventListener('wheel', onWheelZoom, { passive: false });
   camera.position.copy(pos);
   controls.target.copy(tgt);
   controls.addEventListener('change', () => bus.emit('view-changed'));
@@ -204,6 +241,7 @@ export function initViewport() {
     getFit: () => ({ r: fitRadius, c: fitCenter.toArray(),
                      minDistance: controls ? controls.minDistance : null,
                      zoomToCursor: controls ? !!controls.zoomToCursor : null,
+                     ownWheel: controls ? !controls.enableZoom : null,
                      target: controls ? controls.target.toArray() : null }),
     bodyCount: () => bodyObjs.length,
     bodyInfo: () => bodyObjs.map(b => ({
