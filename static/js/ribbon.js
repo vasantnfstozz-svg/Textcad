@@ -12,6 +12,7 @@ import { startPlacement, PLACEABLE } from './placement.js';
 import { beginPlanePick } from './viewport.js';
 import { lookAtSketch } from './sketch3d.js';
 import { openExtrude, cancelExtrude } from './extrude.js';
+import { openMeasure, cancelMeasure } from './measure.js';
 
 // sketch draw tools shown in the contextual SKETCH tab's CREATE group (top)
 const SKETCH_TOOLS = {
@@ -31,6 +32,7 @@ let curSketchTool = null;      // which draw tool is active (for ribbon highligh
 // enter sketch mode on it.
 function startSketch() {
   cancelExtrude();                          // don't leave extrude gizmos eating clicks
+  cancelMeasure();                          // nor a measure panel floating
   beginPlanePick((kind, data) => {
     if (kind === 'face') bus.emit('sketch-on-face', data);
     else openSketchEditor(data);            // data = 'XY' | 'XZ' | 'YZ'
@@ -46,6 +48,7 @@ const ACTIONS = {
   undo:    { icon: '↶', name: 'Undo',        fn: actionUndo },
   redo:    { icon: '↷', name: 'Redo',        fn: actionRedo },
   spec:    { icon: '✓', name: 'Spec',        fn: actionSpec },
+  measure: { icon: '⟺', name: 'Measure',     fn: () => openMeasure() },
   select:  { icon: '◉', name: 'Select',
              fn: () => document.getElementById('vSelect').click() },
   settings: { icon: '⚙', name: 'Settings', fn: openSettings },
@@ -97,6 +100,7 @@ const TABS = {
   ],
   Inspect: [
     ['Select', [{ a: 'select' }]],
+    ['Measure', [{ a: 'measure' }]],
     ['Verify', [{ a: 'spec' }]],
     ['History', [{ a: 'undo' }, { a: 'redo' }, { a: 'versions' }]],
   ],

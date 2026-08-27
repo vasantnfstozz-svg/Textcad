@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=25">
+<link rel="stylesheet" href="/static/css/studio.css?v=26">
 </head>
 <body>
 
@@ -60,6 +60,8 @@
     </div>
     <div id="busy"><div class="spinner"></div><span id="busyText">rebuilding…</span></div>
     <div id="pickInfo"></div>
+    <!-- the Measure dimension's value, riding the midpoint of its line -->
+    <div id="dimLabel" style="display:none"></div>
     <div id="placeHint" style="display:none"></div>
     <div id="placePopup" style="display:none"></div>
     <!-- sketch mode v2: the viewport IS the sketch editor (Fusion-style) -->
@@ -218,6 +220,27 @@
   </div>
 </div>
 
+<!-- ============ measure panel ============ -->
+<div id="measureDialog" style="display:none">
+  <div class="mehead">⟺ Measure</div>
+  <div class="mehint" id="meHint">Click a face or an edge in the viewport.</div>
+  <div class="mesel">
+    <label>A <span id="meSelA" class="empty">—</span></label>
+    <label>B <span id="meSelB" class="empty">—</span></label>
+  </div>
+  <div class="meout">
+    <div id="meValue">—</div>
+    <div id="meKind"></div>
+  </div>
+  <div id="meRows"></div>
+  <div id="meNote" style="display:none"></div>
+  <div class="mefoot">
+    <button id="meSwap" title="measure B to A instead">⇄ Swap</button>
+    <button id="meReset">Reset</button>
+    <button class="primary" id="meCancel">Close</button>
+  </div>
+</div>
+
 <!-- ============ spec editor dialog ============ -->
 <dialog id="specDialog">
   <form id="specForm" method="dialog">
@@ -250,6 +273,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=99"></script>
+<script type="module" src="/static/js/main.js?v=100"></script>
 </body>
 </html>

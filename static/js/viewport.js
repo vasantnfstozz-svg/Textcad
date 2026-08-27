@@ -289,7 +289,7 @@ export function initViewport() {
   };
 
   (function animate() { requestAnimationFrame(animate);
-    controls.update(); renderer.render(scene, camera); })();
+    controls.update(); paintDimLabel(); renderer.render(scene, camera); })();
 
   document.getElementById('vFit').onclick = () => setView('iso');
   document.getElementById('vTop').onclick = () => setView('top');
@@ -1253,6 +1253,70 @@ export async function showFeatureOverlay(fid) {
   } catch (e) { /* feature not built (suppressed / rolled back) */ }
 }
 
+/* ---------------- the dimension line (Measure) ----------------
+   The readout in the panel says WHAT was measured; this says BETWEEN WHAT.
+   Without it, a number like "12.00 mm thick" is unfalsifiable — the user
+   cannot tell whether the tool measured the two faces they meant. The line
+   is drawn between the witness points the backend actually used. */
+
+let dimOverlay = null;           // { group, from, to, text }
+
+function dimEnd(p) {             // a small ball so a zero-length end still reads
+  const s = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 12, 8),
+    new THREE.MeshBasicMaterial({ color: 0x6ee7ff, depthTest: false }));
+  s.position.copy(p);
+  s.renderOrder = 1000;
+  return s;
+}
+
+export function showDimension(fromArr, toArr, label) {
+  clearDimension();
+  if (!fromArr || !toArr) return;
+  const a = new THREE.Vector3(...fromArr), b = new THREE.Vector3(...toArr);
+  const group = new THREE.Group();
+  // depthTest off: a dimension between two faces runs THROUGH the solid, and a
+  // line you cannot see is the same as no line at all
+  group.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([a, b]),
+    new THREE.LineBasicMaterial({ color: 0x6ee7ff, depthTest: false })));
+  // scale the end balls to the part, so they read on a 4 mm boss and a 400 mm plate
+  const r = Math.max(fitRadius / 160, 0.15);
+  const e1 = dimEnd(a), e2 = dimEnd(b);
+  e1.scale.setScalar(r); e2.scale.setScalar(r);
+  group.add(e1, e2);
+  group.renderOrder = 1000;
+  scene.add(group);
+  dimOverlay = { group, from: a, to: b, text: label || '' };
+  paintDimLabel();
+}
+
+export function clearDimension() {
+  if (!dimOverlay) return;
+  scene.remove(dimOverlay.group);
+  dimOverlay.group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  dimOverlay = null;
+  const el = document.getElementById('dimLabel');
+  if (el) el.style.display = 'none';
+}
+
+/* the label rides the midpoint every frame, so it stays put while orbiting */
+function paintDimLabel() {
+  const el = document.getElementById('dimLabel');
+  if (!el) return;
+  if (!dimOverlay || !dimOverlay.text) { el.style.display = 'none'; return; }
+  const mid = dimOverlay.from.clone().add(dimOverlay.to).multiplyScalar(0.5);
+  // behind the camera: project() flips the sign and the label would jump to
+  // the opposite corner of the screen
+  if (mid.clone().project(camera).z > 1) { el.style.display = 'none'; return; }
+  const s = toScreen(mid);
+  const r = renderer.domElement.getBoundingClientRect();
+  el.textContent = dimOverlay.text;
+  el.style.display = 'block';
+  el.style.left = (s.x - r.left) + 'px';
+  el.style.top = (s.y - r.top) + 'px';
+}
+
 /* ---------------- face / edge picking ---------------- */
 
 function clearPickHighlight() {
@@ -1264,6 +1328,7 @@ function clearPick() {
   S.pickedCurved = null;
   S.pickedProfile = null;
   document.getElementById('pickInfo').style.display = 'none';
+  bus.emit('pick', { kind: null, clear: true });
 }
 
 /* How much model one screen pixel covers at a given depth (perspective). */
@@ -1324,6 +1389,7 @@ function selectProfile(sketchId, meshObj) {
   S.pickedFace = null;
   S.pickedCurved = null;
   S.pickedProfile = { id: sketchId };
+  bus.emit('pick', { kind: 'profile', id: sketchId, body: null, info: null });
   pickHl = new THREE.Mesh(meshObj.geometry.clone(),
     new THREE.MeshBasicMaterial({ color: 0xffb85c, transparent: true,
       opacity: 0.55, side: THREE.DoubleSide, depthWrite: false,
@@ -1365,6 +1431,11 @@ function selectFace(fid, entry = null, hitPoint = null) {
   S.pickedFace = (info.center && isFlat) ? info : null;
   S.pickedCurved = (info.center && !isFlat) ? info : null;
   S.pickedProfile = null;              // a face pick replaces a profile pick
+  // 'pick' is the RAW selection event, for tools that need the identity of
+  // whatever was clicked (Measure). 'face-picked' below stays face-only
+  // because provenance asks a face-shaped question.
+  bus.emit('pick', { kind: 'face', id: fid,
+                     body: info.body || (entry ? entry.id : null), info });
   showPick(`<b>Face ${fid}</b> — ${isFlat && info.type !== 'PLANE' ? info.type + ' (flat)' : info.type}`,
     [// which BODY this face belongs to — several are pickable now, and the
      // tools act on the picked one, so the user must see which it is
@@ -1416,8 +1487,16 @@ function selectEdge(eid, bodyId = null) {
     color: 0xffb85c, linewidth: 3, depthTest: false }));
   pickHl.renderOrder = 999;
   scene.add(pickHl);
+  bus.emit('pick', { kind: 'edge', id: eid, body: src ? src.id : null, info: e });
+  // a round edge reads out as a DIAMETER, because that is how a machinist
+  // reads a bore — the radius/arc_center ride along in the mesh payload
+  const dia = e.radius != null
+    ? [['diameter', `⌀${(e.radius * 2).toFixed(2)} mm`],
+       ['radius', e.radius.toFixed(2) + ' mm']]
+    : [];
   showPick(`<b>Edge ${eid}</b> — ${e.type}`,
     [src && bodyObjs.length > 1 ? ['body', src.id] : null,
+     ...dia,
      ['length', e.length + ' mm']]);
 }
 

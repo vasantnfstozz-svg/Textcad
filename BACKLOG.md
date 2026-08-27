@@ -33,6 +33,21 @@ complete. Details + Done history: MANUAL-DESIGN.md.
 
 ## To triage (dump new problems here if they don't clearly belong to a workstream file)
 
+- [ ] **Right-edge tool panels cover the AI-designer pane.** `#measureDialog`
+  and `#extrudeDialog` are both `position:fixed; right:24px`, so an open tool
+  panel sits on top of the chat column (visible in the Measure UI verification,
+  2026-08-27). Harmless while one command runs at a time, but the chat is where
+  failures are reported (rule 7), so hiding it while a tool is open is
+  backwards. Either dock tool panels inside the viewport pane or shift them
+  left of the chat. **P3** — cosmetic, pre-existing, not specific to Measure.
+
+- [ ] **Measure: no snap to vertices or arc centres yet.** P0 measures
+  face-to-face, edge-to-edge and diameters, which covers the user's request,
+  but "distance between two POINTS" in their words still means picking the
+  faces/edges those points belong to. Vertex picking would close the gap — the
+  raycaster already has an edge threshold to copy. **P2**, tracked in
+  [MEASURE-PLAN.md](MEASURE-PLAN.md).
+
 - [ ] **Version tree per design** (agreed with the user 2026-08-26, planned in
   [VERSION-TREE-PLAN.md](VERSION-TREE-PLAN.md), nothing built yet). Every design
   edit spawns a new tab and overwrites the previous state, so after ten

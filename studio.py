@@ -45,6 +45,7 @@ from OCP.TopTools import TopTools_IndexedDataMapOfShapeListOfShape
 import author
 import blocks
 import imgtrace
+import measure as measurelib
 import sketch as sketchlib
 import sketch_trim as trimlib
 import sketch_snap as snaplib
@@ -482,6 +483,20 @@ class FaceFeatureReq(BaseModel):
     area: float | None = None
 
 
+class MeasureSel(BaseModel):
+    """One viewport selection: a face or edge index on a body, as the tagged
+    mesh handed them out."""
+    body: str | None = None
+    kind: str = "face"
+    id: int | None = None
+
+
+class MeasureReq(BaseModel):
+    """Measure one selection (`b` omitted) or between two."""
+    a: MeasureSel
+    b: MeasureSel | None = None
+
+
 class RemoveReq(BaseModel):
     feature_id: str
     mode: str = "auto"          # auto (repair the history) | cascade | strict
@@ -902,6 +917,19 @@ def _tagged_mesh(part, body_id: str | None = None) -> dict:
                 info["radius"] = round(face.radius, 2)
             except Exception:
                 pass
+            # The AXIS, not center(): a cylinder's center() lies ON the surface
+            # (probed 2026-08-27 — a r=5 bore at the origin reports x=-5), so
+            # labelling a hole's position from it is wrong by one radius.
+            try:
+                ax = face.axis_of_rotation
+                info["axis"] = [round(ax.direction.X, 4),
+                                round(ax.direction.Y, 4),
+                                round(ax.direction.Z, 4)]
+                info["axis_at"] = [round(ax.position.X, 4),
+                                   round(ax.position.Y, 4),
+                                   round(ax.position.Z, 4)]
+            except Exception:
+                pass
         faces_meta.append(info)
 
     # In mesh mode, sampling 15k+ triangle edges would choke both server and
@@ -930,6 +958,16 @@ def _tagged_mesh(part, body_id: str | None = None) -> dict:
                 continue
         em = {"id": ei, "type": gt, "length": round(edge.length, 2),
               "points": poly}
+        # a round edge carries its DIAMETER, so clicking the line of a circle
+        # can read one out with no round trip. arc_center only: edge.center()
+        # is a point on the circle, not its centre (probed 2026-08-27).
+        if gt == "CIRCLE":
+            try:
+                em["radius"] = round(edge.radius, 4)
+                c = edge.arc_center
+                em["arc_center"] = [round(c.X, 4), round(c.Y, 4), round(c.Z, 4)]
+            except Exception:
+                pass
         if body_id is not None:
             em["body"] = body_id
         edges_meta.append(em)
@@ -1248,6 +1286,19 @@ def face_feature(req: FaceFeatureReq):
             center=req.center, area=req.area)
     except Exception as e:                  # OCP errors are NOT RuntimeError
         return {"feature": None, "reason": f"attribution failed: {e!r}"}
+
+
+@app.post("/api/measure")
+def measure_selection(req: MeasureReq):
+    """HOW WIDE / HOW FAR / HOW THICK (Fusion's Measure).
+
+    Read-only, like /api/face-feature: no snapshot, no rebuild, no document
+    mutation — it measures the solids already cached from the last rebuild, and
+    deliberately does NOT return the document (the payload per click would be
+    the whole tree). Errors come back as {"error": ...} rather than a 500, so
+    the readout can say why instead of going blank (rule 7)."""
+    return measurelib.measure(_doc(), req.a.model_dump(),
+                              req.b.model_dump() if req.b else None)
 
 
 @app.post("/api/feature/remove")

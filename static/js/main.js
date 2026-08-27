@@ -15,6 +15,7 @@ import { initRibbon } from './ribbon.js';
 import { initSplitters } from './splitters.js';
 import { initSettings } from './settings.js';
 import { initExtrude } from './extrude.js';
+import { initMeasure } from './measure.js';
 import { initVersions } from './versions.js';
 
 initSettings();          // load prefs before anything renders (fmtVol/fmtLen)
@@ -23,6 +24,7 @@ initChat();
 initDialogs();
 initSketcher();
 initExtrude();
+initMeasure();    // the Measure tool (face/edge dimensions)
 initRibbon();
 initSplitters();
 initVersions();   // version tree under the feature tree
