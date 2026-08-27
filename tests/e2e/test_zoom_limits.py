@@ -11,9 +11,15 @@ camera straight into the part.
 
 `minDistance` alone cannot fix it. esp32-remote is 12 mm thick, so its centre is
 6 mm from either face: any small distance from the target is still inside the
-material. The fix is `zoomToCursor`, which moves the target onto the surface
-being pointed at, with `minDistance` as the floor that stops the camera reaching
-it.
+material. The target has to move onto the surface being pointed at, with
+`minDistance` as the floor that stops the camera reaching it.
+
+OrbitControls' own `zoomToCursor` was tried first and REVERTED the same day: it
+has no idea whether the cursor is over anything, so with the pointer on empty
+background it slid the target off into space — measured at 47 mm of drift from a
+model of radius 70 after five small scrolls, which swings the part out of frame
+("when i am zooming little bit, the whole sketch vanish"). We raycast first and
+only retarget on a real hit.
 """
 import pytest
 
@@ -33,11 +39,52 @@ def _load(page, server, slug):
     page.wait_for_timeout(1500)
 
 
-def test_zoom_is_clamped_and_follows_the_cursor(page, server, fresh_doc):
+def test_zoom_is_clamped_and_does_not_use_orbitcontrols_zoomtocursor(
+        page, server, fresh_doc):
     _load(page, server, "flange-100")
     fit = page.evaluate(FIT)
-    assert fit["zoomToCursor"] is True, "the wheel still dollies at the centre"
     assert fit["minDistance"] > 0, "minDistance is 0 — the camera can reach the target"
+    assert fit["zoomToCursor"] is False,         "OrbitControls' zoomToCursor drifts the target over empty space"
+
+
+def _wheel_at(page, dx, dy, n=1, out=False):
+    box = page.locator("#viewer").bounding_box()
+    cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+    for _ in range(n):
+        page.mouse.move(cx + dx, cy + dy)
+        page.mouse.wheel(0, 300 if out else -300)
+        page.wait_for_timeout(120)
+
+
+def _drift(page):
+    return page.evaluate("""() => {
+      const c = window.__vp.getControls(), f = window.__vp.getFit();
+      return Math.hypot(c.target.x - f.c[0], c.target.y - f.c[1],
+                        c.target.z - f.c[2]);
+    }""")
+
+
+def test_zooming_over_empty_space_does_not_drag_the_model_out_of_frame(
+        page, server, fresh_doc):
+    """THE REGRESSION. zoomToCursor drifted the target 47 mm in five scrolls
+    with the pointer on the background, and the part left the screen."""
+    _load(page, server, "flange-100")
+    assert _drift(page) < 1e-6
+    _wheel_at(page, -420, -260, n=6)          # a corner: nothing under the cursor
+    assert _drift(page) < 1e-6,         f"the orbit target wandered {_drift(page):.1f} mm over empty space"
+    assert not page.errors, page.errors
+
+
+def test_zooming_onto_the_part_aims_at_what_is_under_the_cursor(
+        page, server, fresh_doc):
+    """The half worth keeping: pointing at solid material moves the target ONTO
+    that surface, so the dolly approaches it instead of the middle of the
+    block. (Dead centre of a flange is its bore — the ray goes through the hole
+    and correctly retargets nothing, so aim off-centre.)"""
+    _load(page, server, "flange-100")
+    _wheel_at(page, 120, 0, n=2)
+    assert _drift(page) > 1.0, "the target never moved onto the surface"
+    assert not page.errors, page.errors
 
 
 def test_the_floor_clears_the_near_clip_plane(page, server, fresh_doc):

@@ -83,6 +83,24 @@ function zoomFloor() {
   return Math.max(r / 40, (r / 100) * 3);
 }
 
+/* Point the orbit target at whatever is under the cursor, so the dolly that
+   follows moves toward THAT and not toward the middle of the block.
+
+   Only on zoom-IN, and only on a real hit: zooming out wants to keep the frame
+   it has, and over empty space there is nothing to aim at — leaving the target
+   alone there is the whole difference between this and `zoomToCursor`. */
+function retargetOnWheel(e) {
+  if (!controls || !controls.enabled || e.deltaY >= 0) return;
+  const objs = [...bodyMeshes(), ...sketchMeshes()];
+  if (!objs.length) return;
+  raycaster.setFromCamera(ndcFrom(e), camera);
+  const hit = raycaster.intersectObjects(objs, false)[0];
+  if (!hit) return;                       // empty space: do not move the target
+  // Ease toward it rather than snapping: a hard jump on every notch makes the
+  // model appear to lurch sideways while zooming.
+  controls.target.lerp(hit.point, 0.35);
+}
+
 function buildControls(up) {
   const pos = camera.position.clone();
   const tgt = controls ? controls.target.clone() : new THREE.Vector3();
@@ -108,17 +126,28 @@ function buildControls(up) {
   // never dolly past the far clip plane — beyond it the whole scene (model,
   // grids, everything) is clipped to a black void that reads as a crash
   controls.maxDistance = camera.far * 0.85;
-  /* ZOOM TOWARD THE CURSOR, not toward the orbit target (user, 2026-08-27:
-     "when i am zooming the design it completely goes like that" — a full-screen
-     grey wash). The target sits at the model's CENTRE, so dollying in walked
-     the camera straight into the solid and left it looking at the inside of the
-     far wall. minDistance alone cannot fix that: a 12 mm-thick plate has its
-     centre 6 mm from either face, so ANY small distance is still inside.
-     Zooming at the cursor moves the target onto the surface being pointed at,
-     which is both the CAD-standard behaviour and what keeps the camera
-     outside; minDistance is then a floor that stops it touching that surface. */
-  controls.zoomToCursor = true;
+  /* Zoom toward what the cursor is ON — but NOT via OrbitControls'
+     `zoomToCursor`, which was tried and reverted the same day.
+
+     The problem it solves is real: the orbit target sits at the model's CENTRE,
+     so dollying in walked the camera into the solid and left it looking at the
+     inside of the far wall (a full-screen grey wash). minDistance alone cannot
+     fix that — a 12 mm plate has its centre 6 mm from either face, so any small
+     distance is still inside.
+
+     But `zoomToCursor` has no idea whether the cursor is over anything. With
+     the pointer on empty background it projects onto a plane at the target's
+     depth and slides the target off into space: measured, five small scrolls
+     drifted it 47 mm from a model of radius 70, swinging the part out of frame
+     entirely (user: "when i am zooming little bit, the whole sketch vanish").
+
+     So we do it ourselves, and only when there is something to zoom AT:
+     retargetOnWheel() raycasts first and moves the target to the surface under
+     the cursor; over empty space it leaves the target exactly where it is. */
+  controls.zoomToCursor = false;
   controls.minDistance = zoomFloor();
+  renderer.domElement.addEventListener('wheel', retargetOnWheel,
+                                       { passive: true, capture: true });
   camera.position.copy(pos);
   controls.target.copy(tgt);
   controls.addEventListener('change', () => bus.emit('view-changed'));
@@ -196,7 +225,8 @@ export function initViewport() {
     camera, getControls,
     getFit: () => ({ r: fitRadius, c: fitCenter.toArray(),
                      minDistance: controls ? controls.minDistance : null,
-                     zoomToCursor: controls ? !!controls.zoomToCursor : null }),
+                     zoomToCursor: controls ? !!controls.zoomToCursor : null,
+                     target: controls ? controls.target.toArray() : null }),
     bodyCount: () => bodyObjs.length,
     bodyInfo: () => bodyObjs.map(b => ({
       id: b.id, result: b.result, faces: (b.data.faces || []).length,
