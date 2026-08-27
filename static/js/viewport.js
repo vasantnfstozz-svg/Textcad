@@ -83,24 +83,6 @@ function zoomFloor() {
   return Math.max(r / 40, (r / 100) * 3);
 }
 
-/* Point the orbit target at whatever is under the cursor, so the dolly that
-   follows moves toward THAT and not toward the middle of the block.
-
-   Only on zoom-IN, and only on a real hit: zooming out wants to keep the frame
-   it has, and over empty space there is nothing to aim at — leaving the target
-   alone there is the whole difference between this and `zoomToCursor`. */
-function retargetOnWheel(e) {
-  if (!controls || !controls.enabled || e.deltaY >= 0) return;
-  const objs = [...bodyMeshes(), ...sketchMeshes()];
-  if (!objs.length) return;
-  raycaster.setFromCamera(ndcFrom(e), camera);
-  const hit = raycaster.intersectObjects(objs, false)[0];
-  if (!hit) return;                       // empty space: do not move the target
-  // Ease toward it rather than snapping: a hard jump on every notch makes the
-  // model appear to lurch sideways while zooming.
-  controls.target.lerp(hit.point, 0.35);
-}
-
 function buildControls(up) {
   const pos = camera.position.clone();
   const tgt = controls ? controls.target.clone() : new THREE.Vector3();
@@ -126,28 +108,24 @@ function buildControls(up) {
   // never dolly past the far clip plane — beyond it the whole scene (model,
   // grids, everything) is clipped to a black void that reads as a crash
   controls.maxDistance = camera.far * 0.85;
-  /* Zoom toward what the cursor is ON — but NOT via OrbitControls'
-     `zoomToCursor`, which was tried and reverted the same day.
+  /* The wheel zooms EXACTLY as OrbitControls ships it — toward the orbit
+     target, at its own rate. Two attempts to be clever were reverted on
+     2026-08-27 and neither is coming back:
 
-     The problem it solves is real: the orbit target sits at the model's CENTRE,
-     so dollying in walked the camera into the solid and left it looking at the
-     inside of the far wall (a full-screen grey wash). minDistance alone cannot
-     fix that — a 12 mm plate has its centre 6 mm from either face, so any small
-     distance is still inside.
+       * `zoomToCursor = true` slid the target off into empty space when the
+         cursor was not over anything (47 mm of drift in five scrolls), and the
+         model left the frame.
+       * raycasting and easing the target onto the surface under the cursor
+         kept the target sane, but moving the pivot mid-zoom PANS the view, so
+         one notch swung the camera far further than a notch used to. The
+         dolly rate was untouched and still measured x0.93 per notch, which is
+         why the numbers looked fine while it felt wrong (user: "if i am moving
+         little mouse roller, if going so far ... bring back old method").
 
-     But `zoomToCursor` has no idea whether the cursor is over anything. With
-     the pointer on empty background it projects onto a plane at the target's
-     depth and slides the target off into space: measured, five small scrolls
-     drifted it 47 mm from a model of radius 70, swinging the part out of frame
-     entirely (user: "when i am zooming little bit, the whole sketch vanish").
-
-     So we do it ourselves, and only when there is something to zoom AT:
-     retargetOnWheel() raycasts first and moves the target to the surface under
-     the cursor; over empty space it leaves the target exactly where it is. */
-  controls.zoomToCursor = false;
+     minDistance stays. It changes nothing about the feel — OrbitControls
+     clamps AFTER applying its scale, so every notch short of the limit is
+     identical — it only stops the camera collapsing onto the target. */
   controls.minDistance = zoomFloor();
-  renderer.domElement.addEventListener('wheel', retargetOnWheel,
-                                       { passive: true, capture: true });
   camera.position.copy(pos);
   controls.target.copy(tgt);
   controls.addEventListener('change', () => bus.emit('view-changed'));

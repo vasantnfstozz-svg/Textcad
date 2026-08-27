@@ -75,15 +75,36 @@ def test_zooming_over_empty_space_does_not_drag_the_model_out_of_frame(
     assert not page.errors, page.errors
 
 
-def test_zooming_onto_the_part_aims_at_what_is_under_the_cursor(
-        page, server, fresh_doc):
-    """The half worth keeping: pointing at solid material moves the target ONTO
-    that surface, so the dolly approaches it instead of the middle of the
-    block. (Dead centre of a flange is its bore — the ray goes through the hole
-    and correctly retargets nothing, so aim off-centre.)"""
+def test_the_wheel_zooms_exactly_as_orbitcontrols_ships_it(page, server,
+                                                          fresh_doc):
+    """The user's actual requirement: "bring back old method for zooming".
+
+    Two attempts at being clever were reverted. The second one kept the DOLLY
+    RATE untouched (still x0.94 a notch) but moved the pivot onto the surface
+    under the cursor — and moving the pivot mid-zoom pans the view, so a single
+    notch swung the camera far further than a notch used to. The numbers looked
+    right while it felt wrong, which is why this test checks the pivot as well
+    as the rate."""
     _load(page, server, "flange-100")
-    _wheel_at(page, 120, 0, n=2)
-    assert _drift(page) > 1.0, "the target never moved onto the surface"
+    box = page.locator("#viewer").bounding_box()
+    cx = box["x"] + box["width"] / 2 + 120      # deliberately OFF-centre, over
+    cy = box["y"] + box["height"] / 2           # solid material
+
+    dist = "() => { const c = window.__vp.getControls();"            " return window.__vp.camera.position.distanceTo(c.target); }"
+    ratios, prev = [], page.evaluate(dist)
+    for _ in range(6):
+        page.mouse.move(cx, cy)
+        page.mouse.wheel(0, -120)
+        page.wait_for_timeout(200)
+        now = page.evaluate(dist)
+        ratios.append(round(now / prev, 3))
+        prev = now
+
+    # every notch the same proportional step: no acceleration, no lurch
+    assert len(set(ratios)) == 1, f"the zoom step is not constant: {ratios}"
+    assert 0.8 < ratios[0] < 1.0, ratios
+    # and the pivot stays put, so zooming never pans the view sideways
+    assert _drift(page) < 1e-6,         f"zooming moved the orbit target {_drift(page):.2f} mm — it will pan"
     assert not page.errors, page.errors
 
 
