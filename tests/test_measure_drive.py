@@ -247,7 +247,15 @@ def test_api_set_refuses_a_derived_measurement_without_touching_the_doc(client):
         "b": {"body": body["id"], "kind": "face", "id": bot["id"]},
         "value": 20.0}).json()
     assert "error" in r
-    assert "not driven by a single parameter" in r["error"]
+    # The refusal must EXPLAIN itself. Which reason applies depends on what the
+    # faces trace back to — here a `plate` primitive, whose walls have no sketch
+    # entity at all — so assert that a real reason came back rather than
+    # pinning one phrasing (P2 made these messages more specific).
+    assert any(bit in r["error"] for bit in (
+        "not driven by a single parameter",   # nothing to type into
+        "traces back to a sketch entity",     # nothing movable behind it
+        "depth",                              # controlled by depth instead
+    )), r["error"]
     assert client.get("/api/doc").json()["features"] == before
     # a refusal must not leave an undo entry behind: the user would press
     # Ctrl+Z expecting their last real edit back and get a no-op instead
@@ -323,3 +331,25 @@ def test_two_holes_of_the_SAME_radius_still_resolve_separately():
         paths[round(faces[i].axis_of_rotation.position.X)] = tuple(d["path"])
     assert paths[-30] == ("entities", 0, "r"), paths
     assert paths[30] == ("entities", 1, "r"), paths
+
+
+def test_verification_checks_the_KIND_not_just_the_number(client):
+    """The endpoint re-measures the same face INDICES, and those are array
+    positions a rebuild can reorder. Agreeing on a number is therefore not
+    enough — if the pick now measures a different kind of thing, the indices
+    went stale and the 'verified' claim would be about other geometry.
+
+    Asserted through the honest path: a normal edit verifies AND reports the
+    same kind it planned against."""
+    model = api_pocket(client)
+    r = client.post("/api/measure/set",
+                    json={"a": cyl_sel(model, 9.0), "value": 12.0}).json()
+    assert r["verified"] is True, r
+    # re-reading must still describe a diameter, not something else that
+    # happens to measure 12. Re-FETCH the model: `model` above was captured
+    # before the edit and still describes the old r=9 bore.
+    fresh = client.get("/api/model").json()
+    again = client.post("/api/measure",
+                        json={"a": cyl_sel(fresh, 6.0)}).json()
+    assert again["kind"] == "diameter"
+    assert again["value"] == pytest.approx(12.0, abs=1e-3)

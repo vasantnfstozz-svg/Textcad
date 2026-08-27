@@ -1,7 +1,7 @@
 # Measure & drive — development sheet
 
-> **Status: P0 + P1 shipped 2026-08-27** (39 new tests, both UI-verified in a
-> real browser). P2 next. Design agreed with the user 2026-08-27.
+> **Status: P0 + P1 + P2 shipped 2026-08-27** (50 new tests, each UI-verified
+> in a real browser). P3/P4 remain. Design agreed with the user 2026-08-27.
 
 ## The problem, in the user's words
 
@@ -75,7 +75,7 @@ becomes a different face. Therefore:
 |---|---|---|
 | **P0** | Measure, read-only: diameter, length, distance, angle, thickness | **shipped** |
 | **P1** | Driven edits — **diameter** (depth/offset deferred, see below) | **shipped** |
-| **P2** | Derived edits — with the *which side moves* step | — |
+| **P2** | Derived edits — with the *which side moves* step | **shipped** |
 | **P3** | Pinned dimensions that survive rebuild | — |
 | **P4** | Named parameters (`wall_gap = 8`) | design only |
 
@@ -200,21 +200,72 @@ sketch plane coincides with the face being measured from, so each needs its own
 predicate before it can be offered honestly. Diameter had no such caveat, so it
 shipped first.
 
-### P2 — Derived edits
+### P2 — Derived edits (shipped)
 
-When both selections resolve to drivers in *different* features, offer a move.
+A derived distance has no param to overwrite, so `/api/measure/set` changes it
+by **moving one side** — and never without naming which.
 
-- **Default side:** the face whose feature is **later in the tree** moves; the
-  earlier feature is almost always stock or datum. In `esp32-remote`,
-  `outline_sketch` is feature #1 and the pillar islands are far later, so
-  "pillar moves, wall stays" falls out correctly. The user can flip it.
-- **Direction decomposition** — this is what makes it implementable without a
-  constraint solver:
-  - gap lies **in the sketch plane** → translate that entity's coordinates
-  - gap lies **along the extrude axis** → edit `offset` / `amount`
-  - anything else → refuse, and hand the chat a precise sentence
-    ("move the SD pillar 2 mm toward +X so its gap to the left wall is 8 mm")
-    rather than guessing. Rule 7: failures speak.
+**Wall vs cap.** A rectangle entity makes four walls, so "which entity made
+this face" is not answerable from the face alone. `_face_role` answers it in
+the sketch's own plane: each entity's 2D face is rebuilt with `sketch._entity`
+(which applies its rotation and position) and the wall belongs to the entity
+whose boundary passes through the wall's projected centre. Probed — the four
+walls of a 20×20 boss and a round boss's wall each resolved to their own entity
+at distance 0.0, while the host plate's own walls sat 20–40 mm from every entity
+and correctly resolved to none.
+
+The same function separates a **wall** (normal lies in the sketch plane; its
+position across the plane *is* the entity's x/y, so it can move) from a **cap**
+(normal looks along the plane; its position is the extrude depth, so moving the
+profile sideways would not shift it at all). That distinction is what lets the
+tool answer "change the extrude distance or the sketch offset" instead of the
+misleading "nothing here can move".
+
+**Which side moves.** Default: the wall whose sketch is later in the tree — in
+`esp32-remote` `outline_sketch` is feature #1 and the pillar islands come far
+later, so "the pillar moves, the wall stays" falls out of tree order rather than
+from a guess. The panel shows an A/B choice whenever both sides could move, and
+`side` overrides the default.
+
+**One direction formula for all three cases.** With `along = nA·(cB - cA)` the
+measured distance is `|along|`, and shifting the chosen side by `s` along `nA`
+lands `|along + s| = target` when
+
+```
+s = sign(along) · (target - current)          (negated when A is the mover)
+```
+
+Verified on a gap (shrinks by moving B toward A), a thickness (thins the other
+way) and a step. The shift is then mapped into the sketch plane; a non-zero
+local Z means the distance is depth-controlled and the edit is refused.
+
+**Both coordinates are written as one list.** `write()` applies a plan's
+`writes` array, so a one-param edit (a diameter) and a two-param edit (x *and*
+y) share the same code and an entity can never end up half-moved.
+
+#### What P2 learned
+
+`applyEdit`'s guard still demanded a `driver`, so pressing Set on a perfectly
+movable gap returned **silently** — the number stayed put with no explanation,
+the one thing rule 7 forbids. Only the browser showed it; every backend test
+passed throughout. The guard now accepts either a driver or a movable side.
+
+#### Still derived, still refused
+
+- non-parallel faces (no single distance to set)
+- faces with no sketch behind them (a primitive, an imported body)
+- depth-controlled distances (a pocket floor to the part's underside)
+
+Each refuses with its own reason and leaves the document byte-identical.
+
+#### Not built, deliberately
+
+The original plan had a third branch: when a distance is depth-controlled,
+*hand the chat a sentence* ("move the SD pillar 2 mm toward +X…") so the AI
+could do it. P2 refuses with the reason instead. The sentence is a good idea but
+it is a chat feature, not a measurement one, and wiring it here would mean
+Measure quietly delegating an edit the user did not ask the AI for. Worth
+revisiting as an explicit "ask the AI to do this" button.
 
 ### P3 — Pinned dimensions
 

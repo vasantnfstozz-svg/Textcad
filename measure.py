@@ -594,6 +594,207 @@ def resolve_driver(doc, shape_a, result: dict, sel_a: dict | None = None,
     return None
 
 
+# ---------------------------------------------------------------------------
+# P2 — DERIVED distances: moving one side instead of writing one param
+#
+# The user's own example: "distanse bewteen a pillar to wall is 10, and i am
+# changine the it 8, the pillar should move to wall". That 10 is stored nowhere
+# — it is the subtraction of two independent sketches' literals — so there is no
+# param to overwrite. What CAN be done is move one side, and the only honest way
+# is to be explicit about which one.
+
+# how close a wall's centre must lie to an entity's 2D boundary to belong to it
+BOUNDARY_TOL = 1e-3
+
+
+def _face_role(doc, shape, sel: dict, body):
+    """What this flat face IS, relative to the sketch that made it.
+
+      {"kind": "wall", feature, entity, plane}  — a side of an entity's
+          profile. Its position across the plane is the entity's x/y, so it
+          CAN be moved by editing those.
+      {"kind": "cap", feature, plane}           — the top or bottom face of an
+          extruded profile. Its position is the extrude depth / plane offset,
+          NOT the entity's x/y, so sliding the profile sideways would not move
+          it at all. Distinguishing this is what lets the tool say "change the
+          depth" instead of the misleading "nothing here can move".
+      None                                       — no sketch behind it (a
+          primitive, an imported body).
+
+    Wall vs cap is decided by the face normal against the sketch plane normal:
+    a cap looks along it, a wall lies in it.
+
+    A rectangle entity makes four walls, so "which entity" is not answerable
+    from the face alone. It IS answerable in the sketch's own plane: rebuild
+    each entity's 2D face with sketch._entity (which applies its rotation and
+    position) and the wall belongs to the entity whose boundary passes through
+    the wall's projected centre. Probed 2026-08-27 — the four walls of a 20x20
+    boss and a round boss's wall each resolved to their own entity at distance
+    0.0, while the host plate's own walls sat 20-40 mm from every entity and
+    correctly resolved to none."""
+    from build123d import Vector, Vertex
+    import sketch as sk
+    pl = _plane(shape)
+    if not pl or str(sel.get("kind")) != "face" or sel.get("id") is None:
+        return None
+    centre, normal = pl
+    att = provenance.attribute_face(doc, body_id=body,
+                                    face_index=int(sel["id"]))
+    sid = att.get("sketch")
+    if not sid:
+        return None
+    try:
+        feat = doc.get(sid)
+    except KeyError:
+        return None
+    plane = _sketch_plane(doc, feat)
+    if plane is None:
+        return None
+    pn = _xyz(plane.z_dir)
+    if abs(abs(_dot(normal, pn)) - 1.0) <= 1e-6:
+        return {"kind": "cap", "feature": feat, "plane": plane}
+    try:
+        loc = plane.to_local_coords(Vector(*centre))
+    except Exception:
+        return None
+    probe = Vertex(loc.X, loc.Y, 0)
+    best, best_d = None, None
+    for i, e in enumerate((feat.params or {}).get("entities") or []):
+        if not isinstance(e, dict):
+            continue
+        try:
+            face2d = sk._entity(e)
+        except Exception:
+            continue                      # an entity that will not build alone
+        d = None
+        for ed in face2d.edges():
+            got = _min_distance(probe, ed)
+            if got and (d is None or got[0] < d):
+                d = got[0]
+        if d is not None and (best_d is None or d < best_d):
+            best, best_d = i, d
+    if best is None or best_d > BOUNDARY_TOL:
+        return None
+    return {"kind": "wall", "feature": feat, "entity": best, "plane": plane}
+
+
+DEPTH_ADVICE = ("this distance runs along the sketch's depth, not across its "
+                "plane — change the extrude distance or the sketch offset "
+                "instead of moving the profile")
+
+
+def _tree_order(doc) -> dict:
+    return {f.id: i for i, f in enumerate(doc.features)}
+
+
+def resolve_move(doc, a_shape, b_shape, a_sel, b_sel, body_a, body_b,
+                 side: str = "auto"):
+    """How to change a two-face distance by MOVING one side.
+
+    Parallel planar faces only, because only then is "the distance" a single
+    number with a single direction.
+
+    Which side moves: by default the one whose sketch is LATER in the tree. The
+    earlier feature is almost always stock or a datum — in esp32-remote
+    `outline_sketch` is feature #1 and the pillar islands come far later, so
+    "the pillar moves, the wall stays" falls out of tree order rather than from
+    a guess. `side` overrides it with the user's explicit choice.
+
+    Returns a description, or {"error": reason} — never a silent None, because
+    "why can't I type here?" deserves an answer (rule 7)."""
+    pa, pb = _plane(a_shape), _plane(b_shape)
+    if not pa or not pb:
+        return {"error": "moving a side needs two FLAT faces"}
+    (centre_a, na), (centre_b, nb) = pa, pb
+    if abs(abs(_dot(na, nb)) - 1.0) > PARALLEL_TOL:
+        return {"error": "those faces are not parallel, so there is no single "
+                         "distance to set — measure a parallel pair"}
+    roles = {"a": _face_role(doc, a_shape, a_sel, body_a),
+             "b": _face_role(doc, b_shape, b_sel, body_b)}
+    walls = {k: v for k, v in roles.items() if v and v["kind"] == "wall"}
+    if not walls:
+        # A cap's position is its depth, not its profile's x/y, so name the
+        # edit that WOULD work rather than reporting nothing movable.
+        if any(v and v["kind"] == "cap" for v in roles.values()):
+            return {"error": DEPTH_ADVICE}
+        return {"error": "neither face traces back to a sketch entity that "
+                         "could be moved (a primitive or an imported body) — "
+                         "ask the AI designer to move it instead"}
+    if side not in ("auto", "a", "b"):
+        side = "auto"
+    if side == "auto":
+        order = _tree_order(doc)
+        # LATER in the tree moves: the earlier feature is the datum
+        side = max(walls.items(),
+                   key=lambda kv: order.get(kv[1]["feature"].id, -1))[0]
+    if side not in walls:
+        other = "b" if side == "a" else "a"
+        if roles[side] and roles[side]["kind"] == "cap":
+            return {"error": DEPTH_ADVICE}
+        return {"error": f"face {side.upper()} does not come from a movable "
+                         f"sketch entity — try moving {other.upper()} instead"}
+    feat = walls[side]["feature"]
+    idx = walls[side]["entity"]
+    plane = walls[side]["plane"]
+    # signed separation along A's normal, which is what "the distance" is
+    along = _dot(na, _sub(centre_b, centre_a))
+    return {"side": side, "feature": feat.id, "entity": idx,
+            "plane": plane, "normal": na, "along": along,
+            "label": f"{feat.id} · entity #{idx}",
+            "movable": sorted(walls)}
+
+
+def plan_move(doc, mv: dict, current: float, target: float) -> dict:
+    """Turn a resolve_move() description into the x/y writes that land it.
+
+    One formula covers all three parallel cases. With
+    `along` = nA·(cB - cA) the measured distance is |along|, and shifting the
+    chosen side by s along nA gives |along + s| = target when
+
+        s = sign(along) · (target - current)
+
+    Checked on all three: a gap (along > 0) shrinks by moving B toward A, a
+    thickness (along < 0) thins by moving B the other way, and a step follows
+    the same rule. Moving A instead of B reverses the sense."""
+    from build123d import Vector
+    if current <= 0:
+        return {"error": "that distance is zero — nothing to move relative to"}
+    sign = 1.0 if mv["along"] >= 0 else -1.0
+    s = sign * (target - current)
+    if mv["side"] == "a":
+        s = -s
+    shift = _scale(mv["normal"], s)
+
+    plane = mv["plane"]
+    # The move must lie IN the sketch plane. When it does not, the distance is
+    # controlled by DEPTH (an extrude amount or a plane offset), not by where
+    # the entity sits — a different edit. Pretending otherwise would slide the
+    # profile sideways and leave the measurement unchanged.
+    try:
+        origin = plane.to_local_coords(Vector(0, 0, 0))
+        moved = plane.to_local_coords(Vector(*shift))
+        dx, dy = moved.X - origin.X, moved.Y - origin.Y
+        dz = moved.Z - origin.Z
+    except Exception:
+        return {"error": "could not map that move into the sketch's plane"}
+    if abs(dz) > 1e-6:
+        return {"error": DEPTH_ADVICE}
+    try:
+        feat = doc.get(mv["feature"])
+        ent = (feat.params or {})["entities"][mv["entity"]]
+    except (KeyError, IndexError, TypeError):
+        return {"error": "the entity behind that face is gone — click it again"}
+    x0, y0 = float(ent.get("x", 0) or 0), float(ent.get("y", 0) or 0)
+    return {
+        "writes": [(["entities", mv["entity"], "x"], _r(x0 + dx, 6)),
+                   (["entities", mv["entity"], "y"], _r(y0 + dy, 6))],
+        "feature": mv["feature"],
+        "moved": mv["label"],
+        "by": [_r(dx, 4), _r(dy, 4)],
+        "side": mv["side"],
+    }
+
+
 def _to_param(transform: str, value: float, current: float) -> float:
     """The stored param that produces `value` on screen."""
     if transform == "half":
@@ -603,11 +804,15 @@ def _to_param(transform: str, value: float, current: float) -> float:
     return value
 
 
-def plan_set(doc, a: dict, b: dict | None, value: float) -> dict:
-    """Work out WHICH param to write and to what — without writing anything.
+def plan_set(doc, a: dict, b: dict | None, value: float,
+             side: str = "auto") -> dict:
+    """Work out WHAT to write and to what — without writing anything.
 
     Split from the write so the caller can snapshot for undo first, and so a
-    request that cannot be honoured changes nothing at all."""
+    request that cannot be honoured changes nothing at all.
+
+    `side` ("auto" | "a" | "b") picks which face moves when the distance is
+    derived rather than driven — see resolve_move."""
     try:
         value = float(value)
     except (TypeError, ValueError):
@@ -620,28 +825,57 @@ def plan_set(doc, a: dict, b: dict | None, value: float) -> dict:
     except ValueError as e:
         return {"error": str(e)}
     driver = resolve_driver(doc, shape_a, base, a, body_a)
-    if not driver:
+    if driver:
+        new_param = _to_param(driver["transform"], value, driver["current"])
+        if new_param <= 0:
+            # sketch._validate_dims would reject it at rebuild anyway; refusing
+            # here means the document is never even touched
+            return {"error": f"a {driver['drives']} of {value:g} mm would need "
+                             f"{new_param:g} mm — dimensions must be positive"}
+        return {"driver": driver, "requested": _r(value),
+                "param": _r(new_param, 6), "was": _r(driver["current"], 6),
+                "kind": base.get("kind"),
+                "writes": [(driver["path"], _r(new_param, 6))]}
+
+    # Not driven by one param. If it is a distance between two parallel faces,
+    # it can still be changed by MOVING one side — but only with the side named
+    # (P2). Everything else is honestly read-only.
+    if b is None:
         return {"error": "this measurement is not driven by a single "
                          "parameter, so it cannot be typed into — see the "
-                         "feature tree, or ask the AI designer to move it"}
-    new_param = _to_param(driver["transform"], value, driver["current"])
-    if new_param <= 0:
-        # sketch._validate_dims would reject it at rebuild anyway; refusing
-        # here means the document is never even touched
-        return {"error": f"a {driver['drives']} of {value:g} mm would need "
-                         f"{new_param:g} mm — dimensions must be positive"}
-    return {"driver": driver, "requested": _r(value),
-            "param": _r(new_param, 6), "was": _r(driver["current"], 6)}
+                         "feature tree, or ask the AI designer to change it"}
+    try:
+        shape_b, body_b = resolve(doc, b)
+    except ValueError as e:
+        return {"error": str(e)}
+    mv = resolve_move(doc, shape_a, shape_b, a, b, body_a, body_b, side)
+    if "error" in mv:
+        return mv
+    plan = plan_move(doc, mv, float(base.get("value") or 0), value)
+    if "error" in plan:
+        return plan
+    return {"move": {"side": plan["side"], "feature": plan["feature"],
+                     "label": plan["moved"], "by": plan["by"],
+                     "movable": mv["movable"]},
+            "requested": _r(value), "was": _r(base.get("value") or 0, 6),
+            "kind": base.get("kind"),
+            "writes": plan["writes"]}
 
 
 def write(doc, plan: dict) -> None:
-    """Apply a plan_set() result to the document. Caller rebuilds."""
-    feat = doc.get(plan["driver"]["feature"])
-    target = feat.params
-    path = plan["driver"]["path"]
-    for k in path[:-1]:
-        target = target[k]
-    target[path[-1]] = plan["param"]
+    """Apply a plan_set() result to the document. Caller rebuilds.
+
+    Every plan carries a `writes` list of (path, value), so a one-param edit
+    (a diameter) and a two-param edit (moving an entity in x AND y) go through
+    the same code — one of them being half-applied is not a state this should
+    be able to reach."""
+    fid = (plan.get("driver") or plan.get("move") or {})["feature"]
+    feat = doc.get(fid)
+    for path, value in plan["writes"]:
+        target = feat.params
+        for k in path[:-1]:
+            target = target[k]
+        target[path[-1]] = value
 
 
 # ---------------------------------------------------------------------------
@@ -670,6 +904,20 @@ def measure(doc, a: dict, b: dict | None = None) -> dict:
         out = _measure_two(shape_a, shape_b)
         out["a"] = {"body": body_a, "kind": a.get("kind"), "id": a.get("id")}
         out["b"] = {"body": body_b, "kind": b.get("kind"), "id": b.get("id")}
+        out["driver"] = None       # a two-face distance is never one param
+        # A derived distance has no driver, but a parallel pair can often still
+        # be changed by MOVING one side (P2). Report which sides could move and
+        # which one is the default, so the panel can offer the choice instead of
+        # either refusing or silently picking.
+        if out.get("kind") in ("gap", "thickness", "step"):
+            try:
+                mv = resolve_move(doc, shape_a, shape_b, a, b, body_a, body_b)
+            except Exception as e:
+                mv = {"error": f"could not work out what to move ({e!r})"}
+            out["move"] = ({"error": mv["error"]} if "error" in mv else
+                           {"side": mv["side"], "label": mv["label"],
+                            "feature": mv["feature"],
+                            "movable": mv["movable"]})
         return out
     except ValueError as e:
         return {"error": str(e)}

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=27">
+<link rel="stylesheet" href="/static/css/studio.css?v=28">
 </head>
 <body>
 
@@ -238,6 +238,13 @@
     </div>
     <div id="meKind"></div>
     <div id="meDriver" style="display:none"></div>
+    <!-- WHICH SIDE MOVES. A derived distance is stored nowhere, so changing it
+         means moving one side; the tool must never pick silently. -->
+    <div id="meSide" style="display:none">
+      <span>move</span>
+      <label><input type="radio" name="meSideR" value="a"> A</label>
+      <label><input type="radio" name="meSideR" value="b"> B</label>
+    </div>
   </div>
   <div id="meRows"></div>
   <div id="meNote" style="display:none"></div>
@@ -280,6 +287,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=103"></script>
+<script type="module" src="/static/js/main.js?v=106"></script>
 </body>
 </html>

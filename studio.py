@@ -499,8 +499,15 @@ class MeasureReq(BaseModel):
 
 class MeasureSetReq(MeasureReq):
     """Drive the geometry FROM the measured number: make this dimension
-    `value`. Only honoured when the measurement maps to a single param."""
+    `value`.
+
+    A DRIVEN dimension (a diameter) writes its one param. A DERIVED one (the
+    gap between two independent features) is changed by MOVING one side, and
+    `side` says which: "auto" lets tree order decide (the later feature moves,
+    because the earlier one is almost always stock or a datum), "a"/"b" is the
+    user's explicit choice."""
     value: float
+    side: str = "auto"
 
 
 class RemoveReq(BaseModel):
@@ -1311,10 +1318,15 @@ def measure_selection(req: MeasureReq):
 def measure_set(req: MeasureSetReq):
     """TYPE A DIMENSION AND THE MODEL FOLLOWS (the editable half of Measure).
 
-    Only a DRIVEN measurement — one that maps to a single param, like a hole's
-    diameter mapping to a circle entity's radius — can be written. A derived
-    one (the gap between two independent features) is refused with a reason
-    instead of guessing which side should move.
+    Two kinds of change, and never a guess between them:
+
+      * a DRIVEN dimension — one that maps to a single param, like a bore's
+        diameter mapping to a circle entity's radius — writes that param;
+      * a DERIVED one — the gap between two independent features, a number
+        stored nowhere — is changed by MOVING one side, with `side` naming
+        which. Tree order picks the default (the later feature moves; the
+        earlier is almost always stock or a datum) and the user can override
+        it. Anything that is neither is refused with a reason.
 
     The write is planned before anything is touched, so a refusal leaves the
     document byte-identical. Afterwards the SAME selection is measured again and
@@ -1322,7 +1334,7 @@ def measure_set(req: MeasureSetReq):
     trust, always measure. Writing a param is not proof the geometry moved."""
     plan = measurelib.plan_set(_doc(), req.a.model_dump(),
                                req.b.model_dump() if req.b else None,
-                               req.value)
+                               req.value, req.side)
     if "error" in plan:
         return {**plan, **_doc_json()}
     _hand_edit()
@@ -1338,15 +1350,24 @@ def measure_set(req: MeasureSetReq):
     after = measurelib.measure(_doc(), req.a.model_dump(),
                                req.b.model_dump() if req.b else None)
     achieved = after.get("value")
-    ok = (achieved is not None
+    # The re-measure reuses the SAME face indices, and those are array
+    # positions that a rebuild can reorder. So agreeing on a number is not
+    # enough: if the pick now measures a different KIND of thing, the indices
+    # went stale and this verification is about some other geometry entirely.
+    same_kind = after.get("kind") == plan.get("kind")
+    ok = (achieved is not None and same_kind
           and abs(float(achieved) - float(req.value)) <= 1e-4)
-    out = {"driver": plan["driver"], "requested": plan["requested"],
-           "param": plan["param"], "was": plan["was"],
-           "achieved": achieved, "verified": ok}
+    out = {k: plan[k] for k in
+           ("driver", "move", "requested", "param", "was") if k in plan}
+    out.update({"achieved": achieved, "verified": ok})
     if not ok:
         # the param changed but the dimension did not land where asked (a
         # downstream feature overrode it, or the pick now resolves elsewhere)
         out["warning"] = (
+            "the edit was applied but could not be confirmed: the same pick "
+            f"now reads as {after.get('kind') or 'nothing measurable'}, not "
+            f"{plan.get('kind')} — click the geometry again to check it"
+            if not same_kind else
             f"asked for {req.value:g} mm, the model now measures "
             + (f"{achieved:g} mm" if achieved is not None
                else "something else")

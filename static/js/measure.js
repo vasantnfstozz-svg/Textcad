@@ -23,6 +23,7 @@ let A = null, B = null;
 let busy = false;
 let last = null;          // the last measurement (carries .driver)
 let mine = false;         // true while OUR OWN edit is rebuilding the document
+let chosenSide = null;    // 'a'/'b' when the user overrode which side moves
 
 const el = id => document.getElementById(id);
 const panel = () => el('measureDialog');
@@ -84,6 +85,7 @@ export function initMeasure() {
       if (same(A, sel)) { note('That is the same thing — pick a different one.'); return; }
       B = sel;
     } else { A = sel; B = null; }
+    chosenSide = null;      // a new pair re-asks which side should move
     render();
     run();
   });
@@ -98,9 +100,11 @@ export function initMeasure() {
   });
   el('meCancel').onclick = cancelMeasure;
   el('meReset').onclick = () => {
-    A = null; B = null; clearDimension(); render();
+    A = null; B = null; chosenSide = null; clearDimension(); render();
   };
   el('meApply').onclick = applyEdit;
+  for (const inp of document.getElementsByName('meSideR'))
+    inp.onchange = () => { chosenSide = inp.value; };
   el('meInput').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); applyEdit(); }
     // Esc in the box reverts the box, it does not close the tool — losing a
@@ -110,6 +114,10 @@ export function initMeasure() {
   el('meSwap').onclick = () => {
     if (!B) return;
     const t = A; A = B; B = t;
+    // Swapping renames the slots, so a remembered "move B" would now point at
+    // the face that used to be A — exactly the move-the-wrong-thing surprise
+    // this tool must not spring. Drop the override and re-ask.
+    chosenSide = null;
     render(); run();
   };
   window.addEventListener('keydown', e => {
@@ -226,21 +234,45 @@ function show(r, error) {
    disappointment; a box that silently moves the wrong wall is not. */
 
 function showEdit(r) {
-  const row = el('meEdit'), who = el('meDriver');
+  const row = el('meEdit'), who = el('meDriver'), sideRow = el('meSide');
   const d = r && r.driver;
-  if (!d) {
+  // A derived distance has no param to write, but a parallel pair can still be
+  // changed by MOVING one side. The backend says which sides are movable; if
+  // none are, it says why and the readout stays read-only.
+  const mv = r && r.move && !r.move.error ? r.move : null;
+  if (!d && !mv) {
     row.style.display = 'none';
     who.style.display = 'none';
+    sideRow.style.display = 'none';
+    if (r && r.move && r.move.error) {
+      who.style.display = 'block';
+      who.textContent = r.move.error;
+    }
     return;
   }
   row.style.display = 'flex';
   el('meInput').value = r.value;
   who.style.display = 'block';
-  who.textContent = `drives ${d.label}`;
+  who.textContent = d ? `drives ${d.label}` : `moves ${mv.label}`;
+  // Only offer the A/B choice when BOTH sides could move; with one candidate
+  // there is nothing to choose and a disabled radio is just noise.
+  if (mv && (mv.movable || []).length > 1) {
+    sideRow.style.display = 'flex';
+    for (const inp of document.getElementsByName('meSideR'))
+      inp.checked = inp.value === (chosenSide || mv.side);
+  } else {
+    sideRow.style.display = 'none';
+  }
 }
 
 async function applyEdit() {
-  if (!last || !last.driver || busy) return;
+  // Editable means EITHER a driver (one param to write) or a movable side.
+  // This guard used to demand a driver, so pressing Set on a movable gap
+  // returned silently — the number stayed put with no explanation, which is
+  // the one thing rule 7 forbids (caught in UI verification).
+  const editable = last && (last.driver
+                            || (last.move && !last.move.error));
+  if (!editable || busy) return;
   const v = parseFloat(el('meInput').value);
   if (!isFinite(v)) { note('Type a number first.'); return; }
   let failed = null, warn = null;
@@ -248,6 +280,7 @@ async function applyEdit() {
   try {
     const body = { a: strip(A), value: v };
     if (B) body.b = strip(B);
+    if (chosenSide) body.side = chosenSide;
     // postJSON (unlike the read path): this DOES mutate the document, so the
     // busy overlay and the doc-updated broadcast are both wanted
     mine = true;                       // this doc-updated is ours; keep A/B
