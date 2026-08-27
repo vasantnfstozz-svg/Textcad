@@ -72,34 +72,69 @@ def test_sketch_on_face_needs_some_way_to_say_which_face():
 # what `offset` and `flip` mean — the SAME thing on every face
 # ---------------------------------------------------------------------------
 
+# A face supplies the plane's POSITION; its ORIENTATION is always the part's
+# own. Chasing one sign rule for "into the material" on every face was the
+# first attempt (2026-08-27) and it cost a silent MIRROR: a right-handed frame
+# whose normal points -Z has to flip an in-plane axis, so the esp32 cavity came
+# out mirrored in y and non-manifold. Coordinates that never move matter more
+# than signs that never change.
+
 @pytest.mark.parametrize("face", ["top", "bottom", "+x", "-x", "front", "back"])
-def test_negative_offset_goes_INTO_the_material_on_every_face(face):
+def test_coordinates_never_mirror_on_any_face(face):
+    """The property the whole method rests on: an entity authored at (x, y)
+    lands at the same in-plane point whichever face it is drawn on. Only the
+    plane's position may differ."""
     box = blocks.plate(40, 30, 12)
-    f = sk.named_face(box, face)
-    n = sk.face_plane(f).z_dir
-    at_face = sk.sketch_on_face(box, face=face,
-                                entities=[{"kind": "circle", "r": 4}])
-    inside = sk.sketch_on_face(box, face=face, offset=-3.0,
-                               entities=[{"kind": "circle", "r": 4}])
-    outside = sk.sketch_on_face(box, face=face, offset=+2.0,
-                                entities=[{"kind": "circle", "r": 4}])
-    reach = lambda s: (s.center().X * n.X + s.center().Y * n.Y
-                       + s.center().Z * n.Z)
-    assert reach(inside) == pytest.approx(reach(at_face) - 3.0, abs=1e-6)
-    assert reach(outside) == pytest.approx(reach(at_face) + 2.0, abs=1e-6)
-
-
-@pytest.mark.parametrize("face", ["top", "bottom", "+x", "front"])
-def test_flip_always_means_into_the_body(face):
-    """The reason the method is teachable: a pocket is `flip: true` whichever
-    face it is on. No per-face sign reasoning, so no per-face sign mistakes."""
-    box = blocks.plate(40, 30, 12)
+    pl = sk.face_sketch_plane(sk.named_face(box, face))
     s = sk.sketch_on_face(box, face=face,
-                          entities=[{"kind": "circle", "r": 4}])
-    boss = sk.extrude_sketch(s, amount=4.0)              # out into the air
-    pocket = sk.extrude_sketch(s, amount=4.0, flip=True)  # into the material
-    assert (box + boss).volume > box.volume + 100    # boss added material
-    assert (box - pocket).volume < box.volume - 100  # pocket removed material
+                          entities=[{"kind": "rectangle", "w": 6, "h": 4,
+                                     "x": 10, "y": 8}])
+    local = pl.to_local_coords(s.center())
+    assert (local.X, local.Y) == pytest.approx((10, 8), abs=1e-6),         f"{face} moved the entity to ({local.X:.2f}, {local.Y:.2f})"
+
+
+@pytest.mark.parametrize("face,axis", [("top", "z"), ("bottom", "z"),
+                                       ("+x", "x"), ("-x", "x"),
+                                       ("front", "y"), ("back", "y")])
+def test_offset_runs_along_the_canonical_axis(face, axis):
+    """`offset` moves along the principal plane's normal (+Z for a Z-facing
+    face, +X for X, -Y for Y) — the same direction a `plane:` sketch's offset
+    moves, whichever side of the part the face is on."""
+    box = blocks.plate(40, 30, 12)
+    pl = sk.face_sketch_plane(sk.named_face(box, face))
+    want = {"z": (0, 0, 1), "x": (1, 0, 0), "y": (0, -1, 0)}[axis]
+    assert (pl.z_dir.X, pl.z_dir.Y, pl.z_dir.Z) == pytest.approx(want, abs=1e-6)
+    at = sk.sketch_on_face(box, face=face,
+                           entities=[{"kind": "circle", "r": 4}]).center()
+    moved = sk.sketch_on_face(box, face=face, offset=3.0,
+                              entities=[{"kind": "circle", "r": 4}]).center()
+    delta = (moved.X - at.X, moved.Y - at.Y, moved.Z - at.Z)
+    assert delta == pytest.approx(tuple(3.0 * w for w in want), abs=1e-6)
+
+
+def test_into_the_material_is_opposite_on_the_two_faces():
+    """The cost of a non-mirroring frame, stated as a test so nobody has to
+    rediscover it: a top-face pocket cuts with flip, a bottom-face one without.
+    Both remove material; neither is ambiguous."""
+    box = blocks.plate(40, 30, 12)                 # spans z -6 .. +6
+    top = sk.sketch_on_face(box, face="top", entities=[{"kind": "circle", "r": 4}])
+    bot = sk.sketch_on_face(box, face="bottom", entities=[{"kind": "circle", "r": 4}])
+    assert sk.extrude_sketch(top, amount=3, flip=True).bounding_box().min.Z         == pytest.approx(6.0 - 3.0, abs=1e-6)      # from the top face, down 3
+    assert sk.extrude_sketch(bot, amount=3).bounding_box().max.Z         == pytest.approx(-6.0 + 3.0, abs=1e-6)     # from the bottom face, up 3
+    for solid in (sk.extrude_sketch(top, amount=3, flip=True),
+                  sk.extrude_sketch(bot, amount=3)):
+        assert (box - solid).volume < box.volume - 100
+
+
+def test_a_bottom_face_offset_IS_a_height_above_the_bottom():
+    """Why the esp32 cavity hangs off the bottom face: offset 3 means "leave a
+    3mm floor", and it stays 3mm when the stock thickness changes."""
+    for thickness, want_z in ((12.0, 3.0), (10.0, 3.0), (20.0, 3.0)):
+        plate = blocks.plate(40, 30, thickness)    # bottom at -thickness/2
+        s = sk.sketch_on_face(plate, face="bottom", offset=3.0,
+                              entities=[{"kind": "circle", "r": 4}])
+        above_bottom = s.center().Z - (-thickness / 2)
+        assert above_bottom == pytest.approx(want_z, abs=1e-6), thickness
 
 
 def test_through_cut_from_a_named_face_clears_the_part():
@@ -236,3 +271,72 @@ def test_the_authoring_prompt_teaches_the_method():
     assert "face" in [pp["name"] for pp in cat["sketch_on_face"]["params"]]
     assert "offset" in [pp["name"] for pp in cat["sketch_on_face"]["params"]]
     assert "flip" in [pp["name"] for pp in cat["extrude"]["params"]]
+
+
+# ---------------------------------------------------------------------------
+# the frame a face sketch draws in — world-aligned, and it must NOT drift
+# ---------------------------------------------------------------------------
+
+def test_face_frame_reproduces_the_principal_planes():
+    """A sketch on the top face of a T-thick plate must be the same frame as
+    `plane: "XY", offset: T`. That equivalence is what makes stating a depth
+    from a face a safe substitute for an absolute Z rather than a new
+    coordinate system to learn."""
+    from build123d import Plane
+    box = blocks.plate(40, 30, 12)
+    for name, want in (("top", Plane.XY), ("+x", Plane.YZ), ("front", Plane.XZ)):
+        pl = sk.face_sketch_plane(sk.named_face(box, name))
+        for axis in ("x_dir", "y_dir", "z_dir"):
+            assert getattr(pl, axis).dot(getattr(want, axis)) == pytest.approx(
+                1.0, abs=1e-9), f"{name}.{axis}"
+
+
+def test_a_top_face_sketch_equals_a_plane_sketch_at_that_height():
+    box = blocks.plate(40, 30, 12)               # top at z=+6
+    ents = [{"kind": "circle", "r": 4, "x": -11, "y": 7}]
+    on_face = sk.sketch_on_face(box, face="top", entities=ents)
+    on_plane = sk.make_sketch("XY", 6.0, ents)
+    for a, b in zip(tuple(on_face.center()), tuple(on_plane.center())):
+        assert a == pytest.approx(b, abs=1e-6)
+
+
+def test_the_face_frame_does_not_follow_the_face_CENTROID():
+    """build123d's Plane(face) origin IS the centroid, and the top face of a
+    shell is the rim minus every pocket cut so far — so a centroid-based frame
+    would shift every entity on it whenever an upstream feature changed."""
+    prof = sk.make_sketch("XY", 0, [{"kind": "rectangle", "w": 60, "h": 40,
+                                     "x": 0, "y": 30}])
+    body = sk.extrude_sketch(prof, amount=12)
+    at_origin = lambda solid: sk.sketch_on_face(
+        solid, face="top", entities=[{"kind": "circle", "r": 3}]).center()
+
+    before = at_origin(body)
+    assert (before.X, before.Y, before.Z) == pytest.approx((0, 0, 12), abs=1e-6)
+
+    # a lopsided pocket drags the top face's centroid a long way
+    tool = sk.extrude_sketch(sk.sketch_on_face(
+        body, face="top",
+        entities=[{"kind": "rectangle", "w": 40, "h": 10, "x": 0, "y": 42}]),
+        amount=3, flip=True)
+    cut = body - tool
+    moved = sk.named_face(cut, "top").center()
+    assert moved.Y != pytest.approx(30, abs=0.5)      # the centroid DID move
+
+    after = at_origin(cut)                            # the frame did not
+    assert (after.X, after.Y, after.Z) == pytest.approx((0, 0, 12), abs=1e-6)
+
+
+def test_the_ui_frame_and_the_geometry_agree():
+    """/api/face-outline hands the sketcher the frame it draws in; if it ever
+    disagreed with the frame the geometry is built in, everything the user
+    drew would land somewhere else."""
+    box = blocks.plate(40, 30, 12)
+    out = sk.face_outline_2d(box, [0, 0, 6], [0, 0, 1])
+    assert out["planar"]
+    pl = sk.face_sketch_plane(sk.named_face(box, "top"))
+    assert out["frame"]["origin"] == [pytest.approx(v, abs=1e-4)
+                                      for v in (pl.origin.X, pl.origin.Y,
+                                                pl.origin.Z)]
+    assert out["frame"]["x_dir"] == [pytest.approx(v, abs=1e-4)
+                                     for v in (pl.x_dir.X, pl.x_dir.Y,
+                                               pl.x_dir.Z)]

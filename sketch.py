@@ -280,18 +280,31 @@ def named_face(solid, name: str, align_tol: float = 0.001):
             f"{sorted(set(FACE_DIRS))}, or give face_center/face_normal from "
             f"an actual pick")
     dx, dy, dz = FACE_DIRS[key]
-    best, best_reach = None, None
-    for f in solid.faces():
-        pl = face_plane(f)
-        if pl is None:
-            continue                       # genuinely curved: not sketchable
-        n = pl.z_dir
-        if n.X * dx + n.Y * dy + n.Z * dz < 1.0 - align_tol:
-            continue                       # not facing this way
-        c = f.center()
-        reach = c.X * dx + c.Y * dy + c.Z * dz
-        if best_reach is None or reach > best_reach:
-            best, best_reach = f, reach
+
+    def scan(faces):
+        best, best_reach = None, None
+        for f in faces:
+            pl = face_plane(f)
+            if pl is None:
+                continue                   # genuinely curved: not sketchable
+            n = pl.z_dir
+            if n.X * dx + n.Y * dy + n.Z * dz < 1.0 - align_tol:
+                continue                   # not facing this way
+            c = f.center()
+            reach = c.X * dx + c.Y * dy + c.Z * dz
+            if best_reach is None or reach > best_reach:
+                best, best_reach = f, reach
+        return best
+
+    # Real parts carry hundreds of faces and this runs on every rebuild of
+    # every feature, so try the kernel-typed planes first — face_plane()'s
+    # 9-sample flatness probe only runs on the leftovers, and only when no
+    # honest PLANE points this way.
+    faces = solid.faces()
+    typed = [f for f in faces if f.geom_type == b3d.GeomType.PLANE]
+    best = scan(typed)
+    if best is None and len(typed) != len(faces):
+        best = scan([f for f in faces if f.geom_type != b3d.GeomType.PLANE])
     if best is None:
         raise ValueError(
             f"this solid has no flat face pointing '{name}' — pick a different "
@@ -366,6 +379,52 @@ def face_plane(face, ang_tol_deg: float = 1.0, dist_tol: float = 1e-2):
         return None
 
 
+def face_sketch_plane(face):
+    """The plane a sketch on `face` is drawn in. Returns None when the face is
+    genuinely curved.
+
+    A face supplies the plane's POSITION. Its ORIENTATION is always the part's
+    own — canonicalised to the principal plane of that axis (Z-facing -> XY,
+    X-facing -> YZ, Y-facing -> XZ), the same three frames the sketcher and
+    every `plane:` sketch already use. So `sketch_on_face` is exactly "a
+    principal-plane sketch positioned by a face", and an entity at (x, y) means
+    the same thing on every face of the part.
+
+    Two things this deliberately avoids:
+
+    * build123d's `Plane(face)` puts the origin at the face CENTROID. The top
+      face of a shell is the rim minus every pocket cut so far, so its centroid
+      MOVES whenever an upstream feature changes, dragging every entity with it.
+    * Following the face's OUTWARD normal (what this did first, 2026-08-27)
+      keeps one sign rule for "into the material" on every face, but a
+      right-handed frame with the normal pointing -Z must mirror an in-plane
+      axis: an entity authored at (10, 8) landed at world y = -8 on the bottom
+      face, and the esp32 cavity came out mirrored and non-manifold. Uniform
+      signs are not worth a silent mirror.
+
+    The cost is that "into the material" is no longer one sign everywhere: on a
+    top face it is a negative offset / `flip`, on a bottom face a positive
+    offset / no flip. The author knows which side they are on, and getting it
+    wrong cuts air — which fails loudly instead of quietly building the wrong
+    part."""
+    from build123d import Plane, Vector
+    pl = face_plane(face)
+    if pl is None:
+        return None
+    n = pl.z_dir
+    for frame in (Plane.XY, Plane.YZ, Plane.XZ):
+        if abs(n.dot(frame.z_dir)) > 0.9:        # this face's axis
+            k = frame.z_dir
+            return Plane(origin=k * k.dot(pl.origin),
+                         x_dir=frame.x_dir, z_dir=k)
+    # a genuinely oblique flat face (a tapered wall): no principal plane fits,
+    # so derive a stable frame from the normal itself
+    seed = next((c for c in (Vector(1, 0, 0), Vector(0, 1, 0), Vector(0, 0, 1))
+                 if abs(n.dot(c)) < 0.9), Vector(1, 0, 0))
+    return Plane(origin=n * n.dot(pl.origin),
+                 x_dir=(seed - n * n.dot(seed)).normalized(), z_dir=n)
+
+
 def face_outline_2d(solid, face_center: list, face_normal: list | None = None):
     """Project a picked PLANAR face's boundary into its own plane's local 2D
     coordinates — the outer wire plus any inner wires (holes). Returned in the
@@ -375,7 +434,7 @@ def face_outline_2d(solid, face_center: list, face_normal: list | None = None):
     -> {"outer": [[x,y],...], "holes": [[[x,y],...],...], "planar": bool}
     """
     face = resolve_face(solid, face_center, face_normal)
-    pl = face_plane(face)
+    pl = face_sketch_plane(face)                # the SKETCH frame, world-aligned
     if pl is None:                              # genuinely curved — can't project
         return {"outer": [], "holes": [], "planar": False}
 
@@ -436,7 +495,7 @@ def sketch_on_face(solid, face_center: list | None = None,
         raise ValueError(
             'sketch_on_face needs either face="top"/"bottom"/"+x"/... or a '
             'face_center from an actual pick')
-    pl = face_plane(picked)
+    pl = face_sketch_plane(picked)
     if pl is None:
         raise ValueError(
             f"sketch_on_face: the picked face is {picked.geom_type.name} and not "

@@ -745,6 +745,12 @@ def f(id, op, params, inputs=[]):
     F.append({"id": id, "op": op, "params": params, "inputs": inputs})
 
 
+# v11 — THE OFFSET METHOD (user mandate 2026-08-27: "first we design the base
+# and then only draw sketch on it"). The base body is built first and NOTHING
+# below it names an absolute Z again: every sketch sits on the shell's TOP FACE
+# (re-resolved by geometry on every rebuild) at an offset that IS the surface it
+# is cut from, and every cut states its own DEPTH. Change T and the part
+# follows; under the old tree all 27 sketch planes had to be re-derived by hand.
 f("outline_sketch", "sketch", {"plane": "XY", "offset": 0,
                                "entities": [outline_path(VERTS, RADII)]})
 # v6: no top-rim fillet — outer corners stay SQUARE (no chamfer tooling)
@@ -752,13 +758,91 @@ f("body", "extrude", {"amount": T}, ["outline_sketch"])
 
 prev = "body"
 
+# ---- depths: each measured from the surface the cutter starts on, so it is
+# the number a machinist would read off the part
+KEY_DEEP = T - KEYPAD[4]                # 2.0  recess below the top face
+TR_DEEP = KEYPAD[4] - TRENCH[4]         # 2.2  wire bed below the recess floor
+SCOOP_DEEP = KEYPAD[4] - SCOOP_T[4]     # 4.0  fold room below the pad seat
+CAV_DEEP = T - CAV_Z                    # 9.0  cavity below the top face
+SEAT_DEEP = CAV_Z - BATT_SEAT[4]        # 0.5  seats + slot boxes in its floor
+RING_DEEP = T - RING_Z                  # 0.6  pinstripe groove
+PILOT_DEEP = 4.0                        # screw pilots, from their own top
+# How far a bottom-referenced tool over-runs the top face. It has to clear the
+# stock, and it must NOT be `through`: a 2m cavity prism with island columns
+# subtracted out of it turns them into 400:1 blind holes and OCCT hands back a
+# non-manifold solid. Finite and generous is both safe and thickness-tolerant;
+# the gate below refuses any T it would not clear.
+TOOL_OVER = 4.0
 
-def pocket(name, z, ents, top=None):
+# v12 datum gates. The bottom-referenced tools over-run the top by a FINITE
+# amount, so the stock has to sit inside their reach, and every floor-measured
+# height has to fit under it with real material left.
+assert CAV_Z + CAV_DEEP + TOOL_OVER > T + 1.0, (
+    f"a {T}mm stock is not cleared by the cavity tool "
+    f"(reaches z{CAV_Z + CAV_DEEP + TOOL_OVER}) — raise TOOL_OVER")
+for _nm, _h in (("ESP pillar", ESP_TOP), ("SD pillar", SD_TOP),
+                ("OLED pillar", OLED_TOP), ("battery rim", RIM_TOP)):
+    assert _h < T, f"{_nm} top z{_h} is above the {T}mm stock"
+    assert _h > CAV_Z + 1.0, f"{_nm} stands only {_h - CAV_Z} above the floor"
+assert CAV_Z - SEAT_DEEP >= 2.0, (
+    f"the seats leave only {CAV_Z - SEAT_DEEP}mm of floor — thicken CAV_Z")
+
+# ---- surfaces in the TOP face, as offsets from it (negative = into the
+# material). `at=RECESS_FLR` then reads "cut from the keypad recess floor".
+TOP_FACE = 0.0
+RECESS_FLR = -KEY_DEEP                  # keypad recess floor
+TRENCH_FLR = RECESS_FLR - TR_DEEP       # wire-bed floor
+
+
+# Which datum a feature hangs off is a real engineering choice (v12).
+# Measured from the TOP, the cavity keeps its 9mm DEPTH and eats the floor when
+# the stock gets thinner (T=10 gave a 1.0mm floor, 0.5mm under the seats).
+# Measured from the BOTTOM it keeps its FLOOR and gets shallower — which is what
+# the part actually needs. Same rule for the pillars: their job is a standoff
+# above the floor, not a distance below the lid.
+#
+# A face sketch is drawn in the part's own frame (Plane.XY for both the top and
+# the bottom face), so a bottom-face `offset` is simply the HEIGHT above the
+# bottom, and `flip` says which way the cutter goes from there.
+
+
+def pocket(name, depth, ents, at=TOP_FACE):
+    """Cut `depth` mm into the body, starting on the surface `at` mm from the
+    shell's TOP face. No overshoot fudge: the tool starts exactly ON the
+    surface it cuts, so `depth` is the depth and nothing else."""
     global prev
-    f(f"{name}_sketch", "sketch", {"plane": "XY", "offset": z,
-                                   "entities": ents})
-    amt = (T + 1 if top is None else top) - z
-    f(f"{name}_tool", "extrude", {"amount": round(amt, 3)}, [f"{name}_sketch"])
+    f(f"{name}_sketch", "sketch_on_face",
+      {"face": "top", "offset": round(at, 3), "entities": ents}, [prev])
+    f(f"{name}_tool", "extrude",
+      {"amount": round(depth, 3), "flip": True}, [f"{name}_sketch"])
+    f(name, "cut", {}, [prev, f"{name}_tool"])
+    prev = name
+
+
+def floor_pocket(name, depth, ents, height):
+    """Cut `depth` mm DOWNWARD from the plane `height` mm above the BOTTOM
+    face — seats and pilot holes, whose height above the floor is the point."""
+    global prev
+    f(f"{name}_sketch", "sketch_on_face",
+      {"face": "bottom", "offset": round(height, 3), "entities": ents}, [prev])
+    f(f"{name}_tool", "extrude",
+      {"amount": round(depth, 3), "flip": True}, [f"{name}_sketch"])
+    f(name, "cut", {}, [prev, f"{name}_tool"])
+    prev = name
+
+
+def trim(name, ents, height, nominal):
+    """Remove EVERYTHING above the plane `height` mm above the BOTTOM face.
+
+    through=True is what makes the height hold at any stock thickness — and it
+    runs UP, out of the top of the part, so it can never breach the floor (a
+    through hole would let go of the vacuum table). `nominal` is the distance
+    it would travel with through unticked; through ignores it."""
+    global prev
+    f(f"{name}_sketch", "sketch_on_face",
+      {"face": "bottom", "offset": round(height, 3), "entities": ents}, [prev])
+    f(f"{name}_tool", "extrude",
+      {"amount": round(nominal, 3), "through": True}, [f"{name}_sketch"])
     f(name, "cut", {}, [prev, f"{name}_tool"])
     prev = name
 
@@ -774,21 +858,28 @@ KEY_PATH = flared_path(KEYPAD[0], KEYPAD[1], KEYPAD[2], CAV_Y0,
                        KEYPAD[5], KEY_FLARE)
 TR_PATH = flared_path(TRENCH[0], TRENCH[1], TRENCH[2], CAV_Y0,
                       TRENCH[5], TR_FLARE)
-pocket("keypad_recess", KEYPAD[4], [path_from_segs(*KEY_PATH)])
-pocket("keypad_pilots", KEYPAD[4] - 4.0,
-       [circ(x, y, KEY_HOLE_R) for x, y in KEY_HOLES], top=KEYPAD[4] + 0.5)
-pocket("tail_trench", TRENCH[4], [path_from_segs(*TR_PATH)])
+pocket("keypad_recess", KEY_DEEP, [path_from_segs(*KEY_PATH)])
+pocket("keypad_pilots", PILOT_DEEP,
+       [circ(x, y, KEY_HOLE_R) for x, y in KEY_HOLES], at=RECESS_FLR)
+pocket("tail_trench", TR_DEEP, [path_from_segs(*TR_PATH)], at=RECESS_FLR)
 # the name, engraved into the slot floor only (the cutter spans just the
 # 0.8 below that floor, so nothing above the slot is touched)
 for _i, _batch in enumerate(LOGO_BATCHES):
-    pocket(f"logo_{_i}", round(TRENCH[4] - LOGO_DEEP, 3), _batch,
-           top=round(TRENCH[4] + 0.2, 3))
-pocket("tail_fold_scoop", SCOOP_T[4], [rr(SCOOP_T)])
+    pocket(f"logo_{_i}", LOGO_DEEP, _batch, at=TRENCH_FLR)
+# the scoop is referenced to the PAD SEAT, not to the trench floor it sits
+# in: its r2 corners hang outside the trench's wider r3 corners, so two
+# lens-shaped bits of it are cut from the recess floor instead. Stating it
+# from the trench floor left those 2.2mm shallow (4.4mm3 of the part) --
+# a reference is only right if it holds under the WHOLE footprint.
+pocket("tail_fold_scoop", SCOOP_DEEP, [rr(SCOOP_T)], at=RECESS_FLR)
 
 # ---- first cut: the weight-reduction cavity, islands left standing
-f("cav_sketch", "sketch", {"plane": "XY", "offset": CAV_Z,
-                           "entities": [outline_path(*cavity_geo())]})
-f("cav_tool", "extrude", {"amount": T - CAV_Z + 1}, ["cav_sketch"])
+# the cavity is "leave a CAV_Z floor", not "go 9 deep" -> bottom datum, and
+# it over-runs the top face so it always opens whatever T is
+f("cav_sketch", "sketch_on_face", {"face": "bottom", "offset": CAV_Z,
+                                   "entities": [outline_path(*cavity_geo())]},
+  [prev])
+f("cav_tool", "extrude", {"amount": CAV_DEEP + TOOL_OVER}, ["cav_sketch"])
 
 isl1 = ([rrect(*t) for t in BATT_RIMS]
         + [circ(x, y, ESP_PIL_R) for x, y in ESP_HOLES]
@@ -796,65 +887,81 @@ isl1 = ([rrect(*t) for t in BATT_RIMS]
 isl2 = ([circ(x, y, OLED_PIL_R) for x, y in OLED_HOLES]
         + [circ(x, y, BUZZ_PIL_R) for x, y in BUZZ_PIL]
         + [circ(x, y, LORA_PIL_R) for x, y in LORA_PIL])
-f("isl1_sketch", "sketch", {"plane": "XY", "offset": CAV_Z - 1,
-                            "entities": isl1})
-f("isl1_tool", "extrude", {"amount": T - CAV_Z + 3}, ["isl1_sketch"])
-f("isl2_sketch", "sketch", {"plane": "XY", "offset": CAV_Z - 1,
-                            "entities": isl2})
-f("isl2_tool", "extrude", {"amount": T - CAV_Z + 3}, ["isl2_sketch"])
+# The island tools must CONTAIN the cavity tool in z at BOTH ends -- 1mm below
+# its floor and 2mm past its top -- so the columns punch clean THROUGH it. Get
+# that wrong and the subtraction leaves capped blind holes instead of
+# through-holes, which is exactly how v12 first came out non-manifold.
+f("isl1_sketch", "sketch_on_face", {"face": "bottom", "offset": CAV_Z - 1,
+                                    "entities": isl1}, [prev])
+f("isl1_tool", "extrude", {"amount": CAV_DEEP + TOOL_OVER + 3}, ["isl1_sketch"])
+f("isl2_sketch", "sketch_on_face", {"face": "bottom", "offset": CAV_Z - 1,
+                                    "entities": isl2}, [prev])
+f("isl2_tool", "extrude", {"amount": CAV_DEEP + TOOL_OVER + 3}, ["isl2_sketch"])
 f("cav_neg", "cut", {}, ["cav_tool", "isl1_tool", "isl2_tool"])
 f("main_cavity", "cut", {}, [prev, "cav_neg"])
 prev = "main_cavity"
 
 # ---- trim the islands to their working heights (oversized tools)
-pocket("esp_pillar_trim", ESP_TOP,
-       [circ(x, y, ESP_PIL_R + 1.0) for x, y in ESP_HOLES])
-pocket("batt_rim_trim", RIM_TOP,
-       [rrect(x0 - 1, x1 + 1, y0 - 0.5, y1 + 0.5, r)
-        for x0, x1, y0, y1, r in BATT_RIMS])
-pocket("sd_pillar_trim", SD_TOP,
-       [circ(x, y, SD_PIL_R + 1.0) for x, y in SD_HOLES])
-pocket("oled_pillar_trim", OLED_TOP,
-       [circ(x, y, OLED_PIL_R + 1.0) for x, y in OLED_HOLES])
+# a pillar top is a STANDOFF above the cavity floor (ESP/SD 4.0, OLED 6.5,
+# battery rims 6.0), so it hangs off the bottom datum and holds when T changes
+trim("esp_pillar_trim", [circ(x, y, ESP_PIL_R + 1.0) for x, y in ESP_HOLES],
+     ESP_TOP, T - ESP_TOP)
+trim("batt_rim_trim", [rrect(x0 - 1, x1 + 1, y0 - 0.5, y1 + 0.5, r)
+                       for x0, x1, y0, y1, r in BATT_RIMS],
+     RIM_TOP, T - RIM_TOP)
+trim("sd_pillar_trim", [circ(x, y, SD_PIL_R + 1.0) for x, y in SD_HOLES],
+     SD_TOP, T - SD_TOP)
+trim("oled_pillar_trim", [circ(x, y, OLED_PIL_R + 1.0) for x, y in OLED_HOLES],
+     OLED_TOP, T - OLED_TOP)
 # buzzer clamp pillars stay full height (z12)
 
 # ---- locating seats (0.5 deep spots in the cavity floor)
-pocket("batt_seat", BATT_SEAT[4], [rr(BATT_SEAT)], top=CAV_Z + 0.5)
-pocket("buzzer_seat", 2.5, [circ(BUZZ[0], BUZZ[1], BUZZ[2])], top=CAV_Z + 0.5)
+floor_pocket("batt_seat", SEAT_DEEP, [rr(BATT_SEAT)], CAV_Z)
+floor_pocket("buzzer_seat", SEAT_DEEP, [circ(BUZZ[0], BUZZ[1], BUZZ[2])],
+             CAV_Z)
 
 # ---- footprint slot boxes: every component outline visible in the block,
 # 0.5 deep around the pillars (subtracted collars keep the bases intact)
-pocket("esp_foot", ESP_FOOT[4],
-       [scalloped_box(ESP_FOOT, ESP_HOLES, SCAL_ESP)], top=CAV_Z + 0.5)
-pocket("oled_foot", OLED_FOOT[4],
-       [scalloped_box(OLED_FOOT, OLED_HOLES, SCAL_OLED)], top=CAV_Z + 0.5)
-pocket("sd_foot", SD_FOOT[4],
-       [scalloped_box(SD_FOOT, SD_HOLES, SCAL_SD)], top=CAV_Z + 0.5)
+floor_pocket("esp_foot", SEAT_DEEP,
+             [scalloped_box(ESP_FOOT, ESP_HOLES, SCAL_ESP)], CAV_Z)
+floor_pocket("oled_foot", SEAT_DEEP,
+             [scalloped_box(OLED_FOOT, OLED_HOLES, SCAL_OLED)], CAV_Z)
+floor_pocket("sd_foot", SEAT_DEEP,
+             [scalloped_box(SD_FOOT, SD_HOLES, SCAL_SD)], CAV_Z)
 # LoRa clamp pillars stand fully OUTSIDE this box -> plain smooth rrect
-pocket("lora_foot", LORA_FOOT[4], [rr(LORA_FOOT)], top=CAV_Z + 0.5)
+floor_pocket("lora_foot", SEAT_DEEP, [rr(LORA_FOOT)], CAV_Z)
 
 # ---- screw pilot pipes
-pocket("esp_pilots", CAV_Z,
-       [circ(x, y, ESP_HOLE_R) for x, y in ESP_HOLES], top=ESP_TOP + 0.5)
-pocket("sd_pilots", CAV_Z,
-       [circ(x, y, SD_HOLE_R) for x, y in SD_HOLES], top=SD_TOP + 0.5)
-pocket("oled_pilots", OLED_TOP - 4.0,
-       [circ(x, y, OLED_HOLE_R) for x, y in OLED_HOLES], top=OLED_TOP + 0.5)
-pocket("clamp_pilots", T - 5.0,
+# each pilot is drilled DOWN from its own pillar top; the ESP + SD ones
+# bottom out ON the cavity floor, so their depth is the standoff itself --
+# and every one stays BLIND (vacuum table: no through holes)
+floor_pocket("esp_pilots", ESP_TOP - CAV_Z,
+             [circ(x, y, ESP_HOLE_R) for x, y in ESP_HOLES], ESP_TOP)
+floor_pocket("sd_pilots", SD_TOP - CAV_Z,
+             [circ(x, y, SD_HOLE_R) for x, y in SD_HOLES], SD_TOP)
+floor_pocket("oled_pilots", PILOT_DEEP,
+             [circ(x, y, OLED_HOLE_R) for x, y in OLED_HOLES], OLED_TOP)
+# the buzzer + LoRa clamp pillars stand full height, so their tops ARE the
+# top face
+pocket("clamp_pilots", 5.0,
        [circ(x, y, BUZZ_HOLE_R) for x, y in BUZZ_PIL]
-       + [circ(x, y, LORA_HOLE_R) for x, y in LORA_PIL], top=T + 0.5)
-pocket("strap_pilots", RIM_TOP - 4.0,
-       [circ(x, y, STRAP_R) for x, y in STRAP], top=RIM_TOP + 0.5)
+       + [circ(x, y, LORA_HOLE_R) for x, y in LORA_PIL], at=TOP_FACE)
+floor_pocket("strap_pilots", PILOT_DEEP,
+             [circ(x, y, STRAP_R) for x, y in STRAP], RIM_TOP)
 
 # ---- rim pinstripe: (outline-3.0 minus outline-4.2) band, 0.6 deep
-f("ringA_sketch", "sketch", {"plane": "XY", "offset": RING_Z, "entities":
-  [outline_path(offset_verts(VERTS, RING_D1),
-                [r - RING_D1 for r in RADII])]})
-f("ringA_tool", "extrude", {"amount": 1.3}, ["ringA_sketch"])
-f("ringB_sketch", "sketch", {"plane": "XY", "offset": RING_Z - 0.1,
+f("ringA_sketch", "sketch_on_face", {"face": "top", "offset": TOP_FACE,
+  "entities": [outline_path(offset_verts(VERTS, RING_D1),
+                            [r - RING_D1 for r in RADII])]}, [prev])
+f("ringA_tool", "extrude", {"amount": RING_DEEP, "flip": True},
+  ["ringA_sketch"])
+# ringB is the groove's inner wall: 0.1 proud of the face and 0.1 past
+# ringA's floor, so the band boolean never meets a coincident face
+f("ringB_sketch", "sketch_on_face", {"face": "top", "offset": 0.1,
   "entities": [outline_path(offset_verts(VERTS, RING_D2),
-                            [r - RING_D2 for r in RADII])]})
-f("ringB_tool", "extrude", {"amount": 1.6}, ["ringB_sketch"])
+                            [r - RING_D2 for r in RADII])]}, [prev])
+f("ringB_tool", "extrude", {"amount": RING_DEEP + 0.2, "flip": True},
+  ["ringB_sketch"])
 f("ring_band", "cut", {}, ["ringA_tool", "ringB_tool"])
 f("esp32_remote", "cut", {}, [prev, "ring_band"])
 

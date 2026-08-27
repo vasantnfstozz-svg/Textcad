@@ -84,14 +84,37 @@ def test_the_flag_takes_the_usual_loose_boolean_strings():
 @pytest.mark.parametrize("amount", [4, 2, 0.5])
 def test_a_short_trim_is_now_healed_instead_of_severing(amount):
     """This used to assert the bug reproduced (5 pieces). It is now fixed
-    automatically: the design has no `through` key, so nobody has decided, and
-    the healer proves through-all is the cure before applying it."""
+    automatically: with no `through` key nobody has decided, and the healer
+    proves through-all is the cure before applying it.
+
+    The key is popped explicitly because v12 of the design (the offset method,
+    2026-08-27) DECLARES `through` on the trim — see the companion test below.
+    The healer is for script-generated trees that never set the flag, so the
+    test has to put it back in that situation."""
     d = fresh_remote()
+    d.get(TRIM).params.pop("through", None)         # nobody has decided
+    d._mark_stale()
     d.edit(TRIM, "amount", amount)
     d.rebuild()
     assert d._result_feature().pieces == 1, "the strand was not healed"
     assert d.get(TRIM).params.get("through") is True
     assert any("Extended" in w for w in d.warnings), d.warnings
+
+
+@pytest.mark.parametrize("amount", [4, 2, 0.5])
+def test_the_design_now_declares_through_instead_of_being_healed(amount):
+    """Better than being rescued: state the intent. The pillar trim is a
+    bottom-referenced cut that has to clear everything above the pillar top at
+    ANY stock thickness, so v12 authors `through` on it. No value the user
+    types into the distance can sever the part — which is the whole of the
+    user's report ("it should not create a new body") — and no heal is needed,
+    so no "Extended" warning fires."""
+    d = fresh_remote()
+    assert d.get(TRIM).params.get("through") is True,         "the trim should declare through-all, not rely on the healer"
+    d.edit(TRIM, "amount", amount)
+    d.rebuild()
+    assert d._result_feature().pieces == 1
+    assert not any("Extended" in w for w in d.warnings), d.warnings
 
 
 @pytest.mark.parametrize("amount", [4, 2, 0.5])

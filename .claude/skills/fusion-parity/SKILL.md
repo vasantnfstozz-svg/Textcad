@@ -61,9 +61,25 @@ were each learned from a correction — do not regress them.
    2026-08-27).** Build the base body first, and every sketch after it is a
    `sketch_on_face` on the CURRENT body, naming its face
    (`face: "top"|"bottom"|"+x"|...`) with depth stated as an `offset` FROM
-   that face — negative into the material. `flip: true` always means INTO the
-   body, on every face; a cut wants `through: true` unless the depth is the
-   point. NEVER a `sketch` with a nonzero absolute offset once a body exists:
+   that face. A cut wants `through: true` unless the depth is the point.
+   Two hard-won corollaries:
+   * **A face gives the plane its POSITION, never its ORIENTATION.** The frame
+     is canonicalised to that axis's principal plane (Z-facing -> XY, X -> YZ,
+     Y -> XZ) so `(x, y)` means the same on every face. Deriving it from the
+     face's OUTWARD normal buys one sign rule for "into the material" and pays
+     with a silent MIRROR on any -Z/-X/+Y face (an entity at (10, 8) landed at
+     y = -8; the esp32 cavity came out mirrored and non-manifold). Consequence
+     to teach, not to fix: into the material is `flip` from a top face and
+     no-flip from a bottom one.
+   * **Pick the datum that carries the invariant.** Top face for features OF
+     the top surface; BOTTOM face for anything that must survive a thickness
+     change — a cavity is "leave a 3mm floor" (`face:"bottom", offset:3`), not
+     "9mm deep", and a screw boss is "4mm of standoff above the floor". Get it
+     backwards and thinning the stock eats the floor (esp32 at T=10: a 1.0mm
+     floor, 0.5mm under the seats). To clear everything above such a plane use
+     `through: true` with no flip — it runs up and out of the top, so it can
+     never breach the floor.
+   NEVER a `sketch` with a nonzero absolute offset once a body exists:
    that hardcodes the base thickness, so changing it strands every downstream
    feature (251 of the 274 sketches authored before this rule did exactly
    that — the user: "the way you are drawing is not good for editing, people

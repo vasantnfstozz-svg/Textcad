@@ -66,12 +66,14 @@ OP_NOTES = {
               "along its normal (mm).",
     "sketch_on_face": 'Sketch on a face of an existing body — the offset method. '
                       'Say WHICH face by name: face="top"|"bottom"|"+x"|"-x"|'
-                      '"+y"|"-y" (never compute a face_center yourself). '
-                      'offset shifts the plane along that FACE OUTWARD '
-                      'normal: NEGATIVE goes INTO the material (offset -3 = '
-                      '3mm below the top face), positive out into the air. '
-                      'The face is re-resolved every rebuild, so the sketch '
-                      'RIDES the face when upstream dimensions change.',
+                      '"+y"|"-y" (never compute a face_center yourself). The '
+                      'face gives the plane its POSITION only; x/y always mean '
+                      'what they mean in a plane sketch, on every face. offset '
+                      'moves the plane along +Z (Z-facing faces), +X (X-facing) '
+                      'or -Y (Y-facing): from the TOP face offset -3 is 3mm '
+                      'below it, from the BOTTOM face offset 3 IS 3mm above the '
+                      'bottom. The face is re-resolved every rebuild, so the '
+                      'sketch RIDES it when upstream dimensions change.',
     "import_stl": "Imports an EXISTING .stl file (UI upload or absolute path). "
                   "Only use when the user names a real file — NEVER invent a "
                   "filename. STL units read as mm; scale resizes on import.",
@@ -228,6 +230,10 @@ BASE FIRST, THEN SKETCH ON THE BASE — THE OFFSET METHOD
 2. EVERY sketch after the base is a "sketch_on_face" whose input is the
    CURRENT body (the newest solid — the latest cut/fuse result, not the raw
    base), naming its face: {{"face":"top","offset":0,"entities":[...]}}.
+   The face positions the plane; x/y in the entities mean exactly what they
+   mean in a plane sketch, on every face. offset moves the plane along +Z for
+   a top/bottom face (+X for +x/-x, -Y for front/back), and flip extrudes the
+   other way.
 3. State depth as a DEPTH FROM THAT FACE, never as an absolute Z:
    * pocket 3mm deep in the top   -> sketch_on_face face "top" offset 0,
      then extrude {{"amount":3,"flip":true}}, then cut
@@ -237,9 +243,18 @@ BASE FIRST, THEN SKETCH ON THE BASE — THE OFFSET METHOD
      then extrude {{"through":true,"flip":true}}, then cut
    * something starting partway in (a pilot hole in a 3mm recess floor) ->
      sketch_on_face face "top" offset -3, then extrude flip/through, cut
-   flip=true always means INTO the body, on EVERY face — top, bottom or a
-   side wall. A cut should use through=true unless the depth is the point;
-   a tool that stops inside material slices it and leaves loose pieces.
+   A cut should use through=true unless the depth is the point; a tool that
+   stops inside material slices it and leaves loose pieces.
+3b. PICK THE DATUM THAT CARRIES THE INVARIANT. Measure from the TOP face what
+   is a feature OF the top surface (a recess, an engraving, a groove). Measure
+   from the BOTTOM face what must survive a change of stock thickness — a
+   cavity is not "9mm deep", it is "leave a 3mm floor"; a boss the board bolts
+   to is not "5mm below the lid", it is "4mm of standoff above the floor". From
+   the bottom face the offset IS that height: {{"face":"bottom","offset":3}}.
+   Get this backwards and making the plate thinner eats the floor instead of
+   the cavity. To cut everything ABOVE such a plane, extrude from it with
+   {{"through":true}} and no flip: it runs up and out of the top, so it can
+   never breach the floor.
 4. NEVER write a "sketch" with a nonzero absolute offset once a body exists.
    That is the banned old habit: it hardcodes an absolute Z, so changing the
    base thickness leaves every feature floating at the wrong height and the
@@ -268,9 +283,10 @@ radius/sides, polygon points[[x,y]...], path {{"start":[x,y],"segments":[
 mode "add" or "subtract"; first must be add).
 A sketch_on_face has ONE input (the body) and params
 {{"face":"top|bottom|+x|-x|+y|-y","offset":mm,"entities":[...]}} — same
-entities, and offset is measured from that face (negative = into the
-material). Do NOT send face_center/face_normal; the named face is resolved
-from the real geometry at every rebuild.
+entities, and offset is measured from that face along the axis in rule 2
+(from "top" negative goes into the material; from "bottom" positive is the
+height above it). Do NOT send face_center/face_normal; the named face is
+resolved from the real geometry at every rebuild.
 extrude params {{"amount":mm,"flip":false,"through":false,"both":false}}; revolve {{"axis":"Z",
 "angle":360}} (draw the profile on XZ at positive X to revolve about Z). Sketch
 features have no volume — only the extrude/revolve/loft result is a solid.

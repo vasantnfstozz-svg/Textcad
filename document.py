@@ -782,7 +782,21 @@ class Document:
                                          else self._parts.get(other))
                 except Exception:
                     continue
-                if n_solids(trial) == base_pieces:
+                # The piece COUNT alone is not proof. Since the offset
+                # method (2026-08-27) cuts run DOWNWARD from a face, so
+                # through-all reaches 2m INTO the part instead of out of it --
+                # it drills clean through, which also lands on "1 piece" while
+                # destroying the part (and on a vacuum table a through hole
+                # breaks the job loose). So require that the heal removed only
+                # the STRANDED lumps: the healed volume must match the current
+                # volume minus everything that is not the main body.
+                cur = self._parts.get(f.id)
+                if cur is None:
+                    continue
+                lumps = sorted((sv.volume for sv in cur.solids()), reverse=True)
+                stranded = sum(lumps[1:])
+                want = cur.volume - stranded
+                if n_solids(trial) == base_pieces and                         trial.volume >= want - max(1e-6, 1e-9 * want):
                     t.params["through"] = True     # the design is now correct,
                     fixed.append(tid)              # not merely reported on
         if fixed:
