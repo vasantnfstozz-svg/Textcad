@@ -1314,6 +1314,30 @@ def measure_selection(req: MeasureReq):
                               req.b.model_dump() if req.b else None)
 
 
+def _revert_last() -> bool:
+    """Undo the snapshot this request pushed, without touching the redo stack.
+
+    Used when a measure-driven edit fails its own verification: the user asked
+    for a dimension and did not get it, so the design goes back exactly as it
+    was rather than being left mid-change. Deliberately NOT the /api/undo path,
+    because this was never a state the user chose to be in — offering to redo
+    into it would be offering to redo into a mistake."""
+    e = _entry()
+    if not e["history"]:
+        return False
+    data = e["history"].pop()
+    old = e["doc"]
+    try:
+        e["doc"] = Document.from_data(data)
+    except ValueError:
+        e["history"].append(data)      # put it back; better than losing it
+        return False
+    e["doc"]._cache = old._cache
+    e["doc"]._spec_cache = old._spec_cache
+    _rebuild_and_mesh()
+    return True
+
+
 @app.post("/api/measure/set")
 def measure_set(req: MeasureSetReq):
     """TYPE A DIMENSION AND THE MODEL FOLLOWS (the editable half of Measure).
@@ -1361,17 +1385,23 @@ def measure_set(req: MeasureSetReq):
            ("driver", "move", "requested", "param", "was") if k in plan}
     out.update({"achieved": achieved, "verified": ok})
     if not ok:
-        # the param changed but the dimension did not land where asked (a
-        # downstream feature overrode it, or the pick now resolves elsewhere)
+        # REVERT. The requested dimension is not what the model came out as, so
+        # the edit did something other than what was asked — most often because
+        # translating a profile that far pushes it outside the part and changes
+        # the topology. Leaving that behind with only a warning means handing
+        # the user a wrecked part and hoping they read the note, which is the
+        # opposite of this project's whole point. Put it back and say so.
+        why = ("the same pick now reads as "
+               f"{after.get('kind') or 'nothing measurable'} instead of "
+               f"{plan.get('kind')}"
+               if not same_kind else
+               f"the model came out at "
+               + (f"{achieved:g} mm" if achieved is not None else "something else"))
+        out["reverted"] = _revert_last()
         out["warning"] = (
-            "the edit was applied but could not be confirmed: the same pick "
-            f"now reads as {after.get('kind') or 'nothing measurable'}, not "
-            f"{plan.get('kind')} — click the geometry again to check it"
-            if not same_kind else
-            f"asked for {req.value:g} mm, the model now measures "
-            + (f"{achieved:g} mm" if achieved is not None
-               else "something else")
-            + " — the edit is on the undo stack")
+            f"asked for {req.value:g} mm but {why} — "
+            + ("nothing was changed" if out["reverted"] else
+               "the edit could not be undone automatically; press Ctrl+Z"))
     return {**out, **_doc_json()}
 
 

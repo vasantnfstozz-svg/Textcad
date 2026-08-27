@@ -301,3 +301,62 @@ def test_only_one_movable_side_still_works():
     measure.write(doc, plan)
     assert doc.rebuild(), doc.tree()
     assert doc.get("boss_sk").params["entities"][0]["x"] == pytest.approx(0.0)
+
+
+def test_a_move_that_wrecks_the_part_reverts_itself():
+    """User report 2026-08-27: "i tried to move the box … i chnages but, still
+    it was not moving".
+
+    Found by clicking every wall pair a user can reach from one iso view. From
+    a single view the two facing walls of a gap are never both visible, so the
+    natural pick is two walls pointing the SAME way — a step. Asking for a
+    small step there translates the whole profile far enough to leave the part,
+    which changes the topology: the old code wrote it, failed its own
+    verification, and left the wrecked part behind with only a warning.
+
+    A dimension the user asked for and did not get must put the design back."""
+    from fastapi.testclient import TestClient
+    import studio
+    studio.STATE = {"docs": {}, "active": None, "seq": 0}
+    c = TestClient(studio.app)
+    c.post("/api/new", json={"name": "revert-demo"})
+    for f in (
+        {"id": "outline", "op": "sketch",
+         "params": {"plane": "XY", "entities": [
+             {"kind": "rectangle", "mode": "add", "w": 80, "h": 60,
+              "x": 0, "y": 0}]}, "inputs": []},
+        {"id": "body", "op": "extrude", "params": {"amount": 12},
+         "inputs": ["outline"]},
+        {"id": "cav_sk", "op": "sketch_on_face",
+         "params": {"face": "top", "offset": 0, "entities": [
+             {"kind": "rectangle", "mode": "add", "w": 60, "h": 40,
+              "x": 0, "y": 0}]}, "inputs": ["body"]},
+        {"id": "cav_tool", "op": "extrude", "params": {"amount": -8},
+         "inputs": ["cav_sk"]},
+        {"id": "cavity", "op": "cut", "params": {},
+         "inputs": ["body", "cav_tool"]},
+    ):
+        out = c.post("/api/feature/add", json=f).json()
+        got = next(x for x in out["features"] if x["id"] == f["id"])
+        assert got["status"] == "ok", (f["id"], got["problems"])
+
+    model = c.get("/api/model").json()
+    body = model["bodies"][-1]
+    # the plate's -Y outer wall and the cavity's +Y wall BOTH point -Y, so they
+    # are a step of 50 mm — and both are visible from one iso view, which is
+    # exactly why a user picks them
+    ys = {round(f["center"][1], 1): f["id"] for f in body["faces"]
+          if f.get("normal") and abs(f["normal"][1] + 1) < 1e-6}
+    assert -30.0 in ys and 20.0 in ys, sorted(ys)
+
+    before = c.get("/api/doc").json()["features"]
+    r = c.post("/api/measure/set", json={
+        "a": {"body": body["id"], "kind": "face", "id": ys[-30.0]},
+        "b": {"body": body["id"], "kind": "face", "id": ys[20.0]},
+        "value": 5.0}).json()
+
+    assert r.get("verified") is False, r
+    assert r.get("reverted") is True, r
+    assert "nothing was changed" in r.get("warning", ""), r
+    assert c.get("/api/doc").json()["features"] == before, \
+        "a failed move left the design changed"

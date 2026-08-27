@@ -314,8 +314,17 @@ def _measure_two(a, b) -> dict:
                 # the common case, where this distance is the pocket DEPTH).
                 # Neither "thick" nor "apart" is true here — claiming material
                 # between two up-facing faces would be a confident lie.
+                # Say what this is NOT, because it is the pair a user picks by
+                # accident: from any one view the two faces that FACE each
+                # other are never both visible, so the natural two clicks land
+                # on two faces pointing the same way — giving the far side of
+                # the feature instead of the clearance in front of it. (User
+                # report 2026-08-27: "i tried to move the box … still it was
+                # not moving" — they had measured, and moved, the far wall.)
                 kind = "step"
-                rows = [["faces", "both point the same way — a step"]]
+                rows = [["faces", "both point the same way"],
+                        ["note", "a step, not a clearance — orbit and pick "
+                                 "the facing wall for the gap"]]
                 label = f"{dist:.2f} {MM} step"
             if md and abs(md[0] - dist) > 1e-6:
                 # faces that do not overlap in plan: the nearest points are at

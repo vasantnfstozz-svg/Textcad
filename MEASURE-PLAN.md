@@ -1,7 +1,41 @@
 # Measure & drive — development sheet
 
-> **Status: P0 + P1 + P2 shipped 2026-08-27** (50 new tests, each UI-verified
-> in a real browser). P3/P4 remain. Design agreed with the user 2026-08-27.
+> **Status: P0 + P1 + P2 shipped 2026-08-27** (54 new tests, each UI-verified
+> in a real browser), plus the first round of user feedback below. P3/P4
+> remain. Design agreed with the user 2026-08-27.
+
+## User feedback, round 1 (2026-08-27)
+
+> "i tried to move the box, in piller deomo, i chnages but, still it was not
+> moving, and, when i am clicking the sechond face, the selected first fase
+> color is vansiheg, it should be like that, also, i can see a and b in the
+> tab, but, when iam selecting first face, in top of that, a shoould appers in
+> design"
+
+Three faults, and the third explained the first.
+
+1. **Only one pick was ever highlighted.** The pick highlight is a single
+   transient object, so clicking B wiped A. Measure now paints its OWN
+   persistent overlay: A in cyan, B in amber, both lit until the pair changes.
+   While its panel is open it takes the highlight over entirely
+   (`setPickHighlightEnabled`) so the two never fight over one face.
+2. **A / B badges on the geometry**, riding their faces every frame like the
+   dimension label, in the same two colours — so the panel's labels and the
+   model are visibly the same two things.
+3. **"it was not moving" was a real measurement of the wrong pair.** From any
+   one view the two faces that FACE each other are never both visible, so the
+   natural two clicks land on two faces pointing the SAME way — the far side of
+   the pillar (a 25 mm step), not the 15 mm clearance in front of it. Asking
+   for a small number there translates the profile far enough to push it into
+   the wall, which changes the topology.
+
+   Three changes came out of that: the step readout now says *"a step, not a
+   clearance — orbit and pick the facing wall for the gap"*; a failed
+   verification now **reverts** instead of leaving a wrecked part behind with a
+   warning nobody reads (`_revert_last`); and every read-only measurement now
+   states its reason, because a number with no edit box and no explanation
+   reads as a broken tool (rule 7). Two of those were only visible because the
+   badges made the wrong selection obvious.
 
 ## The problem, in the user's words
 

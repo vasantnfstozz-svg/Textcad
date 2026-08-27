@@ -356,3 +356,20 @@ def test_dimension_line_anchors_on_the_smaller_face():
         f"line anchored at x={fx}, not on the pocket at x=15"
     assert r["from"][:2] == pytest.approx(r["to"][:2], abs=1e-6), \
         "a parallel-plane dimension must run along the normal"
+
+
+def test_a_step_says_it_is_not_a_clearance():
+    """From any one view the two faces that FACE each other are never both
+    visible, so the natural two clicks land on faces pointing the SAME way —
+    the far side of a feature, not the gap in front of it. The user measured
+    and then moved exactly that pair and reported "it was not moving", so the
+    readout has to name the difference instead of just saying "step"."""
+    doc = pocket_doc()
+    floor = find_face(doc, lambda f: abs(normal(f)[2] - 1) < 1e-9
+                      and abs(f.center().Z - 7) < 1e-6)
+    r = measure.measure(doc, sel(doc, "face", top_face(doc)),
+                        sel(doc, "face", floor))
+    assert r["kind"] == "step"
+    rows = dict(r["rows"])
+    assert "clearance" in rows.get("note", ""), rows
+    assert "facing" in rows.get("note", ""), rows

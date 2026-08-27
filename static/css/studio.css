@@ -585,8 +585,11 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 #measureDialog #meEdit button { background: var(--accent); color: #08111e;
   border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer;
   font: inherit; font-weight: 700; }
+/* This line started as a short "drives <param>" label and now also carries a
+   full sentence explaining why a dimension is read-only. Ellipsis-truncating a
+   reason is the same as not giving one, so it wraps. */
 #measureDialog #meDriver { color: var(--dim); font-size: 10.5px; margin-top: 4px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  line-height: 1.35; text-align: center; }
 
 /* Measure: which side moves (a derived distance has no single param) */
 #measureDialog #meSide { display: none; gap: 8px; margin-top: 5px;
@@ -595,3 +598,12 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 #measureDialog #meSide label { display: flex; align-items: center; gap: 3px;
   color: var(--text); cursor: pointer; }
 #measureDialog #meSide input { width: auto; margin: 0; cursor: pointer; }
+
+/* A / B badges pinned to the two Measure picks. Same two colours the overlay
+   paints the faces with, so panel label and geometry read as one thing. */
+.selbadge { position: absolute; transform: translate(-50%, -50%);
+  width: 20px; height: 20px; line-height: 18px; text-align: center;
+  border-radius: 50%; font-size: 12px; font-weight: 800;
+  pointer-events: none; z-index: 31; background: rgba(8, 17, 30, .9); }
+.selbadge.a { color: #6ee7ff; border: 2px solid #6ee7ff; }
+.selbadge.b { color: #ffb85c; border: 2px solid #ffb85c; }

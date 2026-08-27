@@ -279,6 +279,16 @@ export function initViewport() {
       return pickMode;
     },
     getPickMode: () => pickMode,
+    /* screen position of a world point — lets a test click where a USER
+       would click, instead of calling the raycast directly (which hides
+       whether the face is even visible from here) */
+    worldToScreen: (world) => {
+      const v = new THREE.Vector3(...world);
+      if (v.clone().project(camera).z > 1) return null;   // behind the camera
+      const s = toScreen(v);
+      const r = renderer.domElement.getBoundingClientRect();
+      return { x: s.x, y: s.y, cx: s.x - r.left, cy: s.y - r.top };
+    },
     pickAtWorld: (world) => {
       const rect = renderer.domElement.getBoundingClientRect();
       const v = new THREE.Vector3(...world).project(camera);
@@ -289,7 +299,8 @@ export function initViewport() {
   };
 
   (function animate() { requestAnimationFrame(animate);
-    controls.update(); paintDimLabel(); renderer.render(scene, camera); })();
+    controls.update(); paintDimLabel(); paintSelBadges();
+    renderer.render(scene, camera); })();
 
   document.getElementById('vFit').onclick = () => setView('iso');
   document.getElementById('vTop').onclick = () => setView('top');
@@ -1142,7 +1153,7 @@ export async function loadMesh(fit = false, force = false) {
     if (fit) { camera.updateProjectionMatrix(); setView('iso'); }
     return;
   }
-  clearHighlight(); clearPick();
+  clearHighlight(); clearPick(); clearSelectionOverlay();
   // A forced load means the whole document changed (a tab switch, an import,
   // an opened design): say so, because it is the one case where the wait is
   // long enough to look like nothing happened.
@@ -1260,6 +1271,96 @@ export async function showFeatureOverlay(fid) {
    is drawn between the witness points the backend actually used. */
 
 let dimOverlay = null;           // { group, from, to, text }
+
+/* ---------------- the A/B selection overlay (Measure) ----------------
+   A two-pick tool has to show BOTH picks. The normal pick highlight is a
+   single transient object, so clicking the second face wiped the first — the
+   user's own report: "when i am clicking the sechond face, the selected first
+   fase color is vansiheg". These stay lit until the pair changes, each in its
+   own colour with an A / B badge floating on it, so the labels in the panel and
+   the faces in the model are the same two things. */
+
+const SEL_COLORS = { A: 0x6ee7ff, B: 0xffb85c };   // cyan / amber
+let selOverlay = [];             // [{ group, centre, tag }]
+let pickHlOff = false;           // a tool is painting its own highlights
+
+/* Let a tool take over highlighting while its panel is open. */
+export function setPickHighlightEnabled(on) {
+  pickHlOff = !on;
+  if (pickHlOff) clearPickHighlight();
+}
+
+export function clearSelectionOverlay() {
+  for (const s of selOverlay) {
+    scene.remove(s.group);
+    s.group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  }
+  selOverlay = [];
+  for (const tag of ['A', 'B']) {
+    const el = document.getElementById('selBadge' + tag);
+    if (el) el.style.display = 'none';
+  }
+}
+
+/* picks = [{tag:'A'|'B', kind:'face'|'edge', id, body}] */
+export function showSelectionOverlay(picks) {
+  clearSelectionOverlay();
+  for (const p of picks || []) {
+    if (!p || p.id == null) continue;
+    const entry = bodyObjs.find(b => b.id === p.body) || bodyObjs[0];
+    if (!entry) continue;
+    const colour = SEL_COLORS[p.tag] || 0x6ee7ff;
+    const group = new THREE.Group();
+    let centre = null;
+    if (p.kind === 'face') {
+      const g = faceGeometry(entry.data, p.id);
+      if (!g) continue;
+      group.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+        color: colour, emissive: colour, emissiveIntensity: 0.25,
+        side: THREE.DoubleSide, transparent: true, opacity: 0.7,
+        depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 })));
+      const meta = (entry.data.faces || []).find(f => f.id === p.id);
+      if (meta && meta.center) centre = new THREE.Vector3(...meta.center);
+      else { g.computeBoundingSphere(); centre = g.boundingSphere.center.clone(); }
+    } else {
+      const e = (entry.data.edges || []).find(x => x.id === p.id);
+      if (!e) continue;
+      const g = new THREE.BufferGeometry().setFromPoints(
+        e.points.map(q => new THREE.Vector3(q[0], q[1], q[2])));
+      group.add(new THREE.Line(g, new THREE.LineBasicMaterial({
+        color: colour, linewidth: 3, depthTest: false })));
+      const mid = e.points[Math.floor(e.points.length / 2)];
+      centre = new THREE.Vector3(mid[0], mid[1], mid[2]);
+    }
+    group.renderOrder = 999;
+    group.traverse(o => { o.renderOrder = 999; });
+    scene.add(group);
+    selOverlay.push({ group, centre, tag: p.tag });
+  }
+  paintSelBadges();
+}
+
+/* the A / B badges ride their faces every frame, like the dimension label */
+function paintSelBadges() {
+  const seen = {};
+  for (const s of selOverlay) {
+    const el = document.getElementById('selBadge' + s.tag);
+    if (!el || !s.centre) continue;
+    seen[s.tag] = true;
+    if (s.centre.clone().project(camera).z > 1) { el.style.display = 'none'; continue; }
+    const p = toScreen(s.centre);
+    const r = renderer.domElement.getBoundingClientRect();
+    el.textContent = s.tag;
+    el.style.display = 'block';
+    el.style.left = (p.x - r.left) + 'px';
+    el.style.top = (p.y - r.top) + 'px';
+  }
+  for (const tag of ['A', 'B']) {
+    if (seen[tag]) continue;
+    const el = document.getElementById('selBadge' + tag);
+    if (el) el.style.display = 'none';
+  }
+}
 
 function dimEnd(p) {             // a small ball so a zero-length end still reads
   const s = new THREE.Mesh(
@@ -1404,10 +1505,11 @@ function selectProfile(sketchId, meshObj) {
   document.getElementById('pickInfo').appendChild(note);
 }
 
-function selectFace(fid, entry = null, hitPoint = null) {
-  clearPickHighlight();
-  const m = (entry ? entry.data : MODEL);
-  if (!m) return;
+/* The triangles of ONE face, as its own geometry. Factored out of selectFace so
+   the Measure overlay can light up two faces at once without duplicating the
+   faceId walk. */
+function faceGeometry(m, fid) {
+  if (!m) return null;
   const pos = m.positions, keep = [];
   for (let t = 0; t < m.indices.length; t += 3) {
     const a = m.indices[t];
@@ -1415,14 +1517,27 @@ function selectFace(fid, entry = null, hitPoint = null) {
       for (const vi of [m.indices[t], m.indices[t + 1], m.indices[t + 2]])
         keep.push(pos[vi * 3], pos[vi * 3 + 1], pos[vi * 3 + 2]);
   }
+  if (!keep.length) return null;
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(keep, 3));
   g.computeVertexNormals();
-  pickHl = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-    color: 0xffb85c, emissive: 0x8a5a1a, side: THREE.DoubleSide,
-    transparent: true, opacity: 0.75, depthWrite: false,
-    polygonOffset: true, polygonOffsetFactor: -3 }));
-  scene.add(pickHl);
+  return g;
+}
+
+function selectFace(fid, entry = null, hitPoint = null) {
+  clearPickHighlight();
+  const m = (entry ? entry.data : MODEL);
+  if (!m) return;
+  const g = faceGeometry(m, fid);
+  // A tool that owns the highlighting (Measure paints its own A and B) turns
+  // this off, so the two do not fight over the same face with two colours.
+  if (g && !pickHlOff) {
+    pickHl = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+      color: 0xffb85c, emissive: 0x8a5a1a, side: THREE.DoubleSide,
+      transparent: true, opacity: 0.75, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -3 }));
+    scene.add(pickHl);
+  }
   const info = m.faces.find(f => f.id === fid) || {};
   // FLAT is decided geometrically (info.planar), NOT by surface type — a taper/
   // loft wall can be dead flat yet typed BSPLINE, and must still be sketchable.

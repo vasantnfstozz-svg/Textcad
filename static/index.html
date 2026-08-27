@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=28">
+<link rel="stylesheet" href="/static/css/studio.css?v=30">
 </head>
 <body>
 
@@ -62,6 +62,10 @@
     <div id="pickInfo"></div>
     <!-- the Measure dimension's value, riding the midpoint of its line -->
     <div id="dimLabel" style="display:none"></div>
+    <!-- A / B badges on the picked faces, so the panel's labels and the
+         geometry are visibly the same two things -->
+    <div id="selBadgeA" class="selbadge a" style="display:none">A</div>
+    <div id="selBadgeB" class="selbadge b" style="display:none">B</div>
     <div id="placeHint" style="display:none"></div>
     <div id="placePopup" style="display:none"></div>
     <!-- sketch mode v2: the viewport IS the sketch editor (Fusion-style) -->
@@ -287,6 +291,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=106"></script>
+<script type="module" src="/static/js/main.js?v=110"></script>
 </body>
 </html>

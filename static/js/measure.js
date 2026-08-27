@@ -16,7 +16,9 @@
 import { bus } from './bus.js';
 import { postJSON } from './api.js';
 import { S } from './state.js';
-import { showDimension, clearDimension, loadMesh } from './viewport.js';
+import { showDimension, clearDimension, loadMesh,
+         showSelectionOverlay, clearSelectionOverlay,
+         setPickHighlightEnabled } from './viewport.js';
 
 // the two selections, in click order
 let A = null, B = null;
@@ -54,14 +56,17 @@ export function openMeasure() {
   panel().style.display = 'block';
   S.modalTool = 'Measure';
   S.modalToolPanel = 'measureDialog';
+  setPickHighlightEnabled(false);   // we paint A and B ourselves
   render();
   if (A) run();
 }
 
 export function cancelMeasure() {
   if (S.modalTool === 'Measure') { S.modalTool = null; S.modalToolPanel = null; }
-  A = null; B = null;
+  A = null; B = null; chosenSide = null;
   clearDimension();
+  clearSelectionOverlay();
+  setPickHighlightEnabled(true);    // hand the normal highlight back
   if (panel()) panel().style.display = 'none';
 }
 
@@ -171,7 +176,15 @@ function strip(sel) {
 
 /* ------------------------------------------------------------- rendering */
 
+function paintPicks() {
+  showSelectionOverlay([
+    A ? { tag: 'A', kind: A.kind, id: A.id, body: A.body } : null,
+    B ? { tag: 'B', kind: B.kind, id: B.id, body: B.body } : null,
+  ].filter(Boolean));
+}
+
 function render() {
+  paintPicks();
   el('meSelA').textContent = label(A);
   el('meSelB').textContent = label(B);
   el('meSelA').classList.toggle('empty', !A);
@@ -242,12 +255,15 @@ function showEdit(r) {
   const mv = r && r.move && !r.move.error ? r.move : null;
   if (!d && !mv) {
     row.style.display = 'none';
-    who.style.display = 'none';
     sideRow.style.display = 'none';
-    if (r && r.move && r.move.error) {
-      who.style.display = 'block';
-      who.textContent = r.move.error;
-    }
+    // FAILURES SPEAK (rule 7). A number with no box and no reason reads as a
+    // broken tool — the user is left wondering why they cannot type here. The
+    // backend gives a specific reason for a distance it cannot move; for
+    // everything else say what kind of read-only this is.
+    const why = (r && r.move && r.move.error) ? r.move.error
+                                              : readOnlyReason(r);
+    who.style.display = why ? 'block' : 'none';
+    who.textContent = why;
     return;
   }
   row.style.display = 'flex';
@@ -304,12 +320,33 @@ async function applyEdit() {
   // verification). It also clears the now-stale pick overlay, which was
   // contradicting the readout with the pre-edit radius.
   await loadMesh();
+  // loadMesh disposes every body, and the A/B overlay was built from the OLD
+  // ones — so re-light the same two picks against the new geometry. Without
+  // this the panel still listed A and B while the model showed neither, which
+  // is the same "my selection vanished" confusion the highlight fix removed.
+  paintPicks();
   // Repaint from the REBUILT geometry rather than assuming the write landed
   // where it was asked to (house rule 3). The backend verified it too; this is
   // what the user actually sees.
   await run();
   if (warn) note('⚠ ' + warn);         // after run(), which clears the note
   setTimeout(() => { mine = false; }, 0);
+}
+
+/* Why a measurement cannot be typed into, per kind. Never left blank. */
+const READ_ONLY = {
+  angle: 'read-only — an angle follows the faces that form it',
+  centres: 'read-only — set each hole’s position in its sketch',
+  length: 'read-only — an edge length follows the profile behind it',
+  area: 'read-only — a face area follows the profile behind it',
+  distance: 'read-only — these two picks are not a parallel pair',
+  diameter: 'read-only — no sketch circle drives this bore '
+            + '(a primitive, or an imported body)',
+};
+
+function readOnlyReason(r) {
+  if (!r || !r.kind) return '';
+  return READ_ONLY[r.kind] || 'read-only — no single parameter drives this';
 }
 
 const KIND_NAMES = {
