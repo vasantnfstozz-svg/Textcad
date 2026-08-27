@@ -692,6 +692,116 @@ DEPTH_ADVICE = ("this distance runs along the sketch's depth, not across its "
                 "instead of moving the profile")
 
 
+# ---------------------------------------------------------------------------
+# two faces of ONE entity: the distance IS one of its dimensions
+#
+# User report (2026-08-27, round 2): "i can measure the distance between two
+# seleted face, but the moving option is not working". They had picked the two
+# OPPOSITE WALLS of one box. Both walls belong to the same rectangle entity, so
+# the move path translated the whole box sideways — the box stayed 10 wide, the
+# verification failed, the edit reverted, and the tool read as broken. Moving
+# can never change a distance both of whose ends ride the same entity.
+#
+# But that distance IS a driven dimension: opposite walls of a rectangle are
+# exactly its `w` (or `h`). So this pair gets an exact edit box, like a
+# diameter, not a move.
+
+# which dimension key spans a given LOCAL direction, per entity kind. Only
+# kinds whose opposed flat walls correspond to one stored dimension belong
+# here — a polygon/path wall has no such single number.
+_DIM_BY_AXIS = {
+    "rectangle": {"x": ("w", "width"), "y": ("h", "height")},
+    # a slot's flat sides span its height; its ends are arcs, never planar
+    "slot": {"y": ("height", "height")},
+}
+
+
+def _entity_dim_for_direction(feat, ent_idx, plane, normal):
+    """(param key, display name) of the entity dimension spanning `normal`
+    (a world unit vector), or None.
+
+    The normal is mapped into the sketch plane and then UN-ROTATED by the
+    entity's own rotation, because sketch._entity rotates the shape about its
+    centre before placing it — a 90-degree rectangle's `w` runs along local Y.
+    Probed 2026-08-27: all eight walls of a straight and a rotated rectangle
+    map to the correct dimension."""
+    from build123d import Vector
+    try:
+        e = (feat.params or {})["entities"][ent_idx]
+    except (KeyError, IndexError, TypeError):
+        return None
+    table = _DIM_BY_AXIS.get(e.get("kind"))
+    if not table:
+        return None
+    try:
+        o = plane.to_local_coords(Vector(0, 0, 0))
+        v = plane.to_local_coords(Vector(*normal))
+    except Exception:
+        return None
+    lx, ly = v.X - o.X, v.Y - o.Y
+    r = math.radians(float(e.get("rotation", 0) or 0))
+    ux = lx * math.cos(r) + ly * math.sin(r)
+    uy = -lx * math.sin(r) + ly * math.cos(r)
+    axis = "x" if abs(abs(ux) - 1) < 1e-3 else \
+           "y" if abs(abs(uy) - 1) < 1e-3 else None
+    got = table.get(axis) if axis else None
+    if not got:
+        return None
+    key, name = got
+    if not isinstance(e.get(key), (int, float)):
+        return None
+    return key, name
+
+
+def resolve_pair_driver(doc, a_shape, b_shape, a_sel, b_sel, body_a, body_b,
+                        measured):
+    """When two parallel faces are opposite walls of ONE entity, the distance
+    between them is that entity's dimension — return it as a driver.
+
+    Returns {"driver": {...}} when the pair maps to a dimension,
+    {"blocked": reason} when the pair is same-entity but has no such dimension
+    (moving it would be a no-op, so the move path must not be offered either),
+    or None when the faces belong to different things (the move path applies).
+    """
+    pa, pb = _plane(a_shape), _plane(b_shape)
+    if not pa or not pb:
+        return None
+    (_ca, na), (_cb, nb) = pa, pb
+    if _dot(na, nb) > -1.0 + PARALLEL_TOL:
+        return None            # not opposed: not a width-like pair
+    ra = _face_role(doc, a_shape, a_sel, body_a)
+    rb = _face_role(doc, b_shape, b_sel, body_b)
+    if (not ra or not rb or ra["kind"] != "wall" or rb["kind"] != "wall"
+            or ra["feature"].id != rb["feature"].id
+            or ra["entity"] != rb["entity"]):
+        return None            # different owners: moving one side works
+    feat, idx, plane = ra["feature"], ra["entity"], ra["plane"]
+    got = _entity_dim_for_direction(feat, idx, plane, na)
+    kind = (feat.params or {})["entities"][idx].get("kind")
+    blocked = {"blocked":
+               f"both faces belong to the same {kind or 'sketch entity'} "
+               f"({feat.id} · #{idx}) — moving it slides both walls together, "
+               "so this distance cannot be changed that way; edit the entity "
+               "in the feature tree"}
+    if not got:
+        return blocked
+    key, name = got
+    current = float(feat.params["entities"][idx][key])
+    # sanity: opposite walls of the entity must actually measure its dimension;
+    # if they do not (a fragment of a wall after some cut), offering the edit
+    # would land somewhere other than what the user sees
+    if measured is not None and abs(current - float(measured)) > 1e-2:
+        return blocked
+    return {"driver": {
+        "feature": feat.id,
+        "path": ["entities", idx, key],
+        "current": current,
+        "transform": "value",          # the distance IS the stored number
+        "label": f"{feat.id} · {kind} #{idx} {key}",
+        "drives": name,
+    }}
+
+
 def _tree_order(doc) -> dict:
     return {f.id: i for i, f in enumerate(doc.features)}
 
@@ -721,6 +831,16 @@ def resolve_move(doc, a_shape, b_shape, a_sel, b_sel, body_a, body_b,
     roles = {"a": _face_role(doc, a_shape, a_sel, body_a),
              "b": _face_role(doc, b_shape, b_sel, body_b)}
     walls = {k: v for k, v in roles.items() if v and v["kind"] == "wall"}
+    # BACKSTOP: both walls on ONE entity means translating it moves both ends
+    # of the tape measure together — the distance can never change. This pair
+    # belongs to resolve_pair_driver (an exact dimension edit); reaching here
+    # means it had no such dimension, so refuse rather than no-op.
+    if (len(walls) == 2
+            and walls["a"]["feature"].id == walls["b"]["feature"].id
+            and walls["a"]["entity"] == walls["b"]["entity"]):
+        return {"error": "both faces belong to the same sketch entity — "
+                         "moving it slides both walls together; edit the "
+                         "entity's dimensions in the feature tree instead"}
     if not walls:
         # A cap's position is its depth, not its profile's x/y, so name the
         # edit that WOULD work rather than reporting nothing movable.
@@ -857,6 +977,22 @@ def plan_set(doc, a: dict, b: dict | None, value: float,
         shape_b, body_b = resolve(doc, b)
     except ValueError as e:
         return {"error": str(e)}
+    # opposite walls of ONE entity: an exact dimension edit, never a move
+    pd = resolve_pair_driver(doc, shape_a, shape_b, a, b, body_a, body_b,
+                             base.get("value"))
+    if pd and "driver" in pd:
+        driver = pd["driver"]
+        new_param = _to_param(driver["transform"], value, driver["current"])
+        if new_param <= 0:
+            return {"error": f"a {driver['drives']} of {value:g} mm would "
+                             f"need {new_param:g} mm — dimensions must be "
+                             "positive"}
+        return {"driver": driver, "requested": _r(value),
+                "param": _r(new_param, 6), "was": _r(driver["current"], 6),
+                "kind": base.get("kind"),
+                "writes": [(driver["path"], _r(new_param, 6))]}
+    if pd and "blocked" in pd:
+        return {"error": pd["blocked"]}
     mv = resolve_move(doc, shape_a, shape_b, a, b, body_a, body_b, side)
     if "error" in mv:
         return mv
@@ -913,12 +1049,25 @@ def measure(doc, a: dict, b: dict | None = None) -> dict:
         out = _measure_two(shape_a, shape_b)
         out["a"] = {"body": body_a, "kind": a.get("kind"), "id": a.get("id")}
         out["b"] = {"body": body_b, "kind": b.get("kind"), "id": b.get("id")}
-        out["driver"] = None       # a two-face distance is never one param
-        # A derived distance has no driver, but a parallel pair can often still
-        # be changed by MOVING one side (P2). Report which sides could move and
-        # which one is the default, so the panel can offer the choice instead of
-        # either refusing or silently picking.
+        out["driver"] = None
         if out.get("kind") in ("gap", "thickness", "step"):
+            # Opposite walls of ONE entity first: that distance IS the entity's
+            # dimension (a box's width), so it gets an exact edit box. Moving
+            # is meaningless there — it slides both walls together.
+            try:
+                pd = resolve_pair_driver(doc, shape_a, shape_b, a, b,
+                                         body_a, body_b, out.get("value"))
+            except Exception:
+                pd = None
+            if pd and "driver" in pd:
+                out["driver"] = pd["driver"]
+                return out
+            if pd and "blocked" in pd:
+                out["move"] = {"error": pd["blocked"]}
+                return out
+            # Different owners: a derived distance, changeable by MOVING one
+            # side (P2). Report which sides could move and which is the
+            # default, so the panel offers the choice instead of picking.
             try:
                 mv = resolve_move(doc, shape_a, shape_b, a, b, body_a, body_b)
             except Exception as e:

@@ -353,3 +353,180 @@ def test_verification_checks_the_KIND_not_just_the_number(client):
                         json={"a": cyl_sel(fresh, 6.0)}).json()
     assert again["kind"] == "diameter"
     assert again["value"] == pytest.approx(12.0, abs=1e-3)
+
+
+# ------------------------------------------- same-entity pairs (round 2) -----
+
+def cavity_pillar_doc():
+    """The pillar demo: 80x60x12 plate, 60x40 cavity, 10x10 pillar at x=-10."""
+    doc = Document(name="t-pair-driver")
+    doc.add("outline", "sketch", {"plane": "XY", "entities": [
+        {"kind": "rectangle", "w": 80, "h": 60, "x": 0, "y": 0}]})
+    doc.add("body", "extrude", {"amount": 12}, inputs=["outline"])
+    doc.add("cav_sk", "sketch_on_face", {"face": "top", "offset": 0,
+            "entities": [{"kind": "rectangle", "mode": "add",
+                          "w": 60, "h": 40, "x": 0, "y": 0}]}, inputs=["body"])
+    doc.add("cav_tool", "extrude", {"amount": -8}, inputs=["cav_sk"])
+    doc.add("isl_sk", "sketch_on_face", {"face": "top", "offset": 0,
+            "entities": [{"kind": "rectangle", "mode": "add",
+                          "w": 10, "h": 10, "x": -10, "y": 0}]}, inputs=["body"])
+    doc.add("isl_tool", "extrude", {"amount": -12}, inputs=["isl_sk"])
+    doc.add("cav_neg", "cut", {}, inputs=["cav_tool", "isl_tool"])
+    doc.add("cavity", "cut", {}, inputs=["body", "cav_neg"])
+    assert doc.rebuild(), doc.tree()
+    return doc
+
+
+def wall_at(doc, x, nx):
+    for i, f in enumerate(doc.result().faces()):
+        n = f.normal_at(f.center())
+        c = f.center()
+        if (abs(n.Z) < 0.01 and abs(c.X - x) < 1e-6
+                and abs(n.X - nx) < 1e-6):
+            return i
+    raise AssertionError(f"no wall at x={x} nx={nx}")
+
+
+def test_opposite_walls_of_one_box_drive_its_width():
+    """User report (2026-08-27, round 2): "i can measure the distance between
+    two seleted face, but the moving option is not working". They had picked
+    the two opposite walls of one box - both ends of the tape measure on the
+    SAME rectangle entity. The old move path translated the whole box, the
+    width stayed 10, verification failed and reverted: "not working".
+
+    That distance IS the rectangle's `w`, so it must be a DRIVEN edit."""
+    doc = cavity_pillar_doc()
+    a = wall_at(doc, -15, -1)
+    b = wall_at(doc, -5, 1)
+    r = measure.measure(doc, sel(doc, "face", a), sel(doc, "face", b))
+    assert r["kind"] == "thickness"
+    d = r["driver"]
+    assert d is not None, "opposite walls of one box must be editable"
+    assert d["feature"] == "isl_sk"
+    assert d["path"] == ["entities", 0, "w"]
+    assert d["current"] == pytest.approx(10.0)
+
+    plan = measure.plan_set(doc, sel(doc, "face", a), sel(doc, "face", b), 8.0)
+    assert "driver" in plan, plan
+    measure.write(doc, plan)
+    assert doc.rebuild(), doc.tree()
+    ent = doc.get("isl_sk").params["entities"][0]
+    assert ent["w"] == pytest.approx(8.0)
+    assert ent["x"] == pytest.approx(-10.0), \
+        "resizing must keep the box centred, not slide it"
+    # the box really is 8 wide now: walls at -14 and -6
+    wall_at(doc, -14, -1)
+    wall_at(doc, -6, 1)
+
+
+def test_facing_walls_of_one_cavity_drive_its_width_too():
+    """A GAP whose two walls belong to one entity (the inside of a cavity) is
+    that entity's dimension as well - same rule, opposite normal sense."""
+    doc = cavity_pillar_doc()
+    a = wall_at(doc, -30, 1)
+    b = wall_at(doc, 30, -1)
+    r = measure.measure(doc, sel(doc, "face", a), sel(doc, "face", b))
+    assert r["kind"] == "gap"
+    assert r["driver"] is not None
+    assert r["driver"]["path"] == ["entities", 0, "w"]
+    assert r["driver"]["feature"] == "cav_sk"
+
+
+def test_cross_entity_pairs_still_move():
+    """The pair driver must not swallow the move path: cavity wall to pillar
+    wall is two different entities and stays a move."""
+    doc = cavity_pillar_doc()
+    a = wall_at(doc, -30, 1)
+    b = wall_at(doc, -15, -1)
+    r = measure.measure(doc, sel(doc, "face", a), sel(doc, "face", b))
+    assert r["driver"] is None
+    assert r["move"]["feature"] == "isl_sk"
+
+
+def test_rotated_rectangle_maps_the_right_dimension():
+    """sketch._entity rotates a shape about its centre, so a 90-degree
+    rectangle's `w` runs along local Y. Un-rotating the wall normal must pick
+    w, not h (probed 2026-08-27)."""
+    doc = Document(name="t-rot")
+    doc.add("b", "plate", {"width": 100, "depth": 80, "thickness": 10})
+    doc.add("sk", "sketch_on_face", {"face": "top", "offset": 0,
+            "entities": [{"kind": "rectangle", "mode": "add", "w": 20,
+                          "h": 12, "x": 0, "y": 0, "rotation": 90}]},
+            inputs=["b"])
+    doc.add("boss", "extrude", {"amount": 5}, inputs=["sk"])
+    doc.add("j", "fuse", {}, inputs=["b", "boss"])
+    assert doc.rebuild(), doc.tree()
+    # after 90 deg, w=20 spans WORLD Y: the boss walls at y=+-10 face +-Y
+    walls = [i for i, f in enumerate(doc.result().faces())
+             if abs(abs(f.normal_at(f.center()).Y) - 1) < 1e-6
+             and f.center().Z > 6]
+    assert len(walls) == 2
+    r = measure.measure(doc, sel(doc, "face", walls[0]),
+                        sel(doc, "face", walls[1]))
+    assert r["value"] == pytest.approx(20.0)
+    d = r["driver"]
+    assert d is not None
+    assert d["path"] == ["entities", 0, "w"], \
+        f"rotation was not unwound: {d['path']}"
+
+
+def test_same_entity_without_a_dimension_is_blocked_with_a_reason():
+    """Two walls of one POLYGON have no single stored dimension, and moving the
+    polygon slides both walls together. The tool must say so - not offer a
+    move that can only ever no-op and revert."""
+    doc = Document(name="t-poly-pair")
+    doc.add("b", "plate", {"width": 100, "depth": 80, "thickness": 10})
+    doc.add("sk", "sketch_on_face", {"face": "top", "offset": 0,
+            "entities": [{"kind": "polygon", "mode": "add",
+                          "points": [[-10, -8], [10, -8], [12, 8], [-12, 8]]}]},
+            inputs=["b"])
+    doc.add("boss", "extrude", {"amount": 5}, inputs=["sk"])
+    doc.add("j", "fuse", {}, inputs=["b", "boss"])
+    assert doc.rebuild(), doc.tree()
+    walls = [i for i, f in enumerate(doc.result().faces())
+             if abs(abs(f.normal_at(f.center()).Y) - 1) < 1e-6
+             and f.center().Z > 6]
+    assert len(walls) == 2, walls
+    r = measure.measure(doc, sel(doc, "face", walls[0]),
+                        sel(doc, "face", walls[1]))
+    assert r["driver"] is None
+    assert "same" in (r.get("move") or {}).get("error", ""), r.get("move")
+    before = doc.to_data()
+    plan = measure.plan_set(doc, sel(doc, "face", walls[0]),
+                            sel(doc, "face", walls[1]), 12.0)
+    assert "error" in plan
+    assert doc.to_data() == before
+
+
+def test_api_box_width_edit_verifies(client):
+    """The user's exact gesture over HTTP: two opposite walls, type 8, and the
+    box IS 8 wide - verified by the endpoint's own re-measure."""
+    c = client
+    c.post("/api/new", json={"name": "width-api"})
+    _add(c, {"id": "b", "op": "plate",
+             "params": {"width": 80, "depth": 60, "thickness": 12},
+             "inputs": []})
+    _add(c, {"id": "sk", "op": "sketch_on_face",
+             "params": {"face": "top", "offset": 0,
+                        "entities": [{"kind": "rectangle", "mode": "add",
+                                      "w": 10, "h": 10, "x": -10, "y": 0}]},
+             "inputs": ["b"]})
+    _add(c, {"id": "boss", "op": "extrude", "params": {"amount": 5},
+             "inputs": ["sk"]})
+    _add(c, {"id": "j", "op": "fuse", "params": {}, "inputs": ["b", "boss"]})
+    model = c.get("/api/model").json()
+    body = model["bodies"][-1]
+    walls = [f["id"] for f in body["faces"]
+             if f.get("normal") and abs(abs(f["normal"][0]) - 1) < 1e-6
+             and f["center"][2] > 6]
+    assert len(walls) == 2, walls
+    r = c.post("/api/measure/set", json={
+        "a": {"body": body["id"], "kind": "face", "id": walls[0]},
+        "b": {"body": body["id"], "kind": "face", "id": walls[1]},
+        "value": 8.0}).json()
+    assert r.get("error") is None, r
+    assert r["verified"] is True, r
+    assert r["achieved"] == pytest.approx(8.0, abs=1e-3)
+    doc = c.get("/api/doc").json()
+    sk = next(f for f in doc["features"] if f["id"] == "sk")
+    assert sk["params"]["entities"][0]["w"] == pytest.approx(8.0)

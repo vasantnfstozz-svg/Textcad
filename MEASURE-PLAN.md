@@ -37,6 +37,32 @@ Three faults, and the third explained the first.
    reads as a broken tool (rule 7). Two of those were only visible because the
    badges made the wrong selection obvious.
 
+## User feedback, round 2 (2026-08-27)
+
+> "i can measure the distance between two seleted face, but the moving option
+> is not working"
+
+Reproduced on the first try: the pair was the two OPPOSITE WALLS of one box.
+Both ends of the tape measure ride the SAME rectangle entity, so the move path
+translated the whole box sideways — the width stayed 10, the endpoint's own
+verification failed, the edit reverted, and the tool read as broken. Moving can
+never change a distance whose two ends belong to one entity.
+
+But that distance IS a driven dimension: opposite walls of a rectangle are
+exactly its `w` (or `h`). So `resolve_pair_driver` now runs before the move
+path: same feature + same entity + opposed normals → the entity dimension
+spanning the measurement direction becomes the driver (transform `value`), and
+the panel shows a plain edit box — no side chooser, because nothing moves. The
+direction is mapped into the sketch plane and UN-ROTATED by the entity's own
+rotation (a 90° rectangle's `w` runs along local Y — probed on all eight walls
+of a straight and a rotated rectangle). Covered: rectangle `w`/`h`, slot
+`height`. A same-entity pair with no such dimension (a polygon's walls) is
+refused with the reason, and `resolve_move` carries a backstop guard so the
+no-op translate can never be offered again.
+
+This closes the plate-width / cavity-width / boss-width cases in one stroke:
+"how wide is this thing" measured between its own two walls is now typeable.
+
 ## The problem, in the user's words
 
 > "we dont have proper scale to measure distance between two point … if i am
