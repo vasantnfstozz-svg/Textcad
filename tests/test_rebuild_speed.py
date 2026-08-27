@@ -12,9 +12,22 @@ reads none.
 
 After: health computes only the four facts it judges on, and the rebuild skips
 OpenCASCADE's validity analysis (~270 ms a call) on INTERMEDIATE features while
-still running it in full on the result. Cold 22.5 -> 7.9 s, edit 16.7 -> 4.9 s.
+still running it in full on the result.
 
-These tests exist so the speed cannot come back as lost checking.
+MEASURED HONESTLY, because the first figures quoted here did not reproduce.
+Wall-clock on this machine swings by 3x between runs, so a single before/after
+pair means nothing. A controlled A/B — fresh process per run, same design, old
+health monkeypatched back in — gives:
+
+    old   cold 69.8 / 65.1 s      one edit 50.2 / 23.6 s
+    new   cold 28.5 / 18.9 s      one edit 19.4 / 15.1 s
+
+So roughly 2.5-3.5x, consistently, on both paths. The absolute numbers are
+whatever the machine feels like that hour; the RATIO is the claim. What remains
+is real geometry: _eval is ~20 s of a 28 s cold rebuild, health ~4 s.
+
+These tests exist so the speed cannot come back as lost checking. They assert
+BEHAVIOUR, never wall-clock, for exactly the reason above.
 """
 import pytest
 

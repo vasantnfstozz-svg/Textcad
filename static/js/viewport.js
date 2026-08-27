@@ -74,6 +74,15 @@ export function setLeftButton(action) {
 
 export function shiftPanActive() { return shiftPan; }
 
+/* How close the camera may get. Scaled to the model so a keychain and a
+   200 mm panel both zoom about as far in proportional terms, and kept above the
+   near clip plane (fitRadius/100) — inside that, faces get clipped away and you
+   see through the part, which looks identical to the bug this prevents. */
+function zoomFloor() {
+  const r = fitRadius || 100;
+  return Math.max(r / 40, (r / 100) * 3);
+}
+
 function buildControls(up) {
   const pos = camera.position.clone();
   const tgt = controls ? controls.target.clone() : new THREE.Vector3();
@@ -99,6 +108,17 @@ function buildControls(up) {
   // never dolly past the far clip plane — beyond it the whole scene (model,
   // grids, everything) is clipped to a black void that reads as a crash
   controls.maxDistance = camera.far * 0.85;
+  /* ZOOM TOWARD THE CURSOR, not toward the orbit target (user, 2026-08-27:
+     "when i am zooming the design it completely goes like that" — a full-screen
+     grey wash). The target sits at the model's CENTRE, so dollying in walked
+     the camera straight into the solid and left it looking at the inside of the
+     far wall. minDistance alone cannot fix that: a 12 mm-thick plate has its
+     centre 6 mm from either face, so ANY small distance is still inside.
+     Zooming at the cursor moves the target onto the surface being pointed at,
+     which is both the CAD-standard behaviour and what keeps the camera
+     outside; minDistance is then a floor that stops it touching that surface. */
+  controls.zoomToCursor = true;
+  controls.minDistance = zoomFloor();
   camera.position.copy(pos);
   controls.target.copy(tgt);
   controls.addEventListener('change', () => bus.emit('view-changed'));
@@ -174,7 +194,9 @@ export function initViewport() {
   // ghost passes every DOM check while looking broken to the user)
   window.__vp = {
     camera, getControls,
-    getFit: () => ({ r: fitRadius, c: fitCenter.toArray() }),
+    getFit: () => ({ r: fitRadius, c: fitCenter.toArray(),
+                     minDistance: controls ? controls.minDistance : null,
+                     zoomToCursor: controls ? !!controls.zoomToCursor : null }),
     bodyCount: () => bodyObjs.length,
     bodyInfo: () => bodyObjs.map(b => ({
       id: b.id, result: b.result, faces: (b.data.faces || []).length,
@@ -1105,6 +1127,7 @@ export async function loadMesh(fit = false, force = false) {
     if (fit) {
       camera.near = fitRadius / 100; camera.far = fitRadius * 100;
       controls.maxDistance = camera.far * 0.85;
+      controls.minDistance = zoomFloor();      // scales with the model
       camera.updateProjectionMatrix(); setView('iso');
     }
   } catch (e) { /* no model yet */ }
@@ -1126,6 +1149,7 @@ function fitToObjects(objs) {
   updateGroundGrid();                   // the plate grows with the model
   camera.near = fitRadius / 100; camera.far = fitRadius * 100;
   controls.maxDistance = camera.far * 0.85;
+  controls.minDistance = zoomFloor();
   camera.updateProjectionMatrix(); setView('iso');
 }
 
