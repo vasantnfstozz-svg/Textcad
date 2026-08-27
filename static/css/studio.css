@@ -526,3 +526,4 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 .vwho.you { color: #8fb7e8; background: #1d2836; }
 .vwho.ai  { color: #b79ae8; background: #2a2338; }
 .vwho.git { color: var(--dim); background: var(--panel3); }
+#sBuild { color: var(--dim); opacity: .65; margin-left: 14px; font-variant-numeric: tabular-nums; }

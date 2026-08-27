@@ -101,6 +101,10 @@
   <span id="sVolume"></span>
   <span id="sRebuild"></span>
   <span style="margin-left:auto">verified pipeline: engine · inspector · blocks</span>
+  <!-- Which build this TAB is actually running. A tab left open across a
+       code change keeps its old JS in memory no matter what the server
+       sends, and "did you reload?" is otherwise unanswerable. -->
+  <span id="sBuild" title="the UI build this tab is running — reload if it is behind"></span>
 </div>
 
 <!-- ============ add feature dialog ============ -->
@@ -246,6 +250,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=95"></script>
+<script type="module" src="/static/js/main.js?v=96"></script>
 </body>
 </html>

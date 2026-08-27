@@ -28,6 +28,16 @@ initSplitters();
 initVersions();   // version tree under the feature tree
 initTreeFind();   // the feature-tree find box
 
+/* Stamp the build this tab is running. A tab left open across a code
+   change keeps its old modules in memory whatever the server sends, and
+   a stale tab is indistinguishable from a real bug — it cost a whole
+   round trip of 'the zoom is broken' when the zoom on disk was fine. */
+try {
+  const v = new URL(import.meta.url).searchParams.get('v');
+  const el = document.getElementById('sBuild');
+  if (el && v) el.textContent = 'ui v' + v;
+} catch (e) { /* a build stamp must never break the app */ }
+
 /* keyboard shortcuts */
 window.addEventListener('keydown', e => {
   if (document.activeElement.tagName === 'INPUT') return;
