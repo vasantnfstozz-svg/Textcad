@@ -20,6 +20,7 @@ health + spec verification. The LLM never regenerates a design during an edit.
 from __future__ import annotations
 import base64
 import json
+import math
 import os
 import re
 import webbrowser
@@ -943,6 +944,26 @@ def _tagged_mesh(part, body_id: str | None = None) -> dict:
                                    round(ax.position.Z, 4)]
             except Exception:
                 pass
+        # FULL circular boundaries of this face, largest first — an annular
+        # face's outer and inner radii, a hole's rim on a floor. The user reads
+        # a washer face as "outer dia / inner dia" (request 2026-08-31), not as
+        # an area. Corner-fillet arcs are PARTIAL circles and excluded: someone
+        # asking "what is this bore" does not mean the corner radius.
+        try:
+            radii = []
+            for fe in face.edges():
+                if str(fe.geom_type).replace("GeomType.", "") != "CIRCLE":
+                    continue
+                r = float(fe.radius)
+                if abs(float(fe.length) - 2 * math.pi * r) > max(1e-6, 1e-4 * r):
+                    continue                     # an arc, not a full circle
+                if not any(abs(r - q) < 1e-6 for q in radii):
+                    radii.append(r)
+            if radii:
+                info["circles"] = sorted((round(r, 4) for r in radii),
+                                         reverse=True)
+        except Exception:
+            pass
         faces_meta.append(info)
 
     # In mesh mode, sampling 15k+ triangle edges would choke both server and

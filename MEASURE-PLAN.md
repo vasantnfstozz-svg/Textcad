@@ -63,6 +63,30 @@ no-op translate can never be offered again.
 This closes the plate-width / cavity-width / boss-width cases in one stroke:
 "how wide is this thing" measured between its own two walls is now typeable.
 
+## User feedback, round 3 (2026-08-31)
+
+> "when i am going for circle, i want to know the diameter, its not robust …
+> when i am selecting that face, i can simply see the inner dia and outer dia
+> … we dont need to mentions body … the information regarding how we created
+> this feature right, just hide it … like an option so that we can expand it"
+
+The pick box, reworked as a dimensions-first readout:
+
+1. **Face-boundary diameters.** `_tagged_mesh` now tags every face with its
+   FULL circular boundary radii (`circles`, largest first), so clicking an
+   annular face reads "outer ⌀ 20.00 / inner ⌀ 8.00" with no round trip, and a
+   pocket floor names its bore. Partial circles are excluded — someone asking
+   "what is this bore" does not mean the corner-fillet radius (locked by
+   `test_corner_fillet_arcs_are_not_reported_as_diameters`). The Measure
+   panel's single-face readout carries the same rows (`_full_circles`).
+2. **The body row shows only with several bodies on screen** — its original
+   reason. With one body it was noise.
+3. **The "Created by" chain is collapsed** behind `▸ Created by <feature>`,
+   expandable in place; the open/closed choice sticks for the session. The
+   one-line answer (who made it) survives collapsed; the sketch→extrude→cut
+   chain is a click away. The E2E provenance tests now expand it the way a
+   user does before reading the chain.
+
 ## The problem, in the user's words
 
 > "we dont have proper scale to measure distance between two point … if i am

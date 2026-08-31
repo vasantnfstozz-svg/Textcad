@@ -373,3 +373,52 @@ def test_a_step_says_it_is_not_a_clearance():
     rows = dict(r["rows"])
     assert "clearance" in rows.get("note", ""), rows
     assert "facing" in rows.get("note", ""), rows
+
+
+# ------------------------------------------- face-boundary diameters ---------
+
+def washer_doc():
+    """A ⌀80 disc with a ⌀24 centre hole: its top face IS "outer 80, inner 24"
+    to anyone clicking it (user request 2026-08-31)."""
+    doc = Document(name="t-washer")
+    doc.add("plate", "disc", {"radius": 40, "thickness": 8})
+    doc.add("bore", "with_center_hole", {"radius": 12}, inputs=["plate"])
+    assert doc.rebuild(), doc.tree()
+    return doc
+
+
+def test_an_annular_face_reports_outer_and_inner_diameter():
+    doc = washer_doc()
+    top = find_face(doc, lambda f: abs(normal(f)[2] - 1) < 1e-9)
+    r = measure.measure(doc, sel(doc, "face", top))
+    assert r["kind"] == "area"
+    rows = dict(r["rows"])
+    assert rows["outer ⌀"] == "80.00 mm", rows
+    assert rows["inner ⌀"] == "24.00 mm", rows
+
+
+def test_a_pocket_mouth_face_reports_its_hole_diameter():
+    """The pocket_doc top face has ONE full circle boundary (the ⌀18 mouth) —
+    and its corner-free rectangle outline contributes nothing round."""
+    doc = pocket_doc()
+    r = measure.measure(doc, sel(doc, "face", top_face(doc)))
+    rows = dict(r["rows"])
+    assert rows["⌀"] == "18.00 mm", rows
+
+
+def test_corner_fillet_arcs_are_not_reported_as_diameters():
+    """A rounded-corner boss face has four r=3 ARCS. Someone asking "what is
+    this bore" does not mean the corner radius, so partial circles must stay
+    out of the ⌀ rows."""
+    from build123d import Part
+    doc = Document(name="t-fillets")
+    doc.add("b", "plate", {"width": 60, "depth": 40, "thickness": 10})
+    doc.add("f", "fillet", {"radius": 3, "edges": "vertical"}, inputs=["b"])
+    ok = doc.rebuild()
+    if not ok:
+        import pytest as _pt
+        _pt.skip("fillet op unavailable on vertical edges in this build")
+    top = find_face(doc, lambda f: abs(normal(f)[2] - 1) < 1e-9)
+    r = measure.measure(doc, sel(doc, "face", top))
+    rows = dict(r["rows"])
+    assert "⌀" not in rows and "outer ⌀" not in rows, rows

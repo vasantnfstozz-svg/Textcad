@@ -607,3 +607,11 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
   pointer-events: none; z-index: 31; background: rgba(8, 17, 30, .9); }
 .selbadge.a { color: #6ee7ff; border: 2px solid #6ee7ff; }
 .selbadge.b { color: #ffb85c; border: 2px solid #ffb85c; }
+
+/* the collapsed "Created by" chain in the pick box (2026-08-31: hidden until
+   asked for — the pick box is for dimensions first) */
+#pickInfo .provhead { cursor: pointer; user-select: none; margin-top: 2px; }
+#pickInfo .provhead .provcaret { display: inline-block; width: 12px;
+  color: var(--dim); }
+#pickInfo .provhead .provwho { color: var(--accent); font-size: 11px; }
+#pickInfo .provhead:hover b { text-decoration: underline; }

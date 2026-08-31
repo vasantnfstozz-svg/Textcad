@@ -1551,12 +1551,30 @@ function selectFace(fid, entry = null, hitPoint = null) {
   // because provenance asks a face-shaped question.
   bus.emit('pick', { kind: 'face', id: fid,
                      body: info.body || (entry ? entry.id : null), info });
+  // DIAMETERS FIRST — a machinist reads round things as ⌀, and the user asked
+  // for exactly this (2026-08-31: "when i am selecting that face, i can simply
+  // see the inner dia and outer dia"). A cylindrical wall has one; a planar
+  // face reports its full circular boundaries (an annular face: outer + inner).
+  const dia = [];
+  if (info.radius != null)
+    dia.push(['⌀', (info.radius * 2).toFixed(2) + ' mm']);
+  const circ = info.circles || [];
+  if (circ.length === 1)
+    dia.push(['⌀', (circ[0] * 2).toFixed(2) + ' mm']);
+  else if (circ.length >= 2) {
+    dia.push(['outer ⌀', (circ[0] * 2).toFixed(2) + ' mm'],
+             ['inner ⌀', (circ[circ.length - 1] * 2).toFixed(2) + ' mm']);
+    if (circ.length > 2)     // e.g. a floor with several different holes
+      dia.push(['also ⌀', circ.slice(1, -1)
+        .map(r => (r * 2).toFixed(1)).join(', ') + ' mm']);
+  }
   showPick(`<b>Face ${fid}</b> — ${isFlat && info.type !== 'PLANE' ? info.type + ' (flat)' : info.type}`,
-    [// which BODY this face belongs to — several are pickable now, and the
-     // tools act on the picked one, so the user must see which it is
-     info.body ? ['body', info.body] : null,
+    [// which BODY this face belongs to — but ONLY when several are on screen
+     // and the answer is not obvious; with one body it is noise (user request
+     // 2026-08-31: "we dont need to mentions body")
+     info.body && bodyObjs.length > 1 ? ['body', info.body] : null,
+     ...dia,
      ['area', (info.area ?? '?') + ' mm²'],
-     info.radius != null ? ['radius', info.radius + ' mm'] : null,
      info.center ? ['center', info.center.join(', ')] : null]);
   // ask WHO MADE THIS FACE (provenance.js listens) — a face pick is how the
   // user navigates an AI-authored tree they did not build themselves

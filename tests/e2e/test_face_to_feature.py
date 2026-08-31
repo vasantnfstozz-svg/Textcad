@@ -112,6 +112,15 @@ def click_face(page, server, body, face):
     return page.evaluate(PICKED) == face["id"]
 
 
+def expand_chain(page):
+    """The "Created by" chain is COLLAPSED by default (2026-08-31: the pick
+    box is for dimensions first) — open it the way a user does."""
+    head = page.locator("#pickInfo .provhead")
+    if head.count():
+        head.click()
+        page.wait_for_timeout(250)
+
+
 def test_clicking_a_pocket_floor_reveals_the_cut_and_names_its_sketch(
         page, server, fresh_doc):
     model = build(page, server)
@@ -120,6 +129,12 @@ def test_clicking_a_pocket_floor_reveals_the_cut_and_names_its_sketch(
                          and f.get("center") and abs(f["center"][2] - 7) < 0.01)
     assert click_face(page, server, body, face), "could not click the floor"
 
+    # collapsed, the header still gives the one-line answer — it names the
+    # MAKER (the cut "pocket"); the tree separately reveals that cut's row
+    st0 = page.evaluate(STATE)
+    assert "Created by" in (st0["panel"] or "") and "pocket" in st0["panel"], \
+        "the collapsed header must still name the maker"
+    expand_chain(page)
     st = page.evaluate(STATE)
     # the cut folds onto its tool's row (one operation, one row), so THAT is
     # the row a picked pocket face reveals
@@ -139,6 +154,7 @@ def test_clicking_the_untouched_top_face_blames_the_base_extrude(
                          and f.get("center") and abs(f["center"][2] - 12) < 0.01
                          and f["area"] > 1000)
     assert click_face(page, server, body, face), "could not click the top face"
+    expand_chain(page)
     st = page.evaluate(STATE)
     assert st["revealed"] == "body"                   # not the later cut
     assert "outline" in st["panel"]

@@ -203,6 +203,27 @@ def _closest_on_axis(pos, direction, target):
     return _add(pos, _scale(u, _dot(_sub(target, pos), u)))
 
 
+def _full_circles(shape) -> list[float]:
+    """The radii of this face's FULL circular boundary edges, largest first.
+
+    Full circles only: an annular face's rims, a hole's mouth on a floor.
+    Corner-fillet arcs are partial circles and excluded — someone asking
+    "what is this bore" does not mean the corner radius. Never raises."""
+    radii: list[float] = []
+    try:
+        for ed in shape.edges():
+            if _geom(ed) != "CIRCLE":
+                continue
+            r = float(ed.radius)
+            if abs(float(ed.length) - 2 * math.pi * r) > max(1e-6, 1e-4 * r):
+                continue                       # an arc, not a full circle
+            if not any(abs(r - q) < 1e-6 for q in radii):
+                radii.append(r)
+    except Exception:
+        return []
+    return sorted(radii, reverse=True)
+
+
 # ---------------------------------------------------------------------------
 # single-selection measurements
 
@@ -234,8 +255,19 @@ def _measure_one(shape) -> dict:
         return {"kind": "length", "value": _r(length), "unit": MM,
                 "label": _fmt(length), "rows": rows}
 
-    # a planar (or any) face on its own: area + how big it is
-    rows = [["type", _geom(shape)]]
+    # a planar (or any) face on its own: its ⌀s first, then area + extents.
+    # A washer-like face IS its outer and inner diameters to the person
+    # clicking it (user request 2026-08-31) — the area is the footnote.
+    rows = []
+    holes = _full_circles(shape)
+    if len(holes) == 1:
+        rows.append(["⌀", _fmt(holes[0] * 2)])
+    elif len(holes) >= 2:
+        rows.append(["outer ⌀", _fmt(holes[0] * 2)])
+        rows.append(["inner ⌀", _fmt(holes[-1] * 2)])
+        for r_mid in holes[1:-1]:            # a floor with several bores
+            rows.append(["also ⌀", _fmt(r_mid * 2)])
+    rows.append(["type", _geom(shape)])
     try:
         rows.append(["area", f"{shape.area:.2f} mm²"])
     except Exception:

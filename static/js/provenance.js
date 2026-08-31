@@ -17,6 +17,7 @@ import { revealFeature, rowFor } from './tree.js';
 import { showFeatureOverlay } from './viewport.js';
 
 let seq = 0;                 // only the newest pick may write to the panel
+let chainOpen = false;       // the "Created by" chain, collapsed by default
 
 bus.on('face-picked', async info => {
   const mine = ++seq;
@@ -85,7 +86,27 @@ function render(mine, r) {
     : [{ id: r.feature, op: r.op, role: 'origin' }];
   const ROLE = { sketch: 'sketch', extrude: 'extrude', origin: 'created by',
                  applied: 'applied by' };
-  box.innerHTML = '<b>Created by this feature</b>';
+  // COLLAPSED BY DEFAULT (user request 2026-08-31: "there is the information,
+  // regarding how we created this feature right, just hide it, if i want it,
+  // we can see that, like an option"). The header names the maker so the
+  // one-line answer is still there; the toggle opens the full chain. The
+  // choice is remembered for the session, so a user who works with it open
+  // is not re-collapsing it on every click.
+  const head = document.createElement('div');
+  head.className = 'provhead';
+  head.innerHTML = `<span class="provcaret">${chainOpen ? '▾' : '▸'}</span>` +
+    `<b>Created by</b> <span class="provwho"></span>`;
+  head.querySelector('.provwho').textContent = r.feature;
+  head.title = 'click to show the whole sketch → extrude → boolean chain';
+  const body = document.createElement('div');
+  body.className = 'provbody';
+  body.style.display = chainOpen ? 'block' : 'none';
+  head.onclick = () => {
+    chainOpen = !chainOpen;
+    body.style.display = chainOpen ? 'block' : 'none';
+    head.querySelector('.provcaret').textContent = chainOpen ? '▾' : '▸';
+  };
+  box.append(head, body);
   for (const step of chain) {
     const row = document.createElement('div');
     row.className = 'provrow';
@@ -105,7 +126,7 @@ function render(mine, r) {
     op.style.cssText = 'color:var(--dim);font-size:10.5px';
     op.textContent = step.op;
     row.append(role, link, op);
-    box.appendChild(row);
+    body.appendChild(row);
   }
   if (r.confidence && r.confidence !== 'high') {
     const note = document.createElement('div');
@@ -113,7 +134,7 @@ function render(mine, r) {
     note.textContent = r.confidence === 'medium'
       ? 'Curved/lofted surface — traced by shape, so this is a best match.'
       : (r.reason || 'Low confidence.');
-    box.appendChild(note);
+    body.appendChild(note);
   }
   host.appendChild(box);
 

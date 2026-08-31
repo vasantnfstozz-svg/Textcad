@@ -129,3 +129,20 @@ def test_measure_on_an_empty_design_is_an_error(client):
     r = client.post("/api/measure", json={
         "a": {"body": None, "kind": "face", "id": 0}}).json()
     assert "error" in r
+
+
+def test_mesh_payload_carries_face_boundary_circles(client):
+    """The pick box reads inner/outer dia straight from the tagged mesh, no
+    round trip — so the payload must carry each face's FULL circular
+    boundaries, largest first (user request 2026-08-31)."""
+    client.post("/api/new", json={"name": "washer-mesh"})
+    _add(client, {"id": "plate", "op": "disc",
+                  "params": {"radius": 40, "thickness": 8}, "inputs": []})
+    _add(client, {"id": "bore", "op": "with_center_hole",
+                  "params": {"radius": 12}, "inputs": ["plate"]})
+    body = client.get("/api/model").json()["bodies"][-1]
+    tops = [f for f in body["faces"]
+            if f.get("normal") and f["normal"][2] > 0.99]
+    assert tops, "no top face in the payload"
+    circles = tops[0].get("circles")
+    assert circles == pytest.approx([40.0, 12.0]), circles
