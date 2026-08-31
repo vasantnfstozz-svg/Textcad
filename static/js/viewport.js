@@ -300,7 +300,7 @@ export function initViewport() {
   };
 
   (function animate() { requestAnimationFrame(animate);
-    controls.update(); paintDimLabel(); paintSelBadges(); paintDimNudge();
+    controls.update(); paintDimLabel(); paintSelBadges();
     renderer.render(scene, camera); })();
 
   initDimDrag();               // the draggable Measure dimension label
@@ -1524,99 +1524,9 @@ export function clearDimProbe() {
   if (el) { el.classList.remove('grab', 'grabbing'); el.title = ''; }
 }
 
-/* The nudge arrows beside the dimension label (user request 2026-08-31: "add
-   two arrow mark near the line for moving up and down and for side left to
-   right"). Each click steps the probe point 6 screen-px in that direction —
-   through the SAME pipeline as a drag — and holding a button glides. The
-   anchor is the line's grabbed end, so steps accumulate along the surface. */
-const NUDGE_STEP = 6;            // px per tick — small enough for fine reads
-
-function initDimNudge(probeAtClient) {
-  const box = document.getElementById('dimNudge');
-  if (!box) return;
-  const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
-  for (const btn of box.querySelectorAll('button')) {
-    const dir = DIRS[btn.dataset.dir];
-    if (!dir) continue;
-    let timer = null;
-    const stepOnce = () => {
-      if (!dimProbe || !dimOverlay) return;
-      // step from where the grabbed end IS now, so holds walk the surface
-      if (dimOverlay.from.clone().project(camera).z > 1) return;
-      const sPos = toScreen(dimOverlay.from);
-      probeAtClient(sPos.x + dir[0] * NUDGE_STEP,
-                    sPos.y + dir[1] * NUDGE_STEP);
-    };
-    btn.addEventListener('pointerdown', e => {
-      e.preventDefault();
-      e.stopPropagation();          // never start an orbit from a button
-      stepOnce();
-      timer = setInterval(stepOnce, 60);
-      const stop = () => {
-        clearInterval(timer);
-        timer = null;
-        window.removeEventListener('pointerup', stop);
-      };
-      window.addEventListener('pointerup', stop);
-      btn.addEventListener('pointerleave', stop, { once: true });
-    });
-  }
-}
-
-/* the arrow cluster rides just under the label, only while a probe is armed */
-function paintDimNudge() {
-  const box = document.getElementById('dimNudge');
-  if (!box) return;
-  const lbl = document.getElementById('dimLabel');
-  if (!dimProbe || !dimOverlay || !lbl || lbl.style.display === 'none') {
-    box.style.display = 'none';
-    return;
-  }
-  box.style.display = 'flex';
-  box.style.left = lbl.style.left;
-  box.style.top = (parseFloat(lbl.style.top) + 22) + 'px';
-}
-
 function initDimDrag() {
   const lbl = document.getElementById('dimLabel');
   if (!lbl) return;
-
-  /* One probe step at a SCREEN position — shared by the label drag and the
-     nudge arrows, so an arrow click behaves exactly like a tiny drag (same
-     miss-tolerant snap, same clamp interplay, same kernel round trip). */
-  const tmp = new THREE.Vector3(), best = new THREE.Vector3();
-  function probeAtClient(clientX, clientY) {
-    if (!dimProbe) return;
-    raycaster.setFromCamera(ndcFrom({ clientX, clientY }), camera);
-    const hit = raycaster.intersectObject(dimProbe.mesh, false)[0];
-    let p = null;
-    if (hit) {
-      p = hit.point;
-      dimProbe.lastDist = hit.distance;
-    } else if (dimProbe.tris.length && dimProbe.tris.length < 20000) {
-      // off the face: sample the ray at the last hit depth and snap to the
-      // nearest point ON the face, so the motion never freezes
-      const depth = dimProbe.lastDist
-        ?? camera.position.distanceTo(controls.target);
-      const at = raycaster.ray.at(depth, new THREE.Vector3());
-      let bd = Infinity;
-      for (const t of dimProbe.tris) {
-        t.closestPointToPoint(at, tmp);
-        const d = tmp.distanceToSquared(at);
-        if (d < bd) { bd = d; best.copy(tmp); }
-      }
-      if (bd < Infinity) p = best;
-    }
-    if (!p) return;
-    if (!dimProbe.frozen)
-      nudgeDimFrom(p);                 // the line tracks the motion NOW
-    // the kernel is still asked while frozen — it is how we notice the
-    // point coming back into range and unfreeze
-    if (dimProbe.cb) dimProbe.cb([p.x, p.y, p.z]);
-  }
-
-  initDimNudge(probeAtClient);
-
   lbl.addEventListener('pointerdown', e => {
     if (!dimProbe) return;
     e.preventDefault();
@@ -1625,12 +1535,38 @@ function initDimDrag() {
     controls.enabled = false;
     lbl.classList.add('grabbing');
     let queued = null, raf = 0;
+    const tmp = new THREE.Vector3(), best = new THREE.Vector3();
     const step = () => {
       raf = 0;
       const ev = queued;
       queued = null;
       if (!ev || !dimProbe) return;
-      probeAtClient(ev.clientX, ev.clientY);
+      raycaster.setFromCamera(ndcFrom(ev), camera);
+      const hit = raycaster.intersectObject(dimProbe.mesh, false)[0];
+      let p = null;
+      if (hit) {
+        p = hit.point;
+        dimProbe.lastDist = hit.distance;
+      } else if (dimProbe.tris.length && dimProbe.tris.length < 20000) {
+        // the cursor left the face: sample the ray at the last hit depth and
+        // snap to the nearest point ON the face, so the drag never freezes
+        const depth = dimProbe.lastDist
+          ?? camera.position.distanceTo(controls.target);
+        const at = raycaster.ray.at(depth, new THREE.Vector3());
+        let bd = Infinity;
+        for (const t of dimProbe.tris) {
+          t.closestPointToPoint(at, tmp);
+          const d = tmp.distanceToSquared(at);
+          if (d < bd) { bd = d; best.copy(tmp); }
+        }
+        if (bd < Infinity) p = best;
+      }
+      if (!p) return;
+      if (!dimProbe.frozen)
+        nudgeDimFrom(p);               // the line tracks the cursor NOW
+      // the kernel is still asked while frozen — it is how we notice the
+      // cursor coming back into range and unfreeze
+      if (dimProbe.cb) dimProbe.cb([p.x, p.y, p.z]);
     };
     // one raycast per FRAME, not per pointermove — a gaming mouse fires
     // hundreds of moves a second and queueing them all is its own lag
