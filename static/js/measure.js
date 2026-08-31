@@ -18,13 +18,16 @@ import { postJSON } from './api.js';
 import { S } from './state.js';
 import { showDimension, clearDimension, loadMesh,
          showSelectionOverlay, clearSelectionOverlay,
-         setPickHighlightEnabled } from './viewport.js';
+         setPickHighlightEnabled, setDimProbe, clearDimProbe }
+  from './viewport.js';
 
 // the two selections, in click order
 let A = null, B = null;
 let busy = false;
 let last = null;          // the last measurement (carries .driver)
 let mine = false;         // true while OUR OWN edit is rebuilding the document
+let probeOn = null;       // 'a'|'b': which selection the drag probe rides
+let probeBusy = false, probePending = null;
 let chosenSide = null;    // 'a'/'b' when the user overrode which side moves
 
 const el = id => document.getElementById(id);
@@ -64,6 +67,7 @@ export function openMeasure() {
 export function cancelMeasure() {
   if (S.modalTool === 'Measure') { S.modalTool = null; S.modalToolPanel = null; }
   A = null; B = null; chosenSide = null;
+  probeOn = null; clearDimProbe();
   clearDimension();
   clearSelectionOverlay();
   setPickHighlightEnabled(true);    // hand the normal highlight back
@@ -101,11 +105,15 @@ export function initMeasure() {
   // panel the instant the user's edit succeeded.
   bus.on('doc-updated', () => {
     if (!isMeasuring() || mine) return;
-    A = null; B = null; clearDimension(); render();
+    A = null; B = null;
+    probeOn = null; clearDimProbe();
+    clearDimension(); render();
   });
   el('meCancel').onclick = cancelMeasure;
   el('meReset').onclick = () => {
-    A = null; B = null; chosenSide = null; clearDimension(); render();
+    A = null; B = null; chosenSide = null;
+    probeOn = null; clearDimProbe();
+    clearDimension(); render();
   };
   el('meApply').onclick = applyEdit;
   for (const inp of document.getElementsByName('meSideR'))
@@ -237,6 +245,59 @@ function show(r, error) {
   // draw what was actually measured (see viewport.showDimension)
   if (r.from && r.to) showDimension(r.from, r.to, r.label);
   else clearDimension();
+  armProbe(r);
+}
+
+/* ---------------------------------------------------- the draggable line ----
+   The witness pair is ONE sample: between a slanted wall and a boss, or around
+   a cylinder, the distance varies along the geometry (user request 2026-08-31:
+   "i dont know the closest distance and longest distance ... i can see the
+   live value in the box"). With two picks and at least one FACE, the value
+   label becomes a grab handle — dragging it slides the sample point across
+   that face and every position asks the kernel for the exact local distance.
+   One request in flight, latest drag position wins: same throttle discipline
+   as the extrude preview. */
+
+function armProbe(r) {
+  probeOn = null;
+  clearDimProbe();
+  if (!r || !A || !B || !r.from || !r.to) return;
+  const on = A.kind === 'face' ? 'a' : (B.kind === 'face' ? 'b' : null);
+  if (!on) return;                       // two edges: nothing to slide across
+  const src = on === 'a' ? A : B;
+  if (setDimProbe({ body: src.body, id: src.id }, sendProbe)) {
+    probeOn = on;
+    el('meHint').textContent =
+      'Drag the value label to slide the measurement along the face.';
+  }
+}
+
+async function sendProbe(pt) {
+  if (!probeOn || !A || !B) return;
+  if (probeBusy) { probePending = pt; return; }
+  probeBusy = true;
+  try {
+    const res = await fetch('/api/measure/probe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ a: strip(A), b: strip(B),
+                             point: pt, on: probeOn }),
+    });
+    const r = await res.json();
+    if (!r.error && r.from && r.to) {
+      // the LIVE value, in the box and on the line
+      el('meValue').textContent = r.label;
+      el('meKind').textContent = 'distance at this spot';
+      showDimension(r.from, r.to, r.label);
+    }
+  } catch (e) { /* mid-drag hiccup: the next move retries */ } finally {
+    probeBusy = false;
+    if (probePending) {
+      const q = probePending;
+      probePending = null;
+      sendProbe(q);
+    }
+  }
 }
 
 /* ---------------------------------------------------- the editable half ----

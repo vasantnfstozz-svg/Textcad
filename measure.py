@@ -1056,6 +1056,49 @@ def write(doc, plan: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# probing: slide the measurement along the geometry
+#
+# User request (2026-08-31): "the measurement always measure from the center,
+# but i dont know the closest distance and longest distance … if i can able to
+# [move] the line, i can see the live value in the box, same this works for the
+# circle and a box". The witness pair is one sample; between a slanted wall and
+# a boss — or around a cylinder — the distance varies along the geometry, so
+# the dimension line is draggable and each drag position asks the KERNEL for
+# the local distance, not the mesh.
+
+def probe(doc, a: dict, b: dict | None, point, on: str = "a") -> dict:
+    """Distance from a dragged point (riding selection `on`) to the OTHER
+    selection — the live value under a dimension-line drag.
+
+    The point comes from a raycast on the picked face, so it is already ON the
+    source shape; the answer is the exact minimum distance from that point to
+    the other shape, with the witness point so the line can follow the drag.
+    Read-only and never raises."""
+    from build123d import Vertex
+    try:
+        if not doc.features:
+            return {"error": "the design is empty"}
+        if b is None:
+            return {"error": "probing needs two selections"}
+        shape_a, _ = resolve(doc, a)
+        shape_b, _ = resolve(doc, b)
+    except ValueError as e:
+        return {"error": str(e)}
+    try:
+        p = [float(point[0]), float(point[1]), float(point[2])]
+        v = Vertex(*p)
+    except Exception:
+        return {"error": "that probe point is not a valid position"}
+    target = shape_a if str(on) == "b" else shape_b
+    md = _min_distance(v, target)
+    if md is None:
+        return {"error": "could not measure from there"}
+    d, _p1, p2 = md
+    return {"kind": "probe", "value": _r(d), "unit": MM,
+            "label": _fmt(d), "from": _r3(p), "to": _r3(p2)}
+
+
+# ---------------------------------------------------------------------------
 # the entry point
 
 def measure(doc, a: dict, b: dict | None = None) -> dict:

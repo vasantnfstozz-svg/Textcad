@@ -615,3 +615,8 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
   color: var(--dim); }
 #pickInfo .provhead .provwho { color: var(--accent); font-size: 11px; }
 #pickInfo .provhead:hover b { text-decoration: underline; }
+
+/* the dimension label doubles as the probe grab handle when a drag target is
+   set (2026-08-31: slide the measurement to find the closest/widest spot) */
+#dimLabel.grab { pointer-events: auto; cursor: grab; }
+#dimLabel.grabbing { cursor: grabbing; }

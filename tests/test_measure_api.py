@@ -146,3 +146,26 @@ def test_mesh_payload_carries_face_boundary_circles(client):
     assert tops, "no top face in the payload"
     circles = tops[0].get("circles")
     assert circles == pytest.approx([40.0, 12.0]), circles
+
+
+def test_probe_endpoint_is_read_only(client):
+    """A probe fires per pointermove during a drag — it must never snapshot,
+    rebuild, or touch the document."""
+    model = pocket(client)
+    body = body_of(model)
+    flat = [f for f in body["faces"]
+            if f.get("planar") and f.get("normal")
+            and abs(abs(f["normal"][2]) - 1) < 1e-6]
+    top = max(flat, key=lambda f: f["center"][2])
+    bot = min(flat, key=lambda f: f["center"][2])
+    before = client.get("/api/doc").json()["features"]
+    hist = len(studio._entry()["history"])
+    r = client.post("/api/measure/probe", json={
+        "a": {"body": body["id"], "kind": "face", "id": top["id"]},
+        "b": {"body": body["id"], "kind": "face", "id": bot["id"]},
+        "point": [30, 20, 6], "on": "a"}).json()   # plate is Z-centred: top z=6
+    assert r.get("error") is None, r
+    assert r["value"] == pytest.approx(12.0, abs=1e-3)
+    assert r["from"] and r["to"]
+    assert client.get("/api/doc").json()["features"] == before
+    assert len(studio._entry()["history"]) == hist

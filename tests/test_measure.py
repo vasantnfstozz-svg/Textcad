@@ -422,3 +422,82 @@ def test_corner_fillet_arcs_are_not_reported_as_diameters():
     r = measure.measure(doc, sel(doc, "face", top))
     rows = dict(r["rows"])
     assert "⌀" not in rows and "outer ⌀" not in rows, rows
+
+
+# ---------------------------------------------------- the draggable probe ----
+
+def boss_doc():
+    """80x60x12 plate with a r=5 cylindrical boss at the origin: the distance
+    from the boss to a wall VARIES around the cylinder, which is exactly what
+    the draggable probe exists to explore (user request 2026-08-31)."""
+    doc = Document(name="t-probe")
+    doc.add("b", "plate", {"width": 80, "depth": 60, "thickness": 12})
+    doc.add("sk", "sketch_on_face", {"face": "top", "offset": 0,
+            "entities": [{"kind": "circle", "mode": "add",
+                          "x": 0, "y": 0, "r": 5}]}, inputs=["b"])
+    doc.add("boss", "extrude", {"amount": 6}, inputs=["sk"])
+    doc.add("j", "fuse", {}, inputs=["b", "boss"])
+    assert doc.rebuild(), doc.tree()
+    return doc
+
+
+def test_probe_reports_the_local_distance_not_the_witness_pair():
+    """Two spots on the boss give two different distances to the same wall:
+    the near point reads 35, a quarter turn away reads 40. The fixed witness
+    pair could only ever say 35."""
+    doc = boss_doc()
+    faces = doc.result().faces()
+    cyl = next(i for i, f in enumerate(faces)
+               if "CYLINDER" in str(f.geom_type))
+    wall = next(i for i, f in enumerate(faces)
+                if abs(f.normal_at(f.center()).X + 1) < 1e-9
+                and abs(f.center().X + 40) < 1e-6)
+    a = sel(doc, "face", cyl)
+    b = sel(doc, "face", wall)
+
+    # the plate is Z-CENTRED (spans -6..6), so a probe at z=9 on the boss sits
+    # 3 mm above the wall's top rim and the true minimum is the hypotenuse to
+    # that rim — the kernel measures the BOUNDED face, not its infinite plane
+    near = measure.probe(doc, a, b, [-5, 0, 9], on="a")
+    side = measure.probe(doc, a, b, [0, 5, 9], on="a")
+    assert near.get("error") is None, near
+    assert side.get("error") is None, side
+    assert near["value"] == pytest.approx((35**2 + 3**2) ** 0.5, abs=1e-3)
+    assert side["value"] == pytest.approx((40**2 + 3**2) ** 0.5, abs=1e-3)
+    # the witness point lands ON the wall, so the drawn line is honest
+    assert near["to"][0] == pytest.approx(-40.0, abs=1e-6)
+    assert near["from"] == pytest.approx([-5, 0, 9])
+
+
+def test_probe_on_parallel_faces_matches_the_plane_distance():
+    doc = pocket_doc()
+    top, bot = top_face(doc), bottom_face(doc)
+    r = measure.probe(doc, sel(doc, "face", top), sel(doc, "face", bot),
+                      [30, 20, 12], on="a")
+    assert r.get("error") is None, r
+    assert r["value"] == pytest.approx(12.0)
+    assert r["to"] == pytest.approx([30, 20, 0], abs=1e-6)
+
+
+def test_probe_can_ride_the_second_selection_too():
+    """on='b' flips the roles: the point rides B and measures back to A."""
+    doc = boss_doc()
+    faces = doc.result().faces()
+    cyl = next(i for i, f in enumerate(faces)
+               if "CYLINDER" in str(f.geom_type))
+    wall = next(i for i, f in enumerate(faces)
+                if abs(f.normal_at(f.center()).X + 1) < 1e-9)
+    r = measure.probe(doc, sel(doc, "face", wall), sel(doc, "face", cyl),
+                      [0, 5, 9], on="b")
+    assert r.get("error") is None, r
+    assert r["value"] == pytest.approx((40**2 + 3**2) ** 0.5, abs=1e-3)
+
+
+def test_probe_error_paths_never_raise():
+    doc = boss_doc()
+    a = sel(doc, "face", 0)
+    assert "error" in measure.probe(doc, a, None, [0, 0, 0])
+    assert "error" in measure.probe(doc, a, sel(doc, "face", 1), "not-a-point")
+    assert "error" in measure.probe(doc, a, sel(doc, "face", 9999), [0, 0, 0])
+    assert "error" in measure.probe(Document(name="t-empty"), a,
+                                    sel(doc, "face", 1), [0, 0, 0])

@@ -87,6 +87,34 @@ The pick box, reworked as a dimensions-first readout:
    chain is a click away. The E2E provenance tests now expand it the way a
    user does before reading the chain.
 
+## User feedback, round 4 (2026-08-31)
+
+> "this says the distance right, just move [it] a little further from that
+> measurement line, because it hides the line. 2nd thing, i want move the line
+> … the measurement always measure from the center, but i dont know the closest
+> distance and longest distance … if i can [move] the line, i can see the live
+> value in the box, same this works for the circle and a box, to measure wide"
+
+1. **The value label sits BESIDE the line now**, offset perpendicular to the
+   line's on-screen direction (biased upward, so the side is predictable) —
+   centred on the midpoint it hid the very line it measured.
+2. **The dimension line is draggable.** The witness pair is one sample of many:
+   between a slanted wall and a boss, or around a cylinder, the distance varies
+   along the geometry. With two picks and at least one face, the value label
+   becomes a grab handle — dragging it raycasts onto ONLY the picked face's
+   triangles (an invisible probe mesh, so the drag cannot wander onto a
+   neighbouring surface) and each position calls `POST /api/measure/probe`,
+   which answers with the KERNEL's exact minimum distance from that point to
+   the other selection plus the witness point, so the line follows the drag and
+   the panel reads "distance at this spot" live. One request in flight, latest
+   drag position wins — the extrude preview's throttle discipline. Read-only,
+   asserted: a probe per pointermove must never snapshot or rebuild.
+   Also deduped the cylinder pick box (its rim circles repeated the wall's own
+   ⌀, printing the same diameter twice — visible in the user's screenshot).
+
+Verified with a real mouse drag: grabbing the label and sliding it around a
+boss read 8 distinct kernel values (25.18 → 28.62 mm) with the line following.
+
 ## The problem, in the user's words
 
 > "we dont have proper scale to measure distance between two point … if i am

@@ -498,6 +498,13 @@ class MeasureReq(BaseModel):
     b: MeasureSel | None = None
 
 
+class MeasureProbeReq(MeasureReq):
+    """A dimension-line drag: `point` rides selection `on` (a raycast hit on
+    its face) and the answer is the live distance to the other selection."""
+    point: list
+    on: str = "a"
+
+
 class MeasureSetReq(MeasureReq):
     """Drive the geometry FROM the measured number: make this dimension
     `value`.
@@ -1357,6 +1364,20 @@ def _revert_last() -> bool:
     e["doc"]._spec_cache = old._spec_cache
     _rebuild_and_mesh()
     return True
+
+
+@app.post("/api/measure/probe")
+def measure_probe(req: MeasureProbeReq):
+    """SLIDE THE MEASUREMENT (the draggable dimension line).
+
+    Read-only like /api/measure — a probe per pointermove must never snapshot,
+    rebuild, or touch the document. The value is the kernel's own minimum
+    distance from the dragged point to the other selection, so the live number
+    is exact, not a mesh approximation."""
+    if req.b is None:
+        return {"error": "probing needs two selections"}
+    return measurelib.probe(_doc(), req.a.model_dump(), req.b.model_dump(),
+                            req.point, req.on)
 
 
 @app.post("/api/measure/set")

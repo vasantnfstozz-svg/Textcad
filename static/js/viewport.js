@@ -302,6 +302,7 @@ export function initViewport() {
     controls.update(); paintDimLabel(); paintSelBadges();
     renderer.render(scene, camera); })();
 
+  initDimDrag();               // the draggable Measure dimension label
   document.getElementById('vFit').onclick = () => setView('iso');
   document.getElementById('vTop').onclick = () => setView('top');
   document.getElementById('vFront').onclick = () => setView('front');
@@ -1412,10 +1413,84 @@ function paintDimLabel() {
   if (mid.clone().project(camera).z > 1) { el.style.display = 'none'; return; }
   const s = toScreen(mid);
   const r = renderer.domElement.getBoundingClientRect();
+  // BESIDE the line, not on it: centred on the midpoint the label hid the very
+  // line it measures (user report 2026-08-31). Offset perpendicular to the
+  // line's on-screen direction, biased upward so the side is predictable.
+  const a2 = toScreen(dimOverlay.from), b2 = toScreen(dimOverlay.to);
+  let px = 0, py = -1;
+  const dx = b2.x - a2.x, dy = b2.y - a2.y;
+  const len = Math.hypot(dx, dy);
+  if (len > 1) { px = -dy / len; py = dx / len; }
+  if (py > 0) { px = -px; py = -py; }          // always the upper side
   el.textContent = dimOverlay.text;
   el.style.display = 'block';
-  el.style.left = (s.x - r.left) + 'px';
-  el.style.top = (s.y - r.top) + 'px';
+  el.style.left = (s.x - r.left + px * 18) + 'px';
+  el.style.top = (s.y - r.top + py * 18) + 'px';
+}
+
+/* ---------------- the draggable dimension (Measure probe) ----------------
+   Between a slanted wall and a boss — or around a cylinder — the distance
+   varies along the geometry, so the witness pair is one sample of many. When a
+   probe target is set, GRABBING THE VALUE LABEL and dragging slides the sample
+   point across the picked face; every position reports back through onPoint
+   (Measure asks the kernel and repaints the line + live value). */
+
+let dimProbe = null;             // { mesh, cb }
+
+export function setDimProbe(target, onPoint) {
+  clearDimProbe();
+  if (!target || target.id == null) return false;
+  const entry = bodyObjs.find(b => b.id === target.body) || bodyObjs[0];
+  if (!entry) return false;
+  const g = faceGeometry(entry.data, target.id);
+  if (!g) return false;
+  // an invisible raycast target holding ONLY the probed face's triangles, so
+  // the drag cannot wander onto a neighbouring face and silently measure from
+  // the wrong surface
+  const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+    transparent: true, opacity: 0, depthWrite: false, colorWrite: false,
+    side: THREE.DoubleSide }));
+  scene.add(mesh);
+  dimProbe = { mesh, cb: onPoint };
+  const el = document.getElementById('dimLabel');
+  if (el) { el.classList.add('grab'); el.title = 'drag to slide the measurement along the face'; }
+  return true;
+}
+
+export function clearDimProbe() {
+  if (!dimProbe) return;
+  scene.remove(dimProbe.mesh);
+  dimProbe.mesh.geometry.dispose();
+  dimProbe = null;
+  const el = document.getElementById('dimLabel');
+  if (el) { el.classList.remove('grab', 'grabbing'); el.title = ''; }
+}
+
+function initDimDrag() {
+  const lbl = document.getElementById('dimLabel');
+  if (!lbl) return;
+  lbl.addEventListener('pointerdown', e => {
+    if (!dimProbe) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // same discipline as the gizmos: OrbitControls must never fight the drag
+    controls.enabled = false;
+    lbl.classList.add('grabbing');
+    const move = ev => {
+      raycaster.setFromCamera(ndcFrom(ev), camera);
+      const hit = raycaster.intersectObject(dimProbe.mesh, false)[0];
+      if (hit && dimProbe.cb)
+        dimProbe.cb([hit.point.x, hit.point.y, hit.point.z]);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      controls.enabled = true;
+      lbl.classList.remove('grabbing');
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  });
 }
 
 /* ---------------- face / edge picking ---------------- */
@@ -1558,7 +1633,8 @@ function selectFace(fid, entry = null, hitPoint = null) {
   const dia = [];
   if (info.radius != null)
     dia.push(['⌀', (info.radius * 2).toFixed(2) + ' mm']);
-  const circ = info.circles || [];
+  const circ = (info.circles || []).filter(r =>
+    info.radius == null || Math.abs(r - info.radius) > 1e-3);
   if (circ.length === 1)
     dia.push(['⌀', (circ[0] * 2).toFixed(2) + ' mm']);
   else if (circ.length >= 2) {
