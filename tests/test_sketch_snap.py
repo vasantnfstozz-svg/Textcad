@@ -85,7 +85,8 @@ def test_several_bodies_are_labelled_by_body():
     a = blocks.plate(20, 20, 10)
     b = blocks.plate(20, 20, 10).moved(Location((80, 0, 0)))
     res = snap.snap_geometry({"a": a, "b": b}, "XY", 0)
-    assert {p["body"] for p in res["points"]} == {"a", "b"}
+    assert {p["body"] for p in res["points"]
+            if p["kind"] != "design_center"} == {"a", "b"}
     assert (80 + 10.0, 10.0) in xy_set(res)            # b's corner, shifted
 
 
@@ -111,3 +112,58 @@ def test_curved_edge_crossing_is_accurate_not_sampled():
 def test_bad_plane_name_is_a_clear_error():
     with pytest.raises(ValueError, match="XY"):
         snap.snap_geometry({}, "nope", 0)
+
+
+# ---- face-sketch frames (they had NO model snapping before) ----------------
+
+def test_face_frame_snaps_like_the_named_plane():
+    """A face sketch passes its world frame instead of a plane name. The top
+    face of a centred plate IS the XY plane at z=+10, so both paths must
+    return the same points."""
+    part = PLATE()
+    out = sk.face_outline_2d(part, face="top")
+    via_frame = snap.snap_geometry({"b": part}, frame=out["frame"])
+    via_name = snap.snap_geometry({"b": part}, "XY", 10)
+    assert xy_set(via_frame) == xy_set(via_name)
+    assert (30.0, 20.0) in xy_set(via_frame, "corner")
+
+
+def test_face_frame_hole_centre_is_exact():
+    """The user's report: 'I could not find the center for that circle.' The
+    frame path must return the bore's EXACT arc centre — the UI's polyline
+    centroid was 0.32mm off on a Ø16 hole."""
+    part = blocks.with_center_hole(blocks.disc(30, 10), 8)
+    out = sk.face_outline_2d(part, face="top")
+    res = snap.snap_geometry({"d": part}, frame=out["frame"])
+    assert "center" in kinds_at(res, 0, 0, tol=1e-4), res["points"][:6]
+
+
+def test_bad_frame_is_a_clear_error():
+    with pytest.raises(ValueError, match="frame"):
+        snap.snap_geometry({}, frame={"origin": [0, 0, 0]})   # no x_dir/z_dir
+
+
+# ---- the centre of the design ("the software does not know the center") ----
+
+def test_design_center_is_the_bbox_centre_of_whats_on_the_plane():
+    """Two bodies at x=0 and x=80: the centre of the design on this plane is
+    the bbox centre of everything found, (40, 0) — offered as its own snap."""
+    a = blocks.plate(20, 20, 10)
+    b = blocks.plate(20, 20, 10).moved(Location((80, 0, 0)))
+    res = snap.snap_geometry({"a": a, "b": b}, "XY", 0)
+    assert "design_center" in kinds_at(res, 40, 0), xy_set(res)
+
+
+def test_design_center_defers_to_a_real_snap_point():
+    """When the bbox centre lands ON real geometry (a centred disc's bore),
+    the real point keeps its own kind — one point, labelled 'center'."""
+    part = blocks.with_center_hole(blocks.disc(30, 10), 8)
+    res = snap.snap_geometry({"d": part}, "XY", 5)
+    at_origin = [p for p in res["points"]
+                 if abs(p["x"]) < 1e-3 and abs(p["y"]) < 1e-3]
+    assert len(at_origin) == 1 and at_origin[0]["kind"] == "center", at_origin
+
+
+def test_no_design_center_when_the_plane_is_empty():
+    res = snap.snap_geometry({"b": PLATE()}, "XY", 500)
+    assert res["points"] == []

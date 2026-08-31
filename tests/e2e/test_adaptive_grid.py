@@ -9,7 +9,12 @@ should have the same adaptive grid."
 
 Locked in:
   1. zooming IN subdivides the cells (1-2-5 ladder) down to a floor of
-     gridMm/10 — past that, subdivision STOPS (cells just get bigger);
+     gridMm/100 — past that, subdivision STOPS (cells just get bigger).
+     The floor was gridMm/10 = 1mm at first, which made e.g. a 9.2 x 7.5
+     rectangle unclickable (2026-08-31: "I want to draw 9.2 x 7.5, I can
+     not, because the grid size is fixed to 1mm"); clicks snap to the live
+     grid, so the floor must reach fine dimensions. The DESIGN tab's ground
+     grid keeps the coarser gridMm/10 floor — it is decoration, not input;
   2. clicks snap to the visible grid corners, not just the origin;
   3. the plane is a FINITE plate: zooming out shows its edge instead of
      growing it, and it jumps to the next ladder size only when the sketch
@@ -94,13 +99,41 @@ def test_zoom_subdivides_and_stops_at_the_floor(sketch):
     page = sketch
     g0 = page.evaluate(GRID_INFO)
     assert g0 and g0["step"] >= 2, g0           # default view: coarse cells
-    g_in = page.evaluate(WHEEL, [40, -120])     # zoom IN hard
+    g_in = page.evaluate(WHEEL, [40, -120])     # zoom IN
     assert g_in["step"] < g0["step"], (g0, g_in)
-    assert g_in["step"] == pytest.approx(1.0), g_in   # the gridMm/10 floor
+    assert g_in["step"] < 1.0, g_in             # BELOW the old 1mm dead end
+    g_floor = page.evaluate(WHEEL, [120, -120])  # zoom IN to the stop
+    assert g_floor["step"] == pytest.approx(0.1), g_floor  # the gridMm/100 floor
     g_more = page.evaluate(WHEEL, [25, -120])   # keep zooming: must NOT subdivide
-    assert g_more["step"] == pytest.approx(1.0), g_more
-    g_out = page.evaluate(WHEEL, [80, 120])     # zoom OUT: coarsens again
+    assert g_more["step"] == pytest.approx(0.1), g_more
+    g_out = page.evaluate(WHEEL, [160, 120])    # zoom OUT: coarsens again
     assert g_out["step"] >= g0["step"], (g0, g_out)
+    assert page.errors == []
+
+
+def test_fine_dimensions_are_clickable_at_the_floor(sketch):
+    """THE reported failure: a 9.2 x 7.5 rectangle. Zoomed in to the 0.1mm
+    grid, clicks must land on 0.1 multiples — and come out as clean numbers
+    (9.2, not 9.200000000000001)."""
+    page = sketch
+    g = page.evaluate(WHEEL, [140, -120])       # zoom to the floor
+    assert g["step"] == pytest.approx(0.1), g
+    page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      sk.setSketchTool('rectangle');
+    }""")
+    # sloppy clicks near (0,0) and (9.2, 7.5); tol 0.4 keeps the origin's
+    # geometry snap in play for the first corner only
+    page.evaluate(ACT, [0.03, -0.02, 0.4])
+    page.evaluate(ACT, [9.23, 7.46, 0.4])
+    ents = page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      return sk.sketchEntities();
+    }""")
+    assert len(ents) == 1, ents
+    e = ents[0]
+    assert e["w"] == 9.2 and e["h"] == 7.5, e   # EXACT — not 9.2000000000001
+    assert e["x"] == 4.6 and e["y"] == 3.75, e
     assert page.errors == []
 
 

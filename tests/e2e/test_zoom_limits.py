@@ -166,10 +166,15 @@ def test_the_floor_clears_the_near_clip_plane(page, server, fresh_doc):
 
 def test_the_floor_scales_with_the_model(page, server, fresh_doc):
     """A keychain and a 200 mm panel must both zoom about as far in
-    proportional terms, so the floor cannot be a constant."""
+    proportional terms, so the floor cannot be a constant.
+
+    The big part is wing-rib (220x120x12, 11 features), NOT esp32-remote:
+    that file is live dogfooding WIP that grew to 79 features and blew the
+    open timeout mid-suite (2026-08-31). Tests must load designs whose
+    committed state is stable."""
     _load(page, server, "flange-100")
     small = page.evaluate(FIT)
-    _load(page, server, "esp32-remote")
+    _load(page, server, "wing-rib")
     big = page.evaluate(FIT)
     assert big["r"] > small["r"], (small["r"], big["r"])
     assert big["minDistance"] > small["minDistance"], \
@@ -178,8 +183,10 @@ def test_the_floor_scales_with_the_model(page, server, fresh_doc):
 
 def test_hard_zooming_never_reaches_the_orbit_target(page, server, fresh_doc):
     """The actual regression: 70 hard scrolls used to end with the camera AT the
-    target, i.e. inside the part."""
-    _load(page, server, "esp32-remote")
+    target, i.e. inside the part. wing-rib is the same shape class as the
+    original esp32-remote report — a thin 12 mm plate whose centre is 6 mm
+    from either face — without esp32's mutable-WIP open cost."""
+    _load(page, server, "wing-rib")
     floor = page.evaluate(FIT)["minDistance"]
     box = page.locator("#viewer").bounding_box()
     cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2

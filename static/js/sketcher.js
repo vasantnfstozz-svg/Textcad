@@ -80,13 +80,14 @@ function planeFrame() {
    corners / hole centres / edge midpoints become snap targets — drawing against
    an existing body was pure guesswork before. Fetched ONCE per sketch (never
    per mousemove); failure is silent, snapping just falls back to the sketch's
-   own entities. */
-async function loadModelSnaps(plane, offset = 0) {
+   own entities. FACE sketches pass their world frame (offset already baked
+   in) — they had no model snapping at all before that. */
+async function loadModelSnaps(plane, offset = 0, frame = null) {
   modelSnaps = []; modelEdges = [];
   try {
     const r = await fetch('/api/sketch/snap', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ plane, offset }) });
+      body: JSON.stringify({ plane, offset, frame }) });
     const data = await r.json();
     if (!sketchActive) return;                 // sketch closed while fetching
     modelSnaps = data.points || [];
@@ -284,7 +285,10 @@ export async function editSketch(feature) {
   enterMode();
   updateHint();
   renderEnts();
-  if (!onFace) loadModelSnaps(skPlaneName, skPlaneOffset);
+  // AFTER isolateAt, so the snaps reflect the rolled-back bodies. A face
+  // sketch snaps via its frame (offset baked in by face_outline_2d).
+  if (onFace) loadModelSnaps('XY', 0, outline.frame);
+  else loadModelSnaps(skPlaneName, skPlaneOffset);
 }
 bus.on('edit-sketch', editSketch);
 
@@ -317,6 +321,7 @@ export async function openSketchOnFace(faceInfo) {
   enterMode();
   updateHint();
   draw();
+  loadModelSnaps('XY', 0, data.frame);   // model corners/centres on THIS face
   bus.emit('msg', 'bot', `Sketching on a face of "${owner}" — the grey dashed ` +
     'outline is that surface. Draw your profile, Finish Sketch, then ' +
     'Create → Extrude to raise a boss or cut a pocket.');
@@ -410,15 +415,43 @@ function setTool(kind) {
    that is actually on screen. */
 const snap = v => {
   const s = SETTINGS.snapMm > 0 ? SETTINGS.snapMm : gridStep();
-  return s > 0 ? Math.round(v / s) * s : Math.round(v * 100) / 100;
+  const q = s > 0 ? Math.round(v / s) * s : Math.round(v * 100) / 100;
+  return Math.round(q * 1e6) / 1e6;   // 92 * 0.1 = 9.200000000000001 otherwise
 };
 const snapPt = p => ({ x: snap(p.x), y: snap(p.y) });
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
 /* ---------------- smart snapping (P4) ---------------- */
 
+/* centroid of a face-outline ring, IGNORING the duplicated closing point —
+   averaging it in pulled every "hole center" r/n off-centre (0.32mm on a
+   Ø16 bore: the user could never find the true centre of a circle) */
+function ringCentroid(h) {
+  if (!h || !h.length) return null;
+  const closed = h.length > 1
+    && Math.hypot(h[0][0] - h[h.length - 1][0],
+                  h[0][1] - h[h.length - 1][1]) < 1e-6;
+  const n = closed ? h.length - 1 : h.length;
+  let sx = 0, sy = 0;
+  for (let i = 0; i < n; i++) { sx += h[i][0]; sy += h[i][1]; }
+  return { x: sx / n, y: sy / n };
+}
+
+/* bbox centre of the CURRENT sketch's entities (via their own snap points) —
+   "the centre of the design" while it is still being drawn */
+function sketchCentreOf(pts) {
+  if (skEnts.length < 2 || !pts.length) return null;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const p of pts) {
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  }
+  return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+}
+
 function collectSnapPoints() {
   const pts = [{ x: 0, y: 0, label: 'origin' }];
+  const entFrom = pts.length;          // entity-derived points start here
   skEnts.forEach(e => {
     const cx = e.x || 0, cy = e.y || 0;
     if (e.kind !== 'path') pts.push({ x: cx, y: cy, label: 'center' });
@@ -450,18 +483,24 @@ function collectSnapPoints() {
         pts.push({ x: cx + s.to[0], y: cy + s.to[1], label: 'vertex' });
     }
   });
+  const sc = sketchCentreOf(pts.slice(entFrom));
+  if (sc) pts.push({ ...sc, label: 'sketch centre' });
   if (faceRef) {                       // snap to the selected surface too
     for (const p of faceRef.outer) pts.push({ x: p[0], y: p[1], label: 'edge' });
     for (const h of faceRef.holes) {
-      const hx = h.reduce((s, p) => s + p[0], 0) / h.length;
-      const hy = h.reduce((s, p) => s + p[1], 0) / h.length;
-      pts.push({ x: hx, y: hy, label: 'hole center' });
+      const c = ringCentroid(h);
+      // the model snaps carry the EXACT arc centre for round holes — never
+      // offer an approximate centroid 0.3mm beside it
+      if (c && !modelSnaps.some(m => m.kind === 'center'
+                                  && Math.hypot(m.x - c.x, m.y - c.y) < 0.5))
+        pts.push({ x: c.x, y: c.y, label: 'hole center' });
     }
   }
   // the MODEL's geometry on this plane (S5) — labelled so the marker says what
   // it locked onto ("model corner" reads very differently from "grid")
   const LABEL = { corner: 'model corner', midpoint: 'model edge midpoint',
-                  center: 'model centre', crossing: 'model edge' };
+                  center: 'model centre', crossing: 'model edge',
+                  design_center: 'design centre' };
   for (const m of modelSnaps)
     pts.push({ x: m.x, y: m.y, label: LABEL[m.kind] || 'model' });
   return pts;
@@ -1446,15 +1485,24 @@ function draw3D() {
   // these, a box's corners in plan view are invisible points you have to hunt
   // for — "we need something for selecting to those edges" was exactly this.
   for (const m of modelSnaps)
-    dots.push({ x: m.x, y: m.y, r: dR * 0.75, color: 0x8a97a8,
-                ring: m.kind === 'center' });      // centres read as a ring
+    dots.push({ x: m.x, y: m.y,
+                r: m.kind === 'design_center' ? dR : dR * 0.75,
+                color: 0x8a97a8,                   // centres read as a ring
+                ring: m.kind === 'center' || m.kind === 'design_center' });
   // face sketches: hole centres of the picked surface are snap targets too —
-  // mark them so they are visible BEFORE you hover (same S5 honesty rule)
+  // mark them so they are visible BEFORE you hover (same S5 honesty rule).
+  // Same rule as collectSnapPoints: the model's EXACT arc centre wins over
+  // the ring centroid — never draw two "centres" 0.3mm apart.
   if (faceRef) for (const h of faceRef.holes || []) {
-    if (!h.length) continue;
-    dots.push({ x: h.reduce((s, p) => s + p[0], 0) / h.length,
-                y: h.reduce((s, p) => s + p[1], 0) / h.length,
-                r: dR * 0.75, color: 0x8a97a8, ring: true });
+    const c = ringCentroid(h);
+    if (c && !modelSnaps.some(m => m.kind === 'center'
+                                && Math.hypot(m.x - c.x, m.y - c.y) < 0.5))
+      dots.push({ x: c.x, y: c.y, r: dR * 0.75, color: 0x8a97a8, ring: true });
+  }
+  // the centre of the sketch in progress, findable BEFORE you hover it
+  {
+    const sc = collectSnapPoints().find(p => p.label === 'sketch centre');
+    if (sc) dots.push({ x: sc.x, y: sc.y, r: dR, color: 0x8a97a8, ring: true });
   }
   if (tool === 'trim' && trimPieces && trimHover >= 0) {
     const piece = trimPieces[trimHover];        // the doomed segment, in red

@@ -177,6 +177,43 @@ def test_face_outline_snaps_and_finish_creates_sketch_only(face_sketch):
     assert page.errors == []
 
 
+def test_face_sketch_offers_model_snaps_and_design_centre(face_sketch):
+    """Face sketches had NO model snapping at all (/api/sketch/snap only knew
+    the three named planes), so the part's own corners and circle centres on
+    the picked face were invisible to the cursor ('I could not find the
+    center'). The face's frame is sent now — and the centre of the design on
+    the plane is its own snap point."""
+    page = face_sketch
+    page.wait_for_function("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      return sk.sketchSnapTargets().model.length > 0;
+    }""", timeout=15000)
+    targets = page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      return sk.sketchSnapTargets();
+    }""")
+    kinds = {t["kind"] for t in targets["model"]}
+    assert "corner" in kinds and "design_center" in kinds, targets["model"]
+    xy = {(t["x"], t["y"]) for t in targets["model"]}
+    assert (30.0, 20.0) in xy and (-30.0, -20.0) in xy, xy      # plate corners
+    dc = [t for t in targets["model"] if t["kind"] == "design_center"]
+    assert dc[0]["x"] == 0.0 and dc[0]["y"] == 0.0, dc          # centred plate
+    # and the cursor actually LOCKS onto a model corner, exactly
+    page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      sk.setSketchTool('circle');
+    }""")
+    page.wait_for_timeout(150)
+    page.evaluate(ACT, [29.2, 19.4, 2.0, False])
+    info = page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      return sk.hoverInfo();
+    }""")
+    assert info["snap"], info
+    assert info["snap"]["x"] == 30 and info["snap"]["y"] == 20, info
+    assert page.errors == []
+
+
 def test_named_face_sketch_reopens_for_editing(page, fresh_doc):
     """User report 2026-08-31: 'even after selecting them, I can't edit those
     sketches.' Every AI-authored design names its face (face='top', the offset

@@ -40,6 +40,19 @@ def plane_of(plane: str = "XY", offset: float = 0.0) -> b3d.Plane:
     return pl.offset(float(offset)) if offset else pl
 
 
+def plane_of_frame(frame: dict) -> b3d.Plane:
+    """The sketch plane from an explicit world frame — a FACE sketch's plane,
+    exactly as face_outline_2d returns it ({origin, x_dir, z_dir}; any offset
+    is already baked into the origin). Probed: build123d accepts plain lists,
+    and the derived y_dir matches the frame's own."""
+    try:
+        return b3d.Plane(origin=tuple(frame["origin"]),
+                         x_dir=tuple(frame["x_dir"]),
+                         z_dir=tuple(frame["z_dir"]))
+    except (KeyError, TypeError, ValueError) as e:
+        raise ValueError(f"snap: bad frame: {e}") from e
+
+
 def _signed(pl: b3d.Plane, p) -> float:
     """Distance from the plane, along its normal."""
     return (p - pl.origin).dot(pl.z_dir)
@@ -83,11 +96,13 @@ def _cross_point(edge, pl, t0: float, t1: float, iters: int = 24):
 
 
 def snap_geometry(parts: dict, plane: str = "XY", offset: float = 0.0,
-                  tol: float = TOL) -> dict:
+                  tol: float = TOL, frame: dict | None = None) -> dict:
     """`parts` maps body id -> solid. Returns
     {"points": [{"x","y","kind","body"}], "edges": [{"body","pts"}]}
-    in the sketch plane's local 2D frame."""
-    pl = plane_of(plane, offset)
+    in the sketch plane's local 2D frame. `frame` (a face sketch's world
+    frame) overrides plane/offset — face sketches had NO model snapping at
+    all before, because only the three named planes could be asked about."""
+    pl = plane_of_frame(frame) if frame else plane_of(plane, offset)
     points: list[dict] = []
     edges: list[dict] = []
     # a corner beats a midpoint at the same spot, and a real corner beats a
@@ -143,5 +158,19 @@ def snap_geometry(parts: dict, plane: str = "XY", offset: float = 0.0,
                     hit = _cross_point(edge, pl, i / n, (i + 1) / n)
                     if hit is not None:
                         add(hit, "crossing", body)
+
+    # the CENTRE OF THE DESIGN on this plane — the bbox centre of everything
+    # found above ("if I want to design a circle to the center, the software
+    # does not know the center of the design"). A real snap point that already
+    # sits there keeps its own, more meaningful kind.
+    xs = [p["x"] for p in points] + [q[0] for e in edges for q in e["pts"]]
+    ys = [p["y"] for p in points] + [q[1] for e in edges for q in e["pts"]]
+    if xs:
+        cx = round((min(xs) + max(xs)) / 2, 4)
+        cy = round((min(ys) + max(ys)) / 2, 4)
+        if not any(abs(q["x"] - cx) < DEDUPE and abs(q["y"] - cy) < DEDUPE
+                   for q in points):
+            points.append({"x": cx, "y": cy, "kind": "design_center",
+                           "body": "*"})
 
     return {"points": points, "edges": edges}

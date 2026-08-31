@@ -46,6 +46,7 @@ from OCP.TopTools import TopTools_IndexedDataMapOfShapeListOfShape
 import author
 import blocks
 import imgtrace
+import inspector
 import measure as measurelib
 import sketch as sketchlib
 import sketch_trim as trimlib
@@ -1993,13 +1994,26 @@ def get_ops():
 
 @app.post("/api/export")
 def export_step():
+    """Export the ACTIVE design as STEP and PROVE what was written.
+
+    The file goes to designs/<name>.step — the same canonical place the MCP
+    builds write — so a design has ONE .step on disk, not a root copy and a
+    designs/ copy quietly diverging (2026-08-31: the stale twin of that pair
+    is what a CAM import picked up). After writing, the file itself is
+    measured and the facts returned, so the UI can show what the reader of
+    this file will actually get: never trust, always measure — exports
+    included. A parked rollback bar or a failed tail is handled/refused in
+    Document.to_step rather than silently exporting an intermediate body.
+    """
     doc = _doc()
-    path = str(ROOT / f"{doc.name}.step")
+    path = str(DESIGNS / f"{doc.name}.step")
     try:
         doc.to_step(path)
-        return {"path": path}
     except Exception as e:
         return {"error": str(e)}
+    m = inspector.measure(path)
+    return {"path": path, "n_solids": m.get("n_solids"),
+            "volume": m.get("volume"), "size": m.get("size")}
 
 
 # ---------------------------------------------------------------------------

@@ -233,7 +233,9 @@ export function planeToScreen(x, y) {
 /* ---------------- the adaptive grid (Fusion-style) ----------------
    Two independent rules (shared machinery in grid3d.js): CELL SIZE follows
    the CAMERA — zooming in subdivides along a 1-2-5 ladder down to a floor
-   of gridMm/10, past which the cells simply get bigger on screen. PLANE
+   of gridMm/100 (0.1mm by default — a 1mm floor made 9.2 x 7.5 literally
+   unclickable, since clicks snap to the live grid), past which the cells
+   simply get bigger on screen. PLANE
    SIZE follows the CONTENT — the plane is a finite plate whose edge you can
    find by zooming out, and it jumps to the NEXT ladder size when the sketch
    outgrows it (500 → 1000 → 2000 …). Rebuilt on 'view-changed'; a no-op
@@ -281,7 +283,7 @@ function updateGrid() {
 }
 
 function buildGridFor(fp, pxPerMm) {
-  const step = gridStepFor(pxPerMm, Math.max(gridBase / 10, 0.01),
+  const step = gridStepFor(pxPerMm, Math.max(gridBase / 100, 0.01),
                            planeHalf / 2);
   const bounds = { minX: -planeHalf, maxX: planeHalf,
                    minY: -planeHalf, maxY: planeHalf };
