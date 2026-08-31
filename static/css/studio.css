@@ -626,3 +626,12 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
    set (2026-08-31: slide the measurement to find the closest/widest spot) */
 #dimLabel.grab { pointer-events: auto; cursor: grab; }
 #dimLabel.grabbing { cursor: grabbing; }
+
+/* probe nudge arrows, riding under the dimension label */
+#dimNudge { position: absolute; transform: translate(-50%, 0); z-index: 31;
+  display: none; gap: 2px; }
+#dimNudge button { width: 20px; height: 18px; padding: 0; line-height: 16px;
+  font-size: 10px; color: #6ee7ff; background: rgba(8, 17, 30, .86);
+  border: 1px solid #6ee7ff; border-radius: 4px; cursor: pointer; }
+#dimNudge button:hover { background: rgba(110, 231, 255, .25); }
+#dimNudge button:active { background: rgba(110, 231, 255, .45); }

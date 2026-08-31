@@ -245,6 +245,21 @@ r_target — "the longest point from surface center". Never misses, so the clamp
 never engages. UI-verified: swing 270°→190° read 26.32 → 29.72 approaching the
 far-pole 30.0, with the vertical slide still constant at each height.
 
+## User feedback, round 8 (2026-08-31)
+
+> "add two arrow mark near the line for moving up and down and for side left
+> to right, so when i click those arrows, they will move that direction"
+
+A `◀ ▲ ▼ ▶` cluster rides just under the dimension label whenever a probe is
+armed. Each click steps the probe point 6 screen-px in that direction —
+through the SAME pipeline as a label drag (`probeAtClient`, extracted from the
+drag loop), so the miss-tolerant snap, the parallel slide, the sideways swing
+and the clamp all behave identically; holding a button glides (60 ms repeat).
+The anchor is the line's grabbed end, so steps accumulate along the surface.
+Buttons stopPropagation on pointerdown so a click never starts an orbit.
+UI-verified: hidden before a pair, visible when armed, 5× right stepped
+22.00 → 22.17, holding up glided the label 17 px up the pillars.
+
 ## The problem, in the user's words
 
 > "we dont have proper scale to measure distance between two point … if i am

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=32">
+<link rel="stylesheet" href="/static/css/studio.css?v=33">
 </head>
 <body>
 
@@ -64,6 +64,13 @@
     <div id="dimLabel" style="display:none"></div>
     <!-- A / B badges on the picked faces, so the panel's labels and the
          geometry are visibly the same two things -->
+    <!-- probe nudge arrows: click to step the measurement, hold to glide -->
+    <div id="dimNudge" style="display:none">
+      <button data-dir="left" title="step the measurement left">◀</button>
+      <button data-dir="up" title="step the measurement up">▲</button>
+      <button data-dir="down" title="step the measurement down">▼</button>
+      <button data-dir="right" title="step the measurement right">▶</button>
+    </div>
     <div id="selBadgeA" class="selbadge a" style="display:none">A</div>
     <div id="selBadgeB" class="selbadge b" style="display:none">B</div>
     <div id="placeHint" style="display:none"></div>
@@ -291,6 +298,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=125"></script>
+<script type="module" src="/static/js/main.js?v=126"></script>
 </body>
 </html>
