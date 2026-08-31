@@ -8,6 +8,7 @@ The port is private on purpose — never the dev server. Several processes can
 LISTEN on one port on Windows, and then responses come from whichever bound
 last, which makes results meaningless (see the debug-studio skill).
 """
+import os
 import threading
 import time
 
@@ -15,7 +16,10 @@ import pytest
 
 pw_api = pytest.importorskip("playwright.sync_api")
 
-PORT = 8136
+# Overridable so two suite runs (or two agents working this repo at once) do
+# not fight over one socket: on Windows several processes can LISTEN on the
+# same port and responses come from whichever bound last (see debug-studio).
+PORT = int(os.environ.get("TEXTCAD_E2E_PORT", "8136"))
 URL = f"http://127.0.0.1:{PORT}"
 
 

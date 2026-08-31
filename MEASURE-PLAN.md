@@ -140,6 +140,36 @@ Verified on the compressor itself: a sweep along the channel produced 9
 distinct kernel values (27.3 mm down to 1.17 mm at the blade convergence) with
 no freeze, where the same path previously stalled.
 
+### Round 4 follow-up 2: ACROSS, not just nearest (2026-08-31)
+
+> "when i am moving in x axis, the line size should increase, to extend for
+> the curved surface … in simple words the line should move accoring to the
+> surface"
+
+Nearest-point pivots the line toward one spot on the other shape; dragging
+along a wall past a bore, the user expects the gap AT this station — a ray
+from the probe point along the source face's normal, stretched until it meets
+the other surface. The probe now has two modes, named in the panel:
+
+* **across** — `BRepIntCurveSurface_Inter` on the target with a `gp_Lin` from
+  the probe point along `source.normal_at(P)` (flipped toward the target using
+  the min-distance witness); the smallest positive parameter is the distance
+  and its point is where the line ends, so the far end RIDES the curve
+  (probed: 25.0 / 26.0 / 29.0 sliding a wall past an r=5 bore). The nearest
+  distance rides along as a footnote row.
+* **nearest** — past the surface's shadow the ray misses and the probe falls
+  back to minimum distance, so the drag never goes blank.
+
+Verified as an E2E test on the suite's own server
+(`tests/e2e/test_measure_probe.py`) after two lessons about the LIVE server:
+verifying there raced the other agent switching tabs mid-drag (the picks
+landed on a different design entirely — Face 51 on a 7-face part was the
+tell), and the e2e port is now overridable (`TEXTCAD_E2E_PORT`) because two
+suite runs on one Windows port both LISTEN and answers come from whichever
+bound last. Also: exact rim points are knife-edge picks (50/50 between the
+cylinder, the top face and nothing) — aim into the bore at the far inner wall
+instead.
+
 ## The problem, in the user's words
 
 > "we dont have proper scale to measure distance between two point … if i am

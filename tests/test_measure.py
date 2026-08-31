@@ -501,3 +501,58 @@ def test_probe_error_paths_never_raise():
     assert "error" in measure.probe(doc, a, sel(doc, "face", 9999), [0, 0, 0])
     assert "error" in measure.probe(Document(name="t-empty"), a,
                                     sel(doc, "face", 1), [0, 0, 0])
+
+
+def hole_doc():
+    """80x60x12 plate (Z-centred: -6..6) with a r=5 THROUGH hole at the origin,
+    so its cylinder spans the same Z as the outer walls — a ray from a wall at
+    any z on the wall can actually meet it. (The boss fixture above sits ABOVE
+    the walls' Z span; a ray from the wall passes underneath it — the third
+    time the Z-centred plate has bitten a fixture in this file.)"""
+    doc = Document(name="t-probe-hole")
+    doc.add("b", "plate", {"width": 80, "depth": 60, "thickness": 12})
+    doc.add("bore", "with_center_hole", {"radius": 5}, inputs=["b"])
+    assert doc.rebuild(), doc.tree()
+    return doc
+
+
+def test_probe_measures_ACROSS_the_gap_not_to_the_nearest_spot():
+    """User report (2026-08-31): dragging along a flat wall past a curved
+    surface, "the line should move according to the surface" — extend to meet
+    the circle, not pivot toward its nearest point. From the wall the ray runs
+    along the wall's normal: at x=0 the gap is 25, at x=3 the circle has
+    curved away to 26 — nearest-point would read 25.18 there and pivot."""
+    doc = hole_doc()
+    faces = doc.result().faces()
+    wall = next(i for i, f in enumerate(faces)
+                if abs(f.normal_at(f.center()).Y + 1) < 1e-9)
+    cyl = next(i for i, f in enumerate(faces)
+               if "CYLINDER" in str(f.geom_type))
+    a, b = sel(doc, "face", wall), sel(doc, "face", cyl)
+
+    at0 = measure.probe(doc, a, b, [0, -30, 3], on="a")
+    at3 = measure.probe(doc, a, b, [3, -30, 3], on="a")
+    assert at0.get("mode") == "across", at0
+    assert at0["value"] == pytest.approx(25.0, abs=1e-6)
+    assert at3.get("mode") == "across", at3
+    assert at3["value"] == pytest.approx(26.0, abs=1e-6)
+    # the line's far end rides the CIRCLE at this station, not the near pole
+    assert at3["to"][0] == pytest.approx(3.0, abs=1e-6)
+    assert at3["to"][1] == pytest.approx(-4.0, abs=1e-6)
+    # the honest footnote: the nearest distance rides along
+    assert at3["nearest"] < at3["value"]
+
+
+def test_probe_falls_back_to_nearest_beyond_the_surface():
+    """Past the cylinder's shadow the across-ray misses — the probe must keep
+    answering (nearest) rather than going blank mid-drag."""
+    doc = hole_doc()
+    faces = doc.result().faces()
+    wall = next(i for i, f in enumerate(faces)
+                if abs(f.normal_at(f.center()).Y + 1) < 1e-9)
+    cyl = next(i for i, f in enumerate(faces)
+               if "CYLINDER" in str(f.geom_type))
+    r = measure.probe(doc, sel(doc, "face", wall), sel(doc, "face", cyl),
+                      [8, -30, 3], on="a")
+    assert r.get("mode") == "nearest", r
+    assert r["value"] == pytest.approx((8**2 + 30**2) ** 0.5 - 5, abs=1e-3)

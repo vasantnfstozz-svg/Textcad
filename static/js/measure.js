@@ -285,9 +285,24 @@ async function sendProbe(pt) {
     });
     const r = await res.json();
     if (!r.error && r.from && r.to) {
-      // the LIVE value, in the box and on the line
+      // the LIVE value, in the box and on the line. Two modes, named
+      // honestly: ACROSS runs along the source face's normal and stretches to
+      // meet the other surface ("the line should move according to the
+      // surface"); past the surface's shadow it falls back to NEAREST.
       el('meValue').textContent = r.label;
-      el('meKind').textContent = 'distance at this spot';
+      el('meKind').textContent = r.mode === 'across'
+        ? 'across the gap at this spot' : 'nearest from this spot';
+      const rows = el('meRows');
+      rows.innerHTML = '';
+      if (r.mode === 'across' && r.nearest != null
+          && Math.abs(r.nearest - r.value) > 5e-3) {
+        const d = document.createElement('div');
+        d.className = 'merow';
+        d.innerHTML = '<span class="k"></span><span class="v"></span>';
+        d.querySelector('.k').textContent = 'nearest anywhere';
+        d.querySelector('.v').textContent = r.nearest.toFixed(2) + ' mm';
+        rows.appendChild(d);
+      }
       showDimension(r.from, r.to, r.label);
     }
   } catch (e) { /* mid-drag hiccup: the next move retries */ } finally {

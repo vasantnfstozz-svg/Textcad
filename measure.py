@@ -1074,7 +1074,7 @@ def probe(doc, a: dict, b: dict | None, point, on: str = "a") -> dict:
     source shape; the answer is the exact minimum distance from that point to
     the other shape, with the witness point so the line can follow the drag.
     Read-only and never raises."""
-    from build123d import Vertex
+    from build123d import Vertex, Vector
     try:
         if not doc.features:
             return {"error": "the design is empty"}
@@ -1089,12 +1089,51 @@ def probe(doc, a: dict, b: dict | None, point, on: str = "a") -> dict:
         v = Vertex(*p)
     except Exception:
         return {"error": "that probe point is not a valid position"}
+    source = shape_b if str(on) == "b" else shape_a
     target = shape_a if str(on) == "b" else shape_b
     md = _min_distance(v, target)
     if md is None:
         return {"error": "could not measure from there"}
     d, _p1, p2 = md
-    return {"kind": "probe", "value": _r(d), "unit": MM,
+
+    # ACROSS, not just nearest (user request 2026-08-31: "the line should move
+    # according to the surface"). Nearest-point pivots the line toward one spot
+    # on the other shape; what a machinist dragging along a wall expects is the
+    # gap AT this point — a ray from here along the surface normal, stretched
+    # until it meets the other shape. Probed: sliding along a wall past a
+    # cylinder reads 25.0 / 26.0 / 29.0 mm as the circle curves away, and
+    # cleanly misses beyond it (where nearest takes over again).
+    across = None
+    try:
+        n = source.normal_at(Vector(*p))
+        nv = [float(n.X), float(n.Y), float(n.Z)]
+        ln = _norm(nv)
+        if ln > 1e-9 and d > TOUCH_TOL:
+            nv = _scale(nv, 1.0 / ln)
+            if _dot(nv, _sub(p2, p)) < 0:
+                nv = _scale(nv, -1.0)        # the normal must look AT the target
+            from OCP.gp import gp_Lin, gp_Pnt, gp_Dir
+            from OCP.BRepIntCurveSurface import BRepIntCurveSurface_Inter
+            inter = BRepIntCurveSurface_Inter()
+            inter.Init(target.wrapped, gp_Lin(gp_Pnt(*p), gp_Dir(*nv)), 1e-6)
+            best = None
+            while inter.More():
+                w = float(inter.W())
+                if w > 1e-7 and (best is None or w < best[0]):
+                    q = inter.Pnt()
+                    best = (w, [float(q.X()), float(q.Y()), float(q.Z())])
+                inter.Next()
+            if best is not None:
+                across = best
+    except Exception:
+        across = None                        # curved-source oddity: fall back
+
+    if across is not None:
+        w, hit = across
+        return {"kind": "probe", "mode": "across", "value": _r(w), "unit": MM,
+                "label": _fmt(w), "from": _r3(p), "to": _r3(hit),
+                "nearest": _r(d)}
+    return {"kind": "probe", "mode": "nearest", "value": _r(d), "unit": MM,
             "label": _fmt(d), "from": _r3(p), "to": _r3(p2)}
 
 
