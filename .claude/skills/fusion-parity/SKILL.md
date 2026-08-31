@@ -89,6 +89,14 @@ were each learned from a correction — do not regress them.
    row and what consumed it nests underneath (tree.js `sketchesOf`), because
    that is the order the part was built in.
 
+13. **Viewport navigation mapping (user mandate 2026-08-31).** RIGHT-drag
+   PANS ("move the body front and back, up and down — right click I don't
+   wanna rotate"), MIDDLE-drag orbits, wheel zooms — IDENTICAL in the design
+   tab and sketch mode. LEFT orbits in design (user's call, diverges from
+   Fusion) and draws in sketch; Shift+LEFT pans everywhere as the fallback.
+   One mapping app-wide, set only in viewport.buildControls. Locked in by
+   tests/e2e/test_camera_zup.py::test_navigation_mapping_is_the_same_in_both_tabs.
+
 ## Gizmo/drag mechanics (hard-won, in viewport.js)
 
 - Grab in a CAPTURE-phase pointerdown + `controls.enabled=false` so

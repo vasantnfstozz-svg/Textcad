@@ -3,7 +3,7 @@
 // are real geometry ON the sketch plane inside the 3D scene, and the user can
 // orbit/pan/zoom at any moment while sketching:
 //   * LEFT  = draw / select (raycast onto the sketch plane -> plane-local x,y)
-//   * RIGHT = orbit, MIDDLE = pan, wheel = zoom  (remapped only in sketch mode)
+//   * RIGHT = pan, MIDDLE = orbit, wheel = zoom  (same mapping as design mode)
 // sketcher.js owns ALL tool logic (state machine in plane coordinates); this
 // module only renders its spec and converts pointer rays to plane points.
 // Wiring: viewport.js calls initSketch3D(ctx); sketcher.js calls enter/render/
@@ -107,7 +107,7 @@ export function enterSketch3D(frameSpec, opts = {}) {
   // pole (looking down world -Y at XZ was exactly phi=pi => orbit was dead)
   const c = ctx.setOrbitUp(frame.y.toArray());
   // Sketch mode changes exactly ONE thing about navigation: LEFT stops
-  // orbiting because it draws. MIDDLE=pan / RIGHT=orbit / wheel=zoom are the
+  // orbiting because it draws. RIGHT=pan / MIDDLE=orbit / wheel=zoom are the
   // app-wide mapping set in viewport.buildControls — do not diverge here, the
   // tabs disagreeing is what made "I can't rotate while sketching" happen.
   // Going through setLeftButton (not c.mouseButtons directly) keeps the

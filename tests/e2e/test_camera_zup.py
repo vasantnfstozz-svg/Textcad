@@ -51,7 +51,7 @@ async (args) => {
   const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
 """ + SETTLE + """
   const before = vp.camera.position.clone();
-  const buttons = button === 2 ? 2 : 1;
+  const buttons = button === 2 ? 2 : (button === 1 ? 4 : 1);
   const ev = (t, x, y, down) => cv.dispatchEvent(new PointerEvent(t,
     { clientX: x, clientY: y, bubbles: true, pointerId: 1, isPrimary: true,
       button, buttons: down ? buttons : 0 }));
@@ -130,21 +130,21 @@ def test_view_presets_are_off_the_orbit_pole_and_can_orbit(page, view):
 
 
 def test_navigation_mapping_is_the_same_in_both_tabs(page):
-    """The tabs used to disagree about what each mouse button does (design:
-    left orbit / middle dolly / right pan; sketch: left draw / middle pan /
-    right orbit), so left-dragging in a sketch drew instead of rotating and
-    read as "rotating is broken". RIGHT orbits and MIDDLE pans everywhere now;
-    sketch mode only takes LEFT away. Design keeps left-drag orbit by choice.
-    Pan is told from orbit by whether the ORBIT TARGET moved."""
+    """User mandate 2026-08-31: "for right click I can move the body front and
+    back, up and down — right click I don't wanna rotate", in the sketch tab
+    AND the design tab. So RIGHT pans and MIDDLE orbits everywhere; sketch
+    mode only takes LEFT away (it draws). Design keeps left-drag orbit by
+    choice. Pan is told from orbit by whether the ORBIT TARGET moved."""
     page.evaluate("""async () => {
       const vp = await import('/static/js/viewport.js'); vp.setView('iso');
     }""")
     page.wait_for_timeout(400)
 
-    assert page.evaluate(DRAG_JS, [70, -25, 2]) > 1.0, "design: right must orbit"
-    assert page.evaluate(PAN_JS, [70, -25, 2]) < 1.0, "design: right must not pan"
-    assert page.evaluate(PAN_JS, [70, -25, 1]) > 1.0, "design: middle must pan"
+    assert page.evaluate(PAN_JS, [70, -25, 2]) > 1.0, "design: right must pan"
+    assert page.evaluate(DRAG_JS, [70, -25, 1]) > 1.0, "design: middle must orbit"
+    assert page.evaluate(PAN_JS, [70, -25, 1]) < 1.0, "design: middle must not pan"
     assert page.evaluate(DRAG_JS, [70, -25, 0]) > 1.0, "design keeps left orbit"
+    assert page.evaluate(PAN_JS, [70, -25, 0]) < 1.0, "design: left must not pan"
 
     page.evaluate("""async () => {
       const sk = await import('/static/js/sketcher.js');
@@ -153,8 +153,9 @@ def test_navigation_mapping_is_the_same_in_both_tabs(page):
       sk.setSketchTool('rectangle');           // a draw tool is armed
     }""")
     page.wait_for_timeout(700)
-    assert page.evaluate(DRAG_JS, [70, -25, 2]) > 1.0, "sketch: right must orbit"
-    assert page.evaluate(PAN_JS, [70, -25, 1]) > 1.0, "sketch: middle must pan"
+    assert page.evaluate(PAN_JS, [70, -25, 2]) > 1.0, "sketch: right must pan"
+    assert page.evaluate(DRAG_JS, [70, -25, 1]) > 1.0, "sketch: middle must orbit"
+    assert page.evaluate(PAN_JS, [70, -25, 1]) < 1.0, "sketch: middle must not pan"
     assert page.evaluate(DRAG_JS, [70, -25, 0]) < 1.0, "sketch: left draws"
     assert page.errors == []
 
@@ -214,10 +215,10 @@ def test_sketch_mode_shows_the_navigation_legend(page):
     page.wait_for_timeout(1100)
     assert nav.is_visible()
     text = " ".join(nav.inner_text().split())
-    assert "RIGHT-drag" in text and "orbit" in text, text
-    assert "middle" in text and "pan" in text, text
+    assert "RIGHT-drag" in text and "pan" in text, text
+    assert "middle" in text and "orbit" in text, text
     chat = page.locator("#chatLog").inner_text()
-    assert "RIGHT-drag orbits" in chat, chat[-200:]
+    assert "RIGHT-drag pans" in chat, chat[-200:]
     assert page.errors == []
 
 

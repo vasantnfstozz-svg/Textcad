@@ -124,8 +124,8 @@ def face_sketch(page, fresh_doc):
 
 def test_face_sketch_is_in_viewport_with_model_visible(face_sketch):
     """The literal regression: face sketch != separate 2D screen. The body
-    must still be a real solid in the scene, and right-drag must orbit while
-    a draw tool is armed."""
+    must still be a real solid in the scene, and right-drag must navigate
+    (pan, per the 2026-08-31 mapping) while a draw tool is armed."""
     page = face_sketch
     assert page.evaluate("window.__vp.bodyCount()") == 1, "body vanished"
     assert page.evaluate("document.getElementById('sketchDialog')") is None
@@ -135,7 +135,7 @@ def test_face_sketch_is_in_viewport_with_model_visible(face_sketch):
     }""")
     page.wait_for_timeout(200)
     moved = page.evaluate(DRAG_JS, [70, -25, 2])
-    assert moved > 1.0, f"right-drag orbit dead in a FACE sketch ({moved:.2f}mm)"
+    assert moved > 1.0, f"right-drag nav dead in a FACE sketch ({moved:.2f}mm)"
     assert page.errors == []
 
 

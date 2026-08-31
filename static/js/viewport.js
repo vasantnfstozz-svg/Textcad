@@ -56,9 +56,9 @@ const WORLD_UP = new THREE.Vector3(0, 0, 1);
 
 /* What the LEFT button does when Shift is NOT held: orbit in the design tab,
    nothing in sketch mode (it draws there). Holding Shift turns LEFT into PAN
-   in both — a fallback for mice whose wheel-press drag is awkward, since pan
-   otherwise lives only on the middle button. OrbitControls reads mouseButtons
-   at pointerdown, so flipping it on the Shift keydown is enough. */
+   in both — kept alongside right-drag pan as a fallback gesture.
+   OrbitControls reads mouseButtons at pointerdown, so flipping it on the
+   Shift keydown is enough. */
 let leftBase = THREE.MOUSE.ROTATE;
 let shiftPan = false;
 
@@ -127,15 +127,16 @@ function buildControls(up) {
      while sketch mode had LEFT draw / MIDDLE pan / RIGHT orbit — so the same
      drag did different things depending on where you were, and left-dragging
      in a sketch (which draws) read as "rotating is broken".
-     Now RIGHT-drag orbits, MIDDLE-drag pans and the wheel zooms EVERYWHERE;
-     sketch mode only takes LEFT away (it draws). Fusion never orbits with the
-     left button either — it selects, and orbit is Shift+middle — but the
+     RIGHT-drag PANS, MIDDLE-drag orbits and the wheel zooms EVERYWHERE
+     (user mandate 2026-08-31: "for right click I can move the body front and
+     back, up and down — right click I don't wanna rotate", in the sketch tab
+     and design tab both); sketch mode only takes LEFT away (it draws). The
      design tab deliberately KEEPS left-drag orbit (user's call) since nothing
      else needs left there. */
   leftBase = THREE.MOUSE.ROTATE;        // design default; sketch mode frees it
   controls.mouseButtons = { LEFT: leftBase,
-                            MIDDLE: THREE.MOUSE.PAN,
-                            RIGHT: THREE.MOUSE.ROTATE };
+                            MIDDLE: THREE.MOUSE.ROTATE,
+                            RIGHT: THREE.MOUSE.PAN };
   applyLeftButton();                    // a rebuild must not drop Shift-pan
   // never dolly past the far clip plane — beyond it the whole scene (model,
   // grids, everything) is clipped to a black void that reads as a crash

@@ -2,7 +2,7 @@
 // separate screen (fusion-parity rule 9): whether it starts on an origin plane
 // or on a picked FACE of a body, the viewport IS the editor — the grid lands
 // on the sketch plane in the 3D scene, every body stays visible, and the user
-// orbits (right-drag) / pans (middle / shift+left) / zooms at any moment.
+// orbits (middle-drag) / pans (right / shift+left) / zooms at any moment.
 //   * pick a tool in the contextual ribbon, then CLICK IN THE VIEWPORT to draw
 //     (circle: click center, click radius; rectangle: two corners;
 //      polygon: click points, double-click to close)
@@ -109,7 +109,7 @@ function focusOnModel(plane) {
 
 /* EVERY sketch happens IN the 3D viewport (sketch3d.js) — Fusion's sketch
    mode: entities live on the plane as real geometry, and the user can orbit
-   (right-drag) / pan (middle) / zoom at any time while drawing with LEFT. */
+   (middle-drag) / pan (right-drag) / zoom at any time while drawing with LEFT. */
 let snapTol3d = 2;        // mm for ~12 px — updated with every 3D pointer event
 let pendingFocus = null;  // {cx, cy, extent} camera framing for the next enter
 let edgeOnView = false;   // view rotated (nearly) parallel to the sketch plane
@@ -154,9 +154,9 @@ function enterMode() {
   sketchActive = true;
   if (!navTipShown) {
     navTipShown = true;
-    bus.emit('msg', 'bot', 'Sketch mode: left-drag draws · RIGHT-drag orbits '
-      + '(the model stays live — you never leave 3D) · middle-drag or '
-      + 'shift+left-drag pans · wheel zooms · Look At re-faces the plane.');
+    bus.emit('msg', 'bot', 'Sketch mode: left-drag draws · RIGHT-drag pans '
+      + '(shift+left too) · middle-drag orbits (the model stays live — you '
+      + 'never leave 3D) · wheel zooms · Look At re-faces the plane.');
   }
   enterSketch3D(skOnFace ? skOnFace.frame : planeFrame(),
                 { gridMm: SETTINGS.gridMm, focus: pendingFocus || undefined });
