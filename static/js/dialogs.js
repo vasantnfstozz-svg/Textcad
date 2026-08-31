@@ -109,7 +109,10 @@ export function actionImportStl() {
   if (modalGuard()) return;
   const inp = document.createElement('input');
   inp.type = 'file';
-  inp.accept = '.stl,model/stl';
+  // one button, both formats — the user's own STEP exports must come back in
+  // (2026-08-31: "i have exported a compressor design here, but if i want to
+  // open it again the same file here, its not working")
+  inp.accept = '.stl,.step,.stp,model/stl,model/step';
   inp.onchange = async () => {
     const f = inp.files[0];
     if (!f) return;
@@ -119,19 +122,31 @@ export function actionImportStl() {
       r.onerror = rej;
       r.readAsDataURL(f);
     });
-    const out = await postJSON('/api/import-stl', {
-      stl_base64: dataUrl,
-      feature_id: (f.name.replace(/\.[^.]*$/, '').replace(/[^\w-]+/g, '-')
-                   .slice(0, 24) || 'imported-stl'),
-    }, 'importing STL…');
+    const isStep = /\.(step|stp)$/i.test(f.name);
+    const fid = (f.name.replace(/\.[^.]*$/, '').replace(/[^\w-]+/g, '-')
+                 .slice(0, 24) || (isStep ? 'imported-step' : 'imported-stl'));
+    const out = isStep
+      ? await postJSON('/api/import-step',
+                       { step_base64: dataUrl, feature_id: fid },
+                       'importing STEP…')
+      : await postJSON('/api/import-stl',
+                       { stl_base64: dataUrl, feature_id: fid },
+                       'importing STL…');
     if (out && !out.error) {
-      loadMesh(out.features.length === 1);   // fit on the very first body
+      // FORCE the reload: an imported BREP's first tessellation can take many
+      // seconds (a compressor's splined blades), and a non-forced load shows
+      // no busy overlay — the user stared at an empty viewport with a green
+      // tree and no clue anything was still happening (seen in UI
+      // verification of the STEP import).
+      loadMesh(out.features.length === 1, true);
       const i = out.import_info || {};
       const bodies = i.bodies > 1 ? `${i.bodies} bodies` : 'a body';
       bus.emit('msg', 'bot',
         `Imported "${f.name}" as ${bodies} in feature "${i.feature_id}" — ` +
-        `${(i.size_mm || []).join('×')}mm, ${i.triangles} triangles` +
-        (i.repair ? ` (${i.repair})` : '') + `. ` +
+        `${(i.size_mm || []).join('×')}mm` +
+        (isStep ? ' (exact BREP — nothing was meshed)'
+                : `, ${i.triangles} triangles`
+                  + (i.repair ? ` (${i.repair})` : '')) + `. ` +
         `Move / Cut / Fuse it like any other body (units read as mm — ` +
         `edit the feature's scale if it came in the wrong size).`);
     }

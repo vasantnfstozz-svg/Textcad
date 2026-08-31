@@ -54,7 +54,7 @@ const ACTIONS = {
   settings: { icon: '⚙', name: 'Settings', fn: openSettings },
   newsketch: { icon: '✎', name: 'Create Sketch', fn: startSketch },
   trace_png: { icon: '🖼', name: 'Trace PNG', fn: actionTracePng },
-  import_stl_file: { icon: '📥', name: 'Import STL', fn: actionImportStl },
+  import_stl_file: { icon: '📥', name: 'Import STL/STEP', fn: actionImportStl },
   finish_sketch: { icon: '✓', name: 'Finish Sketch', fn: finishSketch },
   cancel_sketch: { icon: '✕', name: 'Cancel Sketch', fn: cancelSketch },
   look_at: { icon: '⌖', name: 'Look At', fn: lookAtSketch },

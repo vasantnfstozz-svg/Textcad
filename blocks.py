@@ -32,6 +32,7 @@ from build123d import (
     trace, extrude, revolve, Axis, Plane, Part, Mesher, Solid, Compound,
     mirror as _b3d_mirror, scale as _b3d_scale,
     fillet as _b3d_fillet, chamfer as _b3d_chamfer, offset as _b3d_offset,
+    import_step as b3d_import_step,
 )
 from OCP.BRep import BRep_Tool
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
@@ -454,6 +455,54 @@ def import_stl(file: str, scale: float = 1.0) -> Part:
     return part
 
 
+def _resolve_step_path(file: str) -> Path:
+    if not isinstance(file, str) or not file.strip():
+        raise ValueError("import_step: file must be a filename or path")
+    path = Path(file)
+    if not path.is_absolute():
+        path = IMPORTS_DIR / file
+    if not path.is_file():
+        raise ValueError(f"import_step: file not found: {path}")
+    if path.suffix.lower() not in (".step", ".stp"):
+        raise ValueError(f"import_step: {path.name} is not a STEP file "
+                         "(.step / .stp)")
+    return path
+
+
+def import_step(file: str, scale: float = 1.0) -> Part:
+    """Import a STEP file (.step/.stp) as exact BREP solid bodies. `file` is an
+    absolute path, or the name of a file in the imports/ folder.
+
+    Unlike STL there is no faceting and nothing to repair: the geometry comes
+    back as real curves and surfaces, so cylinders stay round and a design
+    exported from HERE re-imports losslessly (the user's round-trip case,
+    2026-08-31). Multi-solid files become a Compound, NOT a fuse — assemblies
+    overlap or touch, and merging them is not this op's decision. STEP files
+    carry their own units (read as mm); `scale` resizes on import."""
+    if not isinstance(scale, (int, float)) or scale <= 0:
+        raise ValueError("import_step: scale must be a positive number")
+    path = _resolve_step_path(file)
+    try:
+        shape = b3d_import_step(str(path))
+    except Exception as e:      # OCP read errors are Exception, not RuntimeError
+        raise ValueError(f"import_step: could not read the STEP ({e})") from e
+    solids = shape.solids()
+    if not solids:
+        raise ValueError("import_step: the file contains no solid bodies — "
+                         "surfaces or curves alone cannot be used here")
+    # NOTE: never Part(solid.wrapped) — that reports volume 0 (probed).
+    part = solids[0] if len(solids) == 1 else Compound(children=list(solids))
+    try:
+        vol = float(part.volume)
+    except Exception:
+        vol = 0.0
+    if vol <= 0:
+        raise ValueError("import_step: the imported geometry has no volume")
+    if scale != 1.0:
+        part = _b3d_scale(part, by=float(scale))
+    return part
+
+
 def import_stl_report(file: str) -> dict:
     """The repair/import report for an STL (free: served from the same cache
     as import_stl). Keys: input_triangles, output_triangles, bodies,
@@ -488,6 +537,7 @@ EXPORTS = {
     "chamfer": chamfer_edges,
     "shell": shell_out,
     "import_stl": import_stl,
+    "import_step": import_step,
 }
 
 
@@ -514,8 +564,13 @@ if __name__ == "__main__":
     _selftest_stl = Path(tempfile.gettempdir()) / "_blocks_selftest.stl"
     _export_stl(Box(20, 10, 5), str(_selftest_stl))
 
+    _selftest_step = Path(tempfile.gettempdir()) / "_blocks_selftest.step"
+    import build123d as _b3d_mod
+    _b3d_mod.export_step(Box(20, 10, 5), str(_selftest_step))
+
     cases = {
         "import_stl (box roundtrip)": import_stl(str(_selftest_stl)),
+        "import_step (box roundtrip)": import_step(str(_selftest_step)),
         "plate":        plate(40, 30, 5),
         "disc":         disc(20, 8),
         "ball":         ball(15),

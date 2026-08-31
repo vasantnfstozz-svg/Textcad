@@ -52,6 +52,7 @@ CREATORS = {name: blocks.EXPORTS[name] for name in
              "hex_plate", "revolve_profile", "curved_blade")}
 CREATORS["sketch"] = sk.make_sketch     # produces a 2D Sketch, not a solid
 CREATORS["import_stl"] = blocks.import_stl   # external mesh file -> solid body
+CREATORS["import_step"] = blocks.import_step  # exact BREP import (incl. our own exports)
 
 # modifiers: exactly one upstream Part + numeric/string params
 MODIFIERS = {
@@ -183,7 +184,7 @@ def _canon_number(v):
 
 # Reads a file that can change under us — the params alone do not describe the
 # result, so its signature carries the file's fingerprint too.
-FILE_BACKED_OPS = {"import_stl"}
+FILE_BACKED_OPS = {"import_stl", "import_step"}
 
 # ONE cache for the whole process. A signature already names the op, its
 # parameters and its inputs' signatures, so an entry is valid for ANY document

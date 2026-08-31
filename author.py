@@ -77,6 +77,10 @@ OP_NOTES = {
     "import_stl": "Imports an EXISTING .stl file (UI upload or absolute path). "
                   "Only use when the user names a real file — NEVER invent a "
                   "filename. STL units read as mm; scale resizes on import.",
+    "import_step": "Imports an EXISTING .step/.stp file as exact BREP solids "
+                   "(a design exported from here re-imports losslessly). Only "
+                   "use when the user names a real file — NEVER invent a "
+                   "filename.",
 }
 
 

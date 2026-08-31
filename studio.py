@@ -1251,6 +1251,59 @@ def trace_png(req: TracePngReq):
             **_doc_json(), "trace_info": {**info, "feature_id": fid}}
 
 
+class ImportStepReq(BaseModel):
+    step_base64: str
+    feature_id: str = "imported-step"
+    scale: float = 1.0
+
+
+@app.post("/api/import-step")
+def import_step_file(req: ImportStepReq):
+    """Upload a STEP file, get an import_step feature holding it as exact BREP
+    bodies. The point (user request 2026-08-31): a design EXPORTED from here
+    must come back in losslessly — cylinders stay round, no mesh, no repair.
+    Same shape as /api/import-stl: the file lands in imports/ so the tree
+    stays a small JSON recipe that rebuilds from disk."""
+    _snapshot()
+    saved_new = None
+    try:
+        data = base64.b64decode(req.step_base64.split(",")[-1])
+        blocks.IMPORTS_DIR.mkdir(exist_ok=True)
+        stem = re.sub(r"[^\w-]+", "-", req.feature_id).strip("-")[:40] or "imported"
+        fname, n = f"{stem}.step", 2
+        # same name + same bytes -> reuse the file; different bytes -> suffix
+        while (blocks.IMPORTS_DIR / fname).exists()                 and (blocks.IMPORTS_DIR / fname).read_bytes() != data:
+            fname, n = f"{stem}-{n}.step", n + 1
+        if not (blocks.IMPORTS_DIR / fname).exists():
+            (blocks.IMPORTS_DIR / fname).write_bytes(data)
+            saved_new = blocks.IMPORTS_DIR / fname
+        # validate BEFORE adding a feature — a bad file must not leave a
+        # broken node in the tree
+        part = blocks.import_step(fname, req.scale)
+        fid, n = req.feature_id, 2
+        while any(f.id == fid for f in _doc().features):
+            fid = f"{req.feature_id}-{n}"
+            n += 1
+        _doc().add(fid, "import_step", {"file": fname, "scale": req.scale}, [])
+    except Exception as e:        # decode/read errors -> honest message
+        _entry()["history"].pop()
+        if saved_new is not None:
+            try:
+                saved_new.unlink()
+            except OSError:
+                pass
+        return {"error": str(e), **_doc_json()}
+    _rebuild_and_mesh()
+    bb = part.bounding_box()
+    solids = part.solids()
+    return {**_record_version(f"imported {fname}", "tool:import_step"),
+            **_doc_json(), "import_info": {
+        "feature_id": fid, "file": fname, "bodies": len(solids),
+        "size_mm": [round(bb.size.X, 2), round(bb.size.Y, 2),
+                    round(bb.size.Z, 2)],
+        "volume_mm3": round(part.volume, 1)}}
+
+
 @app.post("/api/import-stl")
 def import_stl_file(req: ImportStlReq):
     """Upload an STL from an outside source, get an import_stl feature holding
