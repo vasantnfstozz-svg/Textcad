@@ -589,3 +589,38 @@ def test_probe_falls_back_to_nearest_beyond_the_surface():
                       [8, -30, 3], on="a")
     assert r.get("mode") == "nearest", r
     assert r["value"] == pytest.approx((8**2 + 30**2) ** 0.5 - 5, abs=1e-3)
+
+
+def test_probe_between_two_pillars_swings_sideways_to_the_far_pole():
+    """User report (2026-08-31): "if i want to move in side ways, its not
+    moving … the line should able to move untill longest point from surface
+    center". The drag keeps BOTH degrees of freedom: station along the axis
+    AND angle around it. Facing the other bore reads the perpendicular gap;
+    swinging to the flank grows the value smoothly; the far pole is the
+    maximum — centre distance + this radius − the other radius — and the far
+    dot follows the swing instead of standing still."""
+    doc = two_hole_doc()
+    cyls = find_all_faces(doc, lambda f: "CYLINDER" in str(f.geom_type))
+    a, b = sel(doc, "face", cyls[0]), sel(doc, "face", cyls[1])
+
+    facing = measure.probe(doc, a, b, [-19, 0, 5], on="a")
+    flank = measure.probe(doc, a, b, [-25, 6, 5], on="a")
+    far = measure.probe(doc, a, b, [-31, 0, 5], on="a")
+    for r in (facing, flank, far):
+        assert r.get("error") is None, r
+        assert r["mode"] == "across", r
+
+    assert facing["value"] == pytest.approx(38.0, abs=1e-6)
+    # flank: |(-25,6) - (25,0)| - 6 = sqrt(2536) - 6
+    assert flank["value"] == pytest.approx(2536 ** 0.5 - 6, abs=1e-3)
+    # the far pole IS the longest: D + rA - rB = 50 + 6 - 6 ... from (-31,0)
+    assert far["value"] == pytest.approx(50.0, abs=1e-6)
+    assert facing["value"] < flank["value"] < far["value"]
+
+    # the near dot rode the swing (flank point stays at its own angle) and the
+    # far dot moved WITH it, toward the same side
+    assert flank["from"][1] == pytest.approx(6.0, abs=1e-6)
+    assert flank["to"][1] > 0.1, flank
+    # and the sideways swing did not lose the height (parallel slide intact)
+    assert flank["from"][2] == pytest.approx(5.0, abs=1e-6)
+    assert flank["to"][2] == pytest.approx(5.0, abs=1e-6)

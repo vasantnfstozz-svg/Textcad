@@ -227,6 +227,24 @@ plus the round-3 boundary circles (inner/outer ⌀) on any face that has them.
    two pillars moved the whole line monotonically with the value locked at
    the true 22.00 mm gap.
 
+## User feedback, round 7 (2026-08-31)
+
+> "i can move up and down the line … but if i want to move in side ways, its
+> not moving … the line should able to move untill longest point from surface
+> center"
+
+The round-round probe collapsed the drag to the perpendicular axis-to-axis
+line — up/down slid beautifully, and the ANGULAR half of the drag was thrown
+away. Now the drag keeps both degrees of freedom: the point is snapped to the
+TRUE cylinder wall at its own station AND angle (the tessellated hit is a
+facet off the real surface), and the value is the exact minimum distance from
+that wall point to the other surface. Facing the other pillar = the
+perpendicular gap; swinging sideways grows smoothly; the near dot can travel
+to the far pole, where the value maxes at centre-distance + r_source −
+r_target — "the longest point from surface center". Never misses, so the clamp
+never engages. UI-verified: swing 270°→190° read 26.32 → 29.72 approaching the
+far-pole 30.0, with the vertical slide still constant at each height.
+
 ## The problem, in the user's words
 
 > "we dont have proper scale to measure distance between two point … if i am

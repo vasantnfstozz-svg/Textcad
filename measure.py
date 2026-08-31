@@ -1104,31 +1104,36 @@ def probe(doc, a: dict, b: dict | None, point, on: str = "a") -> dict:
     source = shape_b if str(on) == "b" else shape_a
     target = shape_a if str(on) == "b" else shape_b
 
-    # TWO ROUND SURFACES (two pillars, two bores): the natural drag slides the
-    # perpendicular gap line ALONG the axes, both ends moving in parallel
-    # (user report 2026-08-31: "one end is struck, it should move parlley").
-    # The across-ray mode is wrong here — a radial normal only points at the
-    # other pillar from a sliver of the source wall, so most of the drag fell
-    # into nearest and the clamp froze an end. Station = the drag point
-    # projected on the source axis; the line runs axis-to-axis at that station,
-    # trimmed by both radii: surface to surface, staying perpendicular.
+    # TWO ROUND SURFACES (two pillars, two bores): the drag has TWO degrees of
+    # freedom — ALONG the axis (station) and AROUND it (angle). The first cut
+    # of this branch rebuilt the line at the perpendicular axis-to-axis
+    # direction, which made up/down slide beautifully and threw the sideways
+    # component away entirely (user report 2026-08-31: "if i want to move in
+    # side ways, its not moving"). Now the drag point keeps BOTH: it is snapped
+    # to the TRUE cylinder wall at its own station and angle (the tessellated
+    # hit is a facet away from the real surface), and the measurement is the
+    # exact minimum distance from that wall point to the other surface. Facing
+    # the other pillar that is the perpendicular gap; swinging sideways the
+    # value grows smoothly; and the near dot can travel all the way to the far
+    # pole — "untill longest point from surface center" — where the value maxes
+    # at centre-distance + this radius − the other radius. Never misses, so the
+    # curve-limit clamp never engages and nothing freezes.
     cs, ct = _circle(source), _circle(target)
     if cs and ct and cs[2] and ct[2]:
-        (pos_s, r_s, dir_s), (pos_t, r_t, dir_t) = cs, ct
+        (pos_s, r_s, dir_s), _tgt = cs, ct
         u_s = _scale(dir_s, 1.0 / max(_norm(dir_s), 1e-12))
         station = _add(pos_s, _scale(u_s, _dot(_sub(p, pos_s), u_s)))
-        other = _closest_on_axis(pos_t, dir_t, station)
-        gap_v = _sub(other, station)
-        gap_d = _norm(gap_v)
-        if gap_d > 1e-9 and gap_d - r_s - r_t > TOUCH_TOL:
-            u = _scale(gap_v, 1.0 / gap_d)
-            frm = _add(station, _scale(u, r_s))
-            to = _sub(other, _scale(u, r_t))
-            val = gap_d - r_s - r_t
-            return {"kind": "probe", "mode": "across", "value": _r(val),
-                    "unit": MM, "label": _fmt(val),
-                    "from": _r3(frm), "to": _r3(to)}
-        # coaxial or overlapping at this station: fall through to nearest
+        w = _sub(p, station)                     # the drag's radial direction
+        wn = _norm(w)
+        if wn > 1e-9:
+            pa = _add(station, _scale(w, r_s / wn))
+            md2 = _min_distance(Vertex(*pa), target)
+            if md2 and md2[0] > TOUCH_TOL:
+                return {"kind": "probe", "mode": "across",
+                        "value": _r(md2[0]), "unit": MM,
+                        "label": _fmt(md2[0]),
+                        "from": _r3(pa), "to": _r3(md2[2])}
+        # on the axis, or touching the other surface: fall through to nearest
 
     md = _min_distance(v, target)
     if md is None:
