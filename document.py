@@ -361,6 +361,59 @@ class Document:
         self._mark_stale()
         return plan
 
+    def strike(self, feature_id: str) -> dict:
+        """SOFT delete (user mandate 2026-08-31: "instead of deleting the
+        operation, just strike out that operation, also delete it in the
+        design — if I want it back I simply press undo on that struck-out
+        feature"). The geometry is removed exactly as `remove` would, but the
+        rows STAY in the tree, struck out, and nothing is rewired — so
+        restoring is exact.
+
+        It works because the two mechanisms were built to agree: the delete
+        plan's healing rewires each survivor to "the pass-through a suppress
+        would give", and rebuild resolves a suppressed node to its first
+        input's part. So suppressing precisely the set the plan would delete
+        yields the same geometry as deleting it — reversibly."""
+        f = self.get(feature_id)
+        if f.suppressed:
+            raise ValueError(f"'{feature_id}' is already struck out")
+        plan = self.remove_plan(feature_id, "auto")
+        gone = set(plan["deleted"])
+        for f in self.features:
+            if f.id in gone:
+                f.suppressed = True
+        self._mark_stale()
+        return plan
+
+    def unstrike(self, feature_id: str) -> dict:
+        """Put a struck-out feature back — geometry and all. The set to
+        restore is the same delete plan recomputed (striking never touches
+        `inputs`, so the plan is identical to the one that struck it) PLUS
+        any struck ANCESTORS it depends on: restoring an extrude whose sketch
+        is still struck would bring it back broken, so the sketch comes back
+        with it."""
+        if not self.get(feature_id).suppressed:
+            raise ValueError(f"'{feature_id}' is not struck out")
+        plan = self.remove_plan(feature_id, "auto")
+        back = set(plan["deleted"])
+        by_id = {f.id: f for f in self.features}
+        stack = list(back)
+        while stack:                       # walk upstream of everything restored
+            f = by_id.get(stack.pop())
+            if f is None:
+                continue
+            for dep in f.inputs:
+                d = by_id.get(dep)
+                if d is not None and d.suppressed and dep not in back:
+                    back.add(dep)
+                    stack.append(dep)
+        plan["restored"] = [f.id for f in self.features if f.id in back]
+        for f in self.features:
+            if f.id in back:
+                f.suppressed = False
+        self._mark_stale()
+        return plan
+
     def remove_plan(self, feature_id: str, mode: str = "auto") -> dict:
         """What deleting `feature_id` WOULD do -- computed without mutating, so
         the UI can ask "this also removes X and Y, go ahead?" first."""

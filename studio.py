@@ -50,6 +50,7 @@ import inspector
 import measure as measurelib
 import sketch as sketchlib
 import sketch_trim as trimlib
+import sketch_corner as cornerlib
 import sketch_snap as snaplib
 from document import Document
 from history import History, HistoryError, diff_snapshots
@@ -525,6 +526,13 @@ class SnapReq(BaseModel):
     frame: dict | None = None
 
 
+class ArcRadiusReq(BaseModel):
+    entities: list
+    entity: int          # index into entities (must be a path)
+    segment: int         # index into that path's segments (must be an arc)
+    radius: float
+
+
 class ChatReq(BaseModel):
     message: str
 
@@ -617,6 +625,11 @@ class RenameReq(BaseModel):
 class SuppressReq(BaseModel):
     feature_id: str
     suppressed: bool
+
+
+class StrikeReq(BaseModel):
+    feature_id: str
+    restore: bool = False    # True = un-strike (bring the geometry back)
 
 
 class SpecReq(BaseModel):
@@ -1039,6 +1052,58 @@ def _tagged_mesh(part, body_id: str | None = None) -> dict:
                                    round(ax.position.Z, 4)]
             except Exception:
                 pass
+        # PER-TYPE DIMENSIONS (user request 2026-08-31: "add this feature for
+        # every shape or surface — for a selected box surface show the length
+        # and width, if i am selecting a curve show the radius or dia"). All
+        # from the TESSELLATION verts, not topological vertices — a disc's top
+        # face has no corners at all, and a rotated face's world bbox lies
+        # (probed: 23.32 for a 20-wide face at 30°; the plane-frame projection
+        # reads 20.00 exactly).
+        try:
+            if info.get("planar") and verts:
+                pl = sketchlib.face_plane(face)
+                if pl is not None:
+                    ox, oy, oz = pl.origin.X, pl.origin.Y, pl.origin.Z
+                    xd = (pl.x_dir.X, pl.x_dir.Y, pl.x_dir.Z)
+                    yd = (pl.y_dir.X, pl.y_dir.Y, pl.y_dir.Z)
+                    us = [xd[0]*(v[0]-ox) + xd[1]*(v[1]-oy) + xd[2]*(v[2]-oz)
+                          for v in verts]
+                    vs = [yd[0]*(v[0]-ox) + yd[1]*(v[1]-oy) + yd[2]*(v[2]-oz)
+                          for v in verts]
+                    ext = sorted((max(us) - min(us), max(vs) - min(vs)),
+                                 reverse=True)
+                    info["extents"] = [round(ext[0], 2), round(ext[1], 2)]
+            elif gt in ("CYLINDER", "CONE") and verts:
+                if gt == "CYLINDER":
+                    ax = face.axis_of_rotation
+                    px, py, pz = ax.position.X, ax.position.Y, ax.position.Z
+                    dx, dy, dz = (ax.direction.X, ax.direction.Y,
+                                  ax.direction.Z)
+                else:
+                    co = BRepAdaptor_Surface(face.wrapped).Cone()
+                    loc, dirn = co.Axis().Location(), co.Axis().Direction()
+                    px, py, pz = loc.X(), loc.Y(), loc.Z()
+                    dx, dy, dz = dirn.X(), dirn.Y(), dirn.Z()
+                    info["cone_angle"] = round(
+                        abs(math.degrees(co.SemiAngle())), 2)
+                ss, rr = [], []
+                for v in verts:
+                    wx, wy, wz = v[0]-px, v[1]-py, v[2]-pz
+                    s_ = wx*dx + wy*dy + wz*dz
+                    ss.append(s_)
+                    qx, qy, qz = wx - s_*dx, wy - s_*dy, wz - s_*dz
+                    rr.append((qx*qx + qy*qy + qz*qz) ** 0.5)
+                info["height"] = round(max(ss) - min(ss), 2)
+                if gt == "CONE":
+                    info["cone_d"] = [round(2*min(rr), 2), round(2*max(rr), 2)]
+            elif gt == "SPHERE":
+                info["radius"] = round(float(face.radius), 4)
+            elif gt == "TORUS":
+                to = BRepAdaptor_Surface(face.wrapped).Torus()
+                info["torus"] = [round(to.MajorRadius(), 4),
+                                 round(to.MinorRadius(), 4)]
+        except Exception:
+            pass                        # a face with no dimensions is still a face
         # FULL circular boundaries of this face, largest first — an annular
         # face's outer and inner radii, a hole's rim on a floor. The user reads
         # a washer face as "outer dia / inner dia" (request 2026-08-31), not as
@@ -1274,6 +1339,19 @@ def sketch_trim_pieces(req: TrimReq):
         return {"pieces": trimlib.trim_pieces(req.entities)}
     except (KeyError, ValueError) as e:
         return {"pieces": [], "error": str(e)}
+
+
+@app.post("/api/sketch/arc-radius")
+def sketch_arc_radius(req: ArcRadiusReq):
+    """Rewrite one path arc to a given radius (stateless, like trim): a
+    corner arc re-fillets tangent to its neighbouring lines, a free arc
+    re-bulges between its fixed endpoints. The UI applies the returned
+    entities through /api/edit, so undo and the rebuild come for free."""
+    try:
+        return {"entities": cornerlib.set_arc_radius(
+            req.entities, req.entity, req.segment, req.radius)}
+    except (KeyError, ValueError, TypeError) as e:
+        return {"error": str(e)}
 
 
 @app.post("/api/sketch/trim/apply")
@@ -1642,6 +1720,24 @@ def suppress_feature(req: SuppressReq):
     _doc()._mark_stale()
     _rebuild_and_mesh()
     return _doc_json()
+
+
+@app.post("/api/feature/strike")
+def strike_feature(req: StrikeReq):
+    """Soft delete / restore (the tree's ✕ and ↩): the geometry goes or comes
+    back exactly as delete would do it, but the rows stay, struck out, and
+    nothing is rewired — one click undoes it. Also a single Ctrl+Z step."""
+    _hand_edit()
+    _snapshot()
+    try:
+        plan = (_doc().unstrike if req.restore else _doc().strike)(req.feature_id)
+    except (KeyError, ValueError) as e:
+        _entry()["history"].pop()
+        return {"error": str(e), **_doc_json()}
+    _rebuild_and_mesh()
+    verb = "restored" if req.restore else "struck out"
+    return {**_record_version(f"{verb} {req.feature_id}", "tool:strike"),
+            **_doc_json(), "strike_plan": plan}
 
 
 @app.post("/api/spec")
@@ -2106,11 +2202,18 @@ def chat(req: ChatReq):
 if __name__ == "__main__":
     import socket
     import uvicorn
+    port = int(os.environ.get("TEXTCAD_PORT", "8123"))
+    url = f"http://127.0.0.1:{port}"
+
     # Bring back the tabs of the previous run (user mandate 2026-08-31: a
     # restart must not close the designs being worked on). With no session
     # to restore, start EMPTY (user mandate 2026-08-05: the demo flange
     # forced a "disc with bolts" on every launch). Samples stay available
     # under File -> Examples; saved work under File -> Open.
+    # The session file is PER PORT: a test/scratch server on another port in
+    # the same repo must never overwrite (or restore) the main server's tabs.
+    if port != 8123:
+        SESSION_PATH = ROOT / f".studio-session-{port}.json"
     SESSION_ENABLED = True
     restored = _restore_session()
     if restored:
@@ -2118,8 +2221,6 @@ if __name__ == "__main__":
     else:
         _new_tab(Document(name="untitled"))
         _rebuild_and_mesh()
-    port = int(os.environ.get("TEXTCAD_PORT", "8123"))
-    url = f"http://127.0.0.1:{port}"
 
     # Refuse to start a SECOND server on a port that already answers. On
     # Windows two processes can both bind one port and replies then come from

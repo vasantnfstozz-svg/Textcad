@@ -91,6 +91,11 @@ main { flex: 1; display: flex; min-height: 0; }
 /* feature tree — Fusion-style browser: slim rows + guide lines, no boxes */
 .node { position: relative; }
 .node.suppressed > .nrow { opacity: .45; }
+/* struck-out (soft-deleted) rows: the operation is gone from the design but
+   one ↩ click from coming back — say so visually */
+.node.suppressed > .nrow .nname,
+.node.suppressed > .nrow .nop { text-decoration: line-through; }
+.node.suppressed > .nrow .ndot { background: #7a8598; }
 .node.rolledback { opacity: .35; }
 /* The SKETCH owns the row; what consumed it hangs UNDERNEATH (user mandate
    2026-08-27: "first sketch and then extrude below that"). So the guide line

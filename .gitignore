@@ -20,3 +20,4 @@ _studio_mesh.stl
 !designs/*.history/**
 .studio-session.json
 .studio-session.tmp
+.studio-session-*.json

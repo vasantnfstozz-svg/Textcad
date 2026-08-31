@@ -355,24 +355,34 @@ function buildRow(doc, f, chip = null) {
   };
 
   const acts = document.createElement('span'); acts.className = 'nacts';
-  if (f.op === 'sketch' || f.op === 'sketch_on_face') {
-    addAct(acts, '✎', 'edit this sketch (reopens on its plane in the viewport)',
-      () => bus.emit('edit-sketch', f));
+  if (f.suppressed) {
+    // a struck-out row: the geometry is gone but the operation is one click
+    // from coming back (user mandate 2026-08-31) — editing waits until then
+    addAct(acts, '↩', 'restore this operation — the struck-out geometry ' +
+      'comes back exactly as it was', () => restoreFeature(f.id));
+    addAct(acts, '✕', 'delete permanently (removes the row; anything that ' +
+      'must go with it is listed first)', () => deleteFeature(f.id));
+  } else {
+    if (f.op === 'sketch' || f.op === 'sketch_on_face') {
+      addAct(acts, '✎', 'edit this sketch (reopens on its plane in the viewport)',
+        () => bus.emit('edit-sketch', f));
+    }
+    if (f.op === 'sketch' || f.op === 'sketch_on_face') {
+      addAct(acts, '⬆', 'extrude this sketch into a solid',
+        () => openExtrude(f.id));
+    }
+    if (f.op === 'extrude' || f.op === 'extrude_face') {
+      // Edit Feature (Fusion parity): reopen the tool that CREATED the feature
+      addAct(acts, '✎', 'edit this extrude (reopens the Extrude tool with its ' +
+        'arrow and live preview)', () => openExtrudeEdit(f.id));
+    }
+    // ✕ is a SOFT delete now: the geometry goes, the row stays struck out,
+    // and ↩ brings it back (user mandate 2026-08-31). Permanent delete lives
+    // on the struck row.
+    addAct(acts, '✕', 'strike out this feature — the geometry is removed ' +
+      'but the row stays; ↩ brings it back, ✕ again deletes for good',
+      () => strikeFeature(f.id));
   }
-  if (f.op === 'sketch' || f.op === 'sketch_on_face') {
-    addAct(acts, '⬆', 'extrude this sketch into a solid',
-      () => openExtrude(f.id));
-  }
-  if (f.op === 'extrude' || f.op === 'extrude_face') {
-    // Edit Feature (Fusion parity): reopen the tool that CREATED the feature
-    addAct(acts, '✎', 'edit this extrude (reopens the Extrude tool with its ' +
-      'arrow and live preview)', () => openExtrudeEdit(f.id));
-  }
-  // suppress + rollback actions removed from the UI (user mandate R5) — the
-  // backend machinery stays: edit-sketch isolation is built on rollback
-  addAct(acts, '✕', 'delete this feature (dependents are reconnected; ' +
-    'anything that must go with it is listed first)',
-    () => deleteFeature(f.id));
 
   const worst = chip && chip.status === 'failed' ? 'failed' : f.status;
   const dot = document.createElement('span'); dot.className = 'ndot ' + worst;
@@ -381,10 +391,39 @@ function buildRow(doc, f, chip = null) {
   // Fusion's gesture: double-click a feature = edit it with its own tool
   row.ondblclick = () => {
     if (modalGuard()) return;
+    if (f.suppressed) { restoreFeature(f.id); return; }   // dblclick = bring it back
     if (f.op === 'sketch' || f.op === 'sketch_on_face') bus.emit('edit-sketch', f);
     else if (f.op === 'extrude' || f.op === 'extrude_face') openExtrudeEdit(f.id);
   };
   return row;
+}
+
+/* Soft delete (the tree's ✕): geometry removed, rows kept struck-out. No
+   confirm dialog on purpose — the whole point is that it is one click to do
+   and one click (↩ on the row) to take back. */
+async function strikeFeature(fid) {
+  const doc = await postJSON('/api/feature/strike', { feature_id: fid },
+                             'striking out…');
+  if (doc.error) return;
+  if (S.selected === fid) { S.selected = null; clearHighlight(); }
+  loadMesh();
+  const plan = doc.strike_plan;
+  const also = plan && plan.deleted.filter(id => id !== fid);
+  bus.emit('msg', 'bot', `Struck out "${fid}"` +
+    (also && also.length ? ` (with ${also.join(', ')})` : '') +
+    ' — the geometry is removed, the row stays. ↩ on the row brings it back.');
+}
+
+async function restoreFeature(fid) {
+  const doc = await postJSON('/api/feature/strike',
+    { feature_id: fid, restore: true }, 'restoring…');
+  if (doc.error) return;
+  loadMesh();
+  const plan = doc.strike_plan;
+  const also = plan && (plan.restored || plan.deleted).filter(id => id !== fid);
+  bus.emit('msg', 'bot', `Restored "${fid}"` +
+    (also && also.length ? ` (with ${also.join(', ')})` : '') +
+    ' — the geometry is back.');
 }
 
 /* Fusion's browser Delete. The backend REPAIRS the history around the node
@@ -425,7 +464,10 @@ window.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (modalGuard()) return;
   e.preventDefault();
-  deleteFeature(S.selected);
+  // same gesture as the row's ✕: strike out first; Del again deletes for good
+  const f = (S.lastDoc?.features || []).find(x => x.id === S.selected);
+  if (f && f.suppressed) deleteFeature(S.selected);
+  else strikeFeature(S.selected);
 });
 
 /* Reveal a feature the user did not click on: expand it, flash it, and scroll
@@ -610,6 +652,11 @@ function shapeList(feat, entities) {
       if (ent[f.key] !== undefined)
         card.appendChild(entRow(feat, entities, i, f.key, f.label, f.unit));
 
+    // every CURVE of a path gets an editable radius ("wherever we have a
+    // curve, it should be there in the tree" — user, 2026-08-31)
+    if (kind === 'path')
+      for (const row of pathArcRows(feat, entities, i)) card.appendChild(row);
+
     const gkey = known ? (cat.geometry || {})[kind] : genericGeometry(ent);
     if (gkey) card.appendChild(geometryNote(feat, ent, gkey));
 
@@ -661,6 +708,67 @@ function staleCatalogNote() {
   d.textContent = 'raw field names — restart the server (studio.py) for '
     + 'labelled dimensions like width / Ø diameter';
   return d;
+}
+
+/* ---- path arc radii ----
+   A path's curves are stored as 3-POINT ARCS — no radius number exists in
+   the JSON, which is why curves used to be invisible in the tree. These rows
+   compute the radius for display and hand edits to the backend solver
+   (/api/sketch/arc-radius): a corner arc re-fillets tangent to its
+   neighbouring lines, a free arc re-bulges between its fixed endpoints.
+   The rewritten entities then go through the normal /api/edit path, so
+   undo and the rebuild come for free. */
+
+function circumR(a, b, c) {
+  const d = 2 * Math.abs((b[0] - a[0]) * (c[1] - a[1])
+                       - (b[1] - a[1]) * (c[0] - a[0]));
+  if (d < 1e-9) return null;                    // collinear: not a real arc
+  const l = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+  return l(b, c) * l(a, c) * l(a, b) / d;
+}
+
+function pathArcRows(feat, entities, i) {
+  const ent = entities[i];
+  const segs = ent.segments || [];
+  const rows = [];
+  let cur = ent.start || [0, 0];
+  segs.forEach((s, j) => {
+    const from = cur;
+    cur = s.to || cur;
+    if (s.type !== 'arc' || !s.via || !s.to) return;
+    const r = circumR(from, s.via, s.to);
+    if (r == null) return;
+    // same labelling the backend uses to pick its edit: straight edges (or
+    // the auto-close) on both sides = a corner round, anything else = a
+    // free arc. The wrap-around neighbour counts as the closing line.
+    const prev = j > 0 ? segs[j - 1].type : 'close';
+    const next = j < segs.length - 1 ? segs[j + 1].type : 'close';
+    const corner = prev !== 'arc' && next !== 'arc';
+    const pr = document.createElement('div');
+    pr.className = 'prow';
+    pr.innerHTML =
+      `<span class="pname">${corner ? 'corner' : 'arc'} ${j + 1} R</span>`;
+    const val = document.createElement('span');
+    val.className = 'pval';
+    val.textContent = round4(r);
+    val.title = 'click to edit the radius'
+      + (corner ? ' — the round stays tangent to its edges' : '');
+    val.onclick = e => {
+      e.stopPropagation();
+      if (modalGuard()) return;
+      beginEditWith(val, round4(r), async v => {
+        const res = await postJSON('/api/sketch/arc-radius',
+          { entities, entity: i, segment: j, radius: v }, 'solving radius…');
+        if (res.error || !res.entities) return;  // postJSON spoke already
+        await postJSON('/api/edit',
+          { feature_id: feat.id, param: 'entities', value: res.entities });
+        loadMesh();
+      });
+    };
+    pr.appendChild(val);
+    rows.push(pr);
+  });
+  return rows;
 }
 
 /* one editable dimension of one shape. `factor` renders value*factor and
