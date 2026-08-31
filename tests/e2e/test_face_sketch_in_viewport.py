@@ -177,6 +177,72 @@ def test_face_outline_snaps_and_finish_creates_sketch_only(face_sketch):
     assert page.errors == []
 
 
+def test_named_face_sketch_reopens_for_editing(page, fresh_doc):
+    """User report 2026-08-31: 'even after selecting them, I can't edit those
+    sketches.' Every AI-authored design names its face (face='top', the offset
+    method) instead of storing a face_center — and the edit path posted
+    face_center: undefined, which /api/face-outline 422'd before reading, so
+    the editor silently never opened."""
+    page.evaluate(BUILD)
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    page.evaluate("""async () => {
+      const { postJSON } = await import('/static/js/api.js');
+      await postJSON('/api/feature/add', { id: 'named', op: 'sketch_on_face',
+        params: { face: 'top', offset: -2.0,
+                  entities: [{ kind: 'circle', mode: 'add', x: 5, y: 5, r: 4 }] },
+        inputs: ['b'] }, 'add');
+    }""")
+    page.evaluate("""async () => {
+      const { bus } = await import('/static/js/bus.js');
+      const doc = await (await fetch('/api/doc')).json();
+      bus.emit('edit-sketch', doc.features.find(x => x.id === 'named'));
+    }""")
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    ents = page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      return sk.sketchEntities();
+    }""")
+    assert len(ents) == 1 and ents[0]["r"] == pytest.approx(4), ents
+    assert page.errors == [], page.errors      # the 422 used to land here
+
+
+def test_plane_pick_refuses_curved_face_out_loud(page, fresh_doc):
+    """User report 2026-08-31: 'I draw it, I finish it, it simply vanishes.'
+    Clicking a curved face during Create Sketch fell through to the origin
+    quad hidden BEHIND the solid, so the sketch landed on a plane inside the
+    body and the finished profile was swallowed. A curved-face click must now
+    refuse out loud and keep waiting for a real pick."""
+    page.evaluate("""async () => {
+      const { postJSON } = await import('/static/js/api.js');
+      const { loadMesh } = await import('/static/js/viewport.js');
+      await postJSON('/api/feature/add',
+        { id: 'd', op: 'disc', params: { radius: 20, thickness: 30 },
+          inputs: [] }, 'add');
+      await loadMesh(true);
+    }""")
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    page.locator('#tabstrip button', has_text="Create").click()
+    page.wait_for_timeout(200)
+    page.locator('#ribbon button[title="Create Sketch"]').click()
+    page.wait_for_timeout(400)
+    # look flat-on from the front so the click surely lands on the barrel
+    page.click("#vFront")
+    page.wait_for_timeout(900)
+    s = page.evaluate("(w) => window.__vp.worldToScreen(w)", [0, 0, 3])
+    assert s, "disc axis not on screen"
+    page.mouse.click(s["x"], s["y"])           # the CYLINDER side, dead centre
+    page.wait_for_timeout(1200)
+    assert not page.evaluate(IS_ACTIVE), \
+        "a curved-face click silently started a sketch (on the plane behind!)"
+    hint = page.text_content("#placeHint")
+    assert "not flat" in hint, f"the refusal must say WHY: {hint!r}"
+    # still waiting for a pick (not cancelled) — the hint stays visible
+    assert page.locator("#placeHint").is_visible()
+    doc = page.evaluate("async () => (await (await fetch('/api/doc')).json())")
+    assert [f["op"] for f in doc["features"]] == ["disc"], doc["features"]
+
+
 def test_face_sketch_reopens_in_viewport_for_editing(face_sketch):
     """The tree's edit action must route a committed face sketch back into
     the in-viewport mode with its entities loaded — not a dead end."""

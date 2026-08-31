@@ -425,18 +425,35 @@ def face_sketch_plane(face):
                  x_dir=(seed - n * n.dot(seed)).normalized(), z_dir=n)
 
 
-def face_outline_2d(solid, face_center: list, face_normal: list | None = None):
+def face_outline_2d(solid, face_center: list | None = None,
+                    face_normal: list | None = None,
+                    face: str | None = None, offset: float = 0.0):
     """Project a picked PLANAR face's boundary into its own plane's local 2D
     coordinates — the outer wire plus any inner wires (holes). Returned in the
     SAME frame the sketch entities are placed in, so the sketcher can show the
     selected surface as reference geometry to draw against.
 
+    The face is named the same two ways sketch_on_face accepts: by geometry
+    (`face_center` from a real pick) or by direction (`face="top"`, the
+    authoring path) — so EVERY committed face sketch can be reopened for
+    editing. `offset` shifts the frame exactly like sketch_on_face shifts the
+    sketch plane, so the editor's grid lands where the sketch actually lives.
+
     -> {"outer": [[x,y],...], "holes": [[[x,y],...],...], "planar": bool}
     """
-    face = resolve_face(solid, face_center, face_normal)
-    pl = face_sketch_plane(face)                # the SKETCH frame, world-aligned
+    if face:
+        picked = named_face(solid, face)
+    elif face_center is not None:
+        picked = resolve_face(solid, face_center, face_normal)
+    else:
+        raise ValueError('face_outline_2d needs either face="top"/"+x"/... '
+                         "or a face_center from an actual pick")
+    pl = face_sketch_plane(picked)              # the SKETCH frame, world-aligned
     if pl is None:                              # genuinely curved — can't project
         return {"outer": [], "holes": [], "planar": False}
+    off = float(offset or 0.0)
+    if off:
+        pl = pl.offset(off)                     # mirror sketch_on_face exactly
 
     def project(wire):
         poly = []
@@ -447,8 +464,8 @@ def face_outline_2d(solid, face_center: list, face_normal: list | None = None):
                 poly.append([round(loc.X, 3), round(loc.Y, 3)])
         return poly
 
-    outer = face.outer_wire()
-    holes = [project(w) for w in face.wires() if w.length != outer.length]
+    outer = picked.outer_wire()
+    holes = [project(w) for w in picked.wires() if w.length != outer.length]
 
     def vec(v):
         return [round(v.X, 4), round(v.Y, 4), round(v.Z, 4)]

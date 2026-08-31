@@ -616,13 +616,26 @@ function ndcFrom(e) {
     -((e.clientY - rect.top) / rect.height) * 2 + 1);
 }
 
+/* the face of a body mesh under a raycast hit, or null */
+function faceInfoAt(hit) {
+  const entry = bodyObjs.find(b => b.mesh === hit.object);
+  const fid = entry && entry.data.faceId[hit.face.a];
+  return (entry && entry.data.faces.find(f => f.id === fid)) || null;
+}
+
 function planePickHover(e) {
   raycaster.setFromCamera(ndcFrom(e), camera);
   const quads = originPlanes.filter(o => o.userData.plane);
   for (const q of quads) q.material.opacity = q.userData.base;
   renderer.domElement.style.cursor = 'pointer';
-  if (raycaster.intersectObjects(bodyMeshes(), false).length) {
-    renderer.domElement.style.cursor = 'crosshair';   // a face will be picked
+  const fHit = raycaster.intersectObjects(bodyMeshes(), false)[0];
+  if (fHit) {
+    const info = faceInfoAt(fHit);
+    // crosshair only over a face that WILL pick; a curved face (fillet band,
+    // cylinder wall) shows not-allowed instead of promising a pick
+    renderer.domElement.style.cursor =
+      info && info.type === 'PLANE' && info.center ? 'crosshair'
+                                                   : 'not-allowed';
     return;
   }
   const hit = raycaster.intersectObjects(quads, false)[0];
@@ -643,12 +656,22 @@ function planePickAt(e) {
   // Clicking the solid means the solid; the quads keep their ample area
   // OUTSIDE the model's silhouette (they are sized past fitRadius).
   if (fHit) {
-    const entry = bodyObjs.find(b => b.mesh === fHit.object);
-    const fid = entry && entry.data.faceId[fHit.face.a];
-    const info = entry && entry.data.faces.find(f => f.id === fid);
+    const info = faceInfoAt(fHit);
     if (info && info.type === 'PLANE' && info.center) {
       endPlanePick(); cb('face', info); return;
     }
+    // Clicked ON the body but NOT a flat face (a fillet band, a cylinder
+    // wall). Never fall through to the origin quad hiding behind the solid:
+    // that silently started a sketch on a plane INSIDE the body, so the
+    // finished profile was swallowed by the solid — "my shape vanished".
+    // Say why (rule 7) and keep waiting for a real pick.
+    const kind = info && info.type ? info.type.toLowerCase() : 'curved';
+    document.getElementById('placeHint').textContent =
+      `That face is ${kind}, not flat — pick a planar face, or an origin ` +
+      'plane outside the part · Esc to cancel';
+    bus.emit('msg', 'bot', `⚠ That face is ${kind} — a sketch needs a FLAT ` +
+      'face. Pick a planar face, or an origin plane outside the part.');
+    return;
   }
   if (pHit) { const pl = pHit.object.userData.plane; endPlanePick(); cb('plane', pl); return; }
   // clicked empty space — keep waiting (don't cancel)

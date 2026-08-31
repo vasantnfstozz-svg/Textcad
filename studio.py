@@ -425,8 +425,13 @@ class ParamsReq(BaseModel):
 
 
 class FaceReq(BaseModel):
-    face_center: list
+    # a face is named EITHER by geometry (a real pick) or by direction (the
+    # authoring path — face="top"/"bottom"/"+x"/...); requiring face_center
+    # made every named-face sketch un-editable (422 before the JSON was read)
+    face_center: list | None = None
     face_normal: list | None = None
+    face: str | None = None
+    offset: float = 0.0                 # the sketch plane's offset off the face
     feature_id: str | None = None       # which BODY the face belongs to
 
 
@@ -1156,7 +1161,8 @@ def face_outline(req: FaceReq):
         return {"outer": [], "holes": [], "planar": False,
                 "error": "no solid to sketch on"}
     try:
-        return sketchlib.face_outline_2d(part, req.face_center, req.face_normal)
+        return sketchlib.face_outline_2d(part, req.face_center, req.face_normal,
+                                         face=req.face, offset=req.offset)
     except Exception as e:
         return {"outer": [], "holes": [], "planar": False, "error": str(e)}
 

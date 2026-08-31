@@ -250,8 +250,15 @@ export async function editSketch(feature) {
   const onFace = feature.op === 'sketch_on_face';
   let outline = null;
   if (onFace) {
-    outline = await fetchFaceOutline(feature.params.face_center,
-      feature.params.face_normal || null, feature.inputs?.[0] || null);
+    // a face sketch names its face by geometry (face_center, a real pick) OR
+    // by direction (face: "top", the authoring path) — send whichever it has,
+    // plus its plane offset so the grid lands where the sketch actually lives
+    outline = await fetchFaceOutline({
+      center: feature.params.face_center || null,
+      normal: feature.params.face_normal || null,
+      face: feature.params.face || null,
+      offset: Number(feature.params.offset) || 0,
+      featureId: feature.inputs?.[0] || null });
     if (!outline?.planar || !outline.frame) {
       bus.emit('msg', 'bot', '⚠ Could not re-resolve the face this sketch ' +
         'sits on' + (outline?.error ? `: ${outline.error}` : '.'));
@@ -259,7 +266,7 @@ export async function editSketch(feature) {
     }
   }
   skOnFace = onFace
-    ? { center: feature.params.face_center,
+    ? { center: feature.params.face_center || null,
         normal: feature.params.face_normal || null,
         inputId: feature.inputs?.[0] || null, frame: outline.frame }
     : null;
@@ -292,8 +299,8 @@ export async function openSketchOnFace(faceInfo) {
     ? faceInfo.body : tip.id;
   // the face's plane IS the sketch frame, so it must arrive BEFORE the mode
   // can open — same fetch also brings the boundary shown as reference
-  const data = await fetchFaceOutline(faceInfo.center, faceInfo.normal || null,
-                                      owner);
+  const data = await fetchFaceOutline({ center: faceInfo.center,
+    normal: faceInfo.normal || null, featureId: owner });
   if (!data?.planar || !data.frame) {
     bus.emit('msg', 'bot', '⚠ ' + (data?.error ||
       'That face is curved — a sketch needs a FLAT face. Pick a planar face, ' +
@@ -317,13 +324,15 @@ export async function openSketchOnFace(faceInfo) {
 bus.on('sketch-on-face', openSketchOnFace);
 
 /* The picked face's plane frame + boundary (in the plane's own 2D coords),
-   resolved by geometry on the body it was picked from. */
-async function fetchFaceOutline(center, normal, featureId) {
+   resolved on the body it was picked from — by geometry (center/normal) or
+   by name (face: "top"), plus the sketch plane's offset off that face. */
+async function fetchFaceOutline({ center = null, normal = null, face = null,
+                                  offset = 0, featureId = null }) {
   try {
     const r = await fetch('/api/face-outline', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ face_center: center, face_normal: normal,
-                             feature_id: featureId }) });
+                             face, offset, feature_id: featureId }) });
     return await r.json();
   } catch { return null; }
 }
@@ -679,16 +688,26 @@ function entityHandles(e) {
 }
 
 function resizeGrab(p) {
+  // Handles are DRAWN only on the selected shape, so only IT is grabbable.
+  // Grabbing the invisible handles of every other shape turned "drag a circle
+  // to move it" into "the circle gets bigger" (user report 2026-08-31).
+  if (selEnt < 0 || !skEnts[selEnt]) return null;
   const tolW = snapTolWorld();
-  const order = [];
-  if (selEnt >= 0 && skEnts[selEnt]) order.push(selEnt);
-  for (let i = skEnts.length - 1; i >= 0; i--)
-    if (i !== selEnt) order.push(i);
-  for (const i of order)
-    for (const h of entityHandles(skEnts[i]))
-      if (Math.hypot(p.x - h.x, p.y - h.y) <= tolW)
-        return { idx: i, handle: h };
-  return null;
+  const hs = entityHandles(skEnts[selEnt]);
+  let best = null, bestD = Infinity;
+  for (const h of hs) {
+    const d = Math.hypot(p.x - h.x, p.y - h.y);
+    if (d <= tolW && d < bestD) { best = { idx: selEnt, handle: h }; bestD = d; }
+  }
+  if (!best) return null;
+  // A shape smaller than the grab tolerance is COVERED by its own handles —
+  // resize would win everywhere and the shape could never be moved again.
+  // Grabbing the shape nearer its middle than any handle means MOVE.
+  const ax = hs.reduce((s, h) => s + h.x, 0) / hs.length;
+  const ay = hs.reduce((s, h) => s + h.y, 0) / hs.length;
+  if (hitTest(p) === selEnt && Math.hypot(p.x - ax, p.y - ay) < bestD)
+    return null;
+  return best;
 }
 
 function applyResize(grab, p) {

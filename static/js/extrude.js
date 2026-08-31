@@ -459,8 +459,10 @@ async function setupGhost() {
         // ring ("I can't see how far I am going")
         const r = await fetch('/api/face-outline', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ face_center: prof.params.face_center,
+          body: JSON.stringify({ face_center: prof.params.face_center || null,
                                  face_normal: prof.params.face_normal || null,
+                                 face: prof.params.face || null,
+                                 offset: Number(prof.params.offset) || 0,
                                  feature_id: (prof.inputs || [])[0] || null }) });
         const data = await r.json();
         if (!data.planar || !data.frame) return;

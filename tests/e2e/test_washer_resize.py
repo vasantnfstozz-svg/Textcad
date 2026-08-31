@@ -48,6 +48,12 @@ ENTS = """
 async () => (await import('/static/js/sketcher.js')).sketchEntities()
 """
 
+# pin the snap so clicks and drags land on exact millimetres, whatever the
+# adaptive grid happens to show in a headless viewport
+SNAP_1MM = """
+async () => { (await import('/static/js/settings.js')).SETTINGS.snapMm = 1; }
+"""
+
 FINISH = """
 async () => (await import('/static/js/sketcher.js')).finishSketch()
 """
@@ -118,6 +124,50 @@ def test_drag_rect_corner_resizes_about_opposite(server, page, fresh_doc):
     assert abs(e["w"] - 30) < 1e-6 and abs(e["h"] - 20) < 1e-6, e
     assert abs(e["x"] - 15) < 1e-6 and abs(e["y"] - 10) < 1e-6, \
         f"opposite corner (0,0) must stay put: {e}"
+    assert not page.errors, page.errors
+
+
+def test_drag_unselected_circle_moves_not_resizes(server, page, fresh_doc):
+    """User report 2026-08-31: 'they are not moving, instead they are getting
+    bigger.' Handles are only DRAWN on the selected shape, so an unselected
+    shape grabbed at its rim (the natural place to grab) must MOVE — its
+    invisible handles must never win the drag."""
+    page.evaluate(SNAP_1MM)
+    page.evaluate(OPEN_SKETCH % "circle")
+    page.evaluate(CLICK, [0, 0]); page.evaluate(CLICK, [10, 0])   # r10
+    page.evaluate(TOGGLE_TOOL % "circle")                          # -> select
+    page.evaluate(DRAG, [10, 0, 15, 5])       # grab the rim, nothing selected
+    e = page.evaluate(ENTS)[0]
+    assert abs(e["r"] - 10) < 1e-6, f"radius must not change: {e}"
+    assert abs(e["x"] - 5) < 1e-6 and abs(e["y"] - 5) < 1e-6, \
+        f"the circle must MOVE by the drag delta: {e}"
+    assert not page.errors, page.errors
+
+
+def test_small_circle_center_drag_moves(server, page, fresh_doc):
+    """A shape smaller than the grab tolerance is covered by its own handles;
+    a centre grab resized it to wherever the cursor went, so a small circle
+    could never be moved again. Nearer the middle than any handle = MOVE."""
+    DRAG_FAT = """
+    async (args) => {
+      const [x0, y0, x1, y1] = args;
+      const { bus } = await import('/static/js/bus.js');
+      bus.emit('sk3d-down', { x: x0, y: y0, tol: 3 });
+      bus.emit('sk3d-move', { x: x1, y: y1, tol: 3, down: true });
+      bus.emit('sk3d-up', {});
+      await new Promise(r => setTimeout(r, 100));
+    }
+    """
+    page.evaluate(SNAP_1MM)
+    page.evaluate(OPEN_SKETCH % "circle")
+    page.evaluate(CLICK, [20, 10]); page.evaluate(CLICK, [22, 10])  # r2
+    page.evaluate(TOGGLE_TOOL % "circle")                            # -> select
+    page.evaluate(CLICK, [20, 10])                                   # select it
+    page.evaluate(DRAG_FAT, [20, 10, 5, -5])       # grab the CENTRE, drag away
+    e = page.evaluate(ENTS)[0]
+    assert abs(e["r"] - 2) < 1e-6, f"a centre drag must not resize: {e}"
+    assert abs(e["x"] - 5) < 1e-6 and abs(e["y"] + 5) < 1e-6, \
+        f"the small circle must MOVE: {e}"
     assert not page.errors, page.errors
 
 
