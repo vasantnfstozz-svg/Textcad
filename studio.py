@@ -186,9 +186,85 @@ def _rebuild_and_mesh() -> None:
 
 
 def _tabs_json() -> list[dict]:
-    return [{"id": tid, "name": e["doc"].name, "ok": e["ok"],
+    # ok: True/False = last rebuild's verdict; None = restored from the last
+    # session and not rebuilt yet (rebuilds on first switch) — the UI shows
+    # that as a grey "not loaded yet" dot instead of a red "broken" one
+    return [{"id": tid, "name": e["doc"].name,
+             "ok": e["ok"] if e["rebuild_ms"] is not None else None,
              "active": tid == STATE["active"]}
             for tid, e in STATE["docs"].items()]
+
+
+# ---------------------------------------------------------------------------
+# Session persistence — the open tabs SURVIVE a server restart
+# ---------------------------------------------------------------------------
+# Restarting the server (an upgrade, a crash) used to wipe every open tab:
+# whatever wasn't saved to designs/ was simply gone (2026-08-31: three tabs
+# lost this way — user: "all other designs that I am working on close and
+# vanish, do not do that"). So after every mutating request the full intent
+# of EVERY open tab — unsaved ones included — is written to one small JSON
+# file, and startup reopens exactly those tabs, active one active again.
+# Undo stacks and rollback state stay transient; the DESIGNS stay untouched
+# (a restored unsaved tab is still unsaved).
+
+SESSION_PATH = ROOT / ".studio-session.json"
+
+# The middleware persists only in a real server run (__main__ flips this on).
+# Tests import this module and hammer the POST endpoints via TestClient —
+# without the gate, running pytest would overwrite the user's live session.
+SESSION_ENABLED = False
+
+
+def _persist_session() -> None:
+    """Every open tab's intent -> SESSION_PATH. A few KB, written atomically
+    (tmp + replace) so a kill mid-write can never leave half a session; any
+    failure is swallowed — persistence must never break an API reply."""
+    try:
+        tabs = [{"doc": e["doc"].to_data(), "source": e.get("source"),
+                 "active": tid == STATE["active"]}
+                for tid, e in STATE["docs"].items()]
+        tmp = SESSION_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"tabs": tabs}), encoding="utf-8")
+        tmp.replace(SESSION_PATH)
+    except Exception:
+        pass
+
+
+def _restore_session() -> int:
+    """Reopen the previous run's tabs from SESSION_PATH. Only the ACTIVE tab
+    is rebuilt here — rebuilding a whole heavy session up front kept the port
+    closed for minutes (measured: a 79-feature tab among four). The others
+    rebuild lazily on their first switch (see switch_tab); until then their
+    tab dot shows grey "not loaded yet", not red. One broken tab never takes
+    down the rest. Returns how many tabs came back."""
+    if not SESSION_PATH.exists():
+        return 0
+    try:
+        data = json.loads(SESSION_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return 0
+    restored, active_tid = 0, None
+    for t in data.get("tabs", [])[:MAX_TABS]:
+        try:
+            doc = Document.from_data(t["doc"])
+            tid = _new_tab(doc, source=t.get("source"), activate=False)
+            if t.get("active"):
+                active_tid = tid
+            restored += 1
+        except Exception:
+            continue
+    if restored:
+        STATE["active"] = active_tid or next(reversed(STATE["docs"]))
+        _rebuild_and_mesh()                    # the visible tab only
+    return restored
+
+
+@app.middleware("http")
+async def _session_autosave(request, call_next):
+    response = await call_next(request)
+    if SESSION_ENABLED and request.method == "POST":
+        _persist_session()
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +519,9 @@ class TrimReq(BaseModel):
 class SnapReq(BaseModel):
     plane: str = "XY"
     offset: float = 0.0
+    # a FACE sketch's world frame ({origin, x_dir, z_dir}, offset baked in) —
+    # when present it IS the plane and plane/offset are ignored
+    frame: dict | None = None
 
 
 class ChatReq(BaseModel):
@@ -579,8 +658,11 @@ def switch_tab(req: TabReq):
     if req.id not in STATE["docs"]:
         return {"error": f"no tab '{req.id}'", **_doc_json()}
     STATE["active"] = req.id
-    # geometry is cached inside the Document — no rebuild needed on switch,
-    # and the STL is written only if something asks for /api/mesh.stl
+    # geometry is cached inside the Document — no rebuild needed on switch —
+    # EXCEPT a tab restored from the last session, which holds only its intent
+    # until someone actually looks at it (rebuild_ms None = never built)
+    if _entry()["rebuild_ms"] is None:
+        _rebuild_and_mesh()
     _entry()["mesh_stale"] = True
     return _doc_json()
 
@@ -1176,7 +1258,8 @@ def sketch_snap_points(req: SnapReq):
     doc = _doc()
     parts = {fid: doc._parts.get(fid) for fid in doc.leaf_solid_ids()}
     try:
-        return snaplib.snap_geometry(parts, req.plane, req.offset)
+        return snaplib.snap_geometry(parts, req.plane, req.offset,
+                                     frame=req.frame)
     except (KeyError, ValueError) as e:
         return {"points": [], "edges": [], "error": str(e)}
 
@@ -2009,11 +2092,18 @@ def chat(req: ChatReq):
 if __name__ == "__main__":
     import socket
     import uvicorn
-    # Start EMPTY (user mandate 2026-08-05: the demo flange forced a
-    # primitive-tree "disc with bolts" on every launch). Samples stay
-    # available under File -> Examples; saved work under File -> Open.
-    _new_tab(Document(name="untitled"))
-    _rebuild_and_mesh()
+    # Bring back the tabs of the previous run (user mandate 2026-08-31: a
+    # restart must not close the designs being worked on). With no session
+    # to restore, start EMPTY (user mandate 2026-08-05: the demo flange
+    # forced a "disc with bolts" on every launch). Samples stay available
+    # under File -> Examples; saved work under File -> Open.
+    SESSION_ENABLED = True
+    restored = _restore_session()
+    if restored:
+        print(f"Restored {restored} open tab(s) from the last session.")
+    else:
+        _new_tab(Document(name="untitled"))
+        _rebuild_and_mesh()
     port = int(os.environ.get("TEXTCAD_PORT", "8123"))
     url = f"http://127.0.0.1:{port}"
 

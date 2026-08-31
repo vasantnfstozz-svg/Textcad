@@ -18,3 +18,5 @@ _studio_mesh.stl
 # matches those names today; the explicit rule keeps it that way if a broader
 # *.json ignore ever lands.
 !designs/*.history/**
+.studio-session.json
+.studio-session.tmp

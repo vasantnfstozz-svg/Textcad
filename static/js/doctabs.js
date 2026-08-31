@@ -15,7 +15,10 @@ export function renderDocTabs(doc) {
     const el = document.createElement('div');
     el.className = 'dtab' + (t.active ? ' active' : '');
     el.title = t.name;
-    el.innerHTML = `<span class="dot ${t.ok ? 'ok' : 'bad'}"></span>
+    // ok true/false = built fine / broken; null = restored from the last
+    // session, loads on first click — grey, not red
+    const dot = t.ok === true ? 'ok' : t.ok === false ? 'bad' : 'wait';
+    el.innerHTML = `<span class="dot ${dot}"></span>
       <span class="nm">${t.name}</span>`;
     const x = document.createElement('button');
     x.className = 'x'; x.textContent = '✕'; x.title = 'close tab';

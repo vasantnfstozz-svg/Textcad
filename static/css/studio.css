@@ -62,6 +62,7 @@ body { background: var(--bg); color: var(--text); height: 100vh;
   color: var(--dim); font-size: 12px; user-select: none; }
 .dtab .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .dtab .dot.ok { background: var(--ok); } .dtab .dot.bad { background: var(--fail); }
+.dtab .dot.wait { background: var(--muted, #7a8598); } /* restored, loads on click */
 .dtab span.nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dtab.active { background: var(--panel3); color: var(--text);
   border-color: var(--accent); font-weight: 600; }
