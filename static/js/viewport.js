@@ -1501,10 +1501,18 @@ export function setDimProbe(target, onPoint) {
       new THREE.Vector3().fromBufferAttribute(pa, i),
       new THREE.Vector3().fromBufferAttribute(pa, i + 1),
       new THREE.Vector3().fromBufferAttribute(pa, i + 2)));
-  dimProbe = { mesh, tris, cb: onPoint, lastDist: null };
+  dimProbe = { mesh, tris, cb: onPoint, lastDist: null, frozen: false };
   const el = document.getElementById('dimLabel');
   if (el) { el.classList.add('grab'); el.title = 'drag to slide the measurement along the face'; }
   return true;
+}
+
+/* Freeze the zero-latency end-tracking while the probe is CLAMPED at a
+   curve's limit (past the tangent the across ray misses; the line holds its
+   last real crossing, so the local nudge must hold too or the grabbed dot
+   runs away from its own line and snaps back every frame). */
+export function setDimProbeFrozen(on) {
+  if (dimProbe) dimProbe.frozen = !!on;
 }
 
 export function clearDimProbe() {
@@ -1554,7 +1562,10 @@ function initDimDrag() {
         if (bd < Infinity) p = best;
       }
       if (!p) return;
-      nudgeDimFrom(p);                 // the line tracks the cursor NOW
+      if (!dimProbe.frozen)
+        nudgeDimFrom(p);               // the line tracks the cursor NOW
+      // the kernel is still asked while frozen — it is how we notice the
+      // cursor coming back into range and unfreeze
       if (dimProbe.cb) dimProbe.cb([p.x, p.y, p.z]);
     };
     // one raycast per FRAME, not per pointermove — a gaming mouse fires

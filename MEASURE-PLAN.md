@@ -170,6 +170,24 @@ bound last. Also: exact rim points are knife-edge picks (50/50 between the
 cylinder, the top face and nothing) — aim into the bore at the far inner wall
 instead.
 
+### Round 4 follow-up 3: clamp at the curve's limit (2026-08-31)
+
+> "the line is dancing or vibrating when i am moving to curvature … the 2nd
+> dot extended according to the curvature right, that is the limit … after
+> that no need to move"
+
+The dance was the across↔nearest flip at the tangent boundary: the across ray
+grazes, then misses, and the nearest fallback TELEPORTS the far dot to the
+closest point — every micro-move across the boundary jumped it back and forth.
+Once across has been seen for a pair, a miss now CLAMPS the whole line at its
+last real crossing — both dots hold, the length stops growing — and it
+unfreezes the moment the cursor comes back into range. The zero-latency nudge
+freezes with it (`setDimProbeFrozen`), or the grabbed dot would run away from
+its own frozen line and snap back every frame. Approaching from outside,
+before any across exists, nearest still shows (honest, and the only number
+there is). E2E: entering=nearest, inside=across 25→27, leaving=clamped at 27.0
+labelled "at the curve's limit".
+
 ## The problem, in the user's words
 
 > "we dont have proper scale to measure distance between two point … if i am

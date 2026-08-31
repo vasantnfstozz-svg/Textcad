@@ -18,7 +18,8 @@ import { postJSON } from './api.js';
 import { S } from './state.js';
 import { showDimension, clearDimension, loadMesh,
          showSelectionOverlay, clearSelectionOverlay,
-         setPickHighlightEnabled, setDimProbe, clearDimProbe }
+         setPickHighlightEnabled, setDimProbe, clearDimProbe,
+         setDimProbeFrozen }
   from './viewport.js';
 
 // the two selections, in click order
@@ -28,6 +29,8 @@ let last = null;          // the last measurement (carries .driver)
 let mine = false;         // true while OUR OWN edit is rebuilding the document
 let probeOn = null;       // 'a'|'b': which selection the drag probe rides
 let probeBusy = false, probePending = null;
+let lastAcross = null;    // last ACROSS response — held when the ray misses
+let probeFrozen = false;  // clamped at the curve's limit
 let chosenSide = null;    // 'a'/'b' when the user overrode which side moves
 
 const el = id => document.getElementById(id);
@@ -260,6 +263,8 @@ function show(r, error) {
 
 function armProbe(r) {
   probeOn = null;
+  lastAcross = null;
+  probeFrozen = false;
   clearDimProbe();
   if (!r || !A || !B || !r.from || !r.to) return;
   const on = A.kind === 'face' ? 'a' : (B.kind === 'face' ? 'b' : null);
@@ -270,6 +275,23 @@ function armProbe(r) {
     el('meHint').textContent =
       'Drag the value label to slide the measurement along the face.';
   }
+}
+
+function paintProbe(r, kindText) {
+  el('meValue').textContent = r.label;
+  el('meKind').textContent = kindText;
+  const rows = el('meRows');
+  rows.innerHTML = '';
+  if (r.mode === 'across' && r.nearest != null
+      && Math.abs(r.nearest - r.value) > 5e-3) {
+    const d = document.createElement('div');
+    d.className = 'merow';
+    d.innerHTML = '<span class="k"></span><span class="v"></span>';
+    d.querySelector('.k').textContent = 'nearest anywhere';
+    d.querySelector('.v').textContent = r.nearest.toFixed(2) + ' mm';
+    rows.appendChild(d);
+  }
+  showDimension(r.from, r.to, r.label);
 }
 
 async function sendProbe(pt) {
@@ -285,25 +307,28 @@ async function sendProbe(pt) {
     });
     const r = await res.json();
     if (!r.error && r.from && r.to) {
-      // the LIVE value, in the box and on the line. Two modes, named
-      // honestly: ACROSS runs along the source face's normal and stretches to
-      // meet the other surface ("the line should move according to the
-      // surface"); past the surface's shadow it falls back to NEAREST.
-      el('meValue').textContent = r.label;
-      el('meKind').textContent = r.mode === 'across'
-        ? 'across the gap at this spot' : 'nearest from this spot';
-      const rows = el('meRows');
-      rows.innerHTML = '';
-      if (r.mode === 'across' && r.nearest != null
-          && Math.abs(r.nearest - r.value) > 5e-3) {
-        const d = document.createElement('div');
-        d.className = 'merow';
-        d.innerHTML = '<span class="k"></span><span class="v"></span>';
-        d.querySelector('.k').textContent = 'nearest anywhere';
-        d.querySelector('.v').textContent = r.nearest.toFixed(2) + ' mm';
-        rows.appendChild(d);
+      // Two modes, named honestly: ACROSS runs along the source face's normal
+      // and stretches to meet the other surface. Past the curve's extreme the
+      // ray misses — and flipping to nearest there made the far dot TELEPORT
+      // between the tangent region and the closest point on every micro-move
+      // (user report 2026-08-31: "the line is dancing or vibrating"). So once
+      // across has been seen, a miss CLAMPS the line at its last real
+      // crossing — "that is the limit … after that no need to move" — and it
+      // unfreezes the moment the cursor comes back into range.
+      if (r.mode === 'across') {
+        lastAcross = r;
+        if (probeFrozen) { probeFrozen = false; setDimProbeFrozen(false); }
+        paintProbe(r, 'across the gap at this spot');
+      } else if (lastAcross) {
+        if (!probeFrozen) {
+          probeFrozen = true;
+          setDimProbeFrozen(true);
+          paintProbe(lastAcross, "across the gap — at the curve's limit");
+        }
+        // while frozen: ignore nearest updates entirely; the line holds
+      } else {
+        paintProbe(r, 'nearest from this spot');
       }
-      showDimension(r.from, r.to, r.label);
     }
   } catch (e) { /* mid-drag hiccup: the next move retries */ } finally {
     probeBusy = false;

@@ -104,8 +104,13 @@ def test_probe_across_then_nearest(page, server, fresh_doc):
     page.wait_for_timeout(300)
 
     inside = {wx: (v, k) for wx, v, k in seen if abs(wx) <= 4}
-    outside = {wx: (v, k) for wx, v, k in seen if abs(wx) >= 8}
-    assert inside and outside, seen
+    entering = {wx: (v, k) for wx, v, k in seen if wx <= -8}
+    leaving = {wx: (v, k) for wx, v, k in seen if wx >= 8}
+    assert inside and entering and leaving, seen
+
+    # approaching from outside, before any across exists: honest nearest
+    for wx, (v, k) in entering.items():
+        assert "nearest" in k, seen
 
     # ACROSS inside the bore's shadow: the line stretches with the circle —
     # 25.0 at centre, longer off-centre — and says which mode it is in
@@ -117,7 +122,11 @@ def test_probe_across_then_nearest(page, server, fresh_doc):
     # at x=4 the ray meets the r=5 circle at y=-sqrt(25-16)=-3: 25+5-3 = 27
     assert v4 == pytest.approx(27.0, abs=0.4), seen
 
-    # past the shadow: honest fallback, still answering (never frozen)
-    for wx, (v, k) in outside.items():
-        assert "nearest" in k, seen
+    # past the curve's extreme the line CLAMPS at its last real crossing —
+    # flipping to nearest teleported the far dot on every micro-move (user
+    # report: "the line is dancing or vibrating"); "that is the limit …
+    # after that no need to move"
+    for wx, (v, k) in leaving.items():
+        assert "limit" in k, seen
+        assert float(v.split()[0]) == pytest.approx(v4, abs=1e-6),             f"the clamp did not hold the last crossing: {seen}"
     assert page.errors == [], page.errors
