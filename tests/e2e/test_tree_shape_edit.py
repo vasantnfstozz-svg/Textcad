@@ -170,6 +170,53 @@ def test_a_traced_path_shows_a_summary_not_a_json_dump(page, server,
     assert not page.errors, page.errors
 
 
+def test_a_path_curve_radius_is_editable_in_the_tree(page, server, fresh_doc):
+    """User (2026-08-31): "wherever we have a curve ... I can simply edit
+    [it] there in the tree." A path's arcs are 3-point arcs with no stored
+    radius, so the tree used to offer nothing. Now every arc gets a radius
+    row; a corner arc re-fillets TANGENT to its neighbouring lines."""
+    build(page, server)
+    page.evaluate(OPEN, "trace")
+    d = page.evaluate(ROWS, "trace")
+    rows = dict(d["shapes"][0]["rows"])
+    assert "corner 2 R" in rows, rows
+    # circumradius of ([0,8],[1.2,10.8],[4,12]) — the drawn (sloppy) corner
+    assert 4.0 < float(rows["corner 2 R"]) < 4.2, rows
+
+    assert page.evaluate(TYPE_IN, ["trace", "corner 2 R", 2.5]) == "ok"
+    page.wait_for_timeout(2500)
+    tr = feats(server)["trace"]
+    assert tr["status"] == "ok", tr
+    segs = tr["params"]["entities"][0]["segments"]
+    # the corner is between the x=0 wall and the y=12 top: at r2.5 the
+    # tangent points are exactly (0, 9.5) and (2.5, 12), via on the bisector
+    assert segs[0]["to"] == [0, 9.5], segs
+    assert segs[1]["to"] == [2.5, 12], segs
+    assert abs(segs[1]["via"][0] - 0.7322) < 1e-3, segs
+    assert abs(segs[1]["via"][1] - 11.2678) < 1e-3, segs
+    # and the tree now shows the radius it was asked for
+    d2 = page.evaluate(ROWS, "trace")
+    assert abs(float(dict(d2["shapes"][0]["rows"])["corner 2 R"]) - 2.5) < 0.01
+    assert not page.errors, page.errors
+
+
+def test_an_impossible_radius_is_refused_out_loud(page, server, fresh_doc):
+    """r=40 cannot fit the little trace profile — the edit must be refused
+    with a chat message (failures speak), and the geometry stay untouched."""
+    build(page, server)
+    page.evaluate(OPEN, "trace")
+    before = feats(server)["trace"]["params"]["entities"][0]["segments"]
+    assert page.evaluate(TYPE_IN, ["trace", "corner 2 R", 40]) == "ok"
+    page.wait_for_timeout(1500)
+    after = feats(server)["trace"]["params"]["entities"][0]["segments"]
+    assert after == before, "a refused radius must change nothing"
+    said = page.evaluate("""() =>
+      [...document.querySelectorAll('#chatLog .msg')].map(m => m.innerText)
+        .filter(t => t.includes('does not fit')).length""")
+    assert said >= 1, "the refusal must be said in chat, not swallowed"
+    assert not page.errors, page.errors
+
+
 ISLANDS = """
 async () => {
   const { postJSON } = await import('/static/js/api.js');
