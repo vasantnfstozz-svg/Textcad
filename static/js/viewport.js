@@ -1389,8 +1389,22 @@ export function showDimension(fromArr, toArr, label) {
   group.add(e1, e2);
   group.renderOrder = 1000;
   scene.add(group);
-  dimOverlay = { group, from: a, to: b, text: label || '' };
+  dimOverlay = { group, from: a, to: b, text: label || '',
+                 line: group.children[0], e1 };
   paintDimLabel();
+}
+
+/* Move the grabbed end of the dimension NOW, before the kernel answers — the
+   line must track the cursor at frame rate or the drag feels broken, whatever
+   the round trip costs. The exact value and witness point overwrite this a
+   couple of frames later. */
+function nudgeDimFrom(p) {
+  if (!dimOverlay || !dimOverlay.line) return;
+  dimOverlay.from.copy(p);
+  const attr = dimOverlay.line.geometry.getAttribute('position');
+  attr.setXYZ(0, p.x, p.y, p.z);
+  attr.needsUpdate = true;
+  dimOverlay.e1.position.copy(p);
 }
 
 export function clearDimension() {
@@ -1451,7 +1465,19 @@ export function setDimProbe(target, onPoint) {
     transparent: true, opacity: 0, depthWrite: false, colorWrite: false,
     side: THREE.DoubleSide }));
   scene.add(mesh);
-  dimProbe = { mesh, cb: onPoint };
+  // The face's own triangles, for when the ray MISSES it: measuring a blade
+  // gap, the cursor naturally rides the channel BETWEEN the blades, and a
+  // drag that only works while the pointer covers a thin curved strip feels
+  // stuck (user report 2026-08-31: "its not moving countinesly, kind of
+  // strucking"). On a miss we snap to the nearest point on the face instead.
+  const pa = g.getAttribute('position');
+  const tris = [];
+  for (let i = 0; i + 2 < pa.count; i += 3)
+    tris.push(new THREE.Triangle(
+      new THREE.Vector3().fromBufferAttribute(pa, i),
+      new THREE.Vector3().fromBufferAttribute(pa, i + 1),
+      new THREE.Vector3().fromBufferAttribute(pa, i + 2)));
+  dimProbe = { mesh, tris, cb: onPoint, lastDist: null };
   const el = document.getElementById('dimLabel');
   if (el) { el.classList.add('grab'); el.title = 'drag to slide the measurement along the face'; }
   return true;
@@ -1476,15 +1502,47 @@ function initDimDrag() {
     // same discipline as the gizmos: OrbitControls must never fight the drag
     controls.enabled = false;
     lbl.classList.add('grabbing');
-    const move = ev => {
+    let queued = null, raf = 0;
+    const tmp = new THREE.Vector3(), best = new THREE.Vector3();
+    const step = () => {
+      raf = 0;
+      const ev = queued;
+      queued = null;
+      if (!ev || !dimProbe) return;
       raycaster.setFromCamera(ndcFrom(ev), camera);
       const hit = raycaster.intersectObject(dimProbe.mesh, false)[0];
-      if (hit && dimProbe.cb)
-        dimProbe.cb([hit.point.x, hit.point.y, hit.point.z]);
+      let p = null;
+      if (hit) {
+        p = hit.point;
+        dimProbe.lastDist = hit.distance;
+      } else if (dimProbe.tris.length && dimProbe.tris.length < 20000) {
+        // the cursor left the face: sample the ray at the last hit depth and
+        // snap to the nearest point ON the face, so the drag never freezes
+        const depth = dimProbe.lastDist
+          ?? camera.position.distanceTo(controls.target);
+        const at = raycaster.ray.at(depth, new THREE.Vector3());
+        let bd = Infinity;
+        for (const t of dimProbe.tris) {
+          t.closestPointToPoint(at, tmp);
+          const d = tmp.distanceToSquared(at);
+          if (d < bd) { bd = d; best.copy(tmp); }
+        }
+        if (bd < Infinity) p = best;
+      }
+      if (!p) return;
+      nudgeDimFrom(p);                 // the line tracks the cursor NOW
+      if (dimProbe.cb) dimProbe.cb([p.x, p.y, p.z]);
+    };
+    // one raycast per FRAME, not per pointermove — a gaming mouse fires
+    // hundreds of moves a second and queueing them all is its own lag
+    const move = ev => {
+      queued = ev;
+      if (!raf) raf = requestAnimationFrame(step);
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      if (raf) cancelAnimationFrame(raf);
       controls.enabled = true;
       lbl.classList.remove('grabbing');
     };

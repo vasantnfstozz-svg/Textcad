@@ -115,6 +115,31 @@ The pick box, reworked as a dimensions-first readout:
 Verified with a real mouse drag: grabbing the label and sliding it around a
 boss read 8 distinct kernel values (25.18 → 28.62 mm) with the line following.
 
+### Round 4 follow-up: the blade-gap stutter (2026-08-31)
+
+> "i can move the line, but it not moving countinesly, kind of strucking …
+> i am measuring the gas between two blades"
+
+Benchmarked before touching anything: the kernel probe is **5 ms median** on
+the compressor's blade faces — the server was never the bottleneck. The freeze
+was geometric: the drag only updated while the ray HIT the picked face, and a
+blade face is a thin curved strip. Measuring a blade gap, the cursor naturally
+rides the channel *between* the blades — off the strip — and the line froze
+until it wandered back on. Three fixes in the drag loop:
+
+1. **miss-tolerant**: on a ray miss, sample the ray at the last hit depth and
+   snap to the nearest point ON the face (its triangles are precomputed at
+   probe arm time; skipped above 20k triangles);
+2. **frame-coalesced**: one raycast per animation frame, not per pointermove —
+   a gaming mouse fires hundreds of moves a second;
+3. **zero-latency tracking**: the grabbed end of the line follows the cursor
+   immediately (`nudgeDimFrom`), with the exact kernel value and witness point
+   overwriting a couple of frames later.
+
+Verified on the compressor itself: a sweep along the channel produced 9
+distinct kernel values (27.3 mm down to 1.17 mm at the blade convergence) with
+no freeze, where the same path previously stalled.
+
 ## The problem, in the user's words
 
 > "we dont have proper scale to measure distance between two point … if i am
