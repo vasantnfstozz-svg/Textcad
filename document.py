@@ -887,12 +887,68 @@ class Document:
         f = self._result_feature()
         return self._parts.get(f.id) if f else None
 
+    def _export_blockers(self) -> list:
+        """Features that keep the tree's TAIL from being the exported body.
+
+        Walking back from the tail: suppressed features and sketches are
+        skipped, a sketch-valued modifier (a moved profile) is skipped, and
+        the first real solid ends the walk. Anything hit before that point
+        with no built part — failed, or stale behind a rollback bar — is a
+        blocker: exporting past it silently hands over an INTERMEDIATE body
+        (usually a bare cutter volume), which reads as "my edits are not in
+        the STEP file" downstream.
+        """
+        blockers = []
+        for f in reversed(self.features):
+            if f.suppressed or f.op in sk.SKETCH_PRODUCERS:
+                continue
+            part = self._parts.get(f.id)
+            if part is None:
+                blockers.append(f)
+                continue
+            if sk.is_sketch(part):
+                continue
+            break
+        return blockers
+
     def to_step(self, path: str) -> str:
-        part = self.result()
-        if part is None:
+        """Export the FINISHED DESIGN, never the transient build state.
+
+        The rollback bar is edit plumbing — the sketch/extrude editors park
+        it for isolation while they are open. Exporting while it is parked
+        used to write whatever body happened to be last built (2026-08-31:
+        a CAM import showed a bare cavity-cutter slab instead of the edited
+        part). So a parked bar is released for the export and re-parked
+        after — the restore rebuild is all cache hits — and a tail that
+        genuinely failed to build is refused BY NAME instead of silently
+        exporting the last intermediate that succeeded.
+        """
+        if not self._parts:
             raise RuntimeError("nothing to export — rebuild first / fix failures")
-        b3d.export_step(part, path)
-        return path
+        parked = self.rollback
+        if parked is not None:
+            self.rollback = None
+            self.rebuild()
+        try:
+            blockers = self._export_blockers()
+            if blockers:
+                what = "; ".join(
+                    f"'{f.id}' ({f.problems[0]})" if f.problems else f"'{f.id}'"
+                    for f in blockers)
+                raise RuntimeError(
+                    "cannot export: the design's final body did not build — "
+                    f"{what}. Fix or delete the failed feature(s), then "
+                    "export again.")
+            part = self.result()
+            if part is None:
+                raise RuntimeError(
+                    "nothing to export — rebuild first / fix failures")
+            b3d.export_step(part, path)
+            return path
+        finally:
+            if parked is not None:
+                self.rollback = parked
+                self.rebuild()
 
     def tree(self) -> str:
         """Render the tree the way a UI (or terminal) shows it."""

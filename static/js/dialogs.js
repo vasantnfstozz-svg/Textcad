@@ -177,7 +177,16 @@ export async function actionOpen() {
 export async function actionExport() {
   const r = await fetch('/api/export', { method: 'POST' });
   const res = await r.json();
-  bus.emit('msg', 'bot', res.error ? '⚠ ' + res.error : '⬇ Exported: ' + res.path);
+  if (res.error) { bus.emit('msg', 'bot', '⚠ ' + res.error); return; }
+  // Echo what was MEASURED FROM THE FILE, not what we hope is in it — a
+  // wrong body (stale tab, intermediate solid) shows up instantly as the
+  // wrong size/volume next to the path.
+  const facts = (res.size && res.volume != null)
+    ? ` — ${res.n_solids} solid${res.n_solids === 1 ? '' : 's'}, `
+      + `${res.size.map(v => Math.round(v * 10) / 10).join('×')} mm, `
+      + `${(res.volume / 1000).toFixed(1)} cm³ (measured from the file)`
+    : '';
+  bus.emit('msg', 'bot', '⬇ Exported: ' + res.path + facts);
 }
 
 export async function actionUndo() {
