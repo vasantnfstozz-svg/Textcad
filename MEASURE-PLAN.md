@@ -188,6 +188,23 @@ before any across exists, nearest still shows (honest, and the only number
 there is). E2E: entering=nearest, inside=across 25→27, leaving=clamped at 27.0
 labelled "at the curve's limit".
 
+## User feedback, round 5 (2026-08-31)
+
+> "add this feature for every shape or surface, for a seleted box surface show
+> the lenth and widght, if i am seleting a curve show the radius or dia"
+
+Every face type now reads out its own dimensions in the pick box:
+
+| face | rows |
+|---|---|
+| flat | `size: L × W` — ORIENTED extents from the tessellation verts projected into the face's own plane frame (a rotated 20-wide face reads 20.00; its world bbox lies at 23.32, and topological vertices under-sample a disc's rim to nothing) |
+| cylinder | ⌀ + `height` (vert extent along the axis) |
+| cone | `⌀ min → max`, `taper °/side` (BRepAdaptor SemiAngle), height |
+| sphere | ⌀ |
+| torus | ring ⌀ / tube ⌀ |
+
+plus the round-3 boundary circles (inner/outer ⌀) on any face that has them.
+
 ## The problem, in the user's words
 
 > "we dont have proper scale to measure distance between two point … if i am

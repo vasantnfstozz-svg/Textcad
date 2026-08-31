@@ -1726,6 +1726,20 @@ function selectFace(fid, entry = null, hitPoint = null) {
   const dia = [];
   if (info.radius != null)
     dia.push(['⌀', (info.radius * 2).toFixed(2) + ' mm']);
+  // every surface type reads out its own dimensions (2026-08-31: "for a
+  // selected box surface show the length and width, if i am selecting a
+  // curve show the radius or dia like that")
+  if (info.cone_d)
+    dia.push(['⌀', `${info.cone_d[0].toFixed(2)} → ${info.cone_d[1].toFixed(2)} mm`],
+             ['taper', info.cone_angle + '° per side']);
+  if (info.torus)
+    dia.push(['ring ⌀', (info.torus[0] * 2).toFixed(2) + ' mm'],
+             ['tube ⌀', (info.torus[1] * 2).toFixed(2) + ' mm']);
+  if (info.height != null)
+    dia.push(['height', info.height.toFixed(2) + ' mm']);
+  if (info.extents)
+    dia.push(['size', `${info.extents[0].toFixed(2)} × ` +
+                      `${info.extents[1].toFixed(2)} mm`]);
   const circ = (info.circles || []).filter(r =>
     info.radius == null || Math.abs(r - info.radius) > 1e-3);
   if (circ.length === 1)

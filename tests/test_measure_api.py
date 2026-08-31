@@ -169,3 +169,58 @@ def test_probe_endpoint_is_read_only(client):
     assert r["from"] and r["to"]
     assert client.get("/api/doc").json()["features"] == before
     assert len(studio._entry()["history"]) == hist
+
+
+def test_mesh_payload_carries_per_type_dimensions(client):
+    """Every surface type reads out its own dimensions in the pick box
+    (2026-08-31: "for a selected box surface show the length and width, if i
+    am selecting a curve show the radius or dia"). The flat-face extents are
+    ORIENTED — a rotated face must report its true size, not its world bbox
+    (which reads 23.32 for this 20-wide face at 30 degrees)."""
+    client.post("/api/new", json={"name": "dims-payload"})
+    _add(client, {"id": "b", "op": "plate",
+                  "params": {"width": 80, "depth": 60, "thickness": 10},
+                  "inputs": []})
+    _add(client, {"id": "sk", "op": "sketch_on_face",
+                  "params": {"face": "top", "offset": 0, "entities": [
+                      {"kind": "rectangle", "mode": "add", "w": 20, "h": 12,
+                       "x": -20, "y": 0, "rotation": 30}]}, "inputs": ["b"]})
+    _add(client, {"id": "boss", "op": "extrude", "params": {"amount": 5},
+                  "inputs": ["sk"]})
+    _add(client, {"id": "j", "op": "fuse", "params": {},
+                  "inputs": ["b", "boss"]})
+    body = client.get("/api/model").json()["bodies"][-1]
+    boss_top = next(f for f in body["faces"]
+                    if f.get("planar") and f.get("center")
+                    and abs(f["center"][2] - 10) < 1e-6)
+    assert boss_top["extents"] == pytest.approx([20.0, 12.0], abs=0.05), \
+        boss_top["extents"]
+    plate_top = next(f for f in body["faces"]
+                     if f.get("planar") and f.get("center")
+                     and abs(f["center"][2] - 5) < 0.6)
+    assert plate_top["extents"] == pytest.approx([80.0, 60.0], abs=0.05)
+
+    client.post("/api/new", json={"name": "dims-ball"})
+    _add(client, {"id": "s", "op": "ball", "params": {"radius": 7},
+                  "inputs": []})
+    sph = client.get("/api/model").json()["bodies"][-1]["faces"][0]
+    assert sph["type"] == "SPHERE"
+    assert sph["radius"] == pytest.approx(7.0)
+
+    client.post("/api/new", json={"name": "dims-cone"})
+    _add(client, {"id": "c", "op": "cone",
+                  "params": {"bottom_radius": 10, "top_radius": 4,
+                             "height": 12}, "inputs": []})
+    cone = next(f for f in client.get("/api/model").json()["bodies"][-1]["faces"]
+                if f["type"] == "CONE")
+    assert cone["cone_d"] == pytest.approx([8.0, 20.0], abs=0.05)
+    assert cone["cone_angle"] == pytest.approx(26.57, abs=0.05)
+    assert cone["height"] == pytest.approx(12.0, abs=0.05)
+
+    client.post("/api/new", json={"name": "dims-disc"})
+    _add(client, {"id": "d", "op": "disc",
+                  "params": {"radius": 9, "thickness": 14}, "inputs": []})
+    cyl = next(f for f in client.get("/api/model").json()["bodies"][-1]["faces"]
+               if f["type"] == "CYLINDER")
+    assert cyl["radius"] == pytest.approx(9.0)
+    assert cyl["height"] == pytest.approx(14.0, abs=0.05)
