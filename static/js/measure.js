@@ -438,6 +438,7 @@ async function applyEdit() {
 const READ_ONLY = {
   angle: 'read-only — an angle follows the faces that form it',
   centres: 'read-only — set each hole’s position in its sketch',
+  clearance: 'read-only — set each feature’s position in its sketch',
   length: 'read-only — an edge length follows the profile behind it',
   area: 'read-only — a face area follows the profile behind it',
   distance: 'read-only — these two picks are not a parallel pair',
@@ -453,5 +454,6 @@ function readOnlyReason(r) {
 const KIND_NAMES = {
   diameter: 'diameter', length: 'edge length', area: 'face area',
   thickness: 'material thickness', gap: 'open gap', step: 'step / depth',
-  distance: 'minimum distance', centres: 'centre to centre', angle: 'angle',
+  distance: 'minimum distance', centres: 'centre to centre',
+  clearance: 'surface to surface', angle: 'angle',
 };

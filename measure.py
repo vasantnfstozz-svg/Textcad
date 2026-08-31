@@ -303,7 +303,11 @@ def _measure_two(a, b) -> dict:
     pa, pb = _plane(a), _plane(b)
     md = _min_distance(a, b)
 
-    # -- two round things: centre-to-centre, the machinist's hole spacing ----
+    # -- two round things: SURFACE to surface, centres as the footnote -------
+    # (user report 2026-08-31: "its measuring from center to center, i do not
+    # want like this, it should measure from the surface to surface"). The
+    # drawn line runs between the actual walls; the machinist's hole-spacing
+    # number stays one row below.
     if ca and cb:
         (centre_a, ra, axis_a), (centre_b, rb, axis_b) = ca, cb
         # cylinders: pin each arbitrary axis position to the comparable point
@@ -313,11 +317,19 @@ def _measure_two(a, b) -> dict:
             centre_b = _closest_on_axis(centre_b, axis_b, centre_a)
         delta = _sub(centre_b, centre_a)
         dist = _norm(delta)
-        rows = [["Δx", _fmt(delta[0])], ["Δy", _fmt(delta[1])],
+        rows = [["centre-to-centre", _fmt(dist)],
+                ["Δx", _fmt(delta[0])], ["Δy", _fmt(delta[1])],
                 ["Δz", _fmt(delta[2])],
                 ["⌀ A", _fmt(ra * 2)], ["⌀ B", _fmt(rb * 2)]]
+        if md and md[0] > TOUCH_TOL:
+            return {"kind": "clearance", "value": _r(md[0]), "unit": MM,
+                    "label": f"{md[0]:.2f} {MM} surface-to-surface",
+                    "rows": rows, "from": _r3(md[1]), "to": _r3(md[2])}
+        # touching or overlapping: there is no surface gap to report, so the
+        # centre distance is the honest headline again
+        rows = rows[1:]
         if md:
-            rows.append(["clearance", _fmt(md[0])])
+            rows.insert(0, ["surfaces", "touching / overlapping"])
         return {"kind": "centres", "value": _r(dist), "unit": MM,
                 "label": f"{dist:.2f} {MM} centre-to-centre", "rows": rows,
                 "from": _r3(centre_a), "to": _r3(centre_b)}
@@ -1091,6 +1103,33 @@ def probe(doc, a: dict, b: dict | None, point, on: str = "a") -> dict:
         return {"error": "that probe point is not a valid position"}
     source = shape_b if str(on) == "b" else shape_a
     target = shape_a if str(on) == "b" else shape_b
+
+    # TWO ROUND SURFACES (two pillars, two bores): the natural drag slides the
+    # perpendicular gap line ALONG the axes, both ends moving in parallel
+    # (user report 2026-08-31: "one end is struck, it should move parlley").
+    # The across-ray mode is wrong here — a radial normal only points at the
+    # other pillar from a sliver of the source wall, so most of the drag fell
+    # into nearest and the clamp froze an end. Station = the drag point
+    # projected on the source axis; the line runs axis-to-axis at that station,
+    # trimmed by both radii: surface to surface, staying perpendicular.
+    cs, ct = _circle(source), _circle(target)
+    if cs and ct and cs[2] and ct[2]:
+        (pos_s, r_s, dir_s), (pos_t, r_t, dir_t) = cs, ct
+        u_s = _scale(dir_s, 1.0 / max(_norm(dir_s), 1e-12))
+        station = _add(pos_s, _scale(u_s, _dot(_sub(p, pos_s), u_s)))
+        other = _closest_on_axis(pos_t, dir_t, station)
+        gap_v = _sub(other, station)
+        gap_d = _norm(gap_v)
+        if gap_d > 1e-9 and gap_d - r_s - r_t > TOUCH_TOL:
+            u = _scale(gap_v, 1.0 / gap_d)
+            frm = _add(station, _scale(u, r_s))
+            to = _sub(other, _scale(u, r_t))
+            val = gap_d - r_s - r_t
+            return {"kind": "probe", "mode": "across", "value": _r(val),
+                    "unit": MM, "label": _fmt(val),
+                    "from": _r3(frm), "to": _r3(to)}
+        # coaxial or overlapping at this station: fall through to nearest
+
     md = _min_distance(v, target)
     if md is None:
         return {"error": "could not measure from there"}

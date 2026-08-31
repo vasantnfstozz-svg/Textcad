@@ -205,6 +205,28 @@ Every face type now reads out its own dimensions in the pick box:
 
 plus the round-3 boundary circles (inner/outer ⌀) on any face that has them.
 
+## User feedback, round 6 (2026-08-31)
+
+> "when i am measuring lenth between two pillar, its measuring from center to
+> cernter … it should measure from the surface to surface, and also, since we
+> have two cuevature surface, when i am moving the line, its not movien, one
+> end is struck, it should move parlley"
+
+1. **Round-vs-round headline is SURFACE-TO-SURFACE now** (`kind: clearance`),
+   with the line drawn wall-to-wall between the min-distance witnesses;
+   centre-to-centre, Δx/Δy/Δz and both ⌀s stay as rows. Touching/overlapping
+   pairs (no surface gap to report) fall back to the centre headline with a
+   "touching / overlapping" row.
+2. **The probe slides in PARALLEL between two round surfaces.** The across-ray
+   mode was wrong there — a radial normal only points at the other pillar from
+   a sliver of the source wall, so most of the drag fell into nearest and the
+   clamp froze an end. New probe branch when BOTH shapes are round with axes:
+   station = drag point projected onto the source axis; the line runs
+   axis-to-axis at that station trimmed by both radii — surface to surface,
+   perpendicular, both ends translating together. UI-verified: sliding down
+   two pillars moved the whole line monotonically with the value locked at
+   the true 22.00 mm gap.
+
 ## The problem, in the user's words
 
 > "we dont have proper scale to measure distance between two point … if i am

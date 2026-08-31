@@ -234,19 +234,52 @@ def test_outer_walls_are_a_thickness():
 
 # ------------------------------------------------------- hole-to-hole --------
 
-def test_hole_spacing_uses_centres():
+def test_two_holes_headline_is_surface_to_surface():
+    """User report (2026-08-31): "its measuring from center to cernter, i do
+    not want like this, it should measure from the surface to surface". The
+    headline (and the drawn line) is the wall-to-wall gap; the machinist's
+    hole-spacing number stays one row below."""
     doc = two_hole_doc()
     cyls = find_all_faces(doc, lambda f: "CYLINDER" in str(f.geom_type))
     assert len(cyls) >= 2
     r = measure.measure(doc, sel(doc, "face", cyls[0]),
                         sel(doc, "face", cyls[1]))
     assert r.get("error") is None, r
-    assert r["kind"] == "centres"
-    assert r["value"] == pytest.approx(50.0, abs=1e-6)
+    assert r["kind"] == "clearance"
+    # 50 centre-to-centre minus both r=6 walls
+    assert r["value"] == pytest.approx(38.0, abs=1e-3)
     rows = dict(r["rows"])
+    assert float(rows["centre-to-centre"].split()[0]) == pytest.approx(50.0)
     assert rows["Δy"].startswith("0.00"), rows
-    # clearance is centre distance minus both radii: 50 - 6 - 6 = 38
-    assert float(rows["clearance"].split()[0]) == pytest.approx(38.0, abs=1e-3)
+    # the LINE runs wall to wall, not centre to centre
+    assert abs(r["from"][0]) == pytest.approx(19.0, abs=1e-3)
+    assert abs(r["to"][0]) == pytest.approx(19.0, abs=1e-3)
+
+
+def test_probe_between_two_pillars_slides_in_parallel():
+    """User report (2026-08-31): with two curved surfaces "one end is struck,
+    it should move parlley". The drag station is the point projected on the
+    source axis; the line runs axis-to-axis at that station trimmed by both
+    radii — so probing at two heights gives the same surface gap with BOTH
+    ends translated together, and never falls into the clamp."""
+    doc = two_hole_doc()
+    cyls = find_all_faces(doc, lambda f: "CYLINDER" in str(f.geom_type))
+    a, b = sel(doc, "face", cyls[0]), sel(doc, "face", cyls[1])
+    lo = measure.probe(doc, a, b, [-25 + 6, 0, 2], on="a")
+    hi = measure.probe(doc, a, b, [-25 + 6, 0, 8], on="a")
+    for r in (lo, hi):
+        assert r.get("error") is None, r
+        assert r["mode"] == "across", r
+        assert r["value"] == pytest.approx(38.0, abs=1e-6)
+        # both ends sit ON the walls, on the line between the axes
+        assert r["from"][0] == pytest.approx(-19.0, abs=1e-6)
+        assert r["to"][0] == pytest.approx(19.0, abs=1e-6)
+        assert r["from"][1] == pytest.approx(0.0, abs=1e-6)
+    # ...and the whole line moved in PARALLEL with the drag height
+    assert lo["from"][2] == pytest.approx(2.0, abs=1e-6)
+    assert lo["to"][2] == pytest.approx(2.0, abs=1e-6)
+    assert hi["from"][2] == pytest.approx(8.0, abs=1e-6)
+    assert hi["to"][2] == pytest.approx(8.0, abs=1e-6)
 
 
 # ------------------------------------------------------------- length --------
