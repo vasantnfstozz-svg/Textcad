@@ -5,7 +5,7 @@
 import { S } from './state.js';
 import { bus } from './bus.js';
 import { postJSON, getJSON } from './api.js';
-import { askText, askNumber } from './ask.js';
+import { askText } from './ask.js';
 import { OP_ICONS } from './icons.js';
 import { loadMesh, clearMesh, cancelPlanePick } from './viewport.js';
 import { cancelExtrude } from './extrude.js';
@@ -68,70 +68,10 @@ export async function actionSave() {
   if (res.saved) bus.emit('msg', 'bot', `Saved "${res.saved}" to the design library.`);
 }
 
-export function actionTracePng() {
-  if (modalGuard()) return;
-  // capture the face pick NOW — with a face selected the trace lands ON that
-  // face, auto-fitted (user request 2026-09-01: "select a face ... the logo
-  // should automatically scale ... it should perfectly fit that face")
-  const face = S.pickedFace;
-  const inp = document.createElement('input');
-  inp.type = 'file';
-  inp.accept = 'image/png,image/jpeg';
-  inp.onchange = async () => {
-    const f = inp.files[0];
-    if (!f) return;
-    let h = 50;
-    if (!face) {                    // no face picked -> the classic height ask
-      h = await askNumber('Trace image', {
-        label: 'Artwork height in mm',
-        value: 50, min: 0.1,
-        body: `Tracing ${f.name}. The width follows from the image's own aspect.`,
-        ok: 'Trace',
-      });
-      if (h === null) return;
-    }
-    const dataUrl = await new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => res(r.result);
-      r.onerror = rej;
-      r.readAsDataURL(f);
-    });
-    const body = {
-      png_base64: dataUrl,
-      feature_id: (f.name.replace(/\.[^.]*$/, '').replace(/[^\w-]+/g, '-')
-                   .slice(0, 24) || 'traced-image'),
-    };
-    if (face) {
-      body.face_center = face.center;
-      body.face_normal = face.normal || null;
-      body.body_feature_id = face.body || null;
-    } else {
-      body.height_mm = parseFloat(h) || 50;
-    }
-    const out = await postJSON('/api/trace-png', body, 'tracing…');
-    if (out && !out.error) {
-      // the viewport does NOT follow doc-updated — without this the traced
-      // sketch only appeared in the tree (the "upload does nothing when a
-      // design is open" report, 2026-09-01)
-      loadMesh(out.features.length === 1);
-      const i = out.trace_info || {};
-      bus.emit('msg', 'bot', face
-        ? `Traced "${f.name}" onto the selected face as sketch ` +
-          `"${i.feature_id}" — auto-fitted to ${i.width_mm}×${i.height_mm}mm ` +
-          `on the ${(i.face_mm || []).join('×')}mm face, ${i.contours} ` +
-          `outline(s), ${i.holes} hole(s). Extrude it for a raised logo, or ` +
-          `extrude with Cut for an engraving. To resize it, open the sketch ` +
-          `and use Scale.`
-        : `Traced "${f.name}" into sketch "${i.feature_id}" — ` +
-          `${i.width_mm}×${i.height_mm}mm, ${i.contours} outline(s), ` +
-          `${i.holes} hole(s). Select it in the tree and Extrude.` +
-          (out.features.some(x => x.volume != null)
-            ? ' Tip: click a face first and the logo lands on it, ' +
-              'auto-fitted to size.' : ''));
-    }
-  };
-  inp.click();
-}
+// Trace PNG moved into the SKETCH ribbon (user request 2026-09-01): it now
+// inserts into the open sketch — see traceIntoSketch in sketcher.js. The
+// feature-creating API path (/api/trace-png without entities_only) stays for
+// scripts and the MCP tools.
 
 export function actionImportStl() {
   if (modalGuard()) return;

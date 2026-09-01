@@ -4,9 +4,10 @@
 import { S } from './state.js';
 import { bus } from './bus.js';
 import { OP_ICONS, TOOL_NAMES } from './icons.js';
-import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport, actionUndo, actionRedo, actionSpec, actionTracePng, actionImportStl, loadSample, modalGuard, actionExamples } from './dialogs.js';
+import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport, actionUndo, actionRedo, actionSpec, actionImportStl, loadSample, modalGuard, actionExamples } from './dialogs.js';
 import { openSketchEditor, finishSketch, cancelSketch,
-         setSketchTool, sketchModify, editSketch } from './sketcher.js';
+         setSketchTool, sketchModify, editSketch,
+         traceIntoSketch } from './sketcher.js';
 import { openSettings } from './settings.js';
 import { startPlacement, PLACEABLE } from './placement.js';
 import { beginPlanePick } from './viewport.js';
@@ -53,7 +54,7 @@ const ACTIONS = {
              fn: () => document.getElementById('vSelect').click() },
   settings: { icon: '⚙', name: 'Settings', fn: openSettings },
   newsketch: { icon: '✎', name: 'Create Sketch', fn: startSketch },
-  trace_png: { icon: '🖼', name: 'Trace PNG', fn: actionTracePng },
+  trace_png: { icon: '🖼', name: 'Trace PNG', fn: traceIntoSketch },
   import_stl_file: { icon: '📥', name: 'Import STL/STEP', fn: actionImportStl },
   finish_sketch: { icon: '✓', name: 'Finish Sketch', fn: finishSketch },
   cancel_sketch: { icon: '✕', name: 'Cancel Sketch', fn: cancelSketch },
@@ -84,7 +85,7 @@ const TABS = {
     ['Preferences', [{ a: 'settings' }]],
   ],
   Create: [
-    ['Create', [{ a: 'newsketch' }, { a: 'trace_png' },
+    ['Create', [{ a: 'newsketch' },
                 { a: 'import_stl_file' },
                 'extrude', 'revolve', 'loft', 'sweep']],
     ['Primitives', ['plate', 'disc', 'ball', 'cone', 'tube', 'polygon_plate',
@@ -114,6 +115,9 @@ const SKETCH_CONTEXT = [
   ['Create', SKETCH_CREATE.map(t => ({ t }))],
   ['Modify', [{ t: 'trim' }, { a: 'sk_mirror_v' }, { a: 'sk_mirror_h' },
               { a: 'sk_duplicate' }, { a: 'sk_offset' }, { a: 'sk_scale' }]],
+  // Fusion's Insert group: traced art becomes entities of THIS sketch —
+  // auto-fitted to the face when the sketch sits on one
+  ['Insert', [{ a: 'trace_png' }]],
   ['View', [{ a: 'look_at' }]],
   ['Finish', [{ a: 'finish_sketch' }, { a: 'cancel_sketch' }]],
 ];

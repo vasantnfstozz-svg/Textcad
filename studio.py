@@ -563,6 +563,11 @@ class TracePngReq(BaseModel):
     face_normal: list[float] | None = None
     body_feature_id: str | None = None   # the feature the face was picked from
     fit_margin: float = 0.9          # fraction of the face bbox the art fills
+    # entities-only: the sketcher inserting art into the OPEN sketch — return
+    # the traced entities without creating any feature. fit_box = [w, h, cx,
+    # cy] in the sketch plane's own coords (a face sketch sends its face bbox)
+    entities_only: bool = False
+    fit_box: list[float] | None = None
 
 
 class ImportStlReq(BaseModel):
@@ -1420,48 +1425,73 @@ def _trace_face_fit(req: TracePngReq):
             (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2)
 
 
+def _trace_fitted(data: bytes, req: TracePngReq,
+                  box: tuple[float, float, float, float] | None):
+    """Trace `data`; with a fit box (w, h, cx, cy in the sketch plane's own
+    coords) the art is scaled to fit_margin × the box and centred on it —
+    otherwise it traces at req.height_mm, bbox-centred on the origin."""
+    height = req.height_mm
+    if box:
+        fw, fh, fcx, fcy = (float(v) for v in box)
+        if fw <= 0 or fh <= 0:
+            raise ValueError("the fit box needs a positive width and height")
+        # pick the trace height so the art fits the box both ways —
+        # image_to_entities' fidelity floors then run at the REAL scale
+        aspect = imgtrace.artwork_aspect(data)
+        height = max(1.0, min(1000.0, req.fit_margin * min(fh, fw / aspect)))
+    ents, info = imgtrace.image_to_entities(
+        data, height, req.tol_mm, req.min_channel_mm,
+        connect_pieces=req.connect_pieces)
+    if box:
+        # residual exact-fit rescale (the traced bbox can differ a hair
+        # from the mask bbox after speckle removal / smoothing), then
+        # centre on the box. Scale points AND x/y — the entities are
+        # bbox-centred, so scaling one without the other silently no-ops.
+        s = min([1.0]
+                + ([req.fit_margin * fw / info["width_mm"]]
+                   if info["width_mm"] > req.fit_margin * fw else [])
+                + ([req.fit_margin * fh / info["height_mm"]]
+                   if info["height_mm"] > req.fit_margin * fh else []))
+        for e in ents:
+            if s < 1.0:
+                e["x"] = round(e["x"] * s, 3)
+                e["y"] = round(e["y"] * s, 3)
+                e["points"] = [[round(px * s, 3), round(py * s, 3)]
+                               for px, py in e["points"]]
+            e["x"] = round(e["x"] + fcx, 3)
+            e["y"] = round(e["y"] + fcy, 3)
+        info["width_mm"] = round(info["width_mm"] * s, 2)
+        info["height_mm"] = round(info["height_mm"] * s, 2)
+        info["face_mm"] = [round(fw, 2), round(fh, 2)]
+    return ents, info
+
+
 @app.post("/api/trace-png")
 def trace_png(req: TracePngReq):
     """Upload an image, get a SKETCH feature holding its traced outline —
     then Extrude / Revolve / Cut it like any hand-drawn sketch. With a
     face_center (a real face pick) the sketch lands ON that face instead,
-    auto-scaled to fit it (fit_margin × the face bbox) and centred."""
+    auto-scaled to fit it (fit_margin × the face bbox) and centred. With
+    entities_only the traced entities come back WITHOUT creating a feature
+    — the sketcher inserts them into the sketch that is open right now."""
+    if req.entities_only:
+        try:
+            data = base64.b64decode(req.png_base64.split(",")[-1])
+            ents, info = _trace_fitted(data, req, tuple(req.fit_box)
+                                       if req.fit_box else None)
+        except Exception as e:
+            return {"error": str(e)}
+        return {"entities": ents, "trace_info": info}
     _snapshot()
     try:
         data = base64.b64decode(req.png_base64.split(",")[-1])
         fit = None
-        height = req.height_mm
         if req.face_center is not None:
             fit = _trace_face_fit(req)
             body_id, fw, fh, fcx, fcy = fit
-            # pick the trace height so the art fits the face both ways —
-            # image_to_entities' fidelity floors then run at the REAL scale
-            aspect = imgtrace.artwork_aspect(data)
-            height = max(1.0, min(1000.0, req.fit_margin * min(fh, fw / aspect)))
-        ents, info = imgtrace.image_to_entities(
-            data, height, req.tol_mm, req.min_channel_mm,
-            connect_pieces=req.connect_pieces)
-        if fit:
-            # residual exact-fit rescale (the traced bbox can differ a hair
-            # from the mask bbox after speckle removal / smoothing), then
-            # centre on the face. Scale points AND x/y — the entities are
-            # bbox-centred, so scaling one without the other silently no-ops.
-            s = min([1.0]
-                    + ([req.fit_margin * fw / info["width_mm"]]
-                       if info["width_mm"] > req.fit_margin * fw else [])
-                    + ([req.fit_margin * fh / info["height_mm"]]
-                       if info["height_mm"] > req.fit_margin * fh else []))
-            for e in ents:
-                if s < 1.0:
-                    e["x"] = round(e["x"] * s, 3)
-                    e["y"] = round(e["y"] * s, 3)
-                    e["points"] = [[round(px * s, 3), round(py * s, 3)]
-                                   for px, py in e["points"]]
-                e["x"] = round(e["x"] + fcx, 3)
-                e["y"] = round(e["y"] + fcy, 3)
-            info["width_mm"] = round(info["width_mm"] * s, 2)
-            info["height_mm"] = round(info["height_mm"] * s, 2)
-            info["face_mm"] = [round(fw, 2), round(fh, 2)]
+            ents, info = _trace_fitted(data, req, (fw, fh, fcx, fcy))
+        else:
+            ents, info = _trace_fitted(data, req, None)
         fid, n = req.feature_id, 2
         while any(f.id == fid for f in _doc().features):
             fid = f"{req.feature_id}-{n}"

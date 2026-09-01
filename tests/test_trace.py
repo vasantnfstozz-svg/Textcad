@@ -195,6 +195,24 @@ def test_api_trace_png_fits_selected_face():
     assert d2["trace_info"]["width_mm"] == pytest.approx(72, abs=1.0)
     assert d2["trace_info"]["height_mm"] == pytest.approx(14.4, abs=0.5)
 
+    # entities_only: the sketcher inserting into the OPEN sketch — traced
+    # entities come back fitted to the given box, and NO feature is created
+    n_before = len(client.get("/api/doc").json()["features"])
+    d5 = client.post("/api/trace-png", json={
+        "png_base64": b64, "entities_only": True,
+        "fit_box": [60, 30, 5, -2]}).json()
+    assert not d5.get("error")
+    assert "features" not in d5           # no doc mutation, no version
+    ents = d5["entities"]
+    assert ents and ents[0]["mode"] == "add"
+    exs = [e["x"] + p[0] for e in ents for p in e["points"]]
+    eys = [e["y"] + p[1] for e in ents for p in e["points"]]
+    # square art in a 60x30 box at (5,-2) -> 0.9*30 = 27 tall, centred there
+    assert max(eys) - min(eys) == pytest.approx(27, abs=0.5)
+    assert (max(exs) + min(exs)) / 2 == pytest.approx(5, abs=0.5)
+    assert (max(eys) + min(eys)) / 2 == pytest.approx(-2, abs=0.5)
+    assert len(client.get("/api/doc").json()["features"]) == n_before
+
     # a curved face refuses with an honest message, doc unharmed (a ball has
     # exactly one face and it is curved — no flat face to steer to)
     doc2 = dm.Document("ball")
