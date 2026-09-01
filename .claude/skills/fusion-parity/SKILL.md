@@ -18,14 +18,28 @@ were each learned from a correction — do not regress them.
 2. **Select-then-command must work.** Whatever is picked in the viewport when
    a tool is pressed is the tool's input (face picked → Extrude extrudes THAT
    face, not the last sketch). Command-then-select is the fallback, not the
-   default.
+   default. The TREE is a selection surface too (user mandate 2026-09-01:
+   "when I touch the sketch in the feature tree, it should also work"): a
+   selected tree row feeds the tool exactly like a viewport pick, an explicit
+   argument beats a lingering pick, and clicking a tree row REPLACES the
+   viewport pick — one selection set, like Fusion (tree.js selectFeature
+   calls viewport.clearPick).
 3. **Direct manipulation first.** Numbers come from dragging handles in the
    viewport (arrow perpendicular to the profile/face, riding the moving face,
    fixed comfortable size, always rendered on top). The panel is only the
    value box for exact figures — never a form you must fill before seeing
    anything.
-4. **No jumps.** Opening a tool must not visibly change the model (start
-   distances tiny, e.g. 1mm). Geometry changes when the USER drags or types.
+4. **No jumps — and no lies (user mandate 2026-09-01).** Opening a tool must
+   not visibly change the model, and the value boxes must tell the TRUTH:
+   Extrude opens with distance 0 because nothing has been extruded yet ("it
+   should be 0, even I am not extruding" — the old 1mm default read as a
+   phantom extrusion). Geometry appears when the USER drags or types; a
+   0-distance OK creates nothing and says so in chat; never build a
+   zero-thickness solid. Corollaries: the cut into-the-body flip runs at
+   apply time as a ONE-SHOT (first positive value flips negative, after that
+   the sign is the user's — deliberate upward trim cuts stay possible), and
+   THROUGH ALL with an untouched 0 seeds direction INTO the body for face
+   sketches (only the sign matters to a through cut).
 5. **Live, real previews.** The preview is the actual verified rebuild
    (throttled, one in flight), never a fake overlay. Cancel removes every
    preview feature; OK keeps them; Esc = cancel.
