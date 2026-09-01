@@ -262,6 +262,49 @@ def test_the_rename_and_delete_buttons_work(page, server, fresh_doc):
     assert not page.errors, page.errors
 
 
+def test_update_in_place_and_trim_the_tail(page, server, fresh_doc):
+    """The finish-a-round-of-edits choice (2026-09-01): fold the changes into
+    the version you are on, or push them as the next one — and the current
+    row's X trims everything after it, rewinding the numbering."""
+    import studio
+    _branched(server)
+    scratch = studio.DESIGNS / "_e2e-versions.tcad.json"
+    try:
+        httpx.post(f"{server}/api/feature/add",
+                   json={"id": "third", "params": {"radius": 6}, **HOLE},
+                   timeout=120)
+        page.reload()
+        page.wait_for_function("() => !!window.__vp", timeout=20000)
+        _open_panel(page)
+
+        page.wait_for_selector(".vpending", timeout=15000)
+        texts = page.locator(".vpending .vpush").all_inner_texts()
+        assert texts == ["update v3", "push v4"], texts
+
+        page.locator(".vpending .vpush").nth(0).click()   # fold into v3
+        page.wait_for_timeout(2500)
+        assert page.locator(".vrow").count() == 3, "update-in-place minted"
+        assert page.locator(".vpending").count() == 0
+        assert "5f" in page.locator('.vrow[data-vid="v3"] .vmeta').inner_text()
+
+        # trim: move the star off v2 (it guards the cut), stand on v1, X it
+        page.click('.vrow[data-vid="v1"] .vstar')
+        page.wait_for_timeout(800)
+        page.click('.vrow[data-vid="v1"]')                # restore v1
+        page.wait_for_timeout(4000)
+        page.click('.vrow[data-vid="v1"] .vdel')          # = delete-after
+        page.wait_for_selector("#askDialog[open]", timeout=15000)
+        assert "after v1" in page.locator("#askTitle").inner_text()
+        page.click("#askOk")
+        page.wait_for_timeout(1500)
+        assert page.locator(".vrow").count() == 1
+        d = httpx.get(f"{server}/api/versions", timeout=30).json()
+        assert d["next_id"] == "v2", d.get("next_id")
+        assert not page.errors, page.errors
+    finally:
+        scratch.unlink(missing_ok=True)   # the in-place update re-wrote it
+
+
 # ---------------------------------------------------------------------------
 # 2026-09-01: edits no longer mint versions on their own. The tab and the
 # panel show a ● for unpushed changes, the panel offers the push, and closing
@@ -291,7 +334,9 @@ def test_unpushed_changes_show_a_dot_and_the_panel_pushes_them(
         assert page.locator("#verSummary .vdirty").count() == 1
         page.wait_for_selector(".vpending", timeout=15000)
 
-        page.click(".vpush")                      # the explicit push
+        # the pending row now offers "update vN" AND "push vN+1" — this test
+        # is about the push, which is the LAST button
+        page.locator(".vpending .vpush").last.click()
         page.wait_for_selector('.vrow[data-vid="v4"]', timeout=15000)
         page.wait_for_timeout(800)
         assert page.locator(".vpending").count() == 0, \

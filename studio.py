@@ -2048,7 +2048,9 @@ def get_versions():
             "current": h.current(), "starred": h.starred(),
             "problems": h.problems(), "design_id": h.design_id,
             "name": h.name, "tree": h.tree_lines(), "unsaved": False,
-            "dirty": _dirty(_entry())}
+            "dirty": _dirty(_entry()),
+            # so the push button can say "push v16" BEFORE the user commits
+            "next_id": h.next_id()}
 
 
 @app.get("/api/versions/diff")
@@ -2138,6 +2140,54 @@ def star_version(req: VersionReq):
     except HistoryError as e:
         return {"error": str(e)}
     return {"starred": h.starred()}
+
+
+@app.post("/api/versions/amend")
+def amend_version():
+    """Save the tab's changes INTO the current version — no new version.
+
+    The user's choice when a round of edits is done (2026-09-01): "i can
+    decide whether i want to save those changes [into v15], or push the
+    changed design to new version v16". This is the first option: the design
+    file is written and the current version's snapshot is rewritten in place.
+    history.amend() refuses a version that has children (rewriting it would
+    change what every child's diff means) and names the way out."""
+    h = _vhistory()
+    if h is None:
+        return {"error": "this design has no history yet — save it once "
+                         "first", **_doc_json()}
+    e = _entry()
+    doc = e["doc"]
+    try:
+        v = h.amend(doc.to_data(), spec=_measured(e),
+                    rebuildable=bool(e.get("ok")))
+    except HistoryError as ex:
+        return {"error": str(ex), **_doc_json()}
+    # the amend is the risky half; only now touch the design file
+    slug = _slug_of_active()
+    doc.save(str(DESIGNS / f"{slug}.tcad.json"))
+    e["hand_edits"] = 0
+    e["pending"] = []
+    _mark_clean()
+    return {"amended": v.id, "saved": slug, **_doc_json()}
+
+
+@app.post("/api/versions/delete_after")
+def delete_after_version(req: VersionReq):
+    """Delete every version that descends from req.id — "keep v15, the rest
+    I don't need". One confirmed click instead of thirty refused ones; the
+    guard rails (current/starred below the cut) live in history.delete_after
+    and each names its way out. Resets the numbering so the next push
+    continues from what remains (v15 -> v16)."""
+    h = _vhistory()
+    if h is None:
+        return {"error": "this design has no history yet — save it once first"}
+    if not req.id:
+        return {"error": "which version? pass an id like 'v15'"}
+    try:
+        return h.delete_after(req.id)
+    except HistoryError as e:
+        return {"error": str(e)}
 
 
 @app.post("/api/versions/delete")

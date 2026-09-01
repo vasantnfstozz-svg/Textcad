@@ -745,3 +745,99 @@ def test_a_deleted_id_is_never_reused(h):
     h2 = History(h.path)
     v2 = h2.append(design(w=124))
     assert v2.id == "v5"
+
+
+# --------------------------------------- amend: fold changes into the current ---
+
+def test_amend_rewrites_the_current_version_in_place(h):
+    _chain(h, 2)                                   # current = v2
+    before = h.get("v2")
+    v = h.amend(design(w=77), spec={"volume": 9.0}, rebuildable=True)
+    assert v.id == "v2" and len(h.versions()) == 2, "amend minted a version"
+    assert h.snapshot("v2")["features"][0]["params"]["w"] == 77
+    after = h.get("v2")
+    assert after.hash != before.hash
+    assert after.spec == {"volume": 9.0}
+    assert after.parent == before.parent
+    assert after.label == before.label
+    assert not h.problems()
+
+
+def test_amend_refuses_a_version_with_children(h):
+    """Rewriting v1 under v2's feet would change what v2's diff means."""
+    _chain(h, 2)
+    h.set_current("v1")
+    with pytest.raises(HistoryError, match="branched from it"):
+        h.amend(design(w=77))
+    assert h.snapshot("v1")["features"][0]["params"]["w"] == 1, \
+        "the refused amend still rewrote the snapshot"
+
+
+def test_amend_then_append_branches_off_the_amended_content(h):
+    _chain(h, 2)
+    h.amend(design(w=77))
+    v3 = h.append(design(w=78))
+    assert v3.id == "v3" and v3.parent == "v2"
+
+
+def test_amend_with_no_current_says_so(h):
+    with pytest.raises(HistoryError, match="save one first"):
+        h.amend(design())
+
+
+# ------------------------------------ delete_after: trim the tail in one go ---
+
+def test_delete_after_removes_every_descendant_and_their_snapshots(h):
+    _chain(h, 5)                                   # v1..v5, current v5
+    h.set_current("v2")
+    out = h.delete_after("v2")
+    assert out["deleted"] == ["v3", "v4", "v5"]
+    assert [v.id for v in h.versions()] == ["v1", "v2"]
+    for vid in ("v3", "v4", "v5"):
+        assert not (h.path / f"{vid}.json.gz").exists(), f"{vid} left on disk"
+    assert not h.problems()
+
+
+def test_delete_after_takes_whole_branches_not_just_the_trunk(h):
+    _chain(h, 3)                                   # v1 -> v2 -> v3
+    h.append(design(w=50), parent="v2")            # v4 branches off v2
+    h.set_current("v1")
+    out = h.delete_after("v1")
+    assert sorted(out["deleted"]) == ["v2", "v3", "v4"]
+    assert [v.id for v in h.versions()] == ["v1"]
+
+
+def test_delete_after_resets_the_numbering(h):
+    """The user's literal ask: after trimming v16..v45, pushing from v15 must
+    mint v16 — not v46. A single delete still raises the floor; the trim is
+    the explicit 'this tail never happened' gesture that rewinds it."""
+    _chain(h, 5)
+    h.set_current("v4")
+    h.delete("v5")                                 # floor -> 5
+    assert h.next_id() == "v6"
+    h.set_current("v2")
+    h.delete_after("v2")                           # trims v3, v4; floor reset
+    assert h.next_id() == "v3"
+    assert h.append(design(w=90)).id == "v3"
+
+
+def test_delete_after_refuses_while_you_are_below_the_cut(h):
+    _chain(h, 3)                                   # current v3
+    with pytest.raises(HistoryError, match="open v1 first"):
+        h.delete_after("v1")
+    assert len(h.versions()) == 3
+
+
+def test_delete_after_refuses_when_the_star_is_below_the_cut(h):
+    _chain(h, 3)
+    h.set_current("v1")
+    h.star("v3")
+    with pytest.raises(HistoryError, match="starred"):
+        h.delete_after("v1")
+    assert len(h.versions()) == 3
+
+
+def test_delete_after_a_leaf_is_a_polite_no_op(h):
+    _chain(h, 2)
+    out = h.delete_after("v2")
+    assert out["deleted"] == [] and len(h.versions()) == 2

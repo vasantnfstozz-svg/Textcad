@@ -667,3 +667,65 @@ def test_deleting_with_no_history_or_no_id_says_so(client, saved):
     client.post("/api/new", json={"name": "_test-versions-two"})
     r = client.post("/api/versions/delete", json={"id": "v1"}).json()
     assert "no history yet" in r["error"]
+
+
+# --------------------------------------- update-in-place vs push-as-new-version ---
+
+def test_amend_updates_the_current_version_instead_of_minting(client, saved):
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    r = client.post("/api/versions/amend").json()
+    assert r.get("amended") == "v1" and r["saved"] == TMP, r
+    assert r["dirty"] is False
+    assert [v["id"] for v in _versions(client)["versions"]] == ["v1"]
+    assert _hist().snapshot("v1")["features"][1]["params"]["radius"] == 11
+    # the design FILE holds the amended state too — "save those changes"
+    on_disk = json.loads(_design_path().read_text(encoding="utf-8"))
+    assert on_disk["features"][1]["params"]["radius"] == 11
+
+
+def test_amend_refuses_when_newer_versions_hang_off_the_current(client, saved):
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    client.post("/api/save")                                  # v2
+    client.post("/api/versions/restore", json={"id": "v1"})
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 12})
+    r = client.post("/api/versions/amend").json()
+    assert "branched from it" in r["error"], r
+    assert r["dirty"] is True, "a refused amend still marked the tab clean"
+    assert _hist().snapshot("v1")["features"][1]["params"]["radius"] == 15
+
+
+def test_the_listing_says_what_the_next_push_would_be(client, saved):
+    assert _versions(client)["next_id"] == "v2"
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    client.post("/api/save")
+    assert _versions(client)["next_id"] == "v3"
+
+
+def test_delete_after_trims_the_tail_and_the_numbering(client, saved):
+    """The user's esp32 flow end to end: versions pile up after v1, they go
+    back to v1, trim the tail in one call, and the next push counts on from
+    where they stand — not from where the junk left off."""
+    for r in (11, 12, 13):
+        client.post("/api/edit", json={"feature_id": "bore",
+                                       "param": "radius", "value": r})
+        client.post("/api/save")                              # v2, v3, v4
+    client.post("/api/versions/restore", json={"id": "v1"})
+    r = client.post("/api/versions/delete_after", json={"id": "v1"}).json()
+    assert r["deleted"] == ["v2", "v3", "v4"] and r["next"] == "v2", r
+    assert [v["id"] for v in _versions(client)["versions"]] == ["v1"]
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 99})
+    assert client.post("/api/save").json()["version"] == "v2"
+
+
+def test_delete_after_refuses_from_below_the_cut(client, saved):
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    client.post("/api/save")                                  # current v2
+    r = client.post("/api/versions/delete_after", json={"id": "v1"}).json()
+    assert "open v1 first" in r["error"]
+    assert len(_versions(client)["versions"]) == 2

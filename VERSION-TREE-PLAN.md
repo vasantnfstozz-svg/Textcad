@@ -20,6 +20,18 @@
 > Undo back to the version reads clean again — the prompt never cries wolf.
 > A restored session compares against the history's current version, so dirty
 > survives restarts. Tests: test_version_api.py (48), 2 new e2e.
+>
+> **P6 follow-ups (same day):** per-row ✎ rename + ✕ delete buttons
+> (`History.delete` re-points children at the parent; refuses current/starred
+> naming the way out; `id_floor` keeps single-delete ids monotonic). Then the
+> finish-a-round choice: the dirty row offers **update vN** (`History.amend`
+> — rewrite the current version in place, leaf-only so child diffs never
+> lie) and **push vN+1** (`/api/save`, label from the next_id the listing now
+> carries). The CURRENT row's ✕ is the **trim** gesture — `delete_after`
+> removes every descendant in one confirmed click and RESETS `id_floor`, so
+> trimming v16..v45 makes the next push v16, not v46 (the user's literal
+> ask). A single delete still raises the floor; only the explicit
+> tail-rewind rewinds the numbering.
 
 ## The problem, in the user's words
 

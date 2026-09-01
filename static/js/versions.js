@@ -82,18 +82,35 @@ function paint(d) {
     w.textContent = '⚠ ' + p;
     el.appendChild(w);
   }
-  // Changes since the current version live HERE until the user pushes them —
-  // nothing mints a version on its own any more (user decision 2026-09-01),
-  // so the panel must show the state and offer the push.
+  // Changes since the current version live HERE until the user decides —
+  // nothing mints a version on its own any more (2026-09-01), and finishing
+  // a round of edits is a CHOICE (same user, later that day): fold them into
+  // the version you are on, or push them as the next one.
   if (d.dirty) {
     const w = document.createElement('div');
     w.className = 'vpending';
     w.innerHTML = '<span class="vdirty">●</span> unsaved changes';
+    if (d.current) {
+      const upd = document.createElement('button');
+      upd.className = 'vpush';
+      upd.textContent = `update ${d.current}`;
+      upd.title = `these changes belong to ${d.current}: rewrite it in ` +
+                  `place — no new version`;
+      upd.onclick = async () => {
+        const r = await postJSON('/api/versions/amend', {}, 'updating…');
+        if (r.error) bus.emit('msg', 'bot', '⚠ ' + r.error);
+        else bus.emit('msg', 'bot', `Updated ${r.amended} in place and ` +
+          `saved "${r.saved}" — no new version was made.`);
+        refresh();
+      };
+      w.appendChild(upd);
+    }
     const b = document.createElement('button');
     b.className = 'vpush';
-    b.textContent = 'save as version';
-    b.title = 'push everything changed since ' +
-              (d.current || 'the start') + ' as one new version';
+    b.textContent = d.next_id && d.current
+      ? `push ${d.next_id}` : 'save as version';
+    b.title = 'record everything changed since ' +
+              (d.current || 'the start') + ' as one NEW version';
     b.onclick = async () => {
       const r = await postJSON('/api/save', {}, 'saving…');
       if (r.error) bus.emit('msg', 'bot', '⚠ ' + r.error);
@@ -220,15 +237,61 @@ function row(v, depth, d) {
   edit.title = 'rename this version';
   edit.onclick = e => { e.stopPropagation(); rename(v); };
 
+  // On the CURRENT row deleting is refused anyway (you are on it), so its ✕
+  // is the "trim" gesture instead: delete everything AFTER this version.
+  // That is the user's real cleanup (2026-09-01: "deleted version after v15
+  // ... i dont need them") — they had cleared a tail one refused click at a
+  // time before this existed.
   const del = document.createElement('button');
   del.className = 'vdel';
   del.textContent = '✕';
-  del.title = 'delete this version permanently';
-  del.onclick = e => { e.stopPropagation(); remove(v, d); };
+  const below = v.id === d.current ? descendantsOf(v.id, d.versions) : [];
+  if (v.id === d.current) {
+    del.title = below.length
+      ? `delete the ${below.length} version${below.length === 1 ? '' : 's'} ` +
+        `after this one (${v.id} stays)`
+      : 'this is the version you are on, and nothing comes after it';
+    del.onclick = e => { e.stopPropagation(); removeAfter(v, below); };
+  } else {
+    del.title = 'delete this version permanently';
+    del.onclick = e => { e.stopPropagation(); remove(v, d); };
+  }
 
   el.append(star, id, label, who, meta, edit, why, del);
   el.onclick = () => restore(v);
   return el;
+}
+
+function descendantsOf(vid, versions) {
+  const kids = {};
+  for (const v of versions || []) (kids[v.parent] ||= []).push(v.id);
+  const out = [], stack = [vid];
+  while (stack.length)
+    for (const c of kids[stack.pop()] || []) { out.push(c); stack.push(c); }
+  return out;
+}
+
+async function removeAfter(v, below) {
+  if (!below.length) {
+    bus.emit('msg', 'bot', `${v.id} is the version you are on and nothing ` +
+      `comes after it — there is nothing to delete.`);
+    return;
+  }
+  const yes = await askConfirm(`Delete everything after ${v.id}?`, {
+    body: `${below.join(', ')} — ${below.length === 1 ? 'this version is' :
+          `these ${below.length} versions are`} removed for good. ${v.id} ` +
+          `itself and everything before it stay, and the next push counts ` +
+          `on from here.`,
+    ok: `Delete ${below.length === 1 ? 'it' : `all ${below.length}`}`,
+    danger: true,
+  });
+  if (!yes) return;
+  const r = await postJSON('/api/versions/delete_after', { id: v.id });
+  if (r.error) bus.emit('msg', 'bot', '⚠ ' + r.error);
+  else bus.emit('msg', 'bot', `Deleted ${r.deleted.length} version` +
+    `${r.deleted.length === 1 ? '' : 's'} after ${v.id}` +
+    (r.next ? ` — the next push will be ${r.next}` : '') + '.');
+  refresh();
 }
 
 async function remove(v, d) {

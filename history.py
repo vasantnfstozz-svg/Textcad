@@ -547,6 +547,101 @@ class History:
             {**d, "label": label} if d["id"] == vid else d
             for d in data["versions"]]})
 
+    def amend(self, snapshot: dict, *, spec: dict | None = None,
+              rebuildable: bool | None = None) -> Version:
+        """Rewrite the CURRENT version's content in place — no new version.
+
+        The other half of the user's push decision (2026-09-01): finishing a
+        round of edits on v15, they choose between "update v15" (this) and
+        "push as v16" (append). Id, parent, label and created stay; the
+        payload, hash, feature count and measurements become what is on
+        screen now.
+
+        Only a LEAF may be amended. Rewriting a version that others branched
+        from silently changes what every child's diff means — the way out is
+        named instead: push a new version, or delete the newer ones first."""
+        data = self._require()
+        cur = data.get("current")
+        if not cur:
+            raise HistoryError("no current version to update — save one first")
+        self.get(cur)
+        kids = self.children(cur)
+        if kids:
+            raise HistoryError(
+                f"{cur} has versions branched from it ({', '.join(kids)}) — "
+                f"push as a new version instead, or delete the newer "
+                f"versions first")
+        h = content_hash(snapshot)
+        # snapshot first, then the index — append's crash-order reasoning
+        _write_atomic(self._snap_path(cur), gzip.compress(
+            json.dumps(snapshot, separators=(",", ":")).encode("utf-8"), 6))
+        self._save({**data, "versions": [
+            {**d, "hash": h,
+             "features": len(snapshot.get("features", [])),
+             **({"spec": spec} if spec is not None else {}),
+             **({"rebuildable": rebuildable} if rebuildable is not None
+                else {})}
+            if d["id"] == cur else d
+            for d in data["versions"]]})
+        return self.get(cur)
+
+    def delete_after(self, vid: str) -> dict:
+        """Delete every DESCENDANT of `vid` — "keep v15, the rest I don't
+        need" (user, 2026-09-01), after they had cleared a 30-version tail
+        one refusing click at a time.
+
+        Refusals name the way out: the current version or the star sitting
+        below `vid` must be moved first. Unlike a single delete this RESETS
+        id_floor: trimming the tail is the user explicitly rewinding the
+        design's future, and numbering the next push v46 instead of v16
+        would re-create the clutter they just removed. A single delete still
+        raises the floor — mid-tree, stale references are the danger."""
+        data = self._require()
+        self.get(vid)
+        doomed: list[str] = []
+        stack = [vid]
+        while stack:
+            for c in self.children(stack.pop()):
+                doomed.append(c)
+                stack.append(c)
+        if not doomed:
+            return {"deleted": [], "after": vid}
+        cur = data.get("current")
+        if cur in doomed:
+            raise HistoryError(
+                f"the version you are on ({cur}) comes after {vid} — open "
+                f"{vid} first, then delete the ones after it")
+        star = data.get("starred")
+        if star in doomed:
+            raise HistoryError(
+                f"your starred version ({star}) comes after {vid} — star "
+                f"another version (or unpin it) first")
+        gone = set(doomed)
+        entries = [d for d in data["versions"] if d["id"] not in gone]
+        self._save({**data, "versions": entries, "id_floor": 0})
+        for g in doomed:
+            try:
+                self._snap_path(g).unlink(missing_ok=True)
+            except OSError:
+                pass
+        order = {v["id"]: i for i, v in enumerate(data["versions"])}
+        return {"deleted": sorted(doomed, key=lambda g: order.get(g, 0)),
+                "after": vid, "next": self._next_id({**data,
+                                                     "versions": entries,
+                                                     "id_floor": 0})}
+
+    def next_id(self) -> str | None:
+        """The id the next append would mint — shown on the panel's push
+        button so 'push v16' says v16 before the user commits to it.
+
+        None when the index is unusable: the listing endpoint answers with
+        `problems` whatever state the sidecar is in, and a cosmetic button
+        label must never be the thing that turns that into a crash."""
+        try:
+            return self._next_id(self._require())
+        except HistoryError:
+            return None
+
     def delete(self, vid: str) -> dict:
         """Remove ONE version the user pointed at, permanently.
 
