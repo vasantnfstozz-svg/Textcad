@@ -1104,36 +1104,48 @@ def probe(doc, a: dict, b: dict | None, point, on: str = "a") -> dict:
     source = shape_b if str(on) == "b" else shape_a
     target = shape_a if str(on) == "b" else shape_b
 
-    # TWO ROUND SURFACES (two pillars, two bores): the drag has TWO degrees of
-    # freedom — ALONG the axis (station) and AROUND it (angle). The first cut
-    # of this branch rebuilt the line at the perpendicular axis-to-axis
-    # direction, which made up/down slide beautifully and threw the sideways
-    # component away entirely (user report 2026-08-31: "if i want to move in
-    # side ways, its not moving"). Now the drag point keeps BOTH: it is snapped
-    # to the TRUE cylinder wall at its own station and angle (the tessellated
-    # hit is a facet away from the real surface), and the measurement is the
-    # exact minimum distance from that wall point to the other surface. Facing
-    # the other pillar that is the perpendicular gap; swinging sideways the
-    # value grows smoothly; and the near dot can travel all the way to the far
-    # pole — "untill longest point from surface center" — where the value maxes
-    # at centre-distance + this radius − the other radius. Never misses, so the
-    # curve-limit clamp never engages and nothing freezes.
+    # TWO ROUND SURFACES (two pillars, two bores): the CALIPER model. The drag
+    # has two degrees of freedom — ALONG the axis (station) and SIDEWAYS
+    # (lateral offset t). The measuring line stays parallel to the gap and
+    # shifts sideways as one piece, so BOTH dots slide to the same side around
+    # their own curves together, and the length grows because both surfaces
+    # curve away:  value(t) = D − sqrt(rA²−t²) − sqrt(rB²−t²)  — the facing
+    # minimum at t=0, extending on both sides, limit at the smaller flank.
+    # (User report 2026-09-01: "one point is stactic and fixed and one point
+    # is moving … the line or both ponts has to move parrlry in the curve side
+    # and the line should exted in the curve on the both side". The previous
+    # cut swung only the near dot and measured nearest-from-it: the far dot
+    # hugged one spot.)
     cs, ct = _circle(source), _circle(target)
     if cs and ct and cs[2] and ct[2]:
-        (pos_s, r_s, dir_s), _tgt = cs, ct
-        u_s = _scale(dir_s, 1.0 / max(_norm(dir_s), 1e-12))
-        station = _add(pos_s, _scale(u_s, _dot(_sub(p, pos_s), u_s)))
-        w = _sub(p, station)                     # the drag's radial direction
-        wn = _norm(w)
-        if wn > 1e-9:
-            pa = _add(station, _scale(w, r_s / wn))
-            md2 = _min_distance(Vertex(*pa), target)
-            if md2 and md2[0] > TOUCH_TOL:
-                return {"kind": "probe", "mode": "across",
-                        "value": _r(md2[0]), "unit": MM,
-                        "label": _fmt(md2[0]),
-                        "from": _r3(pa), "to": _r3(md2[2])}
-        # on the axis, or touching the other surface: fall through to nearest
+        (pos_s, r_s, dir_s), (pos_t, r_t, dir_t) = cs, ct
+        ua = _scale(dir_s, 1.0 / max(_norm(dir_s), 1e-12))
+        station = _add(pos_s, _scale(ua, _dot(_sub(p, pos_s), ua)))
+        other = _closest_on_axis(pos_t, dir_t, station)
+        gap_v = _sub(other, station)
+        gap_d = _norm(gap_v)
+        if gap_d > 1e-9 and gap_d - r_s - r_t > TOUCH_TOL:
+            u = _scale(gap_v, 1.0 / gap_d)          # across the gap
+            va = [ua[1]*u[2] - ua[2]*u[1],          # sideways = axis × u
+                  ua[2]*u[0] - ua[0]*u[2],
+                  ua[0]*u[1] - ua[1]*u[0]]
+            vn = _norm(va)
+            if vn > 1e-9:
+                va = _scale(va, 1.0 / vn)
+                t = _dot(_sub(p, station), va)
+                # the line needs a wall point on BOTH circles at this offset:
+                # clamp at the smaller flank — that is the natural limit
+                t_max = min(r_s, r_t)
+                t = max(-t_max, min(t_max, t))
+                ha = (max(r_s * r_s - t * t, 0.0)) ** 0.5
+                hb = (max(r_t * r_t - t * t, 0.0)) ** 0.5
+                frm = _add(_add(station, _scale(va, t)), _scale(u, ha))
+                to = _sub(_add(other, _scale(va, t)), _scale(u, hb))
+                val = gap_d - ha - hb
+                return {"kind": "probe", "mode": "across", "value": _r(val),
+                        "unit": MM, "label": _fmt(val),
+                        "from": _r3(frm), "to": _r3(to)}
+        # coaxial or overlapping at this station: fall through to nearest
 
     md = _min_distance(v, target)
     if md is None:

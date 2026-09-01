@@ -245,6 +245,32 @@ r_target — "the longest point from surface center". Never misses, so the clamp
 never engages. UI-verified: swing 270°→190° read 26.32 → 29.72 approaching the
 far-pole 30.0, with the vertical slide still constant at each height.
 
+## User feedback, round 9 (2026-09-01)
+
+> "when we have two curve surface … when i am moving the line in the side the
+> line should move both side, right now, one point is stactic and fixed and
+> one point is moving … the line or both ponts has to move parrlry in the
+> curve side and the line should exted in the curve on the both side"
+
+The round-round probe is now the **CALIPER model**, replacing round 7's
+swing-one-dot: the sideways drag shifts the whole line laterally as one piece.
+At lateral offset t the line touches each circle at sqrt(r²−t²) short of its
+centreline, so
+
+    value(t) = D − sqrt(rA²−t²) − sqrt(rB²−t²)
+
+— the facing minimum at t=0, extending on BOTH sides as both surfaces curve
+away, clamped at the smaller circle's flank (past it one side has no wall
+point at that offset, so the line holds rather than inventing one). Both dots
+carry the same lateral offset, i.e. they move in parallel; the station slide
+along the axes is unchanged. Kernel tests pin facing/mid/flank values and that
+both endpoints share the offset; UI-verified with a lateral sweep (values
+smooth within the 22–30 caliper range, both dots visibly level).
+
+Note for the future: this branch's definition of "sideways" has now been
+revised twice on user feedback (perpendicular-only → swing-one-dot → caliper).
+The caliper is the requested behaviour as of 2026-09-01.
+
 ## The problem, in the user's words
 
 > "we dont have proper scale to measure distance between two point … if i am

@@ -591,36 +591,67 @@ def test_probe_falls_back_to_nearest_beyond_the_surface():
     assert r["value"] == pytest.approx((8**2 + 30**2) ** 0.5 - 5, abs=1e-3)
 
 
-def test_probe_between_two_pillars_swings_sideways_to_the_far_pole():
-    """User report (2026-08-31): "if i want to move in side ways, its not
-    moving … the line should able to move untill longest point from surface
-    center". The drag keeps BOTH degrees of freedom: station along the axis
-    AND angle around it. Facing the other bore reads the perpendicular gap;
-    swinging to the flank grows the value smoothly; the far pole is the
-    maximum — centre distance + this radius − the other radius — and the far
-    dot follows the swing instead of standing still."""
+def test_probe_between_two_pillars_is_a_caliper():
+    """User report (2026-09-01): "one point is stactic and fixed and one point
+    is moving … the line or both ponts has to move parrlry in the curve side
+    and the line should exted in the curve on the both side". The sideways
+    drag shifts the WHOLE line laterally like a caliper: both dots slide to
+    the same side around their own circles, and the value grows because both
+    surfaces curve away — D − sqrt(rA²−t²) − sqrt(rB²−t²), clamped at the
+    smaller flank."""
     doc = two_hole_doc()
     cyls = find_all_faces(doc, lambda f: "CYLINDER" in str(f.geom_type))
     a, b = sel(doc, "face", cyls[0]), sel(doc, "face", cyls[1])
 
     facing = measure.probe(doc, a, b, [-19, 0, 5], on="a")
+    mid = measure.probe(doc, a, b, [-25 + 27 ** 0.5, 3, 5], on="a")
     flank = measure.probe(doc, a, b, [-25, 6, 5], on="a")
-    far = measure.probe(doc, a, b, [-31, 0, 5], on="a")
-    for r in (facing, flank, far):
+    for r in (facing, mid, flank):
         assert r.get("error") is None, r
         assert r["mode"] == "across", r
 
     assert facing["value"] == pytest.approx(38.0, abs=1e-6)
-    # flank: |(-25,6) - (25,0)| - 6 = sqrt(2536) - 6
-    assert flank["value"] == pytest.approx(2536 ** 0.5 - 6, abs=1e-3)
-    # the far pole IS the longest: D + rA - rB = 50 + 6 - 6 ... from (-31,0)
-    assert far["value"] == pytest.approx(50.0, abs=1e-6)
-    assert facing["value"] < flank["value"] < far["value"]
+    assert mid["value"] == pytest.approx(50 - 2 * 27 ** 0.5, abs=1e-3)
+    assert flank["value"] == pytest.approx(50.0, abs=1e-6)
+    assert facing["value"] < mid["value"] < flank["value"]
 
-    # the near dot rode the swing (flank point stays at its own angle) and the
-    # far dot moved WITH it, toward the same side
+    # BOTH dots moved to the same side, by the same lateral offset — parallel
+    assert mid["from"][1] == pytest.approx(3.0, abs=1e-6)
+    assert mid["to"][1] == pytest.approx(3.0, abs=1e-6)
     assert flank["from"][1] == pytest.approx(6.0, abs=1e-6)
-    assert flank["to"][1] > 0.1, flank
-    # and the sideways swing did not lose the height (parallel slide intact)
-    assert flank["from"][2] == pytest.approx(5.0, abs=1e-6)
-    assert flank["to"][2] == pytest.approx(5.0, abs=1e-6)
+    assert flank["to"][1] == pytest.approx(6.0, abs=1e-6)
+    # each dot sits ON its own wall at that offset
+    assert mid["from"][0] == pytest.approx(-25 + 27 ** 0.5, abs=1e-3)
+    assert mid["to"][0] == pytest.approx(25 - 27 ** 0.5, abs=1e-3)
+    # and the height rode along untouched
+    assert mid["from"][2] == pytest.approx(5.0, abs=1e-6)
+    assert mid["to"][2] == pytest.approx(5.0, abs=1e-6)
+
+
+def test_caliper_clamps_at_the_smaller_flank():
+    """Past the smaller circle's flank there is no wall point at that lateral
+    offset on both sides — the line holds at the flank instead of inventing
+    one (drag points on the far half project back to t=0..r)."""
+    doc = Document(name="t-caliper-clamp")
+    doc.add("b", "plate", {"width": 140, "depth": 60, "thickness": 10})
+    doc.add("sk", "sketch_on_face", {"face": "top", "offset": 0,
+            "entities": [{"kind": "circle", "mode": "add", "x": -30, "y": 0,
+                          "r": 10},
+                         {"kind": "circle", "mode": "add", "x": 30, "y": 0,
+                          "r": 4}]}, inputs=["b"])
+    doc.add("tool", "extrude", {"amount": -10}, inputs=["sk"])
+    doc.add("holes", "cut", {}, inputs=["b", "tool"])
+    assert doc.rebuild(), doc.tree()
+    cyls = {}
+    for i, f in enumerate(doc.result().faces()):
+        if "CYLINDER" in str(f.geom_type):
+            cyls[round(f.axis_of_rotation.position.X)] = i
+    a = sel(doc, "face", cyls[-30])
+    b = sel(doc, "face", cyls[30])
+    # drag to t=8 on the r=10 circle: the r=4 circle has no wall there, so the
+    # line clamps at t=4 — value D − sqrt(100−16) − 0 = 60 − sqrt(84)
+    r = measure.probe(doc, a, b, [-30 + 6, 8, 2], on="a")
+    assert r.get("error") is None, r
+    assert r["from"][1] == pytest.approx(4.0, abs=1e-6), r
+    assert r["to"][1] == pytest.approx(4.0, abs=1e-6), r
+    assert r["value"] == pytest.approx(60 - 84 ** 0.5, abs=1e-3)
