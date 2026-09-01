@@ -849,8 +849,11 @@ def _sketch_mesh_data(p) -> dict | None:
 def _sketches_json(doc: Document) -> list[dict]:
     """Unconsumed sketches, tessellated so the viewport can SHOW them as
     floating 2D profiles (like Fusion). Consumed sketches (already extruded /
-    revolved / lofted) are hidden to keep the view clean."""
-    consumed = {i for f in doc.features for i in f.inputs}
+    revolved / lofted) are hidden to keep the view clean. Same consumed rule
+    as the bodies (Document.consumed_ids): a SUPPRESSED consumer does not
+    count — striking out a failed extrude must bring its sketch back on
+    screen so it can be picked and extruded again (2026-09-01)."""
+    consumed = doc.consumed_ids()
     out = []
     for f in doc.features:
         if f.suppressed or f.id in consumed:
@@ -2135,6 +2138,25 @@ def star_version(req: VersionReq):
     except HistoryError as e:
         return {"error": str(e)}
     return {"starred": h.starred()}
+
+
+@app.post("/api/versions/delete")
+def delete_version(req: VersionReq):
+    """Permanently remove one version — the user's explicit click.
+
+    history.delete() carries the guard rails: the current and the starred
+    version are refused with the way out named, children of the deleted node
+    are re-pointed at its parent (nothing is orphaned), and the id is never
+    reused. The DESIGN is untouched — this edits the record, not the part."""
+    h = _vhistory()
+    if h is None:
+        return {"error": "this design has no history yet — save it once first"}
+    if not req.id:
+        return {"error": "which version? pass an id like 'v3'"}
+    try:
+        return h.delete(req.id)
+    except HistoryError as e:
+        return {"error": str(e)}
 
 
 @app.post("/api/versions/label")

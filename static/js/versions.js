@@ -16,7 +16,7 @@
 
 import { bus } from './bus.js';
 import { getJSON, postJSON } from './api.js';
-import { askText } from './ask.js';
+import { askText, askConfirm } from './ask.js';
 import { loadMesh } from './viewport.js';
 
 let open = false;
@@ -160,7 +160,7 @@ function row(v, depth, d) {
     `\n${v.features} features · via ${v.source || '?'}` +
     (v.rebuildable === false ? '\nthis version did NOT verify when recorded'
                              : '') +
-    '\n\nclick to put it back on screen · double-click the name to rename it';
+    '\n\nclick to put it back on screen · ✎ rename · ⇄ what changed · ✕ delete';
 
   const star = document.createElement('button');
   star.className = 'vstar' + (v.id === d.starred ? ' on' : '');
@@ -211,9 +211,46 @@ function row(v, depth, d) {
   why.title = 'what changed in this version';
   why.onclick = e => { e.stopPropagation(); toggleDiff(el, v); };
 
-  el.append(star, id, label, who, meta, why);
+  // Rename existed as double-click-the-label, and nobody found it (user
+  // request 2026-09-01: "add a option where i can delete the version and
+  // rename it") — so both get a visible button. The dblclick still works.
+  const edit = document.createElement('button');
+  edit.className = 'vedit';
+  edit.textContent = '✎';
+  edit.title = 'rename this version';
+  edit.onclick = e => { e.stopPropagation(); rename(v); };
+
+  const del = document.createElement('button');
+  del.className = 'vdel';
+  del.textContent = '✕';
+  del.title = 'delete this version permanently';
+  del.onclick = e => { e.stopPropagation(); remove(v, d); };
+
+  el.append(star, id, label, who, meta, edit, why, del);
   el.onclick = () => restore(v);
   return el;
+}
+
+async function remove(v, d) {
+  // The one destructive click in this panel, so it confirms — unlike restore,
+  // which is deliberately promptless because it destroys nothing.
+  const kids = (d.versions || []).filter(x => x.parent === v.id).length;
+  const yes = await askConfirm(`Delete ${v.id}?`, {
+    body: `"${v.label || v.id}" is removed from the history for good — ` +
+          `your design on screen and the saved file are not touched.` +
+          (kids ? ` The ${kids === 1 ? 'version' : `${kids} versions`} ` +
+                  `branched from it will re-attach to its parent.` : ''),
+    ok: 'Delete', danger: true,
+  });
+  if (!yes) return;
+  const r = await postJSON('/api/versions/delete', { id: v.id });
+  if (r.error) bus.emit('msg', 'bot', '⚠ ' + r.error);
+  else bus.emit('msg', 'bot', `Deleted ${v.id} from the history` +
+    (r.rewired?.length ? ` — ${r.rewired.join(', ')} now ` +
+      (r.parent ? `branch${r.rewired.length === 1 ? 'es' : ''} from ${r.parent}`
+                : `start${r.rewired.length === 1 ? 's' : ''} the tree`)
+     : '') + '.');
+  refresh();
 }
 
 async function toggleDiff(row, v) {

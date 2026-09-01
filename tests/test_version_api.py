@@ -629,3 +629,41 @@ def test_stale_pending_notes_do_not_leak_into_a_later_versions_label(
     assert r["version"] == "v2"
     assert "with_center_hole" not in _hist().get("v2").label
     assert _hist().get("v2").label == "manual changes (1 edit)"
+
+
+# ------------------------------------------------------------ deleting one ---
+
+def test_deleting_a_version_removes_it_from_the_listing(client, saved):
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    client.post("/api/save")                                  # v2 (current)
+    r = client.post("/api/versions/delete", json={"id": "v1"}).json()
+    assert r == {"deleted": "v1", "rewired": ["v2"], "parent": None}
+    d = _versions(client)
+    assert [v["id"] for v in d["versions"]] == ["v2"]
+    assert d["versions"][0]["parent"] is None
+    assert d["problems"] == []
+
+
+def test_deleting_the_current_version_is_refused(client, saved):
+    r = client.post("/api/versions/delete", json={"id": "v1"}).json()
+    assert "version you are on" in r["error"]
+    assert [v["id"] for v in _versions(client)["versions"]] == ["v1"]
+
+
+def test_deleting_the_starred_version_is_refused(client, saved):
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    client.post("/api/save")                                  # v2 (current)
+    client.post("/api/versions/star", json={"id": "v1"})
+    r = client.post("/api/versions/delete", json={"id": "v1"}).json()
+    assert "starred" in r["error"]
+    assert _versions(client)["starred"] == "v1"
+
+
+def test_deleting_with_no_history_or_no_id_says_so(client, saved):
+    r = client.post("/api/versions/delete", json={}).json()
+    assert "which version" in r["error"]
+    client.post("/api/new", json={"name": "_test-versions-two"})
+    r = client.post("/api/versions/delete", json={"id": "v1"}).json()
+    assert "no history yet" in r["error"]

@@ -223,6 +223,45 @@ def test_the_first_version_diff_says_there_is_nothing_before_it(
     assert "nothing before it" in page.locator(".vdiff").inner_text()
 
 
+def test_the_rename_and_delete_buttons_work(page, server, fresh_doc):
+    """2026-09-01: "add a option where i can delete the version and rename it"
+    — rename existed as double-click-the-label and was never found, so both
+    are visible buttons now."""
+    _branched(server)
+    page.reload()
+    page.wait_for_function("() => !!window.__vp", timeout=20000)
+    _open_panel(page)
+
+    # rename via the pencil
+    page.click('.vrow[data-vid="v3"] .vedit')
+    page.wait_for_selector("#askDialog[open]", timeout=15000)
+    page.fill("#askInput", "the one for the mill")
+    page.click("#askOk")
+    page.wait_for_timeout(1500)
+    assert page.locator('.vrow[data-vid="v3"] .vlabel').inner_text() == \
+        "the one for the mill"
+
+    # delete asks first; cancel changes nothing
+    page.click('.vrow[data-vid="v1"] .vdel')
+    page.wait_for_selector("#askDialog[open]", timeout=15000)
+    assert "for good" in page.locator("#askBody").inner_text()
+    page.click("#askCancel")
+    page.wait_for_timeout(800)
+    assert page.locator(".vrow").count() == 3
+
+    # confirmed delete removes the row; v1's children live on as roots
+    # (v2 is starred and v3 is current — the server refuses those two)
+    page.click('.vrow[data-vid="v1"] .vdel')
+    page.wait_for_selector("#askDialog[open]", timeout=15000)
+    page.click("#askOk")
+    page.wait_for_timeout(1500)
+    assert page.locator(".vrow").count() == 2
+    assert page.locator('.vrow[data-vid="v1"]').count() == 0
+    assert page.locator('.vrow[data-vid="v2"]').count() == 1
+    assert page.locator('.vrow[data-vid="v3"]').count() == 1
+    assert not page.errors, page.errors
+
+
 # ---------------------------------------------------------------------------
 # 2026-09-01: edits no longer mint versions on their own. The tab and the
 # panel show a ● for unpushed changes, the panel offers the push, and closing

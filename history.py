@@ -471,9 +471,14 @@ class History:
     # -- writing -----------------------------------------------------------
 
     def _next_id(self, data: dict) -> str:
+        # id_floor is the high-water mark left behind by delete(): ids stay
+        # monotonic over every version that EVER existed, not just the ones
+        # still present — otherwise deleting the newest version would hand its
+        # id to the next save, and anything that referenced the old v5 (a
+        # label in chat, the user's memory) would silently point at new work.
         used = [int(m.group(1)) for m in
                 (_VID.match(d["id"]) for d in data["versions"]) if m]
-        return f"v{max(used, default=0) + 1}"
+        return f"v{max(used + [data.get('id_floor', 0)], default=0) + 1}"
 
     def append(self, snapshot: dict, *, label: str = "", source: str = "",
                parent: str | None = None, use_current_as_parent: bool = True,
@@ -541,6 +546,46 @@ class History:
         self._save({**data, "versions": [
             {**d, "label": label} if d["id"] == vid else d
             for d in data["versions"]]})
+
+    def delete(self, vid: str) -> dict:
+        """Remove ONE version the user pointed at, permanently.
+
+        Unlike prune this is an explicit click, so branch points and leaves
+        ARE deletable: children are re-pointed at the deleted node's parent
+        (dropping a commit from a chain), and the reply says so. Two refusals
+        stay, each naming its one-click way out:
+
+        * the CURRENT version — the design on screen IS that version, and the
+          tab's dirty baseline is measured against it;
+        * the STARRED one — it is the user's answer to "which is my intended
+          design", the last thing that may die to a stray click.
+
+        The removed id is never reused: `id_floor` in the index keeps
+        `_next_id` monotonic over deleted versions too. Index is saved before
+        the snapshot file is unlinked — a crash between the two leaves an
+        orphaned .json.gz (harmless), never an entry pointing at nothing."""
+        data = self._require()
+        v = self.get(vid)                              # raises on unknown ids
+        if vid == data.get("current"):
+            raise HistoryError(
+                f"{vid} is the version you are on — open another version "
+                f"first, then delete this one")
+        if vid == data.get("starred"):
+            raise HistoryError(
+                f"{vid} is your starred version — click its star to unpin "
+                f"it first if you really mean to delete it")
+        rewired = [d["id"] for d in data["versions"]
+                   if d.get("parent") == vid]
+        entries = [{**d, "parent": v.parent} if d.get("parent") == vid else d
+                   for d in data["versions"] if d["id"] != vid]
+        m = _VID.match(vid)
+        floor = max(data.get("id_floor", 0), int(m.group(1)) if m else 0)
+        self._save({**data, "versions": entries, "id_floor": floor})
+        try:
+            self._snap_path(vid).unlink(missing_ok=True)
+        except OSError:
+            pass                       # orphan snapshot beats a failed delete
+        return {"deleted": vid, "rewired": rewired, "parent": v.parent}
 
     def rename(self, new_slug: str) -> "History":
         """Follow a design that was renamed, so its history does NOT fork.

@@ -674,3 +674,74 @@ def test_a_short_history_is_left_completely_alone(h):
     _chain(h, 4)
     out = h.prune(keep=20, dry_run=False)
     assert out["removed"] == [] and len(h.versions()) == 4
+
+
+# ------------------------------------------- delete: one version, on purpose ---
+# Unlike prune this is the user's explicit click (2026-09-01: "add a option
+# where i can delete the version"), so leaves and branch points ARE deletable;
+# the guard rails that remain each name their one-click way out.
+
+def test_delete_removes_the_version_and_its_snapshot(h):
+    _chain(h, 3)                                   # current = v3
+    out = h.delete("v1")
+    assert out["deleted"] == "v1"
+    assert [v.id for v in h.versions()] == ["v2", "v3"]
+    assert not (h.path / "v1.json.gz").exists(), "snapshot left on disk"
+    assert not h.problems()
+
+
+def test_delete_repoints_children_at_the_deleted_nodes_parent(h):
+    """Dropping v2 from v1->v2->v3 must leave v3 hanging off v1, not orphaned."""
+    _chain(h, 3)
+    out = h.delete("v2")
+    assert out["rewired"] == ["v3"] and out["parent"] == "v1"
+    assert h.get("v3").parent == "v1"
+    assert h.ancestors("v3") == ["v1"]
+
+
+def test_deleting_the_root_makes_its_child_a_root(h):
+    _chain(h, 2)                                   # v1 -> v2
+    h.append(design(w=99), parent="v1")            # v3: v1's 2nd child, current
+    out = h.delete("v2")                           # a leaf: gone, nothing moves
+    assert out["rewired"] == []
+    out = h.delete("v1")                           # the root branch point
+    assert out["rewired"] == ["v3"] and out["parent"] is None
+    assert h.get("v3").parent is None
+    assert [r for r in h.roots()] == ["v3"]
+
+
+def test_the_current_version_is_refused_with_the_way_out(h):
+    _chain(h, 2)
+    with pytest.raises(HistoryError, match="version you are on"):
+        h.delete("v2")
+    assert [v.id for v in h.versions()] == ["v1", "v2"]
+
+
+def test_the_starred_version_is_refused_with_the_way_out(h):
+    _chain(h, 3)
+    h.star("v2")
+    with pytest.raises(HistoryError, match="starred"):
+        h.delete("v2")
+    assert h.starred() == "v2"
+
+
+def test_deleting_an_unknown_version_is_a_clear_error(h):
+    _chain(h, 2)
+    with pytest.raises(HistoryError, match="no version 'v9'"):
+        h.delete("v9")
+
+
+def test_a_deleted_id_is_never_reused(h):
+    """Delete the NEWEST version, then append: the next id must be fresh.
+    _next_id used to be max(existing)+1, so v3's id would have been handed to
+    the next save and anything referring to the old v3 would silently point
+    at new work."""
+    _chain(h, 3)
+    h.set_current("v2")
+    h.delete("v3")
+    v = h.append(design(w=123))
+    assert v.id == "v4", f"deleted id was reused as {v.id}"
+    # and the floor survives a reload from disk
+    h2 = History(h.path)
+    v2 = h2.append(design(w=124))
+    assert v2.id == "v5"
