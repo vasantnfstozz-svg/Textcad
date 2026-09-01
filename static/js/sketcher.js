@@ -342,20 +342,50 @@ async function fetchFaceOutline({ center = null, normal = null, face = null,
   } catch { return null; }
 }
 
-/* Trace PNG lives in the SKETCH ribbon (user request 2026-09-01, replacing
+/* The file as a PNG data-URL the raster tracer can eat. An SVG (the user's
+   logo, 2026-09-01: "its not even working man, but rocky png is coming") is
+   VECTOR data cv2 cannot decode — the BROWSER is a perfect SVG renderer, so
+   rasterize it here onto a canvas at high resolution and feed the raster
+   pipeline. Everything else passes through as-is. */
+async function fileToPngDataUrl(f) {
+  const dataUrl = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = rej;
+    r.readAsDataURL(f);
+  });
+  if (!/svg/i.test(f.type) && !/\.svg$/i.test(f.name)) return dataUrl;
+  const img = new Image();
+  await new Promise((res, rej) => {
+    img.onload = res;
+    img.onerror = () => rej(new Error('the SVG did not render'));
+    img.src = dataUrl;
+  });
+  // ~2k px on the long side: crisp curves for the tracer whatever tiny
+  // nominal size the SVG declares (a mm-sized logo renders at ~640px raw)
+  const w = img.naturalWidth || 1000, h = img.naturalHeight || 1000;
+  const scale = 2048 / Math.max(w, h);
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w * scale));
+  c.height = Math.max(1, Math.round(h * scale));
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL('image/png');
+}
+
+/* Trace Image lives in the SKETCH ribbon (user request 2026-09-01, replacing
    the Create-tab button): it inserts the traced art into the sketch that is
    open right now, as normal entities you can move / scale / delete before
    Finish. On a FACE sketch the art auto-fits the face (the boundary is
    already here as faceRef); on a plane sketch it asks for a height. */
 export function traceIntoSketch() {
   if (!sketchActive) {
-    bus.emit('msg', 'bot', '⚠ Trace PNG inserts into the open sketch — ' +
+    bus.emit('msg', 'bot', '⚠ Trace Image inserts into the open sketch — ' +
       'Create Sketch (or pick a face → Sketch on this face) first.');
     return;
   }
   const inp = document.createElement('input');
   inp.type = 'file';
-  inp.accept = 'image/png,image/jpeg';
+  inp.accept = 'image/png,image/jpeg,image/svg+xml,.svg';
   inp.onchange = async () => {
     const f = inp.files[0];
     if (!f) return;
@@ -377,12 +407,13 @@ export function traceIntoSketch() {
       if (h === null) return;
       req.height_mm = parseFloat(h) || 50;
     }
-    req.png_base64 = await new Promise((res, rej) => {
-      const r = new FileReader();
-      r.onload = () => res(r.result);
-      r.onerror = rej;
-      r.readAsDataURL(f);
-    });
+    try {
+      req.png_base64 = await fileToPngDataUrl(f);
+    } catch {
+      bus.emit('msg', 'bot', `⚠ Could not read "${f.name}" as an image — ` +
+        `is the file a valid PNG/JPG/SVG?`);
+      return;
+    }
     const out = await postJSON('/api/trace-png', req, 'tracing…');
     if (out && !out.error && (out.entities || []).length) {
       skEnts.push(...out.entities);

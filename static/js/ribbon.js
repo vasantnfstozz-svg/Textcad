@@ -54,7 +54,7 @@ const ACTIONS = {
              fn: () => document.getElementById('vSelect').click() },
   settings: { icon: '⚙', name: 'Settings', fn: openSettings },
   newsketch: { icon: '✎', name: 'Create Sketch', fn: startSketch },
-  trace_png: { icon: '🖼', name: 'Trace PNG', fn: traceIntoSketch },
+  trace_png: { icon: '🖼', name: 'Trace Image', fn: traceIntoSketch },
   import_stl_file: { icon: '📥', name: 'Import STL/STEP', fn: actionImportStl },
   finish_sketch: { icon: '✓', name: 'Finish Sketch', fn: finishSketch },
   cancel_sketch: { icon: '✕', name: 'Cancel Sketch', fn: cancelSketch },
