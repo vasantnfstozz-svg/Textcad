@@ -700,8 +700,9 @@ export function beginExtrudeArrow(originArr, normalArr, amount, onChange, onComm
     new THREE.CylinderGeometry(grabR, grabR, 1, 10),
     new THREE.MeshBasicMaterial({ visible: false }));
   scene.add(arrow); scene.add(hit);
-  exArrow = { arrow, hit, O, N, amount: amount || 1, len, onChange, onCommit,
-              clampFn, dragging: false, grab: 0 };
+  // amount 0 is a real value (the tool opens at 0 now) — only default nullish
+  exArrow = { arrow, hit, O, N, amount: Number(amount) || 0, len, onChange,
+              onCommit, clampFn, dragging: false, grab: 0 };
   updateArrow();
 }
 
@@ -1591,7 +1592,10 @@ function initDimDrag() {
 function clearPickHighlight() {
   if (pickHl) { scene.remove(pickHl); pickHl.geometry.dispose(); pickHl = null; }
 }
-function clearPick() {
+/* exported: clicking a TREE row replaces the viewport selection (one selection
+   set, like Fusion) — otherwise a stale face pick silently outranks the tree
+   sketch the user just clicked when a select-then-command tool opens */
+export function clearPick() {
   clearPickHighlight();
   S.pickedFace = null;
   S.pickedCurved = null;

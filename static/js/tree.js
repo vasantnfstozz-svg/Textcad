@@ -6,7 +6,8 @@ import { askConfirm } from './ask.js';
 import { S } from './state.js';
 import { postJSON, getJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
-import { loadMesh, showFeatureOverlay, clearHighlight } from './viewport.js';
+import { loadMesh, showFeatureOverlay, clearHighlight, clearPick }
+  from './viewport.js';
 import { openFeatDialog, modalGuard } from './dialogs.js';
 import { openExtrude, openExtrudeEdit, activeExtrudeId } from './extrude.js';
 import { fmtVol } from './settings.js';
@@ -913,6 +914,10 @@ function renderSpecRow(doc, el) {
 }
 
 function selectFeature(fid) {
+  // ONE selection set (Fusion): a tree click replaces any viewport pick —
+  // otherwise a stale face pick outranks the sketch row the user just
+  // clicked when Extrude opens (reported 2026-09-01)
+  clearPick();
   // toggle classes IN PLACE — a full re-render here replaces the row between
   // the two clicks of a double-click, and Chromium then never synthesizes
   // dblclick (rename / Edit Feature silently stopped working)

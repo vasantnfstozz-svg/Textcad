@@ -320,15 +320,20 @@ def test_cut_a_pocket_through_the_real_ui(face_sketch_via_real_click):
       op.dispatchEvent(new Event('change', { bubbles: true }));
     }""")
     page.wait_for_timeout(400)
+    # the box starts at 0 now — choosing Cut has nothing to flip yet
     assert float(page.evaluate(
-        "document.getElementById('exDist').value")) < 0, \
-        "choosing Cut must point the extrude INTO the body"
+        "document.getElementById('exDist').value")) == 0
+    # typing a POSITIVE depth on a Cut must still flip INTO the body (the
+    # flip runs at apply time now): +6 becomes -6, a real 6mm pocket
     page.evaluate("""() => {
       const d = document.getElementById('exDist');
-      d.value = '-6';
+      d.value = '6';
       d.dispatchEvent(new Event('input', { bubbles: true }));
     }""")
     page.wait_for_timeout(1800)
+    assert float(page.evaluate(
+        "document.getElementById('exDist').value")) < 0, \
+        "a positive depth typed on a Cut must flip INTO the body"
     page.click("#exOk")
     page.wait_for_timeout(1000)
 

@@ -61,8 +61,15 @@ def test_cut_targets_the_sketched_body(page, fresh_doc, server):
     # 'blank', not the stale 'part'
     assert page.eval_on_selector("#exTarget", "el => el.value") == "part2"
 
-    # finish the user's intent: a 1mm pocket
+    # finish the user's intent: a 1mm pocket (the box starts at 0 now, so a
+    # depth must be typed; apply flips the positive value INTO the body)
     page.select_option("#exOp", "cut")
+    page.wait_for_timeout(400)
+    page.evaluate("""() => {
+      const d = document.getElementById('exDist');
+      d.value = '1';
+      d.dispatchEvent(new Event('input', { bubbles: true }));
+    }""")
     page.wait_for_timeout(1500)                      # live rewire + rebuild
     page.click("#exOk")
     page.wait_for_timeout(4000)

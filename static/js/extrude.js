@@ -166,8 +166,10 @@ export function openExtrude(preProfile) {
   unlockDialog();
   const bods = solids();
   // FACE MODE (Fusion: click a planar face, press Extrude, pull the arrow).
-  // Capture the pick now — loadMesh() clears it.
-  const face = S.pickedFace;
+  // Capture the pick now — loadMesh() clears it. An EXPLICIT profile (tree ⬆)
+  // always beats a lingering face pick — the click on the sketch row is the
+  // user's latest word on what to extrude.
+  const face = preProfile ? null : S.pickedFace;
   const tip = [...feats()].reverse().find(f => f.volume != null && !f.suppressed);
   if (face && tip) {
     // Extrude the body the face was PICKED FROM, not whatever happens to be
@@ -181,7 +183,11 @@ export function openExtrude(preProfile) {
     fill('exProfile', ['(selected face)'], '(selected face)');
     g('exProfile').disabled = true;
     fill('exTarget', bods.map(b => b.id), owner);
-    g('exDir').value = 'one'; g('exDist').value = '1'; g('exDist2').value = '10';
+    // the distance starts at 0 — the box tells the truth: nothing has been
+    // extruded yet, and geometry appears only when the user drags or types
+    // (user 2026-09-01: "the distance is always starting from 1mm, even I am
+    // not extruding — it should be 0")
+    g('exDir').value = 'one'; g('exDist').value = '0'; g('exDist2').value = '10';
     g('exTaper').value = '0'; g('exFlip').checked = false;
     g('exOp').value = 'join';            // pulling a face usually grows the body
     g('exDir').disabled = true;          // face extrude is one-directional (drag ± instead)
@@ -192,6 +198,13 @@ export function openExtrude(preProfile) {
   }
   // an explicitly SELECTED profile (viewport pick) counts like the tree's ⬆
   if (!preProfile && S.pickedProfile) preProfile = S.pickedProfile.id;
+  // ...and so does a sketch row SELECTED IN THE TREE (select-then-command
+  // must work from either place — reported 2026-09-01: "when I touch the
+  // sketch in the feature tree, it should also work")
+  if (!preProfile && S.selected) {
+    const sel = feats().find(f => f.id === S.selected);
+    if (sel && isSketch(sel) && !sel.suppressed) preProfile = sel.id;
+  }
   if (S.pickedCurved && !preProfile) {
     bus.emit('msg', 'bot',
       `⚠ Extrude needs a FLAT face — the selected surface is ` +
@@ -202,7 +215,10 @@ export function openExtrude(preProfile) {
   // only UNCONSUMED sketches are offered — a sketch already used by an extrude
   // must not silently become the profile again ("goes back to the old sketch").
   // An explicit preProfile (tree ⬆ / viewport pick) is honoured even if consumed.
-  const consumed = new Set(feats().flatMap(f => f.inputs));
+  // A SUPPRESSED (struck-out) consumer does not count: striking out a failed
+  // extrude must free its sketch to be extruded again.
+  const consumed = new Set(feats().filter(f => !f.suppressed)
+                                  .flatMap(f => f.inputs));
   const sks = feats().filter(isSketch)
     .filter(s => !consumed.has(s.id) || s.id === preProfile);
   if (!sks.length && !bods.length) {
@@ -216,9 +232,9 @@ export function openExtrude(preProfile) {
     fill('exProfile', st.sketches, preProfile);
     g('exProfile').disabled = false;
     fill('exTarget', bods.map(b => b.id), defaultTarget(preProfile));
-    // start tiny — the solid should grow when YOU pull the arrow, not jump to
-    // a big default the moment the panel opens
-    g('exDir').value = 'one'; g('exDist').value = '1'; g('exDist2').value = '10';
+    // start at ZERO — the box tells the truth: nothing has been extruded yet,
+    // and the solid appears when YOU pull the arrow or type a distance
+    g('exDir').value = 'one'; g('exDist').value = '0'; g('exDist2').value = '10';
     g('exTaper').value = '0'; g('exFlip').checked = false; g('exOp').value = 'new';
     g('exDir').disabled = false;
     syncRows();
@@ -353,7 +369,16 @@ function params() {
                               flip: false, through };
   if (dir === 'two') return { amount: d, both: false, amount2: d2, taper, flip,
                               through };
-  return { amount: d, both: false, amount2: 0, taper, flip, through };
+  let amt = d;
+  if (through && amt === 0) {
+    // THROUGH ALL with the untouched 0 distance: only the SIGN matters (the
+    // cut runs 2 m that way) — default INTO the body for a face sketch, the
+    // same direction the old 1mm-then-cut-flip default produced. Dragging
+    // the arrow first still wins: any nonzero value keeps its sign.
+    const prof = feats().find(f => f.id === st.profileId);
+    if (prof && prof.op === 'sketch_on_face') amt = -1;
+  }
+  return { amount: amt, both: false, amount2: 0, taper, flip, through };
 }
 
 function syncRows() {
@@ -422,7 +447,7 @@ function safeRadius(loops) {
 const taperF = () => (st && st.hasHoles ? 0.92 : 0.995);
 function clampTaperFn(t) {
   if (t <= 0 || !st || !st.safeR) return t;             // flare = free
-  const a = Math.abs(Number(g('exDist').value) || 1);
+  const a = Math.abs(Number(g('exDist').value) || 0);
   return Math.min(t, Math.atan(taperF() * st.safeR / Math.max(a, 0.01)) * 180 / Math.PI);
 }
 function clampAmountFn(a) {
@@ -498,7 +523,7 @@ function setupTaperRing(frame, loops) {
   beginTaperRing(center, frame, maxR * 1.35, Number(g('exTaper').value) || 0,
     t => {                                   // dragging: ghost + value box only
       g('exTaper').value = Math.round(t * 10) / 10;
-      setExtrudeGhost(Number(g('exDist').value) || 1, t);
+      setExtrudeGhost(Number(g('exDist').value) || 0, t);
     },
     async t => {                             // release: ONE verified rebuild
       g('exTaper').value = Math.round(t * 10) / 10;
@@ -528,7 +553,7 @@ function entLocalCenter(e) {
 function placeArrow() {
   if (st.mode === 'face') {
     beginExtrudeArrow(st.face.center, st.face.normal,
-                      Number(g('exDist').value) || 1, onDrag, onDragCommit,
+                      Number(g('exDist').value) || 0, onDrag, onDragCommit,
                       clampAmountFn);
     return;
   }
@@ -550,7 +575,7 @@ function placeArrow() {
     }
     O = (PLANE_MAP[plane] || PLANE_MAP.XY)(u, v, off);
   }
-  beginExtrudeArrow(O, N, Number(g('exDist').value) || 1, onDrag, onDragCommit,
+  beginExtrudeArrow(O, N, Number(g('exDist').value) || 0, onDrag, onDragCommit,
                     clampAmountFn);
 }
 
@@ -609,7 +634,7 @@ function clampBoxValues() {
       `steeper collapses the walls at this distance.`);
     changed = true;
   }
-  const a0 = Number(g('exDist').value) || 1, a1 = clampAmountFn(a0);
+  const a0 = Number(g('exDist').value) || 0, a1 = clampAmountFn(a0);
   if (Math.abs(a1 - a0) > 0.05) { g('exDist').value = Math.round(a1 * 100) / 100; changed = true; }
   return changed;
 }
@@ -666,8 +691,31 @@ function warnIfSplit(doc) {
 }
 
 async function applyOnce() {
+  // Cut goes INTO the material: on a face sketch the normal points OUT of the
+  // body, so a positive one-direction distance leaves the tool floating
+  // outside and removes NOTHING ("cut is not working"). With the box starting
+  // at 0 there is nothing to flip when Cut is chosen, so the FIRST positive
+  // value is flipped here, at apply time — and only the first: after that
+  // the sign is the user's (an upward cut that trims bosses above the face
+  // is legitimate, so flipping every apply would make it impossible).
+  if (st.mode === 'sketch' && !st.cutFlipped && g('exOp').value === 'cut'
+      && !g('exThrough').checked && g('exDir').value === 'one') {
+    const prof = feats().find(f => f.id === st.profileId);
+    const d = Number(g('exDist').value) || 0;
+    if (prof && prof.op === 'sketch_on_face' && d > 0) {
+      st.cutFlipped = true;
+      g('exDist').value = -d;
+      bus.emit('msg', 'bot', `Cut goes INTO the body — distance flipped to ` +
+        `${-d}mm. Drag the arrow (or type) to set the pocket depth.`);
+    }
+  }
   clampBoxValues();                           // analytic barrier — one rebuild
   const pr = params();
+  // distance 0 = nothing yet: never create a zero-thickness solid — the tool
+  // opens at 0 now, and geometry appears when the user drags or types
+  const total = Math.abs(Number(g('exDist').value) || 0)
+    + (g('exDir').value === 'two' ? Math.abs(Number(g('exDist2').value) || 0) : 0);
+  if (!st.extrudeId && !pr.through && total === 0) return;
   let doc = st.extrudeId ? (await push(pr)).doc : await ensureCreated();
   if (!st) return;
   let f = featOf(doc);
@@ -679,12 +727,12 @@ async function applyOnce() {
     doc = settled.doc; f = settled.f;
   }
   if (isOk(f))
-    st.lastGood = { amount: Number(g('exDist').value) || 1,
+    st.lastGood = { amount: Number(g('exDist').value) || 0,
                     taper: Number(g('exTaper').value) || 0 };
   await applyOp();
   loadMesh();
   // keep the gizmos in sync with the (possibly adjusted) values
-  const amt = Number(g('exDist').value) || 1;
+  const amt = Number(g('exDist').value) || 0;
   setExtrudeArrowAmount(g('exFlip').checked ? -amt : amt);
   setTaperRingAngle(Number(g('exTaper').value) || 0);
 }
@@ -761,7 +809,8 @@ async function ok() {
     ? 'Extrude updated — the change is in the feature tree.'
     : created
     ? 'Extrude created — editable in the feature tree.'
-    : 'Nothing extruded — the profile could not be pulled.');
+    : 'Nothing extruded — the distance was 0. Open Extrude again, then drag ' +
+      'the arrow or type a distance before OK.');
 }
 
 /* Close a lingering Extrude session when ANOTHER tool starts — otherwise its
@@ -782,20 +831,12 @@ export function cancelExtrude() {
 
 export function initExtrude() {
   g('exProfile').onchange = changeProfile;
+  // Cut's into-the-body flip lives in applyOnce() now — it catches the op
+  // change AND a positive distance typed later (the box starts at 0, so at
+  // op-change time there is usually nothing to flip yet). Leaving Cut
+  // re-arms the one-shot flip for the next time Cut is chosen.
   g('exOp').onchange = () => {
-    // Fusion: CUT goes INTO the material. A face sketch's normal points OUT
-    // of the body, so a positive distance leaves the tool floating outside
-    // and the cut removes NOTHING — that read as "cut is not working". Flip
-    // the sign once when Cut is chosen (the user can still drag either way).
-    const prof = st && st.mode === 'sketch'
-      && feats().find(f => f.id === st.profileId);
-    const d = Number(g('exDist').value) || 0;
-    if (g('exOp').value === 'cut' && prof
-        && prof.op === 'sketch_on_face' && d > 0) {
-      g('exDist').value = -d;
-      bus.emit('msg', 'bot', `Cut goes INTO the body — distance flipped to ` +
-        `${-d}mm. Drag the arrow (or type) to set the pocket depth.`);
-    }
+    if (st && g('exOp').value !== 'cut') st.cutFlipped = false;
     syncRows(); apply();
   };
   for (const id of ['exDir', 'exTarget', 'exFlip', 'exThrough'])
