@@ -2,11 +2,16 @@
 
 Two things being pinned here, and they pull in opposite directions:
 
-* versions are minted at MEANINGFUL moments (open / save / tool commit / AI
-  edit) and NOT on every parameter nudge — the user's own decision, because a
-  version list that grows on every slider drag is the tab explosion again;
-* nothing is ever silently lost — a nudge that was not versioned still rides
-  into the next recorded version, and restore never overwrites the saved file.
+* versions are minted ONLY when the user pushes one — an explicit save (plus
+  the open/reload baseline). Since 2026-09-01 tool commits, imports and AI
+  edits no longer mint on their own: they mark the tab DIRTY and ride into
+  the next save together. Before that they minted individually, and before
+  THAT the user had to rule out minting on every slider drag — same complaint,
+  tightened twice;
+* nothing is ever silently lost — every unpushed change still rides into the
+  next saved version, the dirty flag says the tab is holding some (so the UI
+  can ask before a close throws them away), and restore never overwrites the
+  saved file.
 """
 import json
 
@@ -83,46 +88,43 @@ def test_saving_records_a_version(client, saved):
     assert _hist().get("v2").author == "you"
 
 
-def test_a_tool_commit_is_not_relabelled_as_a_manual_nudge(client, saved):
-    """Only parameter edits the user typed count as "manual". A tool commit is
-    the user's work too, but it already has a truthful label of its own, and
-    the save straight after changes nothing — so it dedupes rather than
-    renaming that version."""
-    client.post("/api/feature/add", json={
-        "id": "extra", "op": "with_center_hole", "params": {"radius": 3},
-        "inputs": ["bolts"]})                       # a TOOL commit, not a nudge
-    assert _hist().get("v2").source == "tool:with_center_hole"
-    assert _hist().get("v2").author == "you"
-
-    r = client.post("/api/save").json()
-    assert r["version"] == "v2", "an unchanged save minted a version"
-    assert [v["id"] for v in _versions(client)["versions"]] == ["v1", "v2"]
-    assert "manual" not in _hist().get("v2").label
-
-
-def test_a_tool_commit_records_a_version(client, saved):
+def test_a_tool_commit_records_NO_version_until_save(client, saved):
+    """User (2026-09-01): "whatever i am adding its going as new version, it
+    should not be like that ... if i want then i can push those changes into
+    new version." A tool commit accumulates in the tab; only SAVE mints."""
     r = client.post("/api/feature/add", json={
         "id": "extra", "op": "with_center_hole", "params": {"radius": 3},
         "inputs": ["bolts"]}).json()
+    assert "version" not in r
+    assert [v["id"] for v in _versions(client)["versions"]] == ["v1"]
+
+    r = client.post("/api/save").json()
     assert r["version"] == "v2"
-    assert _hist().get("v2").source == "tool:with_center_hole"
-    assert "with_center_hole added" in _hist().get("v2").label
+    v = _hist().get("v2")
+    assert "with_center_hole added" in v.label
+    assert v.source == "manual" and v.author == "you"
 
 
-def test_deleting_a_feature_records_a_version(client, saved):
+def test_deleting_a_feature_records_no_version_until_save(client, saved):
     r = client.post("/api/feature/remove",
                     json={"feature_id": "bolts", "mode": "auto"}).json()
     assert "error" not in r, r.get("error")
-    assert r.get("version") == "v2"
-    assert _hist().get("v2").source == "tool:delete"
+    assert "version" not in r
+    assert [v["id"] for v in _versions(client)["versions"]] == ["v1"]
+    r = client.post("/api/save").json()
+    assert r["version"] == "v2"
+    assert "deleted bolts" in _hist().get("v2").label
 
 
-def test_an_ai_edit_records_a_version(client, saved, monkeypatch):
-    """An AI edit is a discrete thing the user asked for in words, so it counts
-    as a moment — unlike a hand-dragged slider."""
+def test_an_ai_edit_records_no_version_until_save(client, saved, monkeypatch):
+    """AI edits used to mint on their own ("the user asked in words"); the
+    user overruled that — NOTHING mints until they push."""
     monkeypatch.setattr(studio, "chat_intent", lambda *a, **k: {
         "action": "edit", "feature_id": "bore", "param": "radius", "value": 9})
     r = client.post("/api/chat", json={"message": "make the bore 9"}).json()
+    assert "version" not in r
+    assert [v["id"] for v in _versions(client)["versions"]] == ["v1"]
+    r = client.post("/api/save").json()
     assert r["version"] == "v2"
     v = _hist().get("v2")
     assert v.source == "ai" and "bore.radius" in v.label
@@ -191,6 +193,7 @@ def test_the_listing_carries_the_tree_and_the_markers(client, saved):
     client.post("/api/feature/add", json={
         "id": "x", "op": "with_center_hole", "params": {"radius": 2},
         "inputs": ["bolts"]})
+    client.post("/api/save")                                  # push it -> v2
     client.post("/api/versions/star", json={"id": "v1"})
     d = _versions(client)
     assert d["current"] == "v2" and d["starred"] == "v1"
@@ -292,10 +295,10 @@ def test_restore_on_a_design_with_no_history_says_so(client):
 # -------------------------------------------------------- star and relabel ---
 
 def test_starring_pins_exactly_one_version(client, saved):
-    client.post("/api/save")
     client.post("/api/feature/add", json={
         "id": "x", "op": "with_center_hole", "params": {"radius": 2},
         "inputs": ["bolts"]})
+    client.post("/api/save")                                  # push it -> v2
     assert client.post("/api/versions/star",
                        json={"id": "v1"}).json()["starred"] == "v1"
     assert client.post("/api/versions/star",
@@ -380,6 +383,7 @@ def _mkchange(client):
     client.post("/api/feature/add", json={
         "id": "extra", "op": "with_center_hole", "params": {"radius": 3},
         "inputs": ["bolts"]})
+    client.post("/api/save")               # nothing mints until it is pushed
 
 
 def test_the_diff_defaults_to_comparing_against_the_parent(client, saved):
@@ -442,9 +446,33 @@ def test_an_ai_change_is_recorded_as_the_ais(client, saved, monkeypatch):
     monkeypatch.setattr(studio, "chat_intent", lambda *a, **k: {
         "action": "edit", "feature_id": "bore", "param": "radius", "value": 4})
     client.post("/api/chat", json={"message": "set the bore to 4"})
+    client.post("/api/save")
     v = _hist().get("v2")
     assert v.author == "ai" and v.source == "ai"
     assert "AI" in v.label
+
+
+def test_a_mixed_batch_saves_as_the_users_work_with_a_composite_label(
+        client, saved, monkeypatch):
+    """An AI edit plus a tool commit plus a hand nudge, pushed together: ONE
+    version, attributed to the user (a mixed batch is their curation), the
+    label saying what rode in."""
+    monkeypatch.setattr(studio, "chat_intent", lambda *a, **k: {
+        "action": "edit", "feature_id": "bore", "param": "radius", "value": 4})
+    client.post("/api/chat", json={"message": "set the bore to 4"})
+    client.post("/api/feature/add", json={
+        "id": "extra", "op": "with_center_hole", "params": {"radius": 3},
+        "inputs": ["bolts"]})
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 5})
+    r = client.post("/api/save").json()
+    assert r["version"] == "v2"
+    assert [v["id"] for v in _versions(client)["versions"]] == ["v1", "v2"]
+    v = _hist().get("v2")
+    assert v.source == "manual" and v.author == "you"
+    assert "AI set bore.radius = 4" in v.label
+    assert "with_center_hole added" in v.label
+    assert "1 tweak" in v.label
 
 
 def test_backfilled_versions_are_marked_as_coming_from_git():
@@ -508,3 +536,96 @@ def test_redo_is_per_tab(client, saved):
     client.post("/api/new", json={"name": "_test-versions-two"})
     assert client.get("/api/doc").json()["can_redo"] is False
     assert "nothing to redo" in client.post("/api/redo").json()["error"]
+
+
+# --------------------------- dirty: changes waiting to be pushed as a version ---
+# User (2026-09-01): edits must NOT auto-version; the tab shows it holds
+# unpushed changes, the user pushes when they choose, and closing a dirty tab
+# asks first (the ask lives in the UI — the flag here is what it runs on).
+
+def _dirty_of(client):
+    d = client.get("/api/doc").json()
+    active = next(t for t in d["tabs"] if t["active"])
+    assert d["dirty"] == active["dirty"], "doc and tab bar disagree on dirty"
+    return d["dirty"]
+
+
+def test_a_freshly_opened_design_is_clean(client, saved):
+    assert _dirty_of(client) is False
+    assert _versions(client)["dirty"] is False
+
+
+def test_every_kind_of_edit_marks_the_tab_dirty_and_save_cleans_it(client, saved):
+    client.post("/api/feature/add", json={
+        "id": "extra", "op": "with_center_hole", "params": {"radius": 3},
+        "inputs": ["bolts"]})
+    assert _dirty_of(client) is True
+    assert _versions(client)["dirty"] is True
+    client.post("/api/save")
+    assert _dirty_of(client) is False
+
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    assert _dirty_of(client) is True
+    client.post("/api/save")
+    assert _dirty_of(client) is False
+
+
+def test_undoing_every_edit_reads_clean_again(client, saved):
+    """Dirty is a HASH comparison, not a flag: edit + undo = nothing to push,
+    so the close prompt never cries wolf."""
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    assert _dirty_of(client) is True
+    client.post("/api/undo")
+    assert _dirty_of(client) is False
+
+
+def test_restoring_a_version_reads_clean(client, saved):
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    client.post("/api/save")
+    client.post("/api/versions/restore", json={"id": "v1"})
+    assert _dirty_of(client) is False
+
+
+def test_a_never_saved_design_with_features_is_dirty(client):
+    """No file means closing the tab loses the work — that must read dirty so
+    the UI asks, even though there is no version to compare against."""
+    assert _dirty_of(client) is True          # the flange sample tab, no file
+    client.post("/api/new", json={"name": "_test-versions-two"})
+    assert _dirty_of(client) is False         # empty scratch design — nothing to lose
+
+
+def test_closing_a_dirty_tab_discards_without_touching_the_design(client, saved):
+    """The server side of "Discard & close": the file and its versions stay
+    exactly as they were; only the tab's unpushed edits die with it."""
+    on_disk = _design_path().read_text(encoding="utf-8")
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 55})
+    tid = studio.STATE["active"]
+    client.post("/api/tabs/close", json={"id": tid})
+    assert _design_path().read_text(encoding="utf-8") == on_disk
+    assert [v.id for v in _hist().versions()] == ["v1"]
+
+    client.post(f"/api/open/{saved}")          # reopen: the saved state, clean
+    d = client.get("/api/doc").json()
+    assert d["features"][1]["params"]["radius"] != 55
+    assert _dirty_of(client) is False
+
+
+def test_stale_pending_notes_do_not_leak_into_a_later_versions_label(
+        client, saved):
+    """Add a feature, restore v1 (the addition goes to the undo stack), then
+    hand-nudge and save: the label must describe the nudge, not the feature
+    that is no longer part of the pushed design."""
+    client.post("/api/feature/add", json={
+        "id": "extra", "op": "with_center_hole", "params": {"radius": 3},
+        "inputs": ["bolts"]})
+    client.post("/api/versions/restore", json={"id": "v1"})
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    r = client.post("/api/save").json()
+    assert r["version"] == "v2"
+    assert "with_center_hole" not in _hist().get("v2").label
+    assert _hist().get("v2").label == "manual changes (1 edit)"

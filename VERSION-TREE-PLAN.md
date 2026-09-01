@@ -3,6 +3,23 @@
 > **Status: P0–P5 shipped 2026-08-26 — the feature is complete**, except
 > per-version thumbnails, deferred with a reason (see P5). Design agreed with
 > the user 2026-08-26.
+>
+> **P6 revision, 2026-09-01 — explicit push.** The user tightened decision 1:
+> *"whatever i am adding its going as new version, it should not be like
+> that ... if i want then i can push those model with my changes into new
+> version."* Tool commits, imports, strikes and AI edits **no longer mint
+> versions on their own** — they mark the tab **dirty** (hash of `to_data()`
+> vs the current version, cached per tab, recomputed only after a mutation)
+> and accumulate as `pending` notes. Only an explicit **Save** mints (plus the
+> open/reload baseline), with a label composed from the notes ("hole added; AI
+> set bore.radius = 9; 2 tweaks") and the author attributed to the AI only if
+> every pending change was the AI's. The UI: a ● on the doc tab and in the
+> version panel summary, a "save as version" button in the panel, and closing
+> a dirty tab asks **Save & close / Discard & close / Cancel** (in-app dialog,
+> `askThree`). Discard = close without saving; the file and tree are untouched.
+> Undo back to the version reads clean again — the prompt never cries wolf.
+> A restored session compares against the history's current version, so dirty
+> survives restarts. Tests: test_version_api.py (48), 2 new e2e.
 
 ## The problem, in the user's words
 

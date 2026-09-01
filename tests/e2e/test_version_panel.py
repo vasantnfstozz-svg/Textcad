@@ -17,14 +17,36 @@ HOLE = {"op": "with_center_hole", "inputs": ["bolts"]}
 
 
 def _branched(server):
-    """v1 → v2, then back to v1 → v3. So v1 has TWO children."""
-    httpx.post(f"{server}/api/open/flange-100", timeout=120)
-    httpx.post(f"{server}/api/feature/add",
-               json={"id": "big", "params": {"radius": 20}, **HOLE}, timeout=120)
-    httpx.post(f"{server}/api/versions/restore", json={"id": "v1"}, timeout=120)
-    httpx.post(f"{server}/api/feature/add",
-               json={"id": "tiny", "params": {"radius": 4}, **HOLE}, timeout=120)
-    httpx.post(f"{server}/api/versions/star", json={"id": "v2"}, timeout=30)
+    """v1 → v2, then back to v1 → v3. So v1 has TWO children.
+
+    Tool commits no longer mint versions (2026-09-01: nothing is pushed until
+    the user saves), so every version here is an explicit save — and a save
+    writes designs/<doc.name>.tcad.json, so the design is a throwaway COPY of
+    flange-100 renamed INSIDE the file too: with the embedded name left as
+    "flange-100", the saves would overwrite the real tracked library file
+    (which is exactly what the first run of this helper did)."""
+    import json as jsonlib
+    import studio
+    src = studio.DESIGNS / "flange-100.tcad.json"
+    dst = studio.DESIGNS / "_e2e-versions.tcad.json"
+    data = jsonlib.loads(src.read_text(encoding="utf-8"))
+    data["name"] = "_e2e-versions"
+    dst.write_text(jsonlib.dumps(data), encoding="utf-8")
+    try:
+        httpx.post(f"{server}/api/open/_e2e-versions", timeout=120)     # v1
+        httpx.post(f"{server}/api/feature/add",
+                   json={"id": "big", "params": {"radius": 20}, **HOLE},
+                   timeout=120)
+        httpx.post(f"{server}/api/save", timeout=120)                   # v2
+        httpx.post(f"{server}/api/versions/restore", json={"id": "v1"},
+                   timeout=120)
+        httpx.post(f"{server}/api/feature/add",
+                   json={"id": "tiny", "params": {"radius": 4}, **HOLE},
+                   timeout=120)
+        httpx.post(f"{server}/api/save", timeout=120)                   # v3
+        httpx.post(f"{server}/api/versions/star", json={"id": "v2"}, timeout=30)
+    finally:
+        dst.unlink(missing_ok=True)
 
 
 def _open_panel(page):
@@ -199,3 +221,78 @@ def test_the_first_version_diff_says_there_is_nothing_before_it(
     page.wait_for_selector(".vdiff", timeout=15000)
     page.wait_for_timeout(1000)
     assert "nothing before it" in page.locator(".vdiff").inner_text()
+
+
+# ---------------------------------------------------------------------------
+# 2026-09-01: edits no longer mint versions on their own. The tab and the
+# panel show a ● for unpushed changes, the panel offers the push, and closing
+# a dirty tab ASKS — "if i press, the edits i did, no need to be saved".
+# ---------------------------------------------------------------------------
+
+def test_unpushed_changes_show_a_dot_and_the_panel_pushes_them(
+        page, server, fresh_doc):
+    import studio
+    _branched(server)
+    scratch = studio.DESIGNS / "_e2e-versions.tcad.json"
+    try:
+        # right after _branched everything is pushed: no dot anywhere
+        page.reload()
+        page.wait_for_function("() => !!window.__vp", timeout=20000)
+        _open_panel(page)
+        assert page.locator("#doctabs .dmark").count() == 0
+        assert page.locator(".vpending").count() == 0
+
+        httpx.post(f"{server}/api/feature/add",
+                   json={"id": "third", "params": {"radius": 6}, **HOLE},
+                   timeout=120)
+        page.reload()
+        page.wait_for_function("() => !!window.__vp", timeout=20000)
+        _open_panel(page)
+        assert page.locator("#doctabs .dmark").count() == 1
+        assert page.locator("#verSummary .vdirty").count() == 1
+        page.wait_for_selector(".vpending", timeout=15000)
+
+        page.click(".vpush")                      # the explicit push
+        page.wait_for_selector('.vrow[data-vid="v4"]', timeout=15000)
+        page.wait_for_timeout(800)
+        assert page.locator(".vpending").count() == 0, \
+            "the push left the panel still claiming unsaved changes"
+        assert page.locator("#doctabs .dmark").count() == 0
+        assert not page.errors, page.errors
+    finally:
+        scratch.unlink(missing_ok=True)           # the push re-wrote the file
+
+
+def test_closing_a_dirty_tab_asks_and_discard_minted_nothing(
+        page, server, fresh_doc):
+    import studio
+    from history import History
+    _branched(server)
+    httpx.post(f"{server}/api/feature/add",
+               json={"id": "third", "params": {"radius": 6}, **HOLE},
+               timeout=120)
+    page.reload()
+    page.wait_for_function("() => !!window.__vp", timeout=20000)
+    page.wait_for_timeout(1500)
+    tabs_before = page.locator("#doctabs .dtab").count()
+
+    # Cancel keeps the tab, edits intact
+    page.click("#doctabs .dtab.active .x")
+    page.wait_for_selector("#askDialog[open]", timeout=15000)
+    assert "not saved as a version" in page.locator("#askBody").inner_text()
+    page.click("#askCancel")
+    page.wait_for_timeout(800)
+    assert page.locator("#doctabs .dtab").count() == tabs_before, \
+        "cancel still closed the tab"
+
+    # Discard closes it and minted NOTHING — v1..v3 stay exactly as pushed
+    page.click("#doctabs .dtab.active .x")
+    page.wait_for_selector("#askDialog[open]", timeout=15000)
+    page.click("#askAlt")
+    page.wait_for_timeout(1500)
+    assert page.locator("#doctabs .dtab").count() == tabs_before - 1
+    h = History.for_design(studio._history_root(), "_e2e-versions")
+    assert [v.id for v in h.versions()] == ["v1", "v2", "v3"]
+    assert not (studio.DESIGNS / "_e2e-versions.tcad.json").exists(), \
+        "discard wrote the design file"
+    assert not page.errors, page.errors

@@ -125,6 +125,12 @@ complete. Details + Done history: MANUAL-DESIGN.md.
   cache (tests/test_rebuild_cache.py pins the current behaviour so a
   fix is a deliberate change). Probably: prefer the last feature on the
   result body's input[0] spine over any later stray solid.
+- [ ] **MCP doorbell re-fires on every page load** — the "X just arrived
+  (designed externally) — loaded it" banner reappears and FLIPS THE ACTIVE TAB
+  on every reload, long after the design actually arrived (seen 2026-09-01:
+  it stole focus from a scratch tab mid-probe, and can even move the active
+  tab under an open dialog). The arrival marker needs to be consumed once,
+  not replayed per boot.
 - [ ] **Assemblies/joints in Studio** (assembly.py exists; UI is single-part).
 - [ ] **Units/grid settings** — everything is implicitly mm; at least label it.
 - [ ] **AI-flow polish** (chat edits during rollback etc.) — parked until manual

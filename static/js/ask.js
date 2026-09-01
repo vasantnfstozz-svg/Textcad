@@ -22,7 +22,7 @@ let closer = null;               // resolve fn for the dialog currently open
 
 function open({ title, body = '', label = '', value = null, placeholder = '',
                 ok = 'OK', cancel = 'Cancel', danger = false, hint = '',
-                validate = null }) {
+                validate = null, alt = null, altDanger = false }) {
   const d = dlg();
   if (closer) { closer(null); closer = null; }        // never stack dialogs
 
@@ -32,8 +32,16 @@ function open({ title, body = '', label = '', value = null, placeholder = '',
   el('askOk').textContent = ok;
   el('askCancel').textContent = cancel;
   el('askOk').classList.toggle('danger', !!danger);
+  // the optional THIRD choice ("Discard & close"), between Cancel and OK.
+  // With it set, the dialog resolves 'ok' / 'alt' / null instead of a bool.
+  el('askAlt').classList.toggle('hidden', !alt);
+  el('askAlt').textContent = alt || '';
+  el('askAlt').classList.toggle('danger', !!altDanger);
   el('askHint').textContent = hint;
   el('askHint').classList.remove('bad');
+  // Esc fires 'close' WITHOUT setting returnValue, which would leave the value
+  // from the previous run ('ok'!) — so Esc after an earlier OK read as OK.
+  d.returnValue = 'cancel';
 
   const input = el('askInput');
   const wantsText = value !== null;
@@ -49,9 +57,13 @@ function open({ title, body = '', label = '', value = null, placeholder = '',
       d.removeEventListener('close', onClose);
       resolve(v);
     };
-    const onClose = () => finish(d.returnValue === 'ok'
-      ? (wantsText ? input.value.trim() : true)
-      : (wantsText ? null : false));
+    const onClose = () => {
+      if (alt) return finish(d.returnValue === 'ok' ? 'ok'
+                           : d.returnValue === 'alt' ? 'alt' : null);
+      finish(d.returnValue === 'ok'
+        ? (wantsText ? input.value.trim() : true)
+        : (wantsText ? null : false));
+    };
 
     // Guard the OK button rather than letting a bad value through: a form with
     // method="dialog" closes on submit, so validation has to happen first.
@@ -84,6 +96,12 @@ export function askText(title, opts = {}) {
 /** Ask a yes/no question. Resolves true/false. */
 export function askConfirm(title, opts = {}) {
   return open({ title, value: null, ok: 'OK', ...opts });
+}
+
+/** A three-way question (opts.ok / opts.alt / Cancel).
+ *  Resolves 'ok', 'alt', or null for cancel/Esc. */
+export function askThree(title, opts = {}) {
+  return open({ title, value: null, alt: opts.alt || 'Other', ...opts });
 }
 
 /** A number field with validation built in. Resolves to a Number, or null. */

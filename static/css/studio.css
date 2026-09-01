@@ -69,6 +69,8 @@ body { background: var(--bg); color: var(--text); height: 100vh;
 .dtab .x { background: none; border: none; color: var(--dim); cursor: pointer;
   padding: 0 2px; border-radius: 4px; font-size: 11px; }
 .dtab .x:hover { color: var(--fail); background: var(--panel); }
+/* changes not yet pushed as a version — the ✕ will ask before closing */
+.dtab .dmark { color: var(--stale); font-size: 9px; flex: none; }
 #dtabNew { background: none; border: 1px dashed var(--line); color: var(--dim);
   border-radius: 8px 8px 0 0; padding: 5px 11px; cursor: pointer; font: inherit; }
 #dtabNew:hover { color: var(--accent); border-color: var(--accent); }
@@ -493,6 +495,13 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 .vstar.on { color: #e8c14a; }
 .vnote { color: var(--dim); font-size: 11px; padding: 6px 4px; line-height: 1.4; }
 .vprob { color: var(--fail); font-size: 11px; padding: 6px 4px; line-height: 1.4; }
+.vdirty { color: var(--stale); font-size: 9px; }
+.vpending { display: flex; align-items: center; gap: 6px; padding: 4px;
+  font-size: 11px; color: var(--stale); }
+.vpush { margin-left: auto; background: var(--panel3); color: var(--text);
+  border: 1px solid var(--line); border-radius: 5px; padding: 2px 8px;
+  font-size: 11px; cursor: pointer; }
+.vpush:hover { border-color: var(--accent); color: var(--accent); }
 .vwhy { background: none; border: 0; padding: 0 2px; cursor: pointer;
          color: var(--line); font-size: 11px; line-height: 1; flex: 0 0 auto; }
 .vrow:hover .vwhy { color: var(--dim); }
@@ -511,6 +520,7 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 #askDialog p#askBody:empty { display: none; }
 #askDialog label#askLabel:empty { display: none; }
 #askDialog input#askInput.hidden { display: none; }
+#askDialog button.hidden { display: none; }
 #askHint { color: var(--dim); font-size: 11px; margin-top: 5px; min-height: 0; }
 #askHint:empty { display: none; }
 #askHint.bad { color: var(--fail); }

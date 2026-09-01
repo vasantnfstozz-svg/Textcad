@@ -21,6 +21,7 @@ import { loadMesh } from './viewport.js';
 
 let open = false;
 let seq = 0;                     // only the newest fetch may paint
+let lastDirty = null;            // refresh the summary when dirtiness flips
 
 const pane = () => document.getElementById('verPane');
 const body = () => document.getElementById('verBody');
@@ -35,11 +36,17 @@ export function initVersions() {
   };
   bus.on('doc-updated', doc => {
     // Refresh when the panel is showing, and ALWAYS when the server says it
-    // just recorded something (`version`), reported a history fault, or
-    // restored — otherwise the one-line summary would quietly go stale while
-    // collapsed. Not on every keystroke beyond that: /api/versions is kept
-    // out of /api/doc precisely so it is not on the hot path.
-    if (open || doc.version || doc.history_error || doc.restored) refresh();
+    // just recorded something (`version`), reported a history fault, restored,
+    // or the design's dirtiness FLIPPED (edits no longer mint versions, so the
+    // ● in the summary is how you see there is something to push) — otherwise
+    // the one-line summary would quietly go stale while collapsed. Not on
+    // every keystroke beyond that: /api/versions is kept out of /api/doc
+    // precisely so it is not on the hot path.
+    const dirty = !!doc.dirty;
+    const flipped = lastDirty !== null && dirty !== lastDirty;
+    lastDirty = dirty;
+    if (open || doc.version || doc.history_error || doc.restored || flipped)
+      refresh();
   });
   bus.on('versions-open', () => {
     if (!open) document.getElementById('verHead').click();
@@ -73,6 +80,28 @@ function paint(d) {
     const w = document.createElement('div');
     w.className = 'vprob';
     w.textContent = '⚠ ' + p;
+    el.appendChild(w);
+  }
+  // Changes since the current version live HERE until the user pushes them —
+  // nothing mints a version on its own any more (user decision 2026-09-01),
+  // so the panel must show the state and offer the push.
+  if (d.dirty) {
+    const w = document.createElement('div');
+    w.className = 'vpending';
+    w.innerHTML = '<span class="vdirty">●</span> unsaved changes';
+    const b = document.createElement('button');
+    b.className = 'vpush';
+    b.textContent = 'save as version';
+    b.title = 'push everything changed since ' +
+              (d.current || 'the start') + ' as one new version';
+    b.onclick = async () => {
+      const r = await postJSON('/api/save', {}, 'saving…');
+      if (r.error) bus.emit('msg', 'bot', '⚠ ' + r.error);
+      else if (r.saved) bus.emit('msg', 'bot', `Saved "${r.saved}"` +
+        (r.version ? ` — recorded as ${r.version}` : '') + '.');
+      refresh();
+    };
+    w.appendChild(b);
     el.appendChild(w);
   }
   if (d.unsaved) {
@@ -111,11 +140,14 @@ function paint(d) {
 function summaryText(d) {
   if (!d || d.unreachable) return '<span class="vprob">server?</span>';
   if ((d.problems || []).length) return '<span class="vprob">⚠ problem</span>';
-  if (d.unsaved) return 'unsaved';
+  const dot = d.dirty
+    ? ' <span class="vdirty" title="changes not saved as a version">●</span>'
+    : '';
+  if (d.unsaved) return 'unsaved' + dot;
   const n = (d.versions || []).length;
-  if (!n) return 'none yet';
+  if (!n) return 'none yet' + dot;
   const star = d.starred ? ` <span class="star">★ ${d.starred}</span>` : '';
-  return `${d.current || '—'} of ${n}${star}`;
+  return `${d.current || '—'} of ${n}${star}${dot}`;
 }
 
 function row(v, depth, d) {

@@ -53,7 +53,7 @@ import sketch_trim as trimlib
 import sketch_corner as cornerlib
 import sketch_snap as snaplib
 from document import Document
-from history import History, HistoryError, diff_snapshots
+from history import History, HistoryError, diff_snapshots, content_hash
 import provenance
 from samples import SAMPLES, sample_flange, sample_impeller, sample_compressor  # noqa: F401 (re-export for tests)
 
@@ -132,7 +132,11 @@ def _new_tab(doc: Document, source: str | None = None,
     tid = f"t{STATE['seq']}"
     STATE["docs"][tid] = {"doc": doc, "ok": False, "rebuild_ms": None,
                           "history": [], "redo": [], "source": source,
-                          "hand_edits": 0}
+                          "hand_edits": 0, "pending": [],
+                          # what the doc looked like at the LAST minted version
+                          # (or at creation) — the baseline for "dirty"
+                          "clean_hash": content_hash(doc.to_data()),
+                          "dirty": False}
     if activate:
         STATE["active"] = tid
     return tid
@@ -170,6 +174,7 @@ def _snapshot() -> None:
     e["history"].append(e["doc"].to_data())
     del e["history"][:-MAX_HISTORY]
     e.setdefault("redo", []).clear()
+    e["dirty"] = None                # unknown until someone asks (see _dirty)
 
 
 def _rebuild_and_mesh() -> None:
@@ -193,7 +198,9 @@ def _tabs_json() -> list[dict]:
     # that as a grey "not loaded yet" dot instead of a red "broken" one
     return [{"id": tid, "name": e["doc"].name,
              "ok": e["ok"] if e["rebuild_ms"] is not None else None,
-             "active": tid == STATE["active"]}
+             "active": tid == STATE["active"],
+             # unsaved-changes marker; the UI asks before closing a dirty tab
+             "dirty": _dirty(e)}
             for tid, e in STATE["docs"].items()]
 
 
@@ -249,7 +256,23 @@ def _restore_session() -> int:
     for t in data.get("tabs", [])[:MAX_TABS]:
         try:
             doc = Document.from_data(t["doc"])
-            tid = _new_tab(doc, source=t.get("source"), activate=False)
+            src = t.get("source")
+            tid = _new_tab(doc, source=src, activate=False)
+            # A restored tab may hold UNSAVED edits (that is the point of the
+            # session file), so its dirty baseline is the design's current
+            # VERSION, not whatever intent just came back — otherwise a dirty
+            # tab would read clean after every restart and the close prompt
+            # would let those edits vanish silently.
+            if src and src.startswith("file:"):
+                try:
+                    h = History.for_design(_history_root(), src[5:])
+                    cur = h.current()
+                    if cur:
+                        e = STATE["docs"][tid]
+                        e["clean_hash"] = h.get(cur).hash
+                        e["dirty"] = None
+                except Exception:
+                    pass               # no/broken history -> creation baseline
             if t.get("active"):
                 active_tid = tid
             restored += 1
@@ -330,15 +353,54 @@ def _hand_edit() -> None:
     _entry()["hand_edits"] = _entry().get("hand_edits", 0) + 1
 
 
-def _record_version(label: str, source: str) -> dict:
-    """Mint a version of the active design at a MEANINGFUL moment.
+def _pending(label: str, kind: str) -> None:
+    """Note a change that will ride into the NEXT saved version.
 
-    Deliberately NOT wired to /api/edit, /api/feature/params, /api/spec,
-    /api/feature/suppress or /api/rollback. The user chose "meaningful moments,
-    not every nudge", so a slider drag stays undo's business and then rides
-    into the next recorded version along with everything else it was part of —
-    history.py's hash dedupe means a save after five tweaks records ONE
-    version. That IS the coalescing.
+    User (2026-09-01): "do not push it as a version until i want to do" — a
+    tool commit / import / AI edit no longer mints a version of its own. The
+    note is kept so the eventual save can say what it holds ("hole added; AI
+    set bore.radius = 9") instead of a bare "saved". `kind` is "tool" or "ai",
+    for attributing the version to whoever actually did the work."""
+    e = _entry()
+    p = e.setdefault("pending", [])
+    p.append({"label": label, "kind": kind})
+    del p[:-30]                       # a label needs the gist, not a full log
+
+
+def _mark_clean() -> None:
+    """The doc on screen now equals the design's current version."""
+    e = _entry()
+    e["clean_hash"] = content_hash(e["doc"].to_data())
+    e["dirty"] = False
+
+
+def _dirty(e: dict) -> bool:
+    """Does this tab hold changes that are not yet pushed as a version?
+
+    Hash-based, not flag-based, so five tweaks followed by five undos read as
+    CLEAN — the close prompt must never cry wolf. The hash costs ~8 ms on the
+    biggest design, so it is cached per tab and recomputed only after a
+    mutation (_snapshot / undo / redo set it back to None); read-only requests
+    never pay for it. A design that never had a file (untitled, AI-created) is
+    dirty the moment it has any features: closing that tab loses them."""
+    src = e.get("source") or ""
+    if not src.startswith(("file:", "sample:")):
+        return bool(e["doc"].features)
+    if e.get("dirty") is None:
+        e["dirty"] = content_hash(e["doc"].to_data()) != e.get("clean_hash")
+    return bool(e["dirty"])
+
+
+def _record_version(label: str, source: str) -> dict:
+    """Mint a version of the active design — ONLY when the user pushes one.
+
+    Originally wired to every "meaningful moment" (tool commit, import, AI
+    edit); the user overruled that on 2026-09-01: "whatever i am adding its
+    going as new version, it should not be like that". Now the only minting
+    moments are an explicit SAVE and open/reload-from-disk (the baseline a
+    discard falls back to). Everything else — tool commits, imports, AI edits,
+    parameter nudges — accumulates as the tab's dirty state (see _dirty) and
+    rides into the next save together, labelled by its _pending notes.
 
     Never raises into an endpoint. The design change already succeeded; a
     sidecar file that cannot be written must not make it look otherwise, so the
@@ -348,17 +410,31 @@ def _record_version(label: str, source: str) -> dict:
         return {}
     e = _entry()
     hand = e.get("hand_edits", 0)
-    # Hand edits that were never versioned on their own ride into this one, so
-    # say so: a version recorded after the user nudged seven parameters is
-    # THEIR work, whatever triggered the recording.
-    if hand and source in ("save", "open"):
-        label = f"manual changes ({hand} edit{'' if hand == 1 else 's'})"
-        source = "manual"
+    pending = e.get("pending", [])
+    # A save carries everything done since the last version, so its label and
+    # author must say so — the work is whoever's it actually was, not "saved".
+    if source == "save" and (pending or hand):
+        if pending:
+            bits = [p["label"] for p in pending]
+            if hand:
+                bits.append(f"{hand} tweak{'' if hand == 1 else 's'}")
+            label = "; ".join(bits[:3])
+            if len(bits) > 3:
+                label += f" +{len(bits) - 3} more"
+        else:
+            label = f"manual changes ({hand} edit{'' if hand == 1 else 's'})"
+        source = ("ai" if pending and not hand
+                  and all(p["kind"] == "ai" for p in pending) else "manual")
     try:
         h.init(_slug_of_active() or "")
         v = h.append(e["doc"].to_data(), label=label, source=source,
                      rebuildable=bool(e.get("ok")), spec=_measured(e))
+        # the doc IS the current version now, whatever triggered the mint —
+        # and on open/reload the outgoing edits were replaced, so the notes
+        # about them must not leak into a later save's label
         e["hand_edits"] = 0
+        e["pending"] = []
+        _mark_clean()
         return {"version": v.id}
     except HistoryError as ex:
         return {"history_error": str(ex)}
@@ -371,6 +447,7 @@ def _doc_json() -> dict:
         "name": doc.name,
         "ok": e["ok"],
         "rebuild_ms": e["rebuild_ms"],
+        "dirty": _dirty(e),        # changes not yet pushed as a version
         "can_undo": len(e["history"]) > 0,
         "can_redo": len(e.get("redo") or []) > 0,
         "rollback": doc.rollback,
@@ -1401,8 +1478,8 @@ def add_feature(req: FeatureReq):
         _entry()["history"].pop()
         return {"error": str(e), **_doc_json()}
     _rebuild_and_mesh()
-    return {**_record_version(f"{req.op} added", f"tool:{req.op}"),
-            **_doc_json()}
+    _pending(f"{req.op} added", "tool")
+    return _doc_json()
 
 
 def _trace_face_fit(req: TracePngReq):
@@ -1429,8 +1506,16 @@ def _trace_fitted(data: bytes, req: TracePngReq,
                   box: tuple[float, float, float, float] | None):
     """Trace `data`; with a fit box (w, h, cx, cy in the sketch plane's own
     coords) the art is scaled to fit_margin × the box and centred on it —
-    otherwise it traces at req.height_mm, bbox-centred on the origin."""
+    otherwise it traces at req.height_mm, bbox-centred on the origin.
+
+    Orientation is part of the fit (user report 2026-09-01: a wide logo on
+    a tall face came in "vertical position, its no use" — it fitted the
+    narrow way at 23mm instead of running along the face): the art is tried
+    at 0° AND rotated 90°, and whichever lets it come out BIGGER wins. The
+    rotation is +90° (CCW), so rotated text reads bottom-to-top — the
+    drawing convention; two sketch Mirrors flip it 180° if wanted."""
     height = req.height_mm
+    rotated = False
     if box:
         fw, fh, fcx, fcy = (float(v) for v in box)
         if fw <= 0 or fh <= 0:
@@ -1438,11 +1523,24 @@ def _trace_fitted(data: bytes, req: TracePngReq,
         # pick the trace height so the art fits the box both ways —
         # image_to_entities' fidelity floors then run at the REAL scale
         aspect = imgtrace.artwork_aspect(data)
-        height = max(1.0, min(1000.0, req.fit_margin * min(fh, fw / aspect)))
+        h0 = req.fit_margin * min(fh, fw / aspect)     # as-is
+        h90 = req.fit_margin * min(fw, fh / aspect)    # long side along Y
+        rotated = h90 > h0 * 1.001     # rotate only when it clearly wins
+        height = max(1.0, min(1000.0, h90 if rotated else h0))
     ents, info = imgtrace.image_to_entities(
         data, height, req.tol_mm, req.min_channel_mm,
         connect_pieces=req.connect_pieces)
     if box:
+        if rotated:
+            # +90° about the origin — position AND local points (rotation is
+            # linear, so rotating both composes exactly)
+            for e in ents:
+                e["x"], e["y"] = round(-e["y"], 3), round(e["x"], 3)
+                e["points"] = [[round(-py, 3), round(px, 3)]
+                               for px, py in e["points"]]
+            # width_mm/height_mm now mean the FRAME X/Y extents
+            info["width_mm"], info["height_mm"] = (info["height_mm"],
+                                                   info["width_mm"])
         # residual exact-fit rescale (the traced bbox can differ a hair
         # from the mask bbox after speckle removal / smoothing), then
         # centre on the box. Scale points AND x/y — the entities are
@@ -1463,6 +1561,7 @@ def _trace_fitted(data: bytes, req: TracePngReq,
         info["width_mm"] = round(info["width_mm"] * s, 2)
         info["height_mm"] = round(info["height_mm"] * s, 2)
         info["face_mm"] = [round(fw, 2), round(fh, 2)]
+        info["rotated"] = rotated
     return ents, info
 
 
@@ -1509,8 +1608,8 @@ def trace_png(req: TracePngReq):
         _entry()["history"].pop()
         return {"error": str(e), **_doc_json()}
     _rebuild_and_mesh()
-    return {**_record_version(f"traced {fid}", "tool:trace_png"),
-            **_doc_json(), "trace_info": {**info, "feature_id": fid}}
+    _pending(f"traced {fid}", "tool")
+    return {**_doc_json(), "trace_info": {**info, "feature_id": fid}}
 
 
 class ImportStepReq(BaseModel):
@@ -1558,8 +1657,8 @@ def import_step_file(req: ImportStepReq):
     _rebuild_and_mesh()
     bb = part.bounding_box()
     solids = part.solids()
-    return {**_record_version(f"imported {fname}", "tool:import_step"),
-            **_doc_json(), "import_info": {
+    _pending(f"imported {fname}", "tool")
+    return {**_doc_json(), "import_info": {
         "feature_id": fid, "file": fname, "bodies": len(solids),
         "size_mm": [round(bb.size.X, 2), round(bb.size.Y, 2),
                     round(bb.size.Z, 2)],
@@ -1618,8 +1717,8 @@ def import_stl_file(req: ImportStlReq):
                          f"{rep['output_triangles']:,} triangles")
         repair_note = "auto-repaired: " + ", ".join(steps) if steps else None
     bb = part.bounding_box()
-    return {**_record_version(f"imported {fname}", "tool:import_stl"),
-            **_doc_json(), "import_info": {
+    _pending(f"imported {fname}", "tool")
+    return {**_doc_json(), "import_info": {
         "feature_id": fid, "file": fname,
         "triangles": rep["output_triangles"], "bodies": rep.get("bodies"),
         "repair": repair_note,
@@ -1783,8 +1882,8 @@ def remove_feature(req: RemoveReq):
     _rebuild_and_mesh()
     if not _doc().features and MESH_PATH.exists():
         MESH_PATH.unlink()                  # last feature gone -> empty viewport
-    return {**_record_version(f"deleted {req.feature_id}", "tool:delete"),
-            **_doc_json(), "remove_plan": plan}
+    _pending(f"deleted {req.feature_id}", "tool")
+    return {**_doc_json(), "remove_plan": plan}
 
 
 @app.post("/api/feature/rename")
@@ -1830,8 +1929,8 @@ def strike_feature(req: StrikeReq):
         return {"error": str(e), **_doc_json()}
     _rebuild_and_mesh()
     verb = "restored" if req.restore else "struck out"
-    return {**_record_version(f"{verb} {req.feature_id}", "tool:strike"),
-            **_doc_json(), "strike_plan": plan}
+    _pending(f"{verb} {req.feature_id}", "tool")
+    return {**_doc_json(), "strike_plan": plan}
 
 
 @app.post("/api/spec")
@@ -1865,6 +1964,7 @@ def undo():
     e.setdefault("redo", []).append(old_doc.to_data())
     del e["redo"][:-MAX_HISTORY]
     e["doc"] = rebuilt
+    e["dirty"] = None              # undoing back to the version = clean again
     # The rebuild cache is process-wide (content-addressed), so the restored
     # document already inherits it; this keeps the link explicit for a document
     # that was given a private cache.
@@ -1894,6 +1994,7 @@ def redo():
     e["history"].append(old_doc.to_data())      # ...and redo is undoable again
     del e["history"][:-MAX_HISTORY]
     e["doc"] = rebuilt
+    e["dirty"] = None
     e["doc"]._cache = old_doc._cache
     e["doc"]._spec_cache = old_doc._spec_cache
     _rebuild_and_mesh()
@@ -1937,13 +2038,14 @@ def get_versions():
     h = _vhistory()
     if h is None:
         return {"versions": [], "current": None, "starred": None,
-                "problems": [], "unsaved": True,
+                "problems": [], "unsaved": True, "dirty": _dirty(_entry()),
                 "note": "this design has no history yet — save it once and its "
                         "versions start being recorded"}
     return {"versions": [asdict(v) for v in h.versions()],
             "current": h.current(), "starred": h.starred(),
             "problems": h.problems(), "design_id": h.design_id,
-            "name": h.name, "tree": h.tree_lines(), "unsaved": False}
+            "name": h.name, "tree": h.tree_lines(), "unsaved": False,
+            "dirty": _dirty(_entry())}
 
 
 @app.get("/api/versions/diff")
@@ -2008,6 +2110,11 @@ def restore_version(req: VersionReq):
     out = {"restored": req.id}
     try:
         h.set_current(req.id)
+        # the doc on screen IS that version now — not dirty — and any pending
+        # notes described edits that just went onto the undo stack
+        e["hand_edits"] = 0
+        e["pending"] = []
+        _mark_clean()
     except HistoryError as ex:
         out["history_error"] = str(ex)
     return {**out, **_doc_json()}
@@ -2141,6 +2248,7 @@ def open_design(file: str):
     e["history"].append(e["doc"].to_data())
     del e["history"][:-MAX_HISTORY]
     e["doc"] = fresh
+    e["dirty"] = None            # doc replaced; recompute if the mint fails
     _rebuild_and_mesh()
     # the OUTGOING tab state is deliberately NOT recorded: it was never saved,
     # the undo stack already holds it, and minting versions for scratch states
@@ -2266,9 +2374,9 @@ def chat(req: ChatReq):
         _rebuild_and_mesh()
         state = "PASS" if _entry()["ok"] else "FAILED verification"
         said = plan["summary"].replace("Delete ", "Deleted ", 1)
+        _pending(f"AI deleted {fid}", "ai")
         return {"reply": f"{said} Rebuilt: {state}. Undo (Ctrl+Z) "
                          f"puts it all back.",
-                **_record_version(f"AI deleted {fid}", "ai"),
                 "remove_plan": plan, **_doc_json()}
 
     for _ in range(2):                       # one repair retry, same philosophy
@@ -2283,11 +2391,10 @@ def chat(req: ChatReq):
             continue
         _rebuild_and_mesh()
         state = "PASS" if _entry()["ok"] else "FAILED verification"
+        _pending(f"AI set {intent['feature_id']}.{intent['param']}"
+                 f" = {intent['value']}", "ai")
         return {"reply": f"Set {intent['feature_id']}.{intent['param']} = "
                          f"{intent['value']} — rebuilt: {state}.",
-                **_record_version(
-                    f"AI set {intent['feature_id']}.{intent['param']}"
-                    f" = {intent['value']}", "ai"),
                 **_doc_json()}
     return {"reply": "I couldn't map that to an editable parameter — click "
                      "the value in the tree instead.", **_doc_json()}
