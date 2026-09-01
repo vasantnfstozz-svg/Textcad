@@ -488,7 +488,9 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 .vrow .vlabel { flex: 1; overflow: hidden; text-overflow: ellipsis;
                 white-space: nowrap; }
 .vrow .vmeta { color: var(--dim); font-size: 10px; flex: 0 0 auto; }
-.vrow.dead .vlabel { color: var(--dim); text-decoration: line-through; }
+/* recorded-while-failing-verify gets a ⚠, NOT a strikethrough — struck-out
+   text reads as "deleted", and the version is perfectly openable */
+.vrow .vwarn { color: var(--stale); font-size: 10px; flex: 0 0 auto; }
 .vstar { background: none; border: 0; padding: 0 2px; cursor: pointer;
          color: var(--line); font-size: 12px; line-height: 1; }
 .vstar:hover { color: var(--dim); }

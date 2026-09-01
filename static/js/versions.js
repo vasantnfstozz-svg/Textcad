@@ -205,6 +205,17 @@ function row(v, depth, d) {
     rename(v);
   };
 
+  // A version recorded while verification FAILED used to be struck through —
+  // which reads as "deleted", not "check failed" (user, 2026-09-01: "why the
+  // version name is striked out"). A warning mark says what it means.
+  const warn = document.createElement('span');
+  if (v.rebuildable === false) {
+    warn.className = 'vwarn';
+    warn.textContent = '⚠';
+    warn.title = 'recorded while the design FAILED verification — the ' +
+                 'version opens fine, but check the ✗ badge after restoring';
+  }
+
   // WHO made it. The user asked for manual work to be distinguishable "so ai
   // can recognize the manual changes" — and it has to be visible to them too.
   const who = document.createElement('span');
@@ -257,8 +268,10 @@ function row(v, depth, d) {
     del.onclick = e => { e.stopPropagation(); remove(v, d); };
   }
 
-  el.append(star, id, label, who, meta, edit, why, del);
-  el.onclick = () => restore(v);
+  el.append(star, id, label,
+            ...(v.rebuildable === false ? [warn] : []),
+            who, meta, edit, why, del);
+  el.onclick = () => restore(v, d);
   return el;
 }
 
@@ -369,7 +382,15 @@ async function rename(v) {
   refresh();
 }
 
-async function restore(v) {
+async function restore(v, d) {
+  // Clicking the version you are already ON is a no-op, not a reload — the
+  // esp32 case takes ~30 s to rebuild, and paying that to arrive where you
+  // already are is absurd (user, 2026-09-01). If the tab is DIRTY the click
+  // is meaningful again: it puts the pristine version back (undoable).
+  if (d && v.id === d.current && !d.dirty) {
+    bus.emit('msg', 'bot', `${v.id} is already on screen.`);
+    return;
+  }
   // No confirmation on purpose: this does NOT overwrite the saved .tcad.json,
   // whatever was on screen goes onto the undo stack, and the versions you came
   // from stay in the tree. Nothing here is destructive, so a dialog every time
@@ -377,6 +398,13 @@ async function restore(v) {
   const doc = await postJSON('/api/versions/restore', { id: v.id },
                              `opening ${v.id}…`);
   if (doc.error) { bus.emit('msg', 'bot', '⚠ ' + doc.error); refresh(); return; }
+  if (doc.already) {
+    // the server found the doc already holds this content (e.g. a stale
+    // panel) — nothing was rebuilt, so there is nothing to re-fetch
+    bus.emit('msg', 'bot', `${v.id} is already on screen.`);
+    refresh();
+    return;
+  }
   await loadMesh(true, true);
   bus.emit('msg', 'bot',
     `Opened ${v.id} — ${v.label || 'no label'} (${v.features} features). ` +

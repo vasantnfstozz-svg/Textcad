@@ -729,3 +729,45 @@ def test_delete_after_refuses_from_below_the_cut(client, saved):
     r = client.post("/api/versions/delete_after", json={"id": "v1"}).json()
     assert "open v1 first" in r["error"]
     assert len(_versions(client)["versions"]) == 2
+
+
+# ------------------------------------ restoring what is already on screen ---
+
+def test_restoring_the_version_you_are_on_does_not_rebuild(client, saved):
+    """Clicking v16 while v16 is on screen used to reload the whole design —
+    ~30 s on the esp32 case, to arrive exactly where you already are."""
+    r = client.post("/api/versions/restore", json={"id": "v1"}).json()
+    assert r.get("already") is True and r["restored"] == "v1"
+    assert r["can_undo"] is False, \
+        "a no-op restore pushed an undo entry (so it rebuilt)"
+    assert _versions(client)["current"] == "v1"
+
+
+def test_restoring_the_current_version_while_DIRTY_really_restores(
+        client, saved):
+    """With unsaved edits the same click is meaningful again: it puts the
+    pristine version back, and the edits go to the undo stack."""
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    r = client.post("/api/versions/restore", json={"id": "v1"}).json()
+    assert "already" not in r
+    assert r["features"][1]["params"]["radius"] == 15    # v1's value is back
+    assert r["dirty"] is False
+    d = client.post("/api/undo").json()
+    assert d["features"][1]["params"]["radius"] == 11, "the edits were lost"
+
+
+def test_restoring_an_identical_TWIN_version_only_moves_the_marker(
+        client, saved):
+    """A->B->A: v3 holds the same content as v1. Standing on v3, clicking v1
+    must not rebuild — but it MUST move `current`, so the next edit branches
+    off v1 as asked."""
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    client.post("/api/save")                              # v2
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 15})
+    client.post("/api/save")                              # v3 == v1's content
+    r = client.post("/api/versions/restore", json={"id": "v1"}).json()
+    assert r.get("already") is True
+    assert _versions(client)["current"] == "v1"

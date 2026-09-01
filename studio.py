@@ -2095,6 +2095,26 @@ def restore_version(req: VersionReq):
                 **_doc_json()}
     if not req.id:
         return {"error": "which version? pass an id like 'v3'", **_doc_json()}
+    e = _entry()
+    # Fast path: the tab already HOLDS this content (clicking the version you
+    # are on, or an identical A->B->A node). Rebuilding the esp32 case for
+    # ~30 s to arrive exactly where you already are is absurd (user,
+    # 2026-09-01) — just move the current marker and say so. Compared by
+    # hash, not by id, so a stale panel can never skip a real restore.
+    try:
+        target = h.get(req.id)
+    except HistoryError as ex:
+        return {"error": str(ex), **_doc_json()}
+    if target.hash == content_hash(e["doc"].to_data()):
+        out = {"restored": req.id, "already": True}
+        try:
+            h.set_current(req.id)
+            e["hand_edits"] = 0
+            e["pending"] = []
+            _mark_clean()
+        except HistoryError as ex:
+            out["history_error"] = str(ex)
+        return {**out, **_doc_json()}
     try:
         snap = h.snapshot(req.id)
     except HistoryError as e:
