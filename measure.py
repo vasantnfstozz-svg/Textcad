@@ -1147,6 +1147,58 @@ def probe(doc, a: dict, b: dict | None, point, on: str = "a") -> dict:
                         "from": _r3(frm), "to": _r3(to)}
         # coaxial or overlapping at this station: fall through to nearest
 
+    # FLAT + ROUND (a pillar beside a wall): the same caliper, one side
+    # straightened out. The flat dot may only travel the band between the
+    # pillar's two FLANK points (user report 2026-09-01: "the flat side moves
+    # to over cross. it should move only till the pillar curve two points,
+    # becuase those are hightest point") — near the tangent the old across-ray
+    # grazed and its hit point skated away along the wall. At lateral offset t
+    # (clamped to ±r) the curve dot sits sqrt(r²−t²) from the axis toward the
+    # wall and the flat dot at the perpendicular foot at the SAME offset:
+    #     value(t) = d0 − sqrt(r²−t²)
+    # — the facing minimum, growing to d0 at the flanks, both dots moving in
+    # parallel and holding at the flanks together. Applies when the axis runs
+    # (near-)parallel to the wall; a tilted pair keeps the generic ray.
+    pl_s, pl_t = _plane(source), _plane(target)
+    round_s, round_t = _circle(source), _circle(target)
+    flat_round = None
+    if pl_s and round_t and round_t[2]:
+        flat_round = (pl_s, round_t)
+    elif pl_t and round_s and round_s[2]:
+        flat_round = (pl_t, round_s)
+    if flat_round:
+        (pc, n), (pos_r, r_r, dir_r) = flat_round
+        ua = _scale(dir_r, 1.0 / max(_norm(dir_r), 1e-12))
+        if abs(_dot(ua, n)) < 0.2:              # axis parallel-ish to the wall
+            axp = _add(pos_r, _scale(ua, _dot(_sub(p, pos_r), ua)))
+            dsign = _dot(_sub(axp, pc), n)
+            d0 = abs(dsign)
+            if d0 - r_r > TOUCH_TOL:
+                nh = _scale(n, 1.0 if dsign >= 0 else -1.0)  # wall -> axis
+                va = [ua[1]*nh[2] - ua[2]*nh[1],
+                      ua[2]*nh[0] - ua[0]*nh[2],
+                      ua[0]*nh[1] - ua[1]*nh[0]]
+                vn = _norm(va)
+                if vn > 1e-9:
+                    va = _scale(va, 1.0 / vn)
+                    t = max(-r_r, min(r_r, _dot(_sub(p, axp), va)))
+                    h = (max(r_r * r_r - t * t, 0.0)) ** 0.5
+                    curve_dot = _sub(_add(axp, _scale(va, t)), _scale(nh, h))
+                    flat_dot = _sub(_add(axp, _scale(va, t)), _scale(nh, d0))
+                    val = d0 - h
+                    src_is_flat = flat_round[0] is pl_s
+                    frm = flat_dot if src_is_flat else curve_dot
+                    to = curve_dot if src_is_flat else flat_dot
+                    out = {"kind": "probe", "mode": "across",
+                           "value": _r(val), "unit": MM, "label": _fmt(val),
+                           "from": _r3(frm), "to": _r3(to)}
+                    # the closest-anywhere footnote — one glance tells the
+                    # user how far off the facing minimum this station sits
+                    mdn = _min_distance(Vertex(*frm), target)
+                    if mdn is not None and mdn[0] < val - 5e-3:
+                        out["nearest"] = _r(mdn[0])
+                    return out
+
     md = _min_distance(v, target)
     if md is None:
         return {"error": "could not measure from there"}

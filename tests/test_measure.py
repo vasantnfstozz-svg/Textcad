@@ -488,18 +488,22 @@ def test_probe_reports_the_local_distance_not_the_witness_pair():
     a = sel(doc, "face", cyl)
     b = sel(doc, "face", wall)
 
-    # the plate is Z-CENTRED (spans -6..6), so a probe at z=9 on the boss sits
-    # 3 mm above the wall's top rim and the true minimum is the hypotenuse to
-    # that rim — the kernel measures the BOUNDED face, not its infinite plane
+    # CALIPER model (round 10): the boss axis runs parallel to the wall, so
+    # the probe is the flat+round caliper — value = d0 − sqrt(r²−t²) on the
+    # wall's PLANE, both dots at the same lateral offset. Facing (t=0): 35.
+    # A quarter turn (t=r) clamps at the flank: d0 = 40.
     near = measure.probe(doc, a, b, [-5, 0, 9], on="a")
     side = measure.probe(doc, a, b, [0, 5, 9], on="a")
     assert near.get("error") is None, near
     assert side.get("error") is None, side
-    assert near["value"] == pytest.approx((35**2 + 3**2) ** 0.5, abs=1e-3)
-    assert side["value"] == pytest.approx((40**2 + 3**2) ** 0.5, abs=1e-3)
-    # the witness point lands ON the wall, so the drawn line is honest
+    assert near["value"] == pytest.approx(35.0, abs=1e-3)
+    assert side["value"] == pytest.approx(40.0, abs=1e-3)
+    # the flat dot is the perpendicular foot on the wall plane
     assert near["to"][0] == pytest.approx(-40.0, abs=1e-6)
     assert near["from"] == pytest.approx([-5, 0, 9])
+    # flank clamp: BOTH dots hold at the pillar's extreme point
+    assert side["from"][1] == pytest.approx(5.0, abs=1e-3)
+    assert side["to"][1] == pytest.approx(5.0, abs=1e-3)
 
 
 def test_probe_on_parallel_faces_matches_the_plane_distance():
@@ -523,7 +527,9 @@ def test_probe_can_ride_the_second_selection_too():
     r = measure.probe(doc, sel(doc, "face", wall), sel(doc, "face", cyl),
                       [0, 5, 9], on="b")
     assert r.get("error") is None, r
-    assert r["value"] == pytest.approx((40**2 + 3**2) ** 0.5, abs=1e-3)
+    # caliper flank clamp: the point rides the boss a quarter turn from the
+    # wall, so the line holds at the flank and reads d0
+    assert r["value"] == pytest.approx(40.0, abs=1e-3)
 
 
 def test_probe_error_paths_never_raise():
@@ -576,9 +582,12 @@ def test_probe_measures_ACROSS_the_gap_not_to_the_nearest_spot():
     assert at3["nearest"] < at3["value"]
 
 
-def test_probe_falls_back_to_nearest_beyond_the_surface():
-    """Past the cylinder's shadow the across-ray misses — the probe must keep
-    answering (nearest) rather than going blank mid-drag."""
+def test_flat_dot_stops_at_the_pillar_flanks():
+    """User report (2026-09-01): "the flat side moves to over cross. it should
+    move only till the pillar curve two points, becuase those are hightest
+    point". Dragging the wall point past the bore's shadow clamps BOTH dots at
+    the flank — the flat dot holds at the flank's offset instead of running
+    on, and the value holds at d0."""
     doc = hole_doc()
     faces = doc.result().faces()
     wall = next(i for i, f in enumerate(faces)
@@ -587,8 +596,13 @@ def test_probe_falls_back_to_nearest_beyond_the_surface():
                if "CYLINDER" in str(f.geom_type))
     r = measure.probe(doc, sel(doc, "face", wall), sel(doc, "face", cyl),
                       [8, -30, 3], on="a")
-    assert r.get("mode") == "nearest", r
-    assert r["value"] == pytest.approx((8**2 + 30**2) ** 0.5 - 5, abs=1e-3)
+    assert r.get("mode") == "across", r
+    assert r["value"] == pytest.approx(30.0, abs=1e-6)
+    # both dots held at the flank offset (t clamped from 8 to r=5)
+    assert abs(r["from"][0]) == pytest.approx(5.0, abs=1e-3)
+    assert abs(r["to"][0]) == pytest.approx(5.0, abs=1e-3)
+    assert r["from"][1] == pytest.approx(-30.0, abs=1e-6)   # on the wall
+    assert r["to"][1] == pytest.approx(0.0, abs=1e-3)       # at the flank
 
 
 def test_probe_between_two_pillars_is_a_caliper():

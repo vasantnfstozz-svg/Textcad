@@ -271,6 +271,33 @@ Note for the future: this branch's definition of "sideways" has now been
 revised twice on user feedback (perpendicular-only → swing-one-dot → caliper).
 The caliper is the requested behaviour as of 2026-09-01.
 
+## User feedback, round 10 (2026-09-01)
+
+> "it perfectly works for the two curve face, but when i am trying a flat side
+> and curve side, the flat side moves to over cross. it should move only till
+> the pillar curve two point, becuase those are hightest point right … at the
+> same time the flat point should move, but till curve points"
+
+The caliper, extended to FLAT + ROUND. The old across-ray grazed near the
+tangent and its hit point skated away along the wall — the "over cross". Now,
+when the round shape's axis runs (near-)parallel to the wall (|axis·n| < 0.2),
+the probe is the one-sided caliper:
+
+    value(t) = d0 − sqrt(r²−t²),   t clamped to ±r
+
+— the flat dot at the perpendicular foot at lateral offset t, the curve dot
+sqrt(r²−t²) from the axis toward the wall, both sharing t (parallel), both
+holding together at the flanks ("the pillar curve two points"). The facing
+minimum is d0−r; the flank maximum is d0. A tilted pair (axis not parallel to
+the wall) keeps the generic across-ray + clamp. The "nearest anywhere"
+footnote rides along so a clamped 30 still shows the facing 25 one row down.
+
+This retired two old behaviours for the parallel wall-pillar pair, and their
+tests moved with it: the bounded-rim hypotenuse answers (the caliper measures
+the wall's plane at the model's foot point, which is smoother and never
+rim-jumps) and the nearest-fallback + freeze past the shadow (the clamp at the
+flank replaces both — the mode never flips, so nothing can dance).
+
 ## The problem, in the user's words
 
 > "we dont have proper scale to measure distance between two point … if i am
