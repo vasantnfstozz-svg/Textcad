@@ -211,7 +211,26 @@ def test_api_trace_png_fits_selected_face():
     assert max(eys) - min(eys) == pytest.approx(27, abs=0.5)
     assert (max(exs) + min(exs)) / 2 == pytest.approx(5, abs=0.5)
     assert (max(eys) + min(eys)) / 2 == pytest.approx(-2, abs=0.5)
+    assert d5["trace_info"].get("rotated") is False
     assert len(client.get("/api/doc").json()["features"]) == n_before
+
+    # WIDE art in a TALL box auto-rotates 90° to run along the long axis
+    # (user report 2026-09-01: the logo came in "vertical position, its no
+    # use" — fitted tiny instead of turning). 5:1 art, 30x60 box: unrotated
+    # caps at 0.9*30/5 = 5.4mm tall; rotated it runs 0.9*60 = 54mm long.
+    d6 = client.post("/api/trace-png", json={
+        "png_base64": b64w, "entities_only": True,
+        "fit_box": [30, 60, 0, 0]}).json()
+    assert not d6.get("error")
+    assert d6["trace_info"]["rotated"] is True
+    exs = [e["x"] + p[0] for e in d6["entities"] for p in e["points"]]
+    eys = [e["y"] + p[1] for e in d6["entities"] for p in e["points"]]
+    assert max(eys) - min(eys) == pytest.approx(54, abs=1.0)   # long side -> Y
+    assert max(exs) - min(exs) == pytest.approx(10.8, abs=0.5)
+    assert (max(exs) + min(exs)) / 2 == pytest.approx(0, abs=0.5)
+    assert (max(eys) + min(eys)) / 2 == pytest.approx(0, abs=0.5)
+    assert d6["trace_info"]["width_mm"] == pytest.approx(10.8, abs=0.5)
+    assert d6["trace_info"]["height_mm"] == pytest.approx(54, abs=1.0)
 
     # a curved face refuses with an honest message, doc unharmed (a ball has
     # exactly one face and it is curved — no flat face to steer to)

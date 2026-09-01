@@ -424,6 +424,8 @@ export function traceIntoSketch() {
       bus.emit('msg', 'bot',
         `Traced "${f.name}" into this sketch — ${i.width_mm}×${i.height_mm}mm` +
         (i.face_mm ? `, auto-fitted to the ${i.face_mm.join('×')}mm face` : '') +
+        (i.rotated ? `, rotated 90° to run along the face (Mirror ↔ then ` +
+                     `Mirror ↕ turns it 180°)` : '') +
         `, ${i.contours} outline(s), ${i.holes} hole(s). Move / Scale it if ` +
         `needed, then Finish Sketch and Extrude.`);
     }
