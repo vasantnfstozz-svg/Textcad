@@ -140,3 +140,70 @@ def test_api_trace_png_endpoint():
     d2 = client.post("/api/trace-png", json={
         "png_base64": b64, "feature_id": "logo", "height_mm": 20}).json()
     assert d2["trace_info"]["feature_id"] == "logo-2"
+
+
+def test_api_trace_png_fits_selected_face():
+    """A face pick makes the trace land ON that face (sketch_on_face), auto-
+    scaled to fit_margin x the face bbox — height-bound for tall art, width-
+    bound for wide art — and centred on the face (user request 2026-09-01)."""
+    import base64
+    from fastapi.testclient import TestClient
+    import document as dm
+    import studio
+    studio.STATE["docs"].clear()
+    studio.STATE["active"] = None
+    studio.STATE["seq"] = 0
+    doc = dm.Document("plate")
+    doc.add("base", "plate", {"width": 80, "depth": 40, "thickness": 10}, [])
+    studio._new_tab(doc)
+    studio._rebuild_and_mesh()
+    client = TestClient(studio.app)
+
+    # square art on the 80x40 top face -> height-bound: 0.9 * 40 = 36 x 36
+    b64 = base64.b64encode(_png(_donut_rgba())).decode()
+    d1 = client.post("/api/trace-png", json={
+        "png_base64": b64, "feature_id": "logo",
+        "face_center": [0, 0, 5], "face_normal": [0, 0, 1],
+        "body_feature_id": "base"}).json()
+    assert not d1.get("error")
+    logo = next(f for f in d1["features"] if f["id"] == "logo")
+    assert logo["op"] == "sketch_on_face" and logo["status"] == "ok"
+    assert logo["inputs"] == ["base"]
+    assert d1["trace_info"]["height_mm"] == pytest.approx(36, abs=0.5)
+    assert d1["trace_info"]["width_mm"] == pytest.approx(36, abs=0.5)
+    assert d1["trace_info"]["face_mm"] == [80.0, 40.0]
+    # centred on the face (the plate's top-face frame centre is 0,0)
+    xs = [e["x"] + p[0] for e in logo["params"]["entities"]
+          for p in e["points"]]
+    ys = [e["y"] + p[1] for e in logo["params"]["entities"]
+          for p in e["points"]]
+    assert (max(xs) + min(xs)) / 2 == pytest.approx(0, abs=0.5)
+    assert (max(ys) + min(ys)) / 2 == pytest.approx(0, abs=0.5)
+    # and it never overflows the face
+    assert max(xs) <= 40 and min(xs) >= -40
+    assert max(ys) <= 20 and min(ys) >= -20
+
+    # 5:1 wide art on the same face -> width-bound: 0.9 * 80 = 72 x 14.4
+    img = np.zeros((240, 1040, 4), np.uint8)
+    cv2.rectangle(img, (20, 20), (1019, 219), (0, 0, 0, 255), -1)
+    b64w = base64.b64encode(_png(img)).decode()
+    d2 = client.post("/api/trace-png", json={
+        "png_base64": b64w, "feature_id": "wide",
+        "face_center": [0, 0, 5], "face_normal": [0, 0, 1],
+        "body_feature_id": "base"}).json()
+    assert not d2.get("error")
+    assert d2["trace_info"]["width_mm"] == pytest.approx(72, abs=1.0)
+    assert d2["trace_info"]["height_mm"] == pytest.approx(14.4, abs=0.5)
+
+    # a curved face refuses with an honest message, doc unharmed (a ball has
+    # exactly one face and it is curved — no flat face to steer to)
+    doc2 = dm.Document("ball")
+    doc2.add("base", "ball", {"radius": 30}, [])
+    studio._new_tab(doc2)
+    studio._rebuild_and_mesh()
+    d4 = client.post("/api/trace-png", json={
+        "png_base64": b64, "feature_id": "bad",
+        "face_center": [30, 0, 0], "face_normal": [1, 0, 0],
+        "body_feature_id": "base"}).json()
+    assert d4.get("error") and "FLAT" in d4["error"]
+    assert not any(f["id"] == "bad" for f in d4["features"])

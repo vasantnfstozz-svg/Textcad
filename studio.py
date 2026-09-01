@@ -557,6 +557,12 @@ class TracePngReq(BaseModel):
     tol_mm: float = 0.15
     min_channel_mm: float = 0.0      # end-mill pre-fill; 0 = off
     connect_pieces: bool = False     # weld disjoint art into one piece
+    # fit-to-face: when a face was picked, the trace lands ON it as a
+    # sketch_on_face, auto-scaled to fit — height_mm is then ignored
+    face_center: list[float] | None = None
+    face_normal: list[float] | None = None
+    body_feature_id: str | None = None   # the feature the face was picked from
+    fit_margin: float = 0.9          # fraction of the face bbox the art fills
 
 
 class ImportStlReq(BaseModel):
@@ -1394,23 +1400,81 @@ def add_feature(req: FeatureReq):
             **_doc_json()}
 
 
+def _trace_face_fit(req: TracePngReq):
+    """The picked face's sketch-frame bbox, for fitting traced art onto it.
+    -> (body_feature_id, face_w, face_h, face_cx, face_cy)"""
+    body_id = req.body_feature_id
+    if not body_id or not any(f.id == body_id for f in _doc().features):
+        body_id = (_doc().leaf_solid_ids() or [None])[-1]
+    part = _doc()._parts.get(body_id) if body_id else None
+    if part is None:
+        raise ValueError("no solid to fit the logo onto — build a body "
+                         "first, or trace without a face selected")
+    outline = sketchlib.face_outline_2d(part, req.face_center, req.face_normal)
+    if not outline.get("planar") or not outline.get("outer"):
+        raise ValueError("that face is curved — pick a FLAT face to put "
+                         "the logo on")
+    xs = [p[0] for p in outline["outer"]]
+    ys = [p[1] for p in outline["outer"]]
+    return (body_id, max(xs) - min(xs), max(ys) - min(ys),
+            (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2)
+
+
 @app.post("/api/trace-png")
 def trace_png(req: TracePngReq):
     """Upload an image, get a SKETCH feature holding its traced outline —
-    then Extrude / Revolve / Cut it like any hand-drawn sketch."""
+    then Extrude / Revolve / Cut it like any hand-drawn sketch. With a
+    face_center (a real face pick) the sketch lands ON that face instead,
+    auto-scaled to fit it (fit_margin × the face bbox) and centred."""
     _snapshot()
     try:
         data = base64.b64decode(req.png_base64.split(",")[-1])
+        fit = None
+        height = req.height_mm
+        if req.face_center is not None:
+            fit = _trace_face_fit(req)
+            body_id, fw, fh, fcx, fcy = fit
+            # pick the trace height so the art fits the face both ways —
+            # image_to_entities' fidelity floors then run at the REAL scale
+            aspect = imgtrace.artwork_aspect(data)
+            height = max(1.0, min(1000.0, req.fit_margin * min(fh, fw / aspect)))
         ents, info = imgtrace.image_to_entities(
-            data, req.height_mm, req.tol_mm, req.min_channel_mm,
+            data, height, req.tol_mm, req.min_channel_mm,
             connect_pieces=req.connect_pieces)
+        if fit:
+            # residual exact-fit rescale (the traced bbox can differ a hair
+            # from the mask bbox after speckle removal / smoothing), then
+            # centre on the face. Scale points AND x/y — the entities are
+            # bbox-centred, so scaling one without the other silently no-ops.
+            s = min([1.0]
+                    + ([req.fit_margin * fw / info["width_mm"]]
+                       if info["width_mm"] > req.fit_margin * fw else [])
+                    + ([req.fit_margin * fh / info["height_mm"]]
+                       if info["height_mm"] > req.fit_margin * fh else []))
+            for e in ents:
+                if s < 1.0:
+                    e["x"] = round(e["x"] * s, 3)
+                    e["y"] = round(e["y"] * s, 3)
+                    e["points"] = [[round(px * s, 3), round(py * s, 3)]
+                                   for px, py in e["points"]]
+                e["x"] = round(e["x"] + fcx, 3)
+                e["y"] = round(e["y"] + fcy, 3)
+            info["width_mm"] = round(info["width_mm"] * s, 2)
+            info["height_mm"] = round(info["height_mm"] * s, 2)
+            info["face_mm"] = [round(fw, 2), round(fh, 2)]
         fid, n = req.feature_id, 2
         while any(f.id == fid for f in _doc().features):
             fid = f"{req.feature_id}-{n}"
             n += 1
-        _doc().add(fid, "sketch",
-                   {"plane": req.plane, "offset": req.offset,
-                    "entities": ents}, [])
+        if fit:
+            _doc().add(fid, "sketch_on_face",
+                       {"face_center": req.face_center,
+                        "face_normal": req.face_normal,
+                        "offset": req.offset, "entities": ents}, [body_id])
+        else:
+            _doc().add(fid, "sketch",
+                       {"plane": req.plane, "offset": req.offset,
+                        "entities": ents}, [])
     except Exception as e:        # decode/trace errors -> honest message
         _entry()["history"].pop()
         return {"error": str(e), **_doc_json()}

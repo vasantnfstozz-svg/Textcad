@@ -69,37 +69,65 @@ export async function actionSave() {
 }
 
 export function actionTracePng() {
+  if (modalGuard()) return;
+  // capture the face pick NOW — with a face selected the trace lands ON that
+  // face, auto-fitted (user request 2026-09-01: "select a face ... the logo
+  // should automatically scale ... it should perfectly fit that face")
+  const face = S.pickedFace;
   const inp = document.createElement('input');
   inp.type = 'file';
   inp.accept = 'image/png,image/jpeg';
   inp.onchange = async () => {
     const f = inp.files[0];
     if (!f) return;
-    const h = await askNumber('Trace image', {
-      label: 'Artwork height in mm',
-      value: 50, min: 0.1,
-      body: `Tracing ${f.name}. The width follows from the image's own aspect.`,
-      ok: 'Trace',
-    });
-    if (h === null) return;
+    let h = 50;
+    if (!face) {                    // no face picked -> the classic height ask
+      h = await askNumber('Trace image', {
+        label: 'Artwork height in mm',
+        value: 50, min: 0.1,
+        body: `Tracing ${f.name}. The width follows from the image's own aspect.`,
+        ok: 'Trace',
+      });
+      if (h === null) return;
+    }
     const dataUrl = await new Promise((res, rej) => {
       const r = new FileReader();
       r.onload = () => res(r.result);
       r.onerror = rej;
       r.readAsDataURL(f);
     });
-    const out = await postJSON('/api/trace-png', {
+    const body = {
       png_base64: dataUrl,
-      height_mm: parseFloat(h) || 50,
       feature_id: (f.name.replace(/\.[^.]*$/, '').replace(/[^\w-]+/g, '-')
                    .slice(0, 24) || 'traced-image'),
-    }, 'tracing…');
+    };
+    if (face) {
+      body.face_center = face.center;
+      body.face_normal = face.normal || null;
+      body.body_feature_id = face.body || null;
+    } else {
+      body.height_mm = parseFloat(h) || 50;
+    }
+    const out = await postJSON('/api/trace-png', body, 'tracing…');
     if (out && !out.error) {
+      // the viewport does NOT follow doc-updated — without this the traced
+      // sketch only appeared in the tree (the "upload does nothing when a
+      // design is open" report, 2026-09-01)
+      loadMesh(out.features.length === 1);
       const i = out.trace_info || {};
-      bus.emit('msg', 'bot',
-        `Traced "${f.name}" into sketch "${i.feature_id}" — ` +
-        `${i.width_mm}×${i.height_mm}mm, ${i.contours} outline(s), ` +
-        `${i.holes} hole(s). Select it in the tree and Extrude.`);
+      bus.emit('msg', 'bot', face
+        ? `Traced "${f.name}" onto the selected face as sketch ` +
+          `"${i.feature_id}" — auto-fitted to ${i.width_mm}×${i.height_mm}mm ` +
+          `on the ${(i.face_mm || []).join('×')}mm face, ${i.contours} ` +
+          `outline(s), ${i.holes} hole(s). Extrude it for a raised logo, or ` +
+          `extrude with Cut for an engraving. To resize it, open the sketch ` +
+          `and use Scale.`
+        : `Traced "${f.name}" into sketch "${i.feature_id}" — ` +
+          `${i.width_mm}×${i.height_mm}mm, ${i.contours} outline(s), ` +
+          `${i.holes} hole(s). Select it in the tree and Extrude.` +
+          (out.features.some(x => x.volume != null)
+            ? ' Tip: click a face first and the logo lands on it, ' +
+              'auto-fitted to size.' : ''));
     }
   };
   inp.click();

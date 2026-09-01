@@ -67,6 +67,21 @@ def _mask_from_image(img) -> np.ndarray:
     return m.astype(np.uint8)
 
 
+def artwork_aspect(data: bytes) -> float:
+    """width/height of the image's traceable artwork bbox — from the SAME mask
+    (same polarity rules) image_to_entities traces, so a fit computed from it
+    matches what the trace will actually produce. Needed to pick the trace
+    height BEFORE tracing when fitting art onto a face."""
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
+    mask = _mask_from_image(img)
+    ys, xs = np.where(mask)
+    if len(ys) == 0:
+        raise ValueError("no artwork found in the image")
+    w = int(xs.max()) - int(xs.min()) + 1
+    h = int(ys.max()) - int(ys.min()) + 1
+    return w / h
+
+
 def _bridge_pieces(solid: np.ndarray, thickness: int) -> np.ndarray:
     """Connect disjoint art pieces (highlight-streak splits) by drawing a
     thick line between the globally closest pair until one piece remains."""
