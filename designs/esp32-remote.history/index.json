@@ -179,11 +179,16 @@
       "created": "2026-08-26T10:43:44+00:00",
       "label": "esp32-remote v10.1: autonomIQ engraved along the wire slot, D5.5 ESP pillars",
       "source": "backfill:git",
-      "hash": "sha1:1d183f832df0c17d23d6281ec0e8bda91b7b925f",
+      "hash": "sha1:37794b93a4b8a787cf0663ab43ba39322d4d2681",
       "features": 79,
-      "spec": {},
+      "spec": {
+        "features": 79,
+        "ok": true,
+        "volume": 107484.78
+      },
       "commit": "09638f900f69ddfd00ccf2c9553abedd5c718973",
-      "rebuildable": null
+      "rebuildable": true
     }
-  ]
+  ],
+  "id_floor": 0
 }

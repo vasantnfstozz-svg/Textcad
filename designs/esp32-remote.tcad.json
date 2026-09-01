@@ -189,10 +189,10 @@
     },
     {
       "id": "keypad_recess_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "top",
-        "offset": 0.0,
+        "plane": "XY",
+        "offset": 10.0,
         "entities": [
           {
             "kind": "path",
@@ -292,17 +292,14 @@
           }
         ]
       },
-      "inputs": [
-        "body"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "keypad_recess_tool",
       "op": "extrude",
       "params": {
-        "amount": 2.0,
-        "flip": true
+        "amount": 3.0
       },
       "inputs": [
         "keypad_recess_sketch"
@@ -321,10 +318,10 @@
     },
     {
       "id": "keypad_pilots_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "top",
-        "offset": -2.0,
+        "plane": "XY",
+        "offset": 6.0,
         "entities": [
           {
             "kind": "circle",
@@ -356,17 +353,14 @@
           }
         ]
       },
-      "inputs": [
-        "keypad_recess"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "keypad_pilots_tool",
       "op": "extrude",
       "params": {
-        "amount": 4.0,
-        "flip": true
+        "amount": 4.5
       },
       "inputs": [
         "keypad_pilots_sketch"
@@ -385,10 +379,10 @@
     },
     {
       "id": "tail_trench_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "top",
-        "offset": -2.0,
+        "plane": "XY",
+        "offset": 7.8,
         "entities": [
           {
             "kind": "path",
@@ -488,17 +482,14 @@
           }
         ]
       },
-      "inputs": [
-        "keypad_pilots"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "tail_trench_tool",
       "op": "extrude",
       "params": {
-        "amount": 2.2,
-        "flip": true
+        "amount": 5.2
       },
       "inputs": [
         "tail_trench_sketch"
@@ -517,10 +508,10 @@
     },
     {
       "id": "logo_0_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "top",
-        "offset": -4.2,
+        "plane": "XY",
+        "offset": 7.0,
         "entities": [
           {
             "kind": "polygon",
@@ -1932,22 +1923,19 @@
           }
         ]
       },
-      "inputs": [
-        "tail_trench"
-      ],
-      "suppressed": false
+      "inputs": [],
+      "suppressed": true
     },
     {
       "id": "logo_0_tool",
       "op": "extrude",
       "params": {
-        "amount": 0.8,
-        "flip": true
+        "amount": 1.0
       },
       "inputs": [
         "logo_0_sketch"
       ],
-      "suppressed": false
+      "suppressed": true
     },
     {
       "id": "logo_0",
@@ -1957,14 +1945,14 @@
         "tail_trench",
         "logo_0_tool"
       ],
-      "suppressed": false
+      "suppressed": true
     },
     {
       "id": "logo_1_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "top",
-        "offset": -4.2,
+        "plane": "XY",
+        "offset": 7.0,
         "entities": [
           {
             "kind": "polygon",
@@ -2376,22 +2364,19 @@
           }
         ]
       },
-      "inputs": [
-        "logo_0"
-      ],
-      "suppressed": false
+      "inputs": [],
+      "suppressed": true
     },
     {
       "id": "logo_1_tool",
       "op": "extrude",
       "params": {
-        "amount": 0.8,
-        "flip": true
+        "amount": 1.0
       },
       "inputs": [
         "logo_1_sketch"
       ],
-      "suppressed": false
+      "suppressed": true
     },
     {
       "id": "logo_1",
@@ -2401,14 +2386,14 @@
         "logo_0",
         "logo_1_tool"
       ],
-      "suppressed": false
+      "suppressed": true
     },
     {
       "id": "tail_fold_scoop_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "top",
-        "offset": -2.0,
+        "plane": "XY",
+        "offset": 6.0,
         "entities": [
           {
             "kind": "path",
@@ -2494,17 +2479,14 @@
           }
         ]
       },
-      "inputs": [
-        "logo_1"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "tail_fold_scoop_tool",
       "op": "extrude",
       "params": {
-        "amount": 4.0,
-        "flip": true
+        "amount": 7.0
       },
       "inputs": [
         "tail_fold_scoop_sketch"
@@ -2523,9 +2505,9 @@
     },
     {
       "id": "cav_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
+        "plane": "XY",
         "offset": 3.0,
         "entities": [
           {
@@ -2684,16 +2666,14 @@
           }
         ]
       },
-      "inputs": [
-        "tail_fold_scoop"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "cav_tool",
       "op": "extrude",
       "params": {
-        "amount": 13.0
+        "amount": 10.0
       },
       "inputs": [
         "cav_sketch"
@@ -2702,9 +2682,9 @@
     },
     {
       "id": "isl1_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
+        "plane": "XY",
         "offset": 2.0,
         "entities": [
           {
@@ -2929,16 +2909,14 @@
           }
         ]
       },
-      "inputs": [
-        "tail_fold_scoop"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "isl1_tool",
       "op": "extrude",
       "params": {
-        "amount": 16.0
+        "amount": 12.0
       },
       "inputs": [
         "isl1_sketch"
@@ -2947,9 +2925,9 @@
     },
     {
       "id": "isl2_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
+        "plane": "XY",
         "offset": 2.0,
         "entities": [
           {
@@ -3010,16 +2988,14 @@
           }
         ]
       },
-      "inputs": [
-        "tail_fold_scoop"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "isl2_tool",
       "op": "extrude",
       "params": {
-        "amount": 16.0
+        "amount": 12.0
       },
       "inputs": [
         "isl2_sketch"
@@ -3049,9 +3025,9 @@
     },
     {
       "id": "esp_pillar_trim_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
+        "plane": "XY",
         "offset": 7.0,
         "entities": [
           {
@@ -3084,17 +3060,14 @@
           }
         ]
       },
-      "inputs": [
-        "main_cavity"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "esp_pillar_trim_tool",
       "op": "extrude",
       "params": {
-        "amount": 5.0,
-        "through": true
+        "amount": 6.0
       },
       "inputs": [
         "esp_pillar_trim_sketch"
@@ -3113,9 +3086,9 @@
     },
     {
       "id": "batt_rim_trim_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
+        "plane": "XY",
         "offset": 9.0,
         "entities": [
           {
@@ -3284,17 +3257,14 @@
           }
         ]
       },
-      "inputs": [
-        "esp_pillar_trim"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "batt_rim_trim_tool",
       "op": "extrude",
       "params": {
-        "amount": 3.0,
-        "through": true
+        "amount": 4.0
       },
       "inputs": [
         "batt_rim_trim_sketch"
@@ -3313,9 +3283,9 @@
     },
     {
       "id": "sd_pillar_trim_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
+        "plane": "XY",
         "offset": 7.0,
         "entities": [
           {
@@ -3348,17 +3318,14 @@
           }
         ]
       },
-      "inputs": [
-        "batt_rim_trim"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "sd_pillar_trim_tool",
       "op": "extrude",
       "params": {
-        "amount": 5.0,
-        "through": true
+        "amount": 6.0
       },
       "inputs": [
         "sd_pillar_trim_sketch"
@@ -3377,9 +3344,9 @@
     },
     {
       "id": "oled_pillar_trim_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
+        "plane": "XY",
         "offset": 9.5,
         "entities": [
           {
@@ -3412,17 +3379,14 @@
           }
         ]
       },
-      "inputs": [
-        "sd_pillar_trim"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "oled_pillar_trim_tool",
       "op": "extrude",
       "params": {
-        "amount": 2.5,
-        "through": true
+        "amount": 3.5
       },
       "inputs": [
         "oled_pillar_trim_sketch"
@@ -3441,10 +3405,10 @@
     },
     {
       "id": "batt_seat_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
-        "offset": 3.0,
+        "plane": "XY",
+        "offset": 2.5,
         "entities": [
           {
             "kind": "path",
@@ -3530,17 +3494,14 @@
           }
         ]
       },
-      "inputs": [
-        "oled_pillar_trim"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "batt_seat_tool",
       "op": "extrude",
       "params": {
-        "amount": 0.5,
-        "flip": true
+        "amount": 1.0
       },
       "inputs": [
         "batt_seat_sketch"
@@ -3559,10 +3520,10 @@
     },
     {
       "id": "buzzer_seat_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
-        "offset": 3.0,
+        "plane": "XY",
+        "offset": 2.5,
         "entities": [
           {
             "kind": "circle",
@@ -3573,17 +3534,14 @@
           }
         ]
       },
-      "inputs": [
-        "batt_seat"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "buzzer_seat_tool",
       "op": "extrude",
       "params": {
-        "amount": 0.5,
-        "flip": true
+        "amount": 1.0
       },
       "inputs": [
         "buzzer_seat_sketch"
@@ -3602,10 +3560,10 @@
     },
     {
       "id": "esp_foot_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
-        "offset": 3.0,
+        "plane": "XY",
+        "offset": 2.5,
         "entities": [
           {
             "kind": "path",
@@ -3779,17 +3737,14 @@
           }
         ]
       },
-      "inputs": [
-        "buzzer_seat"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "esp_foot_tool",
       "op": "extrude",
       "params": {
-        "amount": 0.5,
-        "flip": true
+        "amount": 1.0
       },
       "inputs": [
         "esp_foot_sketch"
@@ -3808,10 +3763,10 @@
     },
     {
       "id": "oled_foot_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
-        "offset": 3.0,
+        "plane": "XY",
+        "offset": 2.5,
         "entities": [
           {
             "kind": "path",
@@ -3985,17 +3940,14 @@
           }
         ]
       },
-      "inputs": [
-        "esp_foot"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "oled_foot_tool",
       "op": "extrude",
       "params": {
-        "amount": 0.5,
-        "flip": true
+        "amount": 1.0
       },
       "inputs": [
         "oled_foot_sketch"
@@ -4014,10 +3966,10 @@
     },
     {
       "id": "sd_foot_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
-        "offset": 3.0,
+        "plane": "XY",
+        "offset": 2.5,
         "entities": [
           {
             "kind": "path",
@@ -4191,17 +4143,14 @@
           }
         ]
       },
-      "inputs": [
-        "oled_foot"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "sd_foot_tool",
       "op": "extrude",
       "params": {
-        "amount": 0.5,
-        "flip": true
+        "amount": 1.0
       },
       "inputs": [
         "sd_foot_sketch"
@@ -4220,10 +4169,10 @@
     },
     {
       "id": "lora_foot_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
-        "offset": 3.0,
+        "plane": "XY",
+        "offset": 2.5,
         "entities": [
           {
             "kind": "path",
@@ -4309,17 +4258,14 @@
           }
         ]
       },
-      "inputs": [
-        "sd_foot"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "lora_foot_tool",
       "op": "extrude",
       "params": {
-        "amount": 0.5,
-        "flip": true
+        "amount": 1.0
       },
       "inputs": [
         "lora_foot_sketch"
@@ -4338,10 +4284,10 @@
     },
     {
       "id": "esp_pilots_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
-        "offset": 7.0,
+        "plane": "XY",
+        "offset": 3.0,
         "entities": [
           {
             "kind": "circle",
@@ -4373,17 +4319,14 @@
           }
         ]
       },
-      "inputs": [
-        "lora_foot"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "esp_pilots_tool",
       "op": "extrude",
       "params": {
-        "amount": 4.0,
-        "flip": true
+        "amount": 4.5
       },
       "inputs": [
         "esp_pilots_sketch"
@@ -4402,10 +4345,10 @@
     },
     {
       "id": "sd_pilots_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
-        "offset": 7.0,
+        "plane": "XY",
+        "offset": 3.0,
         "entities": [
           {
             "kind": "circle",
@@ -4437,17 +4380,14 @@
           }
         ]
       },
-      "inputs": [
-        "esp_pilots"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "sd_pilots_tool",
       "op": "extrude",
       "params": {
-        "amount": 4.0,
-        "flip": true
+        "amount": 4.5
       },
       "inputs": [
         "sd_pilots_sketch"
@@ -4466,10 +4406,10 @@
     },
     {
       "id": "oled_pilots_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
-        "offset": 9.5,
+        "plane": "XY",
+        "offset": 5.5,
         "entities": [
           {
             "kind": "circle",
@@ -4501,17 +4441,14 @@
           }
         ]
       },
-      "inputs": [
-        "sd_pilots"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "oled_pilots_tool",
       "op": "extrude",
       "params": {
-        "amount": 4.0,
-        "flip": true
+        "amount": 4.5
       },
       "inputs": [
         "oled_pilots_sketch"
@@ -4530,10 +4467,10 @@
     },
     {
       "id": "clamp_pilots_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "top",
-        "offset": 0.0,
+        "plane": "XY",
+        "offset": 7.0,
         "entities": [
           {
             "kind": "circle",
@@ -4565,17 +4502,14 @@
           }
         ]
       },
-      "inputs": [
-        "oled_pilots"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "clamp_pilots_tool",
       "op": "extrude",
       "params": {
-        "amount": 5.0,
-        "flip": true
+        "amount": 5.5
       },
       "inputs": [
         "clamp_pilots_sketch"
@@ -4594,10 +4528,10 @@
     },
     {
       "id": "strap_pilots_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "bottom",
-        "offset": 9.0,
+        "plane": "XY",
+        "offset": 5.0,
         "entities": [
           {
             "kind": "circle",
@@ -4615,17 +4549,14 @@
           }
         ]
       },
-      "inputs": [
-        "clamp_pilots"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "strap_pilots_tool",
       "op": "extrude",
       "params": {
-        "amount": 4.0,
-        "flip": true
+        "amount": 4.5
       },
       "inputs": [
         "strap_pilots_sketch"
@@ -4644,10 +4575,10 @@
     },
     {
       "id": "ringA_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "top",
-        "offset": 0.0,
+        "plane": "XY",
+        "offset": 11.4,
         "entities": [
           {
             "kind": "path",
@@ -4805,17 +4736,14 @@
           }
         ]
       },
-      "inputs": [
-        "strap_pilots"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "ringA_tool",
       "op": "extrude",
       "params": {
-        "amount": 0.5999999999999996,
-        "flip": true
+        "amount": 1.3
       },
       "inputs": [
         "ringA_sketch"
@@ -4824,10 +4752,10 @@
     },
     {
       "id": "ringB_sketch",
-      "op": "sketch_on_face",
+      "op": "sketch",
       "params": {
-        "face": "top",
-        "offset": 0.1,
+        "plane": "XY",
+        "offset": 11.3,
         "entities": [
           {
             "kind": "path",
@@ -4985,17 +4913,14 @@
           }
         ]
       },
-      "inputs": [
-        "strap_pilots"
-      ],
+      "inputs": [],
       "suppressed": false
     },
     {
       "id": "ringB_tool",
       "op": "extrude",
       "params": {
-        "amount": 0.7999999999999996,
-        "flip": true
+        "amount": 1.6
       },
       "inputs": [
         "ringB_sketch"
