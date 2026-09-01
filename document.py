@@ -769,19 +769,44 @@ class Document:
     def _spec_obj(self) -> inspector.Spec:
         return inspector.spec_from_dict(self.spec)
 
+    def consumed_ids(self) -> set[str]:
+        """Ids swallowed by a downstream feature — what should NOT be shown on
+        its own (the viewport's bodies and floating sketches both filter on
+        this).
+
+        Face-reference ops (sketch_on_face, extrude_face) do NOT consume their
+        body input — they only point at a face. Counting them as consumers made
+        the base body vanish as soon as a face sketch on it was extruded.
+
+        Neither does a SUPPRESSED (struck-out) feature: its geometry is gone,
+        so whatever it used must come back on screen. A struck-out logo cut
+        kept "consuming" the case body, so the moment the next extrude made a
+        new leaf, the whole body vanished from the viewport (reported
+        2026-09-01: "the whole back body vanished"). But a suppressed node IS
+        a pass-through to its first input during rebuild — so an ACTIVE
+        feature consuming a struck id really consumes whatever that id
+        resolves to, and the resolution must follow the chain."""
+        by_id = {f.id: f for f in self.features}
+
+        def resolve(dep: str) -> str:
+            seen = set()
+            while (dep in by_id and by_id[dep].suppressed
+                   and by_id[dep].inputs and dep not in seen):
+                seen.add(dep)
+                dep = by_id[dep].inputs[0]
+            return dep
+
+        return {resolve(dep) for f in self.features
+                if not f.suppressed and f.op not in sk.FACE_REFERENCE_OPS
+                for dep in f.inputs}
+
     def leaf_solid_ids(self) -> list[str]:
         """Ids of every built SOLID body that no downstream feature consumes —
         the bodies that should be VISIBLE in the viewport. Multiple leaves are
         normal mid-build (a base plate and a wall before they are fused); the
         old viewport showed only the last one, so positioning a second body was
-        blind. The last leaf is the result; the rest render as ghosts.
-
-        Face-reference ops (sketch_on_face, extrude_face) do NOT consume their
-        body input — they only point at a face. Counting them as consumers made
-        the base body vanish as soon as a face sketch on it was extruded."""
-        consumed = {dep for f in self.features
-                    if f.op not in sk.FACE_REFERENCE_OPS
-                    for dep in f.inputs}
+        blind. The last leaf is the result; the rest render as ghosts."""
+        consumed = self.consumed_ids()
         out = []
         for f in self.features:
             if f.suppressed or f.id in consumed:
