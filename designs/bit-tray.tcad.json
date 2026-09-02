@@ -1,0 +1,833 @@
+{
+  "name": "bit-tray",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      100,
+      60,
+      24.5
+    ],
+    "tol": 0.3
+  },
+  "features": [
+    {
+      "id": "base_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "rectangle",
+            "w": 100,
+            "h": 60,
+            "x": 0,
+            "y": 0,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "base",
+      "op": "extrude",
+      "params": {
+        "amount": 24.5
+      },
+      "inputs": [
+        "base_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "box_pocket_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "path",
+            "start": [
+              -38,
+              -24
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  38,
+                  -24
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  42.243,
+                  -22.243
+                ],
+                "to": [
+                  44,
+                  -18
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  44,
+                  18
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  42.243,
+                  22.243
+                ],
+                "to": [
+                  38,
+                  24
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -38,
+                  24
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -42.243,
+                  22.243
+                ],
+                "to": [
+                  -44,
+                  18
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -44,
+                  -18
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -42.243,
+                  -22.243
+                ],
+                "to": [
+                  -38,
+                  -24
+                ]
+              }
+            ],
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "base"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "box_pocket_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 12,
+        "flip": true
+      },
+      "inputs": [
+        "box_pocket_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "box_pocket_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "base",
+        "box_pocket_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_10mm_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": -12,
+        "entities": [
+          {
+            "kind": "slot",
+            "length": 30,
+            "height": 10,
+            "x": -25,
+            "y": 15.25,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "box_pocket_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_10mm_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 8
+      },
+      "inputs": [
+        "rib_10mm_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_10mm_round",
+      "op": "fillet",
+      "params": {
+        "radius": 0.8,
+        "edges": "top"
+      },
+      "inputs": [
+        "rib_10mm_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_10mm_fuse",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "box_pocket_cut",
+        "rib_10mm_round"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_8mm_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": -12,
+        "entities": [
+          {
+            "kind": "slot",
+            "length": 30,
+            "height": 8.5,
+            "x": -25,
+            "y": 2,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "rib_10mm_fuse"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_8mm_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 6
+      },
+      "inputs": [
+        "rib_8mm_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_8mm_round",
+      "op": "fillet",
+      "params": {
+        "radius": 0.8,
+        "edges": "top"
+      },
+      "inputs": [
+        "rib_8mm_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_8mm_fuse",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "rib_10mm_fuse",
+        "rib_8mm_round"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_5mm_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": -12,
+        "entities": [
+          {
+            "kind": "slot",
+            "length": 30,
+            "height": 5.5,
+            "x": -25,
+            "y": -9,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "rib_8mm_fuse"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_5mm_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 4
+      },
+      "inputs": [
+        "rib_5mm_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_5mm_round",
+      "op": "fillet",
+      "params": {
+        "radius": 0.8,
+        "edges": "top"
+      },
+      "inputs": [
+        "rib_5mm_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_5mm_fuse",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "rib_8mm_fuse",
+        "rib_5mm_round"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_4mm_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": -12,
+        "entities": [
+          {
+            "kind": "slot",
+            "length": 30,
+            "height": 4.5,
+            "x": -25,
+            "y": -18,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "rib_5mm_fuse"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_4mm_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 3
+      },
+      "inputs": [
+        "rib_4mm_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_4mm_round",
+      "op": "fillet",
+      "params": {
+        "radius": 0.8,
+        "edges": "top"
+      },
+      "inputs": [
+        "rib_4mm_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "rib_4mm_fuse",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "rib_5mm_fuse",
+        "rib_4mm_round"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "tri_island_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": -12,
+        "entities": [
+          {
+            "kind": "path",
+            "start": [
+              14.621,
+              7.963
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  11.261,
+                  14.071
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  11.322,
+                  18.036
+                ],
+                "to": [
+                  14.767,
+                  20
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  23.233,
+                  20
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  26.678,
+                  18.036
+                ],
+                "to": [
+                  26.739,
+                  14.071
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  23.379,
+                  7.963
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  19,
+                  5.373
+                ],
+                "to": [
+                  14.621,
+                  7.963
+                ]
+              }
+            ],
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "rib_4mm_fuse"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "tri_island_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 6
+      },
+      "inputs": [
+        "tri_island_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "tri_island_round",
+      "op": "fillet",
+      "params": {
+        "radius": 0.8,
+        "edges": "top"
+      },
+      "inputs": [
+        "tri_island_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "tri_island_fuse",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "rib_4mm_fuse",
+        "tri_island_round"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "round_island_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": -12,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 8,
+            "x": 33.5,
+            "y": 3,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "tri_island_fuse"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "round_island_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 12
+      },
+      "inputs": [
+        "round_island_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "round_island_fuse",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "tri_island_fuse",
+        "round_island_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pins_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": -12,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 1,
+            "x": 7,
+            "y": -16,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.5,
+            "x": 13,
+            "y": -16,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2,
+            "x": 20,
+            "y": -16,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.5,
+            "x": 28,
+            "y": -16,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 3,
+            "x": 37,
+            "y": -16,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "round_island_fuse"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pins_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 4.55
+      },
+      "inputs": [
+        "pins_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pin_recess_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face_center": [
+          37,
+          -16,
+          17.05
+        ],
+        "face_normal": [
+          0,
+          0,
+          1
+        ],
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 2,
+            "x": 37,
+            "y": -16,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "pins_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pin_recess_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 1,
+        "flip": true
+      },
+      "inputs": [
+        "pin_recess_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pin_recess_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "pins_vol",
+        "pin_recess_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pins_round",
+      "op": "fillet",
+      "params": {
+        "radius": 0.4,
+        "edges": "top"
+      },
+      "inputs": [
+        "pin_recess_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "pins_fuse",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "round_island_fuse",
+        "pins_round"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "slotboss_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": -12,
+        "entities": [
+          {
+            "kind": "slot",
+            "length": 10,
+            "height": 3,
+            "x": 0,
+            "y": -2,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "pins_fuse"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "slotboss_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 4.55
+      },
+      "inputs": [
+        "slotboss_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "slotboss_round",
+      "op": "fillet",
+      "params": {
+        "radius": 0.8,
+        "edges": "top"
+      },
+      "inputs": [
+        "slotboss_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "slotboss_fuse",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "pins_fuse",
+        "slotboss_round"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "post_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": -12,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 5.656854249492381,
+            "x": 0,
+            "y": 13,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "slotboss_fuse"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "post_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 4.55
+      },
+      "inputs": [
+        "post_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "post_recess_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 3.6055512754639896,
+            "x": 0,
+            "y": 13,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "post_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "post_recess_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 1,
+        "flip": true
+      },
+      "inputs": [
+        "post_recess_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "post_recess_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "post_vol",
+        "post_recess_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "post_round",
+      "op": "fillet",
+      "params": {
+        "radius": 0.8,
+        "edges": "top"
+      },
+      "inputs": [
+        "post_recess_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "post_fuse",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "slotboss_fuse",
+        "post_round"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "edge_round",
+      "op": "fillet",
+      "params": {
+        "radius": 0.8,
+        "edges": "top"
+      },
+      "inputs": [
+        "post_fuse"
+      ],
+      "suppressed": false
+    }
+  ]
+}

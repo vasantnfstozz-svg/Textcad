@@ -1,0 +1,94 @@
+{
+  "schema": 1,
+  "design_id": "d_46dd58f251e7",
+  "name": "thread-case",
+  "current": "v5",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-09-01T11:07:45+00:00",
+      "label": "opened thread-case",
+      "source": "open",
+      "hash": "sha1:d67a895864d8ee9a0ad7271b547df33339d43752",
+      "features": 32,
+      "spec": {
+        "features": 32,
+        "ok": true,
+        "volume": 93987.58
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v2",
+      "parent": "v1",
+      "created": "2026-09-01T11:12:50+00:00",
+      "label": "fillet added",
+      "source": "tool:fillet",
+      "hash": "sha1:a4a3cb9b06752809599d19bcc8ad527948ed86c2",
+      "features": 33,
+      "spec": {
+        "features": 33,
+        "ok": false,
+        "volume": 93987.58
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v3",
+      "parent": "v2",
+      "created": "2026-09-01T11:12:58+00:00",
+      "label": "struck out fillet1",
+      "source": "tool:strike",
+      "hash": "sha1:53e2acc4221784ee7ae88eb22617dbd8487d5170",
+      "features": 33,
+      "spec": {
+        "features": 33,
+        "ok": true,
+        "volume": 93987.58
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v4",
+      "parent": "v3",
+      "created": "2026-09-01T11:43:32+00:00",
+      "label": "reloaded from disk",
+      "source": "open",
+      "hash": "sha1:8c12f7ecdbec10c716693fd9263dcd2b500630e0",
+      "features": 58,
+      "spec": {
+        "features": 58,
+        "ok": true,
+        "volume": 93785.6
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v5",
+      "parent": "v4",
+      "created": "2026-09-01T12:26:19+00:00",
+      "label": "reloaded from disk",
+      "source": "open",
+      "hash": "sha1:732fbd43d44bd88377bcbd0bf73b4ebbf76e3760",
+      "features": 48,
+      "spec": {
+        "features": 48,
+        "ok": true,
+        "volume": 171206.73
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    }
+  ]
+}

@@ -1,0 +1,821 @@
+{
+  "name": "thread-case",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      117,
+      79,
+      19
+    ],
+    "holes": {
+      "4.0": 2,
+      "7.0": 1,
+      "1.45": 6,
+      "1.7": 4,
+      "2.25": 3,
+      "2.5": 3,
+      "2.75": 1,
+      "3.3": 1,
+      "4.5": 1,
+      "4.75": 1,
+      "5.5": 1
+    },
+    "tol": 0.15
+  },
+  "features": [
+    {
+      "id": "base_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "rectangle",
+            "w": 117,
+            "h": 79,
+            "x": 0,
+            "y": 0,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "base",
+      "op": "extrude",
+      "params": {
+        "amount": 19
+      },
+      "inputs": [
+        "base_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m25_bores_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 1.45,
+            "x": 0,
+            "y": -31.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.45,
+            "x": -50.5,
+            "y": 0,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.45,
+            "x": -40,
+            "y": -11,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.45,
+            "x": -40,
+            "y": 11,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.45,
+            "x": 0,
+            "y": -11,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.45,
+            "x": 0,
+            "y": 11,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "base"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m25_bores_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 7,
+        "flip": true
+      },
+      "inputs": [
+        "m25_bores_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m25_bores_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "base",
+        "m25_bores_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m3_bores_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 1.7,
+            "x": -52.5,
+            "y": -33.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.7,
+            "x": 52.5,
+            "y": -33.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.7,
+            "x": 52.5,
+            "y": 33.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 1.7,
+            "x": -52.5,
+            "y": 33.5,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "m25_bores_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m3_bores_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 8,
+        "flip": true
+      },
+      "inputs": [
+        "m3_bores_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m3_bores_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "m25_bores_cut",
+        "m3_bores_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m4_bores_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 2.25,
+            "x": 0,
+            "y": 31.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.25,
+            "x": 50.5,
+            "y": 0,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.25,
+            "x": 18,
+            "y": 18,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "m3_bores_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m4_bores_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 9,
+        "flip": true
+      },
+      "inputs": [
+        "m4_bores_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m4_bores_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "m3_bores_cut",
+        "m4_bores_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m5_bore_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 2.75,
+            "x": 14,
+            "y": -16,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "m4_bores_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m5_bore_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 10,
+        "flip": true
+      },
+      "inputs": [
+        "m5_bore_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m5_bore_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "m4_bores_cut",
+        "m5_bore_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m6_bore_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 3.3,
+            "x": 37,
+            "y": 12,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "m5_bore_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m6_bore_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 11,
+        "flip": true
+      },
+      "inputs": [
+        "m6_bore_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m6_bore_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "m5_bore_cut",
+        "m6_bore_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m8_bore_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 4.5,
+            "x": 36,
+            "y": -14,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "m6_bore_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m8_bore_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 13,
+        "flip": true
+      },
+      "inputs": [
+        "m8_bore_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "m8_bore_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "m6_bore_cut",
+        "m8_bore_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cb_m25_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 2.5,
+            "x": 0,
+            "y": -31.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.5,
+            "x": -40,
+            "y": -11,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 2.5,
+            "x": -40,
+            "y": 11,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "m8_bore_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cb_m25_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 2.8,
+        "flip": true
+      },
+      "inputs": [
+        "cb_m25_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cb_m25_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "m8_bore_cut",
+        "cb_m25_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cb_m4_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 4,
+            "x": 0,
+            "y": 31.5,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 4,
+            "x": 18,
+            "y": 18,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "cb_m25_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cb_m4_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 4.4,
+        "flip": true
+      },
+      "inputs": [
+        "cb_m4_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cb_m4_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "cb_m25_cut",
+        "cb_m4_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cb_m5_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 4.75,
+            "x": 14,
+            "y": -16,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "cb_m4_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cb_m5_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 5.4,
+        "flip": true
+      },
+      "inputs": [
+        "cb_m5_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cb_m5_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "cb_m4_cut",
+        "cb_m5_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cb_m6_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 5.5,
+            "x": 37,
+            "y": 12,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "cb_m5_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cb_m6_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 6.5,
+        "flip": true
+      },
+      "inputs": [
+        "cb_m6_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cb_m6_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "cb_m5_cut",
+        "cb_m6_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cb_m8_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 7,
+            "x": 36,
+            "y": -14,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "cb_m6_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cb_m8_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 8.6,
+        "flip": true
+      },
+      "inputs": [
+        "cb_m8_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cb_m8_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "cb_m6_cut",
+        "cb_m8_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cs_m25_cutter",
+      "op": "revolve_profile",
+      "params": {
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            2.75,
+            0
+          ],
+          [
+            1,
+            -1.75
+          ],
+          [
+            0,
+            -1.75
+          ]
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "cs_m25_move_left",
+      "op": "move",
+      "params": {
+        "x": -50.5,
+        "y": 0,
+        "z": 19
+      },
+      "inputs": [
+        "cs_m25_cutter"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cs_m25_move_so1",
+      "op": "move",
+      "params": {
+        "x": 0,
+        "y": -11,
+        "z": 19
+      },
+      "inputs": [
+        "cs_m25_cutter"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cs_m25_move_so2",
+      "op": "move",
+      "params": {
+        "x": 0,
+        "y": 11,
+        "z": 19
+      },
+      "inputs": [
+        "cs_m25_cutter"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cs_m25_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "cb_m8_cut",
+        "cs_m25_move_left",
+        "cs_m25_move_so1",
+        "cs_m25_move_so2"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cs_m3_cutter",
+      "op": "revolve_profile",
+      "params": {
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            3.25,
+            0
+          ],
+          [
+            1,
+            -2.25
+          ],
+          [
+            0,
+            -2.25
+          ]
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "cs_m3_move",
+      "op": "move",
+      "params": {
+        "x": -52.5,
+        "y": -33.5,
+        "z": 19
+      },
+      "inputs": [
+        "cs_m3_cutter"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cs_m3_pat_x",
+      "op": "linear_pattern",
+      "params": {
+        "count": 2,
+        "dx": 105
+      },
+      "inputs": [
+        "cs_m3_move"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cs_m3_pat_y",
+      "op": "linear_pattern",
+      "params": {
+        "count": 2,
+        "dy": 67
+      },
+      "inputs": [
+        "cs_m3_pat_x"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cs_m3_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "cs_m25_cut",
+        "cs_m3_pat_y"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cs_m4_cutter",
+      "op": "revolve_profile",
+      "params": {
+        "points": [
+          [
+            0,
+            0
+          ],
+          [
+            4.25,
+            0
+          ],
+          [
+            1.5,
+            -2.75
+          ],
+          [
+            0,
+            -2.75
+          ]
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "cs_m4_move",
+      "op": "move",
+      "params": {
+        "x": 50.5,
+        "y": 0,
+        "z": 19
+      },
+      "inputs": [
+        "cs_m4_cutter"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cs_m4_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "cs_m3_cut",
+        "cs_m4_move"
+      ],
+      "suppressed": false
+    }
+  ]
+}

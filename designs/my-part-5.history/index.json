@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "design_id": "d_52ba95894fe5",
+  "name": "my-part-5",
+  "current": "v4",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-09-01T12:09:40+00:00",
+      "label": "sketch added; extrude added; extrude_face added +2 more",
+      "source": "manual",
+      "hash": "sha1:d400bd290f4fda1b972ef3ec622ebe0484aabaa1",
+      "features": 4,
+      "spec": {
+        "features": 4,
+        "ok": true,
+        "volume": 26283.49
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v2",
+      "parent": "v1",
+      "created": "2026-09-01T14:31:31+00:00",
+      "label": "sketch_on_face added; extrude added",
+      "source": "manual",
+      "hash": "sha1:c7fac89b1504fb293867ff9750d24ac7604c3e15",
+      "features": 6,
+      "spec": {
+        "features": 6,
+        "ok": true,
+        "volume": 1052.53
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v3",
+      "parent": "v2",
+      "created": "2026-09-01T14:34:29+00:00",
+      "label": "sketch_on_face added; extrude added; sketch_on_face added +9 more",
+      "source": "manual",
+      "hash": "sha1:e619ef66e3e8ed0c26e2805295b9683ca10e6c8b",
+      "features": 17,
+      "spec": {
+        "features": 17,
+        "ok": true,
+        "volume": 57466.55
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v4",
+      "parent": "v3",
+      "created": "2026-09-01T14:46:42+00:00",
+      "label": "fillet added; struck out fillet1; extrude_face added +6 more",
+      "source": "manual",
+      "hash": "sha1:be83cd1cf6ad98de219c9c6f2c5b9e90aefa8ec5",
+      "features": 24,
+      "spec": {
+        "features": 24,
+        "ok": true,
+        "volume": 413262.87
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    }
+  ]
+}

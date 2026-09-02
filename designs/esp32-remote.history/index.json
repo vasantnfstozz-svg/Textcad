@@ -2,8 +2,8 @@
   "schema": 1,
   "design_id": "d_b2c0b6fda979",
   "name": "esp32-remote",
-  "current": "v15",
-  "starred": null,
+  "current": "v16",
+  "starred": "v16",
   "versions": [
     {
       "id": "v1",
@@ -188,6 +188,23 @@
       },
       "commit": "09638f900f69ddfd00ccf2c9553abedd5c718973",
       "rebuildable": true
+    },
+    {
+      "id": "v16",
+      "parent": "v15",
+      "created": "2026-09-01T14:54:59+00:00",
+      "label": "sketch_on_face added; extrude added",
+      "source": "manual",
+      "hash": "sha1:4a8d3d6696bd7e3135d37aa877ed310177e96db4",
+      "features": 81,
+      "spec": {
+        "features": 81,
+        "ok": false,
+        "volume": 249.12
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
     }
   ],
   "id_floor": 0

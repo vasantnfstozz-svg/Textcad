@@ -1,0 +1,570 @@
+{
+  "name": "gear-case",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      90,
+      50,
+      24.5
+    ],
+    "holes": {
+      "0.8": 6
+    },
+    "tol": 0.15
+  },
+  "features": [
+    {
+      "id": "base_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "rectangle",
+            "w": 100,
+            "h": 60,
+            "x": 0,
+            "y": 0,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "base",
+      "op": "extrude",
+      "params": {
+        "amount": 24.5
+      },
+      "inputs": [
+        "base_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "clamp_step_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "rectangle",
+            "w": 100,
+            "h": 60,
+            "x": 0,
+            "y": 0,
+            "mode": "add"
+          },
+          {
+            "kind": "path",
+            "start": [
+              -39,
+              -25
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  39,
+                  -25
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  43.243,
+                  -23.243
+                ],
+                "to": [
+                  45,
+                  -19
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  45,
+                  19
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  43.243,
+                  23.243
+                ],
+                "to": [
+                  39,
+                  25
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -39,
+                  25
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -43.243,
+                  23.243
+                ],
+                "to": [
+                  -45,
+                  19
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -45,
+                  -19
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -43.243,
+                  -23.243
+                ],
+                "to": [
+                  -39,
+                  -25
+                ]
+              }
+            ],
+            "mode": "subtract"
+          }
+        ]
+      },
+      "inputs": [
+        "base"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "clamp_step_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 25,
+        "flip": true
+      },
+      "inputs": [
+        "clamp_step_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "clamp_step_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "base",
+        "clamp_step_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cavity_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "path",
+            "start": [
+              -33,
+              -19
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  33,
+                  -19
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  37.243,
+                  -17.243
+                ],
+                "to": [
+                  39,
+                  -13
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  39,
+                  13
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  37.243,
+                  17.243
+                ],
+                "to": [
+                  33,
+                  19
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -33,
+                  19
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -37.243,
+                  17.243
+                ],
+                "to": [
+                  -39,
+                  13
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -39,
+                  -13
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -37.243,
+                  -17.243
+                ],
+                "to": [
+                  -33,
+                  -19
+                ]
+              }
+            ],
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "clamp_step_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cavity_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 12,
+        "flip": true
+      },
+      "inputs": [
+        "cavity_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cavity_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "clamp_step_cut",
+        "cavity_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "lid_holes_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 41,
+            "y": 21,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 41,
+            "y": -21,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": -41,
+            "y": 21,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": -41,
+            "y": -21,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 0,
+            "y": 22,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 0,
+            "y": -22,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "cavity_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "lid_holes_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 6,
+        "flip": true
+      },
+      "inputs": [
+        "lid_holes_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "lid_holes_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "cavity_cut",
+        "lid_holes_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "clamp_pedestal_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "bottom",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              -39,
+              -25
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  39,
+                  -25
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  43.243,
+                  -23.243
+                ],
+                "to": [
+                  45,
+                  -19
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  45,
+                  19
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  43.243,
+                  23.243
+                ],
+                "to": [
+                  39,
+                  25
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -39,
+                  25
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -43.243,
+                  23.243
+                ],
+                "to": [
+                  -45,
+                  19
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -45,
+                  -19
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -43.243,
+                  -23.243
+                ],
+                "to": [
+                  -39,
+                  -25
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "path",
+            "mode": "subtract",
+            "start": [
+              -39,
+              -22
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  39,
+                  -22
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  41.121,
+                  -21.121
+                ],
+                "to": [
+                  42,
+                  -19
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  42,
+                  19
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  41.121,
+                  21.121
+                ],
+                "to": [
+                  39,
+                  22
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -39,
+                  22
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -41.121,
+                  21.121
+                ],
+                "to": [
+                  -42,
+                  19
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -42,
+                  -19
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -41.121,
+                  -21.121
+                ],
+                "to": [
+                  -39,
+                  -22
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [
+        "lid_holes_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "clamp_pedestal_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 6,
+        "flip": false
+      },
+      "inputs": [
+        "clamp_pedestal_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "clamp_pedestal_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "lid_holes_cut",
+        "clamp_pedestal_vol"
+      ],
+      "suppressed": false
+    }
+  ]
+}

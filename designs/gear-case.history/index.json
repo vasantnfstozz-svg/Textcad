@@ -1,0 +1,687 @@
+{
+  "schema": 1,
+  "design_id": "d_3c2633c72b1b",
+  "name": "gear-case",
+  "current": "v40",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-31T12:33:36+00:00",
+      "label": "opened gear-case",
+      "source": "open",
+      "hash": "sha1:b916bc641737c8ecc0a8b38115a7757d1d1755a7",
+      "features": 40,
+      "spec": {
+        "features": 40,
+        "ok": true,
+        "volume": 86457.99
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v2",
+      "parent": "v1",
+      "created": "2026-08-31T12:34:32+00:00",
+      "label": "deleted edge_round",
+      "source": "tool:delete",
+      "hash": "sha1:341794ecff7547226ad15edaabd18a89cbadb079",
+      "features": 39,
+      "spec": {
+        "features": 39,
+        "ok": true,
+        "volume": 86563.61
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v3",
+      "parent": "v2",
+      "created": "2026-08-31T12:34:39+00:00",
+      "label": "deleted main_housing_round",
+      "source": "tool:delete",
+      "hash": "sha1:3bda983aace3eb04e7744b67b5b901a0a190e064",
+      "features": 38,
+      "spec": {
+        "features": 38,
+        "ok": true,
+        "volume": 86581.3
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v4",
+      "parent": "v3",
+      "created": "2026-08-31T12:34:46+00:00",
+      "label": "deleted small_housing_round",
+      "source": "tool:delete",
+      "hash": "sha1:0057084b6c2108497bef3d4f85c9219fa94b046a",
+      "features": 37,
+      "spec": {
+        "features": 37,
+        "ok": true,
+        "volume": 86591.22
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v5",
+      "parent": "v4",
+      "created": "2026-08-31T12:34:48+00:00",
+      "label": "deleted small_housing_fuse",
+      "source": "tool:delete",
+      "hash": "sha1:80cbaa588f42f03c3a6ec136c5e493be3983568d",
+      "features": 36,
+      "spec": {
+        "features": 36,
+        "ok": true,
+        "volume": 85922.06
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v6",
+      "parent": "v5",
+      "created": "2026-08-31T12:34:51+00:00",
+      "label": "deleted gear_pins_fuse",
+      "source": "tool:delete",
+      "hash": "sha1:5bfc34790d922711067b275fa36682b59e972d2e",
+      "features": 35,
+      "spec": {
+        "features": 35,
+        "ok": true,
+        "volume": 85665.38
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v7",
+      "parent": "v6",
+      "created": "2026-08-31T12:34:54+00:00",
+      "label": "deleted gear_pins_round",
+      "source": "tool:delete",
+      "hash": "sha1:670b9fcf8047102bb69be48c5d4096655976c5e4",
+      "features": 34,
+      "spec": {
+        "features": 34,
+        "ok": true,
+        "volume": 85665.38
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v8",
+      "parent": "v7",
+      "created": "2026-08-31T12:35:00+00:00",
+      "label": "deleted screw_posts_round",
+      "source": "tool:delete",
+      "hash": "sha1:b52762186ace0a410c20156d25ab8e5248f9d3d7",
+      "features": 33,
+      "spec": {
+        "features": 33,
+        "ok": true,
+        "volume": 85667.07
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v9",
+      "parent": "v8",
+      "created": "2026-08-31T12:36:38+00:00",
+      "label": "deleted lid_holes_vol",
+      "source": "tool:delete",
+      "hash": "sha1:8fa01aee030a4a9fd526b62f99a87ee076447582",
+      "features": 31,
+      "spec": {
+        "features": 31,
+        "ok": false,
+        "volume": 85739.45
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v10",
+      "parent": "v9",
+      "created": "2026-08-31T13:07:47+00:00",
+      "label": "opened gear-case",
+      "source": "open",
+      "hash": "sha1:b916bc641737c8ecc0a8b38115a7757d1d1755a7",
+      "features": 40,
+      "spec": {
+        "features": 40,
+        "ok": true,
+        "volume": 86457.99
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v11",
+      "parent": "v10",
+      "created": "2026-08-31T13:18:51+00:00",
+      "label": "deleted edge_round",
+      "source": "tool:delete",
+      "hash": "sha1:341794ecff7547226ad15edaabd18a89cbadb079",
+      "features": 39,
+      "spec": {
+        "features": 39,
+        "ok": true,
+        "volume": 86563.61
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v12",
+      "parent": "v11",
+      "created": "2026-08-31T13:19:01+00:00",
+      "label": "deleted main_housing_round",
+      "source": "tool:delete",
+      "hash": "sha1:3bda983aace3eb04e7744b67b5b901a0a190e064",
+      "features": 38,
+      "spec": {
+        "features": 38,
+        "ok": true,
+        "volume": 86581.3
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v13",
+      "parent": "v12",
+      "created": "2026-08-31T13:19:11+00:00",
+      "label": "deleted main_housing_fuse",
+      "source": "tool:delete",
+      "hash": "sha1:eed03d5cf465ed63ce15fa6916a95f0b05c15608",
+      "features": 37,
+      "spec": {
+        "features": 37,
+        "ok": true,
+        "volume": 84902.12
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v14",
+      "parent": "v13",
+      "created": "2026-08-31T13:19:21+00:00",
+      "label": "deleted small_housing_round",
+      "source": "tool:delete",
+      "hash": "sha1:b1dc83d31fae9c70bf4cdb19b5567b525fc947e4",
+      "features": 36,
+      "spec": {
+        "features": 36,
+        "ok": true,
+        "volume": 84912.04
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v15",
+      "parent": "v14",
+      "created": "2026-08-31T13:19:28+00:00",
+      "label": "deleted small_housing_fuse",
+      "source": "tool:delete",
+      "hash": "sha1:fb94196c5e6d47a00cdd643b996014b9ad38da90",
+      "features": 35,
+      "spec": {
+        "features": 35,
+        "ok": true,
+        "volume": 84242.88
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v16",
+      "parent": "v15",
+      "created": "2026-08-31T13:19:34+00:00",
+      "label": "deleted gear_pins_round",
+      "source": "tool:delete",
+      "hash": "sha1:45eb9e3f437ff6ae3d394f7b53235deaf0b1b02d",
+      "features": 34,
+      "spec": {
+        "features": 34,
+        "ok": true,
+        "volume": 84243.81
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v17",
+      "parent": "v16",
+      "created": "2026-08-31T13:19:40+00:00",
+      "label": "deleted screw_posts_round",
+      "source": "tool:delete",
+      "hash": "sha1:28498205e33d1a07fedaaa1e65b3cc2269af258f",
+      "features": 33,
+      "spec": {
+        "features": 33,
+        "ok": true,
+        "volume": 84245.5
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v18",
+      "parent": "v17",
+      "created": "2026-08-31T13:19:48+00:00",
+      "label": "deleted screw_posts_fuse",
+      "source": "tool:delete",
+      "hash": "sha1:3d84d02b9f822e694173d2addbaca1c9b4c23003",
+      "features": 32,
+      "spec": {
+        "features": 32,
+        "ok": false,
+        "volume": 83666.44
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v19",
+      "parent": "v18",
+      "created": "2026-08-31T13:29:23+00:00",
+      "label": "reloaded from disk",
+      "source": "open",
+      "hash": "sha1:b916bc641737c8ecc0a8b38115a7757d1d1755a7",
+      "features": 40,
+      "spec": {
+        "features": 40,
+        "ok": true,
+        "volume": 86457.99
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v20",
+      "parent": "v19",
+      "created": "2026-08-31T13:30:21+00:00",
+      "label": "deleted main_housing_sketch",
+      "source": "tool:delete",
+      "hash": "sha1:f8aae27e8147fd92f00a6c0fe59a1a6b52f78d53",
+      "features": 30,
+      "spec": {
+        "features": 30,
+        "ok": true,
+        "volume": 84796.5
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v21",
+      "parent": "v20",
+      "created": "2026-08-31T13:30:50+00:00",
+      "label": "deleted small_housing_sketch",
+      "source": "tool:delete",
+      "hash": "sha1:c63448d31f894343e1cb88d7fdeb94291146ebaf",
+      "features": 23,
+      "spec": {
+        "features": 23,
+        "ok": true,
+        "volume": 84137.27
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v22",
+      "parent": "v21",
+      "created": "2026-08-31T13:31:14+00:00",
+      "label": "deleted gear_pins_sketch",
+      "source": "tool:delete",
+      "hash": "sha1:2e629bac404792ada1b5d14df1de7bbaf2d58214",
+      "features": 19,
+      "spec": {
+        "features": 19,
+        "ok": true,
+        "volume": 83880.59
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v23",
+      "parent": "v22",
+      "created": "2026-08-31T13:31:21+00:00",
+      "label": "deleted screw_posts_sketch",
+      "source": "tool:delete",
+      "hash": "sha1:2c5ef07faadf0db1b8f9112b86e6fe6bbcd0d62b",
+      "features": 12,
+      "spec": {
+        "features": 12,
+        "ok": false,
+        "volume": 83303.22
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v24",
+      "parent": "v23",
+      "created": "2026-08-31T13:31:26+00:00",
+      "label": "deleted edge_round",
+      "source": "tool:delete",
+      "hash": "sha1:bd0d3376dd30a94a84b4731079fdc7c82129a32d",
+      "features": 11,
+      "spec": {
+        "features": 11,
+        "ok": false,
+        "volume": 83408.83
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v25",
+      "parent": "v24",
+      "created": "2026-08-31T14:21:21+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:7a0ee21a16168b59ab86f9813ad531f278e9fc54",
+      "features": 12,
+      "spec": {
+        "features": 12,
+        "ok": false,
+        "volume": 83408.83
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v26",
+      "parent": "v25",
+      "created": "2026-08-31T14:21:22+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:fd55420ccafa8215d68c2c774c98785ee73de911",
+      "features": 13,
+      "spec": {
+        "features": 13,
+        "ok": false,
+        "volume": 4660.47
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v27",
+      "parent": "v26",
+      "created": "2026-08-31T14:21:23+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:3def178afd58176a83f3369fb4a65402f59554dc",
+      "features": 14,
+      "spec": {
+        "features": 14,
+        "ok": false,
+        "volume": 83408.83
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v28",
+      "parent": "v27",
+      "created": "2026-08-31T14:21:24+00:00",
+      "label": "manual changes (1 edit)",
+      "source": "manual",
+      "hash": "sha1:94e3390c9149ab9cc4d3205c4c799a6fcc34341c",
+      "features": 14,
+      "spec": {
+        "features": 14,
+        "ok": false,
+        "volume": 83408.83
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v29",
+      "parent": "v28",
+      "created": "2026-08-31T14:22:56+00:00",
+      "label": "deleted clamp_pedestal_cut",
+      "source": "tool:delete",
+      "hash": "sha1:50576b49da8a7228e2e88cfe74f4c2902995d933",
+      "features": 0,
+      "spec": {
+        "features": 0,
+        "ok": true
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v30",
+      "parent": "v29",
+      "created": "2026-08-31T14:24:35+00:00",
+      "label": "manual changes (2 edits)",
+      "source": "manual",
+      "hash": "sha1:c6986a85ec91a1514de4d5476dae01fd510d3650",
+      "features": 14,
+      "spec": {
+        "features": 14,
+        "ok": true,
+        "volume": 69538.44
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v31",
+      "parent": "v30",
+      "created": "2026-08-31T14:58:35+00:00",
+      "label": "fillet added",
+      "source": "tool:fillet",
+      "hash": "sha1:eacfc39f9c89637539f0e174c4a31c384a00526d",
+      "features": 15,
+      "spec": {
+        "features": 15,
+        "ok": false,
+        "volume": 69538.44
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v32",
+      "parent": "v31",
+      "created": "2026-08-31T14:58:40+00:00",
+      "label": "deleted fillet1",
+      "source": "tool:delete",
+      "hash": "sha1:59dda7a452880d17f05ef25709cff97fbaffd2b3",
+      "features": 14,
+      "spec": {
+        "features": 14,
+        "ok": true,
+        "volume": 69538.44
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v33",
+      "parent": "v32",
+      "created": "2026-09-01T08:01:36+00:00",
+      "label": "struck out lid_holes_vol",
+      "source": "tool:strike",
+      "hash": "sha1:48a8928e948ace333fe0abaf3583c3ff54a9dc91",
+      "features": 14,
+      "spec": {
+        "features": 14,
+        "ok": false,
+        "volume": 69610.83
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v34",
+      "parent": "v33",
+      "created": "2026-09-01T08:01:40+00:00",
+      "label": "restored lid_holes_vol",
+      "source": "tool:strike",
+      "hash": "sha1:59dda7a452880d17f05ef25709cff97fbaffd2b3",
+      "features": 14,
+      "spec": {
+        "features": 14,
+        "ok": true,
+        "volume": 69538.44
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v35",
+      "parent": "v34",
+      "created": "2026-09-01T08:01:44+00:00",
+      "label": "struck out lid_holes_sketch",
+      "source": "tool:strike",
+      "hash": "sha1:5a2e88bc3008d3aab6cb54723610d66a8685565c",
+      "features": 14,
+      "spec": {
+        "features": 14,
+        "ok": false,
+        "volume": 69610.83
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v36",
+      "parent": "v35",
+      "created": "2026-09-01T08:01:48+00:00",
+      "label": "struck out clamp_pedestal_sketch",
+      "source": "tool:strike",
+      "hash": "sha1:bae7fdff37559bae78586ba2d44e0a76bf4f9414",
+      "features": 14,
+      "spec": {
+        "features": 14,
+        "ok": false,
+        "volume": 74295.87
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v37",
+      "parent": "v36",
+      "created": "2026-09-01T08:01:53+00:00",
+      "label": "restored lid_holes_sketch",
+      "source": "tool:strike",
+      "hash": "sha1:9281f438321377b02ac9809b980c8f38eb2190c4",
+      "features": 14,
+      "spec": {
+        "features": 14,
+        "ok": true,
+        "volume": 74223.49
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v38",
+      "parent": "v37",
+      "created": "2026-09-01T08:01:55+00:00",
+      "label": "restored clamp_pedestal_sketch",
+      "source": "tool:strike",
+      "hash": "sha1:59dda7a452880d17f05ef25709cff97fbaffd2b3",
+      "features": 14,
+      "spec": {
+        "features": 14,
+        "ok": true,
+        "volume": 69538.44
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v39",
+      "parent": "v38",
+      "created": "2026-09-01T08:01:59+00:00",
+      "label": "struck out base_sketch",
+      "source": "tool:strike",
+      "hash": "sha1:8c5d3e019b79235ba61c1bfb96fcb1249fb73504",
+      "features": 14,
+      "spec": {
+        "features": 14,
+        "ok": true
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v40",
+      "parent": "v39",
+      "created": "2026-09-01T08:02:04+00:00",
+      "label": "restored base_sketch",
+      "source": "tool:strike",
+      "hash": "sha1:59dda7a452880d17f05ef25709cff97fbaffd2b3",
+      "features": 14,
+      "spec": {
+        "features": 14,
+        "ok": true,
+        "volume": 69538.44
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    }
+  ]
+}

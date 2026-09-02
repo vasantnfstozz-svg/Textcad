@@ -21,3 +21,6 @@ _studio_mesh.stl
 .studio-session.json
 .studio-session.tmp
 .studio-session-*.json
+
+# Playwright MCP scratch output (console logs, traces) — tool cruft, not work
+.playwright-mcp/

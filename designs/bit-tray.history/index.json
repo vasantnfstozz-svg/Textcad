@@ -1,0 +1,1369 @@
+{
+  "schema": 1,
+  "design_id": "d_367169112e80",
+  "name": "bit-tray",
+  "current": "v80",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-31T10:11:47+00:00",
+      "label": "opened bit-tray",
+      "source": "open",
+      "hash": "sha1:2e378528341bc65e149b400afb4b20796af970bd",
+      "features": 27,
+      "spec": {
+        "features": 27,
+        "ok": true,
+        "volume": 126959.53
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v2",
+      "parent": "v1",
+      "created": "2026-08-31T10:43:38+00:00",
+      "label": "deleted microbit_holes_sketch",
+      "source": "tool:delete",
+      "hash": "sha1:f793c82dc614e6e36c3e3f4683f5b13008899e89",
+      "features": 24,
+      "spec": {
+        "features": 24,
+        "ok": false,
+        "volume": 127042.3
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v3",
+      "parent": "v2",
+      "created": "2026-08-31T10:45:22+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:1fbf4baa8c22cf6eea4520a340f18563e719bba2",
+      "features": 25,
+      "spec": {
+        "features": 25,
+        "ok": false,
+        "volume": 127042.3
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v4",
+      "parent": "v3",
+      "created": "2026-08-31T10:46:26+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:c33146e5f6287cd2e27603e50b92a32506c46ff0",
+      "features": 26,
+      "spec": {
+        "features": 26,
+        "ok": false,
+        "volume": 817.29
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v5",
+      "parent": "v4",
+      "created": "2026-08-31T10:46:26+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:9887604477302e22afbe05ccd5d77d3e648d54e9",
+      "features": 27,
+      "spec": {
+        "features": 27,
+        "ok": false,
+        "volume": 126430.02
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v6",
+      "parent": "v5",
+      "created": "2026-08-31T10:46:58+00:00",
+      "label": "extrude_face added",
+      "source": "tool:extrude_face",
+      "hash": "sha1:730ff0e685527051c5cdc6483208cd3fe4ef06de",
+      "features": 28,
+      "spec": {
+        "features": 28,
+        "ok": false,
+        "volume": 113.59
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v7",
+      "parent": "v6",
+      "created": "2026-08-31T10:46:58+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:79766bd2ee88e10e3716c6c7c12def0f84b24f8c",
+      "features": 29,
+      "spec": {
+        "features": 29,
+        "ok": false,
+        "volume": 119242.68
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v8",
+      "parent": "v7",
+      "created": "2026-08-31T10:47:17+00:00",
+      "label": "extrude_face added",
+      "source": "tool:extrude_face",
+      "hash": "sha1:cf1b270e6b5faf5e46bbab5e6c37094f1aa53299",
+      "features": 30,
+      "spec": {
+        "features": 30,
+        "ok": false,
+        "volume": 315.67
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v9",
+      "parent": "v8",
+      "created": "2026-08-31T10:47:17+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:4393b706138f8bfa6a68b62948623331cd954441",
+      "features": 31,
+      "spec": {
+        "features": 31,
+        "ok": false,
+        "volume": 119186.58
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v10",
+      "parent": "v9",
+      "created": "2026-08-31T10:51:21+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:094bb4e83d4f67f8a34cc4c961ac3e6d5ccc35f4",
+      "features": 32,
+      "spec": {
+        "features": 32,
+        "ok": false,
+        "volume": 118043.86
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v11",
+      "parent": "v10",
+      "created": "2026-08-31T10:53:06+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:8b168072dfd910456eefd8f6337c08f6fb7a7fee",
+      "features": 33,
+      "spec": {
+        "features": 33,
+        "ok": false,
+        "volume": 1464.75
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v12",
+      "parent": "v11",
+      "created": "2026-08-31T10:55:24+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:176f82c553a765531da8977e0c38b61ee9d9c74e",
+      "features": 34,
+      "spec": {
+        "features": 34,
+        "ok": false,
+        "volume": 906.75
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v13",
+      "parent": "v12",
+      "created": "2026-08-31T10:55:30+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:fa472497fc9fabb5374bcc1979c34f90d58ed259",
+      "features": 35,
+      "spec": {
+        "features": 35,
+        "ok": false,
+        "volume": 53.41
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v14",
+      "parent": "v13",
+      "created": "2026-08-31T10:55:30+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:c1902d229341fce55f922c336b952738c55fd000",
+      "features": 36,
+      "spec": {
+        "features": 36,
+        "ok": false,
+        "volume": 853.34
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v15",
+      "parent": "v14",
+      "created": "2026-08-31T11:08:12+00:00",
+      "label": "manual changes (3 edits)",
+      "source": "manual",
+      "hash": "sha1:bb91d4efeb183e2cbcb9c1ea1b2e7903481fd8d3",
+      "features": 37,
+      "spec": {
+        "features": 37,
+        "ok": true,
+        "volume": 123297.77
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v16",
+      "parent": "v15",
+      "created": "2026-08-31T11:09:55+00:00",
+      "label": "deleted parts_pocket_sketch",
+      "source": "tool:delete",
+      "hash": "sha1:0fef3fa6eecc18e5889508a28477b8fcaae9a1c8",
+      "features": 34,
+      "spec": {
+        "features": 34,
+        "ok": true,
+        "volume": 126712.16
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v17",
+      "parent": "v16",
+      "created": "2026-08-31T11:12:05+00:00",
+      "label": "deleted pins_fuse",
+      "source": "tool:delete",
+      "hash": "sha1:9fd03267f6781fea62be376e9229a7b27c5c9ffb",
+      "features": 33,
+      "spec": {
+        "features": 33,
+        "ok": true,
+        "volume": 125858.82
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v18",
+      "parent": "v17",
+      "created": "2026-08-31T11:13:44+00:00",
+      "label": "extrude_face added",
+      "source": "tool:extrude_face",
+      "hash": "sha1:903edc9d8aebea7df6a8255ad22666c824d2f0ef",
+      "features": 34,
+      "spec": {
+        "features": 34,
+        "ok": false,
+        "volume": 40.84
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v19",
+      "parent": "v18",
+      "created": "2026-08-31T11:13:44+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:3efcc30484b3586b610488e53e59e7760d49a9b7",
+      "features": 35,
+      "spec": {
+        "features": 35,
+        "ok": false,
+        "volume": 897.16
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v20",
+      "parent": "v19",
+      "created": "2026-08-31T11:25:48+00:00",
+      "label": "manual changes (1 edit)",
+      "source": "manual",
+      "hash": "sha1:35c1b19d5db8840a526405257f5a1a557e94b65e",
+      "features": 47,
+      "spec": {
+        "features": 47,
+        "ok": true,
+        "volume": 105578.18
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v21",
+      "parent": "v20",
+      "created": "2026-08-31T11:27:23+00:00",
+      "label": "extrude_face added",
+      "source": "tool:extrude_face",
+      "hash": "sha1:c9c729fdc07402898c0281cf0f329e7671aad076",
+      "features": 48,
+      "spec": {
+        "features": 48,
+        "ok": false,
+        "volume": 12.57
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v22",
+      "parent": "v21",
+      "created": "2026-08-31T11:27:25+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:4c5f63f5da15a57eacaa262779cdc40d570fb663",
+      "features": 49,
+      "spec": {
+        "features": 49,
+        "ok": true,
+        "volume": 105578.18
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v23",
+      "parent": "v22",
+      "created": "2026-08-31T11:28:57+00:00",
+      "label": "deleted slotboss_sketch",
+      "source": "tool:delete",
+      "hash": "sha1:62df5fa1ee761dda3f5c6c80023712391e106dac",
+      "features": 45,
+      "spec": {
+        "features": 45,
+        "ok": true,
+        "volume": 105418.47
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v24",
+      "parent": "v23",
+      "created": "2026-08-31T11:30:00+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:af9df352397231ca9ec4a7cc4d591e98ed5c5432",
+      "features": 46,
+      "spec": {
+        "features": 46,
+        "ok": true,
+        "volume": 105418.47
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v25",
+      "parent": "v24",
+      "created": "2026-08-31T11:30:14+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:c4efc7441a1b71afb4d2b3705ddcbd63f1e106d9",
+      "features": 47,
+      "spec": {
+        "features": 47,
+        "ok": false,
+        "volume": 4702.88
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v26",
+      "parent": "v25",
+      "created": "2026-08-31T11:32:10+00:00",
+      "label": "extrude_face added",
+      "source": "tool:extrude_face",
+      "hash": "sha1:cd8a7a2c6b69b61af9d41f0fed0ba542a5340ca3",
+      "features": 48,
+      "spec": {
+        "features": 48,
+        "ok": false,
+        "volume": 162.86
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v27",
+      "parent": "v26",
+      "created": "2026-08-31T11:32:11+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:6779262fdf9489acd123c220737d4baab717db11",
+      "features": 49,
+      "spec": {
+        "features": 49,
+        "ok": true,
+        "volume": 105418.47
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v28",
+      "parent": "v27",
+      "created": "2026-08-31T11:32:21+00:00",
+      "label": "deleted extrude3_cut1",
+      "source": "tool:delete",
+      "hash": "sha1:c9755730551983934a370531a183c120043c637c",
+      "features": 47,
+      "spec": {
+        "features": 47,
+        "ok": false,
+        "volume": 1708.04
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v29",
+      "parent": "v28",
+      "created": "2026-08-31T11:32:28+00:00",
+      "label": "deleted edge_round",
+      "source": "tool:delete",
+      "hash": "sha1:cefaec01515d773c25cdcc7b5f61cae0641b77f2",
+      "features": 46,
+      "spec": {
+        "features": 46,
+        "ok": false,
+        "volume": 1708.04
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v30",
+      "parent": "v29",
+      "created": "2026-08-31T11:32:37+00:00",
+      "label": "deleted post_round",
+      "source": "tool:delete",
+      "hash": "sha1:c6dc682f762b54f0c94e2a658fd2fe5b3309fd58",
+      "features": 45,
+      "spec": {
+        "features": 45,
+        "ok": false,
+        "volume": 1708.04
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v31",
+      "parent": "v30",
+      "created": "2026-08-31T11:32:58+00:00",
+      "label": "deleted tri_island_fuse",
+      "source": "tool:delete",
+      "hash": "sha1:941a2c5d1e63d438201822a82960bea16af3e8c8",
+      "features": 44,
+      "spec": {
+        "features": 44,
+        "ok": false,
+        "volume": 1708.04
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v32",
+      "parent": "v31",
+      "created": "2026-08-31T11:33:17+00:00",
+      "label": "deleted tri_island_round",
+      "source": "tool:delete",
+      "hash": "sha1:a376e17fbf901be40748215a5c56c8814c6e607c",
+      "features": 43,
+      "spec": {
+        "features": 43,
+        "ok": false,
+        "volume": 1708.04
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v33",
+      "parent": "v32",
+      "created": "2026-08-31T11:33:26+00:00",
+      "label": "deleted rib_5mm_fuse",
+      "source": "tool:delete",
+      "hash": "sha1:a8a23ebf3b063e2005ba7e37ca6605eb093e7725",
+      "features": 42,
+      "spec": {
+        "features": 42,
+        "ok": false,
+        "volume": 1708.04
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v34",
+      "parent": "v33",
+      "created": "2026-08-31T11:33:38+00:00",
+      "label": "deleted rib_5mm_round",
+      "source": "tool:delete",
+      "hash": "sha1:b2d6955a06b39399943aaa3bbefb8633f587e268",
+      "features": 41,
+      "spec": {
+        "features": 41,
+        "ok": false,
+        "volume": 1708.04
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v35",
+      "parent": "v34",
+      "created": "2026-08-31T11:33:43+00:00",
+      "label": "deleted rib_8mm_fuse",
+      "source": "tool:delete",
+      "hash": "sha1:14d4f826410aa57a3b268dc19dd680a8c7d105f2",
+      "features": 40,
+      "spec": {
+        "features": 40,
+        "ok": false,
+        "volume": 1708.04
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v36",
+      "parent": "v35",
+      "created": "2026-08-31T11:33:57+00:00",
+      "label": "deleted rib_4mm_fuse",
+      "source": "tool:delete",
+      "hash": "sha1:ed3e5f188f9106d838cb2b23db36137943618323",
+      "features": 39,
+      "spec": {
+        "features": 39,
+        "ok": false,
+        "volume": 1708.04
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v37",
+      "parent": "v36",
+      "created": "2026-08-31T11:34:08+00:00",
+      "label": "deleted rib_8mm_round",
+      "source": "tool:delete",
+      "hash": "sha1:8ac54496360d5179c8da886f3f235113c1100c06",
+      "features": 38,
+      "spec": {
+        "features": 38,
+        "ok": false,
+        "volume": 1708.04
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v38",
+      "parent": "v37",
+      "created": "2026-08-31T11:34:18+00:00",
+      "label": "deleted rib_10mm_fuse",
+      "source": "tool:delete",
+      "hash": "sha1:8c507f74b7e4749e255f3a732eb81e000b1fd590",
+      "features": 37,
+      "spec": {
+        "features": 37,
+        "ok": false,
+        "volume": 1708.04
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v39",
+      "parent": "v38",
+      "created": "2026-08-31T11:34:22+00:00",
+      "label": "deleted rib_10mm_round",
+      "source": "tool:delete",
+      "hash": "sha1:59e42ab4a7c112b454b0459e31b6965feadfc34f",
+      "features": 36,
+      "spec": {
+        "features": 36,
+        "ok": false,
+        "volume": 1708.04
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v40",
+      "parent": "v39",
+      "created": "2026-08-31T11:34:27+00:00",
+      "label": "deleted rib_4mm_round",
+      "source": "tool:delete",
+      "hash": "sha1:1aee4bbd8e5a68a65c5798dc2425fde8e8070e5c",
+      "features": 35,
+      "spec": {
+        "features": 35,
+        "ok": false,
+        "volume": 1708.04
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v41",
+      "parent": "v40",
+      "created": "2026-08-31T11:34:32+00:00",
+      "label": "deleted pins_round",
+      "source": "tool:delete",
+      "hash": "sha1:53a69d86126fb38c045237d86a8930c737a808ee",
+      "features": 34,
+      "spec": {
+        "features": 34,
+        "ok": false,
+        "volume": 1708.04
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v42",
+      "parent": "v41",
+      "created": "2026-08-31T11:35:52+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:b5f76eca46275cb023462bf317f4f1266e9c7140",
+      "features": 35,
+      "spec": {
+        "features": 35,
+        "ok": false,
+        "volume": 1708.04
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v43",
+      "parent": "v42",
+      "created": "2026-08-31T11:36:04+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:e7675b4bb9899fb7c486433eeba4aaccf9cf9628",
+      "features": 36,
+      "spec": {
+        "features": 36,
+        "ok": false,
+        "volume": 50.11
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v44",
+      "parent": "v43",
+      "created": "2026-08-31T11:36:07+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:9702c47a85e2690eaf0f2ff85a1d993490d2fe5d",
+      "features": 37,
+      "spec": {
+        "features": 37,
+        "ok": true,
+        "volume": 99735.88
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v45",
+      "parent": "v44",
+      "created": "2026-08-31T11:36:51+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:12d2db2eb7aefc87399a450cad065a3da7ca3d1d",
+      "features": 38,
+      "spec": {
+        "features": 38,
+        "ok": true,
+        "volume": 99735.88
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v46",
+      "parent": "v45",
+      "created": "2026-08-31T11:36:59+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:c0988df58736141f8ca14e893b45bacb45f36514",
+      "features": 39,
+      "spec": {
+        "features": 39,
+        "ok": false,
+        "volume": 179.68
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v47",
+      "parent": "v46",
+      "created": "2026-08-31T11:41:24+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:a7d57967183430f9e0bb0398c6460e8246eb29ae",
+      "features": 40,
+      "spec": {
+        "features": 40,
+        "ok": false,
+        "volume": 179.68
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v48",
+      "parent": "v47",
+      "created": "2026-08-31T11:41:39+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:c20a9dce78be893101404d30ace22b5c780d0a2a",
+      "features": 41,
+      "spec": {
+        "features": 41,
+        "ok": false,
+        "volume": 264.98
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v49",
+      "parent": "v48",
+      "created": "2026-08-31T11:42:09+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:4af4bd478b1ca593722f2053bdfaa1984db78196",
+      "features": 42,
+      "spec": {
+        "features": 42,
+        "ok": false,
+        "volume": 264.98
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v50",
+      "parent": "v49",
+      "created": "2026-08-31T11:42:18+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:5c90830c4f3e08be66057272557bda6cbb4bdf75",
+      "features": 43,
+      "spec": {
+        "features": 43,
+        "ok": false,
+        "volume": 214.5
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v51",
+      "parent": "v50",
+      "created": "2026-08-31T11:42:46+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:08ae695249960f2a6be1c3cc28fbd00184c2ce92",
+      "features": 44,
+      "spec": {
+        "features": 44,
+        "ok": false,
+        "volume": 214.5
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v52",
+      "parent": "v51",
+      "created": "2026-08-31T11:42:53+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:03116e1281ae5edecf2b62b66ff3477434f3c240",
+      "features": 45,
+      "spec": {
+        "features": 45,
+        "ok": false,
+        "volume": 67.0
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v53",
+      "parent": "v52",
+      "created": "2026-08-31T11:43:30+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:c7f65a8068ecf21f0d740057a199eb76d6baae3c",
+      "features": 46,
+      "spec": {
+        "features": 46,
+        "ok": false,
+        "volume": 67.0
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v54",
+      "parent": "v53",
+      "created": "2026-08-31T11:43:55+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:b61e90d5e0480fa0c897f852e315bcafdc637e57",
+      "features": 47,
+      "spec": {
+        "features": 47,
+        "ok": false,
+        "volume": 110.28
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v55",
+      "parent": "v54",
+      "created": "2026-08-31T11:45:42+00:00",
+      "label": "extrude_face added",
+      "source": "tool:extrude_face",
+      "hash": "sha1:b49d5b6ea2f8a12a720680ba0989acb68197c81b",
+      "features": 48,
+      "spec": {
+        "features": 48,
+        "ok": false,
+        "volume": 141.57
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v56",
+      "parent": "v55",
+      "created": "2026-08-31T11:45:42+00:00",
+      "label": "fuse added",
+      "source": "tool:fuse",
+      "hash": "sha1:878d1e9818b08a402858ab62dd98b44dfa3bb17d",
+      "features": 49,
+      "spec": {
+        "features": 49,
+        "ok": false,
+        "volume": 1849.6
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v57",
+      "parent": "v56",
+      "created": "2026-08-31T11:46:08+00:00",
+      "label": "extrude_face added",
+      "source": "tool:extrude_face",
+      "hash": "sha1:0aa65b25bb9977cde029fe5b025b9ebc6269711b",
+      "features": 50,
+      "spec": {
+        "features": 50,
+        "ok": false,
+        "volume": 93.93
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v58",
+      "parent": "v57",
+      "created": "2026-08-31T11:46:09+00:00",
+      "label": "fuse added",
+      "source": "tool:fuse",
+      "hash": "sha1:e7aacc69cbe2f53175ffb47cd68662ba66dc9a3a",
+      "features": 51,
+      "spec": {
+        "features": 51,
+        "ok": true,
+        "volume": 99735.88
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v59",
+      "parent": "v58",
+      "created": "2026-08-31T11:46:15+00:00",
+      "label": "deleted extrude10_join1",
+      "source": "tool:delete",
+      "hash": "sha1:0aa65b25bb9977cde029fe5b025b9ebc6269711b",
+      "features": 50,
+      "spec": {
+        "features": 50,
+        "ok": false,
+        "volume": 93.93
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v60",
+      "parent": "v59",
+      "created": "2026-08-31T11:46:16+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:64cd3afca7c488efd074db19cdc48f626347deaf",
+      "features": 51,
+      "spec": {
+        "features": 51,
+        "ok": true,
+        "volume": 99641.95
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v61",
+      "parent": "v60",
+      "created": "2026-08-31T11:48:45+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:8d4f4d108ce02f0d6d4d53bb7db92bca5544089f",
+      "features": 52,
+      "spec": {
+        "features": 52,
+        "ok": true,
+        "volume": 99678.21
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v62",
+      "parent": "v61",
+      "created": "2026-08-31T11:48:52+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:a268782b8d0a491eadd0fd74570fce4ac0ecea46",
+      "features": 53,
+      "spec": {
+        "features": 53,
+        "ok": false,
+        "volume": 125.66
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v63",
+      "parent": "v62",
+      "created": "2026-08-31T11:48:52+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:e2232500cd942666796db0a3dbc76849ef1e24c5",
+      "features": 54,
+      "spec": {
+        "features": 54,
+        "ok": true,
+        "volume": 99552.55
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v64",
+      "parent": "v63",
+      "created": "2026-08-31T11:49:18+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:d3a0962bc3eee95ef005debd012dc6aff00e741f",
+      "features": 55,
+      "spec": {
+        "features": 55,
+        "ok": true,
+        "volume": 99436.93
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v65",
+      "parent": "v64",
+      "created": "2026-08-31T11:49:26+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:9cc36c32bbf1864ea216eb73df57e3bfe6f70c42",
+      "features": 56,
+      "spec": {
+        "features": 56,
+        "ok": false,
+        "volume": 78.54
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v66",
+      "parent": "v65",
+      "created": "2026-08-31T11:49:26+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:40817618897991ad205c15540fe615a0e09140d6",
+      "features": 57,
+      "spec": {
+        "features": 57,
+        "ok": true,
+        "volume": 99358.39
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v67",
+      "parent": "v66",
+      "created": "2026-08-31T11:50:06+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:035878965813809ccb3f0e311f6b7597173bc4ba",
+      "features": 58,
+      "spec": {
+        "features": 58,
+        "ok": true,
+        "volume": 99257.08
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v68",
+      "parent": "v67",
+      "created": "2026-08-31T11:50:22+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:0271ac1883fc17dd2f64adbcbc25816860ba55b1",
+      "features": 59,
+      "spec": {
+        "features": 59,
+        "ok": false,
+        "volume": 40.84
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v69",
+      "parent": "v68",
+      "created": "2026-08-31T11:50:22+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:63108602f6b589c45b78cbec10226b615c01ccde",
+      "features": 60,
+      "spec": {
+        "features": 60,
+        "ok": true,
+        "volume": 99216.24
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v70",
+      "parent": "v69",
+      "created": "2026-08-31T11:50:28+00:00",
+      "label": "deleted extrude13_cut1",
+      "source": "tool:delete",
+      "hash": "sha1:367cebc2d4720a1eb64f78d9b30bb73431fbc80d",
+      "features": 46,
+      "spec": {
+        "features": 46,
+        "ok": false,
+        "volume": 1754.09
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v71",
+      "parent": "v70",
+      "created": "2026-08-31T11:50:45+00:00",
+      "label": "deleted extrude13",
+      "source": "tool:delete",
+      "hash": "sha1:035878965813809ccb3f0e311f6b7597173bc4ba",
+      "features": 58,
+      "spec": {
+        "features": 58,
+        "ok": true,
+        "volume": 99257.08
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v72",
+      "parent": "v71",
+      "created": "2026-08-31T11:50:51+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:0271ac1883fc17dd2f64adbcbc25816860ba55b1",
+      "features": 59,
+      "spec": {
+        "features": 59,
+        "ok": false,
+        "volume": 40.84
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v73",
+      "parent": "v72",
+      "created": "2026-08-31T11:50:51+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:63108602f6b589c45b78cbec10226b615c01ccde",
+      "features": 60,
+      "spec": {
+        "features": 60,
+        "ok": true,
+        "volume": 99216.24
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v74",
+      "parent": "v73",
+      "created": "2026-08-31T11:51:47+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:405c836e9add738bf8bbf61a2875032c95e3185b",
+      "features": 61,
+      "spec": {
+        "features": 61,
+        "ok": true,
+        "volume": 99157.43
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v75",
+      "parent": "v74",
+      "created": "2026-08-31T11:51:55+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:610094ba79cc02d5d048309b156bb582b0893280",
+      "features": 62,
+      "spec": {
+        "features": 62,
+        "ok": false,
+        "volume": 15.71
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v76",
+      "parent": "v75",
+      "created": "2026-08-31T11:51:55+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:0701bd64f842209984401a488eba7aa2581fcf3b",
+      "features": 63,
+      "spec": {
+        "features": 63,
+        "ok": true,
+        "volume": 99141.72
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v77",
+      "parent": "v76",
+      "created": "2026-08-31T11:52:40+00:00",
+      "label": "sketch_on_face added",
+      "source": "tool:sketch_on_face",
+      "hash": "sha1:e33e61c610ccbf60874b14383223c367ddae4610",
+      "features": 64,
+      "spec": {
+        "features": 64,
+        "ok": true,
+        "volume": 99114.54
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v78",
+      "parent": "v77",
+      "created": "2026-08-31T11:52:54+00:00",
+      "label": "extrude added",
+      "source": "tool:extrude",
+      "hash": "sha1:bd1b584724425324eab5c36c443ecd8d0bdd9020",
+      "features": 65,
+      "spec": {
+        "features": 65,
+        "ok": false,
+        "volume": 7.07
+      },
+      "commit": null,
+      "rebuildable": false,
+      "author": "you"
+    },
+    {
+      "id": "v79",
+      "parent": "v78",
+      "created": "2026-08-31T11:52:54+00:00",
+      "label": "cut added",
+      "source": "tool:cut",
+      "hash": "sha1:342368455aec4f32f130565dc1081b7aaff1acad",
+      "features": 66,
+      "spec": {
+        "features": 66,
+        "ok": true,
+        "volume": 99107.48
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    },
+    {
+      "id": "v80",
+      "parent": "v79",
+      "created": "2026-08-31T12:33:08+00:00",
+      "label": "opened bit-tray",
+      "source": "open",
+      "hash": "sha1:35c1b19d5db8840a526405257f5a1a557e94b65e",
+      "features": 47,
+      "spec": {
+        "features": 47,
+        "ok": true,
+        "volume": 105578.18
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    }
+  ]
+}

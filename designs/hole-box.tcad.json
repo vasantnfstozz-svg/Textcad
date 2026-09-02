@@ -1,0 +1,348 @@
+{
+  "name": "hole-box",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      100,
+      60,
+      24.5
+    ],
+    "holes": {
+      "0.8": 14
+    },
+    "tol": 0.15
+  },
+  "features": [
+    {
+      "id": "base_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "rectangle",
+            "w": 100,
+            "h": 60,
+            "x": 0,
+            "y": 0,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "base",
+      "op": "extrude",
+      "params": {
+        "amount": 24.5
+      },
+      "inputs": [
+        "base_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cavity_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "path",
+            "start": [
+              -38,
+              -24
+            ],
+            "segments": [
+              {
+                "type": "line",
+                "to": [
+                  38,
+                  -24
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  42.243,
+                  -22.243
+                ],
+                "to": [
+                  44,
+                  -18
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  44,
+                  18
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  42.243,
+                  22.243
+                ],
+                "to": [
+                  38,
+                  24
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -38,
+                  24
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -42.243,
+                  22.243
+                ],
+                "to": [
+                  -44,
+                  18
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  -44,
+                  -18
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  -42.243,
+                  -22.243
+                ],
+                "to": [
+                  -38,
+                  -24
+                ]
+              }
+            ],
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "base"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cavity_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 16,
+        "flip": true
+      },
+      "inputs": [
+        "cavity_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "cavity_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "base",
+        "cavity_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "edge_round",
+      "op": "fillet",
+      "params": {
+        "radius": 1,
+        "edges": "top"
+      },
+      "inputs": [
+        "cavity_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "wall_holes_long_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": -36,
+            "y": 27,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": -12,
+            "y": 27,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 12,
+            "y": 27,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 36,
+            "y": 27,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": -36,
+            "y": -27,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": -12,
+            "y": -27,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 12,
+            "y": -27,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 36,
+            "y": -27,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "edge_round"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "wall_holes_long_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 8,
+        "flip": true
+      },
+      "inputs": [
+        "wall_holes_long_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "wall_holes_long_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "edge_round",
+        "wall_holes_long_vol"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "wall_holes_short_sketch",
+      "op": "sketch_on_face",
+      "params": {
+        "face": "top",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 47,
+            "y": -13,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 47,
+            "y": 0,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": 47,
+            "y": 13,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": -47,
+            "y": -13,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": -47,
+            "y": 0,
+            "mode": "add"
+          },
+          {
+            "kind": "circle",
+            "r": 0.8,
+            "x": -47,
+            "y": 13,
+            "mode": "add"
+          }
+        ]
+      },
+      "inputs": [
+        "wall_holes_long_cut"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "wall_holes_short_vol",
+      "op": "extrude",
+      "params": {
+        "amount": 8,
+        "flip": true
+      },
+      "inputs": [
+        "wall_holes_short_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "wall_holes_short_cut",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "wall_holes_long_cut",
+        "wall_holes_short_vol"
+      ],
+      "suppressed": false
+    }
+  ]
+}

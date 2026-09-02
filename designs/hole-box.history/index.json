@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "design_id": "d_a77e17f195eb",
+  "name": "hole-box",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-08-31T12:19:15+00:00",
+      "label": "opened hole-box",
+      "source": "open",
+      "hash": "sha1:86146293818f1022ff4c034d193c60dc7603ecf6",
+      "features": 12,
+      "spec": {
+        "features": 12,
+        "ok": true,
+        "volume": 79560.23
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    }
+  ]
+}
