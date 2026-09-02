@@ -593,9 +593,13 @@ def test_reordering_alone_is_not_a_change():
     assert diff_snapshots(_snap(a, b), _snap(b, a))["summary"] == "no change"
 
 
+@pytest.mark.library
 def test_diff_runs_on_the_real_backfilled_library():
     """Against actual recorded designs, not toys — this is where a value that
-    will not compare or serialise would show up."""
+    will not compare or serialise would show up.
+
+    Marked `library` (LAUNCH-PLAN.md R6): it reads the user's LIVE version
+    history, so it belongs to the opt-in library check, not the code suite."""
     from history import History, diff_snapshots
     h = History.for_design("designs", "esp32-remote")
     if len(h.versions()) < 15:

@@ -24,7 +24,10 @@ import pytest
 import sketch as sk
 from document import Document
 
-REMOTE = "designs/esp32-remote.tcad.json"
+# A FROZEN copy (LAUNCH-PLAN.md R6): the live designs/esp32-remote.tcad.json is
+# the user's work in progress and once turned 13 of these tests red with zero
+# code change. The fixture is history v15 plus the `through` declaration.
+REMOTE = "tests/fixtures/esp32-remote.tcad.json"
 TRIM = "esp_pillar_trim_tool"
 
 

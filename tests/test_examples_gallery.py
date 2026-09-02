@@ -46,18 +46,20 @@ def test_the_catalog_exists_and_is_grouped():
             assert d["file"] and d["title"] and d["description"]
 
 
-def test_every_catalogued_design_still_exists_and_rebuilds_its_count():
-    """A renamed or deleted design must not sit in the gallery as a dead tile,
-    and the count shown on the card must come from the file, not the catalog."""
+def test_every_catalogued_design_still_exists_and_loads():
+    """A renamed or deleted design must not sit in the gallery as a dead tile.
+
+    The catalog's stored `features` number is NOT compared any more: /api/examples
+    derives the count from the file ("so it cannot drift from the catalog"), so
+    the stored copy is dead data, and pinning it turned this test red every time
+    the user edited a catalogued design in the app (LAUNCH-PLAN.md R6)."""
     data = json.loads(CATALOG.read_text(encoding="utf-8"))
     for g in data["groups"]:
         for d in g["designs"]:
             p = DESIGNS / f"{d['file']}.tcad.json"
             assert p.exists(), f"catalogued but missing: {d['file']}"
             doc = json.loads(p.read_text(encoding="utf-8"))
-            assert len(doc["features"]) == d["features"], \
-                f"{d['file']}: catalog says {d['features']} features, file has " \
-                f"{len(doc['features'])}"
+            assert doc.get("features"), f"{d['file']}: no features in the file"
 
 
 def test_the_user_s_own_projects_are_all_in_there():

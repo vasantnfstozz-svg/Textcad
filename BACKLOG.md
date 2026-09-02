@@ -1,13 +1,18 @@
 # TextCAD backlog — top-level index of problems & workstreams
 
-> **PROJECT PAUSED 2026-08-17 (~4 weeks, may resume anytime).** Everything
-> is committed + pushed to https://github.com/Vasan0021/textcad (private).
-> All open Studio tabs were snapshotted into designs/. Resume by reading
-> [FEATURE-TREE-PLAN.md](FEATURE-TREE-PLAN.md)'s pause note (top of file).
+> **ACTIVE WORKSTREAM (2026-09-02): [LAUNCH-PLAN.md](LAUNCH-PLAN.md)** — the
+> tool framework, drag-handle tools, the AI using the same tools, and
+> frozen-fixture testing, phases P0–P6. Its §10 carries the deduplicated
+> open items from every sheet below with launch priorities. New problems
+> still get filed here or in their workstream sheet the moment they are
+> noticed; LAUNCH-PLAN.md §10 is the ranked view.
 >
-> **WORKSTREAM AT PAUSE: Feature tree — see
-> [FEATURE-TREE-PLAN.md](FEATURE-TREE-PLAN.md)** (steps 1–3, 5–8 shipped;
-> R1–R14 closed; step 4 incremental tool-calling authoring is next).
+> The pause of 2026-08-17 ended 2026-08-18. Since then: design work for the
+> SimplyMill QA parts, the version tree (VERSION-TREE-PLAN.md, P0–P6
+> shipped), Measure & drive (MEASURE-PLAN.md, P0–P2 + ten feedback rounds),
+> strike-out delete, STEP import/export guard, session restore. The feature
+> tree sheet's remaining item (step 4, incremental AI authoring) is
+> LAUNCH-PLAN.md P5.
 >
 > **PARKED (2026-08-04): Manual design** — everything shipped + every open
 > manual-design problem (viewport, sketch mode, extrude/modify tools,
@@ -48,11 +53,11 @@ complete. Details + Done history: MANUAL-DESIGN.md.
   raycaster already has an edge threshold to copy. **P2**, tracked in
   [MEASURE-PLAN.md](MEASURE-PLAN.md).
 
-- [ ] **Version tree per design** (agreed with the user 2026-08-26, planned in
-  [VERSION-TREE-PLAN.md](VERSION-TREE-PLAN.md), nothing built yet). Every design
-  edit spawns a new tab and overwrites the previous state, so after ten
-  iterations there are ten identical tabs and no way back to v3. P0 (tab reuse
-  in /api/open) is a ~20-line quick win that is worth doing on its own.
+- [x] **Version tree per design** — SHIPPED (P0–P6, see
+  [VERSION-TREE-PLAN.md](VERSION-TREE-PLAN.md); tab reuse 9f41fd1, history
+  storage 2c8ffa1, API 59b87bd, panel 820d158, backfill e327540, explicit
+  push 073ef85, update-vs-push + trim 127d3d0). Open there: prune policy,
+  per-version thumbnails.
 
 - [ ] **autonomiq-sat-panel v3 needs a tooling pass** (audited 2026-08-26,
   after fa9bc15). The geometry verifies (1 manifold solid) but several new
@@ -88,11 +93,11 @@ complete. Details + Done history: MANUAL-DESIGN.md.
   Fix: normalize winding to CCW in `sketch._entity` polygon branch (shoelace
   sign test, reverse if negative) + regression test. Same normalization is
   already proven in the design generator (scratchpad `rocky_probe.py`).
-- [ ] **P2 — /api/model has no mesh cache; complex designs blank the viewport
-  ~25 s per page load.** rocky-keychain (5 letters sampled to 100-pt polygons)
-  tessellates ~25 s on EVERY /api/model call; the viewport is empty with no
-  progress hint meanwhile (looks exactly like "model disappeared"). Cache the
-  tagged mesh keyed on rebuild stamp, and/or show a "meshing…" state.
+- [x] **P2 — /api/model has no mesh cache** — SUPERSEDED: studio.py now
+  keeps a process-wide `_MESH_CACHE` plus a per-tab `model_json` cache keyed
+  on the rebuild stamp (`_geom_version`). Still open from this entry: a
+  visible "meshing…" state while a first tessellation runs (the viewport
+  sits empty with a green tree — see the import gotchas).
 - [ ] **P3 — `text` sketch entity** (build123d `Text`). rocky-keychain needed
   font lettering; had to bake Impact outlines into polygon entities offline.
   A first-class text entity (font, size, position) via the add-sketch-entity

@@ -10,6 +10,9 @@ _studio_mesh.stl
 # uploaded import files are user work too: designs reference them by name,
 # so a backup without them would not rebuild
 !imports/*.stl
+# frozen design copies the code tests read (LAUNCH-PLAN.md R6) — must travel
+# with the code or a fresh clone's suite is red
+!tests/fixtures/*.tcad.json
 
 # Version histories are user work too (VERSION-TREE-PLAN.md): designs/<slug>.history/
 # holds index.json + gzipped snapshots, ~10 KB each. User's call 2026-08-26:

@@ -1,0 +1,221 @@
+{
+  "name": "pump-impeller",
+  "spec": {
+    "n_solids": 1,
+    "size": [
+      50,
+      50,
+      11
+    ],
+    "tip_radius": 25,
+    "holes": {
+      "1.5": 1
+    },
+    "tol": 0.3
+  },
+  "features": [
+    {
+      "id": "base_disc",
+      "op": "disc",
+      "params": {
+        "radius": 25,
+        "thickness": 3
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "base_disc_seat",
+      "op": "move",
+      "params": {
+        "z": 1.5
+      },
+      "inputs": [
+        "base_disc"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "hub",
+      "op": "disc",
+      "params": {
+        "radius": 7,
+        "thickness": 7
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "hub_seat",
+      "op": "move",
+      "params": {
+        "z": 3.5
+      },
+      "inputs": [
+        "hub"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "blade_sketch",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "path",
+            "mode": "add",
+            "start": [
+              6.3,
+              -0.52
+            ],
+            "segments": [
+              {
+                "type": "arc",
+                "via": [
+                  5.48,
+                  -0.3
+                ],
+                "to": [
+                  5.7,
+                  0.52
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  7.962,
+                  3.011
+                ],
+                "to": [
+                  9.776,
+                  5.925
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  11.023,
+                  9.31
+                ],
+                "to": [
+                  11.755,
+                  13.098
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  11.717,
+                  17.268
+                ],
+                "to": [
+                  10.702,
+                  21.673
+                ]
+              },
+              {
+                "type": "line",
+                "to": [
+                  11.253,
+                  21.91
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  12.986,
+                  17.521
+                ],
+                "to": [
+                  13.742,
+                  13.066
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  13.452,
+                  8.721
+                ],
+                "to": [
+                  12,
+                  4.784
+                ]
+              },
+              {
+                "type": "arc",
+                "via": [
+                  9.591,
+                  1.538
+                ],
+                "to": [
+                  6.3,
+                  -0.52
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "blade_solid",
+      "op": "extrude",
+      "params": {
+        "amount": 8.5
+      },
+      "inputs": [
+        "blade_sketch"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "blade_seat",
+      "op": "move",
+      "params": {
+        "z": 2.5
+      },
+      "inputs": [
+        "blade_solid"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "blade_ring",
+      "op": "polar_pattern",
+      "params": {
+        "count": 6
+      },
+      "inputs": [
+        "blade_seat"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "body",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "base_disc_seat",
+        "hub_seat",
+        "blade_ring"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "impeller",
+      "op": "with_center_hole",
+      "params": {
+        "radius": 1.5
+      },
+      "inputs": [
+        "body"
+      ],
+      "suppressed": false
+    }
+  ]
+}

@@ -28,7 +28,8 @@ import provenance as P
 import studio
 from document import Document
 
-IMPELLER = "designs/pump-impeller.tcad.json"
+# frozen copy, never the live library (LAUNCH-PLAN.md R6)
+IMPELLER = "tests/fixtures/pump-impeller.tcad.json"
 
 
 # --------------------------------------------------------------- fixtures ----

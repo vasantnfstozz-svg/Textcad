@@ -1,4 +1,9 @@
-# Feature Tree — development sheet (PAUSED 2026-08-17, resume-ready)
+# Feature Tree — development sheet (steps 1–3, 5–8 shipped; step 4 moved)
+
+> **2026-09-02:** the pause below ended 2026-08-18. The one open step here —
+> step 4, incremental tool-calling authoring so the AI builds through the same
+> tools as the user — is now **P5 of [LAUNCH-PLAN.md](LAUNCH-PLAN.md)**, the
+> active workstream. This sheet stays as the record of steps 1–3 and 5–8.
 
 > **PAUSE NOTE (2026-08-17, user: "not going do anything with this text to
 > cad for next four weeks... everything should be recorded properly").**

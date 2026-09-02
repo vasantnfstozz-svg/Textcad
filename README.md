@@ -1,5 +1,13 @@
 # TextCAD — a robust text-to-CAD system
 
+> **Historical document (July 2026).** This README describes the original
+> command-line prototype (`generate.py` writing build123d code) and a
+> long-fixed API-key blocker. The product today is **TextCAD Studio**, the
+> feature-tree web app. Start with [CLAUDE.md](CLAUDE.md) for the map and the
+> rules, [ARCHITECTURE.md](ARCHITECTURE.md) for how it works, and
+> [LAUNCH-PLAN.md](LAUNCH-PLAN.md) for what is being built now. The founding
+> idea below — mistakes must never reach the user — is unchanged.
+
 This is a working prototype that turns a natural-language description into a
 validated, machinable CAD model (a STEP file). It was built step by step; this
 document is the full context so development can continue in **Claude Code**
