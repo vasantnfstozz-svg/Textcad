@@ -1,13 +1,19 @@
 # TextCAD backlog — top-level index of problems & workstreams
 
-> **PROJECT PAUSED 2026-08-17 (~4 weeks, may resume anytime).** Everything
+> **ACTIVE — resumed 2026-09-02** (the 2026-08-17 pause is over). Everything
 > is committed + pushed to https://github.com/Vasan0021/textcad (private).
-> All open Studio tabs were snapshotted into designs/. Resume by reading
-> [FEATURE-TREE-PLAN.md](FEATURE-TREE-PLAN.md)'s pause note (top of file).
 >
-> **WORKSTREAM AT PAUSE: Feature tree — see
-> [FEATURE-TREE-PLAN.md](FEATURE-TREE-PLAN.md)** (steps 1–3, 5–8 shipped;
-> R1–R14 closed; step 4 incremental tool-calling authoring is next).
+> **Live workstreams:**
+> * **Version tree** — [VERSION-TREE-PLAN.md](VERSION-TREE-PLAN.md): P0–P6 and
+>   the P6 follow-ups shipped (explicit push, per-row rename/delete,
+>   update-vN-in-place vs push-vN+1, trim-after). Per-version thumbnails
+>   deferred with a reason.
+> * **Measure & drive** — [MEASURE-PLAN.md](MEASURE-PLAN.md): P0–P2 shipped
+>   plus feedback round 1; **P3/P4 open**.
+> * **Feature tree** — [FEATURE-TREE-PLAN.md](FEATURE-TREE-PLAN.md): steps 1–3
+>   and 5–8 shipped, R1–R14 closed; **step 4 (incremental tool-calling
+>   authoring) still open** — needed when AI designs must reference existing
+>   faces.
 >
 > **PARKED (2026-08-04): Manual design** — everything shipped + every open
 > manual-design problem (viewport, sketch mode, extrude/modify tools,

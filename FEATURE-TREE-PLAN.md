@@ -1,19 +1,17 @@
-# Feature Tree — development sheet (PAUSED 2026-08-17, resume-ready)
+# Feature Tree — development sheet (ACTIVE)
 
-> **PAUSE NOTE (2026-08-17, user: "not going do anything with this text to
-> cad for next four weeks... everything should be recorded properly").**
-> State at pause: steps 1–3 and 5–8 SHIPPED (R1–R14 all closed, suite 241
-> green at `a446ad3`); every open Studio tab snapshotted uniquely into
-> designs/ (my-part, my-part-2..4, untitled, t-washer, spiderman-logo) and
-> pushed to the private backup https://github.com/Vasan0021/textcad.
-> **To resume:** read this file top to bottom, then MEMORY (auto-loaded);
-> launch the app DETACHED via
+> **Status (resumed 2026-09-02; the 2026-08-17 pause is over).** Steps 1–3 and
+> 5–8 SHIPPED, R1–R14 all closed. Work has continued since on the version tree,
+> measure, strike-out, trace and sketch workstreams — see
+> [BACKLOG.md](BACKLOG.md) for the live index.
+> **Open here, in priority order:** step 4 (incremental tool-calling authoring
+> — needed when AI designs must reference existing faces), then BACKLOG
+> cross-cutting P2s (compressor rebuild speed) and P3s (CI running pytest,
+> vendor three.js, LICENSE).
+> Launch the app DETACHED via
 > `Start-Process C:\Python314\python.exe -ArgumentList "-u","studio.py"
 > -WorkingDirectory <repo> -WindowStyle Hidden` (debug-studio skill rule 0);
-> saved designs open via File → Open. Open work, in priority order:
-> step 4 (incremental tool-calling authoring — needed when AI designs must
-> reference existing faces), BACKLOG cross-cutting P2s (compressor rebuild
-> speed), P3s (CI running pytest, vendor three.js, LICENSE).
+> saved designs open via File → Open.
 
 *(original header: ACTIVE workstream, started 2026-08-04)*
 
