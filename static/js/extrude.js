@@ -7,6 +7,7 @@ import { S } from './state.js';
 import { bus } from './bus.js';
 import { postJSON } from './api.js';
 import { loadMesh, beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
+         extrudeArrowDragging,
          beginExtrudeGhost, setExtrudeGhost, hideExtrudeGhost, endExtrudeGhost,
          beginTaperRing, setTaperRingAngle, endTaperRing,
          cancelPlanePick, beginProfilePick, cancelProfilePick } from './viewport.js';
@@ -26,6 +27,20 @@ const PLANE_FRAME = {
   XZ: o => ({ origin: [0, -o, 0], x_dir: [1, 0, 0], y_dir: [0, 0, 1], z_dir: [0, -1, 0] }),
   YZ: o => ({ origin: [o, 0, 0], x_dir: [0, 1, 0], y_dir: [0, 0, 1], z_dir: [1, 0, 0] }),
 };
+
+// A sketch ON A FACE is drawn in the CANONICALISED frame of that face's axis
+// (sketch.py face_sketch_plane): +Z for a Z-facing face, +X for X, -Y for Y —
+// the SAME frame for BOTH faces of an axis pair. So a sketch on a bottom / -x /
+// +y face extrudes along the canonical axis and NOT along the face's outward
+// normal: the two are OPPOSITE on exactly half the faces of a box (probed
+// 2026-09-01). Mirror that here, or a gizmo points the other way to the solid.
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const CANON_AXES = [[0, 0, 1], [1, 0, 0], [0, -1, 0]];   // Plane.XY/.YZ/.XZ z_dir
+function canonAxis(n) {
+  for (const k of CANON_AXES)
+    if (Math.abs(dot3(n, k)) > 0.9) return k;
+  return n;                  // a genuinely oblique flat face keeps its own normal
+}
 
 /* outline loop of one sketch entity in local coords — the ghost's TRUE shape */
 function entLoop(e) {
@@ -320,7 +335,7 @@ export function openExtrudeEdit(fid) {
   showPanel();
   placeArrow();
   setupGhost();
-  setExtrudeArrowAmount(original.flip ? -original.amount : original.amount);
+  setExtrudeArrowAmount(original.amount);   // st.axis already carries Flip
   isolateFor(f.id).then(() => loadMesh());   // downstream waits for OK/Cancel
 }
 
@@ -400,6 +415,9 @@ function syncRows() {
    value, or OK). No more surprise 1mm boss the moment the panel opens. */
 function createPreview() {
   st.extrudeId = null;
+  // a fresh profile means a fresh axis — never inherit the last one's frame
+  st.axis = st.axisBase = st.arrowO = st.frameZ = null;
+  st.ghostSign = 1;
   placeArrow();
   setupGhost();
 }
@@ -473,6 +491,12 @@ async function setupGhost() {
       st.safeR = safeRadius(loops);
       st.hasHoles = !!(data.holes && data.holes.length);
       beginExtrudeGhost(data.frame, loops);
+      // extrude_face follows the face's OUTWARD normal, the ghost grows along
+      // the frame — on a bottom / -x / +y face those are opposite, so the ghost
+      // gets a signed depth instead of the arrow getting a second opinion
+      st.frameZ = data.frame.z_dir;
+      setAxis(baseAxis());
+      placeArrow();
       setupTaperRing(data.frame, loops);
     } else {
       const prof = feats().find(f => f.id === st.profileId);
@@ -501,6 +525,14 @@ async function setupGhost() {
       st.hasHoles = (prof.params.entities || [])
         .some(e => e.mode === 'subtract');
       beginExtrudeGhost(frame, loops);
+      // extrude_sketch runs along the SKETCH's plane, so the resolved frame is
+      // the truth for the arrow too — and the arrow belongs ON that plane, at
+      // the middle of the profile (a face sketch with an offset does not live
+      // on the face it was drawn from)
+      st.frameZ = frame.z_dir;
+      setAxis(frame.z_dir);
+      st.arrowO = loopsCentre(frame, loops) || st.arrowO;
+      placeArrow();
       setupTaperRing(frame, loops);
     }
   } catch (e) { /* ghost is a nicety — dragging still works, just rebuilds on release */ }
@@ -510,20 +542,17 @@ async function setupGhost() {
    around it to set the taper angle — ghost only while dragging, one rebuild
    on release, value box stays in sync. */
 function setupTaperRing(frame, loops) {
+  const center = loopsCentre(frame, loops);
+  if (!center) return;
   let cx = 0, cy = 0, np = 0, maxR = 0;
   for (const L of loops || []) for (const p of L.outer) { cx += p[0]; cy += p[1]; np++; }
-  if (!np) return;
   cx /= np; cy /= np;
   for (const L of loops) for (const p of L.outer)
     maxR = Math.max(maxR, Math.hypot(p[0] - cx, p[1] - cy));
-  const X = frame.x_dir, Y = frame.y_dir, O = frame.origin;
-  const center = [O[0] + X[0] * cx + Y[0] * cy,
-                  O[1] + X[1] * cx + Y[1] * cy,
-                  O[2] + X[2] * cx + Y[2] * cy];
   beginTaperRing(center, frame, maxR * 1.35, Number(g('exTaper').value) || 0,
     t => {                                   // dragging: ghost + value box only
       g('exTaper').value = Math.round(t * 10) / 10;
-      setExtrudeGhost(Number(g('exDist').value) || 0, t);
+      showGhost(Number(g('exDist').value) || 0, t);
     },
     async t => {                             // release: ONE verified rebuild
       g('exTaper').value = Math.round(t * 10) / 10;
@@ -549,40 +578,104 @@ function entLocalCenter(e) {
   return [ox, oy];
 }
 
-// put the drag arrow at the MIDDLE of the profile, perpendicular to its plane
-function placeArrow() {
-  if (st.mode === 'face') {
-    beginExtrudeArrow(st.face.center, st.face.normal,
-                      Number(g('exDist').value) || 0, onDrag, onDragCommit,
-                      clampAmountFn);
-    return;
-  }
+/* ------------- ONE direction: arrow, ghost AND solid agree ------------------
+   Extrude used to carry THREE direction sources that disagreed (probed
+   2026-09-01): the arrow followed the picked face's OUTWARD normal, the ghost
+   box grew along the canonicalised sketch frame's z_dir, and the solid followed
+   whichever the backend op reads — extrude_face goes along the outward normal,
+   extrude_sketch along the sketch's own plane. On a bottom / -x / +y face those
+   are opposite, so pulling the arrow one way grew the ghost the other way while
+   the body still came out right (face pick), or the arrow pointed away from
+   where the material actually went (face sketch). User, 2026-09-01: "when I am
+   pushing the arrow mark one side, the ghost box goes to another side, but the
+   body is generated as intended direction sometimes".
+
+   st.axis is now the single truth — the world direction a POSITIVE distance
+   moves material, taken from the op that will BUILD it — and Flip is folded
+   into it, so ticking Flip moves the arrow instead of silently negating it at
+   apply time (which made the arrow jump to the far side on release). The ghost
+   keeps its frame (the profile's 2D coords live in it) and is driven with a
+   signed depth, st.ghostSign, so it grows along st.axis too. */
+function baseAxis() {
+  if (st.mode === 'face') return st.face.normal || [0, 0, 1];
   const prof = feats().find(f => f.id === st.profileId);
-  if (!prof) return;
-  let O, N;
+  if (!prof) return [0, 0, 1];
+  if (prof.op === 'sketch_on_face')
+    return canonAxis(prof.params.face_normal || [0, 0, 1]);
+  return PLANE_N[prof.params.plane || 'XY'] || [0, 0, 1];
+}
+// the flip that will actually be SENT (params() drops it in symmetric mode)
+const flipOn = () => g('exFlip').checked && g('exDir').value !== 'sym';
+function setAxis(base) {
+  st.axisBase = base;                            // unflipped, for re-deriving
+  const s = flipOn() ? -1 : 1;
+  st.axis = [base[0] * s, base[1] * s, base[2] * s];
+  st.ghostSign = st.frameZ && dot3(st.frameZ, st.axis) < 0 ? -1 : 1;
+}
+function refreshAxis() {                         // Flip / direction changed
+  if (!st) return;
+  setAxis(st.axisBase || baseAxis());
+  placeArrow();
+}
+/* the ghost's depth in ITS frame — negative when the material goes the other
+   way down the frame's z axis (a bottom / -x / +y face pick) */
+function showGhost(amount, taper) {
+  setExtrudeGhost(amount * (st && st.ghostSign < 0 ? -1 : 1), taper);
+}
+
+/* world centre of the profile, from the ghost loops in their frame */
+function loopsCentre(frame, loops) {
+  let cx = 0, cy = 0, np = 0;
+  for (const L of loops || []) for (const p of L.outer) { cx += p[0]; cy += p[1]; np++; }
+  if (!np) return null;
+  cx /= np; cy /= np;
+  const X = frame.x_dir, Y = frame.y_dir, O = frame.origin;
+  return [O[0] + X[0] * cx + Y[0] * cy,
+          O[1] + X[1] * cx + Y[1] * cy,
+          O[2] + X[2] * cx + Y[2] * cy];
+}
+
+/* fallback origin, before the real frame comes back from the server */
+function arrowOrigin() {
+  if (st.mode === 'face') return st.face.center;
+  const prof = feats().find(f => f.id === st.profileId);
+  if (!prof) return null;
   if (prof.op === 'sketch_on_face') {
-    O = prof.params.face_center || [0, 0, 0];
-    N = prof.params.face_normal || [0, 0, 1];
-  } else {
-    const plane = prof.params.plane || 'XY';
-    N = PLANE_N[plane] || [0, 0, 1];
+    // the sketch plane is offset along the CANONICAL axis, not the face normal
+    // (probed: bottom face + offset 3 puts the plane 3mm UP, at z = -2)
+    const k = canonAxis(prof.params.face_normal || [0, 0, 1]);
+    const c = prof.params.face_center || [0, 0, 0];
     const off = Number(prof.params.offset) || 0;
-    const ents = prof.params.entities || [];
-    let u = 0, v = 0;
-    if (ents.length) {
-      for (const e of ents) { const c = entLocalCenter(e); u += c[0]; v += c[1]; }
-      u /= ents.length; v /= ents.length;
-    }
-    O = (PLANE_MAP[plane] || PLANE_MAP.XY)(u, v, off);
+    return [c[0] + k[0] * off, c[1] + k[1] * off, c[2] + k[2] * off];
   }
-  beginExtrudeArrow(O, N, Number(g('exDist').value) || 0, onDrag, onDragCommit,
-                    clampAmountFn);
+  const plane = prof.params.plane || 'XY';
+  const ents = prof.params.entities || [];
+  let u = 0, v = 0;
+  if (ents.length) {
+    for (const e of ents) { const c = entLocalCenter(e); u += c[0]; v += c[1]; }
+    u /= ents.length; v /= ents.length;
+  }
+  return (PLANE_MAP[plane] || PLANE_MAP.XY)(u, v, Number(prof.params.offset) || 0);
+}
+
+// put the drag arrow at the MIDDLE of the profile, pointing the way a positive
+// distance actually moves material
+function placeArrow() {
+  if (!st) return;
+  if (!st.axis) setAxis(baseAxis());
+  // the server frame can land mid-drag (setupGhost is async): rebuilding the
+  // arrow then would kill the drag and leave orbit switched off
+  if (extrudeArrowDragging()) return;
+  const O = st.arrowO || arrowOrigin();
+  if (!O) return;
+  beginExtrudeArrow(O, st.axis, Number(g('exDist').value) || 0,
+                    onDrag, onDragCommit, clampAmountFn);
 }
 
 function onDrag(amount) {
   // while dragging: move ONLY the instant white ghost box — no rebuild, no lag
   g('exDist').value = Math.round(amount * 100) / 100;
-  setExtrudeGhost(amount, Number(g('exTaper').value) || 0);
+  showGhost(amount, Number(g('exTaper').value) || 0);
 }
 async function onDragCommit(amount) {     // release: ONE real verified rebuild
   g('exDist').value = Math.round(amount * 100) / 100;
@@ -733,7 +826,7 @@ async function applyOnce() {
   loadMesh();
   // keep the gizmos in sync with the (possibly adjusted) values
   const amt = Number(g('exDist').value) || 0;
-  setExtrudeArrowAmount(g('exFlip').checked ? -amt : amt);
+  setExtrudeArrowAmount(amt);          // st.axis already carries Flip
   setTaperRingAngle(Number(g('exTaper').value) || 0);
 }
 
@@ -840,7 +933,7 @@ export function initExtrude() {
     syncRows(); apply();
   };
   for (const id of ['exDir', 'exTarget', 'exFlip', 'exThrough'])
-    g(id).onchange = () => { syncRows(); apply(); };
+    g(id).onchange = () => { syncRows(); refreshAxis(); apply(); };
   for (const id of ['exDist', 'exDist2', 'exTaper'])
     g(id).oninput = () => debounce(apply);
   g('exCancel').onclick = cancel;

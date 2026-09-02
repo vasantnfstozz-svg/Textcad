@@ -122,6 +122,25 @@ were each learned from a correction — do not regress them.
 - THREE.Vector3 is MUTABLE: always `.clone()` before multiplyScalar/add on a
   stored vector (a shared-reference bug silently scaled the arrow's normal).
 - Plane normals must be PROBED, not assumed: build123d XZ extrudes toward -Y.
+- **ONE TOOL, ONE AXIS (2026-09-01).** Every gizmo of a tool must take its
+  direction from the OP THAT WILL BUILD THE SOLID, not from what happens to be
+  at hand. Extrude carried three: the arrow used the picked face's OUTWARD
+  normal, the ghost box grew along the sketch frame's z_dir, and the solid
+  followed the backend — `extrude_face` goes along the outward normal,
+  `extrude_sketch` along the sketch's plane. Because `face_sketch_plane`
+  CANONICALISES that plane (+Z / +X / -Y — the same frame for both faces of an
+  axis pair), the frame is OPPOSITE the outward normal on a bottom / -x / +y
+  face, i.e. half the faces of a box. So a face pick grew the ghost away from
+  the arrow, and a face sketch aimed the arrow away from the material (user:
+  "when I am pushing the arrow mark one side, the ghost box goes to another
+  side, but the body is generated as inteded direction sometimes").
+  extrude.js now derives ONE `st.axis` and drives the ghost with a signed depth
+  (`st.ghostSign`) so it grows along that axis in its own frame. Corollary:
+  a FLIP checkbox must move the arrow when it is ticked, never be applied
+  silently at apply time — negating only the built value made the arrow jump
+  to the far side on release. Locked in by
+  tests/e2e/test_extrude_direction.py (window.__vp.extrudeDirs() reports the
+  arrow axis and the ghost's growth vector — assert their dot product > 0).
 - OrbitControls (three 0.160) FREEZES its orbit axis at construction —
   `setFromUnitVectors(object.up,(0,1,0))` lives in update()'s closure, so
   assigning `camera.up` later does nothing. Looking straight down an axis

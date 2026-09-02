@@ -263,6 +263,19 @@ export function initViewport() {
     /* which extrude gizmos are live — a face-sketch extrude must have ALL
        three (the ghost/ring were silently missing there once) */
     gizmos: () => ({ arrow: !!exArrow, ghost: !!exGhost, ring: !!taperRing }),
+    /* the extrude gizmos' DIRECTIONS: the arrow's axis and the way the ghost
+       box actually grows (its matrix z column, which carries the signed
+       depth). They MUST point the same way — three disagreeing direction
+       sources is the 2026-09-01 "the ghost box goes to another side" bug. */
+    extrudeDirs: () => ({
+      arrow: exArrow ? { origin: exArrow.O.toArray(), axis: exArrow.N.toArray(),
+                         amount: exArrow.amount, points: arrowDir().toArray() }
+                     : null,
+      ghost: exGhost ? { visible: exGhost.mesh.visible,
+                         grows: [exGhost.mesh.matrix.elements[8],
+                                 exGhost.mesh.matrix.elements[9],
+                                 exGhost.mesh.matrix.elements[10]] }
+                     : null }),
     /* how many of each thing is actually in the scene — catches duplicate
        objects piling up from overlapping loads */
     sceneCounts: () => ({ bodies: bodyObjs.length, edges: edgeLines.length,
@@ -714,6 +727,9 @@ export function endExtrudeArrow() {
 }
 
 export function hasExtrudeArrow() { return !!exArrow; }
+/* mid-drag? re-placing the arrow under a live drag would strand the drag with
+   OrbitControls still disabled, so callers that re-aim it must ask first. */
+export function extrudeArrowDragging() { return !!(exArrow && exArrow.dragging); }
 
 /* ---------------- extrude GHOST (instant drag preview) ----------------
    While dragging, a translucent white prism in the TRUE SHAPE of the profile
