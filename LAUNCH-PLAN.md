@@ -1,8 +1,9 @@
 # TextCAD launch plan — a robust, user-friendly CAD you can trust
 
-> **Status: DRAFT for the user's approval, written 2026-09-02.** Agreed in
-> conversation the same day. No code has changed yet. When approved, this file
-> becomes the ACTIVE workstream sheet and every other plan file points here.
+> **Status: ACTIVE — approved by the user 2026-09-02 ("proceed with your
+> plan").** P0 done 2026-09-02 (31cccf0), P1 done 2026-09-03 (1246e3c), plus
+> the taper-ring cap removed (703d0ea). Next: P2. Every other plan file points
+> here; §7 carries the done-notes, §10 the ranked open items.
 >
 > It replaces the reverted TOOL-FRAMEWORK-PLAN.md (2026-09-02, another model's
 > session, deleted at the user's request). Its diagnosis was checked against
