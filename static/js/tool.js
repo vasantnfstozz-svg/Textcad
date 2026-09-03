@@ -34,6 +34,10 @@ const solids = () => feats().filter(f => f.volume != null && !f.suppressed);
 export const g = id => document.getElementById(id);
 export const num = id => Number(g(id).value) || 0;
 export const say = text => bus.emit('msg', 'bot', text);
+/* a handle's value into its box, rounded to what the box can show */
+export const setBox = (id, v, decimals = 1) => {
+  const f = 10 ** decimals; g(id).value = Math.round(v * f) / f;
+};
 
 export function uid(base) {
   const ex = new Set(feats().map(f => f.id));
@@ -83,6 +87,7 @@ function currentSelection(explicit) {
 let active = null;          // the tool whose session / panel is open
 const byOp = {};            // op -> the tool that re-opens a feature of that op
 let isoActive = false;      // an edit has the rollback bar parked
+let isoPending = null;      // the park request in flight: a release never overtakes it
 
 /* the feature the open tool is live-editing (the tree's failure toasts stay
    quiet about it — the tool explains and repairs its own failures) */
@@ -117,9 +122,11 @@ function boolOf(fid) {
 async function isolateFor(fid) {
   const comb = boolOf(fid);
   isoActive = true;
-  await postJSON('/api/rollback', { feature_id: (comb || { id: fid }).id });
+  isoPending = postJSON('/api/rollback', { feature_id: (comb || { id: fid }).id });
+  try { await isoPending; } finally { isoPending = null; }
 }
 async function releaseIso() {
+  if (isoPending) await isoPending.catch(() => {});
   if (!isoActive) return;
   isoActive = false;
   await postJSON('/api/rollback', { feature_id: null });
@@ -138,10 +145,9 @@ async function releaseIso() {
                                 the boxes;  params(st) reads them back
      snapshot(feature)          a normalized copy of EVERY param the tool can
                                 write, for Cancel-in-edit to restore verbatim
-     isEmpty(params)            honest zero: nothing to build yet
+     isEmpty(params, st)        honest zero: nothing to build yet
      nothing                    the sentence OK says when nothing was built
      gizmos: {begin(st, plan), end()}   handles, from the plan only
-     planExtra(st)              extra fields for the opening plan request
      split(n)                   the remedy when the part falls into n pieces
      sync(st) refresh(st) beforeApply(st) afterApply(st) afterPush(st, doc)
      settle(st, params, push)   milder values to try when the kernel refuses
@@ -222,15 +228,16 @@ export function tool(spec) {
         `fine; a rounded face like a cone or cylinder side can't.`);
       return;
     }
-    const notAFace = () => say(`⚠ ${spec.name} works on a sketch profile — click a sketch, not a face.`);
-    if (sel && sel.kind === 'face') notAFace();   // no face op: say so, then let the user pick
+    const canFace = !!spec.ops.face;
+    if (sel && sel.kind === 'face')   // picked a face for a tool without face mode
+      say(`⚠ ${spec.name} works on a sketch profile — click a sketch, not a face.`);
     const want = sel && sel.kind === 'profile' ? sel.id : null;
     // only UNCONSUMED sketches are offered — a sketch already used must not
     // silently become the profile again; an explicit pick is honoured even if
     // consumed; a SUPPRESSED (struck-out) consumer frees its sketch
     const consumed = new Set(feats().filter(f => !f.suppressed).flatMap(f => f.inputs));
     const sks = feats().filter(isSketch).filter(s => !consumed.has(s.id) || s.id === want);
-    if (!sks.length && !bods.length) {
+    if (!sks.length && !(canFace && bods.length)) {   // bodies only help a tool with face mode
       say(`⚠ Draw a sketch first (Create → Create Sketch), then ${spec.name} it.`);
       return;
     }
@@ -247,15 +254,13 @@ export function tool(spec) {
     }
     // NOTHING selected: Fusion's command-then-select — the USER picks what to
     // work on (a sketch profile or a flat face); never auto-grab a sketch
-    const onPick = (kind, data) => {
+    beginProfilePick((kind, data) => {
       if (kind === 'profile') { open(data); return; }
-      if (!spec.ops.face) { notAFace(); beginProfilePick(onPick); return; }
       S.pickedFace = data;            // planar face — reuse face mode
       open();
-    };
-    beginProfilePick(onPick);
-    say(`${spec.name}: click a sketch profile or a flat face in the viewport — ` +
-      `your pick, nothing is chosen for you. Esc cancels.`);
+    }, { name: spec.name, faces: canFace });   // the picker speaks for THIS tool
+    say(`${spec.name}: click a sketch profile${canFace ? ' or a flat face' : ''} in the ` +
+      `viewport — your pick, nothing is chosen for you. Esc cancels.`);
   }
 
   /* opening builds NOTHING — the boxes start at the honest zero, the gizmos
@@ -266,10 +271,10 @@ export function tool(spec) {
     showPanel();
     startPreview();
   }
-  function startPreview() {
+  function startPreview(closeOnRefusal = true) {
     st.featureId = null;
     st.plan = null;                   // a fresh input means a fresh plan
-    setupTool();
+    setupTool(closeOnRefusal);
   }
 
   /* -------- EDIT FEATURE (Fusion parity): reopen in the tool that made it --
@@ -318,21 +323,22 @@ export function tool(spec) {
   /* -------- R1: ONE answer drives every handle and the solid -------- */
   async function fetchPlan(extra = {}, quiet = false) {
     const i = st.input;
-    const plan = await planRequest(i.kind === 'face'
-      ? { tool: spec.tool, body_id: i.body, face_center: i.center,
-          face_normal: i.normal, ...extra }
-      : { tool: spec.tool, sketch_id: i.id, ...extra });
+    const req = i.kind === 'face'
+      ? { tool: spec.tool, body_id: i.body, face_center: i.center, face_normal: i.normal }
+      : { tool: spec.tool, sketch_id: i.id };
+    if (st.editing) req.feature_id = st.featureId;   // the server reads the stored params
+    const plan = await planRequest({ ...req, ...extra });
     if (plan.ok) return plan;
     if (!quiet) say(`⚠ ${spec.name} cannot start: ${plan.error}.`);     // rule 7
     return null;
   }
-  async function setupTool() {
+  async function setupTool(closeOnRefusal = true) {
     const mine = st;
-    const plan = await fetchPlan(spec.planExtra ? spec.planExtra(st) : {});
+    const plan = await fetchPlan();
     if (st !== mine) return;                    // closed / re-opened meanwhile
-    if (!plan) {                                // refused (it said why): do not
-      hide(); releaseIso(); releaseModal();     // sit there with no handles
-      return;
+    if (!plan) {                                // refused (it said why)
+      if (closeOnRefusal) { hide(); releaseIso(); releaseModal(); }   // opening: no empty panel
+      return;                                   // mid-session: the panel stays, pick another profile
     }
     st.plan = plan;
     if (!st.editing && plan.target_body
@@ -417,7 +423,7 @@ export function tool(spec) {
     const pr = spec.params(st);
     // honest zero: never create a zero-thickness solid — geometry appears
     // when the user drags or types
-    if (!st.featureId && spec.isEmpty(pr)) return;
+    if (!st.featureId && spec.isEmpty(pr, st)) return;
     let doc = st.featureId ? (await push(pr)).doc : await create(pr);
     if (!st) return;
     let f = featOf(doc);
@@ -454,7 +460,7 @@ export function tool(spec) {
     st.input = { kind: 'profile', id: el('Profile').value };
     // the combine target follows the profile (the plan brings the new default)
     fill(id('Target'), solids().map(b => b.id), null);
-    startPreview();
+    startPreview(false);              // a refused profile keeps the panel: choose another
   }
 
   /* -------- Cancel / OK / another tool (rule 5) -------- */

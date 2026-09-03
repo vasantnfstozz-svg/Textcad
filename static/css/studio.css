@@ -413,14 +413,12 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 .toolpanel .excheck input { width: auto; }
 .toolpanel .exfoot { display: flex; justify-content: flex-end; gap: 8px;
   margin-top: 12px; }
-.toolpanel .exfoot button { background: var(--panel3); color: var(--text);
-  border: 1px solid var(--line); border-radius: 7px; padding: 7px 15px;
-  cursor: pointer; font: inherit; }
+.toolpanel .exfoot button, .toolpanel .exbtn { background: var(--panel3);
+  color: var(--text); border: 1px solid var(--line); border-radius: 7px;
+  padding: 7px 15px; cursor: pointer; font: inherit; }
 .toolpanel .exfoot .primary { background: var(--accent); color: #08111e;
   border: none; font-weight: 700; }
-.toolpanel .exbtn { width: 100%; background: var(--panel3); color: var(--text);
-  border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
-  cursor: pointer; font: inherit; }
+.toolpanel .exbtn { width: 100%; padding: 6px 8px; }
 
 /* the tab you clicked, while its design comes up */
 .dtab.loading { opacity: .6; }

@@ -138,15 +138,71 @@ def test_the_sign_of_the_angle_is_the_direction_of_the_sweep():
     assert sk.revolve_sketch(s, axis="v", angle=-90).center().Y < -5
 
 
-def test_u_and_v_ride_an_offset_plane_but_a_world_axis_does_not_move():
+def test_u_and_v_ride_an_offset_plane_and_a_world_axis_outside_it_is_refused():
     """The tool's axes go through the SKETCH origin: on XZ offset 7 (y = -7)
     "v" is the line x=0 in that plane, so the volume is the plain lathe volume.
-    The legacy "Z" is the world axis, 7 mm out of the plane — kept as it was
-    for authored trees (its direction lies in the plane, so it still builds)."""
+    The world Z axis is 7 mm OUTSIDE that plane: the kernel builds a valid solid
+    of the wrong shape from it (review 2026-09-03: lathe volume, displaced
+    centroid) — refused with a sentence, never built."""
     s = rect_sketch("XZ", offset=7)
     assert sk.revolve_sketch(s, axis="v", angle=360).volume == pytest.approx(pappus(20, 60, 360), rel=1e-6)
-    world = sk.revolve_sketch(s, axis="Z", angle=360)
-    assert world.volume > 0
+    with pytest.raises(ValueError, match="does not contain the Z axis"):
+        sk.revolve_sketch(s, axis="Z", angle=360)
+    d = Document(name="skew")
+    d.add("p", "sketch", {"plane": "XZ", "offset": 7, "entities": [
+        {"kind": "rectangle", "w": 10, "h": 6, "x": 20, "y": 10}]}, [])
+    d.add("r", "revolve", {"axis": "Z", "angle": 90}, ["p"])
+    d.rebuild()
+    assert d.get("r").status == "failed" and "does not contain" in " ".join(d.get("r").problems)
+
+
+def test_faces_on_both_sides_of_the_axis_revolve_when_none_crosses_it():
+    """A mirrored pair (two circles at x = ±15): neither face crosses v, so both
+    revolve into tori — the straddle test is per FACE, not the union."""
+    s = sk.make_sketch(plane="XZ", entities=[
+        {"kind": "circle", "r": 4, "x": 15, "y": 0, "mode": "add"},
+        {"kind": "circle", "r": 4, "x": -15, "y": 0, "mode": "add"}])
+    solid = sk.revolve_sketch(s, axis="v", angle=360)
+    assert solid.volume == pytest.approx(2 * pappus(15, math.pi * 16, 360), rel=1e-6)
+    d = Document(name="pair")
+    d.add("p", "sketch", {"plane": "XZ", "offset": 0, "entities": [
+        {"kind": "circle", "r": 4, "x": 15, "y": 0}, {"kind": "circle", "r": 4, "x": -15, "y": 0}]}, [])
+    d.rebuild()
+    p = plan(d)
+    assert p["ok"] and p["axis_name"] == "v", p
+    assert all(q[0] != 0 for L in p["loops"] for q in L["outer"])
+
+
+def test_a_sketch_moved_out_of_its_plane_rides_and_a_mirrored_one_refuses_u_v():
+    """A move along the normal carries the plane (and so u / v) with it; a
+    mirror hands back a fresh Sketch with no recorded plane — u / v refuse with
+    a sentence rather than guess, while a world axis in the plane still works."""
+    d = Document(name="derived")
+    d.add("p", "sketch", {"plane": "XZ", "offset": 0, "entities": [
+        {"kind": "rectangle", "w": 10, "h": 6, "x": 20, "y": 10}]}, [])
+    d.add("m", "move", {"y": 5}, ["p"])
+    d.add("q", "mirror", {"plane": "YZ"}, ["p"])
+    d.rebuild()
+    moved = d._parts["m"]
+    assert sk.sketch_plane_of(moved).origin.Y == pytest.approx(5, abs=1e-6)
+    assert sk.revolve_sketch(moved, axis="v", angle=360).volume == pytest.approx(pappus(20, 60, 360), rel=1e-6)
+    mirrored = d._parts["q"]
+    with pytest.raises(ValueError, match="does not carry the plane"):
+        sk.revolve_sketch(mirrored, axis="v", angle=360)
+    assert sk.revolve_sketch(mirrored, axis="Z", angle=360).volume == pytest.approx(pappus(20, 60, 360), rel=1e-6)
+
+
+def test_a_legacy_world_axis_off_the_plane_falls_back_with_a_note_and_alternatives_carry_the_swap():
+    d = doc_with("XZ", offset=7)
+    d.add("r", "revolve", {"axis": "Z", "angle": 90}, ["p"])     # fails now: Z is outside the plane
+    d.rebuild()
+    p = toolplan.plan(d, {"tool": "revolve", "feature_id": "r"})
+    assert p["ok"] and p["axis_name"] == "v", p
+    assert p["fallback"]["from"] == "Z" and "outside" in p["fallback"]["why"]
+    assert set(p["alternatives"]) == {"u"}
+    alt = p["alternatives"]["u"]
+    assert alt["frame"]["z_dir"] == pytest.approx(list(sk.sketch_plane("XZ", 7).x_dir), abs=1e-6)
+    assert alt["limits"]["max_angle"] == 360
 
 
 def test_a_face_sketch_revolves_about_its_own_axis():
@@ -283,7 +339,7 @@ def test_a_face_sketch_plans_about_the_face_plane_axes_and_targets_its_body(face
     bb = d._parts["b"].bounding_box()
     z = bb.max.Z if face == "top" else bb.min.Z
     assert p["origin"][2] == pytest.approx(z, abs=1e-6)      # on that face
-    assert p["target_body"] == "b" and p["into_sign"] is None
+    assert p["target_body"] == "b"
     rs = [q[0] for q in p["loops"][0]["outer"]]
     assert min(rs) > 0, "the outline sits on the material side of the axis"
     # the ring's x points from the axis to the material: the sketch's centre
@@ -299,9 +355,12 @@ def test_a_face_sketch_plans_about_the_face_plane_axes_and_targets_its_body(face
 def test_an_existing_revolve_plans_from_its_feature_and_keeps_its_axis():
     d = doc_with("XZ")
     d.add("r", "revolve", {"axis": "u", "angle": 270}, ["p"])
+    d.add("legacy", "revolve", {"angle": 270}, ["p"])            # no axis: the op's Z
     d.rebuild()
     p = toolplan.plan(d, {"tool": "revolve", "feature_id": "r"})
-    assert p["ok"] and p["input"] == "p" and p["axis_name"] == "u"
+    assert p["ok"] and p["input"] == "p" and p["axis_name"] == "u" and p["fallback"] is None
+    q = toolplan.plan(d, {"tool": "revolve", "feature_id": "legacy"})
+    assert q["ok"] and q["axis_name"] == "v" and q["fallback"] is None   # Z IS v here (offset 0)
 
 
 def test_failures_are_sentences_never_exceptions():

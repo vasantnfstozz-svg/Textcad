@@ -251,7 +251,7 @@ def test_failures_are_sentences_never_exceptions():
     # a feature that is not an extrude
     d = build(PLATE)
     r = toolplan.plan(d, {"tool": "extrude", "feature_id": "b"})
-    assert r["ok"] is False and "not an extrude" in r["error"]
+    assert r["ok"] is False and "not extrude" in r["error"]
     for res in (r,):
         json.dumps(res)
 

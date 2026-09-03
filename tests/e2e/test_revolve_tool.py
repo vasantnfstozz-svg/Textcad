@@ -40,7 +40,7 @@ ADD_REVOLVE = """
 async () => {
   const { postJSON } = await import('/static/js/api.js');
   await postJSON('/api/feature/add',
-    { id: 'rv1', op: 'revolve', params: { axis: 'v', angle: 360 }, inputs: ['p'] }, 'add');
+    { id: 'rv1', op: 'revolve', params: { axis: 'v' }, inputs: ['p'] }, 'add');   // no angle: the op's full turn
 }
 """
 BODY_CENTRE = """
@@ -156,7 +156,7 @@ def test_edit_reopens_at_the_stored_angle_and_cancel_restores(page, fresh_doc, s
     page.wait_for_selector("#revolveDialog", state="hidden")
     page.wait_for_timeout(1800)
     f = feature(server, "rv1")
-    assert f["params"]["angle"] == 360
+    assert f["status"] == "ok" and f["params"].get("angle", 360) == 360
     assert f["volume"] == pytest.approx(pappus(20, 60, 360), rel=1e-4)
     assert page.errors == []
 

@@ -11,7 +11,7 @@
 // limits, the default target and which sign goes INTO the body all arrive in
 // ONE plan (toolplan.py). This file draws what it is told and computes nothing.
 
-import { tool, g, num, say } from './tool.js';
+import { tool, g, num, say, setBox } from './tool.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          extrudeArrowDragging,
          beginExtrudeGhost, setExtrudeGhost, hideExtrudeGhost, endExtrudeGhost,
@@ -101,11 +101,11 @@ function placeArrow(st) {
   if (extrudeArrowDragging()) return;
   beginExtrudeArrow(st.plan.origin, st.axis, num('exDist'),
     amount => {                          // dragging: the instant ghost only
-      g('exDist').value = Math.round(amount * 100) / 100;
+      setBox('exDist', amount, 2);
       showGhost(st, amount, num('exTaper'));
     },
     async amount => {                    // release: ONE real verified rebuild
-      g('exDist').value = Math.round(amount * 100) / 100;
+      setBox('exDist', amount, 2);
       await ex.apply();
       hideExtrudeGhost();                // the real solid replaces the ghost
     });
@@ -162,11 +162,11 @@ function setupTaperRing(st, plan) {
   if (!plan.limits.outer_radius) return;
   beginTaperRing(plan.origin, plan.frame, plan.limits.outer_radius * 1.35, num('exTaper'),
     t => {                                   // dragging: ghost + value box only
-      g('exTaper').value = Math.round(t * 10) / 10;
+      setBox('exTaper', t);
       showGhost(st, num('exDist'), t);
     },
     async t => {                             // release: ONE verified rebuild
-      g('exTaper').value = Math.round(t * 10) / 10;
+      setBox('exTaper', t);
       await ex.apply();
       hideExtrudeGhost();
     },

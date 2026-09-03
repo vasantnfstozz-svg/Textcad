@@ -1,0 +1,29 @@
+<!doctype html>
+<!-- Probe for the Revolve ghost (LAUNCH-PLAN.md P3, textcad-dev rule 1): which
+     way three.js LatheGeometry actually sweeps. The ghost's frame assumes:
+       local +Y = the lathe axis, points (x = radius, y = height),
+       φ = 0 starts on local +Z, φ grows toward local +X.
+     Run: probes/lathe_orientation_probe.py (headless Chromium reads the JSON
+     this page prints), or open in a browser. -->
+<title>LatheGeometry orientation probe</title>
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+<pre id="out">probing…</pre>
+<script type="module">
+import * as THREE from 'three';
+const pts = [new THREE.Vector2(10, -1), new THREE.Vector2(10, 1)];   // a thin band at radius 10
+const at = (phiStart, phiLength) => {
+  const geo = new THREE.LatheGeometry(pts, 4, phiStart, phiLength);
+  const p = geo.attributes.position;
+  const first = [p.getX(0), p.getY(0), p.getZ(0)];                    // segment 0, point 0
+  const last = [p.getX(p.count - 2), p.getY(p.count - 2), p.getZ(p.count - 2)];
+  return { first: first.map(v => +v.toFixed(3)), last: last.map(v => +v.toFixed(3)) };
+};
+const out = {
+  quarter_from_0: at(0, Math.PI / 2),          // expect first on +Z, last on +X
+  quarter_negative: at(-Math.PI / 2, Math.PI / 2),   // expect first on -X, last on +Z
+  axis_is_local_y: at(0, Math.PI).first[1] === -1,
+};
+document.getElementById('out').textContent = JSON.stringify(out);
+</script>

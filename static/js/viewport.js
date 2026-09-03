@@ -503,12 +503,15 @@ function updateGroundGrid() {
    The user picks; nothing is auto-selected for them. */
 
 let profilePickCb = null;
+let profilePickOpts = { name: 'Extrude', faces: true };   // whose pick, and may a face do
 
-export function beginProfilePick(onPick) {
+export function beginProfilePick(onPick, opts = {}) {
   profilePickCb = onPick;
+  profilePickOpts = { name: 'Extrude', faces: true, ...opts };
   renderer.domElement.style.cursor = 'crosshair';
   const h = document.getElementById('placeHint');
-  h.textContent = 'Select a sketch profile or a flat face to extrude · Esc to cancel';
+  h.textContent = `Select a sketch profile${profilePickOpts.faces ? ' or a flat face' : ''} ` +
+    `to ${profilePickOpts.name.toLowerCase()} · Esc to cancel`;
   h.style.display = 'block';
 }
 
@@ -533,11 +536,16 @@ function profilePickAt(e) {
     const fid = entry && entry.data.faceId[fHit.face.a];
     const info = entry && entry.data.faces.find(f => f.id === fid);
     const flat = info && (info.planar ?? (info.type === 'PLANE'));
+    if (info && !profilePickOpts.faces) {          // this tool takes profiles only
+      bus.emit('msg', 'bot', `⚠ ${profilePickOpts.name} works on a sketch profile — ` +
+        'click a sketch, not a face. Keep picking, or Esc.');
+      return;
+    }
     if (info && flat && info.center) {
       cancelProfilePick(); cb('face', info); return;
     }
     if (info) {
-      bus.emit('msg', 'bot', `⚠ That face is ${info.type} (curved) — Extrude ` +
+      bus.emit('msg', 'bot', `⚠ That face is ${info.type} (curved) — ${profilePickOpts.name} ` +
         'needs a sketch profile or a FLAT face. Keep picking, or Esc.');
       return;
     }
@@ -753,6 +761,31 @@ export function extrudeArrowDragging() { return !!(exArrow && exArrow.dragging);
    loops = [{outer: [[x,y],…], holes: [[[x,y],…],…]}, …] in plane-local coords. */
 let exGhost = null;
 
+/* one translucent ghost part — mesh + outline — the way EVERY tool's drag
+   preview looks (Extrude's prism, Revolve's lathe). depthTest OFF: a ghost
+   must stay visible when pushed INSIDE the body. */
+function ghostPart(geo, edgeGeo = new THREE.EdgesGeometry(geo, 15)) {
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.13, depthWrite: false,
+    depthTest: false, side: THREE.DoubleSide }));
+  const edges = new THREE.LineSegments(edgeGeo,
+    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true,
+      opacity: 0.65, depthTest: false }));
+  mesh.renderOrder = 990; edges.renderOrder = 991;
+  mesh.matrixAutoUpdate = false; edges.matrixAutoUpdate = false;
+  scene.add(mesh); scene.add(edges);
+  return { mesh, edges };
+}
+function setPartsVisible(parts, v) {
+  for (const P of parts) { P.mesh.visible = v; P.edges.visible = v; }
+}
+function disposeParts(parts) {
+  for (const P of parts) {
+    scene.remove(P.mesh); scene.remove(P.edges);
+    P.mesh.geometry.dispose(); P.edges.geometry.dispose();
+  }
+}
+
 export function beginExtrudeGhost(frame, loops) {
   endExtrudeGhost();
   // ONE PART PER OUTLINE (user 2026-09-03: "two circles with different
@@ -769,16 +802,7 @@ export function beginExtrudeGhost(frame, loops) {
     for (const h of L.holes || [])
       if (h.length >= 3) shape.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p[0], p[1]))));
     const geo = new THREE.ExtrudeGeometry([shape], { depth: 1, bevelEnabled: false });
-    // depthTest OFF: the ghost must stay visible when pushed INSIDE the body
-    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.13, depthWrite: false,
-      depthTest: false, side: THREE.DoubleSide }));
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 15),
-      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true,
-        opacity: 0.65, depthTest: false }));
-    mesh.renderOrder = 990; edges.renderOrder = 991;
-    mesh.matrixAutoUpdate = false; edges.matrixAutoUpdate = false;
-    scene.add(mesh); scene.add(edges);
+    const { mesh, edges } = ghostPart(geo);
     let cx = 0, cy = 0;
     for (const q of L.outer) { cx += q[0]; cy += q[1]; }
     cx /= L.outer.length; cy /= L.outer.length;
@@ -852,18 +876,13 @@ export function ghostLoopTops() {
   });
 }
 
-function ghostVisible(v) {
-  if (exGhost) for (const P of exGhost.parts) { P.mesh.visible = v; P.edges.visible = v; }
-}
+function ghostVisible(v) { if (exGhost) setPartsVisible(exGhost.parts, v); }
 export function hideExtrudeGhost() { ghostVisible(false); }
 export function hasExtrudeGhostVisible() { return !!(exGhost && exGhost.mesh.visible); }
 
 export function endExtrudeGhost() {
   if (!exGhost) return;
-  for (const P of exGhost.parts) {
-    scene.remove(P.mesh); scene.remove(P.edges);
-    P.mesh.geometry.dispose(); P.edges.geometry.dispose();
-  }
+  disposeParts(exGhost.parts);
   exGhost = null;
 }
 
@@ -873,10 +892,11 @@ export function endExtrudeGhost() {
    protocol as the arrow: drag = ghost only, release = one verified rebuild. */
 let taperRing = null;
 
-/* opts.continuous: the angle accumulates across the ±180 seam instead of
-   wrapping, for a value that runs 0..±360 (Revolve) */
+/* the angle accumulates the unwrapped delta of every drag step — 0..±360 for
+   Revolve, ±max_taper for Extrude: the tool's clampFn owns the range, the
+   gizmo has no wrap or cap of its own */
 export function beginTaperRing(centerArr, frame, radius, taper0, onChange, onCommit,
-                               clampFn, opts = {}) {
+                               clampFn) {
   endTaperRing();
   const C = new THREE.Vector3(...centerArr);
   const X = new THREE.Vector3(...frame.x_dir).normalize();
@@ -904,8 +924,7 @@ export function beginTaperRing(centerArr, frame, radius, taper0, onChange, onCom
   scene.add(circle); scene.add(handle); scene.add(grab);
   taperRing = { circle, handle, grab, C, X, Y, N, R, ringAt,
                 taper: taper0 || 0, onChange, onCommit, clampFn,
-                continuous: !!opts.continuous, lastRaw: 0,
-                dragging: false, grabOff: 0 };
+                lastRaw: 0, dragging: false };
   taperRingPlace();
 }
 
@@ -951,26 +970,18 @@ function taperGrab(e) {
   taperRing.dragging = true;
   controls.enabled = false;
   taperRing.lastRaw = taperAngleAt(e);
-  taperRing.grabOff = taperRing.taper - taperRing.lastRaw;
   return true;
 }
 
 function taperDrag(e) {
   const raw = taperAngleAt(e);
-  let t;
-  if (taperRing.continuous) {          // accumulate turns: 0..±360
-    let d = raw - taperRing.lastRaw;
-    while (d > 180) d -= 360;
-    while (d < -180) d += 360;
-    taperRing.lastRaw = raw;
-    t = taperRing.taper + d;
-  } else {
-    t = raw + taperRing.grabOff;
-    while (t > 180) t -= 360;
-    while (t < -180) t += 360;
-  }
+  let d = raw - taperRing.lastRaw;                 // this step's turn, unwrapped
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  taperRing.lastRaw = raw;
+  let t = taperRing.taper + d;
   // no cap of its own (user 2026-09-03: "in Fusion it goes until -90"): the
-  // tool's clampFn holds the server's max_taper — one limit, one place
+  // tool's clampFn holds the server's limit — one limit, one place
   if (taperRing.clampFn) t = taperRing.clampFn(t);
   taperRing.taper = t;
   taperRingPlace();
@@ -1020,48 +1031,44 @@ export function beginRevolveGhost(frame, loops) {
   const parts = [];
   for (const L of loops || []) {
     if (!L.outer || L.outer.length < 3) continue;
-    const pts = L.outer.map(p => new THREE.Vector2(Math.max(p[0], 0), p[1]));
+    // |r|: a face on the far side of the axis sweeps the same annulus
+    const pts = L.outer.map(p => new THREE.Vector2(Math.abs(p[0]), p[1]));
     pts.push(pts[0].clone());                          // close the outline
-    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.13, depthWrite: false,
-      depthTest: false, side: THREE.DoubleSide }));
-    const edges = new THREE.LineSegments(new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true,
-        opacity: 0.65, depthTest: false }));
-    mesh.renderOrder = 990; edges.renderOrder = 991;
-    mesh.matrixAutoUpdate = false; edges.matrixAutoUpdate = false;
-    mesh.matrix.copy(basis); edges.matrix.copy(basis);
-    mesh.visible = edges.visible = false;
-    scene.add(mesh); scene.add(edges);
-    parts.push({ mesh, edges, pts });
+    // empty until the first drag: an EdgesGeometry cannot be made from nothing
+    const part = ghostPart(new THREE.BufferGeometry(), new THREE.BufferGeometry());
+    part.mesh.matrix.copy(basis); part.edges.matrix.copy(basis);
+    parts.push({ ...part, pts });
   }
-  rvGhost = { parts, angle: 0 };
+  setPartsVisible(parts, false);
+  rvGhost = { parts, angle: 0, pending: null, raf: 0 };
 }
 
+/* one geometry rebuild per animation frame, however fast the pointer moves */
 export function setRevolveGhost(deg) {
   if (!rvGhost) return;
-  const a = deg;                          // the tool clamps; the ghost draws what it is told
-  rvGhost.angle = a;
-  const len = Math.abs(a) * Math.PI / 180;
-  const start = a < 0 ? -len : 0;
-  const segs = Math.max(8, Math.round(Math.abs(a) / 5));
-  for (const P of rvGhost.parts) {
-    P.mesh.geometry.dispose(); P.edges.geometry.dispose();
-    P.mesh.geometry = new THREE.LatheGeometry(P.pts, segs, start, Math.max(len, 0.001));
-    P.edges.geometry = new THREE.EdgesGeometry(P.mesh.geometry, 15);
-    P.mesh.visible = P.edges.visible = Math.abs(a) > 0.05;
-  }
+  rvGhost.pending = deg;
+  if (rvGhost.raf) return;
+  rvGhost.raf = requestAnimationFrame(() => {
+    if (!rvGhost) return;
+    rvGhost.raf = 0;
+    const a = rvGhost.pending;
+    rvGhost.angle = a;
+    if (Math.abs(a) <= 0.05) { setPartsVisible(rvGhost.parts, false); return; }
+    const len = Math.abs(a) * Math.PI / 180;
+    const segs = Math.max(8, Math.round(Math.abs(a) / 5));
+    for (const P of rvGhost.parts) {
+      P.mesh.geometry.dispose(); P.edges.geometry.dispose();
+      P.mesh.geometry = new THREE.LatheGeometry(P.pts, segs, a < 0 ? -len : 0, len);
+      P.edges.geometry = new THREE.EdgesGeometry(P.mesh.geometry, 15);
+    }
+    setPartsVisible(rvGhost.parts, true);
+  });
 }
-export function hideRevolveGhost() {
-  if (!rvGhost) return;
-  for (const P of rvGhost.parts) P.mesh.visible = P.edges.visible = false;
-}
+export function hideRevolveGhost() { if (rvGhost) setPartsVisible(rvGhost.parts, false); }
 export function endRevolveGhost() {
   if (!rvGhost) return;
-  for (const P of rvGhost.parts) {
-    scene.remove(P.mesh); scene.remove(P.edges);
-    P.mesh.geometry.dispose(); P.edges.geometry.dispose();
-  }
+  if (rvGhost.raf) cancelAnimationFrame(rvGhost.raf);
+  disposeParts(rvGhost.parts);
   rvGhost = null;
 }
 

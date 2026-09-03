@@ -203,17 +203,13 @@ def plan_extrude(doc, req: dict) -> dict:
 
     fid = req.get("feature_id")
     if fid:
-        f = _feature(doc, fid)
-        if f is None:
-            raise ValueError(f"no feature '{fid}' in this design")
+        f = _edit_input(doc, fid, ("extrude", "extrude_face"))
         if f.op == "extrude_face":
             body_id = (f.inputs or [None])[0]
             face_center = f.params.get("face_center")
             face_normal = f.params.get("face_normal")
-        elif f.op == "extrude":
-            sketch_id = (f.inputs or [None])[0]
         else:
-            raise ValueError(f"'{fid}' is a {f.op}, not an extrude")
+            sketch_id = (f.inputs or [None])[0]
 
     if sketch_id is None and face_center is None:
         raise ValueError("Extrude needs a sketch profile or a picked flat face")
@@ -265,10 +261,19 @@ def plan_extrude(doc, req: dict) -> dict:
     }
 
 
-def _profile(doc, sketch_id: str):
-    """A sketch feature's built profile, the plane it was drawn on, and — for a
-    face sketch — which SIGN goes into the host body. Shared by every tool
-    that consumes a profile (extrude, revolve)."""
+def _edit_input(doc, fid: str, ops: tuple):
+    """The feature an EDIT session reopens, checked to be one of this tool's ops."""
+    f = _feature(doc, fid)
+    if f is None:
+        raise ValueError(f"no feature '{fid}' in this design")
+    if f.op not in ops:
+        raise ValueError(f"'{fid}' is a {f.op}, not {' / '.join(ops)}")
+    return f
+
+
+def _sketch_part(doc, sketch_id: str):
+    """A sketch feature and its built profile — the cheap lookup every
+    profile-consuming tool starts from."""
     prof = _feature(doc, sketch_id)
     if prof is None:
         raise ValueError(f"no sketch '{sketch_id}' in this design")
@@ -279,6 +284,14 @@ def _profile(doc, sketch_id: str):
         raise ValueError(f"sketch '{sketch_id}' has not been built"
                          + (f" ({prof.problems[0]})" if getattr(prof, "problems", None) else "")
                          + " — fix the sketch first")
+    return prof, profile
+
+
+def _profile(doc, sketch_id: str):
+    """A sketch feature's built profile, the plane it was drawn on, and — for a
+    face sketch — which SIGN goes into the host body (Extrude needs the host
+    face for that; Revolve reads the plane the sketch carries instead)."""
+    prof, profile = _sketch_part(doc, sketch_id)
     p = prof.params or {}
     offset = float(p.get("offset") or 0.0)
     into_sign = None
@@ -303,89 +316,104 @@ def _profile(doc, sketch_id: str):
     return profile, pl, into_sign
 
 
+def _coincides(pl: Plane, world: str):
+    """The local axis name ("u" / "v") whose LINE is the world axis `world`, else
+    None — only then may a legacy world name become the riding local name."""
+    d = sk._AXES[world].direction
+    if (pl.origin - d * pl.origin.dot(d)).length > 1e-6:    # the plane origin is off that line
+        return None
+    for name, attr in sk._LOCAL_AXES.items():
+        if abs(abs(getattr(pl, attr).dot(d)) - 1.0) < 1e-6:
+            return name
+    return None
+
+
+def _revolve_geometry(profile, ax, n, ext) -> dict:
+    """What the tool draws for ONE axis: the axis, the ring's centre on it level
+    with the profile, the ring frame (x = radial toward the material, z = the
+    axis, y = z × x so a positive drag turns the way the kernel sweeps — probed
+    right-handed), the outline as (radial, axial) pairs, and the sizes."""
+    r_lo, r_hi, h_lo, h_hi, _ = ext
+    axis_dir = ax.direction
+    side = 1.0 if abs(r_hi) >= abs(r_lo) else -1.0
+    radial = n.cross(axis_dir).normalized() * side
+    origin = ax.position + axis_dir * ((h_lo + h_hi) / 2.0)
+    ring = Plane(origin=origin, x_dir=radial, z_dir=axis_dir)
+    lathe = Plane(origin=origin, x_dir=radial, z_dir=radial.cross(axis_dir))
+    radius = max(abs(r_lo), abs(r_hi), 1.0)
+    return {"axis": _vec(axis_dir), "origin": _vec(origin), "frame": _frame(ring),
+            "loops": _loops(list(profile.faces()), lathe),
+            "limits": {"radius": round(radius, 4),
+                       "axis_half": round(max(radius, (h_hi - h_lo) / 2.0) * 1.3, 4),
+                       "max_angle": sk.MAX_REVOLVE_DEG}}
+
+
 def plan_revolve(doc, req: dict) -> dict:
-    """The Revolve tool's plan (specs/revolve.md). Input: sketch_id (or
-    feature_id of an existing revolve), optional axis — "u" / "v" to swap, or
-    a legacy world axis name that is mapped onto the local axis it coincides
-    with.
+    """The Revolve tool's plan (specs/revolve.md). Input: sketch_id, or the
+    feature_id of an existing revolve (edit: its stored axis is read here),
+    plus an optional axis name.
 
     The axis is DERIVED, not asked for: of the sketch plane's two axes through
-    the sketch origin, the profile must lie entirely on one side. Both that
-    work are offered (candidates), the lathe axis (v) first. Get it wrong and
-    the kernel answers with a raw StdFail_NotDone or a zero-volume "success"
-    — so the plan only ever hands the UI an axis that builds.
-
-        axis / origin     the spin axis and the ring's centre ON it, level
-                          with the middle of the profile
-        frame             the ring's frame: x = radial, toward the material
-                          (0° is where the sketch is), z = the axis,
-                          y = z × x so a positive drag turns the way the
-                          kernel sweeps (probed: a positive arc is
-                          right-handed about the axis)
-        loops             the profile outline as (radial, axial) pairs in that
-                          frame, for the lathe ghost
-        limits            radius (the profile's far edge), axis_half (how long
-                          to draw the gold axis line)
+    the sketch origin, the profile must lie entirely on one side. Every axis
+    that works is returned with its own handles (`alternatives`), the lathe
+    axis v first, so a swap in the panel is a local choice. A legacy tree's
+    WORLD axis is kept when its line lies in the plane (mapped to the local
+    name when they coincide, offered under its own name otherwise); when the
+    stored axis cannot be used the plan opens on one that can and says so in
+    `fallback`, so the tool can tell the user before OK saves the change.
     """
     sketch_id = req.get("sketch_id")
     want = req.get("axis")
     fid = req.get("feature_id")
     if fid:
-        f = _feature(doc, fid)
-        if f is None:
-            raise ValueError(f"no feature '{fid}' in this design")
-        if f.op != "revolve":
-            raise ValueError(f"'{fid}' is a {f.op}, not a revolve")
+        f = _edit_input(doc, fid, ("revolve",))
         sketch_id = (f.inputs or [None])[0]
-        want = want or (f.params or {}).get("axis")
+        want = want or (f.params or {}).get("axis") or "Z"    # the op's default when a tree names none
     if not sketch_id:
         raise ValueError("Revolve needs a sketch profile")
-    profile, _pl, _into = _profile(doc, sketch_id)
-    pl = sk.sketch_plane_of(profile)            # the very plane the op will use
+    _prof, profile = _sketch_part(doc, sketch_id)
+    pl = sk.sketch_plane_of(profile)            # the very plane the op will use (or its sentence)
     n = pl.z_dir
 
+    coincident = _coincides(pl, want) if want in sk._AXES else None
+    names = ["v", "u"]                          # the classic lathe axis first
+    if want in sk._AXES and not coincident:
+        names.append(want)                      # a legacy world axis, by its own name
     valid, why = [], []
-    for name in ("v", "u"):                     # the classic lathe axis first
-        ax = sk.revolve_axis(profile, name)     # the op's own axis, no second table
-        ext = sk.revolve_extent(profile, ax)
-        if ext is None:                         # cannot happen for an in-plane axis
-            why.append(f"{name} is not in the sketch plane")
-            continue
-        lo, hi = ext[0], ext[1]
-        if lo < -1e-6 and hi > 1e-6:
-            why.append(f"it crosses {name} ({lo:.3g} to {hi:.3g} mm)")
-            continue
-        valid.append((name, ax, ext))
+    for name in names:
+        ext = sk.revolve_extent(profile, sk.revolve_axis(profile, name))
+        if ext is None:
+            why.append(f"the world {name} axis runs outside the sketch plane")
+        elif ext[4]:
+            why.append(f"it crosses {name} ({ext[0]:.3g} to {ext[1]:.3g} mm)")
+        else:
+            valid.append((name, ext))
     if not valid:
         raise ValueError("this profile cannot be revolved: " + " and ".join(why)
                          + ". Move the profile entirely to one side of an axis in "
                            "its plane.")
-    if want in sk._AXES:                        # a legacy world name from an authored tree
-        w = sk._AXES[want].direction
-        hit = [v for v in valid if abs(abs(v[1].direction.dot(w)) - 1.0) < 1e-6]
-        want = hit[0][0] if hit else None
-    name, ax, (r_lo, r_hi, h_lo, h_hi) = next((v for v in valid if v[0] == want), valid[0])
-
-    axis_dir = ax.direction
-    side = 1.0 if abs(r_hi) >= abs(r_lo) else -1.0     # where the material is
-    radial = n.cross(axis_dir).normalized() * side      # the extent's own radial, signed toward it
-    origin = ax.position + axis_dir * ((h_lo + h_hi) / 2.0)   # on the axis, level with the profile
-    ring = Plane(origin=origin, x_dir=radial, z_dir=axis_dir)             # y = axis × radial
-    lathe = Plane(origin=origin, x_dir=radial, z_dir=radial.cross(axis_dir))   # y = the axis
-    loops = _loops(list(profile.faces()), lathe)
-    radius = max(abs(r_lo), abs(r_hi), 1.0)
-    half = max(radius, (h_hi - h_lo) / 2.0) * 1.3
-    axis_v = _vec(axis_dir)
+    if coincident:
+        want = coincident                       # the same line, under the name that rides
+    chosen = next((v for v in valid if v[0] == want), None)
+    fallback = None
+    if chosen is None:
+        chosen = valid[0]
+        if want:
+            fallback = {"from": want,
+                        "why": next((w for w in why if want in w),
+                                    f"{want} is not one of this sketch's axes")}
+    name, ext = chosen
+    geo = _revolve_geometry(profile, sk.revolve_axis(profile, name), n, ext)
     return {
         "ok": True, "tool": "revolve", "mode": "sketch", "op": "revolve",
-        "input": sketch_id, "axis": axis_v, "origin": _vec(origin),
-        "axis_name": name, "candidates": [v[0] for v in valid],
-        "frame": _frame(ring), "loops": loops, "into_sign": None,
-        "limits": {"radius": round(radius, 4), "axis_half": round(half, 4),
-                   "max_angle": sk.MAX_REVOLVE_DEG},
+        "input": sketch_id, **geo, "axis_name": name,
+        "candidates": [v[0] for v in valid],
+        "alternatives": {v[0]: _revolve_geometry(profile, sk.revolve_axis(profile, v[0]), n, v[1])
+                         for v in valid if v[0] != name},
+        "fallback": fallback,
         "target_body": _default_target(doc, sketch_id),
         "will_build": f"revolve {sketch_id} about its {name} axis "
-                      f"({_axis_name(axis_v)})",
+                      f"({_axis_name(geo['axis'])})",
     }
 
 

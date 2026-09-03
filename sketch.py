@@ -256,19 +256,30 @@ def _on_plane(sketch, pl: Plane):
 
 
 def sketch_plane_of(sketch) -> Plane:
-    """The plane a sketch was drawn on: the one it was built on when we built
-    it; for a sketch from elsewhere, the plane of its first face (build123d's
-    default x direction for that normal)."""
+    """The plane a sketch was drawn on — the one it was built on when we built
+    it (`_on_plane`), moved along its own normal if the sketch has since been
+    translated out of it (the axes ride a move). Never guessed: a sketch that
+    came through mirror / scale carries no plane, and one that was rotated has
+    a plane that no longer matches its geometry; both raise a sentence, since
+    "u" / "v" would otherwise mean a different axis than the sketcher showed
+    (review 2026-09-03)."""
     pl = getattr(sketch, "_tc_plane", None)
-    if pl is not None:
-        return pl
+    if pl is None:
+        raise ValueError("this sketch does not carry the plane it was drawn on (it "
+                         "came through a modifier such as mirror or scale) — revolve "
+                         "the original sketch, or use a world axis (X, Y, Z) that "
+                         "lies in its plane")
     faces = sketch.faces()
     if not faces:
         raise ValueError("the sketch has no face to read a plane from")
-    pl = face_plane(faces[0])
-    if pl is None:
-        raise ValueError("the sketch's face is not flat")
-    return pl
+    f = faces[0]
+    c = f.center()
+    if abs(abs(f.normal_at(c).dot(pl.z_dir)) - 1.0) > 1e-6:
+        raise ValueError("this sketch was rotated after it was drawn, so its own axes "
+                         "no longer lie in its plane — revolve the original sketch, "
+                         "or use a world axis (X, Y, Z) that lies in its plane")
+    d = (c - pl.origin).dot(pl.z_dir)
+    return pl.offset(d) if abs(d) > 1e-9 else pl
 
 
 def sketch_plane(plane: str, offset: float = 0.0) -> Plane:
@@ -1066,7 +1077,7 @@ def revolve_axis(sketch, axis) -> Axis:
     """The Axis for a revolve axis NAME. "u" / "v" are the sketch plane's own x
     / y through the sketch origin — they RIDE the geometry when a face or an
     offset moves (the offset method, applied to an axis). "X" / "Y" / "Z" are
-    the world axes: the authoring path, kept as it was."""
+    the world axes: the authoring path."""
     if axis in _LOCAL_AXES:
         pl = sketch_plane_of(sketch)
         return Axis(pl.origin, getattr(pl, _LOCAL_AXES[axis]))
@@ -1076,60 +1087,78 @@ def revolve_axis(sketch, axis) -> Axis:
                      'axes) or "X", "Y", "Z"')
 
 
+def _plane_for_axis_check(sketch):
+    """The plane a revolve axis must lie in: the recorded one when it is still
+    valid, else the first face's own plane — enough to check a WORLD axis on a
+    sketch that came through a modifier (u / v need the record and say so)."""
+    try:
+        return sketch_plane_of(sketch)
+    except ValueError:
+        faces = sketch.faces()
+        if not faces:
+            return None
+        f = faces[0]
+        return Plane(origin=f.center(), z_dir=f.normal_at(f.center()))
+
+
 def revolve_extent(sketch, ax: Axis):
     """The profile's reach in the (radial, axial) frame of `ax`:
-    (r_lo, r_hi, h_lo, h_hi) — radial along n × a (the sketch plane's normal
-    crossed with the axis), axial along the axis, both from the axis point.
-    None when the axis direction does not lie in the sketch's plane. ONE
-    measurement for the op's straddle check and the tool's ring / ghost, on
-    the kernel's own bounding box of the profile turned into that frame, so a
-    circle's whole reach counts, not just its seam vertex. The plane is the
-    one the sketch was drawn on (sketch_plane_of), never re-read from the
-    geometry — on a bottom face the two differ in sign."""
-    try:
-        n = sketch_plane_of(sketch).z_dir
-    except ValueError:
+    (r_lo, r_hi, h_lo, h_hi, straddles) — radial along n × a (the sketch
+    plane's normal crossed with the axis), axial along the axis, both from the
+    axis point; `straddles` is True when ANY ONE FACE reaches both sides of the
+    axis (faces on opposite sides, none crossing, revolve cleanly). None when
+    the axis does not lie in the sketch's plane — its direction OR its line:
+    an axis parallel to the plane but outside it makes OCCT return a valid
+    solid of the WRONG shape (probed 2026-09-03: lathe volume, displaced
+    centroid), the banned silent-wrong-geometry failure. ONE measurement for
+    the op's guard and the tool's ring / ghost, on the kernel's own bounding
+    boxes, so a circle's whole reach counts, not just its seam vertex."""
+    pl = _plane_for_axis_check(sketch)
+    if pl is None:
         return None
-    a = ax.direction
-    # the axis has to LIE IN the plane: perpendicular to its normal. Parallel
-    # to the normal means spinning the profile in its own plane — a
-    # "successful" ZERO-volume solid, the other banned failure (rule 5).
-    if abs(n.dot(a)) > 1e-6:
+    n, a = pl.z_dir, ax.direction
+    if abs(n.dot(a)) > 1e-6:                              # direction out of the plane
         return None
-    radial = n.cross(a)
-    if radial.length < 1e-9:
+    if abs(n.dot(ax.position - pl.origin)) > 1e-6:       # the LINE runs outside it
         return None
-    radial = radial.normalized()
+    radial = n.cross(a).normalized()
     local = Plane(origin=ax.position, x_dir=radial, z_dir=radial.cross(a))   # y = the axis
-    bb = local.to_local_coords(sketch).bounding_box()
-    return (float(bb.min.X), float(bb.max.X), float(bb.min.Y), float(bb.max.Y))
+    bbs = [local.to_local_coords(f).bounding_box() for f in sketch.faces()]
+    if not bbs:
+        return None
+    straddles = any(bb.min.X < -1e-6 and bb.max.X > 1e-6 for bb in bbs)
+    return (min(float(bb.min.X) for bb in bbs), max(float(bb.max.X) for bb in bbs),
+            min(float(bb.min.Y) for bb in bbs), max(float(bb.max.Y) for bb in bbs),
+            straddles)
 
 
 def revolve_axis_span(sketch, ax: Axis):
-    """(r_lo, r_hi) of revolve_extent: r_lo < 0 < r_hi means the profile
-    STRADDLES the axis — OCCT answers that with a raw StdFail_NotDone, so this
-    is what makes the refusal a sentence (probed 2026-09-02/03)."""
+    """(r_lo, r_hi) of revolve_extent — how far the profile reaches either side
+    of the axis, radially; None when the axis is not in the sketch's plane."""
     e = revolve_extent(sketch, ax)
     return None if e is None else (e[0], e[1])
 
 
 def revolve_sketch(sketch, axis: str = "Z", angle: float = 360.0):
-    """Spin a sketch around an axis to make a solid of revolution.
+    """Spin a sketch about an axis to make a solid of revolution.
 
     axis: "u" / "v" — the sketch plane's own x / y through the sketch origin
     (what the Revolve tool sends: it rides the geometry), or "X" / "Y" / "Z"
-    — a world axis (the authoring path). The sketch must lie in a plane
-    containing the axis direction and sit entirely on one side of the axis
-    (a profile on XZ at positive x, revolved about Z or "v").
+    — a world axis (the authoring path). The axis LINE must lie in the sketch
+    plane and no face of the profile may cross it (a profile on XZ at positive
+    x, revolved about Z or "v").
 
-    Every way of getting that wrong used to reach the user raw (probed
-    2026-09-02 and 2026-09-03, probes/revolve_axis_probe.py):
-      * a profile straddling the axis -> StdFail_NotDone, an OCP exception
-        that does NOT derive from RuntimeError;
+    Every way of getting that wrong used to reach the user raw or wrong
+    (probes/revolve_axis_probe.py, 2026-09-02/03):
+      * a face straddling the axis -> StdFail_NotDone, an OCP exception that
+        does NOT derive from RuntimeError;
       * an axis perpendicular to the plane -> a "successful" solid of volume 0;
+      * an axis parallel to the plane but OUTSIDE it -> a valid solid of the
+        wrong shape;
       * angle 0 -> build123d quietly makes a FULL turn; 400 -> quietly 40.
     Each is a ValueError that says what to change — the tool shows it, and the
-    AI repair loop reads it."""
+    AI repair loop reads it. An empty result is caught by the document's
+    health check like every other op's."""
     ax = revolve_axis(sketch, axis)
     ang = float(angle)
     if not -MAX_REVOLVE_DEG <= ang <= MAX_REVOLVE_DEG:
@@ -1139,28 +1168,22 @@ def revolve_sketch(sketch, axis: str = "Z", angle: float = 360.0):
     if abs(ang) < 1e-9:
         raise ValueError("revolve: angle is 0, so there is nothing to build — "
                          "drag the ring or type an angle first")
-    span = revolve_axis_span(sketch, ax)
-    if span is None:
+    ext = revolve_extent(sketch, ax)
+    if ext is None:
         raise ValueError(
-            f"revolve: the sketch's plane does not contain the {axis} axis, so "
-            f"spinning it around {axis} sweeps nothing. Revolve about an axis "
-            f"that lies IN the sketch plane — u or v (the plane's own axes), or "
-            f"a world axis the plane contains.")
-    lo, hi = span
-    if lo < -1e-6 and hi > 1e-6:
+            f"revolve: the sketch's plane does not contain the {axis} axis (its "
+            f"direction or its line lies outside the plane), so spinning around it "
+            f"does not make a true solid of revolution. Revolve about u or v — the "
+            f"plane's own axes through the sketch origin — or a world axis that "
+            f"lies in the plane.")
+    r_lo, r_hi, _h0, _h1, straddles = ext
+    if straddles:
         raise ValueError(
             f"revolve: the profile crosses the {axis} axis (it reaches "
-            f"{lo:.3g} to {hi:.3g} either side), so the sweep would pass "
+            f"{r_lo:.3g} to {r_hi:.3g} either side), so the sweep would pass "
             f"through itself. Move the profile entirely to one side of the "
             f"axis, or revolve about the other in-plane axis.")
-    solid = _revolve(sketch, axis=ax, revolution_arc=ang)
-    # belt and braces: never hand back a "successful" empty solid
-    if solid is None or solid.volume <= 1e-9:
-        raise ValueError(
-            f"revolve: spinning this profile around {axis} produced no "
-            f"material. Check the profile is on one side of the axis and that "
-            f"the axis lies in its plane.")
-    return solid
+    return _revolve(sketch, axis=ax, revolution_arc=ang)
 
 
 def loft_sketches(sketches: list):
