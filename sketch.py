@@ -625,6 +625,8 @@ def _taper_offset_problem(profile, amount: float, taper: float):
         if (direction.normalized() == face.normal_at()
                 and pl.z_dir.Z > 0 and taper > 0 and not inner):
             return None                         # robust DPrism path, no offset
+        # (when DPrism goes the wrong way and _taper_loft takes over, the loft
+        # checks its own offset wires — see there)
         off = -abs(amount) * math.tan(math.radians(taper))
         if abs(off) < 1e-9:
             return None
@@ -638,9 +640,13 @@ def _taper_offset_problem(profile, amount: float, taper: float):
                 return (f"the {'hole' if i else 'outline'} cannot be offset by "
                         f"{abs(off):.3f}mm ({type(e).__name__})")
             n_after = len(res.edges())
-            # the degenerate signature: edges vanish while the offset is tiny
-            if n_after < n_before and abs(off) < 0.25 * math.sqrt(
-                    max(face.area, 1e-9)):
+            # the degenerate signature: a polygon collapses to one or two
+            # edges (the BSPLINE-seam garbage that access-violated OCCT came
+            # back as a SINGLE edge). A wire merely LOSING an edge is normal —
+            # the 0.07mm top of a near-collapsed wedge wall vanishes under any
+            # inward offset and the loft builds fine (2026-09-03); refusing
+            # that made a flipped taper on such a wall impossible.
+            if n_after < n_before and n_before >= 3 and n_after < 3:
                 return (f"the {'hole' if i else 'outline'} collapses when "
                         f"offset by {abs(off):.3f}mm "
                         f"({n_before} edges -> {n_after})")
@@ -658,24 +664,52 @@ def _tapered_extrude(profile, amount: float, taper: float):
     OCP raises Standard_NoSuchObject etc., which derive from Exception and NOT
     from RuntimeError — an `except RuntimeError` here never caught them and the
     raw kernel error reached the feature tree."""
+    outward = None          # a FACE's outward normal, captured BEFORE any rebuild
     if taper:
-        profile = _straighten_face(profile) if isinstance(profile, b3d.Face) \
-            else profile
+        if isinstance(profile, b3d.Face):
+            fp = face_plane(profile)
+            outward = fp.z_dir if fp is not None else None
+            # _straighten_face may rebuild the face with its normal FLIPPED
+            # (measured 2026-09-03 on a fused body's wall) — every direction
+            # decision below uses `outward`, never the rebuilt face's normal
+            profile = _straighten_face(profile)
         problem = _taper_offset_problem(profile, amount, taper)
         if problem:
             raise ValueError(
-                f"taper {taper}° over {abs(amount)}mm does not work on this "
+                f"taper {-taper:g}° over {abs(amount):g}mm does not work on this "
                 f"profile: {problem}. Try a smaller taper, a shorter distance, "
                 f"or taper the other way.")
+    solid = None
+    tried_loft = False
     try:
         solid = _extrude(profile, amount=amount, taper=taper)
+        # A FACE OF A SOLID can come out on the WRONG SIDE of a tapered build:
+        # build123d hands an upward, narrowing, hole-less face to OCCT's
+        # LocOpe_DPrism, which follows the face's INTERNAL orientation (a face
+        # made by an earlier taper is stored reversed), and the straightened
+        # face may carry a flipped normal. Either way the stub landed INSIDE
+        # the body (user 2026-09-03: "it goes to the opposite direction").
+        # Measure the side against the ORIGINAL outward normal; if the kernel
+        # went the wrong way, build the loft along that explicit direction.
+        if taper and outward is not None \
+                and not _same_side(solid, profile, amount, outward):
+            tried_loft = True
+            solid = None                    # never keep the wrong-sided solid
+            solid = _taper_loft(profile, amount, taper, outward)
     except Exception as e:
         if not taper:
             raise
-        raise ValueError(
-            f"taper {taper}° over {abs(amount)}mm failed on this profile "
-            f"({type(e).__name__}: {str(e)[:80]}). Try a smaller taper, a "
-            f"shorter distance, or taper the other way.") from e
+        err = e
+        if outward is not None and not tried_loft:   # the other construction may work
+            try:
+                solid = _taper_loft(profile, amount, taper, outward)
+            except Exception as e2:
+                err = e2
+        if solid is None:
+            raise ValueError(
+                f"taper {-taper:g}° over {abs(amount):g}mm failed on this profile "
+                f"({type(err).__name__}: {str(err)[:100]}). Try a smaller taper, "
+                f"a shorter distance, or taper the other way.") from err
     if taper:
         # A tapered extrude can also SUCCEED into a broken solid (measured on
         # an L-bracket's reflex corner and a DPrism boss face: an open shell /
@@ -693,9 +727,70 @@ def _tapered_extrude(profile, amount: float, taper: float):
             if healed is not None and not inspector.health(healed):
                 return healed
             raise ValueError(
-                f"taper {taper}° over {abs(amount)}mm produces a broken solid "
+                f"taper {-taper:g}° over {abs(amount):g}mm produces a broken solid "
                 f"on this profile ({problems[0]}). Try a smaller taper, a "
                 f"shorter distance, or taper the other way.")
+    return solid
+
+
+def _same_side(solid, face, amount: float, outward) -> bool:
+    """Does the extruded solid lie on the side of `face` its amount asked for?
+    (centre of mass along the face's ORIGINAL outward normal; a prism off a
+    face never straddles it)"""
+    try:
+        d = (solid.center() - face.center()).dot(outward)
+        return (d > 0) == (float(amount) > 0)
+    except Exception:
+        return True                             # a check must never break a build
+
+
+def _taper_loft(face, amount: float, taper: float, outward):
+    """A tapered extrude of a FACE OF A SOLID along its OUTWARD normal, built as
+    a loft from the face to its 2D-offset copy moved by `amount` — the same
+    construction build123d's `Solid.extrude_taper` uses for every case but one.
+
+    The one it does differently is the bug (user, 2026-09-03: "I tried a
+    taper on the triangle face and it goes in the opposite direction"): when a
+    face points upward, the taper narrows and the face has no holes, build123d
+    hands the job to OCCT's `LocOpe_DPrism`, which follows the face's INTERNAL
+    orientation rather than its outward normal. A face created by an earlier
+    taper is stored reversed, so the tapered stub landed INSIDE the body while
+    the untapered one went outside (measured: +2.50 vs -2.40 mm along the
+    normal on a 45° wedge wall). Here the direction is explicit — the same
+    `face_plane` normal the untapered extrude and the tool's plan use — so the
+    tapered and untapered results always lie on the same side. `taper` is in
+    the kernel helpers' convention (positive narrows), like _extrude."""
+    from build123d import Kind, Location, Plane, Solid, Vector
+    n = outward                  # the ORIGINAL face's normal, never the rebuilt face's
+    direction = Vector(n.X, n.Y, n.Z) * float(amount)
+    offset_amt = -direction.length * math.tan(math.radians(taper))
+    pl = Plane(face)                            # a 2D frame for the offset only
+    wires = [face.outer_wire()] + face.inner_wires()
+    solids = []
+    for i, wire in enumerate(wires):
+        flip = -1 if i > 0 else 1               # holes taper the other way
+        local = pl.to_local_coords(wire)
+        try:
+            shrunk = local.offset_2d(flip * offset_amt, kind=Kind.INTERSECTION)
+        except Exception as e:                  # the offset eats the whole wire
+            raise ValueError(
+                f"the walls meet before the end: the {'hole' if i else 'outline'} "
+                f"cannot be offset by {abs(offset_amt):.2f}mm ({type(e).__name__}) "
+                f"— use a smaller taper or a shorter distance") from e
+        # never hand OCCT a degenerate wire (the garbage that once
+        # access-violated the whole server): a polygon offset must stay a
+        # polygon — a circle (1 edge) is fine, 1-2 edges from 3+ is not
+        if len(wire.edges()) >= 3 and len(shrunk.edges()) < 3:
+            raise ValueError(
+                f"the {'hole' if i else 'outline'} collapses when offset by "
+                f"{abs(offset_amt):.3f}mm ({len(wire.edges())} edges -> "
+                f"{len(shrunk.edges())})")
+        moved = pl.from_local_coords(shrunk)
+        moved.move(Location(direction))
+        solids.append(Solid.make_loft([wire, moved]))
+    solid = solids[0]
+    if len(solids) > 1:
+        solid = solid.cut(*solids[1:])
     return solid
 
 
@@ -785,7 +880,7 @@ def extrude_sketch(sketch, amount: float, both: bool = False,
         except Exception as e:
             if t:
                 raise ValueError(
-                    f"taper {t}° over {abs(a)}mm (symmetric) failed on this "
+                    f"taper {-t:g}° over {abs(a):g}mm (symmetric) failed on this "
                     f"profile ({type(e).__name__}: {str(e)[:80]}). Try a "
                     f"smaller taper, a shorter distance, or the other way.") from e
             raise

@@ -10,12 +10,19 @@ import math
 import pytest
 
 
-def test_tilted_face_taper_heals_intermittent_invalids():
-    """User repro 2026-08-05: narrowing taper on a face extruded from the
-    tilted wall of a tapered body failed at 10 and 31 deg but built at
-    5/20/40 — OCCT intermittently flags the loft result invalid. ShapeFix
-    heals it (probed: identical volume); the whole sweep must now be ok."""
+def test_tilted_face_taper_is_on_the_right_side_or_refused():
+    """User repro 2026-08-05, re-read 2026-09-03. The face is a REVERSED face of
+    a fused tapered body, ~37.5 x 17.7 mm; a narrowing taper over 97 mm
+    collapses it past ~5 deg. The old test asserted every angle "ok" — which
+    OCCT's LocOpe_DPrism delivered by building the stub INSIDE the body and
+    invalid, then ShapeFix made it pass. That is the user's "taper goes to the
+    opposite direction" bug (2026-09-03) hiding behind a green test. Truth:
+    a buildable angle builds OUTSIDE the body; an impossible one is refused with
+    a sentence — never a healthy-looking solid on the wrong side."""
     from document import Document
+    import sketch as sk
+    face_center, face_normal = [16.25, 56.45, 9.96], [0, 0.854, 0.52]
+    built = 0
     for taper in (-5.0, -10.0, -20.0, -31.0, -40.0):     # Fusion sign: negative narrows
         doc = Document(name="repro")
         doc.add("sk", "sketch", {"plane": "XY", "offset": 0, "entities": [
@@ -27,13 +34,20 @@ def test_tilted_face_taper_heals_intermittent_invalids():
                  "face_normal": [0, -0.854, 0.52], "amount": 71.78}, ["e1"])
         doc.add("j1", "fuse", {}, ["e1", "e2"])
         doc.add("e3", "extrude_face",
-                {"face_center": [16.25, 56.45, 9.96],
-                 "face_normal": [0, 0.854, 0.52], "amount": 97.32,
-                 "taper": taper}, ["j1"])
-        doc.add("j2", "fuse", {}, ["j1", "e3"])
+                {"face_center": face_center, "face_normal": face_normal,
+                 "amount": 97.32, "taper": taper}, ["j1"])
         doc.rebuild()
         f = doc.get("e3")
-        assert f.status == "ok", (taper, f.problems)
+        if f.status == "ok":
+            built += 1
+            body, stub = doc._parts["j1"], doc._parts["e3"]
+            face = sk.resolve_face(body, face_center, face_normal)
+            n = sk.face_plane(face).z_dir
+            assert (stub.center() - face.center()).dot(n) > 0,                 (taper, "the tapered stub landed INSIDE the body")
+        else:
+            msg = " ".join(f.problems).lower()
+            assert "taper" in msg and ("smaller" in msg or "shorter" in msg), (taper, f.problems)
+    assert built >= 1, "the shallow -5 deg taper must still build"
 from build123d import Edge, Kind, Line, Spline, Wire
 
 import sketch as sk
