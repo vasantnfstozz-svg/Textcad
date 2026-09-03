@@ -350,6 +350,12 @@ journey tests; volume cross-checked (Pappus). *Success metric for the whole
 plan:* bugs the user finds in Revolve's first week, compared with Extrude's
 history. *User does:* Revolve checklist.
 
+*Spec written 2026-09-03:* `specs/revolve.md` — awaiting the user's approval
+(R8). Decisions proposed there: the axis is derived (one of the sketch's two
+in-plane axes through the sketch origin, `u`/`v`, riding the geometry; Swap
+offered when both work); angle box starts at 0 with a Full button; a picked
+FACE as profile, a sketch-line axis and Two-sides/Symmetric are P3b.
+
 **P4 — The rest of Tier 1, one tool per session.**
 Order: Fillet/Chamfer on picked edges (needs edge picking + per-edge op) →
 Hole → Pattern → Mirror → Shell → Move/Rotate → Push/Pull naming. Each: spec
@@ -370,9 +376,9 @@ assemblies, the user's personal project.
 
 ## 8. The per-tool ritual (P3 onward)
 
-1. **Spec** — one page: the three sentences of what you click and see, the
-   handle, the value box, failure messages, the five-step user checklist.
-   User approves.
+1. **Spec** — one page in `specs/<tool>.md`: the three sentences of what you
+   click and see, the handle, the value box, failure messages, the five-step
+   user checklist. User approves.
 2. **Probe** — any kernel behaviour the tool relies on gets a probe script
    under `probes/<tool>_*.py`, committed.
 3. **Plan tests** — table of (input geometry × selection × params → plan).
