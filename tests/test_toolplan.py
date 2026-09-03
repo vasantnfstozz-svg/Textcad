@@ -58,9 +58,15 @@ def test_a_plane_sketch_extrudes_along_its_plane(plane, axis, origin):
     assert p["origin"] == pytest.approx(origin, abs=1e-3)
     assert p["into_sign"] is None
     assert len(p["loops"]) == 1 and not p["loops"][0]["holes"]
-    assert p["limits"]["inradius"] == pytest.approx(5, abs=0.05)
     assert p["limits"]["outer_radius"] == pytest.approx(5, abs=0.05)
     assert p["limits"]["has_holes"] is False
+    # the taper constants are the server's; the meeting depth costs 18 kernel
+    # offsets per face, so a plain plan does NOT measure it ...
+    assert p["limits"]["max_taper"] == 89 and p["limits"]["apex_fraction"] == pytest.approx(0.999)
+    assert p["limits"]["collapse"] is None
+    # ... and a plan that asks for it gets the exact per-face value
+    m = ok(toolplan.plan(d, {"tool": "extrude", "sketch_id": "s", "measure_collapse": True}))
+    assert m["limits"]["collapse"] == pytest.approx([5], abs=0.01)
     # and the KERNEL agrees: +3 along the plan's axis
     solid = sk.extrude_sketch(d._parts["s"], 3)
     bb = solid.bounding_box()
@@ -78,7 +84,8 @@ def test_a_sketch_with_a_hole_reports_the_hole_and_the_thin_wall():
     assert len(p["loops"]) == 1 and len(p["loops"][0]["holes"]) == 1
     assert p["limits"]["has_holes"] is True
     # half the thinnest wall: the hole's edge (y=±2) to the outer edge (y=±5)
-    assert p["limits"]["inradius"] == pytest.approx(1.5, abs=0.05)
+    m = ok(toolplan.plan(d, {"tool": "extrude", "sketch_id": "s", "measure_collapse": True}))
+    assert m["limits"]["collapse"] == pytest.approx([1.5], abs=0.01)
     assert p["origin"] == pytest.approx([0, 0, 0], abs=1e-3)
 
 
@@ -147,8 +154,10 @@ def test_a_picked_bottom_face_builds_along_the_outward_normal_in_its_own_frame()
     xs, ys = [q[0] for q in outer], [q[1] for q in outer]
     assert max(xs) - min(xs) == pytest.approx(60, abs=1e-3)
     assert max(ys) - min(ys) == pytest.approx(40, abs=1e-3)
-    assert p["limits"]["inradius"] == pytest.approx(20, abs=0.05)      # half the short side
     assert p["limits"]["outer_radius"] == pytest.approx(math.hypot(30, 20), abs=0.05)
+    m = ok(toolplan.plan(d, {"tool": "extrude", "body_id": "b", "face_center": [0, 0, -10],
+                             "face_normal": [0, 0, -1], "measure_collapse": True}))
+    assert m["limits"]["collapse"] == pytest.approx([20], abs=0.01)   # half the short side
     # the KERNEL agrees: +5 from the bottom face goes DOWN
     solid = sk.extrude_face(d._parts["b"], [0, 0, -10], [0, 0, -1], amount=5)
     assert solid.bounding_box().min.Z == pytest.approx(-15, abs=1e-3)

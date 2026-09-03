@@ -133,17 +133,16 @@ def ring_point(page, deg):
         deg)
 
 
-def test_the_taper_ring_is_not_capped_below_the_geometric_limit(server, page, fresh_doc):
-    """A 40x40 profile extruded 5 mm collapses at atan(20/5) = 76°, so 70° must
-    be reachable by DRAGGING the ring — it used to stop dead at 60°."""
-    page.evaluate(BUILD_SHALLOW)
-    page.wait_for_selector("#tree .nrow >> text=ex1")
-    open_edit(page, "ex1")
-    page.wait_for_function("() => window.__vp.gizmos().ring", timeout=10000)
-    page.wait_for_timeout(300)                # the plan has landed, ring placed
-    # the ring is 1.35x the profile, and in this 1200px window its 0° handle
-    # lands OFF the canvas (over the chat column) at the fitted zoom — zoom out
-    # first, the way a user would (wheel = zoom, positive deltaY = out)
+
+def drag_ring_to(page, deg):
+    """Grab the taper ring's handle (at the current 0°) and drag it, in real
+    5° mouse steps, to `deg` — leaving the button DOWN so the caller can read
+    the live value before releasing.
+
+    The ring is 1.35x the profile, and in this 1200px window its 0° handle
+    lands OFF the canvas (over the chat column) at the fitted zoom — so zoom
+    out first, the way a user would (wheel = zoom, positive deltaY = out).
+    (LAUNCH-PLAN.md §10 P3 tracks clamping the ring to the viewport.)"""
     c = page.evaluate("() => { const r = document.querySelector('canvas')"
                       ".getBoundingClientRect(); return {l:r.left, t:r.top, w:r.width, h:r.height}; }")
     page.mouse.move(c["l"] + c["w"] / 2, c["t"] + c["h"] / 2)
@@ -152,13 +151,26 @@ def test_the_taper_ring_is_not_capped_below_the_geometric_limit(server, page, fr
         page.wait_for_timeout(15)
     page.wait_for_timeout(300)
     p0 = ring_point(page, 0)                  # the handle sits at the current 0°
-    assert c["l"] < p0["x"] < c["l"] + c["w"] and c["t"] < p0["y"] < c["t"] + c["h"],         f"ring handle still off the canvas: {p0} vs {c}"
+    assert c["l"] < p0["x"] < c["l"] + c["w"] and c["t"] < p0["y"] < c["t"] + c["h"], \
+        f"ring handle still off the canvas: {p0} vs {c}"
     page.mouse.move(p0["x"], p0["y"])
     page.mouse.down()
-    for deg in range(-5, -71, -5):            # a real, gradual drag (negative = narrowing)
-        p = ring_point(page, deg)
+    step = -5 if deg < 0 else 5
+    for d in range(step, deg + step, step):
+        p = ring_point(page, d)
         page.mouse.move(p["x"], p["y"])
         page.wait_for_timeout(20)
+
+
+def test_the_taper_ring_is_not_capped_below_the_geometric_limit(server, page, fresh_doc):
+    """A 40x40 profile extruded 5 mm collapses at atan(20/5) = 76°, so 70° must
+    be reachable by DRAGGING the ring — it used to stop dead at 60°."""
+    page.evaluate(BUILD_SHALLOW)
+    page.wait_for_selector("#tree .nrow >> text=ex1")
+    open_edit(page, "ex1")
+    page.wait_for_function("() => window.__vp.gizmos().ring", timeout=10000)
+    page.wait_for_timeout(300)                # the plan has landed, ring placed
+    drag_ring_to(page, -70)                   # still holding the mouse
     live = float(page.input_value("#exTaper"))
     assert live < -60, f"the ring stopped at {live} deg while dragging (old cap)"
     page.mouse.up()                           # one verified rebuild
@@ -186,20 +198,7 @@ def test_past_the_meeting_angle_the_solid_ends_at_the_tip(server, page, fresh_do
     open_edit(page, "ex1")
     page.wait_for_function("() => window.__vp.gizmos().ring", timeout=10000)
     page.wait_for_timeout(300)
-    c = page.evaluate("() => { const r = document.querySelector('canvas')"
-                      ".getBoundingClientRect(); return {l:r.left, t:r.top, w:r.width, h:r.height}; }")
-    page.mouse.move(c["l"] + c["w"] / 2, c["t"] + c["h"] / 2)
-    for _ in range(16):
-        page.mouse.wheel(0, 100)
-        page.wait_for_timeout(15)
-    page.wait_for_timeout(300)
-    p0 = ring_point(page, 0)
-    page.mouse.move(p0["x"], p0["y"])
-    page.mouse.down()
-    for deg in range(-5, -86, -5):
-        p = ring_point(page, deg)
-        page.mouse.move(p["x"], p["y"])
-        page.wait_for_timeout(20)
+    drag_ring_to(page, -85)                   # still holding the mouse
     live = float(page.input_value("#exTaper"))
     assert live < -80, f"the ring stopped at {live} deg — there must be no barrier"
     page.mouse.up()

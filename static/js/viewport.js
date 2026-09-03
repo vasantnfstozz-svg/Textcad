@@ -910,12 +910,9 @@ function taperDrag(e) {
   let t = taperAngleAt(e) + taperRing.grabOff;
   while (t > 180) t -= 360;
   while (t < -180) t += 360;
-  // no fixed cap (user 2026-09-03: "in Fusion it goes until the circle has
-  // merged"): the walls may lean until they MEET — clampFn below is the
-  // geometric barrier, and Fusion's own limit is geometric too. 89° only
-  // stops a wall from going flat or folding back.
-  t = Math.max(-89, Math.min(89, t));
-  if (taperRing.clampFn) t = taperRing.clampFn(t);   // barrier (wall collapse)
+  // no cap of its own (user 2026-09-03: "in Fusion it goes until -90"): the
+  // tool's clampFn holds the server's max_taper — one limit, one place
+  if (taperRing.clampFn) t = taperRing.clampFn(t);
   taperRing.taper = t;
   taperRingPlace();
   taperRing.onChange(taperRing.taper);

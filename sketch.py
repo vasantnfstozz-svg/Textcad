@@ -601,83 +601,107 @@ def _straighten_face(face):
     return rebuilt
 
 
-def collapse_offset(face) -> float:
+# Non-fatal facts an op wants the user to hear (a taper that ended at the tip).
+# document.rebuild() drains this after every feature build into Feature.notes
+# and Document.warnings, so the AI, MCP and API paths hear it too - not only
+# the browser's ring (LAUNCH-PLAN.md R7, review finding 2026-09-03).
+_NOTES: list = []
+
+
+def _note(msg: str) -> None:
+    _NOTES.append(msg)
+
+
+def drain_notes() -> list:
+    out = list(_NOTES)
+    _NOTES.clear()
+    return out
+
+
+def collapse_offset(face):
     """How far this face's outline can be offset INWARD before the material is
-    gone — the depth at which a narrowing taper's walls MEET (a point for a
+    gone - the depth at which a narrowing taper's walls MEET (a point for a
     circle or square, a ridge for a rectangle, wherever the medial axis peaks
     for an odd shape). Measured by bisection on the kernel's own 2D offset, so
-    it is exact for any outline; holes cap it at half the thinnest wall
-    (build123d offsets holes OUTWARD under a taper, so hole and outer wall
-    meet in the middle).
+    it is exact for any outline; a hole caps it at half the EXACT kernel
+    distance between the hole and the outer wall (or another hole) - build123d
+    offsets holes OUTWARD under a taper, so hole and outer wall meet in the
+    middle. (Point sampling was 5% off on a 200 mm plate and let a hole break
+    through the wall with status ok - review 2026-09-03.)
 
-    Used by the tapered extrude to end the solid where the walls meet (Fusion's
-    semantics, user decision 2026-09-03) and reported by the tool plan as
-    `limits.inradius`, so the handle, the ghost and the solid share one number."""
+    Returns None when it cannot be measured; callers then apply NO cap and let
+    the usual guards speak. Used by the tapered extrude to end the solid where
+    the walls meet (Fusion's semantics) and by the tool plan, so the handle,
+    the ghost and the solid share one number."""
     from build123d import Kind, Plane
-    pl = Plane(face)
-    outer_w = face.outer_wire()
-    outer = pl.to_local_coords(outer_w)
-    bb = outer.bounding_box()
-    hi = max(bb.size.X, bb.size.Y) / 2.0 + 1e-6      # this much surely eats everything
+    try:
+        pl = Plane(face)
+        outer_w = face.outer_wire()
+        outer = pl.to_local_coords(outer_w)
+        bb = outer.bounding_box()
+        hi = max(bb.size.X, bb.size.Y) / 2.0 + 1e-6      # this much surely eats everything
 
-    def alive(o: float) -> bool:
-        try:
-            w = outer.offset_2d(-o, kind=Kind.INTERSECTION)
-            if not w.edges():
-                return False
+        def alive(o: float) -> bool:
             try:
-                return abs(b3d.Face(w).area) > 1e-6
+                w = outer.offset_2d(-o, kind=Kind.INTERSECTION)
+                if not w.edges():
+                    return False
+                try:
+                    return abs(b3d.Face(w).area) > 1e-6
+                except Exception:
+                    return abs(make_face(w).area) > 1e-6
             except Exception:
-                return abs(make_face(w).area) > 1e-6
-        except Exception:
-            return False
+                return False
 
-    lo = 0.0
-    if alive(hi):                                    # cannot happen for a bounded face
-        return hi
-    for _ in range(18):                              # ~4e-6 of the size
-        mid = (lo + hi) / 2.0
-        if alive(mid):
-            lo = mid
-        else:
-            hi = mid
-    r = lo
-    inner = face.inner_wires()
-    if inner:
-        def pts(w):
-            return [w @ (i / 64) for i in range(64)]
-        op = pts(outer_w)
-        hp = [pts(h) for h in inner]
-        thin = min((p - q).length for h in hp for p in h for q in op)
-        for i in range(len(hp)):
-            for j in range(i + 1, len(hp)):
-                thin = min(thin, min((p - q).length for p in hp[i] for q in hp[j]))
-        r = min(r, thin / 2.0)
-    return r
+        if not alive(hi * 1e-3):                     # the smallest step fails: unknown
+            return None
+        lo = 0.0
+        for _ in range(18):                              # ~4e-6 of the size
+            mid = (lo + hi) / 2.0
+            if alive(mid):
+                lo = mid
+            else:
+                hi = mid
+        r = lo
+        inner = list(face.inner_wires())
+        if inner:
+            thin = min(h.distance_to(outer_w) for h in inner)       # exact, ~0.2 ms each
+            for i in range(len(inner)):
+                for j in range(i + 1, len(inner)):
+                    thin = min(thin, inner[i].distance_to(inner[j]))
+            r = min(r, thin / 2.0)
+        return r if r > 1e-6 else None
+    except Exception:
+        return None
 
 
 # the tapered solid stops a hair short of the exact apex: OCCT reports the
-# mathematically perfect tip as a broken solid (probed 2026-09-03 — a cone
-# built at 100% of the meeting height fails, 99.9% builds and is watertight)
+# mathematically perfect tip as a broken solid (probes/taper_apex_probe.py -
+# a cone built at 100% of the meeting height fails, 99.9% builds watertight)
 APEX_FRACTION = 0.999
+MAX_TAPER_DEG = 89.0          # a wall cannot lean past flat
 
 
-def _apex_cap(profile, amount: float, taper: float) -> float:
+def _apex_cap(face, amount: float, taper: float) -> float:
     """FUSION SEMANTICS (user, 2026-09-03: "in Fusion they go until -90, until
-    flat as the sketch — there is no limit"): the distance is a MAXIMUM. When a
-    narrowing taper's walls meet before it, the solid ends where they meet — a
+    flat as the sketch - there is no limit"): the distance is a MAXIMUM. When a
+    narrowing taper's walls meet before it, the solid ends where they meet - a
     complete cone / pyramid / ridge that gets lower as the angle steepens and
-    lies flat on the sketch at 90°. Returns the amount actually built.
-    `taper` is in the kernel helpers' convention (positive narrows)."""
+    lies flat on the sketch at 90 deg. ONE face at a time: each profile of a
+    multi-face sketch ends at its own tip. Returns the amount actually built and
+    records a note when it shortened it. `taper` is in the kernel helpers'
+    convention (positive narrows)."""
     if taper <= 0 or not amount:
         return amount
-    faces = [profile] if isinstance(profile, b3d.Face) else list(profile.faces())
-    if not faces:
-        return amount
-    r = min(collapse_offset(f) for f in faces)
+    r = collapse_offset(face)
+    if r is None:
+        return amount                            # unknown: no cap, the guards speak
     h_apex = APEX_FRACTION * r / math.tan(math.radians(taper))
     if abs(amount) <= h_apex:
         return amount
+    _note(f"the walls meet {h_apex:.2f} mm in at {-taper:g} deg, before the "
+          f"{abs(amount):g} mm asked - the solid ends at the tip (Fusion does "
+          f"the same); a gentler angle makes it taller")
     return math.copysign(h_apex, amount)
 
 
@@ -737,36 +761,51 @@ def _taper_offset_problem(profile, amount: float, taper: float):
 
 def _tapered_extrude(profile, amount: float, taper: float):
     """extrude() with the taper failure modes handled honestly:
+      * every face of a multi-face sketch ends at ITS OWN tip (_apex_cap);
       * straight BSPLINE seam edges (from a fused tapered body) are rebuilt as
-        LINEs first, which makes the offset — and the extrude — actually work;
+        LINEs first, which makes the offset - and the extrude - actually work;
       * a genuinely degenerate offset is caught BEFORE OCCT crashes on it;
-      * kernel errors are reported as-is instead of being blamed on the taper.
+      * a face of a solid always builds on its OUTWARD side (_same_side);
+      * kernel errors are reported as-is, naming the distance the USER asked.
     OCP raises Standard_NoSuchObject etc., which derive from Exception and NOT
-    from RuntimeError — an `except RuntimeError` here never caught them and the
+    from RuntimeError - an `except RuntimeError` here never caught them and the
     raw kernel error reached the feature tree."""
-    if abs(taper) >= 90:
-        raise ValueError(f"taper {-taper:g}° — a wall cannot lean past flat (90°); "
-                         f"use a smaller angle")
-    outward = None          # a FACE's outward normal, captured BEFORE any rebuild
-    if taper:
-        if isinstance(profile, b3d.Face):
-            fp = face_plane(profile)
-            outward = fp.z_dir if fp is not None else None
-            # _straighten_face may rebuild the face with its normal FLIPPED
-            # (measured 2026-09-03 on a fused body's wall) — every direction
-            # decision below uses `outward`, never the rebuilt face's normal
-            profile = _straighten_face(profile)
-        amount = _apex_cap(profile, amount, taper)   # the walls may meet first
-        problem = _taper_offset_problem(profile, amount, taper)
-        if problem:
-            raise ValueError(
-                f"taper {-taper:g}° over {abs(amount):g}mm does not work on this "
-                f"profile: {problem}. Try a smaller taper, a shorter distance, "
-                f"or taper the other way.")
+    if not taper:
+        return _extrude(profile, amount=amount, taper=0.0)
+    if isinstance(profile, b3d.Face):
+        return _tapered_extrude_face(profile, amount, taper, from_solid=True)
+    faces = list(profile.faces())
+    if len(faces) <= 1:
+        return _tapered_extrude_face(faces[0] if faces else profile, amount, taper,
+                                     from_solid=False)
+    parts = [_tapered_extrude_face(f, amount, taper, from_solid=False) for f in faces]
+    return b3d.Part(children=parts)
+
+
+def _tapered_extrude_face(face, amount: float, taper: float, from_solid: bool):
+    """One face. `from_solid`: a picked face of an existing body (may be stored
+    reversed, may carry BSPLINE seams) rather than a fresh sketch face."""
+    asked = amount                                   # what the user typed - for messages
+    outward = None
+    fp = face_plane(face)
+    if fp is not None:
+        outward = fp.z_dir                           # captured BEFORE any rebuild
+    if from_solid:
+        # _straighten_face may rebuild the face with its normal FLIPPED
+        # (measured 2026-09-03 on a fused body's wall) - every direction
+        # decision below uses `outward`, never the rebuilt face's normal
+        face = _straighten_face(face)
+    amount = _apex_cap(face, amount, taper)          # the walls may meet first
+    problem = _taper_offset_problem(face, amount, taper)
+    if problem:
+        raise ValueError(
+            f"taper {-taper:g} deg over {abs(asked):g}mm does not work on this "
+            f"profile: {problem}. Try a smaller taper, a shorter distance, "
+            f"or taper the other way.")
     solid = None
     tried_loft = False
     try:
-        solid = _extrude(profile, amount=amount, taper=taper)
+        solid = _extrude(face, amount=amount, taper=taper)
         # A FACE OF A SOLID can come out on the WRONG SIDE of a tapered build:
         # build123d hands an upward, narrowing, hole-less face to OCCT's
         # LocOpe_DPrism, which follows the face's INTERNAL orientation (a face
@@ -775,45 +814,40 @@ def _tapered_extrude(profile, amount: float, taper: float):
         # the body (user 2026-09-03: "it goes to the opposite direction").
         # Measure the side against the ORIGINAL outward normal; if the kernel
         # went the wrong way, build the loft along that explicit direction.
-        if taper and outward is not None \
-                and not _same_side(solid, profile, amount, outward):
+        if outward is not None and not _same_side(solid, face, amount, outward):
             tried_loft = True
-            solid = None                    # never keep the wrong-sided solid
-            solid = _taper_loft(profile, amount, taper, outward)
+            solid = None                             # never keep the wrong-sided solid
+            solid = _taper_loft(face, amount, taper, outward)
     except Exception as e:
-        if not taper:
-            raise
         err = e
         if outward is not None and not tried_loft:   # the other construction may work
             try:
-                solid = _taper_loft(profile, amount, taper, outward)
+                solid = _taper_loft(face, amount, taper, outward)
             except Exception as e2:
                 err = e2
         if solid is None:
             raise ValueError(
-                f"taper {-taper:g}° over {abs(amount):g}mm failed on this profile "
+                f"taper {-taper:g} deg over {abs(asked):g}mm failed on this profile "
                 f"({type(err).__name__}: {str(err)[:100]}). Try a smaller taper, "
                 f"a shorter distance, or taper the other way.") from err
-    if taper:
-        # A tapered extrude can also SUCCEED into a broken solid (measured on
-        # an L-bracket's reflex corner and a DPrism boss face: an open shell /
-        # OCCT-invalid result). Handing that to a fuse corrupts the model
-        # silently, so refuse it here — a failed feature beats a bad body.
-        import inspector                       # local: avoids an import cycle
-        problems = inspector.health(solid)
-        if problems:
-            # OCCT's loft-based taper INTERMITTENTLY flags valid geometry as
-            # an invalid solid (probed on a 97mm extrude from a tilted face:
-            # taper 10° and 31° "invalid", 5/20/40° fine — same volumes).
-            # ShapeFix heals the bookkeeping; accept the repair only if it
-            # passes health with the volume unchanged (0.1%).
-            healed = _shapefix(solid)
-            if healed is not None and not inspector.health(healed):
-                return healed
-            raise ValueError(
-                f"taper {-taper:g}° over {abs(amount):g}mm produces a broken solid "
-                f"on this profile ({problems[0]}). Try a smaller taper, a "
-                f"shorter distance, or taper the other way.")
+    # A tapered extrude can also SUCCEED into a broken solid (measured on an
+    # L-bracket's reflex corner and a DPrism boss face: an open shell /
+    # OCCT-invalid result). Handing that to a fuse corrupts the model
+    # silently, so refuse it here - a failed feature beats a bad body.
+    import inspector                                 # local: avoids an import cycle
+    problems = inspector.health(solid)
+    if problems:
+        # OCCT's loft-based taper INTERMITTENTLY flags valid geometry as an
+        # invalid solid (probed on a 97mm extrude from a tilted face). ShapeFix
+        # heals the bookkeeping; accept the repair only if it passes health
+        # with the volume unchanged (0.1%).
+        healed = _shapefix(solid)
+        if healed is not None and not inspector.health(healed):
+            return healed
+        raise ValueError(
+            f"taper {-taper:g} deg over {abs(asked):g}mm produces a broken solid "
+            f"on this profile ({problems[0]}). Try a smaller taper, a shorter "
+            f"distance, or taper the other way.")
     return solid
 
 
@@ -917,8 +951,13 @@ def _fusion_taper(taper) -> float:
     """The public taper sign is FUSION'S (user decision 2026-09-03, Autodesk
     help: "a negative angle tapers the extrusion inward, a positive value
     outward"). The kernel helpers below keep their historical convention
-    (positive narrows), so this is the ONE place the sign turns around."""
-    return -float(taper or 0.0)
+    (positive narrows), so this is the ONE place the sign turns around - and
+    the one place a wall leaning past flat is refused, for every extrude path."""
+    t = float(taper or 0.0)
+    if abs(t) >= 90:
+        raise ValueError(f"taper {t:g} deg - a wall cannot lean past flat (90 deg); "
+                         f"use a smaller angle")
+    return -t
 
 
 # How far a "through all" cut reaches. Anything longer than the part is
@@ -940,8 +979,9 @@ def extrude_sketch(sketch, amount: float, both: bool = False,
     2026-09-03): NEGATIVE narrows as it extrudes, POSITIVE flares outward.
     (Before 2026-09-03 positive narrowed; saved designs were migrated.)
     FUSION'S SEMANTICS too: `amount` is a MAXIMUM. If the narrowing walls meet
-    before it, the solid ends where they meet (see _apex_cap) — any angle up
-    to ±90 builds, steeper is simply lower.
+    before it, the solid ends where they meet (see _apex_cap) - every face of
+    a multi-face sketch at its own tip. Any angle below 90 deg builds, steeper
+    is simply lower; 90 deg and beyond (a wall past flat) is refused.
 
     `through` = THROUGH ALL: ignore the distance and run far past the material,
     keeping the direction. This is what a CUTTING tool almost always wants. A
@@ -963,8 +1003,10 @@ def extrude_sketch(sketch, amount: float, both: bool = False,
         t = 0.0
     if _to_bool(both, "both"):
         try:
-            return _extrude(sketch, amount=_apex_cap(sketch, a, t), both=True,
-                            taper=t)
+            faces = list(sketch.faces()) if not isinstance(sketch, b3d.Face) else [sketch]
+            parts = [_extrude(f, amount=_apex_cap(f, a, t), both=True, taper=t)
+                     for f in faces]
+            return parts[0] if len(parts) == 1 else b3d.Part(children=parts)
         except Exception as e:
             if t:
                 raise ValueError(

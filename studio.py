@@ -468,6 +468,7 @@ def _doc_json() -> dict:
             "id": f.id, "op": f.op, "params": f.params, "inputs": f.inputs,
             "status": f.status, "problems": f.problems, "volume": f.volume,
             "suppressed": f.suppressed, "pieces": f.pieces,
+            "notes": getattr(f, "notes", []),
         } for f in doc.features],
     }
 
@@ -599,6 +600,9 @@ class ToolPlanReq(BaseModel):
     face_center: list | None = None
     face_normal: list | None = None
     feature_id: str | None = None       # edit mode: an existing extrude / extrude_face
+    # measure where a narrowing taper's walls meet, per face (18 kernel offsets
+    # per face — asked for lazily, the first time the tool needs a taper limit)
+    measure_collapse: bool = False
 
 
 class TrimReq(BaseModel):

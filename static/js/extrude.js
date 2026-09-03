@@ -362,7 +362,7 @@ async function setupTool() {
   const plan = await fetchPlan();
   if (!plan || st !== mine) return;             // closed / re-opened meanwhile
   st.plan = plan;
-  st.safeR = plan.limits.inradius;
+  st.collapse = null;                   // measured lazily, the first time a taper needs it
   if (!st.editing && plan.target_body
       && [...g('exTarget').options].some(o => o.value === plan.target_body))
     g('exTarget').value = plan.target_body;
@@ -389,8 +389,9 @@ function refreshAxis() {                         // Flip / direction changed
 }
 function showGhost(amount, taper) {
   // the ghost ends where the solid will: at the tip, if the walls meet first
-  const h = apexHeight(taper);
-  const eff = Math.abs(amount) > h ? Math.sign(amount || 1) * h : amount;
+  // (the tallest face's tip — each face of a sketch ends at its own)
+  const h = apexHeights(taper);
+  const eff = h && Math.abs(amount) > h.max ? Math.sign(amount || 1) * h.max : amount;
   setExtrudeGhost(eff * (st && st.ghostSign < 0 ? -1 : 1), taper);
 }
 
@@ -403,7 +404,7 @@ function placeArrow() {
   // would kill the drag and leave orbit switched off
   if (extrudeArrowDragging()) return;
   beginExtrudeArrow(st.plan.origin, st.axis, Number(g('exDist').value) || 0,
-                    onDrag, onDragCommit, clampAmountFn);
+                    onDrag, onDragCommit);          // the distance is free: the server caps the build
 }
 
 /* Fusion's dashed taper circle: centered on the profile, drag the handle
@@ -431,28 +432,68 @@ function setupTaperRing(plan) {
    narrowing walls meet before it, the SERVER ends the solid where they meet
    (sketch._apex_cap), so a steeper angle is simply a lower cone / pyramid /
    ridge, flat on the sketch at 90°. The ring and the box accept any angle up
-   to ±89° (a wall cannot go flatter than flat). st.safeR is the plan's
-   kernel-measured meeting depth; here it only decides WHEN to say, once, that
-   the tip will come before the distance (rule 7) and how tall to draw the
-   ghost — never a number of its own. */
-const APEX_FRACTION = 0.999;         // = sketch.APEX_FRACTION (the kernel refuses the exact tip)
-function apexHeight(taper) {          // where the walls meet, for a NARROWING taper
-  if (!(taper < 0) || !st || !st.safeR) return Infinity;
-  return APEX_FRACTION * st.safeR / Math.tan(-taper * Math.PI / 180);
+   to the server's max_taper (a wall cannot go flatter than flat). The
+   kernel-measured meeting depths (plan.limits.collapse, per face) only decide
+   WHEN to say, once, that the tip will come before the distance (rule 7) and
+   how tall to draw the ghost — never a number of this file's own. */
+/* The taper constants and the meeting depths are the SERVER's (plan.limits):
+   max_taper, apex_fraction, and — fetched lazily the first time a narrowing
+   taper appears, because it costs 18 kernel offsets per face — collapse[], one
+   per profile face. Nothing here is a geometric fact of its own. */
+const lim = () => (st && st.plan && st.plan.limits) || {};
+const maxTaper = () => Number(lim().max_taper) || 89;
+async function ensureCollapse() {
+  if (!st || st.collapse || st.collapseLoading || !st.plan) return;
+  st.collapseLoading = true;
+  const mine = st;
+  const req = st.mode === 'face'
+    ? { tool: 'extrude', body_id: st.face.body, face_center: st.face.center,
+        face_normal: st.face.normal, measure_collapse: true }
+    : { tool: 'extrude', sketch_id: st.profileId, measure_collapse: true };
+  try {
+    const r = await fetch('/api/tool/plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req) });
+    const plan = await r.json();
+    if (st !== mine) return;
+    if (plan.ok && plan.limits && Array.isArray(plan.limits.collapse))
+      st.collapse = plan.limits.collapse;           // per face; null = unmeasurable
+  } catch (e) { /* no cap known: the server still builds the right thing */ }
+  finally { if (st === mine) st.collapseLoading = false; }
+}
+/* where the walls meet for a NARROWING taper: {min, max} height over the
+   profile's faces, or null while unknown */
+function apexHeights(taper) {
+  if (!(taper < 0) || !st || !st.collapse) return null;
+  const f = Number(lim().apex_fraction) || 0.999;
+  const hs = st.collapse.filter(r => r != null)
+    .map(r => f * r / Math.tan(-taper * Math.PI / 180));
+  return hs.length ? { min: Math.min(...hs), max: Math.max(...hs) } : null;
 }
 function clampTaperFn(t) {
-  t = Math.max(-89, Math.min(89, t));
+  const m = maxTaper();
+  t = Math.max(-m, Math.min(m, t));
+  if (t < 0) ensureCollapse();
   const a = Math.abs(Number(g('exDist').value) || 0);
-  if (st && !st.saidApex && apexHeight(t) < a) {
-    st.saidApex = true;
-    const meet = -Math.atan(st.safeR / Math.max(a, 0.01)) * 180 / Math.PI;
+  const h = apexHeights(t);
+  if (st && !st.saidApex && h && h.min < a) {
+    st.saidApex = true;                             // once — the server's note repeats it in the tree
+    const rMin = Math.min(...st.collapse.filter(r => r != null));
+    const meet = -Math.atan(rMin / Math.max(a, 0.01)) * 180 / Math.PI;
     bus.emit('msg', 'bot', `Steeper than ${Math.round(meet * 10) / 10}° the walls meet ` +
       `before ${a} mm, so the solid ends at the tip — lower the angle, the taller ` +
       `it gets (Fusion does the same). The distance stays your maximum.`);
   }
   return t;
 }
-const clampAmountFn = a => a;         // the distance is free; the server caps the build
+/* the server told us the build stopped at the tip (feature notes, R7): say it
+   once in the chat too, for the typed-value path that never touches the ring */
+function warnIfCapped(doc) {
+  if (!st || st.saidApex || !doc || !doc.features) return;
+  const f = doc.features.find(x => x.id === st.extrudeId);
+  const note = f && (f.notes || []).find(n => /walls meet/.test(n));
+  if (note) { st.saidApex = true; bus.emit('msg', 'bot', `ℹ ${note}.`); }
+}
 
 function onDrag(amount) {
   // while dragging: move ONLY the instant white ghost box — no rebuild, no lag
@@ -490,6 +531,7 @@ async function push(pr) {
   const doc = await postJSON('/api/feature/params',
     { feature_id: st.extrudeId, params: pr });
   warnIfSplit(doc);
+  warnIfCapped(doc);
   return { doc, f: featOf(doc) };
 }
 
@@ -501,17 +543,14 @@ async function push(pr) {
    arrow use live) so typed values behave identically to dragging — and note it
    once when we actually had to reduce something. Returns true if it changed. */
 function clampBoxValues() {
-  let changed = false;
   const t0 = Number(g('exTaper').value) || 0, t1 = clampTaperFn(t0);
   if (Math.abs(t1 - t0) > 0.05) {
     g('exTaper').value = Math.round(t1 * 10) / 10;
-    bus.emit('msg', 'bot', `Taper limited to ${g('exTaper').value}° — ` +
-      `steeper collapses the walls at this distance.`);
-    changed = true;
+    bus.emit('msg', 'bot', `Taper limited to ${g('exTaper').value}° — a wall ` +
+      `cannot lean past flat.`);
+    return true;
   }
-  const a0 = Number(g('exDist').value) || 0, a1 = clampAmountFn(a0);
-  if (Math.abs(a1 - a0) > 0.05) { g('exDist').value = Math.round(a1 * 100) / 100; changed = true; }
-  return changed;
+  return false;
 }
 
 /* rare backstop: the analytic clamp already prevents collapse on normal faces,
@@ -527,7 +566,8 @@ async function settleValid(pr) {
     if (isOk(t.f)) {
       const val = Math.round(sign * mag * 10) / 10;
       g('exTaper').value = val;
-      bus.emit('msg', 'bot', `Taper limited to ${val}° — steeper collapses the walls here.`);
+      bus.emit('msg', 'bot', `The kernel could not build a ${Math.round(pr.taper * 10) / 10}° ` +
+        `taper on this profile — reduced to ${val}°, which builds.`);
       return t;
     }
   }

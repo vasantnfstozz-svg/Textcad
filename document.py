@@ -258,6 +258,9 @@ class Feature:
     problems: list = field(default_factory=list)
     volume: float | None = None
     pieces: int | None = None      # separate lumps in this feature's solid
+    notes: list = field(default_factory=list)   # non-fatal facts from the build
+    #                                (e.g. a taper that ended at its tip) — shown
+    #                                through Document.warnings on every path
 
 
 @dataclass
@@ -573,8 +576,9 @@ class Document:
             self._cache[sig] = hit
         return hit
 
-    def _cache_put(self, sig: str, part, problems, volume, pieces=None) -> None:
-        self._cache[sig] = (part, list(problems), volume, pieces)
+    def _cache_put(self, sig: str, part, problems, volume, pieces=None,
+                   notes=None) -> None:
+        self._cache[sig] = (part, list(problems), volume, pieces, list(notes or []))
         while len(self._cache) > CACHE_MAX:
             self._cache.pop(next(iter(self._cache)))     # oldest out
 
@@ -613,14 +617,16 @@ class Document:
             if hit is not None:
                 # identical inputs -> identical geometry: skip the build AND
                 # the health check, which together are most of a rebuild
-                part, problems, volume, pieces = hit
+                part, problems, volume, pieces, *rest = hit
                 f.problems, f.volume, f.pieces = list(problems), volume, pieces
+                f.notes = list(rest[0]) if rest and rest[0] else []
                 f.status = "ok" if not problems else "failed"
                 self._parts[f.id] = part
                 if f.status == "failed":
                     ok = False
                 continue
             try:
+                sk.drain_notes()                 # only THIS feature's notes below
                 part = self._eval(f)
                 # 2D result: check area, not solid health. Classified by OP as
                 # well as type — disjoint entities compose into a Compound that
@@ -642,12 +648,15 @@ class Document:
                     f.volume = round(part.volume, 2)
                     f.pieces = n_solids(part)
                     f.status = "ok" if not f.problems else "failed"
+                f.notes = sk.drain_notes()
                 self._parts[f.id] = part
                 self._cache_put(sigs[f.id], part, f.problems, f.volume,
-                                f.pieces)
+                                f.pieces, f.notes)
             except Exception as e:
                 f.status, f.problems, f.volume = "failed", [repr(e)], None
                 f.pieces = None
+                f.notes = []
+                sk.drain_notes()
                 self._parts[f.id] = None
                 # cache the FAILURE too: a broken parameter must not cost a
                 # full re-evaluation on every rebuild while the user fixes it
@@ -928,6 +937,11 @@ class Document:
         and now BOTH render — but until they are combined the earlier ones are
         still 'not the result', so we flag them so the state is never silent.)"""
         self.warnings = self._check_pieces()
+        # what the ops wanted the user to hear (a taper that ended at its tip):
+        # here, so the AI, MCP and API paths see it — not only the browser panel
+        for f in self.features:
+            for note in (f.notes or []):
+                self.warnings.append(f"'{f.id}': {note}")
         rf = self._result_feature()
         if rf is None:
             return

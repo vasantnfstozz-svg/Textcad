@@ -10,10 +10,12 @@ tool's handles, so it draws what it is told and computes nothing:
     loops         the profile's outline in that frame: [{outer, holes}, ...]
     into_sign     which SIGN of the value goes INTO the material (face sketches
                   and face picks; None for a free-standing plane sketch)
-    limits        inradius = collapse_offset (how far the walls move inward
-                  before they MEET — kernel-measured, sketch.collapse_offset;
-                  a narrowing taper ends the solid at inradius / tan(angle)),
-                  has_holes, outer_radius (the taper ring)
+    limits        outer_radius (the taper ring), has_holes, max_taper (89: a
+                  wall cannot lean past flat), apex_fraction (0.999: the kernel
+                  refuses the exact tip), and — only with measure_collapse —
+                  collapse: per face, how far the walls move inward before they
+                  MEET (kernel-measured, sketch.collapse_offset; a narrowing
+                  taper ends that face at apex_fraction * collapse / tan(angle))
     target_body   the body a Join / Cut targets by default
     will_build    one sentence: which op, on what, along which way
 
@@ -86,41 +88,45 @@ def _loops(faces, pl: Plane) -> list[dict]:
 
 
 def _limits(loops: list[dict]) -> tuple[dict, tuple[float, float] | None]:
-    """The taper barrier numbers, and the centre of all outer points.
-
-    inradius ~ how far the walls can move inward before the profile collapses:
-    the smallest centroid-to-boundary distance (exact for convex shapes:
-    rectangle -> half the short side, circle -> radius); a hole shrinks it to
-    half the thinnest wall. outer_radius = the farthest boundary point from the
-    common centre (the taper ring's size). Same estimate the tool always used,
-    now computed once, here."""
-    min_r = math.inf
+    """The gizmo sizes and the centre of all outer points: outer_radius = the
+    farthest boundary point from the common centre (the taper ring's size),
+    has_holes, plus the two taper constants the UI must not own itself
+    (LAUNCH-PLAN.md R1): max_taper (a wall cannot lean past flat) and
+    apex_fraction (the kernel refuses the exact tip). Where the walls MEET is
+    a kernel measurement — see _collapse(), asked for lazily."""
     cx = cy = 0.0
     n = 0
     for L in loops:
         pts = L["outer"]
         if len(pts) < 3:
             continue
-        lx = sum(p[0] for p in pts) / len(pts)
-        ly = sum(p[1] for p in pts) / len(pts)
         for p in pts:
-            min_r = min(min_r, math.hypot(p[0] - lx, p[1] - ly))
             cx += p[0]
             cy += p[1]
             n += 1
-        for h in L["holes"]:
-            for hp in h:
-                for op in pts:
-                    min_r = min(min_r, math.hypot(hp[0] - op[0], hp[1] - op[1]) / 2)
+    base = {"has_holes": any(L["holes"] for L in loops),
+            "max_taper": sk.MAX_TAPER_DEG, "apex_fraction": sk.APEX_FRACTION}
     if not n:
-        return ({"inradius": None, "has_holes": False, "outer_radius": 0.0}, None)
+        return ({**base, "outer_radius": 0.0}, None)
     cx /= n
     cy /= n
     outer_r = max(math.hypot(p[0] - cx, p[1] - cy) for L in loops for p in L["outer"])
-    has_holes = any(L["holes"] for L in loops)
-    return ({"inradius": round(max(min_r, 0.1), 4) if math.isfinite(min_r) else None,
-             "has_holes": has_holes, "outer_radius": round(outer_r, 4)},
-            (cx, cy))
+    return ({**base, "outer_radius": round(outer_r, 4)}, (cx, cy))
+
+
+def _collapse(faces, req: dict) -> list | None:
+    """Per face, how far the outline can move inward before the walls meet —
+    sketch.collapse_offset, the SAME measurement the build uses (None where it
+    cannot be measured). 18 kernel offsets per face, so only when asked
+    (`measure_collapse`): the tool fetches it the first time a taper needs it,
+    not on every open (a 64-face plate took 1.9 s per plan — review 2026-09-03)."""
+    if not req.get("measure_collapse"):
+        return None
+    out = []
+    for f in faces:
+        r = sk.collapse_offset(f)
+        out.append(round(r, 4) if r is not None else None)
+    return out
 
 
 def _world(pl: Plane, cx: float, cy: float) -> list[float]:
@@ -230,10 +236,7 @@ def plan_extrude(doc, req: dict) -> dict:
         fp = _flat_or_raise(picked)
         loops = _loops([picked], fp)
         limits, _centre = _limits(loops)
-        # the EXACT meeting depth of a narrowing taper, from the same kernel
-        # measurement the build uses (sketch.collapse_offset) — one number for
-        # the handle, the ghost and the solid
-        limits["inradius"] = limits["collapse_offset"] = round(sk.collapse_offset(picked), 4)
+        limits["collapse"] = _collapse([picked], req)
         axis = _vec(fp.z_dir)
         return {
             "ok": True, "tool": "extrude", "mode": "face", "op": "extrude_face",
@@ -281,8 +284,7 @@ def plan_extrude(doc, req: dict) -> dict:
     limits, centre = _limits(loops)
     if centre is None:
         raise ValueError(f"sketch '{sketch_id}' has no area to extrude")
-    limits["inradius"] = limits["collapse_offset"] = round(
-        min(sk.collapse_offset(f) for f in faces), 4)
+    limits["collapse"] = _collapse(faces, req)
     axis = _vec(pl.z_dir)
     return {
         "ok": True, "tool": "extrude", "mode": "sketch", "op": "extrude",
