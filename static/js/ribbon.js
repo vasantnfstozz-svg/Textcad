@@ -13,6 +13,7 @@ import { startPlacement, PLACEABLE } from './placement.js';
 import { beginPlanePick } from './viewport.js';
 import { lookAtSketch } from './sketch3d.js';
 import { openExtrude } from './extrude.js';
+import { openRevolve } from './revolve.js';
 import { cancelTool } from './tool.js';
 import { openMeasure, cancelMeasure } from './measure.js';
 
@@ -40,6 +41,9 @@ function startSketch() {
     else openSketchEditor(data);            // data = 'XY' | 'XZ' | 'YZ'
   });
 }
+
+// the drag-handle tools (born on tool.js): pressed with the current selection
+const TOOLS = { extrude: openExtrude, revolve: openRevolve };
 
 // named (non-op) actions that live in the ribbon
 const ACTIONS = {
@@ -200,7 +204,7 @@ function renderRibbon() {
         b.title = item;
         b.innerHTML = `<span class="rico">${OP_ICONS[item] || '□'}</span>` +
                       `<span>${TOOL_NAMES[item] || item}</span>`;
-        b.onclick = guard(item === 'extrude' ? () => openExtrude()
+        b.onclick = guard(TOOLS[item] ? () => TOOLS[item]()
           : item === 'scale' ? () => smartScale()
           : PLACEABLE.includes(item) ? () => startPlacement(item)
           : () => openFeatDialog(item));

@@ -10,6 +10,7 @@ import { showFeatureOverlay, clearHighlight, clearPick }
   from './viewport.js';
 import { openFeatDialog, modalGuard } from './dialogs.js';
 import { openExtrude } from './extrude.js';
+import { openRevolve } from './revolve.js';
 import { activeToolFeature, canEdit, editFeature } from './tool.js';
 import { fmtVol } from './settings.js';
 
@@ -372,6 +373,8 @@ function buildRow(doc, f, chip = null) {
     if (f.op === 'sketch' || f.op === 'sketch_on_face') {
       addAct(acts, '⬆', 'extrude this sketch into a solid',
         () => openExtrude(f.id));
+      addAct(acts, '↻', 'revolve this sketch into a solid',
+        () => openRevolve(f.id));
     }
     if (canEdit(f.op)) {
       // Edit Feature (Fusion parity): reopen the tool that CREATED the feature

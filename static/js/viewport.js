@@ -262,7 +262,19 @@ export function initViewport() {
       half: groundState.half, clip: { ...groundState.clip } } : null,
     /* which extrude gizmos are live — a face-sketch extrude must have ALL
        three (the ghost/ring were silently missing there once) */
-    gizmos: () => ({ arrow: !!exArrow, ghost: !!exGhost, ring: !!taperRing }),
+    gizmos: () => ({ arrow: !!exArrow, ghost: !!exGhost, ring: !!taperRing,
+                     axis: !!axisLine, lathe: !!rvGhost }),
+    /* the revolve ghost as drawn: its angle and the world centre of its
+       swept volume — a positive angle must land on the kernel's side */
+    revolveGhostInfo: () => {
+      if (!rvGhost || !rvGhost.parts.length) return null;
+      const box = new THREE.Box3();
+      for (const P of rvGhost.parts) box.expandByObject(P.mesh);
+      return { visible: rvGhost.parts[0].mesh.visible, angle: rvGhost.angle,
+               centre: box.getCenter(new THREE.Vector3()).toArray() };
+    },
+    axisLineInfo: () => axisLine ? { from: axisLine.geometry.attributes.position.array.slice(0, 3),
+                                     to: axisLine.geometry.attributes.position.array.slice(3, 6) } : null,
     ghostLoopTops,
     /* the extrude gizmos' DIRECTIONS: the arrow's axis and the way the ghost
        box actually grows (its matrix z column, which carries the signed
@@ -861,8 +873,10 @@ export function endExtrudeGhost() {
    protocol as the arrow: drag = ghost only, release = one verified rebuild. */
 let taperRing = null;
 
+/* opts.continuous: the angle accumulates across the ±180 seam instead of
+   wrapping, for a value that runs 0..±360 (Revolve) */
 export function beginTaperRing(centerArr, frame, radius, taper0, onChange, onCommit,
-                               clampFn) {
+                               clampFn, opts = {}) {
   endTaperRing();
   const C = new THREE.Vector3(...centerArr);
   const X = new THREE.Vector3(...frame.x_dir).normalize();
@@ -890,6 +904,7 @@ export function beginTaperRing(centerArr, frame, radius, taper0, onChange, onCom
   scene.add(circle); scene.add(handle); scene.add(grab);
   taperRing = { circle, handle, grab, C, X, Y, N, R, ringAt,
                 taper: taper0 || 0, onChange, onCommit, clampFn,
+                continuous: !!opts.continuous, lastRaw: 0,
                 dragging: false, grabOff: 0 };
   taperRingPlace();
 }
@@ -935,14 +950,25 @@ function taperGrab(e) {
   if (!raycaster.intersectObject(taperRing.grab, false).length) return false;
   taperRing.dragging = true;
   controls.enabled = false;
-  taperRing.grabOff = taperRing.taper - taperAngleAt(e);
+  taperRing.lastRaw = taperAngleAt(e);
+  taperRing.grabOff = taperRing.taper - taperRing.lastRaw;
   return true;
 }
 
 function taperDrag(e) {
-  let t = taperAngleAt(e) + taperRing.grabOff;
-  while (t > 180) t -= 360;
-  while (t < -180) t += 360;
+  const raw = taperAngleAt(e);
+  let t;
+  if (taperRing.continuous) {          // accumulate turns: 0..±360
+    let d = raw - taperRing.lastRaw;
+    while (d > 180) d -= 360;
+    while (d < -180) d += 360;
+    taperRing.lastRaw = raw;
+    t = taperRing.taper + d;
+  } else {
+    t = raw + taperRing.grabOff;
+    while (t > 180) t -= 360;
+    while (t < -180) t += 360;
+  }
   // no cap of its own (user 2026-09-03: "in Fusion it goes until -90"): the
   // tool's clampFn holds the server's max_taper — one limit, one place
   if (taperRing.clampFn) t = taperRing.clampFn(t);
@@ -955,6 +981,88 @@ function taperRelease() {
   taperRing.dragging = false;
   controls.enabled = true;
   taperRing.onCommit(taperRing.taper);
+}
+
+/* ---------------- a tool's AXIS line (Revolve: the spin axis, gold) ---------- */
+let axisLine = null;
+
+export function beginAxisLine(originArr, dirArr, half) {
+  endAxisLine();
+  const o = new THREE.Vector3(...originArr);
+  const d = new THREE.Vector3(...dirArr).normalize();
+  const geo = new THREE.BufferGeometry().setFromPoints([
+    o.clone().addScaledVector(d, -half), o.clone().addScaledVector(d, half)]);
+  axisLine = new THREE.Line(geo, new THREE.LineBasicMaterial({
+    color: 0xffc400, transparent: true, opacity: 0.95, depthTest: false }));
+  axisLine.renderOrder = 1000;
+  scene.add(axisLine);
+}
+export function endAxisLine() {
+  if (!axisLine) return;
+  scene.remove(axisLine); axisLine.geometry.dispose(); axisLine = null;
+}
+
+/* ---------------- revolve GHOST (instant drag preview) ----------------
+   The profile outline swept by the current angle: a three.js lathe of the
+   plan's (radial, axial) outline in the plan's ring frame. LatheGeometry spins
+   points (x = radius, y = height) about its local +Y, starting on local +Z and
+   turning toward local +X — so local Y is the axis, local Z the ring's x
+   (radial, toward the material) and local X the ring's y: a positive angle
+   turns the way the kernel sweeps (right-handed about the axis, probed
+   2026-09-03). Holes are ignored: a ghost is a hint, the solid is the truth. */
+let rvGhost = null;
+
+export function beginRevolveGhost(frame, loops) {
+  endRevolveGhost();
+  const X = new THREE.Vector3(...frame.y_dir), Y = new THREE.Vector3(...frame.z_dir),
+        Z = new THREE.Vector3(...frame.x_dir), O = new THREE.Vector3(...frame.origin);
+  const basis = new THREE.Matrix4().makeBasis(X, Y, Z).setPosition(O);
+  const parts = [];
+  for (const L of loops || []) {
+    if (!L.outer || L.outer.length < 3) continue;
+    const pts = L.outer.map(p => new THREE.Vector2(Math.max(p[0], 0), p[1]));
+    pts.push(pts[0].clone());                          // close the outline
+    const mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.13, depthWrite: false,
+      depthTest: false, side: THREE.DoubleSide }));
+    const edges = new THREE.LineSegments(new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true,
+        opacity: 0.65, depthTest: false }));
+    mesh.renderOrder = 990; edges.renderOrder = 991;
+    mesh.matrixAutoUpdate = false; edges.matrixAutoUpdate = false;
+    mesh.matrix.copy(basis); edges.matrix.copy(basis);
+    mesh.visible = edges.visible = false;
+    scene.add(mesh); scene.add(edges);
+    parts.push({ mesh, edges, pts });
+  }
+  rvGhost = { parts, angle: 0 };
+}
+
+export function setRevolveGhost(deg) {
+  if (!rvGhost) return;
+  const a = Math.max(-360, Math.min(360, deg));
+  rvGhost.angle = a;
+  const len = Math.abs(a) * Math.PI / 180;
+  const start = a < 0 ? -len : 0;
+  const segs = Math.max(8, Math.round(Math.abs(a) / 5));
+  for (const P of rvGhost.parts) {
+    P.mesh.geometry.dispose(); P.edges.geometry.dispose();
+    P.mesh.geometry = new THREE.LatheGeometry(P.pts, segs, start, Math.max(len, 0.001));
+    P.edges.geometry = new THREE.EdgesGeometry(P.mesh.geometry, 15);
+    P.mesh.visible = P.edges.visible = Math.abs(a) > 0.05;
+  }
+}
+export function hideRevolveGhost() {
+  if (!rvGhost) return;
+  for (const P of rvGhost.parts) P.mesh.visible = P.edges.visible = false;
+}
+export function endRevolveGhost() {
+  if (!rvGhost) return;
+  for (const P of rvGhost.parts) {
+    scene.remove(P.mesh); scene.remove(P.edges);
+    P.mesh.geometry.dispose(); P.edges.geometry.dispose();
+  }
+  rvGhost = null;
 }
 
 /* debug snapshot of the arrow gizmo (used by verification scripts) */

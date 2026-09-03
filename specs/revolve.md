@@ -1,6 +1,7 @@
 # Revolve — tool spec (P3, LAUNCH-PLAN.md §8 step 1)
 
-> **Status: DRAFT, awaiting the user's approval (R8). No code until approved.**
+> **Status: APPROVED by the user 2026-09-03 ("approved and proceed"); SHIPPED
+> the same day — done-note in LAUNCH-PLAN.md §7 P3.**
 > The first tool born on the framework (`tool.js`). Success metric for the whole
 > plan: bugs found in Revolve's first week, compared with Extrude's history.
 

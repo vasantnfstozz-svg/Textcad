@@ -602,6 +602,8 @@ class ToolPlanReq(BaseModel):
     feature_id: str | None = None       # edit mode: an existing extrude / extrude_face
     plane: str | None = None            # tool "sketch": the principal plane a new
     offset: float = 0.0                 #   plane sketch is drawn on, and its offset
+    axis: str | None = None             # tool "revolve": the axis to plan for ("u"/"v";
+                                        #   a legacy "X"/"Y"/"Z" is mapped onto one)
     # measure where a narrowing taper's walls meet, per face (18 kernel offsets
     # per face — asked for lazily, the first time the tool needs a taper limit)
     measure_collapse: bool = False

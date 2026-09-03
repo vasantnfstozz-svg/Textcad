@@ -3,8 +3,10 @@
 > **Status: ACTIVE — approved by the user 2026-09-02 ("proceed with your
 > plan").** P0 done 2026-09-02 (31cccf0), P1 done 2026-09-03 (1246e3c), the
 > taper work the same day (Fusion sign + semantics, fc15233), P2 done
-> 2026-09-03 (the tool framework, 7b62ff3). Next: P3,
-> Revolve. Every other plan file points here; §7 carries the done-notes, §10
+> 2026-09-03 (the tool framework, 7b62ff3; review fixes 6cc526a), P3 done
+> 2026-09-03 (Revolve, the first tool born on the framework; hash in the next
+> header update). Next: P4 — Fillet/Chamfer on picked edges, one tool per
+> session. Every other plan file points here; §7 carries the done-notes, §10
 > the ranked open items.
 >
 > It replaces the reverted TOOL-FRAMEWORK-PLAN.md (2026-09-02, another model's
@@ -66,10 +68,10 @@ no select-then-command, no live gizmo): fillet, chamfer, shell, move, rotate,
 scale, mirror, polar and linear pattern, fuse/cut/intersect, revolve, loft,
 sweep, primitives. These are the tools the plan turns into real tools.
 
-Sizes that matter (2026-09-03, after P2): `extrude.js` 261 lines on the
-497-line `tool.js` framework (was 941 alone), `sketcher.js` 2091, `studio.py`
-2570, `viewport.js` 1918. 49 test files + 27 browser test files (122
-journeys).
+Sizes that matter (2026-09-03, after P3): `tool.js` 528 lines carries
+`extrude.js` 267 (was 941 alone) and `revolve.js` 97; `sketcher.js` 2091,
+`studio.py` 2572, `viewport.js` 2032. 50 test files + 28 browser test files
+(127 journeys).
 
 ---
 
@@ -350,11 +352,46 @@ journey tests; volume cross-checked (Pappus). *Success metric for the whole
 plan:* bugs the user finds in Revolve's first week, compared with Extrude's
 history. *User does:* Revolve checklist.
 
-*Spec written 2026-09-03:* `specs/revolve.md` — awaiting the user's approval
-(R8). Decisions proposed there: the axis is derived (one of the sketch's two
-in-plane axes through the sketch origin, `u`/`v`, riding the geometry; Swap
-offered when both work); angle box starts at 0 with a Full button; a picked
-FACE as profile, a sketch-line axis and Two-sides/Symmetric are P3b.
+*Spec approved 2026-09-03* (`specs/revolve.md`, 629ca66): the axis is
+derived (one of the sketch's two in-plane axes through the sketch origin,
+`u`/`v`, riding the geometry; Swap offered when both work); the angle box
+starts at 0 with a Full button; a picked FACE as profile, a sketch-line axis
+and Two-sides/Symmetric are P3b.
+
+*Done 2026-09-03, in one session on the framework.* `static/js/revolve.js` is
+**97 lines with no geometry maths**: panel `rv…`, op `revolve`, boxes ↔
+params, and the three handles — gold axis line, angle ring, lathe ghost — each
+placed from the plan. Backend: `sketch.revolve_sketch` takes axis `u` / `v`
+(the sketch plane's own axes through the sketch origin; a sketch now remembers
+its plane ON the object, `_tc_plane`, set by `make_sketch` / `sketch_on_face`)
+or the legacy `X` / `Y` / `Z`; its guards turn three kernel behaviours into
+sentences (probes/revolve_axis_probe.py): angle 0 quietly built a FULL turn
+and 400 quietly built 40 → refused outside (−360, 360] \ {0}; an axis not in
+the plane was a zero-volume "success" → refused; a straddling profile was a
+raw `StdFail_NotDone` → refused, measured on the kernel's bounding box so a
+circle's whole reach counts, not its seam vertex. `toolplan.plan_revolve`
+derives the axis (lathe axis `v` first, `u` offered, legacy world names
+mapped onto the local axis they coincide with, a swap to an axis that does
+not work falls back), returns the ring frame with x toward the material and
+y = z × x so a positive drag turns the way the kernel sweeps (probed
+right-handed), and the outline as (radial, axial) pairs. Framework additions
+under §8 step 5 ("extend the framework and Extrude gets it too"): `planExtra`,
+a refused opening plan closes the session instead of leaving an empty panel,
+a tool without a face op says so and keeps the pick alive; viewport:
+`beginAxisLine`, the ring's `continuous` mode (0..±360), `beginRevolveGhost`
+(a three.js lathe in the plan's frame). **Tests:** `tests/test_revolve_tool.py`
+— 92 cases: 30 plane × axis × side combinations never raw, Pappus on
+rectangles / a circle / an L-profile / a face sketch on all three planes,
+sweep direction by centroid, the planner's pick / swap / mapping / refusal, the
+ring frame orthonormal and pointing at the material, document integration,
+the HTTP route read-only; `tests/e2e/test_revolve_tool.py` — 5 journeys: tree
+row + ring drag (ghost and solid on the kernel's side, volume = Pappus), Full
++ OK, edit + Cancel restores, refusal with no panel, Cut into the body the
+sketch sits on (default target). **Line delta (source, excl. tests/probes):
++479** — a new tool is new capability; the R10 judgement the P2 note deferred:
+`revolve.js` + `tool.js` = 625 lines against the 768-line hand-wired Extrude
+they replace as the pattern. **The success metric runs from today:** bugs the
+user finds in Revolve's first week, against Extrude's history.
 
 **P4 — The rest of Tier 1, one tool per session.**
 Order: Fillet/Chamfer on picked edges (needs edge picking + per-edge op) →

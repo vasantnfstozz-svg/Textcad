@@ -140,6 +140,7 @@ async function releaseIso() {
      isEmpty(params)            honest zero: nothing to build yet
      nothing                    the sentence OK says when nothing was built
      gizmos: {begin(st, plan), end()}   handles, from the plan only
+     planExtra(st)              extra fields for the opening plan request
      split(n)                   the remedy when the part falls into n pieces
      sync(st) refresh(st) beforeApply(st) afterApply(st) afterPush(st, doc)
      settle(st, params, push)   milder values to try when the kernel refuses
@@ -220,6 +221,8 @@ export function tool(spec) {
         `fine; a rounded face like a cone or cylinder side can't.`);
       return;
     }
+    if (sel && sel.kind === 'face')   // a tool without a face op: say so, then let the user pick
+      say(`⚠ ${spec.name} works on a sketch profile — click a sketch, not a face.`);
     const want = sel && sel.kind === 'profile' ? sel.id : null;
     // only UNCONSUMED sketches are offered — a sketch already used must not
     // silently become the profile again; an explicit pick is honoured even if
@@ -243,11 +246,17 @@ export function tool(spec) {
     }
     // NOTHING selected: Fusion's command-then-select — the USER picks what to
     // work on (a sketch profile or a flat face); never auto-grab a sketch
-    beginProfilePick((kind, data) => {
+    const onPick = (kind, data) => {
       if (kind === 'profile') { open(data); return; }
+      if (!spec.ops.face) {           // this tool has no face mode: keep picking
+        say(`⚠ ${spec.name} works on a sketch profile — click a sketch, not a face.`);
+        beginProfilePick(onPick);
+        return;
+      }
       S.pickedFace = data;            // planar face — reuse face mode
       open();
-    });
+    };
+    beginProfilePick(onPick);
     say(`${spec.name}: click a sketch profile or a flat face in the viewport — ` +
       `your pick, nothing is chosen for you. Esc cancels.`);
   }
@@ -322,8 +331,12 @@ export function tool(spec) {
   }
   async function setupTool() {
     const mine = st;
-    const plan = await fetchPlan();
-    if (!plan || st !== mine) return;           // closed / re-opened meanwhile
+    const plan = await fetchPlan(spec.planExtra ? spec.planExtra(st) : {});
+    if (st !== mine) return;                    // closed / re-opened meanwhile
+    if (!plan) {                                // refused (it said why): do not
+      hide(); releaseIso(); releaseModal();     // sit there with no handles
+      return;
+    }
     st.plan = plan;
     if (!st.editing && plan.target_body
         && [...el('Target').options].some(o => o.value === plan.target_body))

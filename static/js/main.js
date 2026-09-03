@@ -15,6 +15,7 @@ import { initRibbon } from './ribbon.js';
 import { initSplitters } from './splitters.js';
 import { initSettings } from './settings.js';
 import { initExtrude } from './extrude.js';
+import { initRevolve } from './revolve.js';
 import { initMeasure } from './measure.js';
 import { initVersions } from './versions.js';
 
@@ -24,6 +25,7 @@ initChat();
 initDialogs();
 initSketcher();
 initExtrude();
+initRevolve();
 initMeasure();    // the Measure tool (face/edge dimensions)
 initRibbon();
 initSplitters();

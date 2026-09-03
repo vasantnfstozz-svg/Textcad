@@ -247,6 +247,28 @@ def plan_extrude(doc, req: dict) -> dict:
         }
 
     # ---- sketch mode: extrude_sketch runs along the SKETCH's own plane -------
+    profile, pl, into_sign = _profile(doc, sketch_id)
+    faces = list(profile.faces())
+    loops = _loops(faces, pl)
+    limits, centre = _limits(loops)
+    if centre is None:
+        raise ValueError(f"sketch '{sketch_id}' has no area to extrude")
+    limits["collapse"] = _collapse(faces, req)
+    axis = _vec(pl.z_dir)
+    return {
+        "ok": True, "tool": "extrude", "mode": "sketch", "op": "extrude",
+        "input": sketch_id, "axis": axis, "origin": _world(pl, *centre),
+        "frame": _frame(pl), "loops": loops,
+        "into_sign": into_sign, "limits": limits,
+        "target_body": _default_target(doc, sketch_id),
+        "will_build": f"extrude on {sketch_id} along {_axis_name(axis)}",
+    }
+
+
+def _profile(doc, sketch_id: str):
+    """A sketch feature's built profile, the plane it was drawn on, and — for a
+    face sketch — which SIGN goes into the host body. Shared by every tool
+    that consumes a profile (extrude, revolve)."""
     prof = _feature(doc, sketch_id)
     if prof is None:
         raise ValueError(f"no sketch '{sketch_id}' in this design")
@@ -278,20 +300,99 @@ def plan_extrude(doc, req: dict) -> dict:
         # the very plane make_sketch() built the profile on — one home; it
         # refuses exactly what the kernel refuses (no upper(), no fallback)
         pl = sk.sketch_plane(str(p.get("plane") or "XY"), offset)
+    return profile, pl, into_sign
+
+
+_LATHE_ORDER = (("v", "y_dir"), ("u", "x_dir"))    # the classic lathe axis first
+
+
+def plan_revolve(doc, req: dict) -> dict:
+    """The Revolve tool's plan (specs/revolve.md). Input: sketch_id (or
+    feature_id of an existing revolve), optional axis — "u" / "v" to swap, or
+    a legacy world axis name that is mapped onto the local axis it coincides
+    with.
+
+    The axis is DERIVED, not asked for: of the sketch plane's two axes through
+    the sketch origin, the profile must lie entirely on one side. Both that
+    work are offered (candidates), the lathe axis (v) first. Get it wrong and
+    the kernel answers with a raw StdFail_NotDone or a zero-volume "success"
+    — so the plan only ever hands the UI an axis that builds.
+
+        axis / origin     the spin axis and the ring's centre ON it, level
+                          with the middle of the profile
+        frame             the ring's frame: x = radial, toward the material
+                          (0° is where the sketch is), z = the axis,
+                          y = z × x so a positive drag turns the way the
+                          kernel sweeps (probed: a positive arc is
+                          right-handed about the axis)
+        loops             the profile outline as (radial, axial) pairs in that
+                          frame, for the lathe ghost
+        limits            radius (the profile's far edge), axis_half (how long
+                          to draw the gold axis line)
+    """
+    sketch_id = req.get("sketch_id")
+    want = req.get("axis")
+    fid = req.get("feature_id")
+    if fid:
+        f = _feature(doc, fid)
+        if f is None:
+            raise ValueError(f"no feature '{fid}' in this design")
+        if f.op != "revolve":
+            raise ValueError(f"'{fid}' is a {f.op}, not a revolve")
+        sketch_id = (f.inputs or [None])[0]
+        want = want or (f.params or {}).get("axis")
+    if not sketch_id:
+        raise ValueError("Revolve needs a sketch profile")
+    profile, pl, _into = _profile(doc, sketch_id)
+    n = pl.z_dir
+
+    valid, why = [], []
+    for name, attr in _LATHE_ORDER:
+        ax = b3d.Axis(pl.origin, getattr(pl, attr))
+        span = sk.revolve_axis_span(profile, ax)
+        if span is None:                        # cannot happen for an in-plane axis
+            why.append(f"{name} is not in the sketch plane")
+            continue
+        lo, hi = span
+        if lo < -1e-6 and hi > 1e-6:
+            why.append(f"it crosses {name} ({lo:.3g} to {hi:.3g} mm)")
+            continue
+        valid.append((name, ax, span))
+    if not valid:
+        raise ValueError("this profile cannot be revolved: " + " and ".join(why)
+                         + ". Move the profile entirely to one side of an axis in "
+                           "its plane.")
+    if want in sk._AXES:                        # a legacy world name from an authored tree
+        w = sk._AXES[want].direction
+        hit = [v for v in valid if abs(abs(v[1].direction.dot(w)) - 1.0) < 1e-6]
+        want = hit[0][0] if hit else None
+    name, ax, (lo, hi) = next((v for v in valid if v[0] == want), valid[0])
+
+    axis_dir = ax.direction
+    side = 1.0 if abs(hi) >= abs(lo) else -1.0          # where the material is
+    radial = (n.cross(axis_dir)).normalized() * side     # in-plane, toward it
+    # (radial, axial) frame: x = radial, y = axis — the ghost's lathe profile
+    lathe = Plane(origin=ax.position, x_dir=radial, z_dir=radial.cross(axis_dir))
+    bb = lathe.to_local_coords(profile).bounding_box()
+    mid = (float(bb.min.Y) + float(bb.max.Y)) / 2.0
+    origin = ax.position + axis_dir * mid
+    lathe = Plane(origin=origin, x_dir=radial, z_dir=radial.cross(axis_dir))
     faces = list(profile.faces())
-    loops = _loops(faces, pl)
-    limits, centre = _limits(loops)
-    if centre is None:
-        raise ValueError(f"sketch '{sketch_id}' has no area to extrude")
-    limits["collapse"] = _collapse(faces, req)
-    axis = _vec(pl.z_dir)
+    loops = _loops(faces, lathe)
+    radius = max(abs(float(bb.min.X)), abs(float(bb.max.X)), 1.0)
+    half = max(radius, (float(bb.max.Y) - float(bb.min.Y)) / 2.0) * 1.3
+    axis_v = _vec(axis_dir)
     return {
-        "ok": True, "tool": "extrude", "mode": "sketch", "op": "extrude",
-        "input": sketch_id, "axis": axis, "origin": _world(pl, *centre),
-        "frame": _frame(pl), "loops": loops,
-        "into_sign": into_sign, "limits": limits,
+        "ok": True, "tool": "revolve", "mode": "sketch", "op": "revolve",
+        "input": sketch_id, "axis": axis_v, "origin": _vec(origin),
+        "axis_name": name, "candidates": [v[0] for v in valid],
+        "frame": {"origin": _vec(origin), "x_dir": _vec(radial),
+                  "y_dir": _vec(axis_dir.cross(radial)), "z_dir": axis_v},
+        "loops": loops, "into_sign": None,
+        "limits": {"radius": round(radius, 4), "axis_half": round(half, 4)},
         "target_body": _default_target(doc, sketch_id),
-        "will_build": f"extrude on {sketch_id} along {_axis_name(axis)}",
+        "will_build": f"revolve {sketch_id} about its {name} axis "
+                      f"({_axis_name(axis_v)})",
     }
 
 
@@ -313,7 +414,7 @@ def plan_sketch(doc, req: dict) -> dict:
     }
 
 
-_PLANNERS = {"extrude": plan_extrude, "sketch": plan_sketch}
+_PLANNERS = {"extrude": plan_extrude, "revolve": plan_revolve, "sketch": plan_sketch}
 
 
 def plan(doc, req: dict) -> dict:
