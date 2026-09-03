@@ -49,6 +49,7 @@ import imgtrace
 import inspector
 import measure as measurelib
 import sketch as sketchlib
+import toolplan
 import sketch_trim as trimlib
 import sketch_corner as cornerlib
 import sketch_snap as snaplib
@@ -588,6 +589,16 @@ class FaceReq(BaseModel):
     face: str | None = None
     offset: float = 0.0                 # the sketch plane's offset off the face
     feature_id: str | None = None       # which BODY the face belongs to
+
+
+class ToolPlanReq(BaseModel):
+    # LAUNCH-PLAN.md R1: the tool's input, ONE of the three ways (see toolplan)
+    tool: str = "extrude"
+    sketch_id: str | None = None        # a sketch / sketch_on_face profile
+    body_id: str | None = None          # face mode: the body the face was picked from
+    face_center: list | None = None
+    face_normal: list | None = None
+    feature_id: str | None = None       # edit mode: an existing extrude / extrude_face
 
 
 class TrimReq(BaseModel):
@@ -1404,6 +1415,17 @@ def face_outline(req: FaceReq):
                                          face=req.face, offset=req.offset)
     except Exception as e:
         return {"outer": [], "holes": [], "planar": False, "error": str(e)}
+
+
+@app.post("/api/tool/plan")
+def tool_plan(req: ToolPlanReq):
+    """ONE geometry authority for the tools (LAUNCH-PLAN.md R1, P1): the axis,
+    origin, frame, outline, limits, default target and into-the-material sign
+    a tool needs to draw its handles. The browser draws what this says and
+    computes nothing, so the arrow, the ghost and the solid cannot disagree.
+    Read-only: no snapshot, no rebuild, no version. Never raises — a failure
+    is {"ok": false, "error": <sentence>}."""
+    return toolplan.plan(_doc(), req.model_dump())
 
 
 @app.post("/api/sketch/snap")

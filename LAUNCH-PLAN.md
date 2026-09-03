@@ -28,13 +28,22 @@
 > behave like this: click and drag an arrow, instead of filling numbers in a
 > box."
 
-Three things must be true at launch:
+> "We need a robust design AI. If the user wants to do something, it should
+> not hallucinate. That is our main motto as well." (2026-09-03)
+
+Four things must be true at launch:
 
 1. **Every tool works the Extrude way** — drag a handle on the model, the
    number box is the second option, the preview is the real verified solid.
 2. **Every feature the AI or the user creates can be re-opened and changed
    with the same tool that made it**, straight from the feature tree.
-3. **No silent wrong geometry, no data loss, no phantom bugs.** A launch for
+3. **The design AI does not hallucinate.** It can only use the tools in the
+   toolbar, every step it takes is built and verified before the next, a
+   failed step is repaired or refused out loud, and it never redraws a design
+   to make a small change — it points at the parameter. What the user asked
+   for is what gets built, or the AI says plainly why it cannot. (The founding
+   motto, restated for the AI chat: mistakes must never reach the user.)
+4. **No silent wrong geometry, no data loss, no phantom bugs.** A launch for
    students and professionals alike; also the base for the user's own
    personal project (to be discussed).
 
@@ -265,6 +274,27 @@ told. Delete `PLANE_FRAME`, `PLANE_N` and `canonAxis` from `extrude.js`.
 returns only reads of server data; Extrude e2e stays green. *User does:*
 five-step Extrude checklist on top, bottom, side and tilted faces.
 
+*Done 2026-09-03:* `toolplan.py` (new, pure functions over a Document) +
+`POST /api/tool/plan` (read-only: no snapshot, no rebuild, no version). The
+plan carries `axis`, `origin`, `frame`, `loops`, `into_sign`, `limits`
+(inradius / has_holes / outer_radius), `target_body`, `will_build`.
+`extrude.js` lost `PLANE_N`, `PLANE_MAP`, `PLANE_FRAME`, `CANON_AXES`,
+`canonAxis`, `baseAxis`, `arrowOrigin`, `entLoop`, `loopsForEntities`,
+`loopsCentre`, `safeRadius`, `latestDescendant`, `defaultTarget`: 941 → 715
+lines, and it now refuses to open with the server's sentence when a plan
+cannot be made (rule 7). Tests: `tests/test_toolplan.py` (20 — every plan is
+also checked against what the kernel builds), the 14 Extrude browser journeys
+green unchanged. Two things the authority CORRECTED on the way: (1) the
+"cut goes into the body" flip assumed negative = into; on a bottom / -x / +y
+face the canonical frame points into the body, so there the pocket direction
+is POSITIVE — `into_sign` now says which, and the kernel-verified table is in
+the tests; (2) a face pick's ghost frame is now the face's OWN plane (z = the
+build axis), so a tilted wall's ghost grows with its solid instead of along a
+snapped principal plane. Sampled outlines no longer repeat the seam point
+(a circle's centre was 0.2 mm off). **Acceptance partly met:** `extrude.js` is
+clean; `sketcher.js` still owns `PLANE_FRAMES` (the frame a NEW plane sketch is
+drawn in) — the last duplicate, listed in §10 for P2.
+
 **P2 — The tool framework, extracted FROM Extrude.**
 A `tool({...})` factory owning the inherited rules; viewport follows the
 document (R3); one selection resolver (R4). Extrude is ported with zero
@@ -347,6 +377,7 @@ assemblies, the user's personal project.
 | ★P0 | `/api/feature/remove` over-cascade: removing a tail cut with no dependents wiped a 14-feature tree (undo recovered). Not yet diagnosed. | export-integrity notes |
 | P1 | LIVE esp32-remote: `esp_pillar_trim_tool` lacks `through: true` (safe only via the healer), and the current v16 is a broken WIP (unfused logo extrude → 35 pieces). Fix WITH the user in the app, not by editing the file under their open tab. | verified 2026-09-02 |
 | done | Code tests read live `designs/` — frozen in P0 (fixtures + `library` marker). The e2e examples-tab test still opens `pump-impeller` from the library: allowed, it is a stable committed design (e2e rule). | 2026-09-02 |
+| P1 | `sketcher.js` `PLANE_FRAMES` is the last hand copy of build123d's plane frames in the browser (used to place a NEW plane sketch's grid before any feature exists). Fix in P2: `/api/tool/plan {tool:"sketch", plane, offset}` returns the frame; the sketcher draws what it is told. | P1 2026-09-03 |
 | P1 | MCP doorbell re-fires on every page load and flips the active tab, even under a dialog. Needs a consume-once arrival marker. | BACKLOG |
 | P1 | A suppressed final boolean promotes its TOOL to the result (viewport shows the cutter). | BACKLOG |
 | P2 | `/api/open/{file}` and `/api/export` use unsanitised names for file paths. | reader 2026-09-02 |

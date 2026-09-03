@@ -2,6 +2,16 @@
 // it creates the extrude (and optional Join/Cut/Intersect) feature immediately
 // and edits it in place through the verified rebuild as you change settings, so
 // the 3D preview is always a real, checked solid. Cancel removes it; OK keeps.
+//
+// GEOMETRY COMES FROM THE SERVER (LAUNCH-PLAN.md R1, P1). Which way a positive
+// distance moves material, where the arrow sits, the profile's frame and
+// outline for the ghost, the taper limits, the default Join/Cut target and
+// which sign goes INTO the body all arrive in ONE answer from
+// POST /api/tool/plan (toolplan.py). This file draws what it is told and
+// computes nothing: the arrow, the ghost and the solid cannot disagree because
+// only one answer exists. (Until 2026-09-02 it carried its own copy of
+// build123d's plane frames and a JS re-implementation of
+// sketch.face_sketch_plane(); the two disagreed on half the faces of a box.)
 
 import { S } from './state.js';
 import { bus } from './bus.js';
@@ -11,97 +21,6 @@ import { loadMesh, beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          beginExtrudeGhost, setExtrudeGhost, hideExtrudeGhost, endExtrudeGhost,
          beginTaperRing, setTaperRingAngle, endTaperRing,
          cancelPlanePick, beginProfilePick, cancelProfilePick } from './viewport.js';
-
-// plane normals = the direction a positive offset/extrude actually goes
-// (probed against build123d: XZ offset +7 lands at y=-7, so XZ is -Y!)
-const PLANE_N = { XY: [0, 0, 1], XZ: [0, -1, 0], YZ: [1, 0, 0] };
-// sketch-local (u,v) + offset o -> world, per plane (probed)
-const PLANE_MAP = {
-  XY: (u, v, o) => [u, v, o],
-  XZ: (u, v, o) => [u, -o, v],
-  YZ: (u, v, o) => [o, u, v],
-};
-// full frame per plane for the ghost box (x_dir/y_dir = local axes in world)
-const PLANE_FRAME = {
-  XY: o => ({ origin: [0, 0, o], x_dir: [1, 0, 0], y_dir: [0, 1, 0], z_dir: [0, 0, 1] }),
-  XZ: o => ({ origin: [0, -o, 0], x_dir: [1, 0, 0], y_dir: [0, 0, 1], z_dir: [0, -1, 0] }),
-  YZ: o => ({ origin: [o, 0, 0], x_dir: [0, 1, 0], y_dir: [0, 0, 1], z_dir: [1, 0, 0] }),
-};
-
-// A sketch ON A FACE is drawn in the CANONICALISED frame of that face's axis
-// (sketch.py face_sketch_plane): +Z for a Z-facing face, +X for X, -Y for Y —
-// the SAME frame for BOTH faces of an axis pair. So a sketch on a bottom / -x /
-// +y face extrudes along the canonical axis and NOT along the face's outward
-// normal: the two are OPPOSITE on exactly half the faces of a box (probed
-// 2026-09-01). Mirror that here, or a gizmo points the other way to the solid.
-const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const CANON_AXES = [[0, 0, 1], [1, 0, 0], [0, -1, 0]];   // Plane.XY/.YZ/.XZ z_dir
-function canonAxis(n) {
-  for (const k of CANON_AXES)
-    if (Math.abs(dot3(n, k)) > 0.9) return k;
-  return n;                  // a genuinely oblique flat face keeps its own normal
-}
-
-/* outline loop of one sketch entity in local coords — the ghost's TRUE shape */
-function entLoop(e) {
-  const x = e.x || 0, y = e.y || 0, rot = (e.rotation || 0) * Math.PI / 180;
-  const R = (px, py) => [x + px * Math.cos(rot) - py * Math.sin(rot),
-                         y + px * Math.sin(rot) + py * Math.cos(rot)];
-  const ring = (fx, fy, n = 48) => Array.from({ length: n }, (_, i) => {
-    const a = 2 * Math.PI * i / n; return R(fx(a), fy(a));
-  });
-  switch (e.kind) {
-    case 'circle': return ring(a => (e.r || 1) * Math.cos(a), a => (e.r || 1) * Math.sin(a));
-    case 'ellipse': return ring(a => (e.rx || 1) * Math.cos(a), a => (e.ry || 1) * Math.sin(a));
-    case 'regular_polygon': {
-      const n = Math.max(3, e.sides || 6), r = e.radius || 1;
-      return Array.from({ length: n }, (_, i) => {
-        const a = Math.PI / 2 + 2 * Math.PI * i / n;
-        return R(r * Math.cos(a), r * Math.sin(a));
-      });
-    }
-    case 'rectangle': {
-      const w = (e.w || 1) / 2, h = (e.h || 1) / 2;
-      return [R(-w, -h), R(w, -h), R(w, h), R(-w, h)];
-    }
-    case 'slot': {
-      const c = Math.max((e.length || 1) / 2 - (e.height || 1) / 2, 0);
-      const r = (e.height || 1) / 2, pts = [];
-      for (let i = 0; i <= 16; i++) {
-        const a = -Math.PI / 2 + Math.PI * i / 16;
-        pts.push(R(c + r * Math.cos(a), r * Math.sin(a)));
-      }
-      for (let i = 0; i <= 16; i++) {
-        const a = Math.PI / 2 + Math.PI * i / 16;
-        pts.push(R(-c + r * Math.cos(a), r * Math.sin(a)));
-      }
-      return pts;
-    }
-    case 'polygon': return (e.points || []).map(p => [x + p[0], y + p[1]]);
-    case 'path': {
-      if (!e.start) return null;
-      const out = [[x + e.start[0], y + e.start[1]]];
-      for (const s of e.segments || []) {
-        if (s.type === 'arc' && s.via) out.push([x + s.via[0], y + s.via[1]]);
-        out.push([x + s.to[0], y + s.to[1]]);
-      }
-      return out;
-    }
-  }
-  return null;
-}
-
-/* ghost loops for a plane sketch: each ADD entity's true outline (cut
-   entities are skipped — the ghost is a drag aid, not the verified result) */
-function loopsForEntities(entities) {
-  const loops = [];
-  for (const e of entities || []) {
-    if (e.mode === 'subtract') continue;
-    const pts = entLoop(e);
-    if (pts && pts.length >= 3) loops.push({ outer: pts, holes: [] });
-  }
-  return loops;
-}
 
 const OPMAP = { join: 'fuse', cut: 'cut', intersect: 'intersect' };
 const panel = () => document.getElementById('extrudeDialog');
@@ -117,34 +36,6 @@ const feats = () => (S.lastDoc && S.lastDoc.features) || [];
 const isSketch = f => f.op === 'sketch' || f.op === 'sketch_on_face';
 const solids = () => feats().filter(f => f.volume != null && !f.suppressed);
 
-/* The body a solid feature has BECOME: follow solid-producing consumers down
-   the tree (a cut/fillet/pattern of X is the current state of X). Inputs
-   always reference earlier features, so the walk strictly advances. */
-function latestDescendant(id) {
-  let cur = id;
-  for (;;) {
-    const next = [...feats()].reverse().find(f =>
-      f.volume != null && !f.suppressed && (f.inputs || []).includes(cur));
-    if (!next) return cur;
-    cur = next.id;
-  }
-}
-
-/* Fusion parity: Join/Cut applies to the body the sketch LIVES ON — a
-   face sketch targets its parent body (walked to its current state), a
-   plane sketch defaults to the NEWEST solid. Defaulting to the first body
-   in the tree cut the raw stock instead of the part the user was looking
-   at (reported 2026-08-24 on the sat-side-panel design). */
-function defaultTarget(profileId) {
-  const bods = solids();
-  const sk = feats().find(f => f.id === profileId);
-  if (sk && sk.op === 'sketch_on_face' && (sk.inputs || []).length) {
-    const cur = latestDescendant(sk.inputs[0]);
-    if (bods.some(b => b.id === cur)) return cur;
-  }
-  const tip = [...bods].pop();
-  return tip ? tip.id : null;
-}
 function uid(base) {
   const ex = new Set(feats().map(f => f.id));
   let n = 1; while (ex.has(base + n)) n++; return base + n;
@@ -246,7 +137,10 @@ export function openExtrude(preProfile) {
            opId: null, opType: null, opTarget: null, profileId: preProfile };
     fill('exProfile', st.sketches, preProfile);
     g('exProfile').disabled = false;
-    fill('exTarget', bods.map(b => b.id), defaultTarget(preProfile));
+    // the Join/Cut target list; the DEFAULT arrives with the plan (the body
+    // the sketch lives on, walked to its current state — never the first
+    // body in the tree)
+    fill('exTarget', bods.map(b => b.id), null);
     // start at ZERO — the box tells the truth: nothing has been extruded yet,
     // and the solid appears when YOU pull the arrow or type a distance
     g('exDir').value = 'one'; g('exDist').value = '0'; g('exDist2').value = '10';
@@ -333,9 +227,7 @@ export function openExtrudeEdit(fid) {
   setHeader(`✎ Edit ${f.id}`);
   syncRows();
   showPanel();
-  placeArrow();
-  setupGhost();
-  setExtrudeArrowAmount(original.amount);   // st.axis already carries Flip
+  setupTool().then(() => setExtrudeArrowAmount(original.amount));   // st.axis carries Flip
   isolateFor(f.id).then(() => loadMesh());   // downstream waits for OK/Cancel
 }
 
@@ -370,6 +262,11 @@ async function releaseIso() {
   await postJSON('/api/rollback', { feature_id: null });
 }
 
+/* which SIGN of the distance goes INTO the material — from the plan (a face
+   sketch on a bottom / -x / +y face has the canonical frame pointing into the
+   body, so there the pocket direction is POSITIVE); null for a plane sketch */
+const intoSign = () => (st && st.plan && st.plan.into_sign) || null;
+
 function params() {
   const d = Number(g('exDist').value) || 0;
   const taper = Number(g('exTaper').value) || 0;
@@ -385,13 +282,12 @@ function params() {
   if (dir === 'two') return { amount: d, both: false, amount2: d2, taper, flip,
                               through };
   let amt = d;
-  if (through && amt === 0) {
+  if (through && amt === 0 && intoSign()) {
     // THROUGH ALL with the untouched 0 distance: only the SIGN matters (the
     // cut runs 2 m that way) — default INTO the body for a face sketch, the
     // same direction the old 1mm-then-cut-flip default produced. Dragging
     // the arrow first still wins: any nonzero value keeps its sign.
-    const prof = feats().find(f => f.id === st.profileId);
-    if (prof && prof.op === 'sketch_on_face') amt = -1;
+    amt = intoSign();
   }
   return { amount: amt, both: false, amount2: 0, taper, flip, through };
 }
@@ -415,11 +311,9 @@ function syncRows() {
    value, or OK). No more surprise 1mm boss the moment the panel opens. */
 function createPreview() {
   st.extrudeId = null;
-  // a fresh profile means a fresh axis — never inherit the last one's frame
-  st.axis = st.axisBase = st.arrowO = st.frameZ = null;
-  st.ghostSign = 1;
-  placeArrow();
-  setupGhost();
+  // a fresh profile means a fresh plan — never inherit the last one's frame
+  st.plan = null; st.axis = st.axisBase = null; st.ghostSign = 1; st.cutFlipped = false;
+  setupTool();
 }
 
 /* create the extrude feature the first time the user actually acts */
@@ -432,124 +326,91 @@ async function ensureCreated() {
     { id: st.extrudeId, op, params: params(), inputs: [input] });
 }
 
-/* Inradius of the profile: how far the walls can move inward before it
-   collapses. The face-outline samples points ALONG the edges, so the min
-   distance from the centroid to a sampled point ≈ the inradius (correct for
-   convex faces: rect→half-short-side, circle→radius). Holes shrink it to half
-   the thinnest wall. This is the LIVE-barrier estimate; the verified back-off
-   in apply() is the backstop when the estimate is off (e.g. non-convex). */
-function safeRadius(loops) {
-  let minR = Infinity;
-  for (const L of loops || []) {
-    if (!L.outer || L.outer.length < 3) continue;
-    let cx = 0, cy = 0;
-    for (const p of L.outer) { cx += p[0]; cy += p[1]; }
-    cx /= L.outer.length; cy /= L.outer.length;
-    for (const p of L.outer)
-      minR = Math.min(minR, Math.hypot(p[0] - cx, p[1] - cy));
-    for (const h of L.holes || [])
-      for (const hp of h)
-        for (const op of L.outer)
-          minR = Math.min(minR, Math.hypot(hp[0] - op[0], hp[1] - op[1]) / 2);
-  }
-  return isFinite(minR) ? Math.max(minR, 0.1) : null;
-}
-
-/* live barrier: keep a NARROWING taper (or a distance under taper) inside the
-   buildable range. Flaring (negative taper) never collapses, so it stays free.
-   If safeR is unknown, don't block — the verified back-off will catch it.
-   Fusion parity (user mandate 2026-08-05): a HOLE-LESS profile may narrow all
-   the way to full collapse — a wedge/apex "flat" limit (0.995: probed — the
-   exact singular angle fails in OCCT, a hair under builds fine). Profiles
-   with holes keep the 0.92 margin: hole-wall collision genuinely breaks. */
-const taperF = () => (st && st.hasHoles ? 0.92 : 0.995);
-function clampTaperFn(t) {
-  if (t <= 0 || !st || !st.safeR) return t;             // flare = free
-  const a = Math.abs(Number(g('exDist').value) || 0);
-  return Math.min(t, Math.atan(taperF() * st.safeR / Math.max(a, 0.01)) * 180 / Math.PI);
-}
-function clampAmountFn(a) {
-  const t = Number(g('exTaper').value) || 0;
-  if (t <= 0 || !st || !st.safeR) return a;
-  const maxA = taperF() * st.safeR / Math.tan(t * Math.PI / 180);
-  return Math.max(-maxA, Math.min(maxA, a));
-}
-
-/* prepare the instant white ghost box (frame + profile bbox) for dragging */
-async function setupGhost() {
+/* ------------- ONE answer: the server's plan drives arrow, ghost AND solid ----
+   Extrude used to carry THREE direction sources that disagreed (probed
+   2026-09-01): the arrow followed the picked face's OUTWARD normal, the ghost
+   box grew along the canonicalised sketch frame's z axis, and the solid followed
+   whichever the backend op reads. Now POST /api/tool/plan says, from the op
+   that will BUILD the solid: the axis a POSITIVE distance moves material, the
+   arrow's origin, the ghost's frame and outline, the taper limits, the default
+   target and which sign goes into the body. Flip is folded into st.axis so
+   ticking it moves the arrow instead of silently negating at apply time. */
+async function fetchPlan() {
+  const req = st.mode === 'face'
+    ? { tool: 'extrude', body_id: st.face.body, face_center: st.face.center,
+        face_normal: st.face.normal }
+    : { tool: 'extrude', sketch_id: st.profileId };
   try {
-    if (st.mode === 'face') {
-      const r = await fetch('/api/face-outline', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ face_center: st.face.center,
-                               face_normal: st.face.normal,
-                               feature_id: st.face.body }) });
-      const data = await r.json();
-      if (!data.planar || !data.frame) return;
-      // the ghost is the REAL face shape — outline + holes (circle stays round)
-      const loops = [{ outer: data.outer, holes: data.holes }];
-      st.safeR = safeRadius(loops);
-      st.hasHoles = !!(data.holes && data.holes.length);
-      beginExtrudeGhost(data.frame, loops);
-      // extrude_face follows the face's OUTWARD normal, the ghost grows along
-      // the frame — on a bottom / -x / +y face those are opposite, so the ghost
-      // gets a signed depth instead of the arrow getting a second opinion
-      st.frameZ = data.frame.z_dir;
-      setAxis(baseAxis());
-      placeArrow();
-      setupTaperRing(data.frame, loops);
-    } else {
-      const prof = feats().find(f => f.id === st.profileId);
-      if (!prof) return;
-      let frame;
-      if (prof.op === 'sketch_on_face') {
-        // a FACE sketch's frame lives on the body: re-resolve it by geometry
-        // — without this, face-sketch extrudes had NO ghost box and NO taper
-        // ring ("I can't see how far I am going")
-        const r = await fetch('/api/face-outline', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ face_center: prof.params.face_center || null,
-                                 face_normal: prof.params.face_normal || null,
-                                 face: prof.params.face || null,
-                                 offset: Number(prof.params.offset) || 0,
-                                 feature_id: (prof.inputs || [])[0] || null }) });
-        const data = await r.json();
-        if (!data.planar || !data.frame) return;
-        frame = data.frame;
-      } else {
-        const plane = prof.params.plane || 'XY';
-        frame = (PLANE_FRAME[plane] || PLANE_FRAME.XY)(Number(prof.params.offset) || 0);
-      }
-      const loops = loopsForEntities(prof.params.entities);
-      st.safeR = safeRadius(loops);
-      st.hasHoles = (prof.params.entities || [])
-        .some(e => e.mode === 'subtract');
-      beginExtrudeGhost(frame, loops);
-      // extrude_sketch runs along the SKETCH's plane, so the resolved frame is
-      // the truth for the arrow too — and the arrow belongs ON that plane, at
-      // the middle of the profile (a face sketch with an offset does not live
-      // on the face it was drawn from)
-      st.frameZ = frame.z_dir;
-      setAxis(frame.z_dir);
-      st.arrowO = loopsCentre(frame, loops) || st.arrowO;
-      placeArrow();
-      setupTaperRing(frame, loops);
+    const r = await fetch('/api/tool/plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req) });
+    const plan = await r.json();
+    if (!plan.ok) {                           // rule 7: failures speak
+      bus.emit('msg', 'bot', `⚠ Extrude cannot start: ${plan.error}`);
+      return null;
     }
-  } catch (e) { /* ghost is a nicety — dragging still works, just rebuilds on release */ }
+    return plan;
+  } catch (e) {
+    bus.emit('msg', 'bot', `⚠ Extrude cannot start: the server did not answer (${e.message}).`);
+    return null;
+  }
+}
+
+/* the arrow + ghost + taper ring, from the plan; nothing is built */
+async function setupTool() {
+  const mine = st;
+  const plan = await fetchPlan();
+  if (!plan || st !== mine) return;             // closed / re-opened meanwhile
+  st.plan = plan;
+  st.safeR = plan.limits.inradius;
+  st.hasHoles = !!plan.limits.has_holes;
+  if (!st.editing && plan.target_body
+      && [...g('exTarget').options].some(o => o.value === plan.target_body))
+    g('exTarget').value = plan.target_body;
+  setAxis(plan.axis);
+  placeArrow();
+  beginExtrudeGhost(plan.frame, plan.loops);
+  setupTaperRing(plan);
+}
+
+// the flip that will actually be SENT (params() drops it in symmetric mode)
+const flipOn = () => g('exFlip').checked && g('exDir').value !== 'sym';
+function setAxis(base) {
+  st.axisBase = base;                            // unflipped, for re-deriving
+  const s = flipOn() ? -1 : 1;
+  st.axis = [base[0] * s, base[1] * s, base[2] * s];
+  // the ghost lives in the plan's frame, whose z IS the axis — so its depth is
+  // the amount, and Flip turns it around together with the arrow
+  st.ghostSign = s;
+}
+function refreshAxis() {                         // Flip / direction changed
+  if (!st || !st.plan) return;
+  setAxis(st.plan.axis);
+  placeArrow();
+}
+function showGhost(amount, taper) {
+  setExtrudeGhost(amount * (st && st.ghostSign < 0 ? -1 : 1), taper);
+}
+
+// put the drag arrow at the MIDDLE of the profile, pointing the way a positive
+// distance actually moves material — both from the plan
+function placeArrow() {
+  if (!st || !st.plan) return;
+  if (!st.axis) setAxis(st.plan.axis);
+  // the plan can land mid-drag (setupTool is async): rebuilding the arrow then
+  // would kill the drag and leave orbit switched off
+  if (extrudeArrowDragging()) return;
+  beginExtrudeArrow(st.plan.origin, st.axis, Number(g('exDist').value) || 0,
+                    onDrag, onDragCommit, clampAmountFn);
 }
 
 /* Fusion's dashed taper circle: centered on the profile, drag the handle
    around it to set the taper angle — ghost only while dragging, one rebuild
    on release, value box stays in sync. */
-function setupTaperRing(frame, loops) {
-  const center = loopsCentre(frame, loops);
-  if (!center) return;
-  let cx = 0, cy = 0, np = 0, maxR = 0;
-  for (const L of loops || []) for (const p of L.outer) { cx += p[0]; cy += p[1]; np++; }
-  cx /= np; cy /= np;
-  for (const L of loops) for (const p of L.outer)
-    maxR = Math.max(maxR, Math.hypot(p[0] - cx, p[1] - cy));
-  beginTaperRing(center, frame, maxR * 1.35, Number(g('exTaper').value) || 0,
+function setupTaperRing(plan) {
+  if (!plan.limits.outer_radius) return;
+  beginTaperRing(plan.origin, plan.frame, plan.limits.outer_radius * 1.35,
+    Number(g('exTaper').value) || 0,
     t => {                                   // dragging: ghost + value box only
       g('exTaper').value = Math.round(t * 10) / 10;
       showGhost(Number(g('exDist').value) || 0, t);
@@ -562,114 +423,26 @@ function setupTaperRing(frame, loops) {
     clampTaperFn);                           // live barrier: stop before collapse
 }
 
-/* centroid of one entity in sketch-local coords */
-function entLocalCenter(e) {
-  const ox = e.x || 0, oy = e.y || 0;
-  if (e.kind === 'polygon' && e.points && e.points.length) {
-    const n = e.points.length;
-    return [ox + e.points.reduce((s, p) => s + p[0], 0) / n,
-            oy + e.points.reduce((s, p) => s + p[1], 0) / n];
-  }
-  if (e.kind === 'path' && e.start) {
-    const pts = [e.start, ...(e.segments || []).map(s => s.to)];
-    return [ox + pts.reduce((s, p) => s + p[0], 0) / pts.length,
-            oy + pts.reduce((s, p) => s + p[1], 0) / pts.length];
-  }
-  return [ox, oy];
+/* live barrier: keep a NARROWING taper (or a distance under taper) inside the
+   buildable range. Flaring (negative taper) never collapses, so it stays free.
+   If the inradius is unknown, don't block — the verified back-off will catch it.
+   Fusion parity (user mandate 2026-08-05): a HOLE-LESS profile may narrow all
+   the way to full collapse — a wedge/apex "flat" limit (0.995: probed — the
+   exact singular angle fails in OCCT, a hair under builds fine). Profiles
+   with holes keep the 0.92 margin: hole-wall collision genuinely breaks.
+   (st.safeR / st.hasHoles are the plan's limits — the numbers are the
+   server's; only the clamp of the user's own value happens here.) */
+const taperF = () => (st && st.hasHoles ? 0.92 : 0.995);
+function clampTaperFn(t) {
+  if (t <= 0 || !st || !st.safeR) return t;             // flare = free
+  const a = Math.abs(Number(g('exDist').value) || 0);
+  return Math.min(t, Math.atan(taperF() * st.safeR / Math.max(a, 0.01)) * 180 / Math.PI);
 }
-
-/* ------------- ONE direction: arrow, ghost AND solid agree ------------------
-   Extrude used to carry THREE direction sources that disagreed (probed
-   2026-09-01): the arrow followed the picked face's OUTWARD normal, the ghost
-   box grew along the canonicalised sketch frame's z_dir, and the solid followed
-   whichever the backend op reads — extrude_face goes along the outward normal,
-   extrude_sketch along the sketch's own plane. On a bottom / -x / +y face those
-   are opposite, so pulling the arrow one way grew the ghost the other way while
-   the body still came out right (face pick), or the arrow pointed away from
-   where the material actually went (face sketch). User, 2026-09-01: "when I am
-   pushing the arrow mark one side, the ghost box goes to another side, but the
-   body is generated as intended direction sometimes".
-
-   st.axis is now the single truth — the world direction a POSITIVE distance
-   moves material, taken from the op that will BUILD it — and Flip is folded
-   into it, so ticking Flip moves the arrow instead of silently negating it at
-   apply time (which made the arrow jump to the far side on release). The ghost
-   keeps its frame (the profile's 2D coords live in it) and is driven with a
-   signed depth, st.ghostSign, so it grows along st.axis too. */
-function baseAxis() {
-  if (st.mode === 'face') return st.face.normal || [0, 0, 1];
-  const prof = feats().find(f => f.id === st.profileId);
-  if (!prof) return [0, 0, 1];
-  if (prof.op === 'sketch_on_face')
-    return canonAxis(prof.params.face_normal || [0, 0, 1]);
-  return PLANE_N[prof.params.plane || 'XY'] || [0, 0, 1];
-}
-// the flip that will actually be SENT (params() drops it in symmetric mode)
-const flipOn = () => g('exFlip').checked && g('exDir').value !== 'sym';
-function setAxis(base) {
-  st.axisBase = base;                            // unflipped, for re-deriving
-  const s = flipOn() ? -1 : 1;
-  st.axis = [base[0] * s, base[1] * s, base[2] * s];
-  st.ghostSign = st.frameZ && dot3(st.frameZ, st.axis) < 0 ? -1 : 1;
-}
-function refreshAxis() {                         // Flip / direction changed
-  if (!st) return;
-  setAxis(st.axisBase || baseAxis());
-  placeArrow();
-}
-/* the ghost's depth in ITS frame — negative when the material goes the other
-   way down the frame's z axis (a bottom / -x / +y face pick) */
-function showGhost(amount, taper) {
-  setExtrudeGhost(amount * (st && st.ghostSign < 0 ? -1 : 1), taper);
-}
-
-/* world centre of the profile, from the ghost loops in their frame */
-function loopsCentre(frame, loops) {
-  let cx = 0, cy = 0, np = 0;
-  for (const L of loops || []) for (const p of L.outer) { cx += p[0]; cy += p[1]; np++; }
-  if (!np) return null;
-  cx /= np; cy /= np;
-  const X = frame.x_dir, Y = frame.y_dir, O = frame.origin;
-  return [O[0] + X[0] * cx + Y[0] * cy,
-          O[1] + X[1] * cx + Y[1] * cy,
-          O[2] + X[2] * cx + Y[2] * cy];
-}
-
-/* fallback origin, before the real frame comes back from the server */
-function arrowOrigin() {
-  if (st.mode === 'face') return st.face.center;
-  const prof = feats().find(f => f.id === st.profileId);
-  if (!prof) return null;
-  if (prof.op === 'sketch_on_face') {
-    // the sketch plane is offset along the CANONICAL axis, not the face normal
-    // (probed: bottom face + offset 3 puts the plane 3mm UP, at z = -2)
-    const k = canonAxis(prof.params.face_normal || [0, 0, 1]);
-    const c = prof.params.face_center || [0, 0, 0];
-    const off = Number(prof.params.offset) || 0;
-    return [c[0] + k[0] * off, c[1] + k[1] * off, c[2] + k[2] * off];
-  }
-  const plane = prof.params.plane || 'XY';
-  const ents = prof.params.entities || [];
-  let u = 0, v = 0;
-  if (ents.length) {
-    for (const e of ents) { const c = entLocalCenter(e); u += c[0]; v += c[1]; }
-    u /= ents.length; v /= ents.length;
-  }
-  return (PLANE_MAP[plane] || PLANE_MAP.XY)(u, v, Number(prof.params.offset) || 0);
-}
-
-// put the drag arrow at the MIDDLE of the profile, pointing the way a positive
-// distance actually moves material
-function placeArrow() {
-  if (!st) return;
-  if (!st.axis) setAxis(baseAxis());
-  // the server frame can land mid-drag (setupGhost is async): rebuilding the
-  // arrow then would kill the drag and leave orbit switched off
-  if (extrudeArrowDragging()) return;
-  const O = st.arrowO || arrowOrigin();
-  if (!O) return;
-  beginExtrudeArrow(O, st.axis, Number(g('exDist').value) || 0,
-                    onDrag, onDragCommit, clampAmountFn);
+function clampAmountFn(a) {
+  const t = Number(g('exTaper').value) || 0;
+  if (t <= 0 || !st || !st.safeR) return a;
+  const maxA = taperF() * st.safeR / Math.tan(t * Math.PI / 180);
+  return Math.max(-maxA, Math.min(maxA, a));
 }
 
 function onDrag(amount) {
@@ -734,7 +507,7 @@ function clampBoxValues() {
 
 /* rare backstop: the analytic clamp already prevents collapse on normal faces,
    but if a build still fails (e.g. a non-convex face where the estimate is off,
-   or a value with no safeR), shrink the taper toward zero a few times, then
+   or a value with no inradius), shrink the taper toward zero a few times, then
    fall back to the last values that worked. A few rebuilds at most. */
 async function settleValid(pr) {
   const sign = pr.taper < 0 ? -1 : 1;
@@ -784,22 +557,23 @@ function warnIfSplit(doc) {
 }
 
 async function applyOnce() {
-  // Cut goes INTO the material: on a face sketch the normal points OUT of the
-  // body, so a positive one-direction distance leaves the tool floating
-  // outside and removes NOTHING ("cut is not working"). With the box starting
-  // at 0 there is nothing to flip when Cut is chosen, so the FIRST positive
-  // value is flipped here, at apply time — and only the first: after that
-  // the sign is the user's (an upward cut that trims bosses above the face
-  // is legitimate, so flipping every apply would make it impossible).
+  // Cut goes INTO the material. On a face sketch a distance pointing OUT of
+  // the body leaves the tool floating outside and removes NOTHING ("cut is not
+  // working"). With the box starting at 0 there is nothing to flip when Cut is
+  // chosen, so the FIRST value pointing out of the body is flipped here, at
+  // apply time — and only the first: after that the sign is the user's (an
+  // upward cut that trims bosses above the face is legitimate, so flipping
+  // every apply would make it impossible). Which sign is "in" comes from the
+  // plan: negative on a top face, POSITIVE on a bottom / -x / +y face.
   if (st.mode === 'sketch' && !st.cutFlipped && g('exOp').value === 'cut'
       && !g('exThrough').checked && g('exDir').value === 'one') {
-    const prof = feats().find(f => f.id === st.profileId);
+    const into = intoSign();
     const d = Number(g('exDist').value) || 0;
-    if (prof && prof.op === 'sketch_on_face' && d > 0) {
+    if (into && d !== 0 && Math.sign(d) !== into) {
       st.cutFlipped = true;
-      g('exDist').value = -d;
+      g('exDist').value = into * Math.abs(d);
       bus.emit('msg', 'bot', `Cut goes INTO the body — distance flipped to ` +
-        `${-d}mm. Drag the arrow (or type) to set the pocket depth.`);
+        `${g('exDist').value}mm. Drag the arrow (or type) to set the pocket depth.`);
     }
   }
   clampBoxValues();                           // analytic barrier — one rebuild
@@ -849,8 +623,8 @@ async function changeProfile() {
   await teardown();
   st.profileId = g('exProfile').value;
   // the combine target follows the profile: a different sketch may live on a
-  // different body (same rule as on open)
-  fill('exTarget', solids().map(b => b.id), defaultTarget(st.profileId));
+  // different body (the plan brings the new default)
+  fill('exTarget', solids().map(b => b.id), null);
   loadMesh();
   createPreview();
 }
