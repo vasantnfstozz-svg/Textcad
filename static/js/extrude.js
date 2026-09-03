@@ -11,16 +11,13 @@
 // limits, the default target and which sign goes INTO the body all arrive in
 // ONE plan (toolplan.py). This file draws what it is told and computes nothing.
 
-import { bus } from './bus.js';
-import { tool } from './tool.js';
+import { tool, g, say } from './tool.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          extrudeArrowDragging,
          beginExtrudeGhost, setExtrudeGhost, hideExtrudeGhost, endExtrudeGhost,
          beginTaperRing, setTaperRingAngle, endTaperRing } from './viewport.js';
 
-const g = id => document.getElementById(id);
 const num = id => Number(g(id).value) || 0;
-const say = text => bus.emit('msg', 'bot', text);
 const isFace = st => st.input.kind === 'face';
 
 /* which SIGN of the distance goes INTO the material — from the plan (a face
@@ -66,7 +63,7 @@ function show(st, p) {
 function snapshot(f) {
   const p = f.params || {};
   return f.op === 'extrude_face'
-    ? { face_center: p.face_center, face_normal: p.face_normal || [0, 0, 1],
+    ? { face_center: p.face_center, face_normal: p.face_normal || null,
         amount: Number(p.amount) || 0, taper: Number(p.taper) || 0, flip: !!p.flip }
     : { amount: Number(p.amount) || 0, both: !!p.both, amount2: Number(p.amount2) || 0,
         taper: Number(p.taper) || 0, flip: !!p.flip, through: !!p.through };
@@ -179,6 +176,7 @@ function setupTaperRing(st, plan) {
 const gizmos = {
   begin(st, plan) {
     st.collapse = null;                      // measured lazily, when a taper needs it
+    st.cutFlipped = false;                   // a fresh profile re-arms the one-shot cut flip
     setAxis(st, plan.axis);
     placeArrow(st);
     beginExtrudeGhost(plan.frame, plan.loops);
@@ -224,15 +222,19 @@ function afterPush(st, doc) {
   if (note) { st.saidApex = true; say(`ℹ ${note}.`); }
 }
 /* rare backstop when a build still fails: shrink the taper toward zero a few
-   times — the framework falls back to the last good values after that */
+   times, then try no taper at all — the framework falls back to the last good
+   values after that */
 async function settle(st, pr, push) {
   const sign = pr.taper < 0 ? -1 : 1;
-  let mag = Math.abs(pr.taper), r = null;
-  for (let k = 0; k < 4 && mag > 0.2; k++) {
-    mag *= 0.6;
-    r = await push({ ...pr, taper: sign * mag });
+  const tries = [];
+  for (let m = Math.abs(pr.taper) * 0.6; tries.length < 4 && m > 0.2; m *= 0.6)
+    tries.push(sign * m);
+  tries.push(0);
+  let r = null;
+  for (const t of tries) {
+    r = await push({ ...pr, taper: t });
     if (r.f && r.f.status === 'ok') {
-      const val = Math.round(sign * mag * 10) / 10;
+      const val = Math.round(t * 10) / 10;
       g('exTaper').value = val;
       say(`The kernel could not build a ${Math.round(pr.taper * 10) / 10}° taper on ` +
         `this profile — reduced to ${val}°, which builds.`);
@@ -241,6 +243,12 @@ async function settle(st, pr, push) {
   }
   return r;
 }
+/* the part fell into pieces (the framework detects it, R7): a cut that stops
+   INSIDE the material slices it instead of clearing it (user, 2026-08-26) */
+const split = n => `the cut stops INSIDE the material, so it slices it instead of ` +
+  `clearing it and leaves ${n - 1} loose piece(s). Two fixes: tick "Through all" ` +
+  `(then no distance can land inside the part), and to raise or lower what is ` +
+  `left, edit the SKETCH's offset — that is the height the cut starts from.`;
 
 const ex = tool({
   name: 'Extrude', icon: '↑', tool: 'extrude',
@@ -251,9 +259,7 @@ const ex = tool({
   isEmpty: pr => !pr.through && Math.abs(pr.amount) + Math.abs(pr.amount2 || 0) === 0,
   nothing: 'Nothing extruded — the distance was 0. Open Extrude again, then drag ' +
            'the arrow or type a distance before OK.',
-  reset(st) { st.axis = null; st.ghostSign = 1; st.cutFlipped = false; },
-  beforeApply, afterApply, afterPush, settle,
-  fallback: pr => ({ ...pr, taper: 0 }),
+  beforeApply, afterApply, afterPush, settle, split,
   describe: p => `${p.amount}mm / ${p.taper}°`,
 });
 

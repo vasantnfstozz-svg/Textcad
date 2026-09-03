@@ -65,14 +65,31 @@ def test_cut_targets_the_sketched_body(page, fresh_doc, server):
     # depth must be typed; apply flips the positive value INTO the body)
     page.select_option("#exOp", "cut")
     page.wait_for_timeout(400)
+    # R3 (P2): the typed depth creates the extrude AND its cut — two document
+    # changes, ONE viewport refresh (holdViewport). The half-done state (a
+    # floating tool prism) is never even fetched.
+    model_fetches = []
+    page.on("request", lambda r: model_fetches.append(r.url)
+            if "/api/model" in r.url else None)
     page.evaluate("""() => {
       const d = document.getElementById('exDist');
       d.value = '1';
       d.dispatchEvent(new Event('input', { bubbles: true }));
     }""")
-    page.wait_for_timeout(1500)                      # live rewire + rebuild
+    # wait for the cut to EXIST (the tree folds it into the extrude's row, so
+    # there is no row to wait for); the one model fetch follows the moment the
+    # browser has both answers — a fixed wait raced a slow first rebuild
+    for _ in range(80):
+        if any(f["op"] == "cut" for f in
+               httpx.get(f"{server}/api/doc", timeout=30).json()["features"]):
+            break
+        page.wait_for_timeout(250)
+    page.wait_for_timeout(1500)
+    assert len(model_fetches) == 1, model_fetches
+    model_fetches.clear()
     page.click("#exOk")
     page.wait_for_timeout(4000)
+    assert model_fetches == [], "OK with nothing left to apply must not refetch"
 
     doc = httpx.get(f"{server}/api/doc", timeout=30).json()
     cuts = [f for f in doc["features"]

@@ -414,8 +414,9 @@ async function applyEdit() {
     busy = false;
   }
   if (failed) { note(failed); mine = false; return; }
-  // RELOAD THE VIEWPORT. postJSON only broadcasts the document; every mutating
-  // tool reloads the mesh itself. Without this the readout said 30 mm and the
+  // WAIT FOR THE VIEWPORT. The scene follows the document by itself (R3);
+  // this joins that load so the overlay below is rebuilt from the NEW bodies.
+  // Without the wait the readout said 30 mm and the
   // status bar showed the new volume while the part on screen still drew the
   // old hole, until the 3 s watcher happened to fire (caught in UI
   // verification). It also clears the now-stale pick overlay, which was

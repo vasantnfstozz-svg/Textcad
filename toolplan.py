@@ -38,7 +38,6 @@ from build123d import Plane
 
 import sketch as sk
 
-_PLANES = {"XY": Plane.XY, "XZ": Plane.XZ, "YZ": Plane.YZ}
 _AXIS_NAMES = {(0, 0, 1): "+Z", (0, 0, -1): "-Z", (1, 0, 0): "+X",
                (-1, 0, 0): "-X", (0, 1, 0): "+Y", (0, -1, 0): "-Y"}
 
@@ -276,9 +275,9 @@ def plan_extrude(doc, req: dict) -> dict:
         if offset:
             pl = pl.offset(offset)
     else:
-        pl = _PLANES.get(str(p.get("plane") or "XY").upper(), Plane.XY)
-        if offset:
-            pl = pl.offset(offset)
+        # the very plane make_sketch() built the profile on — one home; it
+        # refuses exactly what the kernel refuses (no upper(), no fallback)
+        pl = sk.sketch_plane(str(p.get("plane") or "XY"), offset)
     faces = list(profile.faces())
     loops = _loops(faces, pl)
     limits, centre = _limits(loops)
@@ -302,12 +301,12 @@ def plan_sketch(doc, req: dict) -> dict:
     {origin, x_dir, y_dir, z_dir}. sketcher.js carried its own copy of these
     three frames until P2 of LAUNCH-PLAN.md; the grid is drawn where the
     kernel will build, and nowhere else is that fact written down."""
-    plane = str(req.get("plane") or "XY").upper()
+    plane = str(req.get("plane") or "XY")
     off = float(req.get("offset") or 0)
     pl = sk.sketch_plane(plane, off)            # raises the op's own sentence
     return {
         "ok": True, "tool": "sketch", "plane": plane, "offset": off,
-        "frame": _frame(pl), "axis": _vec(pl.z_dir), "origin": _vec(pl.origin),
+        "frame": _frame(pl),
         "will_build": f"a sketch on the {plane} plane"
                       + (f", offset {off:g} mm along {_axis_name(_vec(pl.z_dir))}"
                          if off else ""),

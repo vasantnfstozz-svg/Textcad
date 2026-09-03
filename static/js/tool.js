@@ -20,18 +20,19 @@
 
 import { S } from './state.js';
 import { bus } from './bus.js';
-import { postJSON } from './api.js';
+import { postJSON, planRequest } from './api.js';
 import { holdViewport, cancelPlanePick, beginProfilePick, cancelProfilePick }
   from './viewport.js';
 
-export const OPMAP = { join: 'fuse', cut: 'cut', intersect: 'intersect' };
-const COMBINER_LABEL = { fuse: 'join', cut: 'cut', intersect: 'intersect' };
+const OPMAP = { join: 'fuse', cut: 'cut', intersect: 'intersect' };   // panel op -> tree op
+const COMBINER_LABEL = Object.fromEntries(Object.entries(OPMAP).map(([k, v]) => [v, k]));
 
 const feats = () => (S.lastDoc && S.lastDoc.features) || [];
 const isSketch = f => f.op === 'sketch' || f.op === 'sketch_on_face';
 const solids = () => feats().filter(f => f.volume != null && !f.suppressed);
-const g = id => document.getElementById(id);
-const say = text => bus.emit('msg', 'bot', text);
+/* shared plumbing every tool file imports instead of re-typing */
+export const g = id => document.getElementById(id);
+export const say = text => bus.emit('msg', 'bot', text);
 
 export function uid(base) {
   const ex = new Set(feats().map(f => f.id));
@@ -51,15 +52,24 @@ function fill(id, items, val) {
    refuses with a sentence. The tree click already REPLACES the viewport pick
    (tree.selectFeature calls viewport.clearPick), so this is one set, like
    Fusion. Direction and sign are the server's (the plan), never decided here. */
-export function currentSelection(explicit) {
+
+/* the body a picked face belongs to: the body it was PICKED FROM (several
+   bodies are visible and clickable), else the newest solid; null when there
+   is no solid at all. One rule for every tool and for sketch-on-face. */
+export function pickedBody(face) {
+  if (face && face.body && feats().some(f => f.id === face.body)) return face.body;
+  const tip = solids().at(-1);
+  return tip ? tip.id : null;
+}
+
+function currentSelection(explicit) {
   if (explicit) return { kind: 'profile', id: explicit };
   const face = S.pickedFace;
-  const tip = [...feats()].reverse().find(f => f.volume != null && !f.suppressed);
-  if (face && tip) {
-    // the body the face was PICKED FROM, not whatever happens to be the tip —
-    // with several bodies visible those differ
-    const owner = face.body && feats().some(f => f.id === face.body) ? face.body : tip.id;
-    return { kind: 'face', center: face.center, normal: face.normal || [0, 0, 1], body: owner };
+  const owner = face && pickedBody(face);
+  if (owner) {
+    // no normal is invented here: the server resolves the face by its centre
+    // and, when the pick gave one, its normal (R1)
+    return { kind: 'face', center: face.center, normal: face.normal || null, body: owner };
   }
   if (S.pickedProfile) return { kind: 'profile', id: S.pickedProfile.id };
   const sel = feats().find(f => f.id === S.selected);
@@ -84,9 +94,10 @@ export function editFeature(fid) {
 }
 
 /* Close a lingering tool session when ANOTHER tool starts — otherwise its
-   gizmos stay in the viewport and swallow the next click. Keeps any committed
-   feature (it is a real verified feature); clears gizmos + panel, a pending
-   "pick a profile", and never leaves the rollback bar parked. */
+   gizmos stay in the viewport and swallow the next click. A NEW session's
+   committed feature stays (it is a real verified feature); an unfinished EDIT
+   is cancelled, so its original values come back. Also clears a pending
+   "pick a profile" and never leaves the rollback bar parked. */
 export function cancelTool() {
   cancelProfilePick();
   releaseIso();
@@ -129,8 +140,10 @@ async function releaseIso() {
      isEmpty(params)            honest zero: nothing to build yet
      nothing                    the sentence OK says when nothing was built
      gizmos: {begin(st, plan), end()}   handles, from the plan only
-     sync(st) reset(st) refresh(st) beforeApply(st) afterApply(st)
-     afterPush(st, doc) settle(st, params, push) fallback(params) describe(params)
+     split(n)                   the remedy when the part falls into n pieces
+     sync(st) refresh(st) beforeApply(st) afterApply(st) afterPush(st, doc)
+     settle(st, params, push)   milder values to try when the kernel refuses
+     describe(params)           the values, for the revert sentence
    }
    returns the controller {open, openEdit, init, abandon, apply, plan, st} */
 export function tool(spec) {
@@ -139,8 +152,11 @@ export function tool(spec) {
   const el = s => g(P + s);
   const panel = () => g(spec.panel);
   let st = null;                    // the open session
-  let timer = null;
-  const debounce = fn => { clearTimeout(timer); timer = setTimeout(fn, 200); };
+  let timer = null;                 // a typed value waiting for its apply
+  const debounce = fn => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { timer = null; fn(); }, 200);
+  };
   const lower = spec.name.toLowerCase();
 
   const ctl = { open, openEdit, init, abandon, apply, plan: fetchPlan,
@@ -158,7 +174,11 @@ export function tool(spec) {
   function releaseModal() {
     if (S.modalTool === spec.name) { S.modalTool = null; S.modalToolPanel = null; }
   }
-  function hidePanel() {
+  /* the panel and the gizmos go at once; the LOCK is released only when the
+     session's last document change has landed (see ok / cancel) — a tool
+     opened in between would otherwise be torn down by this very close */
+  function hide() {
+    spec.gizmos.end();
     st = null;
     panel().style.display = 'none';
     if (active === ctl) active = null;
@@ -243,7 +263,6 @@ export function tool(spec) {
   function startPreview() {
     st.featureId = null;
     st.plan = null;                   // a fresh input means a fresh plan
-    if (spec.reset) spec.reset(st);
     setupTool();
   }
 
@@ -260,7 +279,7 @@ export function tool(spec) {
     const face = f.op === spec.ops.face;
     const p = f.params || {};
     st = session(face
-      ? { kind: 'face', center: p.face_center, normal: p.face_normal || [0, 0, 1],
+      ? { kind: 'face', center: p.face_center, normal: p.face_normal || null,
           body: f.inputs[0] }
       : { kind: 'profile', id: f.inputs[0] });
     st.editing = true;
@@ -293,20 +312,12 @@ export function tool(spec) {
   /* -------- R1: ONE answer drives every handle and the solid -------- */
   async function fetchPlan(extra = {}, quiet = false) {
     const i = st.input;
-    const req = i.kind === 'face'
+    const plan = await planRequest(i.kind === 'face'
       ? { tool: spec.tool, body_id: i.body, face_center: i.center,
           face_normal: i.normal, ...extra }
-      : { tool: spec.tool, sketch_id: i.id, ...extra };
-    try {
-      const r = await fetch('/api/tool/plan', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(req) });
-      const plan = await r.json();
-      if (plan.ok) return plan;
-      if (!quiet) say(`⚠ ${spec.name} cannot start: ${plan.error}`);   // rule 7
-    } catch (e) {
-      if (!quiet) say(`⚠ ${spec.name} cannot start: the server did not answer (${e.message}).`);
-    }
+      : { tool: spec.tool, sketch_id: i.id, ...extra });
+    if (plan.ok) return plan;
+    if (!quiet) say(`⚠ ${spec.name} cannot start: ${plan.error}.`);     // rule 7
     return null;
   }
   async function setupTool() {
@@ -342,37 +353,35 @@ export function tool(spec) {
   /* A cut that stops short of the material it used to reach leaves loose
      pieces (user, 2026-08-26: "it created a new body"). The geometry is real,
      so it is not blocked — but the panel says so while the value is still in
-     the user's hand. */
+     the user's hand. The framework detects it; the remedy is the tool's. */
   let saidPieces = 0;
   function warnIfSplit(doc) {
     if (!doc || !doc.features) return;
     const n = doc.result_pieces || 0;
     if (n > 1 && n !== saidPieces) {
       saidPieces = n;
-      say(`⚠ At this distance the part falls into ${n} separate pieces — the ` +
-        `cut stops INSIDE the material, so it slices it instead of clearing it ` +
-        `and leaves ${n - 1} loose piece(s). Two fixes: tick "Through all" ` +
-        `(then no distance can land inside the part), and to raise or lower ` +
-        `what is left, edit the SKETCH's offset — that is the height the cut ` +
-        `starts from.`);
+      say(`⚠ At this value the part falls into ${n} separate pieces` +
+        (spec.split ? ` — ${spec.split(n)}` : '.'));
     } else if (n <= 1) {
       saidPieces = 0;
     }
   }
 
   /* the kernel refused: let the tool try milder values, then fall back to the
-     last values that built, then to the tool's safe params — never leave a
-     collapsed solid on screen (red tree / blank body) */
-  async function settle(pr) {
+     last values that built — never leave a collapsed solid on screen (red
+     tree / blank body) without a word */
+  async function settle(pr, failed) {
     const r = spec.settle ? await spec.settle(st, pr, push) : null;
     if (r && isOk(r.f)) return r;
     if (st.lastGood) {
       const back = await push(st.lastGood);
       spec.show(st, st.lastGood);
+      sync();                           // rows and gizmos follow the restored boxes
+      if (spec.refresh) spec.refresh(st);
       say(`Reverted to ${spec.describe(st.lastGood)} — the new values broke the solid.`);
       return back;
     }
-    return await push(spec.fallback ? spec.fallback(pr) : pr);
+    return r || failed;               // nothing better is known: the tree says why
   }
 
   /* Join / Cut / Intersect are separate features with a target (rule 6) */
@@ -403,7 +412,7 @@ export function tool(spec) {
     if (!st) return;
     let f = featOf(doc);
     if (f && f.status === 'failed') {
-      const settled = await settle(pr);
+      const settled = await settle(pr, { doc, f });
       if (!st) return;
       doc = settled.doc; f = settled.f;
     }
@@ -415,18 +424,20 @@ export function tool(spec) {
   // Serialize applies: a settle does several rebuilds and must run to
   // completion, but doc-updated re-renders (and fast input) can call apply()
   // meanwhile. Mark it pending and re-run ONCE after with the latest values —
-  // coalescing bursts into a single trailing rebuild. Each pass is ONE
-  // document change for the viewport (R3): it refreshes once, at the end.
-  let applyBusy = false, applyPending = false;
-  async function apply() {
-    if (!st) return;
-    if (applyBusy) { applyPending = true; return; }
-    applyBusy = true;
-    try {
-      do { applyPending = false; await holdViewport(applyOnce); }
-      while (applyPending && st);
-    } finally { applyBusy = false; }
+  // coalescing bursts into a single trailing rebuild. Every caller gets the
+  // promise of the burst in flight, so OK can wait for it. The whole burst is
+  // ONE document change for the viewport (R3): it refreshes once, after the
+  // last pass — never for a state the next pass throws away.
+  let applyRun = null, applyPending = false;
+  function apply() {
+    if (!st) return Promise.resolve();
+    if (applyRun) { applyPending = true; return applyRun; }
+    applyRun = holdViewport(async () => {
+      do { applyPending = false; await applyOnce(); } while (applyPending && st);
+    }).finally(() => { applyRun = null; });
+    return applyRun;
   }
+  const settled = () => applyRun ? applyRun.catch(() => {}) : Promise.resolve();
 
   async function changeProfile() {
     await teardown();
@@ -446,40 +457,47 @@ export function tool(spec) {
     if (st) { st.opId = st.opType = st.opTarget = st.featureId = null; }
   }
   async function cancel() {
-    releaseModal();
+    if (!st) return;
+    clearTimeout(timer); timer = null;  // a typed value on its way is dropped
+    await settled();                    // a rebuild in flight finishes first
     if (st && st.editing) {             // the feature stays — put its
       const { featureId, original } = st;   // ORIGINAL params back verbatim
-      spec.gizmos.end();
-      hidePanel();
+      hide();
       await holdViewport(async () => {
         await postJSON('/api/feature/params', { feature_id: featureId, params: original });
         await releaseIso();
       });
-      return;
+    } else {
+      await teardown();
+      hide();
     }
-    await teardown();
-    hidePanel();
+    releaseModal();
   }
   async function ok() {
+    if (!st) return;
+    const editing = st.editing;
+    const typed = !!timer;              // a value typed inside the debounce window
+    clearTimeout(timer); timer = null;
+    let created = false;
+    // OK COMMITS the panel's values even if the user never dragged or touched
+    // an input, typed inside the debounce window, or pressed OK while a
+    // rebuild was still running — in edit mode too. The commit and the one
+    // full rebuild (rollback bar released) are ONE change for the viewport.
+    await holdViewport(async () => {
+      if (st && (editing || !st.featureId || typed || applyRun)) await apply();
+      created = !!(st && st.featureId);
+      hide();
+      await releaseIso();
+    });
     releaseModal();
-    const editing = st && st.editing;
-    // OK must COMMIT the panel's values even if the user never dragged or
-    // touched an input (a typed value inside the debounce window, or OK with
-    // the default) — in edit mode too
-    if (st && (editing || !st.featureId)) await apply();
-    const created = st && st.featureId;
-    spec.gizmos.end();
-    hidePanel();
-    await releaseIso();                 // the one full rebuild, now
     say(editing ? `${spec.name} updated — the change is in the feature tree.`
       : created ? `${spec.name} created — editable in the feature tree.`
       : spec.nothing);
   }
   function abandon() {                  // another tool started (see cancelTool)
+    if (st && st.editing) { cancel(); return; }   // an unfinished edit is a Cancel
+    hide();
     releaseModal();
-    if (!st && panel().style.display === 'none') return;
-    spec.gizmos.end();
-    hidePanel();
   }
 
   function init() {

@@ -17,6 +17,21 @@ export async function getJSON(url) {
   return (await fetch(url)).json();
 }
 
+/* ONE way to ask the geometry authority (LAUNCH-PLAN.md R1): POST
+   /api/tool/plan. Read-only, so no busy overlay and no doc-updated; the
+   answer is {ok, ...} or {ok: false, error} — a network failure is an error
+   sentence too, so a caller only ever has to speak it. */
+export async function planRequest(req) {
+  try {
+    const r = await fetch('/api/tool/plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req) });
+    return await r.json();
+  } catch (e) {
+    return { ok: false, error: `the server did not answer (${e.message})` };
+  }
+}
+
 export async function postJSON(url, body, busyMsg) {
   setBusy(busyMsg);
   try {

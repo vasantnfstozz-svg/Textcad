@@ -5,10 +5,9 @@
 // feature tree afterwards.
 
 import { bus } from './bus.js';
-import { S } from './state.js';
 import { postJSON } from './api.js';
 import { beginPlacement, loadMesh, cancelPlanePick } from './viewport.js';
-import { cancelTool } from './tool.js';
+import { cancelTool, uid } from './tool.js';
 
 // sensible starting dimensions (mm) per primitive — blocks have no defaults
 const DEFAULTS = {
@@ -31,15 +30,8 @@ export function startPlacement(op) {
   beginPlacement(op, (x, y) => createAt(op, x, y));
 }
 
-function nextId(op) {
-  const existing = new Set((S.lastDoc?.features || []).map(f => f.id));
-  let n = 1;
-  while (existing.has(op + n)) n++;
-  return op + n;
-}
-
 async function createAt(op, x, y) {
-  const id = nextId(op);
+  const id = uid(op);
   const dims = { ...DEFAULTS[op] };
   const doc = await postJSON('/api/feature/add', { id, op, params: dims, inputs: [] });
   if (doc.error) { bus.emit('msg', 'bot', '⚠ ' + doc.error); return; }

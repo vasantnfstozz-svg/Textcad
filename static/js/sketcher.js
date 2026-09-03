@@ -14,8 +14,9 @@
 import { S } from './state.js';
 import { askConfirm, askNumber } from './ask.js';
 import { bus } from './bus.js';
-import { postJSON } from './api.js';
+import { postJSON, planRequest } from './api.js';
 import { modalGuard } from './dialogs.js';
+import { pickedBody } from './tool.js';
 import { loadMesh, modelExtent } from './viewport.js';
 import { enterSketch3D, exitSketch3D, renderSketch3D,
          planeToScreen, gridStep } from './sketch3d.js';
@@ -67,19 +68,16 @@ let modelEdges = [];      // [{body, pts:[[x,y]..]}] in plane-local mm
    that fact — sketch.sketch_plane — is the only way it stays true). Fetched
    from /api/tool/plan {tool: "sketch"} when the sketch opens. */
 let skFrame = null;
+const planeFrames = new Map();     // `${plane}|${offset}` -> frame: a pure function of both
 
 async function fetchPlaneFrame(plane, offset) {
-  try {
-    const r = await fetch('/api/tool/plan', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tool: 'sketch', plane, offset }) });
-    const p = await r.json();
-    if (p.ok) return p.frame;
-    bus.emit('msg', 'bot', `⚠ Cannot open the sketch: ${p.error}`);
-  } catch (e) {
-    bus.emit('msg', 'bot', `⚠ Cannot open the sketch: the server did not answer (${e.message}).`);
+  const key = `${plane}|${offset}`;
+  if (!planeFrames.has(key)) {
+    const p = await planRequest({ tool: 'sketch', plane, offset });
+    if (!p.ok) { bus.emit('msg', 'bot', `⚠ Cannot open the sketch: ${p.error}.`); return null; }
+    planeFrames.set(key, p.frame);
   }
-  return null;
+  return planeFrames.get(key);
 }
 
 /* Pull in the model geometry that lies ON this sketch plane, so the part's own
@@ -192,14 +190,12 @@ let skIsolated = false;
 async function isolateAt(featureId) {
   skIsolated = true;
   await postJSON('/api/rollback', { feature_id: featureId });
-  loadMesh();
 }
 
 async function releaseIsolation() {
   if (!skIsolated) return;
   skIsolated = false;
   await postJSON('/api/rollback', { feature_id: null });
-  loadMesh();
 }
 
 /* test/debug accessor: what is currently drawn on the sketch canvas, and the
@@ -307,13 +303,11 @@ bus.on('edit-sketch', editSketch);
 
 export async function openSketchOnFace(faceInfo) {
   if (modalGuard()) return;         // finish the open tool (OK/Cancel) first
-  const feats = S.lastDoc?.features || [];
-  const tip = [...feats].reverse().find(f => f.volume != null);
-  if (!tip) { bus.emit('msg', 'bot', '⚠ No solid to sketch on yet.'); return; }
-  // sketch on the body the face was PICKED FROM (several bodies are visible and
-  // clickable now); the tip is only a fallback
-  const owner = faceInfo.body && feats.some(f => f.id === faceInfo.body)
-    ? faceInfo.body : tip.id;
+  // sketch on the body the face was PICKED FROM (several bodies are visible
+  // and clickable); the newest solid is only a fallback — one rule, shared
+  // with every tool (tool.pickedBody)
+  const owner = pickedBody(faceInfo);
+  if (!owner) { bus.emit('msg', 'bot', '⚠ No solid to sketch on yet.'); return; }
   // the face's plane IS the sketch frame, so it must arrive BEFORE the mode
   // can open — same fetch also brings the boundary shown as reference
   const data = await fetchFaceOutline({ center: faceInfo.center,
@@ -1965,7 +1959,6 @@ async function create() {
     const doc = await postJSON('/api/feature/params', {
       feature_id: skEditId, params }, 'updating sketch…');
     exitMode();
-    loadMesh();
     const f = (doc.features || []).find(x => x.id === skEditId);
     bus.emit('msg', 'bot', doc.error || (f && f.status === 'failed')
       ? `⚠ Sketch "${skEditId}" update problem: ${doc.error || f.problems.join('; ')}`
@@ -2068,7 +2061,6 @@ async function finishEmpty() {
   exitMode();
   const doc = await postJSON('/api/feature/remove', { feature_id: fid },
                              'deleting…');
-  loadMesh();
   if (!doc.error)
     bus.emit('msg', 'bot',
       ((doc.remove_plan && doc.remove_plan.summary) || `Deleted "${fid}".`)

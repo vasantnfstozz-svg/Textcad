@@ -365,10 +365,10 @@ export function initViewport() {
   window.addEventListener('blur', dropShift);   // alt-tab must not stick in pan
   // any document change (tab switch, sample opened, external design) while a
   // plane-pick is pending would leave the 3 plane quads stranded — cancel it
-  bus.on('doc-updated', () => {
+  bus.on('doc-updated', doc => {
     if (planePickCb) endPlanePick();
     if (profilePickCb) cancelProfilePick();
-    follow();                     // R3: the scene follows the document
+    follow(doc);                  // R3: the scene follows the document
   });
 
   // Extrude gizmo drags (arrow + taper ring) — capture phase so we grab them
@@ -1233,10 +1233,11 @@ export async function holdViewport(fn) {
   try { return await fn(); }
   finally { if (--holds === 0 && followDue) { followDue = false; follow(); } }
 }
-function follow() {
+let latestVersion = null;        // fingerprint of the newest document announced
+function follow(doc) {
+  if (doc && doc.geom_version) latestVersion = doc.geom_version;   // from the event, not S
   if (holds) { followDue = true; return; }
-  const v = S.lastDoc && S.lastDoc.geom_version;
-  if (v && v !== drawnVersion) loadMesh();
+  if (latestVersion && latestVersion !== drawnVersion) loadMesh();
 }
 
 /* Re-fetching and re-rendering the model is the most expensive thing the UI
@@ -1246,15 +1247,22 @@ function follow() {
    The document carries a geometry fingerprint, so those cost nothing now.
    `force` bypasses it for callers that must reload (imports, tab switches).
    A call for the version that is ALREADY being fetched rides that load (its
-   fit / busy wish carried over) instead of transferring the megabytes twice. */
+   fit wish carried over) instead of transferring the megabytes twice. A load
+   for an OLDER version finishes and is dropped on arrival (loadSeq) — not
+   aborted: uvicorn logs a protocol-error traceback for every response a
+   client abandons mid-transfer. */
 export function loadMesh(fit = false, force = false) {
-  const version = (S.lastDoc && S.lastDoc.geom_version) || null;
-  if (inflight && version && inflight.version === version) {
+  const version = latestVersion || (S.lastDoc && S.lastDoc.geom_version) || null;
+  if (!force && inflight && version && inflight.version === version) {
     inflight.fit = inflight.fit || fit;
-    if (force && !inflight.busy) { inflight.busy = true; setBusy('loading the model…'); }
     return inflight.promise;
   }
-  const job = { version, fit, busy: force };
+  if (!force && version && version === drawnVersion && bodyObjs.length) {
+    clearHighlight(); clearPick();         // already on screen: nothing to fetch
+    if (fit) { camera.updateProjectionMatrix(); setView('iso'); }
+    return Promise.resolve();
+  }
+  const job = { version, fit };
   job.promise = loadModel(job, force).finally(() => { if (inflight === job) inflight = null; });
   inflight = job;
   return job.promise;
@@ -1263,11 +1271,6 @@ export function loadMesh(fit = false, force = false) {
 async function loadModel(job, force) {
   const mine = ++loadSeq;
   const version = job.version;
-  if (!force && version && version === drawnVersion && bodyObjs.length) {
-    clearHighlight(); clearPick();
-    if (job.fit) { camera.updateProjectionMatrix(); setView('iso'); }
-    return;
-  }
   clearHighlight(); clearPick(); clearSelectionOverlay();
   // A forced load means the whole document changed (a tab switch, an import,
   // an opened design): say so, because it is the one case where the wait is
@@ -1304,7 +1307,7 @@ async function loadModel(job, force) {
       camera.updateProjectionMatrix(); setView('iso');
     }
   } catch (e) { /* no model yet */ }
-  finally { if (job.busy) clearBusy(); }
+  finally { if (force) clearBusy(); }
 }
 
 export function clearMesh() {

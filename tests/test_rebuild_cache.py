@@ -162,6 +162,20 @@ def test_renaming_does_not_invalidate_anything():
     assert doc.result().volume == pytest.approx(v0)
 
 
+def test_a_rename_moves_the_geometry_version_without_a_rebuild():
+    """The viewport keys its bodies by feature id, so a rename changes what is
+    drawable (P2 code review): the fingerprint must move at rename time — the
+    endpoint does not rebuild — and the next rebuild must agree with it."""
+    doc = chain_doc()
+    doc.rebuild()
+    v0 = doc._geom_version
+    doc.rename("p1_tool", "first_pocket_tool")
+    v1 = doc._geom_version
+    assert v1 != v0
+    doc.rebuild()
+    assert doc._geom_version == v1
+
+
 def test_geometry_version_moves_only_when_geometry_does():
     doc = chain_doc()
     doc.rebuild()

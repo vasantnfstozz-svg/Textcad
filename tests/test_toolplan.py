@@ -301,7 +301,6 @@ def test_a_sketch_plan_is_the_frame_the_kernel_builds_on(plane, offset, z_dir, o
     fr = p["frame"]
     assert fr["z_dir"] == pytest.approx(z_dir, abs=1e-6)
     assert fr["origin"] == pytest.approx(origin, abs=1e-6)
-    assert p["axis"] == fr["z_dir"] and p["origin"] == fr["origin"]
     assert dot(cross(fr["x_dir"], fr["y_dir"]), fr["z_dir"]) == pytest.approx(1, abs=1e-9)
     face = d._parts["s"].faces()[0]                           # what the kernel built
     assert list(face.center()) == pytest.approx(origin, abs=1e-6)
@@ -315,5 +314,6 @@ def test_a_sketch_plan_needs_no_features_and_refuses_an_unknown_plane():
     d = build()
     p = ok(toolplan.plan(d, {"tool": "sketch"}))
     assert p["plane"] == "XY" and p["offset"] == 0 and "XY" in p["will_build"]
-    bad = toolplan.plan(d, {"tool": "sketch", "plane": "AB"})
-    assert bad["ok"] is False and "XY" in bad["error"]
+    for name in ("AB", "xy"):                  # exactly what the kernel refuses
+        bad = toolplan.plan(d, {"tool": "sketch", "plane": name})
+        assert bad["ok"] is False and "XY" in bad["error"], bad

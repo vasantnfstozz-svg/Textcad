@@ -276,6 +276,7 @@ class Document:
     _cache: dict = field(default_factory=lambda: _SHARED_CACHE, repr=False)
     _spec_cache: tuple = field(default=None, repr=False)     # (sig, problems)
     _geom_version: str = field(default="", repr=False)       # what is drawable
+    _sigs: dict = field(default_factory=dict, repr=False)   # feature id -> content signature
     _healing: bool = field(default=False, repr=False)         # heal re-entry guard
 
     # -- authoring ----------------------------------------------------------
@@ -308,6 +309,16 @@ class Document:
                 return f
         raise KeyError(f"no feature named '{feature_id}'")
 
+    def _stamp_geometry(self) -> None:
+        """A fingerprint of what the viewport would draw. The UI skips
+        refetching and re-rendering the model when this has not moved — opening
+        and closing a sketch without touching anything changes nothing, and
+        used to cost a full re-tessellation plus a multi-megabyte transfer.
+        Feature IDS are part of it: the viewport keys its bodies by id."""
+        self._geom_version = hashlib.sha1(json.dumps(
+            [[f.id, self._sigs.get(f.id), f.suppressed] for f in self.features]
+            + [self.rollback], default=str).encode("utf-8")).hexdigest()
+
     def rename(self, old: str, new: str) -> None:
         """Rename a feature EVERYWHERE it is referenced (Fusion's browser
         rename). The id doubles as the reference key, so inputs, the rollback
@@ -329,6 +340,12 @@ class Document:
             self.rollback = new
         if old in self._parts:
             self._parts[new] = self._parts.pop(old)
+        if old in self._sigs:
+            self._sigs[new] = self._sigs.pop(old)
+        # the viewport keys its bodies by feature id, so a rename IS a change
+        # of what is drawable: the fingerprint must move, or picks and
+        # overlays keep resolving the OLD id (found by the P2 code review)
+        self._stamp_geometry()
 
     # -- deleting: dependency-aware, like Fusion's browser Delete ------------
     def remove(self, feature_id: str, mode: str = "auto") -> dict:
@@ -664,13 +681,8 @@ class Document:
             if f.status == "failed":
                 ok = False
 
-        # A fingerprint of what the viewport would draw. The UI skips refetching
-        # and re-rendering the model when this has not moved — opening and
-        # closing a sketch without touching anything changes nothing, and used
-        # to cost a full re-tessellation plus a multi-megabyte transfer.
-        self._geom_version = hashlib.sha1(json.dumps(
-            [[f.id, sigs.get(f.id), f.suppressed] for f in self.features]
-            + [self.rollback], default=str).encode("utf-8")).hexdigest()
+        self._sigs = sigs
+        self._stamp_geometry()
 
         # A cut tool that STOPS INSIDE the material does not clear it, it
         # slices it, and whatever sat beyond the cut is left floating. The user

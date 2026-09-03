@@ -8,7 +8,7 @@ import { postJSON, getJSON } from './api.js';
 import { askText } from './ask.js';
 import { OP_ICONS } from './icons.js';
 import { loadMesh, clearMesh, cancelPlanePick } from './viewport.js';
-import { cancelTool } from './tool.js';
+import { cancelTool, uid } from './tool.js';
 
 const featDialog = () => document.getElementById('featDialog');
 const libDialog = () => document.getElementById('libDialog');
@@ -21,9 +21,13 @@ const specDialog = () => document.getElementById('specDialog');
    and flash the open panel — until the user presses OK or Cancel. */
 export function modalGuard() {
   if (!S.modalTool) return false;
+  const el = S.modalToolPanel && document.getElementById(S.modalToolPanel);
+  if (el && el.style.display === 'none') {   // OK/Cancel pressed, its rebuild still landing
+    bus.emit('msg', 'bot', `⚠ ${S.modalTool} is still finishing — one moment.`);
+    return true;
+  }
   bus.emit('msg', 'bot', `⚠ Finish the ${S.modalTool} first — press OK or ` +
     `Cancel in its panel (flashing on the right).`);
-  const el = S.modalToolPanel && document.getElementById(S.modalToolPanel);
   if (el) {
     el.classList.remove('modalflash');
     void el.offsetWidth;                    // restart the CSS animation
@@ -321,17 +325,11 @@ function paramField(p) {
    INVENT an id — only override it when they want a meaningful one. Re-suggest
    on op change only while the field still holds our previous suggestion. */
 let lastSuggestedId = '';
-function suggestId(op) {
-  const ids = new Set(((S.lastDoc && S.lastDoc.features) || []).map(f => f.id));
-  let n = 1; while (ids.has(op + n)) n++;
-  return op + n;
-}
-
 function renderFeatForm() {
   const op = S.OPS.find(o => o.op === document.getElementById('featOp').value);
   const idEl = document.getElementById('featId');
   if (!idEl.value.trim() || idEl.value === lastSuggestedId) {
-    lastSuggestedId = suggestId(op.op);
+    lastSuggestedId = uid(op.op);
     idEl.value = lastSuggestedId;
   }
   document.getElementById('featParams').innerHTML =

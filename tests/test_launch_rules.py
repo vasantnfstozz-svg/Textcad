@@ -9,11 +9,34 @@ from pathlib import Path
 
 JS = Path(__file__).resolve().parents[1] / "static" / "js"
 FRAMEWORK = "tool.js"
-TOOL_FILES = ["extrude.js"]                  # every design tool born on tool.js
 
 
 def _src(name):
     return (JS / name).read_text(encoding="utf-8")
+
+
+def tool_files():
+    """Every design tool born on the framework — a module that declares
+    itself with tool({...}). Discovered, not listed, so a new tool is held to
+    the rules the day it lands."""
+    return sorted(p.name for p in JS.glob("*.js")
+                  if p.name != FRAMEWORK and re.search(r"=\s*tool\(\{", _src(p.name)))
+
+
+TOOL_FILES = tool_files()
+
+
+def test_the_discovery_finds_the_tools_that_exist():
+    assert "extrude.js" in TOOL_FILES, TOOL_FILES
+
+
+def test_tool_files_invent_no_axis():
+    """R1 — a default normal or axis typed in JS (`|| [0, 0, 1]`) is a
+    geometric decision the server did not make; send null and let the kernel
+    resolve the face by its centre."""
+    unit = re.compile(r"\[\s*-?[01]\s*,\s*-?[01]\s*,\s*-?[01]\s*\]")
+    for name in [FRAMEWORK, *TOOL_FILES]:
+        assert not unit.search(_src(name)), f"{name} hard-codes a unit vector"
 
 
 def test_no_tool_refreshes_the_viewport_by_hand():
