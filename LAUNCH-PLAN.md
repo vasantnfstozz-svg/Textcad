@@ -3,7 +3,7 @@
 > **Status: ACTIVE — approved by the user 2026-09-02 ("proceed with your
 > plan").** P0 done 2026-09-02 (31cccf0), P1 done 2026-09-03 (1246e3c), the
 > taper work the same day (Fusion sign + semantics, fc15233), P2 done
-> 2026-09-03 (the tool framework; hash in the next header update). Next: P3,
+> 2026-09-03 (the tool framework, 7b62ff3). Next: P3,
 > Revolve. Every other plan file points here; §7 carries the done-notes, §10
 > the ranked open items.
 >
