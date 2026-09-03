@@ -382,8 +382,16 @@ assemblies, the user's personal project.
    framework offers, extend the framework (and Extrude gets it too).
 6. **Journey tests** — real clicks on a frozen fixture, rendered + measured.
 7. **Ship** — targeted tests during the work; at ship: the fast tiers +
-   this tool's journeys, `ui v` bump, restart, the user's checklist, commit
-   with capability + proof + line delta, push.
+   this tool's journeys, `ui v` bump, restart, commit with capability +
+   proof + line delta, push.
+8. **Review, then the checklist** — right after the CODE commit Claude says
+   "recommended now: `/code-review high`" (the user runs it; it is worth its
+   tokens once per shipped tool — the taper review found 4 real bugs the
+   tests had not). Findings are fixed and committed BEFORE the user runs the
+   five-step checklist, so the user never tests what a robot would catch.
+   Docs / plan / memory commits get no review. The review runs on HEAD: a
+   docs commit on top of the code hides it, so review first, then stamp the
+   plan.
 
 ---
 
