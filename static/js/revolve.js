@@ -11,20 +11,20 @@
 // ring's frame, radius and the profile outline as (radial, axial) pairs. This
 // file draws what it is told and computes nothing: no vector maths in JS.
 
-import { tool, g, say } from './tool.js';
+import { tool, g, num, say } from './tool.js';
 import { beginAxisLine, endAxisLine,
          beginTaperRing, setTaperRingAngle, endTaperRing,
          beginRevolveGhost, setRevolveGhost, hideRevolveGhost, endRevolveGhost }
   from './viewport.js';
 
-const num = id => Number(g(id).value) || 0;
-/* the box accepts a full turn either way; the op refuses beyond that (the
-   kernel would quietly wrap 400° to 40°) */
-const clampAngle = t => Math.max(-360, Math.min(360, t));
+/* the limit is the server's (plan.limits.max_angle: one full turn either way;
+   the kernel would quietly wrap 400° to 40°) */
+const maxAngle = st => (st && st.plan && Number(st.plan.limits.max_angle)) || 360;
+const clampAngle = (st, t) => Math.max(-maxAngle(st), Math.min(maxAngle(st), t));
 
 /* ---------------- the panel <-> params ---------------- */
 function params(st) {
-  return { axis: g('rvAxis').value || 'v', angle: clampAngle(num('rvAngle')) };
+  return { axis: g('rvAxis').value || 'v', angle: clampAngle(st, num('rvAngle')) };
 }
 /* write params into the boxes; {} = the honest default: 0°, nothing built yet */
 function show(st, p) {
@@ -55,7 +55,7 @@ const gizmos = {
         await rv.apply();
         hideRevolveGhost();                    // the real solid replaces the ghost
       },
-      clampAngle, { continuous: true });       // 0..±360, not a ±180 wrap
+      t => clampAngle(st, t), { continuous: true });   // 0..±360, not a ±180 wrap
   },
   end() { endAxisLine(); endTaperRing(); endRevolveGhost(); },
 };
@@ -70,7 +70,7 @@ function refresh(st) {
   });
 }
 function beforeApply(st) {                   // a typed value obeys the box's limit
-  const a = num('rvAngle'), c = clampAngle(a);
+  const a = num('rvAngle'), c = clampAngle(st, a);
   if (c !== a) { g('rvAngle').value = c; say(`Angle limited to ${c}° — one full turn.`); }
 }
 function afterApply(st) { setTaperRingAngle(num('rvAngle')); }

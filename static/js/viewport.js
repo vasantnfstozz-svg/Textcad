@@ -1040,7 +1040,7 @@ export function beginRevolveGhost(frame, loops) {
 
 export function setRevolveGhost(deg) {
   if (!rvGhost) return;
-  const a = Math.max(-360, Math.min(360, deg));
+  const a = deg;                          // the tool clamps; the ghost draws what it is told
   rvGhost.angle = a;
   const len = Math.abs(a) * Math.PI / 180;
   const start = a < 0 ? -len : 0;

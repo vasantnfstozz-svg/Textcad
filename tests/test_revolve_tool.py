@@ -267,17 +267,33 @@ def test_the_lathe_outline_is_centred_on_the_ring_and_positive_in_r():
     assert min(hs) == pytest.approx(-3, abs=1e-3) and max(hs) == pytest.approx(3, abs=1e-3)
 
 
-def test_a_face_sketch_plans_about_the_face_plane_axes_and_targets_its_body():
+@pytest.mark.parametrize("face", ["top", "bottom"])
+def test_a_face_sketch_plans_about_the_face_plane_axes_and_targets_its_body(face):
+    """On a BOTTOM face the sketch plane's canonical z points INTO the body
+    while the face's geometric normal points out: the ring must still point at
+    the material and the outline stay at positive radius (review 2026-09-03:
+    the span used to re-read the normal from the geometry)."""
     d = Document(name="face")
     d.add("b", "plate", {"width": 60, "depth": 40, "thickness": 12}, [])
-    d.add("s", "sketch_on_face", {"face": "top", "offset": 0, "entities": [
+    d.add("s", "sketch_on_face", {"face": face, "offset": 0, "entities": [
         {"kind": "rectangle", "w": 10, "h": 6, "x": 20, "y": 0}]}, ["b"])
     d.rebuild()
     p = toolplan.plan(d, {"tool": "revolve", "sketch_id": "s"})
     assert p["ok"], p
-    top = d._parts["b"].bounding_box().max.Z
-    assert p["origin"][2] == pytest.approx(top, abs=1e-6)    # on the top face
+    bb = d._parts["b"].bounding_box()
+    z = bb.max.Z if face == "top" else bb.min.Z
+    assert p["origin"][2] == pytest.approx(z, abs=1e-6)      # on that face
     assert p["target_body"] == "b" and p["into_sign"] is None
+    rs = [q[0] for q in p["loops"][0]["outer"]]
+    assert min(rs) > 0, "the outline sits on the material side of the axis"
+    # the ring's x points from the axis to the material: the sketch's centre
+    # is 20 mm out along the plane's x
+    pl = sk.sketch_plane_of(d._parts["s"])
+    centre = list(pl.origin + pl.x_dir * 20)
+    rel = [c - o for c, o in zip(centre, p["frame"]["origin"])]
+    assert dot(rel, p["frame"]["x_dir"]) == pytest.approx(20, abs=1e-3)
+    solid = sk.revolve_sketch(d._parts["s"], axis=p["axis_name"], angle=360)
+    assert solid.volume == pytest.approx(pappus(20, 60, 360), rel=1e-6)
 
 
 def test_an_existing_revolve_plans_from_its_feature_and_keeps_its_axis():

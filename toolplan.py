@@ -303,9 +303,6 @@ def _profile(doc, sketch_id: str):
     return profile, pl, into_sign
 
 
-_LATHE_ORDER = (("v", "y_dir"), ("u", "x_dir"))    # the classic lathe axis first
-
-
 def plan_revolve(doc, req: dict) -> dict:
     """The Revolve tool's plan (specs/revolve.md). Input: sketch_id (or
     feature_id of an existing revolve), optional axis — "u" / "v" to swap, or
@@ -343,21 +340,22 @@ def plan_revolve(doc, req: dict) -> dict:
         want = want or (f.params or {}).get("axis")
     if not sketch_id:
         raise ValueError("Revolve needs a sketch profile")
-    profile, pl, _into = _profile(doc, sketch_id)
+    profile, _pl, _into = _profile(doc, sketch_id)
+    pl = sk.sketch_plane_of(profile)            # the very plane the op will use
     n = pl.z_dir
 
     valid, why = [], []
-    for name, attr in _LATHE_ORDER:
-        ax = b3d.Axis(pl.origin, getattr(pl, attr))
-        span = sk.revolve_axis_span(profile, ax)
-        if span is None:                        # cannot happen for an in-plane axis
+    for name in ("v", "u"):                     # the classic lathe axis first
+        ax = sk.revolve_axis(profile, name)     # the op's own axis, no second table
+        ext = sk.revolve_extent(profile, ax)
+        if ext is None:                         # cannot happen for an in-plane axis
             why.append(f"{name} is not in the sketch plane")
             continue
-        lo, hi = span
+        lo, hi = ext[0], ext[1]
         if lo < -1e-6 and hi > 1e-6:
             why.append(f"it crosses {name} ({lo:.3g} to {hi:.3g} mm)")
             continue
-        valid.append((name, ax, span))
+        valid.append((name, ax, ext))
     if not valid:
         raise ValueError("this profile cannot be revolved: " + " and ".join(why)
                          + ". Move the profile entirely to one side of an axis in "
@@ -366,30 +364,25 @@ def plan_revolve(doc, req: dict) -> dict:
         w = sk._AXES[want].direction
         hit = [v for v in valid if abs(abs(v[1].direction.dot(w)) - 1.0) < 1e-6]
         want = hit[0][0] if hit else None
-    name, ax, (lo, hi) = next((v for v in valid if v[0] == want), valid[0])
+    name, ax, (r_lo, r_hi, h_lo, h_hi) = next((v for v in valid if v[0] == want), valid[0])
 
     axis_dir = ax.direction
-    side = 1.0 if abs(hi) >= abs(lo) else -1.0          # where the material is
-    radial = (n.cross(axis_dir)).normalized() * side     # in-plane, toward it
-    # (radial, axial) frame: x = radial, y = axis — the ghost's lathe profile
-    lathe = Plane(origin=ax.position, x_dir=radial, z_dir=radial.cross(axis_dir))
-    bb = lathe.to_local_coords(profile).bounding_box()
-    mid = (float(bb.min.Y) + float(bb.max.Y)) / 2.0
-    origin = ax.position + axis_dir * mid
-    lathe = Plane(origin=origin, x_dir=radial, z_dir=radial.cross(axis_dir))
-    faces = list(profile.faces())
-    loops = _loops(faces, lathe)
-    radius = max(abs(float(bb.min.X)), abs(float(bb.max.X)), 1.0)
-    half = max(radius, (float(bb.max.Y) - float(bb.min.Y)) / 2.0) * 1.3
+    side = 1.0 if abs(r_hi) >= abs(r_lo) else -1.0     # where the material is
+    radial = n.cross(axis_dir).normalized() * side      # the extent's own radial, signed toward it
+    origin = ax.position + axis_dir * ((h_lo + h_hi) / 2.0)   # on the axis, level with the profile
+    ring = Plane(origin=origin, x_dir=radial, z_dir=axis_dir)             # y = axis × radial
+    lathe = Plane(origin=origin, x_dir=radial, z_dir=radial.cross(axis_dir))   # y = the axis
+    loops = _loops(list(profile.faces()), lathe)
+    radius = max(abs(r_lo), abs(r_hi), 1.0)
+    half = max(radius, (h_hi - h_lo) / 2.0) * 1.3
     axis_v = _vec(axis_dir)
     return {
         "ok": True, "tool": "revolve", "mode": "sketch", "op": "revolve",
         "input": sketch_id, "axis": axis_v, "origin": _vec(origin),
         "axis_name": name, "candidates": [v[0] for v in valid],
-        "frame": {"origin": _vec(origin), "x_dir": _vec(radial),
-                  "y_dir": _vec(axis_dir.cross(radial)), "z_dir": axis_v},
-        "loops": loops, "into_sign": None,
-        "limits": {"radius": round(radius, 4), "axis_half": round(half, 4)},
+        "frame": _frame(ring), "loops": loops, "into_sign": None,
+        "limits": {"radius": round(radius, 4), "axis_half": round(half, 4),
+                   "max_angle": sk.MAX_REVOLVE_DEG},
         "target_body": _default_target(doc, sketch_id),
         "will_build": f"revolve {sketch_id} about its {name} axis "
                       f"({_axis_name(axis_v)})",

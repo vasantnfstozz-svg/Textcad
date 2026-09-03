@@ -265,8 +265,10 @@ def sketch_plane_of(sketch) -> Plane:
     faces = sketch.faces()
     if not faces:
         raise ValueError("the sketch has no face to read a plane from")
-    f = faces[0]
-    return Plane(origin=f.center(), z_dir=f.normal_at(f.center()))
+    pl = face_plane(faces[0])
+    if pl is None:
+        raise ValueError("the sketch's face is not flat")
+    return pl
 
 
 def sketch_plane(plane: str, offset: float = 0.0) -> Plane:
@@ -1057,16 +1059,7 @@ def extrude_sketch(sketch, amount: float, both: bool = False,
 
 
 _LOCAL_AXES = {"u": "x_dir", "v": "y_dir"}      # a sketch plane's own axes
-
-
-def sketch_normal(sketch):
-    """The plane normal of a planar sketch, from its geometry; None when it has
-    no face to read."""
-    faces = sketch.faces()
-    if not faces:
-        return None
-    f = faces[0]
-    return f.normal_at(f.center())
+MAX_REVOLVE_DEG = 360.0                          # one full turn either way
 
 
 def revolve_axis(sketch, axis) -> Axis:
@@ -1083,17 +1076,19 @@ def revolve_axis(sketch, axis) -> Axis:
                      'axes) or "X", "Y", "Z"')
 
 
-def revolve_axis_span(sketch, ax: Axis):
-    """How far the profile reaches either side of `ax`, radially: (lo, hi)
-    along the in-plane direction perpendicular to the axis, or None when the
-    axis direction does not lie in the sketch's plane. lo < 0 < hi means the
-    profile STRADDLES the axis — OCCT answers that with a raw StdFail_NotDone,
-    so this is what makes the refusal a sentence (probed 2026-09-02/03).
-    Measured on the kernel's own bounding box of the profile turned into the
-    (radial, axial) frame, so a circle's full reach counts, not just its seam
-    vertex."""
-    n = sketch_normal(sketch)
-    if n is None:
+def revolve_extent(sketch, ax: Axis):
+    """The profile's reach in the (radial, axial) frame of `ax`:
+    (r_lo, r_hi, h_lo, h_hi) — radial along n × a (the sketch plane's normal
+    crossed with the axis), axial along the axis, both from the axis point.
+    None when the axis direction does not lie in the sketch's plane. ONE
+    measurement for the op's straddle check and the tool's ring / ghost, on
+    the kernel's own bounding box of the profile turned into that frame, so a
+    circle's whole reach counts, not just its seam vertex. The plane is the
+    one the sketch was drawn on (sketch_plane_of), never re-read from the
+    geometry — on a bottom face the two differ in sign."""
+    try:
+        n = sketch_plane_of(sketch).z_dir
+    except ValueError:
         return None
     a = ax.direction
     # the axis has to LIE IN the plane: perpendicular to its normal. Parallel
@@ -1104,9 +1099,18 @@ def revolve_axis_span(sketch, ax: Axis):
     radial = n.cross(a)
     if radial.length < 1e-9:
         return None
-    local = Plane(origin=ax.position, x_dir=radial.normalized(), z_dir=n)
+    radial = radial.normalized()
+    local = Plane(origin=ax.position, x_dir=radial, z_dir=radial.cross(a))   # y = the axis
     bb = local.to_local_coords(sketch).bounding_box()
-    return (float(bb.min.X), float(bb.max.X))
+    return (float(bb.min.X), float(bb.max.X), float(bb.min.Y), float(bb.max.Y))
+
+
+def revolve_axis_span(sketch, ax: Axis):
+    """(r_lo, r_hi) of revolve_extent: r_lo < 0 < r_hi means the profile
+    STRADDLES the axis — OCCT answers that with a raw StdFail_NotDone, so this
+    is what makes the refusal a sentence (probed 2026-09-02/03)."""
+    e = revolve_extent(sketch, ax)
+    return None if e is None else (e[0], e[1])
 
 
 def revolve_sketch(sketch, axis: str = "Z", angle: float = 360.0):
@@ -1128,9 +1132,10 @@ def revolve_sketch(sketch, axis: str = "Z", angle: float = 360.0):
     AI repair loop reads it."""
     ax = revolve_axis(sketch, axis)
     ang = float(angle)
-    if not -360.0 <= ang <= 360.0:
-        raise ValueError(f"revolve: angle must be between -360 and 360, got "
-                         f"{ang:g} (the kernel would quietly wrap it)")
+    if not -MAX_REVOLVE_DEG <= ang <= MAX_REVOLVE_DEG:
+        raise ValueError(f"revolve: angle must be between -{MAX_REVOLVE_DEG:g} and "
+                         f"{MAX_REVOLVE_DEG:g}, got {ang:g} (the kernel would "
+                         f"quietly wrap it)")
     if abs(ang) < 1e-9:
         raise ValueError("revolve: angle is 0, so there is nothing to build — "
                          "drag the ring or type an angle first")

@@ -32,6 +32,7 @@ const isSketch = f => f.op === 'sketch' || f.op === 'sketch_on_face';
 const solids = () => feats().filter(f => f.volume != null && !f.suppressed);
 /* shared plumbing every tool file imports instead of re-typing */
 export const g = id => document.getElementById(id);
+export const num = id => Number(g(id).value) || 0;
 export const say = text => bus.emit('msg', 'bot', text);
 
 export function uid(base) {
@@ -221,8 +222,8 @@ export function tool(spec) {
         `fine; a rounded face like a cone or cylinder side can't.`);
       return;
     }
-    if (sel && sel.kind === 'face')   // a tool without a face op: say so, then let the user pick
-      say(`⚠ ${spec.name} works on a sketch profile — click a sketch, not a face.`);
+    const notAFace = () => say(`⚠ ${spec.name} works on a sketch profile — click a sketch, not a face.`);
+    if (sel && sel.kind === 'face') notAFace();   // no face op: say so, then let the user pick
     const want = sel && sel.kind === 'profile' ? sel.id : null;
     // only UNCONSUMED sketches are offered — a sketch already used must not
     // silently become the profile again; an explicit pick is honoured even if
@@ -248,11 +249,7 @@ export function tool(spec) {
     // work on (a sketch profile or a flat face); never auto-grab a sketch
     const onPick = (kind, data) => {
       if (kind === 'profile') { open(data); return; }
-      if (!spec.ops.face) {           // this tool has no face mode: keep picking
-        say(`⚠ ${spec.name} works on a sketch profile — click a sketch, not a face.`);
-        beginProfilePick(onPick);
-        return;
-      }
+      if (!spec.ops.face) { notAFace(); beginProfilePick(onPick); return; }
       S.pickedFace = data;            // planar face — reuse face mode
       open();
     };

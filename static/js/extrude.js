@@ -11,13 +11,12 @@
 // limits, the default target and which sign goes INTO the body all arrive in
 // ONE plan (toolplan.py). This file draws what it is told and computes nothing.
 
-import { tool, g, say } from './tool.js';
+import { tool, g, num, say } from './tool.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          extrudeArrowDragging,
          beginExtrudeGhost, setExtrudeGhost, hideExtrudeGhost, endExtrudeGhost,
          beginTaperRing, setTaperRingAngle, endTaperRing } from './viewport.js';
 
-const num = id => Number(g(id).value) || 0;
 const isFace = st => st.input.kind === 'face';
 
 /* which SIGN of the distance goes INTO the material — from the plan (a face
