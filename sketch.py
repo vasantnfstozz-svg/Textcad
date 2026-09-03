@@ -731,7 +731,15 @@ def extrude_face(solid, face_center: list, face_normal: list | None = None,
     a = float(amount)
     if _to_bool(flip, "flip"):
         a = -a
-    return _tapered_extrude(face, a, float(taper or 0.0))
+    return _tapered_extrude(face, a, _fusion_taper(taper))
+
+
+def _fusion_taper(taper) -> float:
+    """The public taper sign is FUSION'S (user decision 2026-09-03, Autodesk
+    help: "a negative angle tapers the extrusion inward, a positive value
+    outward"). The kernel helpers below keep their historical convention
+    (positive narrows), so this is the ONE place the sign turns around."""
+    return -float(taper or 0.0)
 
 
 # How far a "through all" cut reaches. Anything longer than the part is
@@ -749,7 +757,9 @@ def extrude_sketch(sketch, amount: float, both: bool = False,
       * one side   : amount  (flip = extrude the other way)
       * symmetric  : both=True — extrude `amount` to EACH side
       * two sides  : amount one way + amount2 the opposite way
-    `taper` degrees tapers the walls (positive narrows as it extrudes).
+    `taper` degrees tapers the walls — FUSION'S SIGN (user decision
+    2026-09-03): NEGATIVE narrows as it extrudes, POSITIVE flares outward.
+    (Before 2026-09-03 positive narrowed; saved designs were migrated.)
 
     `through` = THROUGH ALL: ignore the distance and run far past the material,
     keeping the direction. This is what a CUTTING tool almost always wants. A
@@ -765,7 +775,7 @@ def extrude_sketch(sketch, amount: float, both: bool = False,
     a = float(amount)
     if _to_bool(flip, "flip"):
         a = -a
-    t = float(taper or 0.0)
+    t = _fusion_taper(taper)
     if _to_bool(through, "through"):
         a = THROUGH_MM if a >= 0 else -THROUGH_MM
         t = 0.0

@@ -1,98 +1,98 @@
 {
-  "name": "my-part-2",
-  "spec": {},
-  "features": [
-    {
-      "id": "sketch1",
-      "op": "sketch",
-      "params": {
-        "plane": "XY",
-        "offset": 0,
-        "entities": [
-          {
-            "kind": "rectangle",
-            "mode": "add",
-            "x": 16.25,
-            "y": 46.25,
-            "w": 37.5,
-            "h": 32.5,
-            "rotation": 0
-          }
-        ]
-      },
-      "inputs": [],
-      "suppressed": false
-    },
-    {
-      "id": "extrude1",
-      "op": "extrude",
-      "params": {
-        "amount": 94.12,
-        "both": false,
-        "amount2": 0,
-        "taper": 31.3,
-        "flip": false
-      },
-      "inputs": [
-        "sketch1"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "extrude2",
-      "op": "extrude_face",
-      "params": {
-        "face_center": [
-          16.25,
-          36.05,
-          9.96
-        ],
-        "face_normal": [
-          0,
-          -0.854,
-          0.52
-        ],
-        "amount": 71.78,
-        "taper": 0,
-        "flip": false
-      },
-      "inputs": [
-        "extrude1"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "extrude2_join1",
-      "op": "fuse",
-      "params": {},
-      "inputs": [
-        "extrude1",
-        "extrude2"
-      ],
-      "suppressed": false
-    },
-    {
-      "id": "extrude3",
-      "op": "extrude_face",
-      "params": {
-        "face_center": [
-          16.25,
-          56.45,
-          9.96
-        ],
-        "face_normal": [
-          0,
-          0.854,
-          0.52
-        ],
-        "amount": 97.32,
-        "taper": -37.6,
-        "flip": false
-      },
-      "inputs": [
-        "extrude2_join1"
-      ],
-      "suppressed": false
-    }
-  ]
+ "name": "my-part-2",
+ "spec": {},
+ "features": [
+  {
+   "id": "sketch1",
+   "op": "sketch",
+   "params": {
+    "plane": "XY",
+    "offset": 0,
+    "entities": [
+     {
+      "kind": "rectangle",
+      "mode": "add",
+      "x": 16.25,
+      "y": 46.25,
+      "w": 37.5,
+      "h": 32.5,
+      "rotation": 0
+     }
+    ]
+   },
+   "inputs": [],
+   "suppressed": false
+  },
+  {
+   "id": "extrude1",
+   "op": "extrude",
+   "params": {
+    "amount": 94.12,
+    "both": false,
+    "amount2": 0,
+    "taper": -31.3,
+    "flip": false
+   },
+   "inputs": [
+    "sketch1"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "extrude2",
+   "op": "extrude_face",
+   "params": {
+    "face_center": [
+     16.25,
+     36.05,
+     9.96
+    ],
+    "face_normal": [
+     0,
+     -0.854,
+     0.52
+    ],
+    "amount": 71.78,
+    "taper": 0,
+    "flip": false
+   },
+   "inputs": [
+    "extrude1"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "extrude2_join1",
+   "op": "fuse",
+   "params": {},
+   "inputs": [
+    "extrude1",
+    "extrude2"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "extrude3",
+   "op": "extrude_face",
+   "params": {
+    "face_center": [
+     16.25,
+     56.45,
+     9.96
+    ],
+    "face_normal": [
+     0,
+     0.854,
+     0.52
+    ],
+    "amount": 97.32,
+    "taper": 37.6,
+    "flip": false
+   },
+   "inputs": [
+    "extrude2_join1"
+   ],
+   "suppressed": false
+  }
+ ]
 }

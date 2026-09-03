@@ -363,7 +363,6 @@ async function setupTool() {
   if (!plan || st !== mine) return;             // closed / re-opened meanwhile
   st.plan = plan;
   st.safeR = plan.limits.inradius;
-  st.hasHoles = !!plan.limits.has_holes;
   if (!st.editing && plan.target_body
       && [...g('exTarget').options].some(o => o.value === plan.target_body))
     g('exTarget').value = plan.target_body;
@@ -424,24 +423,26 @@ function setupTaperRing(plan) {
 }
 
 /* live barrier: keep a NARROWING taper (or a distance under taper) inside the
-   buildable range. Flaring (negative taper) never collapses, so it stays free.
+   buildable range. TAPER SIGN IS FUSION'S (user decision 2026-09-03): NEGATIVE
+   narrows, POSITIVE flares — and flaring never collapses, so it stays free.
    If the inradius is unknown, don't block — the verified back-off will catch it.
-   Fusion parity (user mandate 2026-08-05): a HOLE-LESS profile may narrow all
-   the way to full collapse — a wedge/apex "flat" limit (0.995: probed — the
-   exact singular angle fails in OCCT, a hair under builds fine). Profiles
-   with holes keep the 0.92 margin: hole-wall collision genuinely breaks.
-   (st.safeR / st.hasHoles are the plan's limits — the numbers are the
-   server's; only the clamp of the user's own value happens here.) */
-const taperF = () => (st && st.hasHoles ? 0.92 : 0.995);
+   The walls may meet: the limit is 99.9% of the collapse angle — probed
+   2026-09-03 on a washer face, a rect with a hole, a circle, a rectangle, a
+   slot and a plate face: every one builds at 0.999, only the exact singular
+   angle fails in OCCT. (The old 0.92 margin for profiles with holes is what
+   kept a washer's taper from "going until flat".) st.safeR is the plan's
+   inradius — the number is the server's; only the clamp of the user's own
+   value happens here. */
+const TAPER_F = 0.999;
 function clampTaperFn(t) {
-  if (t <= 0 || !st || !st.safeR) return t;             // flare = free
+  if (t >= 0 || !st || !st.safeR) return t;             // flare = free
   const a = Math.abs(Number(g('exDist').value) || 0);
-  return Math.min(t, Math.atan(taperF() * st.safeR / Math.max(a, 0.01)) * 180 / Math.PI);
+  return Math.max(t, -Math.atan(TAPER_F * st.safeR / Math.max(a, 0.01)) * 180 / Math.PI);
 }
 function clampAmountFn(a) {
   const t = Number(g('exTaper').value) || 0;
-  if (t <= 0 || !st || !st.safeR) return a;
-  const maxA = taperF() * st.safeR / Math.tan(t * Math.PI / 180);
+  if (t >= 0 || !st || !st.safeR) return a;
+  const maxA = TAPER_F * st.safeR / Math.tan(-t * Math.PI / 180);
   return Math.max(-maxA, Math.min(maxA, a));
 }
 

@@ -16,12 +16,12 @@ def test_tilted_face_taper_heals_intermittent_invalids():
     5/20/40 — OCCT intermittently flags the loft result invalid. ShapeFix
     heals it (probed: identical volume); the whole sweep must now be ok."""
     from document import Document
-    for taper in (5.0, 10.0, 20.0, 31.0, 40.0):
+    for taper in (-5.0, -10.0, -20.0, -31.0, -40.0):     # Fusion sign: negative narrows
         doc = Document(name="repro")
         doc.add("sk", "sketch", {"plane": "XY", "offset": 0, "entities": [
             {"kind": "rectangle", "mode": "add", "x": 16.25, "y": 46.25,
              "w": 37.5, "h": 32.5, "rotation": 0}]})
-        doc.add("e1", "extrude", {"amount": 94.12, "taper": 31.3}, ["sk"])
+        doc.add("e1", "extrude", {"amount": 94.12, "taper": -31.3}, ["sk"])
         doc.add("e2", "extrude_face",
                 {"face_center": [16.25, 36.05, 9.96],
                  "face_normal": [0, -0.854, 0.52], "amount": 71.78}, ["e1"])
@@ -79,8 +79,9 @@ def test_seam_face_tapers_both_ways():
             allow_failure=False)          # these MUST succeed, not just refuse
         vols[taper] = solid_out.volume
 
-    # narrowing removes material, flaring adds it — monotonic in the taper
-    assert vols[-2.0] > vols[-0.3] > vols[0.3] > vols[2.0], vols
+    # narrowing (NEGATIVE, Fusion sign) removes material, flaring adds it —
+    # monotonic in the taper
+    assert vols[-2.0] < vols[-0.3] < vols[0.3] < vols[2.0], vols
 
 
 def test_straight_bspline_edge_is_straightened():
@@ -125,7 +126,7 @@ def test_taper_failure_message_is_honest():
     idx, _f, center, normal = max(planar_faces(solid),
                                   key=lambda t: t[1].area)
     try:
-        sk.extrude_face(solid, center, normal, amount=25, taper=80)
+        sk.extrude_face(solid, center, normal, amount=25, taper=-80)    # steep NARROWING
     except ValueError as e:
         msg = str(e)
         assert "taper" in msg.lower()

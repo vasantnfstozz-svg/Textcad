@@ -788,7 +788,8 @@ export function setExtrudeGhost(amount, taper = 0) {
   if (exGhost.basePos && (taper !== exGhost.lastTaper || amount !== exGhost.lastAmount)) {
     const pos = exGhost.mesh.geometry.attributes.position;
     const base = exGhost.basePos;
-    const k = Math.tan((taper || 0) * Math.PI / 180) * Math.abs(d) / exGhost.meanR;
+    // Fusion sign (2026-09-03): NEGATIVE taper narrows, so the shrink runs on -taper
+    const k = Math.tan(-(taper || 0) * Math.PI / 180) * Math.abs(d) / exGhost.meanR;
     for (let i = 0; i < pos.count; i++) {
       const x = base[i * 3], y = base[i * 3 + 1], z = base[i * 3 + 2];
       const s = Math.max(1 - k * z, 0.03);

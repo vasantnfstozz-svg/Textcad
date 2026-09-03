@@ -166,7 +166,7 @@ def test_a_tilted_flat_face_keeps_its_own_normal():
     """A tapered wall is flat but principal-plane-free: the axis is ITS normal
     and the frame is built from it — no canonical snap for oblique faces."""
     d = build(("s", "sketch", {"plane": "XY", "entities": [{"kind": "rectangle", "w": 40, "h": 40}]}, []),
-              ("e", "extrude", {"amount": 20, "taper": 20}, ["s"]))
+              ("e", "extrude", {"amount": 20, "taper": -20}, ["s"]))   # Fusion sign: negative narrows
     part = d._parts["e"]
     wall = max((f for f in part.faces() if sk.face_plane(f) is not None
                 and abs(sk.face_plane(f).z_dir.Z) < 0.9),

@@ -80,7 +80,7 @@ def test_collapsing_taper_gives_friendly_error():
         {"kind": "rectangle", "w": 40, "h": 20},
         {"kind": "circle", "r": 5, "mode": "subtract"}])
     with pytest.raises(ValueError) as exc:
-        sk.extrude_sketch(s, amount=15, taper=35)
+        sk.extrude_sketch(s, amount=15, taper=-35)     # Fusion sign: negative narrows
     msg = str(exc.value).lower()
     assert "taper" in msg
     assert any(w in msg for w in ("smaller", "shorter", "other way"))
@@ -88,9 +88,11 @@ def test_collapsing_taper_gives_friendly_error():
 
 def test_taper_narrows_and_is_healthy():
     straight = sk.extrude_sketch(_rect(), amount=30)
-    tapered = sk.extrude_sketch(_rect(), amount=30, taper=10)
+    tapered = sk.extrude_sketch(_rect(), amount=30, taper=-10)
     assert not inspector.health(tapered)
-    assert tapered.volume < straight.volume     # positive taper removes material
+    assert tapered.volume < straight.volume     # NEGATIVE taper narrows (Fusion sign, 2026-09-03)
+    flared = sk.extrude_sketch(_rect(), amount=30, taper=10)
+    assert flared.volume > straight.volume      # positive flares outward
 
 
 def test_string_bools_coerced():

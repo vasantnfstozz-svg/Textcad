@@ -84,18 +84,18 @@ def test_taper_ring_narrows_to_flat(server, page, fresh_doc):
 
     # rect 20x30, amount 10: inradius 10 -> collapse at 45 deg. The old 0.92
     # barrier stopped at 42.6; Fusion (and now we) allow essentially flat.
-    page.fill("#exTaper", "44.5")
+    page.fill("#exTaper", "-44.5")               # Fusion sign: negative narrows
     deadline = time.time() + 15
     f = None
     while time.time() < deadline:
         doc = httpx.get(f"{server}/api/doc", timeout=5).json()
         f = next(x for x in doc["features"] if x["id"] == "ex1")
-        if (abs(float(f["params"].get("taper", 0)) - 44.5) < 0.05
+        if (abs(float(f["params"].get("taper", 0)) + 44.5) < 0.05
                 and f["status"] == "ok"):
             break
         time.sleep(0.2)
-    assert abs(float(f["params"]["taper"]) - 44.5) < 0.05, \
-        f"44.5deg must survive the clamp (old barrier was 42.6): {f['params']}"
+    assert abs(float(f["params"]["taper"]) + 44.5) < 0.05, \
+        f"-44.5deg must survive the clamp (old barrier was 42.6): {f['params']}"
     assert f["status"] == "ok"
     assert f["volume"] < 3500, f"nearly-collapsed wedge expected: {f['volume']}"
     page.click("#exCancel")
@@ -155,21 +155,21 @@ def test_the_taper_ring_is_not_capped_below_the_geometric_limit(server, page, fr
     assert c["l"] < p0["x"] < c["l"] + c["w"] and c["t"] < p0["y"] < c["t"] + c["h"],         f"ring handle still off the canvas: {p0} vs {c}"
     page.mouse.move(p0["x"], p0["y"])
     page.mouse.down()
-    for deg in range(5, 71, 5):               # a real, gradual drag around the ring
+    for deg in range(-5, -71, -5):            # a real, gradual drag (negative = narrowing)
         p = ring_point(page, deg)
         page.mouse.move(p["x"], p["y"])
         page.wait_for_timeout(20)
     live = float(page.input_value("#exTaper"))
-    assert live > 60, f"the ring stopped at {live} deg while dragging (old cap)"
+    assert live < -60, f"the ring stopped at {live} deg while dragging (old cap)"
     page.mouse.up()                           # one verified rebuild
     deadline = time.time() + 15
     f = None
     while time.time() < deadline:
         doc = httpx.get(f"{server}/api/doc", timeout=5).json()
         f = next(x for x in doc["features"] if x["id"] == "ex1")
-        if f["status"] == "ok" and float(f["params"].get("taper", 0)) > 60:
+        if f["status"] == "ok" and float(f["params"].get("taper", 0)) < -60:
             break
         time.sleep(0.2)
-    assert abs(float(f["params"]["taper"]) - 70) < 1.5, f["params"]
+    assert abs(float(f["params"]["taper"]) + 70) < 1.5, f["params"]
     assert f["status"] == "ok"
     assert not page.errors, page.errors
