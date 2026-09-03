@@ -101,6 +101,17 @@ Two design rules the user has had to re-flag: **base first, then sketch on a
 named face with an offset** (never an absolute-offset sketch once a body
 exists), and **no sharp internal corners in milled parts**.
 
+## Hooks (enforced by Claude Code itself, `.claude/settings.json` + `.claude/hooks/`)
+
+Four house rules run automatically, so they do not depend on memory:
+
+- **Edit/Write to `designs/*.tcad.json`, `designs/*.history/`, `.studio-session*.json` is DENIED** — the user's work is never edited by hand (stale-tab trap). Use the app's API or a generator script; test data lives in `tests/fixtures/`.
+- **Every edit to `static/js/*.js` runs `node --check`**; a syntax error comes straight back.
+- **`git push --force` (any form) is DENIED** — hand the command to the user.
+- **Stop: uncommitted `static/` changes without a `main.js?v=` bump** block the turn with a reminder to bump.
+
+Review or disable them with `/hooks`. Add new ones only for cheap, unambiguous checks.
+
 ## Token rules (the user's usage limit is real)
 
 - One Claude session at a time on this checkout; a second one uses a worktree.

@@ -32,5 +32,55 @@
       "mcp__textcad__design_part",
       "mcp__textcad__design_compressor"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Python314/python.exe \"$CLAUDE_PROJECT_DIR/.claude/hooks/protect_designs.py\"",
+            "timeout": 30,
+            "statusMessage": "checking the design library is untouched"
+          }
+        ],
+        "matcher": "Edit|Write"
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Python314/python.exe \"$CLAUDE_PROJECT_DIR/.claude/hooks/no_force_push.py\"",
+            "timeout": 30
+          }
+        ],
+        "matcher": "Bash|PowerShell"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Python314/python.exe \"$CLAUDE_PROJECT_DIR/.claude/hooks/js_syntax_check.py\"",
+            "timeout": 30,
+            "statusMessage": "node --check"
+          }
+        ],
+        "matcher": "Edit|Write"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "C:/Python314/python.exe \"$CLAUDE_PROJECT_DIR/.claude/hooks/cache_buster_check.py\"",
+            "timeout": 30,
+            "statusMessage": "cache-buster check"
+          }
+        ]
+      }
+    ]
   }
 }
