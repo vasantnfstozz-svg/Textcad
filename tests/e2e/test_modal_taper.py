@@ -220,3 +220,52 @@ def test_past_the_meeting_angle_the_solid_ends_at_the_tip(server, page, fresh_do
     assert f["volume"] < 1200, "a 5 mm frustum would be ~6000 mm3 — the solid must end at the tip"
     assert "walls meet" in page.text_content("#chatLog")
     assert not page.errors, page.errors
+
+
+BUILD_TWO_CIRCLES = """
+async () => {
+  const { postJSON } = await import('/static/js/api.js');
+  const { loadMesh } = await import('/static/js/viewport.js');
+  await postJSON('/api/feature/add',
+    { id: 'sk1', op: 'sketch',
+      params: { plane: 'XY', offset: 0,
+                entities: [{ kind: 'circle', r: 5, x: 0, y: 0, mode: 'add' },
+                           { kind: 'circle', r: 15, x: 40, y: 0, mode: 'add' }] },
+      inputs: [] }, 'add');
+  await postJSON('/api/feature/add',
+    { id: 'ex1', op: 'extrude', params: { amount: 10 }, inputs: ['sk1'] },
+    'add');
+  await loadMesh(true);
+}
+"""
+
+
+def test_the_ghost_tapers_each_outline_toward_its_own_centre(server, page, fresh_doc):
+    """User 2026-09-03: "two circles with different diameters — when tapering,
+    the ghost goes inclined, not a straight cone". The ghost shrank every
+    outline toward the profile's COMMON centroid. Now each outline is its own
+    cone: its top stays over its own base, and it ends at its own tip (the r5
+    circle at -40 deg meets at 0.999*5/tan40 = 5.95 mm, the r15 one would meet
+    at 17.9 so it keeps the full 10)."""
+    import math
+    page.evaluate(BUILD_TWO_CIRCLES)
+    page.wait_for_selector("#tree .nrow >> text=ex1")
+    open_edit(page, "ex1")
+    page.wait_for_function("() => window.__vp.gizmos().ring", timeout=10000)
+    page.wait_for_timeout(300)
+    drag_ring_to(page, -40)                   # still holding the mouse
+    page.wait_for_timeout(700)                # the per-face meeting depths arrive (lazy fetch)
+    p = ring_point(page, -41)                 # one more step re-draws the ghost with them
+    page.mouse.move(p["x"], p["y"])
+    page.wait_for_timeout(100)
+    tops = page.evaluate("() => window.__vp.ghostLoopTops()")
+    assert tops and len(tops) == 2, tops
+    for t in tops:
+        assert abs(t["top"][0] - t["base"][0]) < 0.05 and abs(t["top"][1] - t["base"][1]) < 0.05, \
+            ("an outline's ghost leans", t)
+    heights = sorted(t["height"] for t in tops)
+    deg = -float(page.input_value("#exTaper"))
+    assert abs(heights[0] - 0.999 * 5 / math.tan(math.radians(deg))) < 0.15, (heights, deg)
+    assert abs(heights[1] - 10) < 0.01, heights
+    page.mouse.up()
+    assert not page.errors, page.errors

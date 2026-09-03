@@ -387,12 +387,16 @@ function refreshAxis() {                         // Flip / direction changed
   setAxis(st.plan.axis);
   placeArrow();
 }
+/* per outline, the height where ITS walls meet for this taper (the server's
+   collapse depths, same order as the plan's loops) — null while unknown */
+function apexCaps(taper) {
+  if (!(taper < 0) || !st || !st.collapse) return null;
+  const f = Number(lim().apex_fraction) || 0.999;
+  return st.collapse.map(r => (r == null ? null : f * r / Math.tan(-taper * Math.PI / 180)));
+}
 function showGhost(amount, taper) {
-  // the ghost ends where the solid will: at the tip, if the walls meet first
-  // (the tallest face's tip — each face of a sketch ends at its own)
-  const h = apexHeights(taper);
-  const eff = h && Math.abs(amount) > h.max ? Math.sign(amount || 1) * h.max : amount;
-  setExtrudeGhost(eff * (st && st.ghostSign < 0 ? -1 : 1), taper);
+  // the ghost ends where the solid will: each outline at its own tip
+  setExtrudeGhost(amount * (st && st.ghostSign < 0 ? -1 : 1), taper, apexCaps(taper));
 }
 
 // put the drag arrow at the MIDDLE of the profile, pointing the way a positive

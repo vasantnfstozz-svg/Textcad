@@ -263,6 +263,7 @@ export function initViewport() {
     /* which extrude gizmos are live — a face-sketch extrude must have ALL
        three (the ghost/ring were silently missing there once) */
     gizmos: () => ({ arrow: !!exArrow, ghost: !!exGhost, ring: !!taperRing }),
+    ghostLoopTops,
     /* the extrude gizmos' DIRECTIONS: the arrow's axis and the way the ghost
        box actually grows (its matrix z column, which carries the signed
        depth). They MUST point the same way — three disagreeing direction
@@ -741,84 +742,115 @@ let exGhost = null;
 
 export function beginExtrudeGhost(frame, loops) {
   endExtrudeGhost();
-  const shapes = [];
+  // ONE PART PER OUTLINE (user 2026-09-03: "two circles with different
+  // diameters — the ghost goes inclined, not a straight cone"): the taper morph
+  // used to shrink every outline toward the profile's COMMON centroid, so a
+  // small circle beside a big one leaned toward it. The real solid tapers
+  // each face toward its own centre and ends at its own tip — so does the
+  // ghost now: each loop is its own unit-depth prism with its own centre,
+  // mean radius and height cap.
+  const parts = [];
   for (const L of loops || []) {
     if (!L.outer || L.outer.length < 3) continue;
-    const s = new THREE.Shape(L.outer.map(p => new THREE.Vector2(p[0], p[1])));
+    const shape = new THREE.Shape(L.outer.map(p => new THREE.Vector2(p[0], p[1])));
     for (const h of L.holes || [])
-      if (h.length >= 3) s.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p[0], p[1]))));
-    shapes.push(s);
+      if (h.length >= 3) shape.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p[0], p[1]))));
+    const geo = new THREE.ExtrudeGeometry([shape], { depth: 1, bevelEnabled: false });
+    // depthTest OFF: the ghost must stay visible when pushed INSIDE the body
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.13, depthWrite: false,
+      depthTest: false, side: THREE.DoubleSide }));
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 15),
+      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true,
+        opacity: 0.65, depthTest: false }));
+    mesh.renderOrder = 990; edges.renderOrder = 991;
+    mesh.matrixAutoUpdate = false; edges.matrixAutoUpdate = false;
+    scene.add(mesh); scene.add(edges);
+    let cx = 0, cy = 0;
+    for (const q of L.outer) { cx += q[0]; cy += q[1]; }
+    cx /= L.outer.length; cy /= L.outer.length;
+    let mr = 0;
+    for (const q of L.outer) mr += Math.hypot(q[0] - cx, q[1] - cy);
+    mr = Math.max(mr / L.outer.length, 0.5);
+    parts.push({ mesh, edges, cx, cy, meanR: mr,
+                 basePos: Float32Array.from(geo.attributes.position.array) });
   }
-  if (!shapes.length) return;
-  // unit-depth prism of the real profile; drags scale it along the normal
-  const geo = new THREE.ExtrudeGeometry(shapes, { depth: 1, bevelEnabled: false });
-  // depthTest OFF: the ghost must stay visible when pushed INSIDE the body
-  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-    color: 0xffffff, transparent: true, opacity: 0.13, depthWrite: false,
-    depthTest: false, side: THREE.DoubleSide }));
-  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 15),
-    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true,
-      opacity: 0.65, depthTest: false }));
-  mesh.renderOrder = 990; edges.renderOrder = 991;
-  mesh.matrixAutoUpdate = false; edges.matrixAutoUpdate = false;
-  scene.add(mesh); scene.add(edges);
-  // centroid + mean radius of the profile (for the taper morph)
-  let cx = 0, cy = 0, np = 0;
-  for (const L of loops) for (const p of L.outer) { cx += p[0]; cy += p[1]; np++; }
-  cx /= np || 1; cy /= np || 1;
-  let mr = 0;
-  for (const L of loops) for (const p of L.outer)
-    mr += Math.hypot(p[0] - cx, p[1] - cy);
-  mr = Math.max(mr / (np || 1), 0.5);
+  if (!parts.length) return;
   exGhost = {
-    mesh, edges, cx, cy, meanR: mr, lastTaper: null, lastAmount: null,
-    basePos: Float32Array.from(geo.attributes.position.array),
+    parts, mesh: parts[0].mesh, edges: parts[0].edges,   // .mesh/.edges: test hooks
+    lastTaper: null, lastAmount: null, lastCaps: null,
     x: new THREE.Vector3(...frame.x_dir), y: new THREE.Vector3(...frame.y_dir),
     z: new THREE.Vector3(...frame.z_dir), o: new THREE.Vector3(...frame.origin),
   };
   ghostVisible(false);
 }
 
-export function setExtrudeGhost(amount, taper = 0) {
+/* amount: the signed depth asked; taper: degrees (Fusion sign, negative
+   narrows); caps: per-loop maximum heights (where that loop's walls meet —
+   the server's numbers) or null while unknown */
+export function setExtrudeGhost(amount, taper = 0, caps = null) {
   if (!exGhost) return;
   ghostVisible(true);
-  const d = Math.abs(amount) < 0.01 ? 0.01 : amount;   // keep non-degenerate
-  // taper morph: shrink cross-sections toward the profile centroid with height
-  // (approximate — the ghost is a drag aid; the real solid is exact)
-  if (exGhost.basePos && (taper !== exGhost.lastTaper || amount !== exGhost.lastAmount)) {
-    const pos = exGhost.mesh.geometry.attributes.position;
-    const base = exGhost.basePos;
-    // Fusion sign (2026-09-03): NEGATIVE taper narrows, so the shrink runs on -taper
-    const k = Math.tan(-(taper || 0) * Math.PI / 180) * Math.abs(d) / exGhost.meanR;
-    for (let i = 0; i < pos.count; i++) {
-      const x = base[i * 3], y = base[i * 3 + 1], z = base[i * 3 + 2];
-      // the floor is (almost) zero: at the collapse limit the real solid IS a
-      // point, and a 3% floor showed a ~2 mm flat top on a 70 mm cone that did
-      // not exist (user 2026-09-03: "the ghost stays where the dot stops")
-      const s = Math.max(1 - k * z, 0.001);
-      pos.setXYZ(i, exGhost.cx + (x - exGhost.cx) * s,
-                    exGhost.cy + (y - exGhost.cy) * s, z);
+  const changed = taper !== exGhost.lastTaper || amount !== exGhost.lastAmount
+    || JSON.stringify(caps) !== JSON.stringify(exGhost.lastCaps);
+  const sign = amount < 0 ? -1 : 1;
+  exGhost.parts.forEach((P, i) => {
+    const cap = caps && caps[i] != null ? caps[i] : Infinity;
+    const h = Math.max(Math.min(Math.abs(amount), cap), 0.01);   // this loop's real height
+    if (changed) {
+      // taper morph: shrink THIS outline's cross-section toward ITS centroid
+      // with height (approximate — the ghost is a drag aid; the solid is exact)
+      const pos = P.mesh.geometry.attributes.position;
+      const base = P.basePos;
+      const k = Math.tan(-(taper || 0) * Math.PI / 180) * h / P.meanR;
+      for (let v = 0; v < pos.count; v++) {
+        const x = base[v * 3], y = base[v * 3 + 1], z = base[v * 3 + 2];
+        // the floor is (almost) zero: at the tip the real solid IS a point
+        const s = Math.max(1 - k * z, 0.001);
+        pos.setXYZ(v, P.cx + (x - P.cx) * s, P.cy + (y - P.cy) * s, z);
+      }
+      pos.needsUpdate = true;
+      P.edges.geometry.dispose();                 // the outline follows the morph
+      P.edges.geometry = new THREE.EdgesGeometry(P.mesh.geometry, 15);
     }
-    pos.needsUpdate = true;
-    exGhost.lastTaper = taper; exGhost.lastAmount = amount;
-  }
-  const m = new THREE.Matrix4().makeBasis(exGhost.x, exGhost.y, exGhost.z)
-    .scale(new THREE.Vector3(1, 1, d))
-    .setPosition(exGhost.o);
-  exGhost.mesh.matrix.copy(m);
-  exGhost.edges.matrix.copy(m);
+    const m = new THREE.Matrix4().makeBasis(exGhost.x, exGhost.y, exGhost.z)
+      .scale(new THREE.Vector3(1, 1, sign * h))
+      .setPosition(exGhost.o);
+    P.mesh.matrix.copy(m);
+    P.edges.matrix.copy(m);
+  });
+  if (changed) { exGhost.lastTaper = taper; exGhost.lastAmount = amount; exGhost.lastCaps = caps; }
+}
+
+/* test hook: per outline, the world-space centre of its base and of its top
+   ring, and its height — a straight cone keeps top over base */
+export function ghostLoopTops() {
+  if (!exGhost) return null;
+  return exGhost.parts.map(P => {
+    const pos = P.mesh.geometry.attributes.position;
+    let tx = 0, ty = 0, n = 0;
+    for (let v = 0; v < pos.count; v++)
+      if (pos.getZ(v) > 0.5) { tx += pos.getX(v); ty += pos.getY(v); n++; }
+    const toWorld = (u, w, z) => exGhost.o.clone().addScaledVector(exGhost.x, u)
+      .addScaledVector(exGhost.y, w).addScaledVector(exGhost.z, z).toArray();
+    const hz = P.mesh.matrix.elements[10] / exGhost.z.length();   // the z scale = signed height
+    return { base: toWorld(P.cx, P.cy, 0), top: toWorld(tx / (n || 1), ty / (n || 1), hz),
+             height: hz };
+  });
 }
 
 function ghostVisible(v) {
-  if (exGhost) { exGhost.mesh.visible = v; exGhost.edges.visible = v; }
+  if (exGhost) for (const P of exGhost.parts) { P.mesh.visible = v; P.edges.visible = v; }
 }
 export function hideExtrudeGhost() { ghostVisible(false); }
 export function hasExtrudeGhostVisible() { return !!(exGhost && exGhost.mesh.visible); }
 
 export function endExtrudeGhost() {
   if (!exGhost) return;
-  scene.remove(exGhost.mesh); scene.remove(exGhost.edges);
-  exGhost.mesh.geometry.dispose(); exGhost.edges.geometry.dispose();
+  for (const P of exGhost.parts) {
+    scene.remove(P.mesh); scene.remove(P.edges);
+    P.mesh.geometry.dispose(); P.edges.geometry.dispose();
+  }
   exGhost = null;
 }
 
