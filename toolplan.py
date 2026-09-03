@@ -296,7 +296,25 @@ def plan_extrude(doc, req: dict) -> dict:
     }
 
 
-_PLANNERS = {"extrude": plan_extrude}
+def plan_sketch(doc, req: dict) -> dict:
+    """The frame a NEW plane sketch is drawn in: {plane, offset} -> the very
+    plane make_sketch() will build the profile on (sketch.sketch_plane), as
+    {origin, x_dir, y_dir, z_dir}. sketcher.js carried its own copy of these
+    three frames until P2 of LAUNCH-PLAN.md; the grid is drawn where the
+    kernel will build, and nowhere else is that fact written down."""
+    plane = str(req.get("plane") or "XY").upper()
+    off = float(req.get("offset") or 0)
+    pl = sk.sketch_plane(plane, off)            # raises the op's own sentence
+    return {
+        "ok": True, "tool": "sketch", "plane": plane, "offset": off,
+        "frame": _frame(pl), "axis": _vec(pl.z_dir), "origin": _vec(pl.origin),
+        "will_build": f"a sketch on the {plane} plane"
+                      + (f", offset {off:g} mm along {_axis_name(_vec(pl.z_dir))}"
+                         if off else ""),
+    }
+
+
+_PLANNERS = {"extrude": plan_extrude, "sketch": plan_sketch}
 
 
 def plan(doc, req: dict) -> dict:

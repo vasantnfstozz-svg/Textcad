@@ -1,9 +1,11 @@
 # TextCAD launch plan — a robust, user-friendly CAD you can trust
 
 > **Status: ACTIVE — approved by the user 2026-09-02 ("proceed with your
-> plan").** P0 done 2026-09-02 (31cccf0), P1 done 2026-09-03 (1246e3c), plus
-> the taper-ring cap removed (703d0ea). Next: P2. Every other plan file points
-> here; §7 carries the done-notes, §10 the ranked open items.
+> plan").** P0 done 2026-09-02 (31cccf0), P1 done 2026-09-03 (1246e3c), the
+> taper work the same day (Fusion sign + semantics, fc15233), P2 done
+> 2026-09-03 (the tool framework; hash in the next header update). Next: P3,
+> Revolve. Every other plan file points here; §7 carries the done-notes, §10
+> the ranked open items.
 >
 > It replaces the reverted TOOL-FRAMEWORK-PLAN.md (2026-09-02, another model's
 > session, deleted at the user's request). Its diagnosis was checked against
@@ -64,8 +66,10 @@ no select-then-command, no live gizmo): fillet, chamfer, shell, move, rotate,
 scale, mirror, polar and linear pattern, fuse/cut/intersect, revolve, loft,
 sweep, primitives. These are the tools the plan turns into real tools.
 
-Sizes that matter: `extrude.js` 941 lines for one tool, `sketcher.js` 2078,
-`studio.py` 2542, `viewport.js` 1844. 47 test files + 27 browser tests.
+Sizes that matter (2026-09-03, after P2): `extrude.js` 261 lines on the
+497-line `tool.js` framework (was 941 alone), `sketcher.js` 2091, `studio.py`
+2570, `viewport.js` 1918. 49 test files + 27 browser test files (122
+journeys).
 
 ---
 
@@ -303,6 +307,39 @@ behaviour change. *Acceptance:* `extrude.js` under ~300 lines, all Extrude
 tests green, no `loadMesh()` call left in any tool file. *User does:* the
 same Extrude checklist — nothing should feel different.
 
+*Done 2026-09-03:* `static/js/tool.js` (new, 497 lines, the contract in its
+header) is the framework. `tool({...})` inherits: the modal lock (rule 9);
+the ONE selection resolver `currentSelection()` — explicit argument > viewport
+face > viewport profile > tree sketch row > curved-face refusal (R4);
+select-then-command with the pick fallback; honest zero; the lazy verified
+preview with serialized applies; the kernel-refused backstop (tool retreat →
+last good → safe params); Join/Cut combiners with the plan's default target;
+edit-in-isolation with Cancel-restores-verbatim; OK / Cancel / abandon; and
+every failure sentence. `extrude.js` 768 → 261 lines: it declares its panel,
+its two ops, boxes ↔ params, the arrow / ghost / ring and the cut-flip and
+taper rules — nothing else. **R3:** `viewport.follow()` refreshes the scene on
+every `doc-updated` whose `geom_version` differs from what is drawn;
+`holdViewport(fn)` makes a multi-step change (a feature and its Cut) ONE
+refresh; a `loadMesh()` for the version already being fetched joins that load
+instead of transferring the model twice. No tool file calls `loadMesh()`, and
+the ten redundant calls in `tree.js` / `placement.js` are gone;
+`tests/test_launch_rules.py` holds R1 / R2 / R3 by grep. **R1 closed:**
+`sketcher.js` lost `PLANE_FRAMES` — `/api/tool/plan {tool:"sketch", plane,
+offset}` returns the frame from `sketch.sketch_plane()`, the same function
+`make_sketch()` builds on (kernel-checked: the built face's centre and normal
+equal the frame, tests/test_toolplan.py, 6 new). `cancelTool()`,
+`editFeature()`, `canEdit()`, `activeToolFeature()` replace the
+Extrude-specific exports in ribbon, dialogs, placement and tree, so the next
+tool needs no edit there. Zero behaviour change: the 17 Extrude browser
+journeys pass unchanged. **Line delta (source, excl. tests): +59** — JS +30
+(tool.js +497, extrude.js −507, viewport +37, sketcher +13, tree −9,
+placement −2, ribbon +1), Python +29 (the planner). This is the one phase
+that is allowed to add: the framework is 497 lines written once so that
+Revolve is not 700 lines written again — R10 is judged on P3, where a tool
+must land in 100–250 lines. Honest corner: on the rare revert-to-last-good
+path, a through-all cut with the untouched 0 distance now shows the sign it
+sent (±1) in its disabled distance box instead of 0.
+
 **P3 — Revolve, the first tool born on the framework.**
 Axis derived from the profile, drawn in gold; drag a ring 0..360; backend
 refuses (with a sentence) a profile that straddles the axis or an axis
@@ -378,7 +415,10 @@ assemblies, the user's personal project.
 | ★P0 | `/api/feature/remove` over-cascade: removing a tail cut with no dependents wiped a 14-feature tree (undo recovered). Not yet diagnosed. | export-integrity notes |
 | P1 | LIVE esp32-remote: `esp_pillar_trim_tool` lacks `through: true` (safe only via the healer), and the current v16 is a broken WIP (unfused logo extrude → 35 pieces). Fix WITH the user in the app, not by editing the file under their open tab. | verified 2026-09-02 |
 | done | Code tests read live `designs/` — frozen in P0 (fixtures + `library` marker). The e2e examples-tab test still opens `pump-impeller` from the library: allowed, it is a stable committed design (e2e rule). | 2026-09-02 |
-| P1 | `sketcher.js` `PLANE_FRAMES` is the last hand copy of build123d's plane frames in the browser (used to place a NEW plane sketch's grid before any feature exists). Fix in P2: `/api/tool/plan {tool:"sketch", plane, offset}` returns the frame; the sketcher draws what it is told. | P1 2026-09-03 |
+| done | `sketcher.js` `PLANE_FRAMES` was the last hand copy of build123d's plane frames in the browser. P2: `/api/tool/plan {tool:"sketch", plane, offset}` returns the frame from `sketch.sketch_plane()` (the function `make_sketch` builds on); the sketcher draws what it is told, and `test_launch_rules.py` fails if a frame vector is ever written by hand in `static/js/` again. | P2 2026-09-03 |
+| P3 | `sketcher.js` (5) and `measure.js` (1, awaited) still call `loadMesh()` after their own document changes — redundant since R3, left in place because the sketch-mode scene was not audited for a refetch it may rely on when the version is unchanged. Remove with the sketch browser tests running. | P2 2026-09-03 |
+| P3 | Esc does not cancel a tool panel (rule 5 says Esc = cancel). Inherit it ONCE in `tool.js` when the second tool lands, with the sketcher's and measure's Esc precedence sorted out. | P2 2026-09-03 |
+| P3 | `viewport.beginProfilePick` hint says "to extrude" for every tool; take the tool's name when Revolve uses it. | P2 2026-09-03 |
 | done | **Code review of the taper work (2026-09-03, 14 findings, all fixed the same day).** The four that mattered: (1) P0 — the hole-to-wall distance was point-sampled and 5% off on a 200 mm plate, so a hole could break through the wall with status ok → the kernel's exact wire distance; (2) measuring the meeting depth ran on every plan for every face (27 s on a 33-hole plate) → measured only on request (`measure_collapse`), the tool asks the first time a taper needs it, exact distances make it ~50 ms; (3) a multi-face sketch was capped to its smallest face → each face ends at its own tip; (4) the cap was silent for AI / MCP / API → the op leaves a note, `Feature.notes` + `Document.warnings` carry it (R7). Also: an unmeasurable profile is not capped; ≥90° is refused on every path with one sentence; messages quote the distance the user asked; the UI takes `max_taper` and `apex_fraction` from the plan (R1); dead estimate and duplicate clamps removed; `probes/taper_apex_probe.py` committed (rule 1); e2e scaffolding shared; docstrings fixed. **Lesson for R6/R5:** the review's kernel probes found what the tests had not — every geometric claim needs a kernel-measured assertion on a LARGE part too. | 2026-09-03 |
 | done | **Taper semantics are Fusion's** (user tested Fusion 2026-09-03: "all shapes go until -90, until flat as the sketch — there is no limit"; approved "proceed"). The DISTANCE is a maximum: when a narrowing taper's walls meet before it, the solid ends where they meet — a full cone / pyramid / ridge, lower as the angle steepens, flat at 90°. `sketch.collapse_offset(face)` measures the meeting depth on the kernel's own 2D offset by bisection (exact for L-shapes and holes), `_apex_cap` shortens the build to 99.9% of it (the exact tip is a broken solid for OCCT), and the tool plan reports the same number as `limits.inradius`. The ring and box accept ±89°; the ghost ends where the solid will; the chat says once that the tip comes before the distance. Tests: `tests/test_taper_apex.py` (kernel-measured heights for circle, rectangle, ring, face pick, symmetric, flip) + an e2e that drags the ring to -85. | 2026-09-03 |
 | done | **Taper sign is Fusion's now** (user decision 2026-09-03: "flip the sign"): NEGATIVE narrows, POSITIVE flares. One turning point, `sketch._fusion_taper()`, at the public entry of extrude / extrude_face; the ghost morph, the barrier, the tests and the 6 stored taper values in my-part-2/3/5 (+ the live session file) were flipped with the server stopped. History snapshots of those three scratch designs keep the OLD sign — restoring one flares where it narrowed; noted here, not rewritten. Also: the barrier is 99.9% of the collapse angle for EVERY profile (probed: washer face, rect+hole, circle, rect, slot, plate face all build at 0.999; only the exact angle fails) — the old 0.92 margin for profiles with holes was why "narrowing does not go until flat". | 2026-09-03 |

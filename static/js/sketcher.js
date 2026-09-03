@@ -61,19 +61,25 @@ let trimBusy = false;     // an apply is in flight
 let modelSnaps = [];      // [{x, y, kind, body}] in plane-local mm
 let modelEdges = [];      // [{body, pts:[[x,y]..]}] in plane-local mm
 
-/* principal-plane frames, PROBED from build123d 0.11.1 (never assume — the
-   XZ plane's normal points -Y, and offset moves the origin along z_dir) */
-const PLANE_FRAMES = {
-  XY: { x_dir: [1, 0, 0], y_dir: [0, 1, 0], z_dir: [0, 0, 1] },
-  XZ: { x_dir: [1, 0, 0], y_dir: [0, 0, 1], z_dir: [0, -1, 0] },
-  YZ: { x_dir: [0, 1, 0], y_dir: [0, 0, 1], z_dir: [1, 0, 0] },
-};
+/* the frame a PLANE sketch is drawn in — the SERVER's (LAUNCH-PLAN.md R1):
+   build123d's plane frames are not copied here any more (the XZ plane's
+   normal points -Y and an offset moves the origin along z_dir; one home for
+   that fact — sketch.sketch_plane — is the only way it stays true). Fetched
+   from /api/tool/plan {tool: "sketch"} when the sketch opens. */
+let skFrame = null;
 
-function planeFrame() {
-  const f = PLANE_FRAMES[skPlaneName] || PLANE_FRAMES.XY;
-  const off = skPlaneOffset || 0;
-  return { origin: f.z_dir.map(c => c * off),
-           x_dir: f.x_dir, y_dir: f.y_dir, z_dir: f.z_dir };
+async function fetchPlaneFrame(plane, offset) {
+  try {
+    const r = await fetch('/api/tool/plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool: 'sketch', plane, offset }) });
+    const p = await r.json();
+    if (p.ok) return p.frame;
+    bus.emit('msg', 'bot', `⚠ Cannot open the sketch: ${p.error}`);
+  } catch (e) {
+    bus.emit('msg', 'bot', `⚠ Cannot open the sketch: the server did not answer (${e.message}).`);
+  }
+  return null;
 }
 
 /* Pull in the model geometry that lies ON this sketch plane, so the part's own
@@ -99,8 +105,7 @@ async function loadModelSnaps(plane, offset = 0, frame = null) {
 /* Frame the sketch camera on the MODEL projected into the chosen plane, not on
    the world origin: with a part sitting 200mm out, entering a sketch used to
    stare at empty space at 0,0 while the part sat off-screen. */
-function focusOnModel(plane) {
-  const f = PLANE_FRAMES[plane] || PLANE_FRAMES.XY;
+function focusOnModel(f) {                    // f = the plane's frame
   const { center, radius, hasModel } = modelExtent();
   if (!hasModel) return { cx: 0, cy: 0, extent: 90 };
   const dot = d => center[0] * d[0] + center[1] * d[1] + center[2] * d[2];
@@ -159,7 +164,7 @@ function enterMode() {
       + '(shift+left too) · middle-drag orbits (the model stays live — you '
       + 'never leave 3D) · wheel zooms · Look At re-faces the plane.');
   }
-  enterSketch3D(skOnFace ? skOnFace.frame : planeFrame(),
+  enterSketch3D(skOnFace ? skOnFace.frame : skFrame,
                 { gridMm: SETTINGS.gridMm, focus: pendingFocus || undefined });
   pendingFocus = null;
   document.getElementById('sk3dBar').style.display = '';
@@ -230,13 +235,16 @@ export async function cancelSketch() {
   exitMode();
 }
 
-export function openSketchEditor(plane = 'XY') {
+export async function openSketchEditor(plane = 'XY') {
+  const frame = await fetchPlaneFrame(plane, 0);   // where the kernel will build
+  if (!frame) return;
   skOnFace = null; skEditId = null;
   resetEditor();
   skName = nextName();
   skPlaneName = plane;               // chosen in the viewport
   skPlaneOffset = 0;
-  pendingFocus = focusOnModel(plane);
+  skFrame = frame;
+  pendingFocus = focusOnModel(frame);
   enterMode();
   updateHint();
   draw();
@@ -266,11 +274,16 @@ export async function editSketch(feature) {
       return;
     }
   }
+  const frame = onFace ? outline.frame
+    : await fetchPlaneFrame(feature.params.plane || 'XY',
+                            Number(feature.params.offset) || 0);
+  if (!frame) return;
   skOnFace = onFace
     ? { center: feature.params.face_center || null,
         normal: feature.params.face_normal || null,
-        inputId: feature.inputs?.[0] || null, frame: outline.frame }
+        inputId: feature.inputs?.[0] || null, frame }
     : null;
+  skFrame = frame;
   skEditId = feature.id;
   resetEditor();
   skEnts = (feature.params.entities || []).map(e => ({ ...e }));

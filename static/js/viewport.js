@@ -368,6 +368,7 @@ export function initViewport() {
   bus.on('doc-updated', () => {
     if (planePickCb) endPlanePick();
     if (profilePickCb) cancelProfilePick();
+    follow();                     // R3: the scene follows the document
   });
 
   // Extrude gizmo drags (arrow + taper ring) — capture phase so we grab them
@@ -1217,19 +1218,54 @@ function sketchMeshes() {
 let loadSeq = 0;
 
 let drawnVersion = null;         // the geometry currently in the scene
+let inflight = null;             // {version, fit, busy, promise}: the load fetching now
+
+/* R3 — THE VIEWPORT FOLLOWS THE DOCUMENT (LAUNCH-PLAN.md P2). Every document
+   change is announced on the bus with its geometry fingerprint; when that
+   differs from what is on screen the scene refreshes by itself, so no tool
+   calls loadMesh() by hand (the explicit calls left in other modules join the
+   load already running). A multi-step change — create a feature, then its
+   Cut — runs inside holdViewport(), and the scene refreshes once, at the end,
+   never showing the half-done state. */
+let holds = 0, followDue = false;
+export async function holdViewport(fn) {
+  holds++;
+  try { return await fn(); }
+  finally { if (--holds === 0 && followDue) { followDue = false; follow(); } }
+}
+function follow() {
+  if (holds) { followDue = true; return; }
+  const v = S.lastDoc && S.lastDoc.geom_version;
+  if (v && v !== drawnVersion) loadMesh();
+}
 
 /* Re-fetching and re-rendering the model is the most expensive thing the UI
    does (megabytes of triangles, plus a full three.js scene rebuild). Most calls
    ask for geometry that is already on screen — finishing or cancelling a sketch
    without changing anything, undoing back to the same state, switching tools.
    The document carries a geometry fingerprint, so those cost nothing now.
-   `force` bypasses it for callers that must reload (imports, tab switches). */
-export async function loadMesh(fit = false, force = false) {
+   `force` bypasses it for callers that must reload (imports, tab switches).
+   A call for the version that is ALREADY being fetched rides that load (its
+   fit / busy wish carried over) instead of transferring the megabytes twice. */
+export function loadMesh(fit = false, force = false) {
+  const version = (S.lastDoc && S.lastDoc.geom_version) || null;
+  if (inflight && version && inflight.version === version) {
+    inflight.fit = inflight.fit || fit;
+    if (force && !inflight.busy) { inflight.busy = true; setBusy('loading the model…'); }
+    return inflight.promise;
+  }
+  const job = { version, fit, busy: force };
+  job.promise = loadModel(job, force).finally(() => { if (inflight === job) inflight = null; });
+  inflight = job;
+  return job.promise;
+}
+
+async function loadModel(job, force) {
   const mine = ++loadSeq;
-  const version = S.lastDoc && S.lastDoc.geom_version;
+  const version = job.version;
   if (!force && version && version === drawnVersion && bodyObjs.length) {
     clearHighlight(); clearPick();
-    if (fit) { camera.updateProjectionMatrix(); setView('iso'); }
+    if (job.fit) { camera.updateProjectionMatrix(); setView('iso'); }
     return;
   }
   clearHighlight(); clearPick(); clearSelectionOverlay();
@@ -1245,6 +1281,7 @@ export async function loadMesh(fit = false, force = false) {
     drawnVersion = version || null;
     addSketches(m.sketches);
     addBodies(m.bodies);          // sets mesh + MODEL for the result body
+    const fit = job.fit;                   // a caller may have asked meanwhile
     if (!bodyObjs.length) {
       if (fit && sketchObjs.length) fitToObjects(sketchObjs);
       return;
@@ -1267,7 +1304,7 @@ export async function loadMesh(fit = false, force = false) {
       camera.updateProjectionMatrix(); setView('iso');
     }
   } catch (e) { /* no model yet */ }
-  finally { if (force) clearBusy(); }
+  finally { if (job.busy) clearBusy(); }
 }
 
 export function clearMesh() {

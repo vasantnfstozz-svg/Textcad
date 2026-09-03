@@ -276,3 +276,44 @@ def test_the_http_route_is_read_only():
     assert after["rebuild_ms"] == before["rebuild_ms"], "a plan must never rebuild"
     bad = c.post("/api/tool/plan", json={"tool": "extrude", "sketch_id": "zz"}).json()
     assert bad["ok"] is False and "zz" in bad["error"]
+
+
+# ------------------------------------------------------------ sketch plans ---
+
+def cross(a, b):
+    return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+
+
+@pytest.mark.parametrize("plane, offset, z_dir, origin", [
+    ("XY", 0, [0, 0, 1], [0, 0, 0]),
+    ("XY", 7, [0, 0, 1], [0, 0, 7]),
+    ("XZ", 7, [0, -1, 0], [0, -7, 0]),      # probed: XZ's normal points -Y
+    ("YZ", -3, [1, 0, 0], [-3, 0, 0]),
+])
+def test_a_sketch_plan_is_the_frame_the_kernel_builds_on(plane, offset, z_dir, origin):
+    """The browser draws a NEW plane sketch's grid on this frame (R1, P2: it
+    carried its own copy of the three frames until then). It must be the very
+    plane make_sketch() builds on — the kernel-built face is the proof — and
+    the same frame Extrude later pulls along (one home, two readers)."""
+    d = build(("s", "sketch", {"plane": plane, "offset": offset,
+                               "entities": [{"kind": "circle", "r": 5}]}, []))
+    p = ok(toolplan.plan(d, {"tool": "sketch", "plane": plane, "offset": offset}))
+    fr = p["frame"]
+    assert fr["z_dir"] == pytest.approx(z_dir, abs=1e-6)
+    assert fr["origin"] == pytest.approx(origin, abs=1e-6)
+    assert p["axis"] == fr["z_dir"] and p["origin"] == fr["origin"]
+    assert dot(cross(fr["x_dir"], fr["y_dir"]), fr["z_dir"]) == pytest.approx(1, abs=1e-9)
+    face = d._parts["s"].faces()[0]                           # what the kernel built
+    assert list(face.center()) == pytest.approx(origin, abs=1e-6)
+    assert list(face.normal_at()) == pytest.approx(z_dir, abs=1e-6)
+    e = ok(toolplan.plan(d, {"tool": "extrude", "sketch_id": "s"}))
+    for k in ("origin", "x_dir", "y_dir", "z_dir"):
+        assert e["frame"][k] == pytest.approx(fr[k], abs=1e-6), k
+
+
+def test_a_sketch_plan_needs_no_features_and_refuses_an_unknown_plane():
+    d = build()
+    p = ok(toolplan.plan(d, {"tool": "sketch"}))
+    assert p["plane"] == "XY" and p["offset"] == 0 and "XY" in p["will_build"]
+    bad = toolplan.plan(d, {"tool": "sketch", "plane": "AB"})
+    assert bad["ok"] is False and "XY" in bad["error"]

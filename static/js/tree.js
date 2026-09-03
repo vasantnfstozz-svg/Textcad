@@ -6,10 +6,11 @@ import { askConfirm } from './ask.js';
 import { S } from './state.js';
 import { postJSON, getJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
-import { loadMesh, showFeatureOverlay, clearHighlight, clearPick }
+import { showFeatureOverlay, clearHighlight, clearPick }
   from './viewport.js';
 import { openFeatDialog, modalGuard } from './dialogs.js';
-import { openExtrude, openExtrudeEdit, activeExtrudeId } from './extrude.js';
+import { openExtrude } from './extrude.js';
+import { activeToolFeature, canEdit, editFeature } from './tool.js';
 import { fmtVol } from './settings.js';
 
 const treeEl = () => document.getElementById('tree');
@@ -286,7 +287,7 @@ bus.on('doc-updated', doc => {
     if (f.status === 'failed' && !f.problems.includes('(after rollback bar)'))
       failed.set(f.id, f);
   for (const [id, f] of failed)
-    if (!prevFailed.has(id) && id !== activeExtrudeId())
+    if (!prevFailed.has(id) && id !== activeToolFeature())
       bus.emit('msg', 'bot', failMessage(f));
   prevFailed = new Set(failed.keys());
 });
@@ -372,10 +373,10 @@ function buildRow(doc, f, chip = null) {
       addAct(acts, '⬆', 'extrude this sketch into a solid',
         () => openExtrude(f.id));
     }
-    if (f.op === 'extrude' || f.op === 'extrude_face') {
+    if (canEdit(f.op)) {
       // Edit Feature (Fusion parity): reopen the tool that CREATED the feature
-      addAct(acts, '✎', 'edit this extrude (reopens the Extrude tool with its ' +
-        'arrow and live preview)', () => openExtrudeEdit(f.id));
+      addAct(acts, '✎', `edit this ${f.op.replace('_', ' ')} (reopens the tool ` +
+        'that made it, with its handles and live preview)', () => editFeature(f.id));
     }
     // ✕ is a SOFT delete now: the geometry goes, the row stays struck out,
     // and ↩ brings it back (user mandate 2026-08-31). Permanent delete lives
@@ -394,7 +395,7 @@ function buildRow(doc, f, chip = null) {
     if (modalGuard()) return;
     if (f.suppressed) { restoreFeature(f.id); return; }   // dblclick = bring it back
     if (f.op === 'sketch' || f.op === 'sketch_on_face') bus.emit('edit-sketch', f);
-    else if (f.op === 'extrude' || f.op === 'extrude_face') openExtrudeEdit(f.id);
+    else if (canEdit(f.op)) editFeature(f.id);
   };
   return row;
 }
@@ -407,7 +408,6 @@ async function strikeFeature(fid) {
                              'striking out…');
   if (doc.error) return;
   if (S.selected === fid) { S.selected = null; clearHighlight(); }
-  loadMesh();
   const plan = doc.strike_plan;
   const also = plan && plan.deleted.filter(id => id !== fid);
   bus.emit('msg', 'bot', `Struck out "${fid}"` +
@@ -419,7 +419,6 @@ async function restoreFeature(fid) {
   const doc = await postJSON('/api/feature/strike',
     { feature_id: fid, restore: true }, 'restoring…');
   if (doc.error) return;
-  loadMesh();
   const plan = doc.strike_plan;
   const also = plan && (plan.restored || plan.deleted).filter(id => id !== fid);
   bus.emit('msg', 'bot', `Restored "${fid}"` +
@@ -449,7 +448,6 @@ export async function deleteFeature(fid) {
   if (doc.error) return;
   if (S.selected === fid) { S.selected = null; clearHighlight(); }
   for (const id of plan.deleted) S.openNodes.delete(id);
-  loadMesh();
   const applied = doc.remove_plan;
   if (applied && applied.deleted.length > 1)
     bus.emit('msg', 'bot', '\ud83d\uddd1 ' + applied.summary.replace(/^Delete /, 'Deleted ') +
@@ -521,7 +519,6 @@ function buildBody(f) {
       cb.onchange = async () => {
         if (modalGuard()) { cb.checked = !cb.checked; return; }
         await postJSON('/api/edit', { feature_id: f.id, param: k, value: cb.checked });
-        loadMesh();
       };
       val.appendChild(cb); pr.appendChild(val); body.appendChild(pr);
     } else if (typeof v === 'number' || typeof v === 'string') {
@@ -611,7 +608,6 @@ function diameterRow(fid, param, radius) {
     beginEditWith(val, radius * 2, async d => {
       await postJSON('/api/edit',
         { feature_id: fid, param, value: round4(d / 2) });
-      loadMesh();
     });
   };
   pr.appendChild(val);
@@ -763,7 +759,6 @@ function pathArcRows(feat, entities, i) {
         if (res.error || !res.entities) return;  // postJSON spoke already
         await postJSON('/api/edit',
           { feature_id: feat.id, param: 'entities', value: res.entities });
-        loadMesh();
       });
     };
     pr.appendChild(val);
@@ -873,7 +868,6 @@ async function applyEntity(feat, entities, i, key, value) {
   next[i][key] = value;
   await postJSON('/api/edit',
     { feature_id: feat.id, param: 'entities', value: next });
-  loadMesh();
 }
 
 /* inline edit helper shared by the shape rows and the Ø rows */
@@ -946,7 +940,6 @@ function beginRename(el, f) {
     if (doc.error) { el.textContent = f.id; return; }
     if (S.selected === f.id) S.selected = v;
     if (S.openNodes.has(f.id)) { S.openNodes.delete(f.id); S.openNodes.add(v); }
-    loadMesh();                     // viewport body ids follow the new name
   };
   input.onclick = e => e.stopPropagation();
   input.ondblclick = e => e.stopPropagation();
@@ -966,7 +959,6 @@ function beginEdit(el, fid, param, oldVal) {
     const parsed = raw !== '' && !isNaN(Number(raw)) ? Number(raw) : raw;
     if (commit && raw !== '' && parsed !== oldVal) {
       await postJSON('/api/edit', { feature_id: fid, param, value: parsed });
-      loadMesh();
     } else { el.textContent = oldVal; }
   };
   input.onkeydown = e => {
@@ -1001,7 +993,6 @@ function pointsTable(fid, param, pts) {
     apply.onclick = async () => {
       await postJSON('/api/edit', { feature_id: fid, param,
         value: rows.map(p => [Number(p[0]), Number(p[1])]) });
-      loadMesh();
     };
     box.appendChild(apply);
   };

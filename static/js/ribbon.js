@@ -12,7 +12,8 @@ import { openSettings } from './settings.js';
 import { startPlacement, PLACEABLE } from './placement.js';
 import { beginPlanePick } from './viewport.js';
 import { lookAtSketch } from './sketch3d.js';
-import { openExtrude, cancelExtrude } from './extrude.js';
+import { openExtrude } from './extrude.js';
+import { cancelTool } from './tool.js';
 import { openMeasure, cancelMeasure } from './measure.js';
 
 // sketch draw tools shown in the contextual SKETCH tab's CREATE group (top)
@@ -32,7 +33,7 @@ let curSketchTool = null;      // which draw tool is active (for ribbon highligh
 // Create Sketch (Fusion): pick a plane or a planar face IN THE VIEWPORT, then
 // enter sketch mode on it.
 function startSketch() {
-  cancelExtrude();                          // don't leave extrude gizmos eating clicks
+  cancelTool();                          // don't leave extrude gizmos eating clicks
   cancelMeasure();                          // nor a measure panel floating
   beginPlanePick((kind, data) => {
     if (kind === 'face') bus.emit('sketch-on-face', data);

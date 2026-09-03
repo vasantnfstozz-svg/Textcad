@@ -241,12 +241,21 @@ def make_sketch(plane: str = "XY", offset: float = 0.0,
     plane: "XY", "XZ" or "YZ".  offset: shift the plane along its normal.
     entities: list of {"kind":..., ...params, "mode":"add"|"subtract"}.
     The first entity must be additive."""
+    return _as_sketch(sketch_plane(plane, offset) * _compose(entities or []))
+
+
+def sketch_plane(plane: str, offset: float = 0.0) -> Plane:
+    """The plane a `sketch` feature is drawn in: a principal plane shifted
+    along its own normal. ONE home for build123d's plane frames (XZ's normal
+    points -Y, so an XZ offset of +7 lands at y = -7): make_sketch() builds
+    here and toolplan.plan_sketch() reports the same object to the browser, so
+    the grid the user draws on and the face the kernel builds cannot differ."""
     if plane not in _PLANES:
         raise ValueError('sketch: plane must be "XY", "XZ" or "YZ"')
     pl = _PLANES[plane]
     if offset:
         pl = pl.offset(float(offset))
-    return _as_sketch(pl * _compose(entities or []))
+    return pl
 
 
 # The six named directions an author can point at without inventing a
