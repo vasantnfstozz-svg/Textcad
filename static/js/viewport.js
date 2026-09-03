@@ -792,7 +792,10 @@ export function setExtrudeGhost(amount, taper = 0) {
     const k = Math.tan(-(taper || 0) * Math.PI / 180) * Math.abs(d) / exGhost.meanR;
     for (let i = 0; i < pos.count; i++) {
       const x = base[i * 3], y = base[i * 3 + 1], z = base[i * 3 + 2];
-      const s = Math.max(1 - k * z, 0.03);
+      // the floor is (almost) zero: at the collapse limit the real solid IS a
+      // point, and a 3% floor showed a ~2 mm flat top on a 70 mm cone that did
+      // not exist (user 2026-09-03: "the ghost stays where the dot stops")
+      const s = Math.max(1 - k * z, 0.001);
       pos.setXYZ(i, exGhost.cx + (x - exGhost.cx) * s,
                     exGhost.cy + (y - exGhost.cy) * s, z);
     }

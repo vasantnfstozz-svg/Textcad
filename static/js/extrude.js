@@ -437,7 +437,16 @@ const TAPER_F = 0.999;
 function clampTaperFn(t) {
   if (t >= 0 || !st || !st.safeR) return t;             // flare = free
   const a = Math.abs(Number(g('exDist').value) || 0);
-  return Math.max(t, -Math.atan(TAPER_F * st.safeR / Math.max(a, 0.01)) * 180 / Math.PI);
+  const limit = -Math.atan(TAPER_F * st.safeR / Math.max(a, 0.01)) * 180 / Math.PI;
+  if (t < limit - 0.05 && !st.saidTaperLimit) {
+    // rule 7: the ring's handle stopping dead must say WHY, once per session
+    // (user 2026-09-03: "after a certain point it is not moving the dot")
+    st.saidTaperLimit = true;
+    bus.emit('msg', 'bot', `Taper stops at ${Math.round(limit * 10) / 10}° — at ` +
+      `this distance the walls meet there (the top closes to a point or a ridge). ` +
+      `A longer distance allows a gentler angle to reach the same point.`);
+  }
+  return Math.max(t, limit);
 }
 function clampAmountFn(a) {
   const t = Number(g('exTaper').value) || 0;
