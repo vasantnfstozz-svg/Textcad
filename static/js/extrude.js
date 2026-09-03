@@ -388,7 +388,10 @@ function refreshAxis() {                         // Flip / direction changed
   placeArrow();
 }
 function showGhost(amount, taper) {
-  setExtrudeGhost(amount * (st && st.ghostSign < 0 ? -1 : 1), taper);
+  // the ghost ends where the solid will: at the tip, if the walls meet first
+  const h = apexHeight(taper);
+  const eff = Math.abs(amount) > h ? Math.sign(amount || 1) * h : amount;
+  setExtrudeGhost(eff * (st && st.ghostSign < 0 ? -1 : 1), taper);
 }
 
 // put the drag arrow at the MIDDLE of the profile, pointing the way a positive
@@ -422,38 +425,34 @@ function setupTaperRing(plan) {
     clampTaperFn);                           // live barrier: stop before collapse
 }
 
-/* live barrier: keep a NARROWING taper (or a distance under taper) inside the
-   buildable range. TAPER SIGN IS FUSION'S (user decision 2026-09-03): NEGATIVE
-   narrows, POSITIVE flares — and flaring never collapses, so it stays free.
-   If the inradius is unknown, don't block — the verified back-off will catch it.
-   The walls may meet: the limit is 99.9% of the collapse angle — probed
-   2026-09-03 on a washer face, a rect with a hole, a circle, a rectangle, a
-   slot and a plate face: every one builds at 0.999, only the exact singular
-   angle fails in OCCT. (The old 0.92 margin for profiles with holes is what
-   kept a washer's taper from "going until flat".) st.safeR is the plan's
-   inradius — the number is the server's; only the clamp of the user's own
-   value happens here. */
-const TAPER_F = 0.999;
+/* FUSION SEMANTICS (user, 2026-09-03: "in Fusion they go until -90, until flat
+   as the sketch — there is no limit"): no barrier. TAPER SIGN IS FUSION'S:
+   NEGATIVE narrows, POSITIVE flares. The DISTANCE is a MAXIMUM — when the
+   narrowing walls meet before it, the SERVER ends the solid where they meet
+   (sketch._apex_cap), so a steeper angle is simply a lower cone / pyramid /
+   ridge, flat on the sketch at 90°. The ring and the box accept any angle up
+   to ±89° (a wall cannot go flatter than flat). st.safeR is the plan's
+   kernel-measured meeting depth; here it only decides WHEN to say, once, that
+   the tip will come before the distance (rule 7) and how tall to draw the
+   ghost — never a number of its own. */
+const APEX_FRACTION = 0.999;         // = sketch.APEX_FRACTION (the kernel refuses the exact tip)
+function apexHeight(taper) {          // where the walls meet, for a NARROWING taper
+  if (!(taper < 0) || !st || !st.safeR) return Infinity;
+  return APEX_FRACTION * st.safeR / Math.tan(-taper * Math.PI / 180);
+}
 function clampTaperFn(t) {
-  if (t >= 0 || !st || !st.safeR) return t;             // flare = free
+  t = Math.max(-89, Math.min(89, t));
   const a = Math.abs(Number(g('exDist').value) || 0);
-  const limit = -Math.atan(TAPER_F * st.safeR / Math.max(a, 0.01)) * 180 / Math.PI;
-  if (t < limit - 0.05 && !st.saidTaperLimit) {
-    // rule 7: the ring's handle stopping dead must say WHY, once per session
-    // (user 2026-09-03: "after a certain point it is not moving the dot")
-    st.saidTaperLimit = true;
-    bus.emit('msg', 'bot', `Taper stops at ${Math.round(limit * 10) / 10}° — at ` +
-      `this distance the walls meet there (the top closes to a point or a ridge). ` +
-      `A longer distance allows a gentler angle to reach the same point.`);
+  if (st && !st.saidApex && apexHeight(t) < a) {
+    st.saidApex = true;
+    const meet = -Math.atan(st.safeR / Math.max(a, 0.01)) * 180 / Math.PI;
+    bus.emit('msg', 'bot', `Steeper than ${Math.round(meet * 10) / 10}° the walls meet ` +
+      `before ${a} mm, so the solid ends at the tip — lower the angle, the taller ` +
+      `it gets (Fusion does the same). The distance stays your maximum.`);
   }
-  return Math.max(t, limit);
+  return t;
 }
-function clampAmountFn(a) {
-  const t = Number(g('exTaper').value) || 0;
-  if (t >= 0 || !st || !st.safeR) return a;
-  const maxA = TAPER_F * st.safeR / Math.tan(-t * Math.PI / 180);
-  return Math.max(-maxA, Math.min(maxA, a));
-}
+const clampAmountFn = a => a;         // the distance is free; the server caps the build
 
 function onDrag(amount) {
   // while dragging: move ONLY the instant white ghost box — no rebuild, no lag

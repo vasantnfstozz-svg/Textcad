@@ -79,11 +79,19 @@ def test_collapsing_taper_gives_friendly_error():
     s = sk.make_sketch("XY", 0, [
         {"kind": "rectangle", "w": 40, "h": 20},
         {"kind": "circle", "r": 5, "mode": "subtract"}])
+    # 2026-09-03, Fusion semantics: a taper whose walls meet before the
+    # distance is NOT an error any more — the solid ends at the tip (the hole
+    # wall is 5 mm, so the walls meet 2.5 mm in: height 0.999*2.5/tan35)
+    import math
+    solid = sk.extrude_sketch(s, amount=15, taper=-35)     # Fusion sign: negative narrows
+    assert not inspector.health(solid)
+    assert solid.bounding_box().max.Z == pytest.approx(
+        sk.APEX_FRACTION * 2.5 / math.tan(math.radians(35)), abs=0.02)
+    # what IS still refused, with a sentence: a wall leaning past flat
     with pytest.raises(ValueError) as exc:
-        sk.extrude_sketch(s, amount=15, taper=-35)     # Fusion sign: negative narrows
+        sk.extrude_sketch(s, amount=15, taper=-90)
     msg = str(exc.value).lower()
-    assert "taper" in msg
-    assert any(w in msg for w in ("smaller", "shorter", "other way"))
+    assert "taper" in msg and "flat" in msg
 
 
 def test_taper_narrows_and_is_healthy():

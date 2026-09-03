@@ -601,6 +601,86 @@ def _straighten_face(face):
     return rebuilt
 
 
+def collapse_offset(face) -> float:
+    """How far this face's outline can be offset INWARD before the material is
+    gone — the depth at which a narrowing taper's walls MEET (a point for a
+    circle or square, a ridge for a rectangle, wherever the medial axis peaks
+    for an odd shape). Measured by bisection on the kernel's own 2D offset, so
+    it is exact for any outline; holes cap it at half the thinnest wall
+    (build123d offsets holes OUTWARD under a taper, so hole and outer wall
+    meet in the middle).
+
+    Used by the tapered extrude to end the solid where the walls meet (Fusion's
+    semantics, user decision 2026-09-03) and reported by the tool plan as
+    `limits.inradius`, so the handle, the ghost and the solid share one number."""
+    from build123d import Kind, Plane
+    pl = Plane(face)
+    outer_w = face.outer_wire()
+    outer = pl.to_local_coords(outer_w)
+    bb = outer.bounding_box()
+    hi = max(bb.size.X, bb.size.Y) / 2.0 + 1e-6      # this much surely eats everything
+
+    def alive(o: float) -> bool:
+        try:
+            w = outer.offset_2d(-o, kind=Kind.INTERSECTION)
+            if not w.edges():
+                return False
+            try:
+                return abs(b3d.Face(w).area) > 1e-6
+            except Exception:
+                return abs(make_face(w).area) > 1e-6
+        except Exception:
+            return False
+
+    lo = 0.0
+    if alive(hi):                                    # cannot happen for a bounded face
+        return hi
+    for _ in range(18):                              # ~4e-6 of the size
+        mid = (lo + hi) / 2.0
+        if alive(mid):
+            lo = mid
+        else:
+            hi = mid
+    r = lo
+    inner = face.inner_wires()
+    if inner:
+        def pts(w):
+            return [w @ (i / 64) for i in range(64)]
+        op = pts(outer_w)
+        hp = [pts(h) for h in inner]
+        thin = min((p - q).length for h in hp for p in h for q in op)
+        for i in range(len(hp)):
+            for j in range(i + 1, len(hp)):
+                thin = min(thin, min((p - q).length for p in hp[i] for q in hp[j]))
+        r = min(r, thin / 2.0)
+    return r
+
+
+# the tapered solid stops a hair short of the exact apex: OCCT reports the
+# mathematically perfect tip as a broken solid (probed 2026-09-03 — a cone
+# built at 100% of the meeting height fails, 99.9% builds and is watertight)
+APEX_FRACTION = 0.999
+
+
+def _apex_cap(profile, amount: float, taper: float) -> float:
+    """FUSION SEMANTICS (user, 2026-09-03: "in Fusion they go until -90, until
+    flat as the sketch — there is no limit"): the distance is a MAXIMUM. When a
+    narrowing taper's walls meet before it, the solid ends where they meet — a
+    complete cone / pyramid / ridge that gets lower as the angle steepens and
+    lies flat on the sketch at 90°. Returns the amount actually built.
+    `taper` is in the kernel helpers' convention (positive narrows)."""
+    if taper <= 0 or not amount:
+        return amount
+    faces = [profile] if isinstance(profile, b3d.Face) else list(profile.faces())
+    if not faces:
+        return amount
+    r = min(collapse_offset(f) for f in faces)
+    h_apex = APEX_FRACTION * r / math.tan(math.radians(taper))
+    if abs(amount) <= h_apex:
+        return amount
+    return math.copysign(h_apex, amount)
+
+
 def _taper_offset_problem(profile, amount: float, taper: float):
     """Replicate the 2D offset build123d will perform for a tapered extrude and
     report a problem STRING if it comes back degenerate — before OCCT is handed
@@ -664,6 +744,9 @@ def _tapered_extrude(profile, amount: float, taper: float):
     OCP raises Standard_NoSuchObject etc., which derive from Exception and NOT
     from RuntimeError — an `except RuntimeError` here never caught them and the
     raw kernel error reached the feature tree."""
+    if abs(taper) >= 90:
+        raise ValueError(f"taper {-taper:g}° — a wall cannot lean past flat (90°); "
+                         f"use a smaller angle")
     outward = None          # a FACE's outward normal, captured BEFORE any rebuild
     if taper:
         if isinstance(profile, b3d.Face):
@@ -673,6 +756,7 @@ def _tapered_extrude(profile, amount: float, taper: float):
             # (measured 2026-09-03 on a fused body's wall) — every direction
             # decision below uses `outward`, never the rebuilt face's normal
             profile = _straighten_face(profile)
+        amount = _apex_cap(profile, amount, taper)   # the walls may meet first
         problem = _taper_offset_problem(profile, amount, taper)
         if problem:
             raise ValueError(
@@ -855,6 +939,9 @@ def extrude_sketch(sketch, amount: float, both: bool = False,
     `taper` degrees tapers the walls — FUSION'S SIGN (user decision
     2026-09-03): NEGATIVE narrows as it extrudes, POSITIVE flares outward.
     (Before 2026-09-03 positive narrowed; saved designs were migrated.)
+    FUSION'S SEMANTICS too: `amount` is a MAXIMUM. If the narrowing walls meet
+    before it, the solid ends where they meet (see _apex_cap) — any angle up
+    to ±90 builds, steeper is simply lower.
 
     `through` = THROUGH ALL: ignore the distance and run far past the material,
     keeping the direction. This is what a CUTTING tool almost always wants. A
@@ -876,7 +963,8 @@ def extrude_sketch(sketch, amount: float, both: bool = False,
         t = 0.0
     if _to_bool(both, "both"):
         try:
-            return _extrude(sketch, amount=a, both=True, taper=t)
+            return _extrude(sketch, amount=_apex_cap(sketch, a, t), both=True,
+                            taper=t)
         except Exception as e:
             if t:
                 raise ValueError(

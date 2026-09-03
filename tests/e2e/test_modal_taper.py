@@ -173,3 +173,51 @@ def test_the_taper_ring_is_not_capped_below_the_geometric_limit(server, page, fr
     assert abs(float(f["params"]["taper"]) + 70) < 1.5, f["params"]
     assert f["status"] == "ok"
     assert not page.errors, page.errors
+
+
+def test_past_the_meeting_angle_the_solid_ends_at_the_tip(server, page, fresh_doc):
+    """Fusion semantics (user 2026-09-03: "in Fusion they go until -90, until
+    flat as the sketch"). Drag the ring to -85 on the 40x40 profile extruded
+    5 mm: the walls meet at 76 deg, so the built solid is a low pyramid
+    0.999*20/tan(85) = 1.75 mm tall, NOT a 5 mm frustum — and the chat said so."""
+    import math
+    page.evaluate(BUILD_SHALLOW)
+    page.wait_for_selector("#tree .nrow >> text=ex1")
+    open_edit(page, "ex1")
+    page.wait_for_function("() => window.__vp.gizmos().ring", timeout=10000)
+    page.wait_for_timeout(300)
+    c = page.evaluate("() => { const r = document.querySelector('canvas')"
+                      ".getBoundingClientRect(); return {l:r.left, t:r.top, w:r.width, h:r.height}; }")
+    page.mouse.move(c["l"] + c["w"] / 2, c["t"] + c["h"] / 2)
+    for _ in range(16):
+        page.mouse.wheel(0, 100)
+        page.wait_for_timeout(15)
+    page.wait_for_timeout(300)
+    p0 = ring_point(page, 0)
+    page.mouse.move(p0["x"], p0["y"])
+    page.mouse.down()
+    for deg in range(-5, -86, -5):
+        p = ring_point(page, deg)
+        page.mouse.move(p["x"], p["y"])
+        page.wait_for_timeout(20)
+    live = float(page.input_value("#exTaper"))
+    assert live < -80, f"the ring stopped at {live} deg — there must be no barrier"
+    page.mouse.up()
+    deadline = time.time() + 20
+    f = None
+    while time.time() < deadline:
+        doc = httpx.get(f"{server}/api/doc", timeout=5).json()
+        f = next(x for x in doc["features"] if x["id"] == "ex1")
+        if f["status"] == "ok" and float(f["params"].get("taper", 0)) < -80:
+            break
+        time.sleep(0.2)
+    t = float(f["params"]["taper"])
+    assert abs(t + 85) < 1.5 and f["status"] == "ok", f
+    assert float(f["params"]["amount"]) == 5, "the distance box keeps the user's maximum"
+    h = 0.999 * 20 / math.tan(math.radians(-t))         # where the walls meet
+    top = 40 - 2 * h * math.tan(math.radians(-t))
+    frustum = h / 3 * (1600 + top * top + 40 * top)
+    assert abs(f["volume"] - frustum) / frustum < 0.02, (f["volume"], frustum, h)
+    assert f["volume"] < 1200, "a 5 mm frustum would be ~6000 mm3 — the solid must end at the tip"
+    assert "walls meet" in page.text_content("#chatLog")
+    assert not page.errors, page.errors

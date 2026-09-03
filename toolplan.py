@@ -10,8 +10,10 @@ tool's handles, so it draws what it is told and computes nothing:
     loops         the profile's outline in that frame: [{outer, holes}, ...]
     into_sign     which SIGN of the value goes INTO the material (face sketches
                   and face picks; None for a free-standing plane sketch)
-    limits        inradius (how far walls may move inward before the profile
-                  collapses), has_holes, outer_radius (the taper ring)
+    limits        inradius = collapse_offset (how far the walls move inward
+                  before they MEET — kernel-measured, sketch.collapse_offset;
+                  a narrowing taper ends the solid at inradius / tan(angle)),
+                  has_holes, outer_radius (the taper ring)
     target_body   the body a Join / Cut targets by default
     will_build    one sentence: which op, on what, along which way
 
@@ -228,6 +230,10 @@ def plan_extrude(doc, req: dict) -> dict:
         fp = _flat_or_raise(picked)
         loops = _loops([picked], fp)
         limits, _centre = _limits(loops)
+        # the EXACT meeting depth of a narrowing taper, from the same kernel
+        # measurement the build uses (sketch.collapse_offset) — one number for
+        # the handle, the ghost and the solid
+        limits["inradius"] = limits["collapse_offset"] = round(sk.collapse_offset(picked), 4)
         axis = _vec(fp.z_dir)
         return {
             "ok": True, "tool": "extrude", "mode": "face", "op": "extrude_face",
@@ -270,10 +276,13 @@ def plan_extrude(doc, req: dict) -> dict:
         pl = _PLANES.get(str(p.get("plane") or "XY").upper(), Plane.XY)
         if offset:
             pl = pl.offset(offset)
-    loops = _loops(profile.faces(), pl)
+    faces = list(profile.faces())
+    loops = _loops(faces, pl)
     limits, centre = _limits(loops)
     if centre is None:
         raise ValueError(f"sketch '{sketch_id}' has no area to extrude")
+    limits["inradius"] = limits["collapse_offset"] = round(
+        min(sk.collapse_offset(f) for f in faces), 4)
     axis = _vec(pl.z_dir)
     return {
         "ok": True, "tool": "extrude", "mode": "sketch", "op": "extrude",
