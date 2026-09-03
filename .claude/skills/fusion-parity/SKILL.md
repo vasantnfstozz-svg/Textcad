@@ -126,8 +126,15 @@ were each learned from a correction — do not regress them.
   POSITIVE flares — the public `taper` param of extrude / extrude_face, the
   panel box and the ring all speak this sign; `sketch._fusion_taper()` is the
   one place it turns into the kernel helpers' historical "positive narrows".
-  The barrier is 99.9% of the collapse angle for EVERY profile (probed: only
-  the exact singular angle fails), so a taper goes until the walls meet.
+  **TAPER SEMANTICS ARE FUSION'S (user tested Fusion, 2026-09-03):** the
+  DISTANCE is a MAXIMUM. Any angle up to ±89° builds; when the narrowing
+  walls meet before the distance, the solid ends where they meet (a full
+  cone / pyramid / ridge, lower as the angle steepens, flat at 90°). Never
+  clamp the angle. `sketch.collapse_offset()` measures the meeting depth on
+  the kernel's 2D offset, `_apex_cap` shortens the build to 99.9% of it (the
+  exact tip is a broken solid for OCCT), the plan reports it as
+  `limits.inradius`, the ghost ends where the solid will, the chat says once
+  that the tip comes before the distance.
 - **ONE TOOL, ONE AXIS (2026-09-01).** Every gizmo of a tool must take its
   direction from the OP THAT WILL BUILD THE SOLID, not from what happens to be
   at hand. Extrude carried three: the arrow used the picked face's OUTWARD
