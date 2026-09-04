@@ -1,9 +1,16 @@
 # Fillet / Chamfer on picked edges — tool spec (P4, LAUNCH-PLAN.md §8 step 1)
 
-> **Status: DRAFT for the user's approval, 2026-09-04.** The third tool on the
-> framework (`tool.js`) and the first that needs a NEW input kind: edges. The
-> edge picker it brings is the piece Hole (points on edges), face-profile
-> Revolve (P3b: an edge as the axis) and Shell reuse.
+> **Status: APPROVED by the user 2026-09-04 ("proceed"); SHIPPED the same day
+> (1412dc6), reviewed and fixed (df68f60), and the five-step checklist PASSED —
+> done-note in LAUNCH-PLAN.md §7 P4.** The third tool on the framework
+> (`tool.js`) and the first that needs a NEW input kind: edges. The edge picker
+> it brings is the piece Hole (points on edges), face-profile Revolve (P3b: an
+> edge as the axis) and Shell reuse.
+>
+> One thing here is NOT as approved: the spec promised the tool would name (and
+> apply) the largest value that fits. The review killed it — finding that
+> number means filleting at values the user never typed, and one of those
+> segfaulted the kernel on a real design. See the failure table.
 
 ## What you click, what you see
 

@@ -5,8 +5,11 @@
 > taper work the same day (Fusion sign + semantics, fc15233), P2 done
 > 2026-09-03 (the tool framework, 7b62ff3; review fixes 6cc526a), P3 done
 > 2026-09-03 (Revolve, the first tool born on the framework, a079c8c; its
-> review fixes 127dbcf + the commit after). Next: P4 — Fillet/Chamfer on picked edges, one tool per
-> session. Every other plan file points here; §7 carries the done-notes, §10
+> review fixes 127dbcf + the commit after), P4's first tool done 2026-09-04
+> (Fillet/Chamfer on picked edges, 1412dc6; review fixes df68f60; checklist
+> passed). Next: P4 continues — but ★P0 first (a kernel call can segfault and
+> take the server down, §10), then P3b (a picked FACE as a Revolve profile, the
+> gap the user hit), then Hole. One tool per session. Every other plan file points here; §7 carries the done-notes, §10
 > the ranked open items.
 >
 > It replaces the reverted TOOL-FRAMEWORK-PLAN.md (2026-09-02, another model's
@@ -400,6 +403,49 @@ Order: Fillet/Chamfer on picked edges (needs edge picking + per-edge op) →
 Hole → Pattern → Mirror → Shell → Move/Rotate → Push/Pull naming. Each: spec
 (R8) → plan tests → tool → user checklist (R9) → ship-check → commit.
 
+*Fillet/Chamfer done 2026-09-04* (spec 1f8d55d, tool 1412dc6, review fixes
+df68f60, ui v151; user's checklist passed). `static/js/fillet.js` is **76 lines
+with no geometry maths** and declares BOTH tools from one function. The new
+input kind is **edges**: the framework grew a third selection kind, and every
+click goes to the server as a toggle — only the kernel knows which tangent
+chain an edge is in, so only the server can say whether a click adds or
+removes. An edge is stored as **the two faces it separates** (resolved the way
+a face pick is), never an index: it rides a height change, and when those faces
+no longer meet it says the edge is gone instead of quietly rounding a different
+one. Tangent chain is a picking aid, ON for fresh picks and OFF for edges
+loaded from the tree — keyed on provenance, because the stored set is already
+the answer. Backend: `fillet`/`chamfer` take a group name OR picked edges;
+`toolplan.plan_fillet` returns the gold edges, the handle's frame and the
+resolved edges. Framework additions under §8 step 5: the `edges` kind,
+`planExtra`, `replan`, a one-way Cancel/OK, and **Esc cancels any tool panel**
+(the §10 item that was waiting for the second tool). The extrude arrow is
+reused as the fillet handle — no new gizmo. **Probes:**
+`probes/fillet_edges_probe.py` (what the kernel throws, tangent chains, edge
+identity across a change) and `probes/fillet_segfault_probe.py` (below).
+**Tests:** `tests/test_fillet_tool.py` (42), `tests/test_fillet_gauntlet.py`
+(40: every edge of every corpus body picked alone, for both ops),
+`tests/e2e/test_fillet_tool.py` (6 journeys). **Line delta (source, excl.
+tests/probes/spec): +577/-78 shipping, then +130/-62 in review.**
+
+*The review is the story of this phase.* `/code-review high` found 7; all 7
+were re-verified against the running kernel before anything changed, and two
+verifications changed the decision. **The tool no longer searches for "the
+largest value that would fit."** Finding that number means building at radii
+the user never typed, and on esp32-remote's 80-edge top rim radius **2.0
+segfaults OCCT** (exit 139) while 1.95, 2.05 and 4.0 all refuse politely. It
+was not bad luck: a halving search from 0 to 4 guesses exactly 2.0 first, and
+exact round values are where geometry degenerates. **Rule learned: never hand
+the kernel a value the user did not ask for.** The other six: a fabricated
+diagnosis ("a face beside them is too small" — nothing had measured a face),
+two stored faces collapsing onto one bypassing the gone-edge refusal, a stale
+edge pick looping Extrude's face path forever, the tangent chain growing a
+stored selection on reopen (the founding rule), one click on an AI group adding
+every tangent neighbour, and a held Escape removing the same feature twice.
+Plus one the review could not see: 1412dc6 broke a Revolve journey by adding
+keys to the `gizmos()` debug hook, which the token rule (only the shipped
+tool's journeys) hid — **when a change touches `viewport.js` or `tool.js`, run
+the other tools' journeys too.**
+
 **P5 — The AI uses the tools (§5 step B).** Incremental authoring through
 the plan endpoint; chat edits point at parameters; the FEATURE-TREE-PLAN
 "step 4" everyone deferred.
@@ -489,7 +535,7 @@ assemblies, the user's personal project.
 | done | Code tests read live `designs/` — frozen in P0 (fixtures + `library` marker). The e2e examples-tab test still opens `pump-impeller` from the library: allowed, it is a stable committed design (e2e rule). | 2026-09-02 |
 | done | `sketcher.js` `PLANE_FRAMES` was the last hand copy of build123d's plane frames in the browser. P2: `/api/tool/plan {tool:"sketch", plane, offset}` returns the frame from `sketch.sketch_plane()` (the function `make_sketch` builds on); the sketcher draws what it is told, and `test_launch_rules.py` fails if a frame vector is ever written by hand in `static/js/` again. | P2 2026-09-03 |
 | P3 | `sketcher.js` (5) and `measure.js` (1, awaited) still call `loadMesh()` after their own document changes — redundant since R3, left in place because the sketch-mode scene was not audited for a refetch it may rely on when the version is unchanged. Remove with the sketch browser tests running. | P2 2026-09-03 |
-| P3 | Esc does not cancel a tool panel (rule 5 says Esc = cancel). Inherit it ONCE in `tool.js` when the second tool lands, with the sketcher's and measure's Esc precedence sorted out. | P2 2026-09-03 |
+| done | Esc cancels any tool panel — inherited once in `tool.js`, with a one-way Cancel/OK guard so a held key cannot remove the same feature twice. | P4 2026-09-04 |
 | done | `viewport.beginProfilePick` speaks for the tool (name, and whether a face may do) — P3 review. | 2026-09-03 |
 | done | **Code review of P3 (2026-09-03, 8 angles, 40 findings, 30 acted on).** Real, all kernel-checked: a world axis parallel to the sketch plane but OUTSIDE it built a valid solid of the WRONG shape (the guard tested only the direction) → the axis line must lie in the plane; the straddle test used the union of faces (a mirrored pair was refused) → per face; a sketch through mirror / scale got a GUESSED plane → refused with a sentence, a moved sketch carries its plane; a legacy world axis mapped by direction only was rewritten on edit → coincident lines only, others kept by name, an unusable stored axis is announced (`fallback`); a missing angle defaulted to 0 on Cancel → the op's defaults; the stale axis select before the plan; the endless pick loop for a profile-only tool; a refused plan mid-session closed the tool. Framework: `feature_id` on edit plans, swap via `alternatives` (no request), `setBox`, shared ghost parts, one ring mode, `_edit_input`/`_sketch_part`. Evidence added: `probes/lathe_orientation_probe.py`, `tests/test_revolve_gauntlet.py` (8 corpus bodies). Deferred with reasons: registry-driven ribbon/tree wiring (P4, when the third tool lands), one bbox for both axes, e2e helper de-duplication, measure panel on `.toolpanel`. | 2026-09-03 |
 | P3 | Opening a sketch is async (the frame — and for a face sketch the outline — comes from the server), and nothing locks the UI between the plane click and sketch mode: a second plane click or a tool started in that window races `enterMode()`. Same shape as the face-sketch path before P2. Fix once: a "starting…" lock for the gap, in the sketcher. | review 2026-09-03 |
