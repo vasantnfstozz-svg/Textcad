@@ -153,7 +153,7 @@ notes and eight skills; every session re-reads all of it.
 | R8 | **Spec before code.** Every tool starts as a one-page description the user approves: what you click, what you see, what can go wrong. No code until approved. | "not the intended function" |
 | R9 | **The user tests, with a checklist.** Each tool ships with a five-step checklist the user runs in the real app. Browser robots are for what machines are good at; the user's eyes catch usability. | tokens, Cause 4 |
 | R10 | **Every phase deletes more than it adds**, or it is another layer, not a fix. Record the line delta in the commit. One exception, named here so it is never self-granted: the phase that CREATES the framework (P2) is judged together with the first tool built on it (P3) — their combined delta must be negative against the hand-wired tool they replace. | Cause 2 |
-| R11 | **Token rules.** One Claude session per checkout. Check the `ui v` stamp and single server before debugging any browser report. Targeted tests while building, full suite only at ship. Probe scripts committed under `probes/` so no API is probed twice. No agent fan-outs on this project. | Cause 7 |
+| R11 | **Token rules.** One Claude session per checkout. Check the `ui v` stamp and single server before debugging any browser report. Targeted tests while building, full suite only at ship. Probe scripts committed under `probes/` so no API is probed twice. No agent fan-outs on this project. Fable thinks, Opus reviews and fixes, effort `high` (§9). | Cause 7 |
 
 Standing design rules stay in force: the offset method (base first, then
 sketch on a named face with an offset), no sharp internal corners in milled
@@ -456,6 +456,24 @@ assemblies, the user's personal project.
   the user asks. The user's checklist replaces most browser verification.
 - **The user's server:** launch detached with `studio.py`, never `dev.py`;
   restart after backend changes and let it open the browser.
+- **Model by task** (decided 2026-09-04, after both 5-hour windows died on
+  2026-09-03 at roughly 7-8M weighted tokens each). **Fable 5.1 thinks:**
+  specs, kernel and geometry decisions, guards, probes, the tool framework,
+  root causes. **Opus 5 reviews and fixes:** the `/code-review` agents
+  (`CLAUDE_CODE_SUBAGENT_MODEL` in the user settings), the pass that applies
+  the findings, e2e wiring, docs, plan and memory updates (`/model
+  claude-opus-5` for that chat; the next tool starts a fresh chat on Fable).
+  Per token Opus is half of Fable, Sonnet 5 a fifth (pure docs turns).
+- **Effort `high` by default** (`/effort`); `xhigh` only for the day's hard
+  kernel question. Output tokens are the most expensive class, and effort
+  decides how many there are.
+- **A fresh chat per tool, and after any pause over an hour.** Resuming
+  rewrites the whole context to cache at 1.25x; a fresh chat costs CLAUDE.md
+  plus the memory. The 1M window (`[1m]`) is off, so a chat that runs long
+  compacts near 200k instead of growing to 650k per call.
+- **One `/code-review high` per shipped tool**, on the code commit, agents on
+  Opus. Never twice on one commit; never re-launch one the limit killed until
+  the window resets. `/usage` before starting it.
 
 ---
 
