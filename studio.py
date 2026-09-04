@@ -604,6 +604,9 @@ class ToolPlanReq(BaseModel):
     offset: float = 0.0                 #   plane sketch is drawn on, and its offset
     axis: str | None = None             # tool "revolve": the axis to plan for ("u"/"v";
                                         #   a legacy "X"/"Y"/"Z" is mapped onto one)
+    edges: list | None = None           # tools "fillet"/"chamfer": picked edges of body_id
+    chain: bool | None = None           #   (edge_ref dicts or [x, y, z] midpoints); tangent chain on/off
+    toggle: dict | None = None          #   one clicked edge to add to / remove from `edges`
     # measure where a narrowing taper's walls meet, per face (18 kernel offsets
     # per face — asked for lazily, the first time the tool needs a taper limit)
     measure_collapse: bool = False
@@ -1253,11 +1256,8 @@ def _tagged_mesh(part, body_id: str | None = None) -> dict:
         # silhouette instead of floating beside it
         poly = edge_polys.get(_shape_key(edge))
         if poly is None:
-            n = 2 if gt == "LINE" else 24
             try:
-                pts = [edge @ (i / n) for i in range(n + 1)]
-                poly = [[round(p.X, 4), round(p.Y, 4), round(p.Z, 4)]
-                        for p in pts]
+                poly = toolplan.edge_polyline(edge)
             except Exception:
                 continue
         em = {"id": ei, "type": gt, "length": round(edge.length, 2),

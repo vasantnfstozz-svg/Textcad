@@ -263,7 +263,26 @@ export function initViewport() {
     /* which extrude gizmos are live — a face-sketch extrude must have ALL
        three (the ghost/ring were silently missing there once) */
     gizmos: () => ({ arrow: !!exArrow, ghost: !!exGhost, ring: !!taperRing,
-                     axis: !!axisLine, lathe: !!rvGhost }),
+                     axis: !!axisLine, lathe: !!rvGhost, glow: edgeGlow.length,
+                     edgePick: !!edgePickCb }),
+    /* screen position of the middle point of a body edge's drawn line — so a
+       test clicks where a USER would click on that edge */
+    edgeScreen: (bodyId, i) => {
+      const b = bodyObjs.find(x => x.id === bodyId);
+      const e = b && b.data.edges[i];
+      if (!e) return null;
+      // a straight edge is drawn with TWO points: its middle is between them,
+      // never an end (a corner vertex where three edges meet)
+      const P = e.points, n = P.length;
+      const p = n % 2 === 0
+        ? [0, 1, 2].map(k => (P[n / 2 - 1][k] + P[n / 2][k]) / 2)
+        : P[Math.floor(n / 2)];
+      return window.__vp.worldToScreen(p);
+    },
+    edgeCount: (bodyId) => {
+      const b = bodyObjs.find(x => x.id === bodyId);
+      return b ? b.data.edges.length : 0;
+    },
     /* the revolve ghost as drawn: its angle and the world centre of its
        swept volume — a positive angle must land on the kernel's side */
     revolveGhostInfo: () => {
@@ -356,6 +375,7 @@ export function initViewport() {
     if (e.button !== 0) return;            // right/middle navigate, never pick
     if (sketch3DActive()) return;          // sketch mode owns viewport clicks
     if (moved > 5) return;                 // that was an orbit-drag
+    if (edgePickCb) { edgePickAt(e); return; }
     if (profilePickCb) { profilePickAt(e); return; }
     if (planePickCb) { planePickAt(e); return; }
     if (placeCb) { placeGround(e); return; }
@@ -363,6 +383,7 @@ export function initViewport() {
   });
   renderer.domElement.addEventListener('pointermove', e => {
     if (planePickCb) planePickHover(e);
+    else if (edgePickCb) edgePickHover(e);
   });
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape' && placeCb) cancelPlacement();
@@ -551,6 +572,95 @@ function profilePickAt(e) {
     }
   }
   // clicked empty space — keep waiting (don't cancel)
+}
+
+/* ---------------- pick EDGES for a tool (Fillet / Chamfer) ------------------
+   The tool's session is open while this runs: every click on an edge goes to
+   the tool (which asks the server whether that adds or removes it), a click on
+   a face is reported so the tool can say why it will not do. Hovered edges
+   light up. Nothing is remembered here — the plan's gold edges are the truth. */
+let edgePickCb = null;
+let hoverLine = null, hoverColor = null, hoverPending = false;
+const HOVER_COLOR = 0xffd54a;
+
+export function beginEdgePick(onPick, opts = {}) {
+  edgePickCb = onPick;
+  renderer.domElement.style.cursor = 'crosshair';
+  const h = document.getElementById('placeHint');
+  h.textContent = `Click the edges to ${(opts.name || 'fillet').toLowerCase()} — ` +
+    'a click adds an edge, another click removes it · Esc cancels';
+  h.style.display = 'block';
+}
+export function endEdgePick() {
+  if (!edgePickCb) return;
+  edgePickCb = null;
+  unhoverEdge();
+  renderer.domElement.style.cursor = pickMode ? 'crosshair' : '';
+  document.getElementById('placeHint').style.display = 'none';
+}
+export function edgePickActive() { return !!edgePickCb; }
+
+/* the edge line under the pointer, or null — a face in front of it hides it */
+function edgeHitAt(e) {
+  raycaster.setFromCamera(ndcFrom(e), camera);
+  const fHit = raycaster.intersectObjects(bodyMeshes(), false)[0];
+  const depth = fHit ? fHit.distance : camera.position.distanceTo(controls.target);
+  raycaster.params.Line.threshold = worldPerPixel(depth) * EDGE_PICK_PX;
+  const eHit = raycaster.intersectObjects(edgeLines, false)[0];
+  if (eHit && (!fHit || eHit.distance <= fHit.distance + 1e-3)) return { edge: eHit, face: null };
+  return { edge: null, face: fHit || null };
+}
+function unhoverEdge() {
+  if (hoverLine) { hoverLine.material.color.setHex(hoverColor); hoverLine = null; }
+}
+function edgePickHover(e) {
+  if (hoverPending) return;                  // one raycast per frame, not per event
+  hoverPending = true;
+  requestAnimationFrame(() => {
+    hoverPending = false;
+    if (!edgePickCb) return;
+    const { edge } = edgeHitAt(e);
+    const line = edge ? edge.object : null;
+    if (line === hoverLine) return;
+    unhoverEdge();
+    if (line) {
+      hoverLine = line; hoverColor = line.material.color.getHex();
+      line.material.color.setHex(HOVER_COLOR);
+    }
+    renderer.domElement.style.cursor = line ? 'crosshair' : 'not-allowed';
+  });
+}
+function edgePickAt(e) {
+  const { edge, face } = edgeHitAt(e);
+  const cb = edgePickCb;
+  if (edge) {
+    const body = edge.object.userData.body;
+    const src = bodyObjs.find(b => b.id === body);
+    const info = src && (src.data.edges || []).find(x => x.id === edge.object.userData.edgeId);
+    if (info) cb('edge', { ...info, body: src.id });
+    return;
+  }
+  if (face) cb('face', faceInfoAt(face));
+  // empty space: keep waiting
+}
+
+/* the edges a tool has selected, drawn GOLD on top of everything — from the
+   plan's points, never from the model's edge ids */
+let edgeGlow = [];
+export function beginEdgeGlow(edges) {
+  endEdgeGlow();
+  for (const e of edges || []) {
+    const g = new THREE.BufferGeometry().setFromPoints(
+      (e.points || []).map(p => new THREE.Vector3(p[0], p[1], p[2])));
+    const line = new THREE.Line(g, new THREE.LineBasicMaterial({
+      color: 0xffc83c, depthTest: false, transparent: true, opacity: 0.95 }));
+    line.renderOrder = 1003;
+    scene.add(line); edgeGlow.push(line);
+  }
+}
+export function endEdgeGlow() {
+  for (const l of edgeGlow) { scene.remove(l); l.geometry.dispose(); }
+  edgeGlow = [];
 }
 
 /* ---------------- pick a plane (or planar face) to sketch on (Fusion) ------- */
@@ -1808,6 +1918,7 @@ export function clearPick() {
   S.pickedFace = null;
   S.pickedCurved = null;
   S.pickedProfile = null;
+  S.pickedEdge = null;
   document.getElementById('pickInfo').style.display = 'none';
   bus.emit('pick', { kind: null, clear: true });
 }
@@ -1869,6 +1980,7 @@ function selectProfile(sketchId, meshObj) {
   bus.emit('face-picked', { clear: true });   // ...same for a profile pick
   S.pickedFace = null;
   S.pickedCurved = null;
+  S.pickedEdge = null;
   S.pickedProfile = { id: sketchId };
   bus.emit('pick', { kind: 'profile', id: sketchId, body: null, info: null });
   pickHl = new THREE.Mesh(meshObj.geometry.clone(),
@@ -1926,6 +2038,7 @@ function selectFace(fid, entry = null, hitPoint = null) {
   S.pickedFace = (info.center && isFlat) ? info : null;
   S.pickedCurved = (info.center && !isFlat) ? info : null;
   S.pickedProfile = null;              // a face pick replaces a profile pick
+  S.pickedEdge = null;
   // 'pick' is the RAW selection event, for tools that need the identity of
   // whatever was clicked (Measure). 'face-picked' below stays face-only
   // because provenance asks a face-shaped question.
@@ -2005,10 +2118,13 @@ function selectEdge(eid, bodyId = null) {
   S.pickedFace = null;                 // an edge pick is not a sketchable face
   S.pickedCurved = null;
   S.pickedProfile = null;
+  S.pickedEdge = null;
   const src = bodyObjs.find(b => b.id === bodyId)
     || bodyObjs.find(b => b.result) || bodyObjs[0];
   const e = src && (src.data.edges || []).find(x => x.id === eid);
   if (!e) return;
+  // remembered for select-then-command (Fillet / Chamfer read it), as drawn
+  S.pickedEdge = { id: eid, body: src ? src.id : null, info: e };
   const g = new THREE.BufferGeometry().setFromPoints(
     e.points.map(p => new THREE.Vector3(p[0], p[1], p[2])));
   pickHl = new THREE.Line(g, new THREE.LineBasicMaterial({

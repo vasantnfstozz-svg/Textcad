@@ -60,7 +60,7 @@ at the stored value.
 
 | Situation | What is said |
 |---|---|
-| Radius too big for the neighbouring faces (kernel refuses) | framework `settle`: try smaller values, keep the largest that builds, and say "Radius 8 mm does not fit — the faces beside edge 2 are 6 mm wide; the largest that builds here is 5.9 mm." |
+| Radius too big for the neighbouring faces (kernel refuses, or returns an INVALID solid — probed: a round bigger than the corner round next to it) | the op bisects the largest value that builds AND passes health, and says "fillet: radius 8 mm does not fit on 2 edges — the largest that builds here is 5.9 mm"; the tool's `settle` applies that value, so the handle stops at the limit like Fusion's. When nothing fits, the framework reverts to the last value that built and says so. |
 | Radius 0 on OK | "Nothing rounded — the radius was 0. Open Fillet again, then drag the ball or type a radius before OK." |
 | An edge is gone after an upstream change | "The edge at (10, 0, 20) is no longer on the body (nearest edge is 7 mm away) — re-pick the edges of `fillet1`." (the feature fails, the body stays whole) |
 | Click on a face / sketch / another body's edge | "Fillet works on the edges of ONE body — click an edge of `box1`, not a face." |
@@ -103,5 +103,6 @@ at the stored value.
    nothing.
 4. Press **Chamfer**, click the four vertical edges, type 2, OK. Now edit the
    box's extrude to 30 high: the chamfers ride along on the taller box.
-5. Open `fillet1` and type 50: the body stays at 5, the chat says 50 does not
-   fit and names the largest radius that does. Esc closes the panel.
+5. Open `fillet1` and type 50: the chat says 50 does not fit and names the
+   largest radius that does — the box now reads that value and the body shows
+   it. Esc closes the panel.

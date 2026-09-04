@@ -54,7 +54,8 @@ OP_NOTES = {
     "rotate": "Spins the part about the chosen axis THROUGH THE ORIGIN.",
     "mirror": "Mirrors across a principal plane and RETURNS A COPY.",
     "fillet": "vertical = the 4 upright corner edges (round a box's corners); "
-              "radius must be < half the adjacent wall thickness.",
+              "radius must be < half the adjacent wall thickness. `edges` may "
+              "also be a list of picked edges (the Studio tool writes these).",
     "shell": "Hollows to walls of `thickness`; open_face removes that face.",
     "extrude": "Pulls the sketch normal to its plane, i.e. AWAY from the face a "
                "face-sketch sits on. flip=true pulls the other way (INTO the "

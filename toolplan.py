@@ -36,6 +36,7 @@ import math
 import build123d as b3d
 from build123d import Plane
 
+import blocks
 import sketch as sk
 
 _AXIS_NAMES = {(0, 0, 1): "+Z", (0, 0, -1): "-Z", (1, 0, 0): "+X",
@@ -435,7 +436,142 @@ def plan_sketch(doc, req: dict) -> dict:
     }
 
 
-_PLANNERS = {"extrude": plan_extrude, "revolve": plan_revolve, "sketch": plan_sketch}
+# ------------------------------------------------------- fillet / chamfer ---
+
+def edge_polyline(edge) -> list[list[float]]:
+    """Points along an edge for drawing it: 2 for a line, 24 steps otherwise.
+    (Shared with /api/model's edge outlines when the shared mesh has none.)"""
+    n = 2 if str(edge.geom_type).split(".")[-1] == "LINE" else 24
+    return [_vec(edge @ (i / n)) for i in range(n + 1)]
+
+
+def _body_part(doc, body_id: str):
+    """A solid feature and its built Part — what an edge tool works on."""
+    f = _feature(doc, body_id)
+    if f is None:
+        raise ValueError(f"no body '{body_id}' in this design")
+    part = doc._parts.get(body_id)
+    if part is None or f.volume is None:
+        raise ValueError(f"'{body_id}' is not a built solid"
+                         + (f" ({f.problems[0]})" if f.problems else "")
+                         + " — fix it first")
+    return f, part
+
+
+def _ball(part, edge, faces_by_edge: dict) -> dict:
+    """Where the handle sits and which way it drags: the edge's midpoint, and
+    the bisector of the two faces there pointing INTO the material (probed:
+    -(n1 + n2) — on a box's top edge that is (0, .707, -.707))."""
+    mid = edge @ 0.5
+    ns = []
+    for f in faces_by_edge.get(blocks._shape_key(edge), [])[:2]:
+        try:
+            ns.append(f.normal_at(mid))
+        except Exception:
+            ns.append(f.normal_at(f.center()))
+    if not ns:
+        raise ValueError("that edge belongs to no face of the body — pick another edge")
+    d = -(ns[0] + ns[1]) if len(ns) == 2 else -ns[0]
+    if d.length < 1e-6:                          # tangent faces meet flat: no bisector
+        d = -ns[0]
+    return {"origin": _vec(mid), "dir": _vec(d.normalized())}
+
+
+def _stored(part, ref, by_edge: dict) -> dict:
+    """A pick in stored form: an edge_ref already, or resolved into one."""
+    if isinstance(ref, dict) and "faces" in ref:
+        return ref
+    ref = ref if isinstance(ref, dict) else {"mid": list(ref)}
+    return blocks.edge_ref(part, blocks.resolve_edge(part, ref), by_edge)
+
+
+def _expand(part, refs, chain: bool) -> list:
+    """The edges a pick list means, grown into tangent chains when asked."""
+    picked = blocks.edges_for(part, refs)
+    if not (chain and isinstance(refs, (list, tuple))):
+        return picked
+    seen, grown = set(), []
+    for e in picked:
+        for c in blocks.tangent_chain(part, e):
+            if blocks._shape_key(c) not in seen:
+                seen.add(blocks._shape_key(c))
+                grown.append(c)
+    return grown
+
+
+def _toggle_pick(part, refs, click: dict, chain: bool, by_edge: dict) -> list:
+    """Fusion's click rule: an edge not yet selected joins the picks; one that
+    IS selected — directly or through a pick's tangent chain — takes that pick
+    out. Decided here because only the kernel knows which chain an edge is in."""
+    if isinstance(refs, str):                    # a legacy group becomes explicit picks
+        refs = [blocks.edge_ref(part, e, by_edge) for e in blocks.edges_for(part, refs)]
+    hit = blocks._shape_key(blocks.resolve_edge(part, click))
+    keep = [r for r in refs
+            if hit not in {blocks._shape_key(e) for e in _expand(part, [r], chain)}]
+    if len(keep) == len(refs):                   # not selected yet: add it
+        keep.append(blocks.edge_ref(part, blocks.resolve_edge(part, click), by_edge))
+    return keep
+
+
+def plan_fillet(doc, req: dict) -> dict:
+    """The Fillet / Chamfer tool's plan (specs/fillet-chamfer.md). Input: the
+    body and its picked edges (`edges`: edge_ref dicts or [x, y, z] midpoints
+    straight from the model's edge lines), or the feature_id of an existing
+    fillet / chamfer (edit: its stored edges are read here). `chain` (default
+    on) grows every pick into its tangent chain, Fusion's default.
+
+    Returns the resolved edges in their STORED form (`edges_param`, what the op
+    will be given, so the tree never carries an index), each with the points to
+    draw it gold, and the ball handle's origin and direction — the browser
+    draws what this says and computes nothing (R1). With nothing picked yet the
+    plan is still ok, so the tool can keep the pick alive.
+    """
+    tool = str(req.get("tool") or "fillet").lower()
+    fid = req.get("feature_id")
+    body = req.get("body_id")
+    refs = req.get("edges")
+    chain = req.get("chain")
+    chain = True if chain is None else bool(chain)
+    if fid:
+        f = _edit_input(doc, fid, ("fillet", "chamfer"))
+        body = (f.inputs or [None])[0]
+        if refs is None:
+            refs = (f.params or {}).get("edges", "all")
+    if not body:
+        raise ValueError(f"{tool.capitalize()} needs the edges of a body — click an edge in the viewport")
+    _bf, part = _body_part(doc, body)
+    by_edge = blocks._edge_faces(part)
+    tog = req.get("toggle")
+    if tog is not None:                          # a click: add the edge, or take it out
+        refs = _toggle_pick(part, refs or [], tog, chain, by_edge)
+    # the user's own picks in STORED form (unexpanded) — what the tool sends
+    # back with the next click, so every request is exact
+    picks = (refs if isinstance(refs, str)
+             else [_stored(part, r, by_edge) for r in (refs or [])])
+    if not refs:
+        return {"ok": True, "tool": tool, "op": tool, "input": body, "edges": [],
+                "edges_param": [], "picks": [], "ball": None, "chain": chain,
+                "will_build": f"{tool} — pick the edges of {body}"}
+    picked = _expand(part, refs, chain)          # a gone edge raises its sentence
+    out_refs = [blocks.edge_ref(part, e, by_edge) for e in picked]
+    edges = [{**r, "points": edge_polyline(e), "length": round(e.length, 2)}
+             for r, e in zip(out_refs, picked)]
+    n = len(picked)
+    return {
+        "ok": True, "tool": tool, "op": tool, "input": body,
+        "edges": edges,
+        # a legacy GROUP stays a group unless the user re-picks (the AI's trees
+        # keep their vocabulary); a pick is stored as the resolved list
+        "edges_param": refs if isinstance(refs, str) else out_refs,
+        "picks": picks,
+        "ball": _ball(part, picked[0], by_edge),
+        "chain": chain,
+        "will_build": f"{tool} {n} edge{'s' if n != 1 else ''} of {body}",
+    }
+
+
+_PLANNERS = {"extrude": plan_extrude, "revolve": plan_revolve, "sketch": plan_sketch,
+             "fillet": plan_fillet, "chamfer": plan_fillet}
 
 
 def plan(doc, req: dict) -> dict:

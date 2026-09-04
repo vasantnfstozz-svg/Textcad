@@ -14,6 +14,7 @@ import { beginPlanePick } from './viewport.js';
 import { lookAtSketch } from './sketch3d.js';
 import { openExtrude } from './extrude.js';
 import { openRevolve } from './revolve.js';
+import { openFillet, openChamfer } from './fillet.js';
 import { cancelTool } from './tool.js';
 import { openMeasure, cancelMeasure } from './measure.js';
 
@@ -43,7 +44,8 @@ function startSketch() {
 }
 
 // the drag-handle tools (born on tool.js): pressed with the current selection
-const TOOLS = { extrude: openExtrude, revolve: openRevolve };
+const TOOLS = { extrude: openExtrude, revolve: openRevolve,
+                fillet: openFillet, chamfer: openChamfer };
 
 // named (non-op) actions that live in the ribbon
 const ACTIONS = {

@@ -11,7 +11,7 @@ import { showFeatureOverlay, clearHighlight, clearPick }
 import { openFeatDialog, modalGuard } from './dialogs.js';
 import { openExtrude } from './extrude.js';
 import { openRevolve } from './revolve.js';
-import { activeToolFeature, canEdit, editFeature } from './tool.js';
+import { activeToolFeature, canEdit, editFeature, humanProblem } from './tool.js';
 import { fmtVol } from './settings.js';
 
 const treeEl = () => document.getElementById('tree');
@@ -292,19 +292,6 @@ bus.on('doc-updated', doc => {
       bus.emit('msg', 'bot', failMessage(f));
   prevFailed = new Set(failed.keys());
 });
-
-function humanProblem(p) {
-  // backend raises carry good messages — unwrap them from the Python repr
-  const m = p.match(/^(ValueError|KeyError|TypeError|RuntimeError)\((['"])([\s\S]*)\2\)$/);
-  if (m) return m[1] === 'TypeError'
-    ? 'bad parameters — ' + m[3] : m[3];
-  if (/StdFail|Standard_|OCP\.|BRep|TopoDS|GeomAbs/.test(p))
-    return 'the geometry kernel rejected this shape — try smaller values ' +
-           'or a different face (' + p + ')';
-  if (p.includes('is unavailable'))
-    return p + ' — fix that upstream feature first';
-  return p;
-}
 
 function failMessage(f) {
   const probs = f.problems.filter(p => p !== '(suppressed)').map(humanProblem);

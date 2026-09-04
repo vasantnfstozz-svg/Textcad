@@ -16,6 +16,7 @@ import { initSplitters } from './splitters.js';
 import { initSettings } from './settings.js';
 import { initExtrude } from './extrude.js';
 import { initRevolve } from './revolve.js';
+import { initFillet } from './fillet.js';
 import { initMeasure } from './measure.js';
 import { initVersions } from './versions.js';
 
@@ -26,6 +27,7 @@ initDialogs();
 initSketcher();
 initExtrude();
 initRevolve();
+initFillet();     // Fillet + Chamfer on picked edges
 initMeasure();    // the Measure tool (face/edge dimensions)
 initRibbon();
 initSplitters();

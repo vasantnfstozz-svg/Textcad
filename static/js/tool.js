@@ -21,8 +21,8 @@
 import { S } from './state.js';
 import { bus } from './bus.js';
 import { postJSON, planRequest } from './api.js';
-import { holdViewport, cancelPlanePick, beginProfilePick, cancelProfilePick }
-  from './viewport.js';
+import { holdViewport, cancelPlanePick, beginProfilePick, cancelProfilePick,
+         beginEdgePick, endEdgePick, clearPick } from './viewport.js';
 
 const OPMAP = { join: 'fuse', cut: 'cut', intersect: 'intersect' };   // panel op -> tree op
 const COMBINER_LABEL = Object.fromEntries(Object.entries(OPMAP).map(([k, v]) => [v, k]));
@@ -38,6 +38,20 @@ export const say = text => bus.emit('msg', 'bot', text);
 export const setBox = (id, v, decimals = 1) => {
   const f = 10 ** decimals; g(id).value = Math.round(v * f) / f;
 };
+
+/* a backend failure as a sentence: unwrap the Python repr the tree stores
+   (moved here from tree.js so a tool can relay WHY its build failed) */
+export function humanProblem(p) {
+  const m = p.match(/^(ValueError|KeyError|TypeError|RuntimeError)\((['"])([\s\S]*)\2\)$/);
+  if (m) return m[1] === 'TypeError'
+    ? 'bad parameters — ' + m[3] : m[3];
+  if (/StdFail|Standard_|OCP\.|BRep|TopoDS|GeomAbs/.test(p))
+    return 'the geometry kernel rejected this shape — try smaller values ' +
+           'or a different face (' + p + ')';
+  if (p.includes('is unavailable'))
+    return p + ' — fix that upstream feature first';
+  return p;
+}
 
 export function uid(base) {
   const ex = new Set(feats().map(f => f.id));
@@ -69,6 +83,11 @@ export function pickedBody(face) {
 
 function currentSelection(explicit) {
   if (explicit) return { kind: 'profile', id: explicit };
+  // an edge pick, as the viewport drew it: the server reads the edge off its
+  // points — no midpoint is computed here (R1)
+  if (S.pickedEdge && S.pickedEdge.info)
+    return { kind: 'edges', body: S.pickedEdge.body,
+             edges: [{ points: S.pickedEdge.info.points }] };
   const face = S.pickedFace;
   const owner = face && pickedBody(face);
   if (owner) {
@@ -154,6 +173,12 @@ async function releaseIso() {
      describe(params)           the values, for the revert sentence
    }
    returns the controller {open, openEdit, init, abandon, apply, plan, st} */
+/* Esc = cancel the open tool (fusion-parity rule 5), inherited by every tool.
+   A pending pick without a session is the viewport's to cancel. */
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && active && active.st) active.cancel();
+});
+
 export function tool(spec) {
   const P = spec.ids;
   const id = s => P + s;
@@ -167,7 +192,7 @@ export function tool(spec) {
   };
   const lower = spec.name.toLowerCase();
 
-  const ctl = { open, openEdit, init, abandon, apply, plan: fetchPlan,
+  const ctl = { open, openEdit, init, abandon, apply, cancel, replan, plan: fetchPlan,
                 get st() { return st; } };
   for (const op of Object.values(spec.ops)) if (op) byOp[op] = ctl;
 
@@ -187,6 +212,7 @@ export function tool(spec) {
      opened in between would otherwise be torn down by this very close */
   function hide() {
     spec.gizmos.end();
+    endEdgePick();
     st = null;
     panel().style.display = 'none';
     if (active === ctl) active = null;
@@ -212,6 +238,10 @@ export function tool(spec) {
     unlock();
     const bods = solids();
     const sel = currentSelection(explicit);
+    if (spec.ops.edges) { openEdges(sel, bods); return; }
+    if (sel && sel.kind === 'edges')     // an edge, for a tool that takes profiles / faces
+      say(`⚠ ${spec.name} works on a sketch profile${spec.ops.face ? ' or a flat face' : ''}` +
+        ' — click one of those, not an edge.');
     if (sel && sel.kind === 'face' && spec.ops.face) {
       // FACE MODE (Fusion: click a planar face, press the tool, pull)
       st = session(sel);
@@ -263,6 +293,74 @@ export function tool(spec) {
       `viewport — your pick, nothing is chosen for you. Esc cancels.`);
   }
 
+  /* -------- EDGE MODE (Fusion: press Fillet, click edges, drag) --------
+     The panel opens at once, on whatever edge is already picked or on nothing,
+     and every click in the viewport goes to the SERVER as a toggle: it knows
+     the tangent chains, so it decides add-or-remove and hands back the picks. */
+  const edgesLabel = plan => plan && plan.edges && plan.edges.length
+    ? `${plan.edges.length} edge${plan.edges.length === 1 ? '' : 's'} of ${plan.input}`
+    : '(click edges)';
+  function openEdges(sel, bods) {
+    if (!bods.length) {
+      say(`⚠ ${spec.name} needs a body — build one first, then click its edges.`);
+      return;
+    }
+    if (sel && sel.kind !== 'edges')
+      say(`⚠ ${spec.name} works on the EDGES of a body — click an edge, not a ` +
+        `${sel.kind === 'profile' ? 'sketch' : 'face'}.`);
+    const input = sel && sel.kind === 'edges'
+      ? sel : { kind: 'edges', body: bods.at(-1).id, edges: [] };
+    st = session(input);
+    clearPick();                      // the plan's gold edges take over from the pick
+    fill(id('Profile'), ['(click edges)'], '(click edges)');
+    el('Profile').disabled = true;
+    el('Op').value = 'new';
+    beginEdgePick(onEdgePick, { name: spec.name });
+    begin();
+    say(`${spec.name}: click the edges of ${input.body} — a click adds an edge, ` +
+      'clicking it again removes it. Esc cancels.');
+  }
+  function onEdgePick(kind, info) {
+    if (!st || st.input.kind !== 'edges') return;
+    if (kind !== 'edge') {
+      say(`⚠ ${spec.name} works on edges — click an edge of ${st.input.body}, not a face.`);
+      return;
+    }
+    // while the preview is up the viewport shows THIS tool's result body: its
+    // unchanged edges are the input body's edges, so clicks on it count too
+    const mine = info.body === st.input.body || info.body === st.featureId;
+    if (info.body && !mine) {
+      say(`⚠ ${spec.name} works on ONE body at a time — that edge belongs to ` +
+        `${info.body}; the selection is on ${st.input.body}.`);
+      return;
+    }
+    replan({ toggle: { points: info.points } });
+  }
+  /* the edge set changed (a click, the chain box): plan again, keep the
+     feature if there is one, and re-place the handles */
+  async function replan(extra = {}) {
+    if (!st) return;
+    const mine = st;
+    const plan = await fetchPlan(extra);
+    if (st !== mine || !plan) return;
+    if (st.featureId && plan.edges && !plan.edges.length) {
+      say(`⚠ ${spec.name} keeps at least one edge while a value is set — Cancel closes the tool.`);
+      return;
+    }
+    spec.gizmos.end();
+    adoptPlan(plan);
+    if (st.featureId) await apply();
+  }
+  function adoptPlan(plan) {
+    st.plan = plan;
+    if (st.input.kind === 'edges') {
+      if (plan.picks != null) st.input.edges = plan.picks;   // exact form for the next request
+      st.input.body = plan.input;
+      fill(id('Profile'), [edgesLabel(plan)], edgesLabel(plan));
+    }
+    spec.gizmos.begin(st, plan);
+  }
+
   /* opening builds NOTHING — the boxes start at the honest zero, the gizmos
      come from the plan, and the feature is created on the first user action */
   function begin() {
@@ -288,16 +386,21 @@ export function tool(spec) {
     const f = feats().find(x => x.id === fid);
     if (!f || !Object.values(spec.ops).includes(f.op)) return;
     const face = f.op === spec.ops.face;
+    const edges = f.op === spec.ops.edges;
     const p = f.params || {};
     st = session(face
       ? { kind: 'face', center: p.face_center, normal: p.face_normal || null,
           body: f.inputs[0] }
-      : { kind: 'profile', id: f.inputs[0] });
+      : edges
+        ? { kind: 'edges', body: f.inputs[0], edges: null }   // null: the server reads the stored ones
+        : { kind: 'profile', id: f.inputs[0] });
     st.editing = true;
     st.featureId = f.id;
     st.original = spec.snapshot(f);
     st.lastGood = st.original;
-    const label = face ? `(face of ${f.inputs[0]})` : f.inputs[0];
+    if (edges) { clearPick(); beginEdgePick(onEdgePick, { name: spec.name }); }
+    const label = face ? `(face of ${f.inputs[0]})`
+      : edges ? `edges of ${f.inputs[0]}` : f.inputs[0];
     fill(id('Profile'), [label], label);
     el('Profile').disabled = true;
     el('Profile').title = `changing the profile of an existing ${lower} comes later`;
@@ -325,9 +428,12 @@ export function tool(spec) {
     const i = st.input;
     const req = i.kind === 'face'
       ? { tool: spec.tool, body_id: i.body, face_center: i.center, face_normal: i.normal }
-      : { tool: spec.tool, sketch_id: i.id };
+      : i.kind === 'edges'
+        ? { tool: spec.tool, body_id: i.body, edges: i.edges }
+        : { tool: spec.tool, sketch_id: i.id };
     if (st.editing) req.feature_id = st.featureId;   // the server reads the stored params
-    const plan = await planRequest({ ...req, ...extra });
+    const more = spec.planExtra ? spec.planExtra(st) : {};
+    const plan = await planRequest({ ...req, ...more, ...extra });
     if (plan.ok) return plan;
     if (!quiet) say(`⚠ ${spec.name} cannot start: ${plan.error}.`);     // rule 7
     return null;
@@ -340,11 +446,10 @@ export function tool(spec) {
       if (closeOnRefusal) { hide(); releaseIso(); releaseModal(); }   // opening: no empty panel
       return;                                   // mid-session: the panel stays, pick another profile
     }
-    st.plan = plan;
     if (!st.editing && plan.target_body
         && [...el('Target').options].some(o => o.value === plan.target_body))
       el('Target').value = plan.target_body;
-    spec.gizmos.begin(st, plan);
+    adoptPlan(plan);
   }
 
   /* -------- the verified preview (rules 4, 5, 6, 7) -------- */
@@ -355,8 +460,8 @@ export function tool(spec) {
     st.featureId = uid(spec.tool);
     const i = st.input;
     return await postJSON('/api/feature/add', {
-      id: st.featureId, op: i.kind === 'face' ? spec.ops.face : spec.ops.profile,
-      params: pr, inputs: [i.kind === 'face' ? i.body : i.id] });
+      id: st.featureId, op: spec.ops[i.kind === 'profile' ? 'profile' : i.kind],
+      params: pr, inputs: [i.kind === 'profile' ? i.id : i.body] });
   }
   async function push(pr) {             // one param set → the feature's health
     const doc = await postJSON('/api/feature/params',
@@ -387,7 +492,11 @@ export function tool(spec) {
      last values that built — never leave a collapsed solid on screen (red
      tree / blank body) without a word */
   async function settle(pr, failed) {
-    const r = spec.settle ? await spec.settle(st, pr, push) : null;
+    // the op's own sentence names what to change (fillet: "the largest that
+    // builds here is 5.9 mm") — the tool relays it, the tree stays quiet
+    const why = (failed && failed.f && failed.f.problems && failed.f.problems[0]) || '';
+    if (why) say(`⚠ ${humanProblem(why)}`);
+    const r = spec.settle ? await spec.settle(st, pr, push, humanProblem(why)) : null;
     if (r && isOk(r.f)) return r;
     if (st.lastGood) {
       const back = await push(st.lastGood);

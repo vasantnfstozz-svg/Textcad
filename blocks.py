@@ -35,6 +35,8 @@ from build123d import (
     import_step as b3d_import_step,
 )
 from OCP.BRep import BRep_Tool
+
+import inspector          # health of every fillet / chamfer result
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
 
 _AXES = {"X": Axis.X, "Y": Axis.Y, "Z": Axis.Z}
@@ -230,7 +232,181 @@ def linear_pattern(feature: Part, count: int, dx: float = 0.0,
     return parts[0]
 
 
+# ---------------------------------------------------------------- edges ----
+# Fillet / Chamfer take edges TWO ways (specs/fillet-chamfer.md): a GROUP name
+# (the AI's vocabulary: "all" / "top" / ...) or a list of PICKED edges stored by
+# GEOMETRY — never by index, which the next upstream change would reshuffle.
+# A picked edge is "the edge shared by these two faces", each face by its
+# centre + normal (resolve_face, the rule the face pick already lives by), with
+# the midpoint as the tie-breaker when the faces share several edges. Probed
+# 2026-09-04 (probes/fillet_edges_probe.py): after a chamfer ATE the edge the
+# resolved faces share nothing and the feature says so, where the nearest
+# midpoint would have quietly rounded the bevel's new edge instead. The same
+# probe found the second banned failure live: a fillet larger than the corner
+# fillet next to it "succeeds" as an INVALID solid — so every result is
+# health-checked before it is returned.
+
 _EDGE_RULES = ("all", "top", "bottom", "vertical", "horizontal")
+
+
+def resolve_face(solid, face_center: list, face_normal: list | None = None):
+    """Find the face of `solid` a user picked, by GEOMETRY (nearest center,
+    same-facing normal) — so a stored pick survives parameter changes instead
+    of breaking like a face index would. Shared by sketch_on_face, extrude_face,
+    the face-outline projection and the edge pick (two faces name an edge)."""
+    faces = solid.faces()
+    if not faces:
+        raise ValueError("solid has no faces")
+    cx, cy, cz = (float(v) for v in face_center)
+
+    def score(f):
+        c = f.center()
+        d = (c.X - cx) ** 2 + (c.Y - cy) ** 2 + (c.Z - cz) ** 2
+        if face_normal:
+            try:
+                n = f.normal_at(f.center())
+                align = (n.X * face_normal[0] + n.Y * face_normal[1]
+                         + n.Z * face_normal[2])
+                d += (1.0 - align) * 25.0          # nudge toward same-facing
+            except Exception:
+                pass
+        return d
+
+    return min(faces, key=score)
+
+
+def _shape_key(shape):
+    """Identity of a TopoDS shape (its TShape hash — unique within one part,
+    1.5 us; see studio._shape_key for the measurement)."""
+    return hash(shape.wrapped)
+
+
+def _v3(v) -> list[float]:
+    return [round(float(v.X), 4), round(float(v.Y), 4), round(float(v.Z), 4)]
+
+
+def _gtype(edge) -> str:
+    return str(edge.geom_type).split(".")[-1]
+
+
+def _edge_faces(part: Part) -> dict:
+    """edge key -> the faces that share it, for the whole part in one pass."""
+    m = {}
+    for f in part.faces():
+        for e in f.edges():
+            m.setdefault(_shape_key(e), []).append(f)
+    return m
+
+
+def edge_ref(part: Part, edge, faces_by_edge: dict | None = None) -> dict:
+    """The STORED form of a picked edge: midpoint, direction, curve type and the
+    two faces it separates (centre + normal each)."""
+    faces_by_edge = faces_by_edge or _edge_faces(part)
+    faces = []
+    for f in faces_by_edge.get(_shape_key(edge), [])[:2]:
+        c = f.center()
+        try:
+            n = f.normal_at(c)
+        except Exception:
+            n = f.normal_at()
+        faces.append({"center": _v3(c), "normal": _v3(n)})
+    d = edge % 0.5
+    # a stored direction has ONE sign: an edge comes out of a face with the
+    # face's orientation, out of the part with its own — identity ignores sign
+    if next((c for c in (d.X, d.Y, d.Z) if abs(c) > 1e-9), 1.0) < 0:
+        d = -d
+    return {"mid": _v3(edge @ 0.5), "dir": _v3(d), "type": _gtype(edge),
+            "faces": faces}
+
+
+def _nearest_edge(edges, ref: dict):
+    mx, my, mz = (float(v) for v in ref["mid"])
+    d = ref.get("dir")
+    gt = ref.get("type")
+
+    def score(e):
+        m = e @ 0.5
+        s = (m.X - mx) ** 2 + (m.Y - my) ** 2 + (m.Z - mz) ** 2
+        if d:
+            t = e % 0.5
+            s += (1.0 - abs(t.X * d[0] + t.Y * d[1] + t.Z * d[2])) * 25.0
+        if gt and _gtype(e) != gt:
+            s += 100.0
+        return s
+
+    return min(edges, key=score)
+
+
+def _poly_mid(points) -> list[float]:
+    """The point half-way along a polyline's length — the viewport sends an
+    edge's drawn points untouched (R1: no maths in JS); for a 2-point line this
+    is the exact midpoint, for a 24-step circle it is within 0.1% of it."""
+    pts = [tuple(float(c) for c in p) for p in points]
+    if len(pts) == 1:
+        return list(pts[0])
+    seg = [math.dist(a, b) for a, b in zip(pts, pts[1:])]
+    half, run = sum(seg) / 2, 0.0
+    for (a, b), L in zip(zip(pts, pts[1:]), seg):
+        if run + L >= half and L > 0:
+            t = (half - run) / L
+            return [a[i] + (b[i] - a[i]) * t for i in range(3)]
+        run += L
+    return list(pts[-1])
+
+
+def resolve_edge(part: Part, ref: dict):
+    """The edge of `part` a stored pick means — by the two faces it separates
+    when the pick recorded them, else by the nearest midpoint (+ direction).
+    A raw viewport pick carries the edge's drawn `points` instead of a midpoint.
+    Raises the sentence the feature shows when the edge is gone."""
+    if ref.get("mid") is None and ref.get("points"):
+        ref = {**ref, "mid": _poly_mid(ref["points"])}
+    faces = ref.get("faces") or []
+    if len(faces) == 2:
+        fa, fb = (resolve_face(part, f["center"], f.get("normal")) for f in faces)
+        kb = {_shape_key(e) for e in fb.edges()}
+        shared = [e for e in fa.edges() if _shape_key(e) in kb]
+        if not shared:
+            x, y, z = ref.get("mid", [0, 0, 0])
+            raise ValueError(
+                f"the picked edge at ({x:g}, {y:g}, {z:g}) is no longer on the "
+                f"body — an upstream change removed it (the two faces it sat "
+                f"between no longer meet). Re-pick the edges of this feature.")
+        return shared[0] if len(shared) == 1 else _nearest_edge(shared, ref)
+    if len(faces) == 1:                         # a SEAM of a round face touches one face
+        fa = resolve_face(part, faces[0]["center"], faces[0].get("normal"))
+        return _nearest_edge(fa.edges(), ref)
+    if ref.get("mid") is None:
+        raise ValueError("a picked edge needs its midpoint ('mid': [x, y, z]) — "
+                         "pick it in the viewport")
+    return _nearest_edge(part.edges(), ref)
+
+
+def tangent_chain(part: Part, edge, tol: float = 0.99) -> list:
+    """`edge` plus every edge smoothly connected to it (Fusion's tangent chain):
+    walk shared vertices while the tangents agree. A rounded rim is one chain;
+    a sharp box edge is a chain of one (probed 2026-09-04)."""
+    def vk(p):
+        return (round(p.X, 4), round(p.Y, 4), round(p.Z, 4))
+
+    ends = {}
+    for e in part.edges():
+        for t in (0.0, 1.0):
+            ends.setdefault(vk(e @ t), []).append((e, t))
+    seen = {_shape_key(edge)}
+    out, todo = [edge], [edge]
+    while todo:
+        e = todo.pop()
+        for t in (0.0, 1.0):
+            tan = e % t
+            for other, ot in ends.get(vk(e @ t), []):
+                if _shape_key(other) in seen:
+                    continue
+                if abs(tan.dot(other % ot)) > tol:
+                    seen.add(_shape_key(other))
+                    out.append(other)
+                    todo.append(other)
+    return out
 
 
 def _pick_edges(part: Part, which: str):
@@ -253,21 +429,90 @@ def _pick_edges(part: Part, which: str):
         if not picked:
             raise ValueError('no "horizontal" edges (none parallel to X or Y)')
         return picked
-    raise ValueError(f'edges must be one of {", ".join(_EDGE_RULES)}')
+    raise ValueError(f'edges must be one of {", ".join(_EDGE_RULES)}, or a list '
+                     f"of picked edges")
 
 
-def fillet_edges(part: Part, radius: float, edges: str = "all") -> Part:
+def edges_for(part: Part, edges) -> list:
+    """The edges an `edges` param names: a group name, or a list of picked
+    edges (dicts from edge_ref, or bare [x, y, z] midpoints)."""
+    if isinstance(edges, str):
+        return list(_pick_edges(part, edges))
+    if isinstance(edges, (list, tuple)):
+        if not edges:
+            raise ValueError("no edges picked — click at least one edge of the body")
+        out, seen = [], set()
+        for r in edges:
+            e = resolve_edge(part, r if isinstance(r, dict) else {"mid": list(r)})
+            if _shape_key(e) not in seen:
+                seen.add(_shape_key(e))
+                out.append(e)
+        return out
+    raise ValueError(f'edges must be one of {", ".join(_EDGE_RULES)}, or a list '
+                     f"of picked edges")
+
+
+def _largest_that_builds(build, hi: float, iters: int = 10) -> float | None:
+    """Bisect the value the kernel accepts AND health passes — the number the
+    refusal sentence names, so the user is told what fits instead of guessing.
+    (build123d's max_fillet bisects on is_valid alone and gave up on a plain
+    box at 12 iterations — probed 2026-09-04.)"""
+    lo, best = 0.0, None
+    for _ in range(iters):
+        mid = (lo + hi) / 2
+        try:
+            good = not inspector.health(build(mid))
+        except Exception:                       # OCP errors are Exception
+            good = False
+        if good:
+            lo, best = mid, mid
+        else:
+            hi = mid
+    return best
+
+
+def _finish(name: str, part: Part, edges, value: float, unit: str, build):
+    """Shared by fillet_edges / chamfer_edges: the value guard, the kernel call,
+    the health check, and the sentence that names what fits."""
+    if value is None or not value > 0:
+        raise ValueError(f"{name}: {unit} must be positive (got "
+                         f"{'nothing' if value is None else format(value, 'g')}) — "
+                         f"drag the handle or type a value")
+    picked = edges_for(part, edges)
+    n = len(picked)
+    try:
+        out = build(picked, value)
+        problems = inspector.health(out)
+    except Exception as e:                      # build123d's ValueError or a raw OCP error
+        out, problems = None, [str(e)]
+    if out is not None and not problems:
+        return out
+    why = ("does not fit" if out is None
+           else "leaves a broken solid (it runs into a neighbouring face or round)")
+    hi = min(value, max(e.length for e in picked))
+    best = _largest_that_builds(lambda v: build(picked, v), hi)
+    best = math.floor(best * 10) / 10 if best else 0      # DOWN: typing it must build
+    fits = (f"the largest that builds here is {best:.1f} mm" if best >= 0.1
+            else "no value builds on these edges — a face beside them is too "
+                 "small; pick different edges")
+    raise ValueError(f"{name}: {unit} {value:g} mm {why} on {n} edge"
+                     f"{'s' if n != 1 else ''} — {fits}")
+
+
+def fillet_edges(part: Part, radius: float, edges="all") -> Part:
     """Round edges with a radius. `edges`: "all", "top", "bottom", "vertical"
-    (the 4 upright corner edges — for rounding the corners of a box/enclosure)
-    or "horizontal" (the flat top+bottom rims). The radius must be smaller than
-    half the thickness of the adjacent material."""
-    return _b3d_fillet(_pick_edges(part, edges), radius=radius)
+    (the 4 upright corner edges — for rounding the corners of a box/enclosure),
+    "horizontal" (the flat top+bottom rims), or a LIST of picked edges (see
+    edge_ref). The radius must be smaller than the neighbouring faces allow;
+    the refusal names the largest that fits."""
+    return _finish("fillet", part, edges, radius, "radius",
+                   lambda es, v: _b3d_fillet(es, radius=v))
 
 
-def chamfer_edges(part: Part, length: float, edges: str = "all") -> Part:
-    """Cut a flat 45-degree bevel on edges. `edges`: "all", "top", "bottom",
-    "vertical" or "horizontal" (see fillet_edges)."""
-    return _b3d_chamfer(_pick_edges(part, edges), length=length)
+def chamfer_edges(part: Part, length: float, edges="all") -> Part:
+    """Cut a flat 45-degree bevel on edges. `edges` as for fillet_edges."""
+    return _finish("chamfer", part, edges, length, "distance",
+                   lambda es, v: _b3d_chamfer(es, length=v))
 
 
 def shell_out(part: Part, thickness: float, open_face: str = "top") -> Part:

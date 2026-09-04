@@ -19,6 +19,8 @@ from __future__ import annotations
 import math
 import re
 import build123d as b3d
+
+from blocks import resolve_face   # noqa: F401 — one face resolver (faces, and the edge pick)
 from build123d import (
     Rectangle, Circle, Ellipse, Polygon, SlotOverall, RegularPolygon,
     Pos, Axis, Plane, BuildLine, BuildSketch, Spline, Polyline, Line,
@@ -357,32 +359,6 @@ def named_face(solid, name: str, align_tol: float = 0.001):
             f"this solid has no flat face pointing '{name}' — pick a different "
             f"direction, or sketch on a principal plane")
     return best
-
-
-def resolve_face(solid, face_center: list, face_normal: list | None = None):
-    """Find the face of `solid` a user picked, by GEOMETRY (nearest center,
-    same-facing normal) — so a stored pick survives parameter changes instead
-    of breaking like a face index would. Shared by sketch_on_face and the
-    face-outline projection."""
-    faces = solid.faces()
-    if not faces:
-        raise ValueError("solid has no faces")
-    cx, cy, cz = (float(v) for v in face_center)
-
-    def score(f):
-        c = f.center()
-        d = (c.X - cx) ** 2 + (c.Y - cy) ** 2 + (c.Z - cz) ** 2
-        if face_normal:
-            try:
-                n = f.normal_at(f.center())
-                align = (n.X * face_normal[0] + n.Y * face_normal[1]
-                         + n.Z * face_normal[2])
-                d += (1.0 - align) * 25.0          # nudge toward same-facing
-            except Exception:
-                pass
-        return d
-
-    return min(faces, key=score)
 
 
 def face_plane(face, ang_tol_deg: float = 1.0, dist_tol: float = 1e-2):

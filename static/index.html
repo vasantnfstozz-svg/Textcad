@@ -252,6 +252,37 @@
   </div>
 </div>
 
+
+<!-- ============ Fillet panel (edges picked in the viewport; specs/fillet-chamfer.md) ============ -->
+<div id="flDialog" class="toolpanel" style="display:none">
+  <div class="exhead">◠ Fillet</div>
+  <label>Edges <select id="flProfile" disabled></select></label>
+  <label>Radius (mm) <input id="flValue" type="number" step="any" min="0" value="0"></label>
+  <label><input id="flChain" type="checkbox" checked
+    title="clicking one edge of a smooth rim selects the whole rim (Fusion's tangent chain)"> Tangent chain</label>
+  <select id="flOp" style="display:none"><option value="new">New body</option></select>
+  <label id="flTargetRow" style="display:none">Combine with <select id="flTarget"></select></label>
+  <div class="exfoot">
+    <button id="flCancel">Cancel</button>
+    <button class="primary" id="flOk">OK</button>
+  </div>
+</div>
+
+<!-- ============ Chamfer panel (edges picked in the viewport; specs/fillet-chamfer.md) ============ -->
+<div id="chDialog" class="toolpanel" style="display:none">
+  <div class="exhead">◣ Chamfer</div>
+  <label>Edges <select id="chProfile" disabled></select></label>
+  <label>Distance (mm) <input id="chValue" type="number" step="any" min="0" value="0"></label>
+  <label><input id="chChain" type="checkbox" checked
+    title="clicking one edge of a smooth rim selects the whole rim (Fusion's tangent chain)"> Tangent chain</label>
+  <select id="chOp" style="display:none"><option value="new">New body</option></select>
+  <label id="chTargetRow" style="display:none">Combine with <select id="chTarget"></select></label>
+  <div class="exfoot">
+    <button id="chCancel">Cancel</button>
+    <button class="primary" id="chOk">OK</button>
+  </div>
+</div>
+
 <!-- ============ measure panel ============ -->
 <div id="measureDialog" style="display:none">
   <div class="mehead">⟺ Measure</div>
@@ -319,6 +350,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=149"></script>
+<script type="module" src="/static/js/main.js?v=150"></script>
 </body>
 </html>
