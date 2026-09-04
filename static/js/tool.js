@@ -176,7 +176,8 @@ async function releaseIso() {
 /* Esc = cancel the open tool (fusion-parity rule 5), inherited by every tool.
    A pending pick without a session is the viewport's to cancel. */
 window.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && active && active.st) active.cancel();
+  if (e.key !== 'Escape' || e.repeat) return;   // held down = ONE cancel
+  if (active && active.st) active.cancel();
 });
 
 export function tool(spec) {
@@ -185,6 +186,7 @@ export function tool(spec) {
   const el = s => g(P + s);
   const panel = () => g(spec.panel);
   let st = null;                    // the open session
+  let closing = false;              // a Cancel / OK is already tearing it down
   let timer = null;                 // a typed value waiting for its apply
   const debounce = fn => {
     clearTimeout(timer);
@@ -229,7 +231,7 @@ export function tool(spec) {
   }
   const session = input => ({ input, featureId: null, opId: null, opType: null,
                               opTarget: null, editing: false, plan: null,
-                              lastGood: null });
+                              lastGood: null, firstExtra: null });
 
   /* -------- open on the current selection (rules 1, 2, 4) -------- */
   function open(explicit) {
@@ -286,6 +288,12 @@ export function tool(spec) {
     // work on (a sketch profile or a flat face); never auto-grab a sketch
     beginProfilePick((kind, data) => {
       if (kind === 'profile') { open(data); return; }
+      // ONE selection set. This is the only writer that bypasses the
+      // viewport's own selectFace, so it must drop what it replaces here:
+      // a stale edge pick outranks this face in currentSelection, and the
+      // tool would loop asking for the pick the user had just made. clearPick
+      // also takes away the old highlight and the stale readout.
+      clearPick();
       S.pickedFace = data;            // planar face — reuse face mode
       open();
     }, { name: spec.name, faces: canFace });   // the picker speaks for THIS tool
@@ -308,9 +316,14 @@ export function tool(spec) {
     if (sel && sel.kind !== 'edges')
       say(`⚠ ${spec.name} works on the EDGES of a body — click an edge, not a ` +
         `${sel.kind === 'profile' ? 'sketch' : 'face'}.`);
-    const input = sel && sel.kind === 'edges'
-      ? sel : { kind: 'edges', body: bods.at(-1).id, edges: [] };
+    const input = { kind: 'edges', edges: [],
+                    body: sel && sel.kind === 'edges' ? sel.body : bods.at(-1).id };
     st = session(input);
+    // select-then-command: the edge already picked enters as a CLICK, the same
+    // path as clicking in the viewport — so the server's chain default sees an
+    // empty selection (fresh picking) rather than a lone unexplained edge
+    if (sel && sel.kind === 'edges')
+      st.firstExtra = { toggle: { points: sel.edges[0].points } };
     clearPick();                      // the plan's gold edges take over from the pick
     fill(id('Profile'), ['(click edges)'], '(click edges)');
     el('Profile').disabled = true;
@@ -433,7 +446,8 @@ export function tool(spec) {
         : { tool: spec.tool, sketch_id: i.id };
     if (st.editing) req.feature_id = st.featureId;   // the server reads the stored params
     const more = spec.planExtra ? spec.planExtra(st) : {};
-    const plan = await planRequest({ ...req, ...more, ...extra });
+    const first = st.firstExtra; st.firstExtra = null;   // consumed once
+    const plan = await planRequest({ ...req, ...more, ...first, ...extra });
     if (plan.ok) return plan;
     if (!quiet) say(`⚠ ${spec.name} cannot start: ${plan.error}.`);     // rule 7
     return null;
@@ -581,8 +595,21 @@ export function tool(spec) {
     });
     if (st) { st.opId = st.opType = st.opTarget = st.featureId = null; }
   }
-  async function cancel() {
-    if (!st) return;
+  /* Cancel and OK are ONE-WAY DOORS. st is only nulled by hide(), several
+     awaits away, so without this a second Escape (auto-repeat fires ~31/s), a
+     double-clicked Cancel, or a Cancel/OK crossfire runs the teardown twice and
+     posts a second /api/feature/remove for a feature that has already gone —
+     "no feature named 'fillet1'" in the chat, about something the user never
+     named. Declarations, not consts: ctl and the buttons take them by name. */
+  async function guard(fn) {
+    if (!st || closing) return;
+    closing = true;
+    try { await fn(); } finally { closing = false; }
+  }
+  async function cancel() { await guard(cancelSession); }
+  async function ok() { await guard(okSession); }
+
+  async function cancelSession() {
     clearTimeout(timer); timer = null;  // a typed value on its way is dropped
     await settled();                    // a rebuild in flight finishes first
     if (st && st.editing) {             // the feature stays — put its
@@ -598,8 +625,7 @@ export function tool(spec) {
     }
     releaseModal();
   }
-  async function ok() {
-    if (!st) return;
+  async function okSession() {
     const editing = st.editing;
     const typed = !!timer;              // a value typed inside the debounce window
     clearTimeout(timer); timer = null;

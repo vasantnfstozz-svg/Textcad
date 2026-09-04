@@ -503,8 +503,6 @@ def _toggle_pick(part, refs, click: dict, chain: bool, by_edge: dict) -> list:
     """Fusion's click rule: an edge not yet selected joins the picks; one that
     IS selected — directly or through a pick's tangent chain — takes that pick
     out. Decided here because only the kernel knows which chain an edge is in."""
-    if isinstance(refs, str):                    # a legacy group becomes explicit picks
-        refs = [blocks.edge_ref(part, e, by_edge) for e in blocks.edges_for(part, refs)]
     hit = blocks._shape_key(blocks.resolve_edge(part, click))
     keep = [r for r in refs
             if hit not in {blocks._shape_key(e) for e in _expand(part, [r], chain)}]
@@ -530,18 +528,31 @@ def plan_fillet(doc, req: dict) -> dict:
     fid = req.get("feature_id")
     body = req.get("body_id")
     refs = req.get("edges")
-    chain = req.get("chain")
-    chain = True if chain is None else bool(chain)
+    want_chain = req.get("chain")
+    stored = False                               # did these edges come from the tree?
     if fid:
         f = _edit_input(doc, fid, ("fillet", "chamfer"))
         body = (f.inputs or [None])[0]
         if refs is None:
             refs = (f.params or {}).get("edges", "all")
+            stored = True
     if not body:
         raise ValueError(f"{tool.capitalize()} needs the edges of a body — click an edge in the viewport")
     _bf, part = _body_part(doc, body)
     by_edge = blocks._edge_faces(part)
     tog = req.get("toggle")
+    # A legacy GROUP ("all"/"vertical"/…) becomes explicit picks the moment the
+    # user clicks — converted BEFORE the chain default is worked out, so a group
+    # whose edges have tangent neighbours is not silently grown by that click.
+    if tog is not None and isinstance(refs, str):
+        refs = [blocks.edge_ref(part, e, by_edge)
+                for e in blocks.edges_for(part, refs)]
+    # THE CHAIN DEFAULT. Fresh picking chains (Fusion). A STORED selection does
+    # not: it is already the answer, and re-expanding it can only add edges the
+    # user never picked — a chain-off fillet reopened, or an AI-authored group
+    # whose edges have tangent neighbours. Keyed on where the edges came from,
+    # which only the server knows, so a caller that forgets to say is safe.
+    chain = bool(want_chain) if want_chain is not None else not stored
     if tog is not None:                          # a click: add the edge, or take it out
         refs = _toggle_pick(part, refs or [], tog, chain, by_edge)
     # the user's own picks in STORED form (unexpanded) — what the tool sends

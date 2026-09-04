@@ -168,8 +168,11 @@ def test_a_profile_across_the_axis_is_refused_with_a_sentence(page, fresh_doc, s
     assert page.locator("#revolveDialog").is_hidden(), "the tool must not open"
     chat = page.text_content("#chatLog")
     assert "cannot be revolved" in chat and "crosses" in chat and "one side" in chat
-    assert page.evaluate("() => window.__vp.gizmos()") == {
-        "arrow": False, "ghost": False, "ring": False, "axis": False, "lathe": False}
+    # the gizmos this refusal must leave behind: none. Named one by one, not as
+    # the whole dict — that hook grows a key every time a tool adds a handle
+    # (P4 added glow/edgePick and broke this assertion, caught 2026-09-04).
+    g = page.evaluate("() => window.__vp.gizmos()")
+    assert not any(g[k] for k in ("arrow", "ghost", "ring", "axis", "lathe")), g
     assert page.errors == []
 
 

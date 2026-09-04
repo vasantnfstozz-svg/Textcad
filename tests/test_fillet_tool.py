@@ -47,16 +47,49 @@ OPS = {"fillet": blocks.fillet_edges, "chamfer": blocks.chamfer_edges}
 
 @pytest.mark.parametrize("op", ["fillet", "chamfer"])
 @pytest.mark.parametrize("value", [50, 20])
-def test_too_big_refuses_and_names_a_value_that_builds(op, value):
+def test_too_big_refuses_and_says_why(op, value):
+    """The op refuses cheaply and truthfully. It does NOT search for the largest
+    value that fits: that costs ~8 more kernel builds and a stored-but-failing
+    feature would pay it on every rebuild (review 2026-09-04)."""
     b = box()
     ref = blocks.edge_ref(b, top(b)[0])
     with pytest.raises(ValueError) as ei:
         OPS[op](b, value, [ref])
     msg = str(ei.value)
     assert msg.startswith(op + ":") and "does not fit" in msg
-    fits = float(msg.split("builds here is ")[1].split(" mm")[0])
-    assert 19 <= fits <= 19.9, msg              # the side face is 20 tall
-    healthy(OPS[op](b, fits, [ref]))            # the number it names BUILDS
+    assert f"{value:g} mm" in msg and "1 edge" in msg
+    assert "the kernel could not build it there" in msg
+    for leak in ("TopoDS", "NCollection", "Standard_", "BRep", "StdFail"):
+        assert leak not in msg
+
+
+@pytest.mark.parametrize("op", ["fillet", "chamfer"])
+def test_the_kernel_is_called_once_with_the_value_the_user_typed(op):
+    """No speculative probing. Searching for "the largest that would fit" means
+    building at radii nobody asked for, and on esp32-remote one of those
+    segfaulted OCCT (2026-09-04) — it would take the user's server with it."""
+    calls = []
+    b = box()
+    ref = blocks.edge_ref(b, top(b)[0])
+    real = blocks._b3d_fillet if op == "fillet" else blocks._b3d_chamfer
+    name = "_b3d_fillet" if op == "fillet" else "_b3d_chamfer"
+
+    def spy(es, **kw):
+        calls.append(next(iter(kw.values())))
+        return real(es, **kw)
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(blocks, name, spy)
+    try:
+        with pytest.raises(ValueError):
+            OPS[op](b, 50, [ref])
+        assert calls == [50], calls
+        calls.clear()
+        OPS[op](b, 3, [ref])
+        assert calls == [3], calls
+    finally:
+        mp.undo()
+    assert not hasattr(blocks, "largest_that_builds")
 
 
 @pytest.mark.parametrize("op", ["fillet", "chamfer"])
@@ -126,16 +159,62 @@ def test_a_removed_edge_is_named_not_quietly_swapped():
     assert blocks.fillet_edges(gone, 1, [{"mid": ref["mid"]}]).volume < gone.volume
 
 
-def test_an_invalid_success_is_refused_with_the_largest_that_fits():
+def test_an_invalid_success_is_refused_and_says_what_health_found():
+    """The second banned failure, live: at radius 6 the kernel ACCEPTS a solid
+    that is not watertight. The CHEAP health check sees it, which is why the op
+    can use Document.rebuild's own per-feature policy instead of the ~270 ms
+    validity analysis — asserted here so the op cannot go blind by accident."""
     rc = blocks.fillet_edges(box(), 5, "vertical")
     rim = [blocks.edge_ref(rc, e) for e in top(rc)]
+    built = blocks._b3d_fillet(blocks.edges_for(rc, rim), radius=6)
+    assert inspector.health(built, check_valid=False) != []
     with pytest.raises(ValueError) as ei:
-        blocks.fillet_edges(rc, 6, rim)             # the kernel returns an INVALID solid here
+        blocks.fillet_edges(rc, 6, rim)
     msg = str(ei.value)
-    assert "broken solid" in msg and "largest that builds here is" in msg
-    fits = float(msg.split("builds here is ")[1].split(" mm")[0])
-    assert fits <= 5.0
-    healthy(blocks.fillet_edges(rc, fits, rim))
+    assert "broken solid" in msg and "manifold" in msg
+    healthy(blocks.fillet_edges(rc, 3, rim))        # a value that does fit still builds
+
+
+def test_a_non_geometric_failure_is_not_dressed_up_as_geometry(monkeypatch):
+    """Before the review fix every failure — including our own bugs — was
+    reported as 'a face beside them is too small', a fabricated diagnosis that
+    also hid the real cause from the tree."""
+    b = box()
+    ref = blocks.edge_ref(b, top(b)[0])
+    monkeypatch.setattr(blocks, "_b3d_fillet",
+                        lambda *a, **k: (_ for _ in ()).throw(TypeError("bad kwarg")))
+    with pytest.raises(ValueError) as ei:
+        blocks.fillet_edges(b, 3, [ref])
+    msg = str(ei.value)
+    assert "TypeError: bad kwarg" in msg
+    assert "too small" not in msg
+
+
+def test_kernel_jargon_never_reaches_the_user(monkeypatch):
+    class StdFail_NotDone(Exception):
+        pass
+
+    b = box()
+    ref = blocks.edge_ref(b, top(b)[0])
+    monkeypatch.setattr(blocks, "_b3d_chamfer", lambda *a, **k: (_ for _ in ()).throw(
+        StdFail_NotDone("BRep_API: command not done")))
+    with pytest.raises(ValueError) as ei:
+        blocks.chamfer_edges(b, 3, [ref])
+    msg = str(ei.value)
+    assert "the geometry kernel rejected" in msg
+    for leak in ("TopoDS", "NCollection", "Standard_", "BRep", "StdFail"):
+        assert leak not in msg
+
+
+def test_two_stored_faces_that_resolve_to_one_face_read_as_a_gone_edge():
+    """resolve_face is a NEAREST match that never fails: when one stored face is
+    gone, both can land on the same face, whose edges all 'share' it — and the
+    fillet would quietly move to a different edge."""
+    b = box()
+    ref = blocks.edge_ref(b, top(b)[0])
+    same = {"center": [0, 0, 10], "normal": [0, 0, 1]}
+    with pytest.raises(ValueError, match="no longer on the body"):
+        blocks.resolve_edge(b, {**ref, "faces": [same, dict(same)]})
 
 
 def test_tangent_chain_is_a_rim_a_sharp_edge_or_a_full_circle():
@@ -212,16 +291,84 @@ def test_plan_midpoint_straight_from_the_model_edge_line():
     assert p["ok"] and p["edges"][0]["mid"] == mid(e)
 
 
-def test_plan_chain_is_on_by_default_and_can_be_turned_off():
+def test_plan_chain_is_on_for_fresh_picking_and_can_be_turned_off():
+    """Fusion's default for PICKING. (A stored selection defaults the other way
+    — see test_a_chain_off_fillet_is_not_grown_when_it_is_reopened.)"""
     doc = doc_rounded()
     rim = top(doc._parts["g1"])
     line = next(e for e in rim if blocks._gtype(e) == "LINE")
-    on = toolplan.plan(doc, {"tool": "fillet", "body_id": "g1", "edges": [mid(line)]})
-    off = toolplan.plan(doc, {"tool": "fillet", "body_id": "g1", "edges": [mid(line)],
-                              "chain": False})
+    req = {"tool": "fillet", "body_id": "g1", "edges": [mid(line)]}
+    assert toolplan.plan(doc, req)["chain"] is True          # nothing asked: chain
+    on = toolplan.plan(doc, {**req, "chain": True})
+    off = toolplan.plan(doc, {**req, "chain": False})
     assert on["chain"] is True and len(on["edges"]) == 8
     assert off["chain"] is False and len(off["edges"]) == 1
     assert sorted(e["type"] for e in on["edges"]).count("CIRCLE") == 4
+
+
+def test_a_chain_off_fillet_is_not_grown_when_it_is_reopened():
+    """The founding rule: geometry never changes without the user asking. A
+    single edge of a smooth rim was picked with the chain box OFF; reopening it
+    must not silently turn it into the whole rim (review 2026-09-04)."""
+    doc = doc_rounded()
+    rc = doc._parts["g1"]
+    line = next(e for e in top(rc) if blocks._gtype(e) == "LINE")
+    one = blocks.edge_ref(rc, line)
+    doc.add("f1", "fillet", {"radius": 1, "edges": [one]}, ["g1"])
+    doc.rebuild()
+    p = toolplan.plan(doc, {"tool": "fillet", "feature_id": "f1"})    # no chain: the default
+    assert p["chain"] is False and len(p["edges"]) == 1
+    assert p["edges_param"] == [one]
+    # the user can still opt in — and then SEES all 8 before pressing OK
+    assert len(toolplan.plan(doc, {"tool": "fillet", "feature_id": "f1",
+                                   "chain": True})["edges"]) == 8
+
+
+def test_a_chain_on_fillet_reopens_with_its_whole_chain_and_nothing_added():
+    """The stored set IS the answer on edit — for a chain-ON fillet that means
+    the same 8 edges come back, and no further growth is possible."""
+    doc = doc_rounded()
+    rc = doc._parts["g1"]
+    rim = [blocks.edge_ref(rc, e) for e in top(rc)]
+    assert len(rim) == 8
+    doc.add("f1", "fillet", {"radius": 1, "edges": rim}, ["g1"])
+    doc.rebuild()
+    p = toolplan.plan(doc, {"tool": "fillet", "feature_id": "f1"})
+    assert p["chain"] is False and len(p["edges"]) == 8
+    assert p["edges_param"] == rim
+
+
+def test_one_click_on_an_ai_authored_group_adds_only_that_edge():
+    """A group written by the AI ('horizontal' = the straight rim lines) has
+    tangent neighbours (the corner arcs). One extra click used to add all of
+    them — the click must add exactly the edge clicked."""
+    doc = doc_rounded()
+    rc = doc._parts["g1"]
+    group = blocks.edges_for(rc, "horizontal")
+    refs = [blocks.edge_ref(rc, e) for e in group]
+    assert len(toolplan._expand(rc, refs, True)) > len(group), \
+        "this group must HAVE tangent neighbours or the test proves nothing"
+    doc.add("f1", "fillet", {"radius": 0.5, "edges": "horizontal"}, ["g1"])
+    doc.rebuild()
+    p = toolplan.plan(doc, {"tool": "fillet", "feature_id": "f1"})
+    assert p["chain"] is False                      # not chain-closed: never grown
+    assert p["edges_param"] == "horizontal" and len(p["edges"]) == len(group)
+    vert = next(e for e in rc.edges()
+                if blocks._shape_key(e) not in {blocks._shape_key(g) for g in group}
+                and blocks._gtype(e) == "LINE")
+    p2 = toolplan.plan(doc, {"tool": "fillet", "feature_id": "f1",
+                             "toggle": {"points": toolplan.edge_polyline(vert)}})
+    assert len(p2["edges"]) == len(group) + 1
+    assert isinstance(p2["edges_param"], list)      # the group became explicit picks
+
+
+def test_a_fresh_pick_still_chains_by_default():
+    doc = doc_rounded()
+    rc = doc._parts["g1"]
+    line = next(e for e in top(rc) if blocks._gtype(e) == "LINE")
+    p = toolplan.plan(doc, {"tool": "fillet", "body_id": "g1", "edges": [],
+                            "toggle": {"points": toolplan.edge_polyline(line)}})
+    assert p["chain"] is True and len(p["edges"]) == 8
 
 
 def test_plan_with_nothing_picked_keeps_the_pick_alive():

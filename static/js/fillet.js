@@ -30,10 +30,22 @@ function edgeTool(o) {                 // o = {name, icon, op, ids, param, unit,
     ops: { edges: o.op },
     fields: { typed: ['Value'] },
     /* the op gets the plan's stored edges — never an index, never JS geometry */
+    /* the op gets the plan's stored edges — never an index, never JS geometry.
+       Before the plan lands (OK pressed straight after an edit opens) the
+       feature's OWN edges stand in, so a rebuild is never asked for none. */
     params: st => ({ [o.param]: Math.max(0, num(box)),
-                     edges: st && st.plan ? st.plan.edges_param : [] }),
-    planExtra: () => ({ chain: chainOn() }),
-    show(st, p) { g(box).value = p[o.param] || 0; },
+                     edges: (st && st.plan && st.plan.edges_param)
+                       || (st && st.original && st.original.edges) || [] }),
+    /* THE CHAIN DEFAULT IS THE SERVER'S (R1). The first plan of a session asks
+       without one, so the answer can depend on the geometry — a chain-off
+       fillet reopened, or an AI group with tangent neighbours, must not be
+       grown; the checkbox then shows what came back and speaks from there on. */
+    planExtra: st => (st && st.plan ? { chain: chainOn() } : {}),
+    show(st, p) {
+      g(box).value = p[o.param] || 0;
+      // a NEW session starts at the honest default; the plan's answer follows
+      if (!st || !st.editing) g(P + 'Chain').checked = true;
+    },
     snapshot(f) {
       const p = f.params || {};
       return { [o.param]: Number(p[o.param]) || 0, edges: p.edges == null ? 'all' : p.edges };
@@ -44,6 +56,7 @@ function edgeTool(o) {                 // o = {name, icon, op, ids, param, unit,
     describe: p => `${o.unit.toLowerCase()} ${p[o.param]} mm`,
     gizmos: {
       begin(st, plan) {
+        if (plan.chain != null) g(P + 'Chain').checked = !!plan.chain;
         beginEdgeGlow(plan.edges);
         if (!plan.ball) return;                    // nothing picked yet: the hint is up
         beginExtrudeArrow(plan.ball.origin, plan.ball.dir, num(box),
@@ -55,19 +68,13 @@ function edgeTool(o) {                 // o = {name, icon, op, ids, param, unit,
       end() { endEdgeGlow(); endExtrudeArrow(); },
     },
     afterApply() { setExtrudeArrowAmount(num(box)); },
-    /* the op's refusal names the largest value that builds (bisected on the
-       kernel + health, server side): apply THAT, the way Fusion's handle stops
-       at the limit — the box shows it, the chat has just said why */
-    async settle(st, pr, push, why) {
-      const m = /largest that builds here is ([\d.]+) mm/.exec(why || '');
-      if (!m) return null;                      // nothing fits: the framework reverts
-      const v = Number(m[1]);
-      setBox(box, v);
-      return await push({ ...pr, [o.param]: v });
-    },
+    /* No `settle`: there is no safe way to ASK the kernel what would have fit.
+       Searching means filleting at radii the user never typed, and one of those
+       segfaulted OCCT on a real design (see blocks._finish). The framework puts
+       back the last value that built and says so — the op has already said why. */
   });
 
-  g(P + 'Chain').onchange = () => ctl.replan();   // a different edge set: plan again
+  g(P + 'Chain').onchange = () => ctl.replan();   // the box now speaks: planExtra sends it
   return ctl;
 }
 

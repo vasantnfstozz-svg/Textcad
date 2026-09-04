@@ -28,11 +28,18 @@ at the stored value.
   selects the whole smoothly connected loop. The server works the chain out and
   hands the edges back; a checkbox in the panel turns it off.
 * **Edges are stored by GEOMETRY, never by index** (same rule as
-  `resolve_face`): each edge as its midpoint, direction and type
-  (`edge_centers`). At build time the op finds the nearest matching edge on the
-  CURRENT body, so a fillet survives a change to the box's height upstream.
-  Param stays backward compatible: the AI's `edges: "all"|"top"|…` groups keep
-  working, `edge_centers` is the picked form.
+  `resolve_face`): each edge as **the two faces it separates**, plus its
+  midpoint, direction and type. At build time the op finds the edge those two
+  faces still share, so a fillet survives a change to the box's height
+  upstream — and when they no longer meet (or both resolve to the same face,
+  because a nearest-match never fails) it says the edge is gone instead of
+  quietly rounding a different one. Param stays backward compatible: the AI's
+  `edges: "all"|"top"|…` groups keep working.
+* **The tangent chain is a picking aid, not a stored property.** It is ON for
+  fresh picking (Fusion) and OFF for a selection that came from the tree: the
+  stored edges are already the answer, and re-expanding them could only add
+  edges the user never picked. The panel's checkbox shows the server's answer;
+  ticking it grows the selection visibly, before OK.
 
 ## The handle and the panel (rules 3, 4, 5)
 
@@ -60,7 +67,7 @@ at the stored value.
 
 | Situation | What is said |
 |---|---|
-| Radius too big for the neighbouring faces (kernel refuses, or returns an INVALID solid — probed: a round bigger than the corner round next to it) | the op bisects the largest value that builds AND passes health, and says "fillet: radius 8 mm does not fit on 2 edges — the largest that builds here is 5.9 mm"; the tool's `settle` applies that value, so the handle stops at the limit like Fusion's. When nothing fits, the framework reverts to the last value that built and says so. |
+| Radius too big for the neighbouring faces (kernel refuses, or returns a broken solid — probed: a round bigger than the corner round next to it comes back not watertight) | the op says what actually went wrong — "fillet: radius 8 mm does not fit on 2 edges — the kernel could not build it there" — and the framework puts back the last value that built. **The tool does NOT search for the largest value that would fit** (the approved spec said it would; the P4 review killed it): searching means filleting at radii the user never typed, and on esp32-remote a refused radius 4 made it try 2.0 and OCCT **segfaulted**, taking the server and every unsaved tab with it (reproduced 2026-09-04, exit 139). Nothing speculative is ever handed to the kernel. |
 | Radius 0 on OK | "Nothing rounded — the radius was 0. Open Fillet again, then drag the ball or type a radius before OK." |
 | An edge is gone after an upstream change | "The edge at (10, 0, 20) is no longer on the body (nearest edge is 7 mm away) — re-pick the edges of `fillet1`." (the feature fails, the body stays whole) |
 | Click on a face / sketch / another body's edge | "Fillet works on the edges of ONE body — click an edge of `box1`, not a face." |
@@ -103,6 +110,6 @@ at the stored value.
    nothing.
 4. Press **Chamfer**, click the four vertical edges, type 2, OK. Now edit the
    box's extrude to 30 high: the chamfers ride along on the taller box.
-5. Open `fillet1` and type 50: the chat says 50 does not fit and names the
-   largest radius that does — the box now reads that value and the body shows
-   it. Esc closes the panel.
+5. Open `fillet1` and type 50: the chat says 50 does not fit and why, and the
+   body keeps the radius that did build (the box goes back to it). Esc closes
+   the panel — once, even if you hold the key down.

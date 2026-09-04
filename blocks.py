@@ -364,8 +364,14 @@ def resolve_edge(part: Part, ref: dict):
     faces = ref.get("faces") or []
     if len(faces) == 2:
         fa, fb = (resolve_face(part, f["center"], f.get("normal")) for f in faces)
-        kb = {_shape_key(e) for e in fb.edges()}
-        shared = [e for e in fa.edges() if _shape_key(e) in kb]
+        # resolve_face is a NEAREST match — it always returns something. When
+        # one of the two stored faces is gone, both can land on the SAME face,
+        # whose edges all "share" it: without this check the refusal below is
+        # skipped and the feature quietly rounds a different edge.
+        shared = []
+        if _shape_key(fa) != _shape_key(fb):
+            kb = {_shape_key(e) for e in fb.edges()}
+            shared = [e for e in fa.edges() if _shape_key(e) in kb]
         if not shared:
             x, y, z = ref.get("mid", [0, 0, 0])
             raise ValueError(
@@ -452,51 +458,69 @@ def edges_for(part: Part, edges) -> list:
                      f"of picked edges")
 
 
-def _largest_that_builds(build, hi: float, iters: int = 10) -> float | None:
-    """Bisect the value the kernel accepts AND health passes — the number the
-    refusal sentence names, so the user is told what fits instead of guessing.
-    (build123d's max_fillet bisects on is_valid alone and gave up on a plain
-    box at 12 iterations — probed 2026-09-04.)"""
-    lo, best = 0.0, None
-    for _ in range(iters):
-        mid = (lo + hi) / 2
-        try:
-            good = not inspector.health(build(mid))
-        except Exception:                       # OCP errors are Exception
-            good = False
-        if good:
-            lo, best = mid, mid
-        else:
-            hi = mid
-    return best
+# OCCT's own vocabulary. A user-facing sentence never carries it (the same
+# rule tests/gauntlet.py enforces), so a failure wearing it is named plainly.
+_KERNEL_WORDS = ("TopoDS", "NCollection", "Standard_", "BRep", "StdFail",
+                 "Geom_", "gp_", "TColStd", "BOPAlgo")
+
+
+def _plain_cause(e: Exception) -> str:
+    """The REAL reason a build failed, in words a user can act on.
+
+    build123d's own refusal is already plain; a raw OCP error is jargon, so it
+    is named without its internals; anything else (a TypeError — our own bug)
+    says what it is instead of being dressed up as a geometry problem. Never
+    invent a diagnosis: before 2026-09-04 every failure here was reported as
+    \"a face beside them is too small\", which was a guess for all but one of them."""
+    msg = (str(e) or "").strip()
+    if re.match(r"Failed creating a (fillet|chamfer)", msg):
+        return "the kernel could not build it there"
+    if not msg or any(w in msg or w in type(e).__name__ for w in _KERNEL_WORDS):
+        return "the geometry kernel rejected the shape it would produce"
+    if isinstance(e, ValueError):
+        return msg
+    return f"{type(e).__name__}: {msg}"
 
 
 def _finish(name: str, part: Part, edges, value: float, unit: str, build):
     """Shared by fillet_edges / chamfer_edges: the value guard, the kernel call,
-    the health check, and the sentence that names what fits."""
+    the health check, and a refusal that says the TRUE reason.
+
+    NOTHING here is speculative: the kernel is called ONCE, with the value the
+    user asked for. A bisection for "the largest that would fit" used to run
+    here — 10 more builds on every rebuild of a failing feature — and probing
+    radii nobody typed is not merely slow: on the user's esp32-remote design
+    (254 faces) a refused radius 4 made it try 2.0, and OCCT SEGFAULTED, taking
+    the server and every unsaved tab with it (reproduced 2026-09-04, exit 139).
+
+    The health check is the CHEAP one — Document.rebuild's own per-feature
+    policy. OCCT's validity analysis is ~270 ms on a large solid, and the RESULT
+    gets it anyway in the deep-check pass after the rebuild loop. It still
+    catches the second banned failure: a round larger than the round beside it
+    comes back as a solid the kernel ACCEPTS, and it is not watertight
+    (measured 2026-09-04 — the manifold check sees it, validity adds nothing)."""
     if value is None or not value > 0:
         raise ValueError(f"{name}: {unit} must be positive (got "
                          f"{'nothing' if value is None else format(value, 'g')}) — "
                          f"drag the handle or type a value")
     picked = edges_for(part, edges)
     n = len(picked)
+    on = f"{n} edge{'s' if n != 1 else ''}"
+    low = unit.lower()
     try:
         out = build(picked, value)
-        problems = inspector.health(out)
-    except Exception as e:                      # build123d's ValueError or a raw OCP error
-        out, problems = None, [str(e)]
-    if out is not None and not problems:
+    except Exception as e:                      # OCP errors are Exception, not RuntimeError
+        raise ValueError(f"{name}: {low} {value:g} mm does not fit on {on} — "
+                         f"{_plain_cause(e)}. Try a smaller {low}, or pick "
+                         f"different edges.") from e
+    # measured OUTSIDE that try on purpose: a health check that throws is our
+    # own problem, and must never be reported as a value that "does not fit"
+    problems = inspector.health(out, check_valid=False)
+    if not problems:
         return out
-    why = ("does not fit" if out is None
-           else "leaves a broken solid (it runs into a neighbouring face or round)")
-    hi = min(value, max(e.length for e in picked))
-    best = _largest_that_builds(lambda v: build(picked, v), hi)
-    best = math.floor(best * 10) / 10 if best else 0      # DOWN: typing it must build
-    fits = (f"the largest that builds here is {best:.1f} mm" if best >= 0.1
-            else "no value builds on these edges — a face beside them is too "
-                 "small; pick different edges")
-    raise ValueError(f"{name}: {unit} {value:g} mm {why} on {n} edge"
-                     f"{'s' if n != 1 else ''} — {fits}")
+    raise ValueError(f"{name}: {low} {value:g} mm leaves a broken solid on {on} — "
+                     f"{problems[0]}. It runs into a neighbouring face or round; "
+                     f"try a smaller {low}.")
 
 
 def fillet_edges(part: Part, radius: float, edges="all") -> Part:

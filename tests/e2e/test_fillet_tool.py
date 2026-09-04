@@ -226,10 +226,11 @@ def test_add_and_remove_edges_ok_then_edit_and_cancel(page, fresh_doc, server):
     assert page.errors == []
 
 
-def test_too_large_radius_stops_at_the_largest_that_fits(page, fresh_doc, server):
+def test_too_large_radius_says_why_and_keeps_the_last_one_that_built(page, fresh_doc, server):
     """checklist step 5: 50 does not fit on a 20 mm tall box — the chat says so
-    and names the largest radius that does, and THAT is what gets built (the
-    handle stops at the limit, like Fusion's)"""
+    in the op's own words, and the body keeps the radius that did build. The
+    tool never searches for what WOULD fit: that means filleting at values
+    nobody typed, and one of those segfaulted OCCT on a real design."""
     setup(page, BUILD)
     open_tool(page, "fillet")
     tops = page.evaluate(EDGE_INDICES, ["b", "top"])
@@ -242,11 +243,12 @@ def test_too_large_radius_stops_at_the_largest_that_fits(page, fresh_doc, server
     page.wait_for_timeout(4000)                 # the refused build + the bisection + the settle
     f = wait_feature(server, "fillet1")
     log = page.text_content("#chatLog")
-    assert "radius 50 mm does not fit" in log and "largest that builds here is 19.9 mm" in log, log
-    assert "Reverted" not in log, log
-    assert f["status"] == "ok" and f["params"]["radius"] == 19.9
-    assert f["volume"] == pytest.approx(24000 - round_removed(L, 19.9), rel=1e-4)
-    assert page.input_value("#flValue") == "19.9"
+    assert "radius 50 mm does not fit" in log, log
+    assert "the kernel could not build it there" in log, log
+    assert "Reverted to radius 5" in log, log
+    assert f["status"] == "ok" and f["params"]["radius"] == 5
+    assert f["volume"] == pytest.approx(24000 - round_removed(L, 5), rel=1e-4)
+    assert page.input_value("#flValue") == "5"
     assert page.errors == []
 
 

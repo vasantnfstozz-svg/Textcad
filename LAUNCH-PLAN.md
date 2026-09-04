@@ -481,6 +481,7 @@ assemblies, the user's personal project.
 
 | Pri | Item | Source |
 |-----|------|--------|
+| ★P0 | **A kernel call can SEGFAULT and take the server (and every unsaved tab) with it.** `fillet` at radius 2.0 on esp32-remote's 80-edge top rim = exit 139, reproduced (`probes/fillet_segfault_probe.py`); radius 4 on the same edges refuses cleanly, so it is not a size rule. No try/except can catch it — OCP errors are Exception, a segfault is not. Found by the P4 review, which is why Fillet now calls the kernel ONCE with the value the user typed and never probes. The user can still type the fatal value themselves. Real fix: run kernel ops out of process (or checkpoint before each one). Session auto-restore limits the loss. | P4 review 2026-09-04 |
 | ★P0 | Clockwise `polygon` sketch entities silently refuse to fuse → non-manifold downstream. Normalise winding CCW in `sketch._entity` + test. | BACKLOG |
 | ★P0 | `/api/edit` silent no-op when setting a param the feature does not already have (e.g. `through` on `{amount, flip}`) — reports success, changes nothing. | export-integrity notes |
 | ★P0 | `/api/feature/remove` over-cascade: removing a tail cut with no dependents wiped a 14-feature tree (undo recovered). Not yet diagnosed. | export-integrity notes |
