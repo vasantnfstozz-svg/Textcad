@@ -175,17 +175,34 @@ and a segfault is not an exception. `python studio.py` therefore runs a light
 supervisor that starts the server as a child (`TEXTCAD_SERVER_CHILD=1`) and
 relaunches it after a crash the OS reported (NTSTATUS `0xC…` / a POSIX crash
 signal — never after Ctrl+C, Stop-Process or exit 0), passing
-`TEXTCAD_RECOVERED`. The session file is the checkpoint: written after every
-COMPLETED POST, so the fatal request never reaches it. An in-flight marker
-(`.studio-session-inflight.json`, written before a POST, removed after) names
-the request the dead process was in; the child exposes both as `recovery` on
-`/api/doc`, and `api.js` waits for the server, re-emits `doc-updated` and speaks
-the note once (`server-recovered` lets an open tool panel go). A crash before
-the server ever served relaunches with `TEXTCAD_SAFE_RESTORE=1`: tabs come back
-unbuilt, an empty tab active. The child exits on EOF of its stdin pipe, so a
-killed supervisor never leaves an orphan listener. Tests:
-`tests/test_supervisor.py` (real processes, a real access violation),
-`tests/e2e/test_recovery.py` (what the user sees).
+`TEXTCAD_RECOVERED`. The session file is the checkpoint, written when the last
+POST finishes and **no other is running** — POSTs overlap in FastAPI's
+threadpool, and `edit_params` writes the new value into the feature before the
+kernel is asked, so a checkpoint taken by a passing request during an 8-second
+fillet would hand the relaunched server the very value that killed it. The
+trade is deliberate: while a slow POST is in flight, a shorter one that
+finishes skips its checkpoint, so a crash in that window costs those edits
+too — losing a step is recoverable, a design that crashes every time it is
+restored is not. The
+in-flight set (`.studio-session[-PORT]-inflight.json` names the OLDEST live
+POST) says what the dead process was doing; the child exposes that as
+`recovery` on `/api/doc` — with `unbuilt`, since whether this server rebuilt
+the restored tabs is the server's to say, not the browser's to infer (R1).
+`api.js` waits for the server (5 min: the child rebuilds the active tab BEFORE
+it opens the port), and `noteRecovery` both speaks the note once and emits
+`server-recovered`, so every caller — a failed POST, a failed plan, the 3 s
+watcher, boot — releases an open tool panel without having to remember to.
+In `tool.js` an answer that lands in a session that has gone throws `GONE`,
+caught once in `apply()`. A crash before the server ever served relaunches with
+`TEXTCAD_SAFE_RESTORE=1` (tabs unbuilt, an empty tab active); so does the
+second crash in a row that **nobody asked for** — no request in flight, moments
+after the port opened — because those repeat by themselves (the recovered page
+refetches `/api/model`), and the third stops. A fatal step the user retries is
+not a loop: it leaves a marker, and costs one step every time. The child exits
+on EOF of its stdin pipe, so a killed supervisor never leaves an orphan
+listener. Tests: `tests/test_supervisor.py` (10 — the policy in process, plus
+real processes and a real access violation), `tests/e2e/test_recovery.py`
+(2 — what the user sees, including a crash inside a tool's own step).
 
 **AI.** `author.py` turns a request into a feature-tree JSON through
 validation gates (op catalog, `lint_tree`: no absolute-offset sketch once a

@@ -65,14 +65,19 @@ function docSig(d) {
 }
 setInterval(async () => {
   if (isBusy()) return;                              // don't fight an edit
-  if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
   try {
     const d = await getJSON('/api/doc');
-    if (noteRecovery(d)) {              // the server crashed and came back
-      bus.emit('doc-updated', d);       // (restored tabs carry new ids — not
-      loadMesh(true);                   //  a design "arriving" from outside)
+    // A crash is not an external change, so it is checked BEFORE the typing
+    // guard below: a tool panel's own number box is an INPUT, and testing that
+    // first hid the crash from the very panel that had to hear about it.
+    if (noteRecovery(d)) {          // speaks, and open tool panels let go
+      bus.emit('doc-updated', d);   // the restored document is what was already
+      loadMesh();                   // on screen: keep the camera and the pick
       return;
     }
+    // Typing in a field: don't yank an EXTERNAL change out from under the
+    // keystroke (a design arriving over MCP, another window's edit).
+    if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
     if (docSig(d) !== docSig(S.lastDoc)) {
       const newTab = !S.lastDoc || d.active_tab !== S.lastDoc.active_tab;
       bus.emit('doc-updated', d);

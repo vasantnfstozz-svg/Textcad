@@ -15,6 +15,7 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -45,6 +46,31 @@ def test_only_crashes_relaunch_deliberate_stops_end_the_loop():
     assert supervise.is_crash(-11)                  # POSIX SIGSEGV
     assert not supervise.is_crash(-2)               # SIGINT
     assert not supervise.is_crash(-15)              # SIGTERM
+
+
+def test_a_crash_nobody_asked_for_does_not_relaunch_forever():
+    """A crash the user did not ask for repeats by itself — tessellation inside
+    GET /api/model, which the recovered page refetches on its own — so a plain
+    relaunch would loop. The second one comes back unbuilt (nothing to draw),
+    the third stops. A fatal step the user RETRIES is not a loop: it leaves an
+    in-flight marker, and costs one step every time, however often they retry."""
+    loops, plan = 0, None
+    steps = []
+    for _ in range(3):                       # nobody asked: it repeats itself
+        loops, plan = supervise.relaunch_plan(loops, False, 3.0)
+        steps.append(plan)
+    assert steps == ["restart", "unbuilt", "stop"]
+
+    # the user retrying a fatal fillet: a marker every time, never a loop
+    loops = 0
+    for _ in range(5):
+        loops, plan = supervise.relaunch_plan(loops, True, 3.0)
+        assert plan == "restart"
+    assert loops == 0
+
+    # and a child that served for a while before dying starts the count over
+    loops, plan = supervise.relaunch_plan(2, False, supervise.LOOP_WINDOW + 1)
+    assert (loops, plan) == (0, "restart")
 
 
 @pytest.fixture()
@@ -81,6 +107,56 @@ def test_recovery_note_names_the_request_that_died(client, monkeypatch):
     note = studio._recovery_note()
     assert note["startup"] is True and note["request"] is None
     assert note["code"] == "0xC0000005"
+    # whether THIS server rebuilt the restored tabs is the server's to say
+    # (R1) — the supervisor also asks for an unbuilt restore after a crash
+    # LOOP, which is not a startup crash
+    assert note["unbuilt"] is False
+    monkeypatch.setenv("TEXTCAD_SAFE_RESTORE", "1")
+    assert studio._recovery_note()["unbuilt"] is True
+
+
+def test_an_overlapping_post_steals_neither_the_marker_nor_the_checkpoint(
+        client, monkeypatch):
+    """POSTs overlap (FastAPI runs sync endpoints in a threadpool), and the
+    checkpoint must never be taken while one is half-applied: edit_params
+    writes the new value into the feature BEFORE the kernel is asked, so a
+    checkpoint written by a passing request during an 8-second fillet would
+    hand the relaunched server the very value that crashed it."""
+    client.post("/api/new", json={"name": "x"})
+    client.post("/api/feature/add", json=PLATE)
+    before = studio.SESSION_PATH.read_text(encoding="utf-8")
+
+    slow = threading.Event()
+    slow.set()
+    real = studio._rebuild_and_mesh
+
+    def slow_once():                      # the 8-second fillet, in miniature
+        if slow.is_set():
+            slow.clear()
+            time.sleep(1.5)
+        real()
+    monkeypatch.setattr(studio, "_rebuild_and_mesh", slow_once)
+
+    t = threading.Thread(target=lambda: client.post(
+        "/api/feature/params", json={"feature_id": "p",
+                                     "params": {"thickness": 12}}))
+    t.start()
+    time.sleep(0.6)                       # the slow POST is mid-rebuild
+    marker = json.loads(studio._inflight_path().read_text(encoding="utf-8"))
+    assert marker["path"] == "/api/feature/params"
+
+    client.post("/api/new", json={"name": "a passing click"})   # overlapping
+    assert json.loads(studio._inflight_path().read_text(
+        encoding="utf-8"))["path"] == "/api/feature/params"     # not stolen
+    assert studio.SESSION_PATH.read_text(encoding="utf-8") == before
+
+    t.join(30)
+    assert not t.is_alive()
+    assert not studio._inflight_path().exists()          # nothing running now
+    after = json.loads(studio.SESSION_PATH.read_text(encoding="utf-8"))
+    assert len(after["tabs"]) == 2                       # both tabs, one step
+    plate = after["tabs"][0]["doc"]["features"][0]
+    assert plate["params"]["thickness"] == 12            # and the edit landed
 
 
 def test_safe_restore_builds_nothing_and_activates_nothing(client):

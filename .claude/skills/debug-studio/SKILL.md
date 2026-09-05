@@ -30,7 +30,11 @@ description: Diagnosis playbook for TextCAD Studio problems — server won't sta
    alive. Find/stop it before relaunching. Since 2026-09-05 a healthy server is
    TWO python processes — the `studio.py` supervisor and its LISTENING child
    (`supervise.py`); stop the listener and the supervisor ends with it. A
-   kernel crash relaunches the child by itself and the chat says so.
+   kernel crash relaunches the child by itself and the chat says so. It does
+   NOT relaunch for ever: the second crash in a row that nobody asked for comes
+   back with the tabs unbuilt, and the third stops with a sentence naming the
+   session file. A design whose own rebuild crashes is therefore two restarts
+   away from a usable app, never an endless loop.
 2. **Two Pythons** — Desktop/PATH may resolve `python` to 3.12; everything is
    installed in `C:\Python314\python.exe`. Use absolute paths in configs.
 3. **MCP "Server disconnected"** — module missing (wrong python) OR something

@@ -29,7 +29,13 @@ export async function planRequest(req) {
       body: JSON.stringify(req) });
     return await r.json();
   } catch (e) {
-    return { ok: false, error: `the server did not answer (${e.message})` };
+    /* A plan asks the kernel too (tangent chains, face normals), so this is a
+       route into the crash — same recovery as any other request, and an honest
+       sentence instead of "the server did not answer". */
+    const back = await serverGone();
+    return { ok: false, error: back && back.recovery
+      ? 'the geometry kernel crashed on that step, and Studio restarted itself'
+      : 'the server did not answer' };
   }
 }
 
@@ -37,8 +43,12 @@ export async function planRequest(req) {
    the process with it (LAUNCH-PLAN §10 ★P0); studio.py's supervisor relaunches
    it with every tab as of the last completed step. Here we wait for it to
    answer again and hand the restored document to everyone. Nothing in the UI
-   guesses geometry meanwhile — the document is the authority (R1, R3). */
-export async function waitForServer(ms = 120000) {
+   guesses geometry meanwhile — the document is the authority (R1, R3).
+   The wait is generous on purpose: the relaunched child rebuilds the active
+   tab BEFORE it opens the port (measured: 26 s for the heaviest design in the
+   library), and telling the user to start a second server while the first one
+   is still starting is how two processes end up on one port. */
+export async function waitForServer(ms = 300000) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
     await new Promise(r => setTimeout(r, 1000));
@@ -47,47 +57,74 @@ export async function waitForServer(ms = 120000) {
   return null;
 }
 
-/* The server's crash note is spoken ONCE, by whoever sees it first (the failed
-   request, the 3 s watcher, or a page that booted right after the crash). */
+/* The server's crash note is spoken ONCE and, in the same breath, open tool
+   panels are told to let go — by whoever sees it first: the failed request,
+   the 3 s watcher, or a page that booted right after the crash. Both jobs live
+   here so that no caller can do one and forget the other. WHAT happened and
+   WHAT to do next are separate, and whether this server rebuilt the restored
+   tabs is the SERVER's to say (R1: `unbuilt`, never inferred here). */
 export function noteRecovery(doc) {
   const r = doc && doc.recovery;
   if (!r || r.at === S.recoveredAt) return false;
   S.recoveredAt = r.at;
-  const when = r.startup
-    ? 'while rebuilding the restored tabs at startup. They are open but not ' +
-      'built: switch to one to build it, and close the one that crashes again'
-    : r.request ? `while handling ${r.request.path}. Studio restarted itself ` +
-      'and the design is back at the last completed step; the step that ' +
-      'crashed it was not kept — try a different value'
-    : 'between requests. Studio restarted itself and the tabs are back';
-  bus.emit('msg', 'bot', `⚠ The geometry kernel crashed (${r.code}) ${when}.`);
+  const when = r.startup ? 'while rebuilding the restored tabs at startup'
+    : r.request ? `while handling ${r.request.path}`
+    : 'on its own, between requests';
+  const then = r.unbuilt
+    ? 'Studio is back with your tabs open but NOT built, so nothing is drawn ' +
+      'yet: click a tab to build it, and leave the one that keeps crashing closed'
+    : r.request
+    ? 'Studio restarted itself and the design is back at the last completed ' +
+      'step; the step that crashed it was not kept — try a different value'
+    : 'Studio restarted itself and the tabs are back';
+  bus.emit('msg', 'bot', `⚠ The geometry kernel crashed (${r.code}) ${when}. ${then}.`);
+  bus.emit('server-recovered', doc);          // open tool panels let go
   return true;
+}
+
+/* No answer at all: the process is gone. Wait for the supervisor to bring it
+   back, then let everyone see what came back. A fetch that rejects while the
+   server is ALIVE is not a case this app produces — there is no AbortController
+   anywhere, and fetch resolves on every HTTP status — so treating "no answer"
+   as "gone" costs nothing and never leaves a tool panel locked. */
+async function serverGone() {
+  setBusy('Studio is restarting…');
+  try {
+    const doc = await waitForServer();
+    if (!doc) {
+      bus.emit('msg', 'bot', '⚠ Studio has not come back. Look at the window ' +
+        'you started it in: if it gave up, your tabs are still saved — start ' +
+        'it again with python studio.py.');
+      bus.emit('server-recovered', null);     // never leave a panel locked
+      return null;
+    }
+    if (!noteRecovery(doc)) {      // no NEW crash note: restarted by hand, or
+      bus.emit('msg', 'bot',       // the 3 s watcher spoke this one a tick ago
+        '⚠ The server went away and came back; the design was reloaded.');
+      bus.emit('server-recovered', doc);
+    }
+    if (doc.features) bus.emit('doc-updated', doc);
+    return doc;
+  } finally {
+    clearBusy();
+  }
 }
 
 export async function postJSON(url, body, busyMsg) {
   setBusy(busyMsg);
   try {
-    let r;
+    let doc;
     try {
-      r = await fetch(url, {
+      const r = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body || {}),
       });
+      doc = await r.json();     // a body that dies mid-flight throws here too
     } catch (e) {                                  // no reply at all: gone
-      setBusy('Studio is restarting…');
-      const doc = await waitForServer();
-      if (!doc) {
-        bus.emit('msg', 'bot', '⚠ The server did not come back. Start it again with: python studio.py');
-        return { error: 'the server did not answer' };
-      }
-      if (!noteRecovery(doc))
-        bus.emit('msg', 'bot', '⚠ The server went away and came back; the design was reloaded.');
-      bus.emit('server-recovered', doc);            // open tool panels let go
-      bus.emit('doc-updated', doc);
-      return { error: 'the server restarted during this step', ...doc };
+      const back = await serverGone();
+      return { error: 'the server restarted during this step', ...(back || {}) };
     }
-    const doc = await r.json();
     if (doc.error) bus.emit('msg', 'bot', '⚠ ' + doc.error);
     noteRecovery(doc);
     if (doc.features) bus.emit('doc-updated', doc);

@@ -133,7 +133,11 @@ export function cancelTool() {
    the last completed step. The panel lets go WITHOUT the usual teardown: the
    fatal step never landed, rollback state is not persisted, and the feature's
    last good values are in the restored document. */
-bus.on('server-recovered', () => { cancelProfilePick(); if (active) active.recover(); });
+bus.on('server-recovered', () => {
+  cancelProfilePick();
+  isoActive = false; isoPending = null;   // a relaunched server parks no rollback
+  if (active) active.recover();           // (releaseIso would post to nothing)
+});
 
 /* ------------- editing in isolation (same trick as edit-sketch) -------------
    Editing a feature in the MIDDLE of a tree rebuilt everything below it on
@@ -185,6 +189,14 @@ window.addEventListener('keydown', e => {
   if (e.key !== 'Escape' || e.repeat) return;   // held down = ONE cancel
   if (active && active.st) active.cancel();
 });
+
+/* THE SESSION VANISHED MID-REQUEST. postJSON's crash branch emits
+   'server-recovered' SYNCHRONOUSLY (bus.js), so recover() → hide() → st = null
+   lands INSIDE an await down here, and every line after that await would
+   dereference null. Rather than a null check after each one, the answer to a
+   dead session throws this: thrown in ONE place (post), caught in ONE place
+   (apply), and the whole chain unwinds. */
+const GONE = Symbol('the tool session went away');
 
 export function tool(spec) {
   const P = spec.ids;
@@ -476,15 +488,26 @@ export function tool(spec) {
   const featOf = doc => doc && (doc.features || []).find(x => x.id === st.featureId);
   const isOk = f => f && f.status === 'ok';
 
+  /* Every server call this session makes. If the open session is no longer the
+     one that made the call by the time the answer lands — the server crashed
+     and recover() closed the panel — then the answer belongs to nobody: drop
+     it and unwind, instead of writing it into a session that is gone. */
+  async function post(url, body) {
+    const mine = st;
+    const doc = await postJSON(url, body);
+    if (st !== mine) throw GONE;
+    return doc;
+  }
+
   async function create(pr) {           // the first real user action creates it
     st.featureId = uid(spec.tool);
     const i = st.input;
-    return await postJSON('/api/feature/add', {
+    return await post('/api/feature/add', {
       id: st.featureId, op: spec.ops[i.kind === 'profile' ? 'profile' : i.kind],
       params: pr, inputs: [i.kind === 'profile' ? i.id : i.body] });
   }
   async function push(pr) {             // one param set → the feature's health
-    const doc = await postJSON('/api/feature/params',
+    const doc = await post('/api/feature/params',
       { feature_id: st.featureId, params: pr });
     warnIfSplit(doc);
     if (spec.afterPush) spec.afterPush(st, doc);
@@ -536,13 +559,13 @@ export function tool(spec) {
     const op = el('Op').value;          // new | join | cut | intersect
     const target = el('Target').value;
     if (st.opId && (op === 'new' || st.opType !== op || st.opTarget !== target)) {
-      await postJSON('/api/feature/remove', { feature_id: st.opId });
+      await post('/api/feature/remove', { feature_id: st.opId });
       st.opId = st.opType = st.opTarget = null;
     }
     if (op !== 'new' && !st.opId && target) {
       st.opId = uid(st.featureId + '_' + op);
       st.opType = op; st.opTarget = target;
-      await postJSON('/api/feature/add',
+      await post('/api/feature/add',
         { id: st.opId, op: OPMAP[op], inputs: [target, st.featureId] });
     }
   }
@@ -554,11 +577,9 @@ export function tool(spec) {
     // when the user drags or types
     if (!st.featureId && spec.isEmpty(pr, st)) return;
     let doc = st.featureId ? (await push(pr)).doc : await create(pr);
-    if (!st) return;
     let f = featOf(doc);
     if (f && f.status === 'failed') {
       const settled = await settle(pr, { doc, f });
-      if (!st) return;
       doc = settled.doc; f = settled.f;
     }
     if (isOk(f)) st.lastGood = spec.params(st);   // the boxes may have been adjusted
@@ -579,7 +600,8 @@ export function tool(spec) {
     if (applyRun) { applyPending = true; return applyRun; }
     applyRun = holdViewport(async () => {
       do { applyPending = false; await applyOnce(); } while (applyPending && st);
-    }).finally(() => { applyRun = null; });
+    }).catch(e => { if (e !== GONE) throw e; })   // no session left to finish
+      .finally(() => { applyRun = null; });
     return applyRun;
   }
   const settled = () => applyRun ? applyRun.catch(() => {}) : Promise.resolve();
@@ -635,18 +657,20 @@ export function tool(spec) {
     const editing = st.editing;
     const typed = !!timer;              // a value typed inside the debounce window
     clearTimeout(timer); timer = null;
-    let created = false;
+    let created = false, gone = false;
     // OK COMMITS the panel's values even if the user never dragged or touched
     // an input, typed inside the debounce window, or pressed OK while a
     // rebuild was still running — in edit mode too. The commit and the one
     // full rebuild (rollback bar released) are ONE change for the viewport.
     await holdViewport(async () => {
       if (st && (editing || !st.featureId || typed || applyRun)) await apply();
-      created = !!(st && st.featureId);
+      if (!st) { gone = true; return; }   // the server crashed under us, and
+      created = !!st.featureId;           // recover() already said so
       hide();
       await releaseIso();
     });
     releaseModal();
+    if (gone) return;        // OK must not claim a step the crash threw away
     say(editing ? `${spec.name} updated — the change is in the feature tree.`
       : created ? `${spec.name} created — editable in the feature tree.`
       : spec.nothing);

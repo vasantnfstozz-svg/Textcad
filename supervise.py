@@ -33,6 +33,14 @@ saved design whose rebuild segfaults). The relaunch then runs with
 TEXTCAD_SAFE_RESTORE=1: the tabs come back unbuilt (grey dots), an empty tab
 is active, and the UI says so. A second startup crash gives up.
 
+A crash NOBODY ASKED FOR repeats by itself and would otherwise relaunch for
+ever: the recovered page refetches /api/model, the kernel dies in the same
+tessellation, and round it goes. Those are the crashes with no request in
+flight, moments after the port opened. The second in a row also relaunches
+unbuilt, so there is nothing to draw; the third stops and says where the tabs
+are. A fatal step the user RETRIES is not a loop — it leaves an in-flight
+marker — and keeps costing exactly one step, however often they retry it.
+
 The child holds the read end of a pipe from this process as its stdin; EOF
 (this process died — killed by name, say) makes it exit, so a listener is
 never orphaned on the port.
@@ -78,6 +86,20 @@ def is_crash(code: int | None) -> bool:
     if code == _KILLED or code == _CTRL_C:
         return False
     return 0xC0000000 <= code <= 0xCFFFFFFF        # NTSTATUS error severity
+
+
+LOOP_WINDOW = 60.0        # a child that served this long was not in a loop
+
+
+def relaunch_plan(loops: int, was_inflight: bool, uptime: float) -> tuple[int, str]:
+    """What to do after a crash the server was SERVING when it died.
+
+    `loops` counts the crashes in a row that nobody asked for — no request in
+    flight, moments after the port opened. Those repeat by themselves; a fatal
+    step the user retries leaves a marker and is not a loop.
+    Returns (loops, "restart" | "unbuilt" | "stop")."""
+    loops = loops + 1 if not was_inflight and uptime < LOOP_WINDOW else 0
+    return loops, ("stop" if loops >= 3 else "unbuilt" if loops >= 2 else "restart")
 
 
 def port_answers(port: int, timeout: float = 0.4) -> bool:
@@ -128,10 +150,12 @@ def main() -> int:
         return 3
 
     _quiet_crash_dialogs()
-    inflight = inflight_path(session_path(STUDIO.parent, port))
+    session = session_path(STUDIO.parent, port)
+    inflight = inflight_path(session)
     opened = False
     recovered: str | None = None          # what killed the last child, for the next
-    safe = False                          # restore without rebuilding (startup crash)
+    safe = False                          # restore without rebuilding (nothing to draw)
+    loops = 0                             # crashes in a row nobody asked for
     while True:
         env = dict(os.environ, TEXTCAD_SERVER_CHILD="1")
         env.pop("TEXTCAD_RECOVERED", None)
@@ -143,11 +167,11 @@ def main() -> int:
         child = subprocess.Popen([sys.executable, str(STUDIO)],
                                  stdin=subprocess.PIPE, env=env,
                                  cwd=str(STUDIO.parent))
-        ready = False
+        ready, ready_at = False, 0.0
         try:
             while child.poll() is None:
                 if not ready and port_answers(port):
-                    ready = True
+                    ready, ready_at = True, time.time()
                     if not opened:
                         opened = True
                         print(f"TextCAD Studio -> {url}", flush=True)
@@ -168,11 +192,24 @@ def main() -> int:
         if not is_crash(code):         # a deliberate stop, or the child's own verdict
             return code if 0 <= code < 256 else 1   # 0xFFFFFFFF etc. are not exit codes
         hexcode = f"0x{code & 0xFFFFFFFF:08X}"
-        served = ready or inflight.exists()     # a request in flight = it was serving
+        was_inflight = inflight.exists()
+        served = ready or was_inflight          # a request in flight = it was serving
         if served:
-            recovered, safe = hexcode, False
-            print(f"The geometry kernel crashed ({hexcode}). Restarting Studio; "
-                  f"the tabs come back as of the last completed step.", flush=True)
+            loops, plan = relaunch_plan(loops, was_inflight, time.time() - ready_at)
+            if plan == "stop":
+                print(f"Studio crashed ({hexcode}) three times over without being "
+                      f"asked to do anything, so it is not restarting again — a "
+                      f"restart would land in the same place. Nothing is lost: "
+                      f"your open tabs are saved in {session.name}. Rename that "
+                      f"file to start Studio empty; it still holds every tab.",
+                      flush=True)
+                return 1
+            recovered, safe = hexcode, plan == "unbuilt"
+            print(f"The geometry kernel crashed ({hexcode}). Restarting Studio"
+                  + (" without rebuilding the tabs — it keeps crashing on its own."
+                     if safe else
+                     "; the tabs come back as of the last completed step."),
+                  flush=True)
         elif not safe:
             recovered, safe = hexcode + ":startup", True
             print(f"Studio crashed ({hexcode}) before it could answer. Restarting "

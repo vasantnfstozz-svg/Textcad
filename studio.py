@@ -32,6 +32,7 @@ if __name__ == "__main__" and os.environ.get("TEXTCAD_SERVER_CHILD") != "1":
     raise SystemExit(_supervise())
 
 import base64
+import itertools
 import json
 import math
 import re
@@ -309,35 +310,72 @@ def _restore_session(rebuild: bool = True) -> int:
 # Crash recovery — the kernel can take the process down (LAUNCH-PLAN §10 ★P0)
 # ---------------------------------------------------------------------------
 # The session file above IS the checkpoint: it holds every tab as of the last
-# COMPLETED request, so the request that segfaults the kernel never reaches it
-# and the relaunched server (see supervise.py) comes back one step behind. Two
-# small things make the crash SPEAK instead of looking like a hang: an
-# in-flight marker naming the request that was running when the process died,
-# and RECOVERY, the note the UI shows once ("the kernel crashed while handling
-# ...; the design is back at the last completed step").
+# moment NO request was running, so neither the request that segfaults the
+# kernel nor anything it half-applied can reach it, and the relaunched server
+# (see supervise.py) comes back one whole step behind. Two small things make
+# the crash SPEAK instead of looking like a hang: an in-flight marker naming
+# the request that was running when the process died, and RECOVERY, the note
+# the UI shows once ("the kernel crashed while handling ...; the design is back
+# at the last completed step").
 
 RECOVERY: dict | None = None      # set at startup when the previous process crashed
+
+
+# FastAPI runs every sync endpoint in a threadpool, so POSTs OVERLAP: a tree
+# click during an 8-second fillet is a second request INSIDE the first. The
+# marker is therefore the SET of POSTs running right now. The file names the
+# OLDEST — the slow one a crash is overwhelmingly likely to be in — so a later
+# request can never steal it. Under uvicorn every middleware body runs on the
+# one event-loop thread, but under fastapi's TestClient each calling thread
+# gets its OWN portal and loop (probed), so the set is locked rather than
+# trusted to a single writer.
+_INFLIGHT: dict[int, dict] = {}
+_INFLIGHT_SEQ = itertools.count()
+_INFLIGHT_LOCK = threading.Lock()
+
+# TEST ONLY (TEXTCAD_CRASH_TEST): {"path": "/api/feature/params"} makes the
+# next request to that path die WITH its marker written, so a test can put the
+# crash inside a tool's own step instead of racing a timer. Empty otherwise.
+_CRASH_NEXT: dict = {}
 
 
 def _inflight_path() -> Path:
     return supervise.inflight_path(SESSION_PATH)
 
 
-def _mark_inflight(request) -> None:
+def _write_inflight() -> None:
+    """The oldest request still running — or no file at all when none is.
+    Call with _INFLIGHT_LOCK held."""
+    try:
+        oldest = next(iter(_INFLIGHT.values()), None)
+        if oldest is None:
+            _inflight_path().unlink(missing_ok=True)
+        else:
+            _inflight_path().write_text(json.dumps(oldest), encoding="utf-8")
+    except Exception:
+        pass                      # bookkeeping must never break a reply
+
+
+def _mark_inflight(request) -> int:
     """What we are about to do, in case we never get to say we did it."""
-    try:
-        _inflight_path().write_text(json.dumps(
-            {"method": request.method, "path": request.url.path,
-             "at": time.time()}), encoding="utf-8")
-    except Exception:
-        pass
+    rid = next(_INFLIGHT_SEQ)
+    with _INFLIGHT_LOCK:
+        _INFLIGHT[rid] = {"method": request.method, "path": request.url.path,
+                          "at": time.time()}
+        _write_inflight()
+    return rid
 
 
-def _clear_inflight() -> None:
-    try:
-        _inflight_path().unlink(missing_ok=True)
-    except Exception:
-        pass
+def _clear_inflight(rid: int | None = None) -> bool:
+    """Forget one request — or, with no argument, whatever a dead process left
+    behind. True when nothing is running any more."""
+    with _INFLIGHT_LOCK:
+        if rid is None:
+            _INFLIGHT.clear()
+        else:
+            _INFLIGHT.pop(rid, None)
+        _write_inflight()
+        return not _INFLIGHT
 
 
 def _recovery_note() -> dict | None:
@@ -358,6 +396,10 @@ def _recovery_note() -> dict | None:
         return None
     startup = code.endswith(":startup")
     return {"code": code.split(":")[0], "startup": startup,
+            # Whether this child skipped the rebuild is the SERVER's to say
+            # (R1): the supervisor also asks for an unbuilt restore after a
+            # crash LOOP, which is not the same thing as a startup crash.
+            "unbuilt": os.environ.get("TEXTCAD_SAFE_RESTORE") == "1",
             "request": None if startup else marker, "at": time.time()}
 
 
@@ -386,16 +428,39 @@ if os.environ.get("TEXTCAD_CRASH_TEST") == "1":
         import faulthandler
         faulthandler._read_null()
 
+    class CrashNextReq(BaseModel):
+        path: str
+
+    @app.post("/api/_crash_next")
+    def crash_next_for_test(req: CrashNextReq):
+        """TEST ONLY: die on the NEXT request to `path`. Lets a browser test
+        put the crash inside a tool's own step — the case where the answer
+        never comes back to the code that asked for it — with no timing luck
+        and no 8-second fillet."""
+        _CRASH_NEXT["path"] = req.path
+        return {"armed": req.path}
+
 
 @app.middleware("http")
 async def _session_autosave(request, call_next):
-    mutating = SESSION_ENABLED and request.method == "POST"
-    if mutating:
-        _mark_inflight(request)
-    response = await call_next(request)
-    if mutating:
+    if not (SESSION_ENABLED and request.method == "POST"):
+        return await call_next(request)
+    rid = _mark_inflight(request)
+    if _CRASH_NEXT and request.url.path == _CRASH_NEXT.get("path"):
+        import faulthandler                    # TEST ONLY: see _CRASH_NEXT
+        faulthandler._read_null()              # dies here, marker written
+    try:
+        response = await call_next(request)
+    except BaseException:
+        _clear_inflight(rid)      # a disconnect must not strand the marker
+        raise
+    if _clear_inflight(rid):
+        # Alone again: every POST has finished, so the tabs are a whole step.
+        # While another one is still running the state holds ITS half-applied
+        # edit — edit_params writes the new value into the feature BEFORE the
+        # kernel is asked — and a checkpoint taken now would hand the
+        # relaunched server the very value that crashed it.
         _persist_session()
-        _clear_inflight()
     return response
 
 
