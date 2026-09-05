@@ -136,6 +136,12 @@ def _validate_dims(e: dict, k: str) -> None:
                                 "positive one)" if v < 0 else ""))
 
 
+def _signed_area(pts) -> float:
+    """Shoelace: positive for a counter-clockwise ring, negative for clockwise."""
+    return 0.5 * sum(x0 * y1 - x1 * y0
+                     for (x0, y0), (x1, y1) in zip(pts, pts[1:] + pts[:1]))
+
+
 def _entity(e: dict):
     """One 2D primitive, positioned in the sketch plane's local coordinates."""
     k = e.get("kind")
@@ -162,6 +168,13 @@ def _entity(e: dict):
         pts = [(float(p[0]), float(p[1])) for p in e["points"]]
         if len(pts) < 3:
             raise ValueError("polygon entity needs >= 3 points")
+        # OCCT takes the point order as the face's orientation: a clockwise
+        # polygon is a face whose normal points -Z, and adding it to a normal
+        # face did not fail -- it silently gave TWO overlapping faces, which
+        # extrude into a self-intersecting solid (probed 2026-09-05). Build
+        # every polygon counter-clockwise; the stored points stay as drawn.
+        if _signed_area(pts) < 0:
+            pts.reverse()
         s = Polygon(*pts)
     elif k == "path":
         s = _path_face(e)

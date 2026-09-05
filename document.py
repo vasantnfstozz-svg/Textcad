@@ -27,6 +27,7 @@ the recipe is the artifact, not just the STEP it produces.
 
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
+import inspect
 import hashlib
 import json
 import os
@@ -296,12 +297,40 @@ class Document:
     # -- editing (THE point of the tree) -------------------------------------
     def edit(self, feature_id: str, param: str, value) -> None:
         """Change ONE parameter of ONE named node. Nothing else can change."""
+        self.edit_many(feature_id, {param: value})
+
+    def edit_many(self, feature_id: str, params: dict) -> None:
+        """Change named parameters of ONE node -- all of them or none. A key
+        the feature neither stores nor its op accepts refuses the whole
+        request with a sentence, so a typo can never half-apply, and never
+        gets stored to fail the build later (the multi-param route used to
+        write any key unchecked). A parameter the op knows but the feature has
+        not stored yet IS accepted: `through` on an extrude saved as
+        {amount} was refused for a month as "no such parameter"."""
         f = self.get(feature_id)
-        if param not in f.params:
-            raise KeyError(f"feature '{feature_id}' has no parameter '{param}' "
-                           f"(has: {list(f.params)})")
-        f.params[param] = value
+        allowed = set(f.params) | self.param_names(f.op)
+        bad = [k for k in params if k not in allowed]
+        if bad:
+            raise ValueError(f"'{feature_id}' ({f.op}) has no parameter "
+                             f"{bad[0]!r} -- it takes {sorted(allowed)}")
+        f.params.update(params)
         self._mark_stale()
+
+    @staticmethod
+    def param_names(op: str) -> set:
+        """Every parameter `op` accepts, read from the function the rebuild
+        unpacks the params into -- the same source `author.op_catalog` shows
+        the AI. Combiners take none; `move` is x, y, z."""
+        if op == "move":
+            return {"x", "y", "z"}
+        fn = CREATORS.get(op) or MODIFIERS.get(op)
+        if fn is None:
+            return set()
+        sig = list(inspect.signature(fn).parameters.values())
+        if op in MODIFIERS:
+            sig = sig[1:]                    # the upstream part
+        return {p.name for p in sig
+                if p.kind not in (p.VAR_KEYWORD, p.VAR_POSITIONAL)}
 
     def get(self, feature_id: str) -> Feature:
         for f in self.features:
@@ -521,7 +550,11 @@ class Document:
         consume it is going away, and (c) one of those consumers used it in a
         TOOL slot (cut/intersect, not the base). Real bodies survive: deleting
         a fuse leaves both of its bodies -- exactly like Fusion -- because a
-        fuse has no tool slot."""
+        fuse has no tool slot. The walk up a swept node's feeders stops at a
+        FACE REFERENCE: a sketch drawn on a body names that body as an input,
+        but the body is where the sketch sits, not tool geometry. Following it
+        swept a whole 14-feature tree from its last cut (gear-case,
+        2026-08-31: "removed one feature, 0 left")."""
         def has_live_consumer(fid, swept):
             for f in self.features:
                 if f.id in gone or f.id in swept:
@@ -543,8 +576,8 @@ class Document:
                 continue
             swept.add(fid)
             f = by_id.get(fid)
-            if f is not None:                # its own feeders may now be idle
-                queue += [d for d in f.inputs
+            if f is not None and f.op not in sk.FACE_REFERENCE_OPS:
+                queue += [d for d in f.inputs    # its own feeders may be idle
                           if d not in gone and d not in swept]
         return swept
 

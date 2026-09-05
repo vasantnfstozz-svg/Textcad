@@ -291,3 +291,35 @@ def test_chat_refuses_to_demolish_the_whole_design(client, monkeypatch):
     d = client.post("/api/chat", json={"message": "delete the body"}).json()
     assert len(d["features"]) == len(before)          # nothing was touched
     assert "did NOT touch" in d["reply"] and d["remove_plan"]["deleted"]
+
+
+# ------------------------------------------- the gear-case wipe (P0, fixed) ----
+
+def face_pocket_doc():
+    """The shape that wiped a 14-feature tree (gear-case, 2026-08-31): the LAST
+    pocket's sketch is drawn ON the running body, so the body is one of that
+    sketch's inputs."""
+    doc = pocket_doc(1)                              # outline, body, p0_*
+    doc.add("s_sketch", "sketch_on_face",
+            {"face": "top", "offset": 0,
+             "entities": [{"kind": "circle", "r": 6, "x": 20, "y": 0}]},
+            inputs=["p0"])
+    doc.add("s_tool", "extrude", {"amount": -4}, inputs=["s_sketch"])
+    doc.add("s_cut", "cut", {}, inputs=["p0", "s_tool"])
+    return doc
+
+
+def test_deleting_a_tail_cut_drawn_on_the_body_keeps_the_body():
+    """Removing the LAST cut swept its tool prism, then its sketch -- and then,
+    because the sketch was drawn on the body, the body and everything before
+    it: "14 features removed, 0 left". A face is a place to draw, not tool
+    geometry; the sweep stops at that reference now."""
+    doc = face_pocket_doc()
+    assert doc.rebuild(), [f.status for f in doc.features]
+    plan = doc.remove_plan("s_cut")
+    assert plan["orphans"] == ["s_sketch", "s_tool"]
+    assert plan["deleted"] == ["s_sketch", "s_tool", "s_cut"]
+    doc.remove("s_cut")
+    assert ids(doc) == ["outline", "body", "p0_sketch", "p0_tool", "p0"]
+    assert_tree_sane(doc)
+    assert doc.rebuild() and doc.leaf_solid_ids() == ["p0"]

@@ -193,3 +193,43 @@ def test_meanline_reference_duty():
     spec = meanline.to_spec(d)
     assert spec.symmetry == d.blade_count
     assert spec.tip_radius == d.tip_radius
+
+
+# ------------------------------------------ refusals are refusals (P0) --------
+
+def test_a_refused_edit_is_http_400_with_the_unchanged_document(client):
+    """A refusal used to come back as 200 with `ok: True` beside the error, so
+    a script or the MCP reading the status saw success. `ok` is the BUILD's
+    health and stays true; the status code says the request failed."""
+    r = client.post("/api/edit", json={"feature_id": "bore",
+                                       "param": "rdius", "value": 1})
+    assert r.status_code == 400
+    d = r.json()
+    assert "rdius" in d["error"] and d["ok"] is True
+    assert d["features"][1]["params"] == {"radius": 15}
+
+
+def test_a_parameter_the_op_knows_can_be_set_before_it_is_stored(client):
+    """The original report: `through` on an extrude stored as {amount} was
+    turned down as "no such parameter" (or, on the multi-param route, stored
+    unchecked and failed the build)."""
+    client.post("/api/feature/add", json={"id": "s", "op": "sketch", "params": {
+        "plane": "XY", "offset": 10,
+        "entities": [{"kind": "circle", "r": 5}]}, "inputs": []})
+    client.post("/api/feature/add", json={"id": "post", "op": "extrude",
+                                          "params": {"amount": 8}, "inputs": ["s"]})
+    r = client.post("/api/edit", json={"feature_id": "post", "param": "through",
+                                       "value": True})
+    assert r.status_code == 200 and "error" not in r.json()
+    post = next(f for f in r.json()["features"] if f["id"] == "post")
+    assert post["params"] == {"amount": 8, "through": True}
+    assert post["status"] == "ok"
+
+
+def test_the_multi_param_route_refuses_unknown_keys_before_writing_any(client):
+    r = client.post("/api/feature/params", json={
+        "feature_id": "bore", "params": {"radius": 12, "bogus": 5}})
+    assert r.status_code == 400 and "bogus" in r.json()["error"]
+    d = client.get("/api/doc").json()
+    assert d["features"][1]["params"] == {"radius": 15}     # radius NOT written
+    assert d["features"][1]["status"] == "ok"

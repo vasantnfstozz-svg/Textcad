@@ -44,6 +44,7 @@ from pathlib import Path
 import supervise                       # session/in-flight file names, shared
 
 from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -610,6 +611,15 @@ def _record_version(label: str, source: str) -> dict:
         return {"version": v.id}
     except HistoryError as ex:
         return {"history_error": str(ex)}
+
+
+def _refused(e: Exception) -> JSONResponse:
+    """A request the document turned down: the sentence, the UNCHANGED
+    document, and HTTP 400 -- so a script or the MCP that reads the status
+    sees the refusal. `ok` in the body is the BUILD's health, not the
+    request's: an edit that changed nothing must not paint the tree red."""
+    return JSONResponse(status_code=400,
+                        content=jsonable_encoder({"error": str(e), **_doc_json()}))
 
 
 def _doc_json() -> dict:
@@ -1570,7 +1580,7 @@ def edit(req: EditReq):
         _doc().edit(req.feature_id, req.param, req.value)
     except (KeyError, ValueError) as e:
         _entry()["history"].pop()
-        return {"error": str(e), **_doc_json()}
+        return _refused(e)
     _rebuild_and_mesh()
     return _doc_json()
 
@@ -1663,13 +1673,10 @@ def edit_params(req: ParamsReq):
     _hand_edit()
     _snapshot()
     try:
-        f = _doc().get(req.feature_id)
-        for k, v in req.params.items():
-            f.params[k] = v
-        _doc()._mark_stale()
+        _doc().edit_many(req.feature_id, req.params)
     except (KeyError, ValueError) as e:
         _entry()["history"].pop()
-        return {"error": str(e), **_doc_json()}
+        return _refused(e)
     _rebuild_and_mesh()
     return _doc_json()
 
@@ -1681,7 +1688,7 @@ def add_feature(req: FeatureReq):
         _doc().add(req.id, req.op, req.params, req.inputs)
     except ValueError as e:
         _entry()["history"].pop()
-        return {"error": str(e), **_doc_json()}
+        return _refused(e)
     _rebuild_and_mesh()
     _pending(f"{req.op} added", "tool")
     return _doc_json()
@@ -1811,7 +1818,7 @@ def trace_png(req: TracePngReq):
                         "entities": ents}, [])
     except Exception as e:        # decode/trace errors -> honest message
         _entry()["history"].pop()
-        return {"error": str(e), **_doc_json()}
+        return _refused(e)
     _rebuild_and_mesh()
     _pending(f"traced {fid}", "tool")
     return {**_doc_json(), "trace_info": {**info, "feature_id": fid}}
@@ -1858,7 +1865,7 @@ def import_step_file(req: ImportStepReq):
                 saved_new.unlink()
             except OSError:
                 pass
-        return {"error": str(e), **_doc_json()}
+        return _refused(e)
     _rebuild_and_mesh()
     bb = part.bounding_box()
     solids = part.solids()
@@ -1905,7 +1912,7 @@ def import_stl_file(req: ImportStlReq):
                 saved_new.unlink()
             except OSError:
                 pass
-        return {"error": str(e), **_doc_json()}
+        return _refused(e)
     _rebuild_and_mesh()
     rep = blocks.import_stl_report(fname)
     repair_note = None
@@ -2076,14 +2083,14 @@ def remove_feature(req: RemoveReq):
         try:
             plan = _doc().remove_plan(req.feature_id, req.mode)
         except (KeyError, ValueError) as e:
-            return {"error": str(e), **_doc_json()}
+            return _refused(e)
         return {**_doc_json(), "remove_plan": plan}
     _snapshot()
     try:
         plan = _doc().remove(req.feature_id, req.mode)
     except (KeyError, ValueError) as e:
         _entry()["history"].pop()
-        return {"error": str(e), **_doc_json()}
+        return _refused(e)
     _rebuild_and_mesh()
     if not _doc().features and MESH_PATH.exists():
         MESH_PATH.unlink()                  # last feature gone -> empty viewport
@@ -2102,7 +2109,7 @@ def rename_feature(req: RenameReq):
         _doc().rename(req.feature_id, req.name)
     except (KeyError, ValueError) as e:
         _entry()["history"].pop()
-        return {"error": str(e), **_doc_json()}
+        return _refused(e)
     return _doc_json()
 
 
@@ -2114,7 +2121,7 @@ def suppress_feature(req: SuppressReq):
         _doc().get(req.feature_id).suppressed = req.suppressed
     except KeyError as e:
         _entry()["history"].pop()
-        return {"error": str(e), **_doc_json()}
+        return _refused(e)
     _doc()._mark_stale()
     _rebuild_and_mesh()
     return _doc_json()
@@ -2131,7 +2138,7 @@ def strike_feature(req: StrikeReq):
         plan = (_doc().unstrike if req.restore else _doc().strike)(req.feature_id)
     except (KeyError, ValueError) as e:
         _entry()["history"].pop()
-        return {"error": str(e), **_doc_json()}
+        return _refused(e)
     _rebuild_and_mesh()
     verb = "restored" if req.restore else "struck out"
     _pending(f"{verb} {req.feature_id}", "tool")
@@ -2320,7 +2327,7 @@ def restore_version(req: VersionReq):
     try:
         snap = h.snapshot(req.id)
     except HistoryError as e:
-        return {"error": str(e), **_doc_json()}
+        return _refused(e)
     try:
         fresh = Document.from_data(snap)
     except Exception as e:
