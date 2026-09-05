@@ -71,6 +71,7 @@ MODIFIERS = {
     "extrude": sk.extrude_sketch,       # sketch -> solid
     "extrude_face": sk.extrude_face,    # solid's picked face -> prism (boss/pocket)
     "revolve": sk.revolve_sketch,       # sketch -> solid
+    "revolve_face": sk.revolve_face,    # solid's picked face -> solid of revolution (P3b)
     "sweep": sk.sweep_sketch,           # sketch + path -> solid
     "sketch_on_face": sk.sketch_on_face,  # solid -> sketch (on a picked face)
 }

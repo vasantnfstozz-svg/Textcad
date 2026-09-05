@@ -88,3 +88,90 @@ angle, press **Full** for 360°, choose New body / Join / Cut, press **OK**.
    appears in the box (target = the box), one body, no pieces warning.
 5. Draw a rectangle across the origin on XZ and press Revolve: the tool does
    not open, the chat says the profile crosses the axis and what to do.
+
+---
+
+# P3b — a picked face, the profile's own edges as the axis, two sides / symmetric
+
+> **Status: built 2026-09-05 in one session, under the assumptions below; the
+> user's checklist decides.** The gap the user hit: a FACE picked in the
+> viewport, then Revolve — the tool said "click a sketch, not a face".
+
+## What you click, what you see
+
+Click a flat face of a body and press **Revolve**: the panel opens on the
+face, the **Axis** list holds the face's straight edges (longest first) and the
+gold line sits on the chosen one; nothing is built until you drag the ring or
+type. The same list appears for a sketch profile: **u**, **v**, then every
+straight edge of its outline that the profile does not cross — Fusion's "pick a
+line of the profile as the axis". A **Direction** row (One side · Two sides ·
+Symmetric) and, for two sides, an **Angle 2** box.
+
+## Rules
+
+* **Axis candidates** (server, `toolplan.plan_revolve` → `axes`): `u`, `v`
+  (always listed, greyed with the reason when the profile crosses them), then
+  the straight edges of the profile's OUTER wires that work, named `e1…eN`
+  longest first, labelled by position (`edge at u = 10 (40 mm, along v)`).
+  Inner wires are never offered (material lies on both sides of a hole's
+  edge). Straight-but-BSPLINE seam edges count. **Default:** `v`, else `u`,
+  else the longest working edge — so a rectangle drawn across the origin now
+  opens (about one of its sides) where P3 refused it; a centred circle still
+  refuses, and the sentence says to move it or give it a straight edge.
+* **An edge axis is stored as a line in the sketch plane's own coordinates**,
+  `axis: [[u1, v1], [u2, v2]]` — never an index or a name. It rides the plane
+  exactly as `u` / `v` do (a face or offset move carries it). It does NOT
+  follow a later resize of the profile: it stays where the edge was, as a
+  construction line would, and the plan lists it as *the stored line* while
+  it still works or explains why it no longer does (the `fallback` path). A
+  parametric sketch line is the later, honest fix (a construction-line
+  entity); silently jumping to "the nearest edge" is the banned failure.
+* **A face profile** (`revolve_face`, a FACE-REFERENCE op like `extrude_face`:
+  it never consumes the body) is resolved by geometry at every rebuild
+  (centre + normal) and revolved in **its true plane**, `face_profile_plane`:
+  identical to `face_sketch_plane` on the axis-aligned faces of a box, but a
+  wall tilted under 25° keeps its own plane instead of snapping to the
+  principal one (the snapped plane does not contain the face — the probe
+  measured its edges 1.4 mm off it). `u` / `v` are that plane's axes through
+  the world origin's foot, so on a centred body they cross the face and the
+  edges are what is offered. Default operation Join, target the body (the
+  framework's face mode).
+* **Direction** (Autodesk's Revolve reference): *One side* sweeps `angle`
+  (signed, the ring's sign) from the profile plane. *Two sides* adds
+  `angle2 ≥ 0` the other way. *Symmetric* sweeps `angle` to **each** side
+  ("a single angle to revolve in each direction") — so 90 symmetric is a
+  half turn. Built as ONE sweep of the total, turned back about the axis
+  (exact: the symmetric centroid lies in the profile plane, probe §5). The
+  ghost sweeps both ways too. Limits are the server's one turn: the panel
+  caps one side at 360, symmetric at 180 each way, two sides at 360 together,
+  and says so once.
+
+## Failures speak (added sentences)
+
+| Situation | What is said |
+|---|---|
+| No axis works (centred circle) | "This profile cannot be revolved: it crosses u (…) and v (…) and its outline has no straight edge to turn about. Move the profile entirely to one side of an axis in its plane, or give it a straight edge." |
+| A curved face is picked | "that face is CYLINDER (curved) — only a FLAT face can be revolved" (the tool does not open) |
+| `revolve_face` without an axis (AI path) | "revolve_face needs an axis: one of the face's straight edges as a line [[u1, v1], [u2, v2]] in the face's plane, or u / v" |
+| Two sides add to more than a turn | "the two sides add up to 400°, more than one full turn" (the panel caps first) |
+| A negative second angle | "the second side's angle is a size, not a direction — give it as a positive number" |
+| The stored line no longer works | the P3 `fallback` note: the tool opened on another axis, OK saves that, Cancel keeps the old one |
+
+## The user's five-step checklist (P3b)
+
+1. Make a box. Click its top face, press Revolve: the panel opens, the Axis
+   list shows four edges, the gold line lies on the longest one, angle 0,
+   nothing built. Drag the ring a quarter turn: a quarter-cylinder grows off
+   that edge and Join makes it one body with the box.
+2. Pick another edge in the list: the gold line and the ring move to it, the
+   solid follows. OK. Double-click the new `revolve_face1`: it reopens on the
+   same edge; Cancel changes nothing.
+3. Sketch a rectangle on XZ **across the origin** and press Revolve: the tool
+   opens now, about one of the rectangle's sides (u and v are greyed and say
+   why). Full turn: a solid cylinder.
+4. Sketch the P3 half-profile (10–30 by 0–40 on XZ), Revolve, Direction
+   Symmetric, type 45: a quarter-turn solid centred on the sketch plane
+   (equal amounts on both sides). Switch to Two sides, Angle 2 = 90: the
+   solid extends further the other way. Full resets to one side, 360.
+5. Draw a circle centred on the origin on XZ and press Revolve: the tool does
+   not open; the chat says it crosses both axes and has no straight edge.

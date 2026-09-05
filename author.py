@@ -56,6 +56,16 @@ OP_NOTES = {
               "radius must be < half the adjacent wall thickness. `edges` may "
               "also be a list of picked edges (the Studio tool writes these).",
     "shell": "Hollows to walls of `thickness`; open_face removes that face.",
+    "revolve": "Spins the sketch about an axis IN its plane: \"v\" / \"u\" (the plane's "
+               "own axes through the sketch origin — they ride the geometry), a world "
+               "axis \"X\"/\"Y\"/\"Z\" lying in the plane, or a line in the sketch's own "
+               "coordinates [[u1, v1], [u2, v2]] (one of the profile's straight edges). "
+               "The profile must lie entirely to one side. angle is signed; angle2 adds "
+               "a second side the other way; symmetric=true sweeps angle to EACH side.",
+    "revolve_face": "Revolves a flat face of the input body (face_center + face_normal "
+                    "from a real pick) about a line in the face's plane, normally one of "
+                    "its straight edges: axis=[[u1, v1], [u2, v2]]. Returns only the new "
+                    "solid; fuse/cut it with the body.",
     "extrude": "Pulls the sketch normal to its plane, i.e. AWAY from the face a "
                "face-sketch sits on. flip=true pulls the other way (INTO the "
                "body = pocket/hole). through=true ignores the distance and runs "

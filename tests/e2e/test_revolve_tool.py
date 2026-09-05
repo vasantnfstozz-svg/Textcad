@@ -21,8 +21,34 @@ async () => {
                              mode: 'add' }] }, inputs: [] }, 'add');
 }
 """
-# the same profile centred on the origin: it crosses BOTH in-plane axes
+# the same profile centred on the origin: it crosses BOTH in-plane axes — since
+# P3b the tool opens about one of its SIDES instead of refusing
 BUILD_CENTRED = BUILD.replace("x: 20, y: 10", "x: 0, y: 0")
+# a circle centred on the origin: crosses both axes AND has no straight edge
+BUILD_CIRCLE_CENTRED = BUILD.replace(
+    "{ kind: 'rectangle', w: 10, h: 6, x: 20, y: 10,", "{ kind: 'circle', r: 4, x: 0, y: 0,")
+assert "circle" in BUILD_CIRCLE_CENTRED and "x: 0, y: 0" in BUILD_CIRCLE_CENTRED
+# a bare box, and its top face picked the way the viewport records a pick
+BUILD_BOX = """
+async () => {
+  const { postJSON } = await import('/static/js/api.js');
+  const { loadMesh, setView } = await import('/static/js/viewport.js');
+  await postJSON('/api/feature/add',
+    { id: 'b', op: 'plate', params: { width: 60, depth: 40, thickness: 12 }, inputs: [] }, 'add');
+  await loadMesh(true);
+  setView('iso');
+}
+"""
+PICK_TOP = """
+async () => {
+  const { S } = await import('/static/js/state.js');
+  const faces = window.__vp.bodyObjsRaw()[0].data.faces;
+  const top = faces.find(f => f.normal && f.normal[2] > 0.9);
+  S.pickedFace = { center: top.center, normal: top.normal, body: 'b' };
+  return top;
+}
+"""
+OPEN_REVOLVE = "async () => (await import('/static/js/revolve.js')).openRevolve()"
 # a box with a circle sketched on its top face, off the face's centre
 BUILD_FACE = """
 async () => {
@@ -162,12 +188,15 @@ def test_edit_reopens_at_the_stored_angle_and_cancel_restores(page, fresh_doc, s
 
 
 def test_a_profile_across_the_axis_is_refused_with_a_sentence(page, fresh_doc, server):
-    setup(page, BUILD_CENTRED)
+    """A centred CIRCLE: it crosses both axes and has no straight edge to turn
+    about (a centred rectangle opens about a side since P3b — below)."""
+    setup(page, BUILD_CIRCLE_CENTRED)
     press_revolve(page, "p")
     page.wait_for_timeout(1200)
     assert page.locator("#revolveDialog").is_hidden(), "the tool must not open"
     chat = page.text_content("#chatLog")
     assert "cannot be revolved" in chat and "crosses" in chat and "one side" in chat
+    assert "no straight edge" in chat
     # the gizmos this refusal must leave behind: none. Named one by one, not as
     # the whole dict — that hook grows a key every time a tool adds a handle
     # (P4 added glow/edgePick and broke this assertion, caught 2026-09-04).
@@ -203,4 +232,100 @@ def test_cut_into_the_body_the_sketch_sits_on(page, fresh_doc, server):
     assert cut["volume"] < plate
     assert (doc["result_pieces"] or 1) == 1
     assert page.evaluate("() => window.__vp.bodyCount()") == 1
+    assert page.errors == []
+
+
+# ------------------------------------------------------------------- P3b ---
+
+def test_a_rectangle_across_the_axis_opens_about_its_own_side(page, fresh_doc, server):
+    """P3 refused this profile. Now the Axis list greys u and v (with the
+    reason) and opens on the longest side; a full turn is a solid cylinder."""
+    setup(page, BUILD_CENTRED)
+    open_revolve(page, "p")
+    axis = page.eval_on_selector("#rvAxis", "el => el.value")
+    assert axis.startswith("e"), axis
+    opts = page.eval_on_selector_all("#rvAxis option",
+                                     "os => os.map(o => [o.value, o.disabled, o.title])")
+    by = {v: (d, t) for v, d, t in opts}
+    assert by["u"][0] and "crosses u" in by["u"][1] and by["v"][0] and "crosses v" in by["v"][1]
+    assert page.evaluate("() => window.__vp.bodyCount()") == 0, "opening builds nothing"
+    page.click("#rvFull")
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    page.click("#rvOk")
+    page.wait_for_selector("#revolveDialog", state="hidden")
+    page.wait_for_timeout(800)
+    f = feature(server, "revolve1")
+    assert f["status"] == "ok", f
+    assert isinstance(f["params"]["axis"], list), "an edge axis is stored as a line"
+    # the 10 x 6 rectangle about a 10 mm side: centroid 3 mm off it, area 60
+    assert f["volume"] == pytest.approx(pappus(3, 60, 360), rel=1e-4)
+    assert page.errors == []
+
+
+def test_a_picked_face_revolves_about_its_edge_and_joins_the_body(page, fresh_doc, server):
+    """Fusion's gap the user hit: click a flat face, press Revolve. The panel
+    opens in face mode on the face's longest edge, Join targets the body, a
+    typed quarter turn builds the Pappus volume and fuses into ONE body."""
+    setup(page, BUILD_BOX)
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    box = feature(server, "b")["volume"]
+    page.evaluate(PICK_TOP)
+    page.evaluate(OPEN_REVOLVE)
+    page.wait_for_selector("#revolveDialog", state="visible", timeout=15000)
+    assert page.eval_on_selector("#rvProfile", "el => el.value") == "(selected face)"
+    assert page.eval_on_selector("#rvOp", "el => el.value") == "join"
+    assert page.eval_on_selector("#rvTarget", "el => el.value") == "b"
+    page.wait_for_function("() => document.querySelector('#rvAxis').value === 'e1'", timeout=15000)
+    label = page.eval_on_selector("#rvAxis", "el => el.selectedOptions[0].textContent")
+    assert "60 mm" in label, label
+    assert page.evaluate("() => window.__vp.gizmos().axis"), "the gold line is on the edge"
+    page.fill("#rvAngle", "90")
+    fuse = lambda: next((f for f in httpx.get(f"{server}/api/doc", timeout=30).json()["features"]
+                         if f["op"] == "fuse"), None)
+    for _ in range(80):
+        j = fuse()
+        if j and j["status"] in ("ok", "failed"):
+            break
+        page.wait_for_timeout(250)
+    page.click("#rvOk")
+    page.wait_for_selector("#revolveDialog", state="hidden")
+    page.wait_for_timeout(1000)
+    f = feature(server, "revolve1")               # the framework names features after the TOOL
+    assert f["op"] == "revolve_face" and f["status"] == "ok" and f["inputs"] == ["b"], f
+    # the 60 x 40 face about its 60 mm side: centroid 20 mm off it, area 2400
+    assert f["volume"] == pytest.approx(pappus(20, 2400, 90), rel=1e-4)
+    join = fuse()
+    assert join and join["status"] == "ok" and set(join["inputs"]) == {"b", "revolve1"}, join
+    assert join["volume"] > box
+    assert page.evaluate("() => window.__vp.bodyCount()") == 1
+    assert page.errors == []
+
+
+def test_symmetric_and_two_sides_sweep_the_other_way_too(page, fresh_doc, server):
+    setup(page, BUILD)
+    open_revolve(page, "p")
+    page.select_option("#rvDir", "sym")
+    assert page.locator("#rvAngle2Row").is_hidden()
+    page.fill("#rvAngle", "45")
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    page.wait_for_timeout(600)
+    f = feature(server, "revolve1")
+    assert f["params"]["symmetric"] is True
+    assert f["volume"] == pytest.approx(pappus(20, 60, 90), rel=1e-4)    # 45 EACH side
+    centre = page.evaluate(BODY_CENTRE)
+    assert abs(centre[1]) < 0.05, f"symmetric: centred on the sketch plane, got {centre}"
+    page.select_option("#rvDir", "two")
+    assert page.locator("#rvAngle2Row").is_visible()
+    page.fill("#rvAngle2", "90")
+    page.wait_for_timeout(1800)
+    f = feature(server, "revolve1")
+    assert f["params"]["angle2"] == 90 and f["params"]["symmetric"] is False
+    assert f["volume"] == pytest.approx(pappus(20, 60, 135), rel=1e-4)
+    centre = page.evaluate(BODY_CENTRE)
+    assert centre[1] < 0, f"the bigger second side pulls the body to -y: {centre}"
+    page.click("#rvFull")                                    # a full turn is one side, 360
+    page.wait_for_timeout(1800)
+    assert page.eval_on_selector("#rvDir", "el => el.value") == "one"
+    f = feature(server, "revolve1")
+    assert f["volume"] == pytest.approx(pappus(20, 60, 360), rel=1e-4)
     assert page.errors == []

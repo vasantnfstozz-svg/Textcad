@@ -230,14 +230,21 @@
   <div class="exhead">↻ Revolve</div>
   <label>Profile <select id="rvProfile"></select></label>
   <label>Axis
-    <select id="rvAxis" title="the sketch plane's own axes through the sketch origin - the profile must lie entirely on one side">
+    <select id="rvAxis" title="the plane's own axes through the sketch origin, and the straight edges of the outline - the profile must lie entirely on one side">
       <option value="v">v — the plane's vertical axis</option>
       <option value="u">u — the plane's horizontal axis</option>
+    </select></label>
+  <label>Direction
+    <select id="rvDir" title="One side sweeps the angle from the profile; Two sides adds a second angle the other way; Symmetric sweeps the angle to each side">
+      <option value="one">One side</option>
+      <option value="two">Two sides</option>
+      <option value="sym">Symmetric</option>
     </select></label>
   <div class="exrow">
     <label>Angle (°) <input id="rvAngle" type="number" step="any" value="0"></label>
     <label>&nbsp;<button id="rvFull" type="button" class="exbtn" title="a full turn">Full 360°</button></label>
   </div>
+  <label id="rvAngle2Row" style="display:none">Angle 2 (°) <input id="rvAngle2" type="number" step="any" min="0" value="0"></label>
   <label>Operation
     <select id="rvOp">
       <option value="new">New body</option>
@@ -350,6 +357,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=153"></script>
+<script type="module" src="/static/js/main.js?v=154"></script>
 </body>
 </html>

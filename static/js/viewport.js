@@ -289,7 +289,7 @@ export function initViewport() {
       if (!rvGhost || !rvGhost.parts.length) return null;
       const box = new THREE.Box3();
       for (const P of rvGhost.parts) box.expandByObject(P.mesh);
-      return { visible: rvGhost.parts[0].mesh.visible, angle: rvGhost.angle,
+      return { visible: rvGhost.parts[0].mesh.visible, angle: rvGhost.angle, back: rvGhost.back,
                centre: box.getCenter(new THREE.Vector3()).toArray() };
     },
     axisLineInfo: () => axisLine ? { from: axisLine.geometry.attributes.position.array.slice(0, 3),
@@ -1150,25 +1150,29 @@ export function beginRevolveGhost(frame, loops) {
     parts.push({ ...part, pts });
   }
   setPartsVisible(parts, false);
-  rvGhost = { parts, angle: 0, pending: null, raf: 0 };
+  rvGhost = { parts, angle: 0, back: 0, pending: null, raf: 0 };
 }
 
-/* one geometry rebuild per animation frame, however fast the pointer moves */
-export function setRevolveGhost(deg) {
+/* one geometry rebuild per animation frame, however fast the pointer moves.
+   `back` (P3b, Two sides / Symmetric): degrees swept the OTHER way as well, so
+   the lathe runs from the far end of that sweep through the profile to `deg` */
+export function setRevolveGhost(deg, back = 0) {
   if (!rvGhost) return;
-  rvGhost.pending = deg;
+  rvGhost.pending = { deg, back: Math.max(0, back || 0) };
   if (rvGhost.raf) return;
   rvGhost.raf = requestAnimationFrame(() => {
     if (!rvGhost) return;
     rvGhost.raf = 0;
-    const a = rvGhost.pending;
-    rvGhost.angle = a;
-    if (Math.abs(a) <= 0.05) { setPartsVisible(rvGhost.parts, false); return; }
-    const len = Math.abs(a) * Math.PI / 180;
-    const segs = Math.max(8, Math.round(Math.abs(a) / 5));
+    const { deg: a, back: b } = rvGhost.pending;
+    rvGhost.angle = a; rvGhost.back = b;
+    const total = Math.abs(a) + b;
+    if (total <= 0.05) { setPartsVisible(rvGhost.parts, false); return; }
+    const len = total * Math.PI / 180;
+    const start = (a < 0 ? a : -b) * Math.PI / 180;
+    const segs = Math.max(8, Math.round(total / 5));
     for (const P of rvGhost.parts) {
       P.mesh.geometry.dispose(); P.edges.geometry.dispose();
-      P.mesh.geometry = new THREE.LatheGeometry(P.pts, segs, a < 0 ? -len : 0, len);
+      P.mesh.geometry = new THREE.LatheGeometry(P.pts, segs, start, len);
       P.edges.geometry = new THREE.EdgesGeometry(P.mesh.geometry, 15);
     }
     setPartsVisible(rvGhost.parts, true);

@@ -204,7 +204,7 @@ export function renderDoc(doc) {
      deleting the row still removes the whole group — but the tree now reads
      the way the user builds: sketch, then extrude. */
   const PULLED = new Set(['extrude', 'revolve', 'loft', 'sweep',
-                          'extrude_face']);
+                          'extrude_face', 'revolve_face']);
   const foldedInto = FOLDED;    // boolean id -> the tool row it rides on
   for (const k of Object.keys(foldedInto)) delete foldedInto[k];
   const chipOn = {};            // tool id -> the boolean it applies

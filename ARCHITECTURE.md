@@ -62,7 +62,7 @@ nodes (`id`, `op`, `params`, `inputs`, `suppressed`) forming a DAG. Every
 | Registry | Meaning | Examples |
 |---|---|---|
 | `CREATORS` | no geometric inputs | `plate`, `disc`, `tube`, `sketch`, `import_stl`, `import_step` |
-| `MODIFIERS` | exactly one upstream part | `extrude`, `extrude_face`, `revolve`, `sweep`, `sketch_on_face`, `fillet`, `chamfer`, `shell`, `polar_pattern`, `linear_pattern`, `rotate`, `mirror`, `scale`, `with_center_hole`, `with_bolt_circle` |
+| `MODIFIERS` | exactly one upstream part | `extrude`, `extrude_face`, `revolve`, `revolve_face`, `sweep`, `sketch_on_face`, `fillet`, `chamfer`, `shell`, `polar_pattern`, `linear_pattern`, `rotate`, `mirror`, `scale`, `with_center_hole`, `with_bolt_circle` |
 | `COMBINERS` | two or more upstream parts | `fuse`, `cut`, `intersect`, `loft` |
 
 `move` is special-cased (in `KNOWN_OPS`, in no registry) — a known wart.
@@ -90,7 +90,7 @@ through. `strike()` (the tree's ✕) suppresses exactly the set an auto delete
 plan would remove — reversible, rows stay struck through; `unstrike()` also
 revives struck ancestors. `remove()` deletes for real (a `cut` sweeps its tool
 prism and that prism's sketch). `consumed_ids()` is THE rule for what is
-hidden as consumed: face-reference ops (`sketch_on_face`, `extrude_face`)
+hidden as consumed: face-reference ops (`sketch_on_face`, `extrude_face`, `revolve_face`)
 never consume their body; suppressed features consume nothing; a live feature
 consuming a struck id consumes what that id resolves to.
 
@@ -111,7 +111,7 @@ unbuilt features, so an intermediate cutter can never be exported as the part.
   `slot`, `ellipse`, `polygon`; `mode` add/subtract; rotate about own centre
   THEN translate), `make_sketch`, `extrude_sketch` (one/both sides, taper,
   `through` = ±2000 mm and no taper), `revolve_sketch`, `sweep_sketch`,
-  `loft`, `extrude_face`, `sketch_on_face`, `named_face`, `face_sketch_plane`.
+  `loft`, `extrude_face`, `revolve_face`, `sketch_on_face`, `named_face`, `face_sketch_plane`, `face_profile_plane`.
   **The offset method:** a face gives a sketch plane its POSITION only; the
   frame is canonicalised to the axis's principal plane so `(x, y)` means the
   same on every face; consequence: "into the material" is `flip` on a top

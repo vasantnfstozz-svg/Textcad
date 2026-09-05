@@ -428,7 +428,7 @@ def _sketch_behind(doc, fid, depth=0):
     return None
 
 
-SKETCH_CONSUMERS = {"extrude", "revolve", "loft", "sweep", "extrude_face"}
+SKETCH_CONSUMERS = {"extrude", "revolve", "loft", "sweep", "extrude_face", "revolve_face"}
 
 
 def _extrude_behind(doc, fid, depth=0):

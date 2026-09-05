@@ -349,71 +349,176 @@ def _revolve_geometry(profile, ax, n, ext) -> dict:
                        "max_angle": sk.MAX_REVOLVE_DEG}}
 
 
+def _edge_label(p, q) -> str:
+    """How the panel names an outline edge: by where it lies in the plane."""
+    length = round(math.hypot(q[0] - p[0], q[1] - p[1]), 3)
+    if abs(q[0] - p[0]) < 1e-6:
+        return f"edge at u = {p[0]:g} ({length:g} mm, along v)"
+    if abs(q[1] - p[1]) < 1e-6:
+        return f"edge at v = {p[1]:g} ({length:g} mm, along u)"
+    return f"edge ({p[0]:g}, {p[1]:g}) → ({q[0]:g}, {q[1]:g}) ({length:g} mm)"
+
+
+_AXIS_LABELS = {"v": "v — the plane's vertical axis",
+                "u": "u — the plane's horizontal axis"}
+
+
+def _same_line(a, b) -> bool:
+    """Two ((u1, v1), (u2, v2)) lines with the same endpoints, either way round."""
+    (p, q), (r, s) = a, b
+
+    def close(x, y):
+        return abs(x[0] - y[0]) < 1e-3 and abs(x[1] - y[1]) < 1e-3
+    return (close(p, r) and close(q, s)) or (close(p, s) and close(q, r))
+
+
+def _axis_entries(profile, want) -> list[dict]:
+    """Every axis this profile could turn about, each TESTED (P3b): u and v
+    first — always listed, greyed with the reason when the profile crosses them
+    — then the straight edges of the outline, longest first, named e1…eN and
+    labelled by position; then, when `want` is a stored line that no longer
+    matches an edge, that line under the name "stored" (a construction line:
+    offered while it works, explained when it does not); a legacy WORLD axis
+    under its own name. `param` is what the feature stores for that entry —
+    the name, or the line — so the browser forwards it and derives nothing
+    (R1). `ext` is revolve_extent's answer, for the handles."""
+    entries = []
+
+    def add(name, label, param):
+        why = None
+        try:
+            ext = sk.revolve_extent(profile, sk.revolve_axis(profile, param))
+        except ValueError as e:                  # a line the plane refuses
+            ext, why = None, str(e)
+        if ext is None:
+            why = why or f"the world {name} axis runs outside the sketch plane"
+        elif ext[4]:
+            why = f"it crosses {name} ({ext[0]:.3g} to {ext[1]:.3g} mm)"
+        entries.append({"name": name, "label": label, "param": param,
+                        "ok": why is None, "why": why, "ext": ext})
+
+    for name in ("v", "u"):
+        add(name, _AXIS_LABELS[name], name)
+    lines = sk.revolve_edge_lines(profile)
+    for i, (p, q) in enumerate(lines, 1):
+        add(f"e{i}", _edge_label(p, q), [list(p), list(q)])
+    want_line = sk._axis_line(want)
+    if want_line is not None:
+        if not any(_same_line(want_line, line) for line in lines):
+            p, q = want_line
+            add("stored", f"the stored line ({p[0]:g}, {p[1]:g}) → ({q[0]:g}, {q[1]:g})",
+                [list(p), list(q)])
+    elif isinstance(want, str) and want in sk._AXES:
+        add(want, f"{want} — world axis", want)
+    return entries
+
+
+def _is_edge(entry: dict) -> bool:
+    return entry["name"].startswith("e")
+
+
+def _matches(entry: dict, want) -> bool:
+    """Is `entry` the axis `want` names — by name, or by the same line?"""
+    want_line = sk._axis_line(want)
+    if want_line is None:
+        return entry["name"] == want
+    mine = sk._axis_line(entry["param"])
+    return mine is not None and _same_line(want_line, mine)
+
+
 def plan_revolve(doc, req: dict) -> dict:
-    """The Revolve tool's plan (specs/revolve.md). Input: sketch_id, or the
-    feature_id of an existing revolve (edit: its stored axis is read here),
+    """The Revolve tool's plan (specs/revolve.md). Input is ONE of:
+        sketch_id                      — a sketch / sketch_on_face profile
+        body_id + face_center[+normal] — a picked flat face of that body (P3b)
+        feature_id                     — an existing revolve / revolve_face
+                                         (edit: the input and the stored axis
+                                         are read here)
     plus an optional axis name.
 
-    The axis is DERIVED, not asked for: of the sketch plane's two axes through
-    the sketch origin, the profile must lie entirely on one side. Every axis
-    that works is returned with its own handles (`alternatives`), the lathe
-    axis v first, so a swap in the panel is a local choice. A legacy tree's
-    WORLD axis is kept when its line lies in the plane (mapped to the local
-    name when they coincide, offered under its own name otherwise); when the
-    stored axis cannot be used the plan opens on one that can and says so in
-    `fallback`, so the tool can tell the user before OK saves the change.
-    """
+    The axis is DERIVED, not asked for: every axis that works is returned with
+    its own handles (`alternatives`), the lathe axis v first, so a swap in the
+    panel is a local choice. `axes` lists them all for the panel — u, v, the
+    outline's straight edges, a stored line — each with what the feature would
+    store. A legacy tree's WORLD axis is kept when its line lies in the plane
+    (mapped to the local name when they coincide, offered under its own name
+    otherwise); when the stored axis cannot be used the plan opens on one that
+    can and says so in `fallback`, so the tool can tell the user before OK
+    saves the change."""
     sketch_id = req.get("sketch_id")
+    body_id = req.get("body_id")
+    face_center = req.get("face_center")
+    face_normal = req.get("face_normal")
     want = req.get("axis")
     fid = req.get("feature_id")
     if fid:
-        f = _edit_input(doc, fid, ("revolve",))
-        sketch_id = (f.inputs or [None])[0]
-        want = want or (f.params or {}).get("axis") or "Z"    # the op's default when a tree names none
-    if not sketch_id:
-        raise ValueError("Revolve needs a sketch profile")
-    _prof, profile = _sketch_part(doc, sketch_id)
+        f = _edit_input(doc, fid, ("revolve", "revolve_face"))
+        p = f.params or {}
+        if f.op == "revolve_face":
+            body_id = (f.inputs or [None])[0]
+            face_center, face_normal = p.get("face_center"), p.get("face_normal")
+            want = want or p.get("axis")
+        else:
+            sketch_id = (f.inputs or [None])[0]
+            want = want or p.get("axis") or "Z"    # the op's default when a tree names none
+    if sketch_id is None and face_center is None:
+        raise ValueError("Revolve needs a sketch profile or a picked flat face")
+
+    if sketch_id is None:                       # ---- face mode (P3b) ----
+        part = doc._parts.get(body_id) if body_id else None
+        if part is None:
+            part = doc.result()
+            body_id = body_id or (_solids(doc)[-1].id if _solids(doc) else None)
+        if part is None:
+            raise ValueError("no solid to revolve a face of — build a body first")
+        picked = sk.resolve_face(part, face_center, face_normal)
+        fp = sk.face_profile_plane(picked)
+        if fp is None:
+            raise ValueError(f"that face is {picked.geom_type.name} (curved) — only a "
+                             f"FLAT face can be revolved; tilted flat faces are fine")
+        profile = sk._on_plane(b3d.Sketch([picked]), fp)
+        input_id, mode, op, target = body_id, "face", "revolve_face", body_id
+    else:                                       # ---- sketch mode ----
+        _prof, profile = _sketch_part(doc, sketch_id)
+        input_id, mode, op = sketch_id, "sketch", "revolve"
+        target = _default_target(doc, sketch_id)
     pl = sk.sketch_plane_of(profile)            # the very plane the op will use (or its sentence)
     n = pl.z_dir
 
-    coincident = _coincides(pl, want) if want in sk._AXES else None
-    names = ["v", "u"]                          # the classic lathe axis first
-    if want in sk._AXES and not coincident:
-        names.append(want)                      # a legacy world axis, by its own name
-    valid, why = [], []
-    for name in names:
-        ext = sk.revolve_extent(profile, sk.revolve_axis(profile, name))
-        if ext is None:
-            why.append(f"the world {name} axis runs outside the sketch plane")
-        elif ext[4]:
-            why.append(f"it crosses {name} ({ext[0]:.3g} to {ext[1]:.3g} mm)")
-        else:
-            valid.append((name, ext))
+    if isinstance(want, str) and want in sk._AXES:
+        want = _coincides(pl, want) or want     # the same line, under the name that rides
+    entries = _axis_entries(profile, want)
+    valid = [e for e in entries if e["ok"]]
     if not valid:
-        raise ValueError("this profile cannot be revolved: " + " and ".join(why)
-                         + ". Move the profile entirely to one side of an axis in "
-                           "its plane.")
-    if coincident:
-        want = coincident                       # the same line, under the name that rides
-    chosen = next((v for v in valid if v[0] == want), None)
+        why = " and ".join(e["why"] for e in entries if e["why"] and not _is_edge(e))
+        edges = ("it crosses every straight edge of its outline"
+                 if any(_is_edge(e) for e in entries)
+                 else "its outline has no straight edge to turn about")
+        raise ValueError(f"this profile cannot be revolved: {why}, and {edges}. Move the "
+                         f"profile entirely to one side of an axis in its plane, or give "
+                         f"it a straight edge to turn about.")
+    chosen = next((e for e in valid if _matches(e, want)), None) if want is not None else None
     fallback = None
     if chosen is None:
         chosen = valid[0]
-        if want:
-            fallback = {"from": want,
-                        "why": next((w for w in why if want in w),
-                                    f"{want} is not one of this sketch's axes")}
-    name, ext = chosen
-    geo = _revolve_geometry(profile, sk.revolve_axis(profile, name), n, ext)
+        if want is not None:
+            asked = next((e for e in entries if _matches(e, want)), None)
+            fallback = {"from": want if isinstance(want, str) else "the stored line",
+                        "why": (asked["why"] if asked and asked["why"]
+                                else f"{want} is not one of this profile's axes")}
+    name = chosen["name"]
+    geo = _revolve_geometry(profile, sk.revolve_axis(profile, chosen["param"]), n, chosen["ext"])
     return {
-        "ok": True, "tool": "revolve", "mode": "sketch", "op": "revolve",
-        "input": sketch_id, **geo, "axis_name": name,
-        "candidates": [v[0] for v in valid],
-        "alternatives": {v[0]: _revolve_geometry(profile, sk.revolve_axis(profile, v[0]), n, v[1])
-                         for v in valid if v[0] != name},
+        "ok": True, "tool": "revolve", "mode": mode, "op": op, "input": input_id,
+        **geo, "axis_name": name, "axis_param": chosen["param"],
+        "axes": [{k: e[k] for k in ("name", "label", "param", "ok", "why")}
+                 for e in entries if e["ok"] or not _is_edge(e)],
+        "candidates": [e["name"] for e in valid],
+        "alternatives": {e["name"]: _revolve_geometry(profile, sk.revolve_axis(profile, e["param"]),
+                                                      n, e["ext"])
+                         for e in valid if e["name"] != name},
         "fallback": fallback,
-        "target_body": _default_target(doc, sketch_id),
-        "will_build": f"revolve {sketch_id} about its {name} axis "
+        "target_body": target,
+        "will_build": f"{op} on {input_id} about {chosen['label']} "
                       f"({_axis_name(geo['axis'])})",
     }
 

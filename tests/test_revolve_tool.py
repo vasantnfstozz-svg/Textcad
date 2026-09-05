@@ -199,7 +199,8 @@ def test_a_legacy_world_axis_off_the_plane_falls_back_with_a_note_and_alternativ
     p = toolplan.plan(d, {"tool": "revolve", "feature_id": "r"})
     assert p["ok"] and p["axis_name"] == "v", p
     assert p["fallback"]["from"] == "Z" and "outside" in p["fallback"]["why"]
-    assert set(p["alternatives"]) == {"u"}
+    # u, and (P3b) the rectangle's four sides — every one carries its handles
+    assert set(p["alternatives"]) == {"u", "e1", "e2", "e3", "e4"}
     alt = p["alternatives"]["u"]
     assert alt["frame"]["z_dir"] == pytest.approx(list(sk.sketch_plane("XZ", 7).x_dir), abs=1e-6)
     assert alt["limits"]["max_angle"] == 360
@@ -238,7 +239,8 @@ def cross(a, b):
 def test_the_planner_opens_on_the_lathe_axis_when_both_work(plane):
     p = plan(doc_with(plane))
     assert p["ok"], p
-    assert p["axis_name"] == "v" and p["candidates"] == ["v", "u"]
+    assert p["axis_name"] == "v" and p["candidates"][:2] == ["v", "u"]
+    assert p["candidates"][2:] == ["e1", "e2", "e3", "e4"]     # P3b: the outline's sides follow
     pl = sk.sketch_plane(plane, 0)
     assert p["axis"] == pytest.approx(list(pl.y_dir), abs=1e-6)
 
@@ -252,16 +254,22 @@ def test_the_swap_is_honoured_and_the_legacy_world_name_is_mapped(plane):
     assert plan(d, axis=world)["axis_name"] == "v"
 
 
-def test_a_profile_crossing_v_gets_u_only():
+def test_a_profile_crossing_v_gets_u_not_v():
     p = plan(doc_with("XZ", x=0, y=10))
-    assert p["ok"] and p["axis_name"] == "u" and p["candidates"] == ["u"]
+    assert p["ok"] and p["axis_name"] == "u"
+    assert p["candidates"][0] == "u" and "v" not in p["candidates"]
+    v = next(a for a in p["axes"] if a["name"] == "v")
+    assert not v["ok"] and "crosses v" in v["why"]      # listed, greyed, with the reason
 
 
-def test_a_profile_over_the_origin_is_refused_with_both_reasons():
+def test_a_profile_over_the_origin_opens_on_its_own_side_since_p3b():
+    """P3 refused this profile; Fusion turns it about one of its sides, and so
+    does P3b. The refusal survives only for a profile with no straight edge —
+    tests/test_revolve_p3b.py has the centred circle."""
     p = plan(doc_with("XZ", x=0, y=0))
-    assert p["ok"] is False
-    assert "crosses v" in p["error"] and "crosses u" in p["error"]
-    assert "one side" in p["error"]
+    assert p["ok"] and p["axis_name"] == "e1"
+    byname = {a["name"]: a for a in p["axes"]}
+    assert "crosses v" in byname["v"]["why"] and "crosses u" in byname["u"]["why"]
 
 
 def test_a_swap_to_an_axis_that_does_not_work_falls_back_to_one_that_does():

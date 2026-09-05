@@ -232,19 +232,55 @@ def health(solid, require_manifold: bool = True,
         problems.append("no solid present (empty compound)")
 
     if require_manifold and _try(lambda: bool(solid.is_manifold)) is False:
-        # Known false negative: build123d 0.11 reports ANY solid containing a
-        # spherical face as non-manifold (seam/pole artifact) even when OCCT's
-        # BRepCheck (is_valid) passes. Don't fail sphere-bearing solids on
-        # this flag alone.
-        # the face census is needed ONLY here, so it is paid for only when the
-        # manifold flag has already gone red
-        has_sphere = any(str(f.geom_type) == "GeomType.SPHERE"
-                         for f in _try(lambda: solid.faces(), []) or [])
-        if not has_sphere:
+        # build123d's is_manifold counts the faces on EVERY edge, including
+        # DEGENERATED ones — the zero-length edges OCCT puts at a sphere's
+        # poles and at the apex of a cone, which belong to one face by
+        # construction. A revolve whose profile touches the axis at an angle
+        # (a hexagon about its own side, probes/revolve_face_probe.py §9) has
+        # two such apexes and is a perfectly closed solid: the flag alone
+        # called it an open shell, while the same sweep about an axis a few
+        # microns OFF the edge — a sliver face, no apex — passed. So the flag
+        # is only the trigger; the verdict is the census below, paid for only
+        # when the flag has gone red. (Until 2026-09-05 this was a sphere-only
+        # exemption, which also failed every cone.) A degenerated edge on a
+        # BSPLINE face — a fillet pinched to a point — is still a defect.
+        if _try(lambda: _closed_ignoring_degenerate(solid)) is not True:
             problems.append("solid is not manifold/watertight (open shell) — "
                             "not machinable/printable")
 
     return problems
+
+
+_APEX_SURFACES = {"CONE", "SPHERE", "REVOLUTION"}   # a pole / apex is a point by nature
+
+
+def _closed_ignoring_degenerate(solid) -> bool:
+    """True when every edge of `solid` lies on exactly two faces — the
+    closed-shell test build123d's is_manifold means to make (a seam counts
+    twice for its one face, as it should) — EXCEPT a degenerated edge that is
+    the apex of a cone, the pole of a sphere or the axis point of a surface of
+    revolution, which has one face by construction. A degenerated edge on any
+    other surface stays a defect: a fillet too large for the corner it wraps
+    pinches its BSPLINE face to a point, OCCT calls that valid, and the Fillet
+    tool relies on THIS check to refuse it (tests/test_fillet_tool.py, radius
+    6 on the 5 mm corners)."""
+    from OCP.BRep import BRep_Tool
+    from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE
+    from OCP.TopExp import TopExp
+    from OCP.TopTools import TopTools_IndexedDataMapOfShapeListOfShape
+    m = TopTools_IndexedDataMapOfShapeListOfShape()
+    TopExp.MapShapesAndAncestors_s(solid.wrapped, TopAbs_EDGE, TopAbs_FACE, m)
+    if m.Extent() == 0:
+        return False
+    for i in range(1, m.Extent() + 1):
+        faces = m.FindFromIndex(i)
+        if faces.Size() == 2:
+            continue
+        if (BRep_Tool.Degenerated_s(b3d.Edge(m.FindKey(i)).wrapped)
+                and all(b3d.Face(f).geom_type.name in _APEX_SURFACES for f in faces)):
+            continue
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
