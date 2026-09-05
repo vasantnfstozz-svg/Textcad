@@ -7,10 +7,11 @@
 > 2026-09-03 (Revolve, the first tool born on the framework, a079c8c; its
 > review fixes 127dbcf + the commit after), P4's first tool done 2026-09-04
 > (Fillet/Chamfer on picked edges, 1412dc6; review fixes df68f60; checklist
-> passed). Next: P4 continues — but ★P0 first (a kernel call can segfault and
-> take the server down, §10), then P3b (a picked FACE as a Revolve profile, the
-> gap the user hit), then Hole. One tool per session. Every other plan file points here; §7 carries the done-notes, §10
-> the ranked open items.
+> passed). ★P0 kernel-crash survival done 2026-09-05 (1aea14a: `python
+> studio.py` is a supervisor + server child; a segfault costs one step, not the
+> session — §10). Next: P3b (a picked FACE as a Revolve profile, the gap the
+> user hit), then Hole. One tool per session. Every other plan file points
+> here; §7 carries the done-notes, §10 the ranked open items.
 >
 > It replaces the reverted TOOL-FRAMEWORK-PLAN.md (2026-09-02, another model's
 > session, deleted at the user's request). Its diagnosis was checked against
@@ -527,7 +528,7 @@ assemblies, the user's personal project.
 
 | Pri | Item | Source |
 |-----|------|--------|
-| ★P0 | **A kernel call can SEGFAULT and take the server (and every unsaved tab) with it.** `fillet` at radius 2.0 on esp32-remote's 80-edge top rim = exit 139, reproduced (`probes/fillet_segfault_probe.py`); radius 4 on the same edges refuses cleanly, so it is not a size rule. No try/except can catch it — OCP errors are Exception, a segfault is not. Found by the P4 review, which is why Fillet now calls the kernel ONCE with the value the user typed and never probes. The user can still type the fatal value themselves. Real fix: run kernel ops out of process (or checkpoint before each one). Session auto-restore limits the loss. | P4 review 2026-09-04 |
+| done | **A kernel call can SEGFAULT and take the server (and every unsaved tab) with it** — `fillet` at radius 2.0 on esp32-remote's 80-edge top rim = 0xC0000005, reproduced (`probes/fillet_segfault_probe.py`); no try/except can catch it. **Fixed 2026-09-05 (1aea14a):** `python studio.py` runs `supervise.py`, a light supervisor that starts the server as a child and relaunches it after a crash the OS reported (NTSTATUS `0xC…`; never after Ctrl+C / Stop-Process / exit 0, so the restart routine still works — exit codes probed). The session file, written after every COMPLETED POST, is the checkpoint: the fatal request never reaches it and the child comes back one step behind. An in-flight marker names the request the dead process was in; the UI waits for the server, reloads the document and speaks the note once. A saved design whose rebuild segfaults comes back UNBUILT (safe restore) instead of killing every restart. 13 process-level tests incl. the real fillet crash + 1 browser journey. Not out-of-process kernel calls (the rebuild cache and meshes live with the Document); a checkpoint-and-relaunch, which also covers crashes no one has met yet. | P4 review 2026-09-04 → fixed 2026-09-05 |
 | ★P0 | Clockwise `polygon` sketch entities silently refuse to fuse → non-manifold downstream. Normalise winding CCW in `sketch._entity` + test. | BACKLOG |
 | ★P0 | `/api/edit` silent no-op when setting a param the feature does not already have (e.g. `through` on `{amount, flip}`) — reports success, changes nothing. | export-integrity notes |
 | ★P0 | `/api/feature/remove` over-cascade: removing a tail cut with no dependents wiped a 14-feature tree (undo recovered). Not yet diagnosed. | export-integrity notes |
