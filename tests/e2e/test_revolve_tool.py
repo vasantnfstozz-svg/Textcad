@@ -39,16 +39,26 @@ async () => {
   setView('iso');
 }
 """
-PICK_TOP = """
-async () => {
-  const { S } = await import('/static/js/state.js');
-  const faces = window.__vp.bodyObjsRaw()[0].data.faces;
-  const top = faces.find(f => f.normal && f.normal[2] > 0.9);
-  S.pickedFace = { center: top.center, normal: top.normal, body: 'b' };
-  return top;
+TOP_FACE = """
+() => window.__vp.bodyObjsRaw()[0].data.faces.find(f => f.normal && f.normal[2] > 0.9)
+"""
+TO_SCREEN = """
+(w) => {
+  const vp = window.__vp;
+  const cv = document.querySelector('#viewer canvas');
+  const r = cv.getBoundingClientRect();
+  const V3 = vp.camera.position.constructor;
+  const v = new V3(w[0], w[1], w[2]).project(vp.camera);
+  return { x: r.left + (v.x + 1) / 2 * r.width,
+           y: r.top + (1 - (v.y + 1) / 2) * r.height };
 }
 """
-OPEN_REVOLVE = "async () => (await import('/static/js/revolve.js')).openRevolve()"
+TOP_PICKED = """
+async () => {
+  const { S } = await import('/static/js/state.js');
+  return !!(S.pickedFace && S.pickedFace.normal && S.pickedFace.normal[2] > 0.9);
+}
+"""
 # a box with a circle sketched on its top face, off the face's centre
 BUILD_FACE = """
 async () => {
@@ -265,12 +275,19 @@ def test_a_rectangle_across_the_axis_opens_about_its_own_side(page, fresh_doc, s
 def test_a_picked_face_revolves_about_its_edge_and_joins_the_body(page, fresh_doc, server):
     """Fusion's gap the user hit: click a flat face, press Revolve. The panel
     opens in face mode on the face's longest edge, Join targets the body, a
-    typed quarter turn builds the Pappus volume and fuses into ONE body."""
+    typed quarter turn builds the Pappus volume and fuses into ONE body. The
+    two steps under test are REAL: a pixel click on the face in the viewport
+    and the Revolve button in the ribbon (R5 — no shortcut for the step
+    under test; the face picker has had its own bugs)."""
     setup(page, BUILD_BOX)
     page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    page.wait_for_timeout(800)
     box = feature(server, "b")["volume"]
-    page.evaluate(PICK_TOP)
-    page.evaluate(OPEN_REVOLVE)
+    top = page.evaluate(TOP_FACE)
+    sp = page.evaluate(TO_SCREEN, top["center"])
+    page.mouse.click(sp["x"], sp["y"])                      # the user's pick
+    page.wait_for_function(TOP_PICKED, timeout=15000)
+    page.click("#ribbon .rbtn[title='revolve']")            # the user's button
     page.wait_for_selector("#revolveDialog", state="visible", timeout=15000)
     assert page.eval_on_selector("#rvProfile", "el => el.value") == "(selected face)"
     assert page.eval_on_selector("#rvOp", "el => el.value") == "join"
@@ -310,7 +327,7 @@ def test_symmetric_and_two_sides_sweep_the_other_way_too(page, fresh_doc, server
     page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
     page.wait_for_timeout(600)
     f = feature(server, "revolve1")
-    assert f["params"]["symmetric"] is True
+    assert f["params"]["both"] is True
     assert f["volume"] == pytest.approx(pappus(20, 60, 90), rel=1e-4)    # 45 EACH side
     centre = page.evaluate(BODY_CENTRE)
     assert abs(centre[1]) < 0.05, f"symmetric: centred on the sketch plane, got {centre}"
@@ -319,7 +336,7 @@ def test_symmetric_and_two_sides_sweep_the_other_way_too(page, fresh_doc, server
     page.fill("#rvAngle2", "90")
     page.wait_for_timeout(1800)
     f = feature(server, "revolve1")
-    assert f["params"]["angle2"] == 90 and f["params"]["symmetric"] is False
+    assert f["params"]["angle2"] == 90 and f["params"]["both"] is False
     assert f["volume"] == pytest.approx(pappus(20, 60, 135), rel=1e-4)
     centre = page.evaluate(BODY_CENTRE)
     assert centre[1] < 0, f"the bigger second side pulls the body to -y: {centre}"

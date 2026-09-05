@@ -135,7 +135,8 @@ Plain ES modules, no framework. Modules talk over `bus.js` events and share
 `state.js` (`S`). After ANY JS/CSS change bump `main.js?v=N` (and
 `studio.css?v=N`) in `static/index.html` — read the CURRENT value first. A new
 op is invisible until it is in `icons.js` (`OP_ICONS`, `TOOL_NAMES`) and a
-`ribbon.js` tab.
+`ribbon.js` tab. A face-mode op that its parent tool's button reaches
+(`extrude_face`, `revolve_face`) needs the icons only, no ribbon entry.
 
 ## Commit style
 

@@ -239,8 +239,9 @@ def cross(a, b):
 def test_the_planner_opens_on_the_lathe_axis_when_both_work(plane):
     p = plan(doc_with(plane))
     assert p["ok"], p
-    assert p["axis_name"] == "v" and p["candidates"][:2] == ["v", "u"]
-    assert p["candidates"][2:] == ["e1", "e2", "e3", "e4"]     # P3b: the outline's sides follow
+    working = [a["name"] for a in p["axes"] if a["ok"]]
+    assert p["axis_name"] == "v" and working[:2] == ["v", "u"]
+    assert working[2:] == ["e1", "e2", "e3", "e4"]     # P3b: the outline's sides follow
     pl = sk.sketch_plane(plane, 0)
     assert p["axis"] == pytest.approx(list(pl.y_dir), abs=1e-6)
 
@@ -257,7 +258,8 @@ def test_the_swap_is_honoured_and_the_legacy_world_name_is_mapped(plane):
 def test_a_profile_crossing_v_gets_u_not_v():
     p = plan(doc_with("XZ", x=0, y=10))
     assert p["ok"] and p["axis_name"] == "u"
-    assert p["candidates"][0] == "u" and "v" not in p["candidates"]
+    working = [a["name"] for a in p["axes"] if a["ok"]]
+    assert working[0] == "u" and "v" not in working
     v = next(a for a in p["axes"] if a["name"] == "v")
     assert not v["ok"] and "crosses v" in v["why"]      # listed, greyed, with the reason
 

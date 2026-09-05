@@ -808,8 +808,9 @@ class ToolPlanReq(BaseModel):
     feature_id: str | None = None       # edit mode: an existing extrude / extrude_face
     plane: str | None = None            # tool "sketch": the principal plane a new
     offset: float = 0.0                 #   plane sketch is drawn on, and its offset
-    axis: str | None = None             # tool "revolve": the axis to plan for ("u"/"v";
-                                        #   a legacy "X"/"Y"/"Z" is mapped onto one)
+    axis: str | list | None = None      # tool "revolve": the axis to plan for — "u"/"v",
+                                        #   a world name (mapped onto u/v when they coincide),
+                                        #   or a line [[u1, v1], [u2, v2]] in the sketch plane
     edges: list | None = None           # tools "fillet"/"chamfer": picked edges of body_id
     chain: bool | None = None           #   (edge_ref dicts or [x, y, z] midpoints); tangent chain on/off
     toggle: dict | None = None          #   one clicked edge to add to / remove from `edges`

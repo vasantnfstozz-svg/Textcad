@@ -181,12 +181,25 @@ def _pick_face(part, params: dict):
                      "face_center from an actual pick")
 
 
-def _flat_or_raise(face):
+def _flat_or_raise(face, verb: str = "extruded"):
     fp = sk.face_plane(face)
     if fp is None:
         raise ValueError(f"that face is {face.geom_type.name} (curved) — only a "
-                         f"FLAT face can be extruded; tilted flat faces are fine")
+                         f"FLAT face can be {verb}; tilted flat faces are fine")
     return fp
+
+
+def _pick_body(doc, body_id, what: str):
+    """The body a face was picked from — that one when it is built, else the
+    document's result under the newest solid's id (a pick before any body was
+    named) — or the sentence. ONE rule for every face-mode plan."""
+    part = doc._parts.get(body_id) if body_id else None
+    if part is None:
+        part = doc.result()
+        body_id = body_id or (_solids(doc)[-1].id if _solids(doc) else None)
+    if part is None:
+        raise ValueError(f"no solid to {what} — build a body first")
+    return part, body_id
 
 
 # ------------------------------------------------------------------ extrude ---
@@ -217,12 +230,7 @@ def plan_extrude(doc, req: dict) -> dict:
 
     # ---- face mode: extrude_face runs along the face's OUTWARD normal --------
     if sketch_id is None:
-        part = doc._parts.get(body_id) if body_id else None
-        if part is None:
-            part = doc.result()
-            body_id = body_id or (_solids(doc)[-1].id if _solids(doc) else None)
-        if part is None:
-            raise ValueError("no solid to extrude a face from — build a body first")
+        part, body_id = _pick_body(doc, body_id, "extrude a face from")
         picked = sk.resolve_face(part, face_center, face_normal)
         # the face's OWN plane: z = the outward normal = the build direction.
         # (Not face_sketch_plane: that canonicalises, and snaps a face tilted
@@ -346,7 +354,8 @@ def _revolve_geometry(profile, ax, n, ext) -> dict:
             "loops": _loops(list(profile.faces()), lathe),
             "limits": {"radius": round(radius, 4),
                        "axis_half": round(max(radius, (h_hi - h_lo) / 2.0) * 1.3, 4),
-                       "max_angle": sk.MAX_REVOLVE_DEG}}
+                       "max_angle": sk.MAX_REVOLVE_DEG,
+                       "max_each_side": sk.MAX_REVOLVE_DEG / 2}}   # a symmetric sweep
 
 
 def _edge_label(p, q) -> str:
@@ -372,49 +381,64 @@ def _same_line(a, b) -> bool:
     return (close(p, r) and close(q, s)) or (close(p, s) and close(q, r))
 
 
-def _axis_entries(profile, want) -> list[dict]:
-    """Every axis this profile could turn about, each TESTED (P3b): u and v
-    first — always listed, greyed with the reason when the profile crosses them
-    — then the straight edges of the outline, longest first, named e1…eN and
-    labelled by position; then, when `want` is a stored line that no longer
-    matches an edge, that line under the name "stored" (a construction line:
-    offered while it works, explained when it does not); a legacy WORLD axis
-    under its own name. `param` is what the feature stores for that entry —
+MAX_EDGE_AXES = 12     # the longest straight edges offered as axes — a traced outline has hundreds
+
+
+def _axis_entries(profile, want, edges_first: bool = False) -> list[dict]:
+    """Every axis this profile could turn about, each TESTED (P3b): u and v —
+    always listed, greyed with the reason when the profile crosses them — and
+    the longest straight edges of the outline (at most MAX_EDGE_AXES), named
+    e1…eN and labelled by position. A sketch lists u, v first (its origin is
+    the sketch's own); a picked FACE lists the edges first, because its plane's
+    origin is the world origin's foot, an axis far from a body that is not
+    centred on it. Then, when `want` is a stored line that matches no offered
+    edge, that line under the name "stored" (a construction line: offered while
+    it works, explained when it does not); a legacy WORLD axis under its own
+    name. `kind` says which of those it is, `param` what the feature stores —
     the name, or the line — so the browser forwards it and derives nothing
-    (R1). `ext` is revolve_extent's answer, for the handles."""
+    (R1); `ax` / `ext` are the measured Axis and revolve_extent, for the
+    handles. One candidate the kernel chokes on is greyed, not the tool refused
+    (OCP errors do not derive from RuntimeError)."""
     entries = []
 
-    def add(name, label, param):
-        why = None
+    def add(kind, name, label, param):
+        why, ext, ax = None, None, None
         try:
-            ext = sk.revolve_extent(profile, sk.revolve_axis(profile, param))
+            ax = sk.revolve_axis(profile, param)
+            ext = sk.revolve_extent(profile, ax)
         except ValueError as e:                  # a line the plane refuses
-            ext, why = None, str(e)
-        if ext is None:
-            why = why or f"the world {name} axis runs outside the sketch plane"
-        elif ext[4]:
-            why = f"it crosses {name} ({ext[0]:.3g} to {ext[1]:.3g} mm)"
-        entries.append({"name": name, "label": label, "param": param,
-                        "ok": why is None, "why": why, "ext": ext})
+            why = str(e)
+        except Exception:                        # the kernel: this axis only
+            why = f"the kernel could not measure {label}"
+        word = name if kind in ("local", "world") else label
+        if why is None:
+            if ext is None:
+                why = f"{word} runs outside the sketch plane"
+            elif ext[4]:
+                why = f"it crosses {word} ({ext[0]:.3g} to {ext[1]:.3g} mm)"
+        entries.append({"kind": kind, "name": name, "label": label, "param": param,
+                        "ok": why is None, "why": why, "ext": ext, "ax": ax})
 
-    for name in ("v", "u"):
-        add(name, _AXIS_LABELS[name], name)
-    lines = sk.revolve_edge_lines(profile)
-    for i, (p, q) in enumerate(lines, 1):
-        add(f"e{i}", _edge_label(p, q), [list(p), list(q)])
+    lines = sk.revolve_edge_lines(profile)[:MAX_EDGE_AXES]
+    local = [("local", n, _AXIS_LABELS[n], n) for n in ("v", "u")]
+    edges = [("edge", f"e{i}", _edge_label(p, q), [list(p), list(q)])
+             for i, (p, q) in enumerate(lines, 1)]
+    for spec in (edges + local if edges_first else local + edges):
+        add(*spec)
     want_line = sk._axis_line(want)
     if want_line is not None:
         if not any(_same_line(want_line, line) for line in lines):
             p, q = want_line
-            add("stored", f"the stored line ({p[0]:g}, {p[1]:g}) → ({q[0]:g}, {q[1]:g})",
+            add("stored", "stored",
+                f"the stored line ({p[0]:g}, {p[1]:g}) → ({q[0]:g}, {q[1]:g})",
                 [list(p), list(q)])
     elif isinstance(want, str) and want in sk._AXES:
-        add(want, f"{want} — world axis", want)
+        add("world", want, f"{want} — world axis", want)
     return entries
 
 
 def _is_edge(entry: dict) -> bool:
-    return entry["name"].startswith("e")
+    return entry["kind"] == "edge"
 
 
 def _matches(entry: dict, want) -> bool:
@@ -464,18 +488,8 @@ def plan_revolve(doc, req: dict) -> dict:
         raise ValueError("Revolve needs a sketch profile or a picked flat face")
 
     if sketch_id is None:                       # ---- face mode (P3b) ----
-        part = doc._parts.get(body_id) if body_id else None
-        if part is None:
-            part = doc.result()
-            body_id = body_id or (_solids(doc)[-1].id if _solids(doc) else None)
-        if part is None:
-            raise ValueError("no solid to revolve a face of — build a body first")
-        picked = sk.resolve_face(part, face_center, face_normal)
-        fp = sk.face_profile_plane(picked)
-        if fp is None:
-            raise ValueError(f"that face is {picked.geom_type.name} (curved) — only a "
-                             f"FLAT face can be revolved; tilted flat faces are fine")
-        profile = sk._on_plane(b3d.Sketch([picked]), fp)
+        part, body_id = _pick_body(doc, body_id, "revolve a face of")
+        _picked, _fp, profile = sk.face_profile(part, face_center, face_normal)  # the op's own object
         input_id, mode, op, target = body_id, "face", "revolve_face", body_id
     else:                                       # ---- sketch mode ----
         _prof, profile = _sketch_part(doc, sketch_id)
@@ -486,7 +500,7 @@ def plan_revolve(doc, req: dict) -> dict:
 
     if isinstance(want, str) and want in sk._AXES:
         want = _coincides(pl, want) or want     # the same line, under the name that rides
-    entries = _axis_entries(profile, want)
+    entries = _axis_entries(profile, want, edges_first=(mode == "face"))
     valid = [e for e in entries if e["ok"]]
     if not valid:
         why = " and ".join(e["why"] for e in entries if e["why"] and not _is_edge(e))
@@ -506,15 +520,13 @@ def plan_revolve(doc, req: dict) -> dict:
                         "why": (asked["why"] if asked and asked["why"]
                                 else f"{want} is not one of this profile's axes")}
     name = chosen["name"]
-    geo = _revolve_geometry(profile, sk.revolve_axis(profile, chosen["param"]), n, chosen["ext"])
+    geo = _revolve_geometry(profile, chosen["ax"], n, chosen["ext"])
     return {
         "ok": True, "tool": "revolve", "mode": mode, "op": op, "input": input_id,
         **geo, "axis_name": name, "axis_param": chosen["param"],
-        "axes": [{k: e[k] for k in ("name", "label", "param", "ok", "why")}
+        "axes": [{k: e[k] for k in ("kind", "name", "label", "param", "ok", "why")}
                  for e in entries if e["ok"] or not _is_edge(e)],
-        "candidates": [e["name"] for e in valid],
-        "alternatives": {e["name"]: _revolve_geometry(profile, sk.revolve_axis(profile, e["param"]),
-                                                      n, e["ext"])
+        "alternatives": {e["name"]: _revolve_geometry(profile, e["ax"], n, e["ext"])
                          for e in valid if e["name"] != name},
         "fallback": fallback,
         "target_body": target,

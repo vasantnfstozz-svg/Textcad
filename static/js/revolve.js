@@ -8,7 +8,7 @@
 //
 // THE AXIS IS DERIVED, NOT ASKED FOR (R1): the server tests every axis the
 // profile could turn about — the plane's u and v through the sketch origin, and
-// each straight edge of the outline — and hands back the list (`axes`, each
+// the straight edges of the outline — and hands back the list (`axes`, each
 // with the label to show and the `param` the feature stores: a name, or a line
 // in the sketch plane), the chosen one's ring frame, radius and lathe outline,
 // and the same handles for every other axis that works (a swap is a local
@@ -20,43 +20,63 @@ import { beginAxisLine, endAxisLine,
          beginRevolveGhost, setRevolveGhost, hideRevolveGhost, endRevolveGhost }
   from './viewport.js';
 
-/* the limit is the server's (plan.limits.max_angle: one full turn either way;
-   the kernel would quietly wrap 400° to 40°). The Direction row shares it out:
-   one side may take the whole turn, symmetric half of it each way, two sides
-   split it between them — the mode's own arithmetic, no geometry. */
-const maxAngle = st => (st && st.plan && Number(st.plan.limits.max_angle)) || 360;
-const dir = () => g('rvDir').value;
-const angle2 = () => Math.max(0, num('rvAngle2'));
-const ceiling = st => dir() === 'sym' ? maxAngle(st) / 2
-  : dir() === 'two' ? Math.max(0, maxAngle(st) - angle2()) : maxAngle(st);
-const clampAngle = (st, t) => Math.max(-ceiling(st), Math.min(ceiling(st), t));
-/* what sweeps the OTHER way, for the ghost: symmetric mirrors side one */
-const back = () => dir() === 'sym' ? Math.abs(num('rvAngle')) : dir() === 'two' ? angle2() : 0;
+/* the limits are the server's (plan.limits): max_angle = one full turn either
+   way (the kernel would quietly wrap 400° to 40°), max_each_side = what a
+   symmetric sweep may take each way. That two sides SHARE the turn is the op's
+   own rule; the panel restates it only to keep a typed pair inside it. */
+const lim = st => (st && st.plan && st.plan.limits) || {};
+const maxAngle = st => Number(lim(st).max_angle) || 360;
+const maxEach = st => Number(lim(st).max_each_side) || maxAngle(st) / 2;
 const isFace = st => !!(st && st.input && st.input.kind === 'face');
+
+/* ONE reading of the Direction row: the mode, the two angles, what sweeps the
+   other way (for the ghost) and the ring's ceiling */
+function extents(st) {
+  const mode = g('rvDir').value, angle = num('rvAngle');
+  const angle2 = mode === 'two' ? Math.max(0, num('rvAngle2')) : 0;
+  return { mode, angle, angle2, both: mode === 'sym',
+           back: mode === 'sym' ? Math.abs(angle) : angle2,
+           ceiling: mode === 'sym' ? maxEach(st) : maxAngle(st) };
+}
+const clampAngle = (st, t) => { const c = extents(st).ceiling; return Math.max(-c, Math.min(c, t)); };
+let lastTyped = 'angle';        // two sides: the box the user touched last wins the turn
 
 /* ---------------- the panel <-> params ---------------- */
 /* the axis the select names → what the feature stores: the plan's `param` for
-   that entry ("u", "v", a world name, or a line in the sketch plane) */
+   that entry ("u", "v", a world name, or a line in the sketch plane). Until the
+   plan has arrived (an edit reopened and a value typed at once) the feature's
+   OWN axis stands — never the select's static default. */
 function axisParam(st) {
-  const name = g('rvAxis').value || 'v';
+  const name = g('rvAxis').value;
   const e = st && st.plan && (st.plan.axes || []).find(a => a.name === name);
-  return e ? e.param : name;
+  if (e) return e.param;
+  if (st && st.original) return st.original.axis;
+  return name || 'v';
 }
 function params(st) {                          // typed values are clamped in beforeApply, drags by the ring
-  const p = { axis: axisParam(st), angle: num('rvAngle'),
-              angle2: dir() === 'two' ? angle2() : 0, symmetric: dir() === 'sym' };
+  const x = extents(st);
+  const p = { axis: axisParam(st), angle: x.angle, angle2: x.angle2, both: x.both };
   if (isFace(st)) { p.face_center = st.input.center; p.face_normal = st.input.normal; }
   return p;
 }
+/* the option whose param IS this axis — by name for u / v / a world axis, by
+   the same line for an edge; null while the plan has not listed it */
+function optionFor(st, axis) {
+  const axes = (st && st.plan && st.plan.axes) || [];
+  const key = JSON.stringify(axis);
+  const e = axes.find(a => a.name === axis || JSON.stringify(a.param) === key);
+  if (e) return e.name;
+  return typeof axis === 'string' && [...g('rvAxis').options].some(o => o.value === axis) ? axis : null;
+}
 /* write params into the boxes; {} = the honest default: 0°, one side, nothing
-   built yet. The axis list is the plan's (setAxisOptions) — until it arrives
-   the static u / v options stand, and a stored line has no row to select. */
+   built yet. The select FOLLOWS the params — a revert to the last good values
+   must not leave it on the axis that broke the solid. */
 function show(st, p) {
-  g('rvDir').value = p.symmetric ? 'sym' : (p.angle2 ? 'two' : 'one');
+  g('rvDir').value = p.both ? 'sym' : (p.angle2 ? 'two' : 'one');
   g('rvAngle').value = p.angle || 0;
   g('rvAngle2').value = p.angle2 || 0;
-  const sel = g('rvAxis');
-  if (typeof p.axis === 'string' && [...sel.options].some(o => o.value === p.axis)) sel.value = p.axis;
+  const name = optionFor(st, p.axis);
+  if (name) g('rvAxis').value = name;
 }
 /* the op's defaults ARE the feature's values when a tree names none (a legacy
    revolve with only an angle spins about Z; one without an angle is a full turn)
@@ -65,11 +85,11 @@ function snapshot(f) {
   const p = f.params || {};
   const s = { axis: p.axis == null ? (f.op === 'revolve_face' ? null : 'Z') : p.axis,
               angle: p.angle == null ? 360 : Number(p.angle),
-              angle2: Number(p.angle2) || 0, symmetric: !!p.symmetric };
+              angle2: Number(p.angle2) || 0, both: !!p.both };
   if (f.op === 'revolve_face') { s.face_center = p.face_center; s.face_normal = p.face_normal || null; }
   return s;
 }
-function sync() { g('rvAngle2Row').style.display = dir() === 'two' ? '' : 'none'; }
+function sync() { g('rvAngle2Row').style.display = g('rvDir').value === 'two' ? '' : 'none'; }
 
 /* ---------------- the handles: axis line, ring, lathe ghost ---------------- */
 /* the select shows the server's list: every axis that works, and u / v greyed
@@ -96,7 +116,7 @@ const gizmos = {
     beginAxisLine(plan.origin, plan.axis, plan.limits.axis_half);
     beginRevolveGhost(plan.frame, plan.loops);
     beginTaperRing(plan.origin, plan.frame, plan.limits.radius * 1.15, num('rvAngle'),
-      t => { setBox('rvAngle', t); setRevolveGhost(t, back()); },   // dragging: the ghost only
+      t => { lastTyped = 'angle'; setBox('rvAngle', t); setRevolveGhost(t, extents(st).back); },
       async t => {                                            // release: ONE verified rebuild
         setBox('rvAngle', t);
         await rv.apply();
@@ -119,26 +139,35 @@ function refresh(st) {
     axis: st.plan.axis, origin: st.plan.origin, frame: st.plan.frame,
     loops: st.plan.loops, limits: st.plan.limits } };
   delete rest[name];
-  const entry = (st.plan.axes || []).find(a => a.name === name);
-  st.plan = { ...st.plan, ...alt, axis_name: name, axis_param: entry ? entry.param : name,
-              alternatives: rest, fallback: null };
+  st.plan = { ...st.plan, ...alt, axis_name: name, alternatives: rest, fallback: null };
   gizmos.end();
   gizmos.begin(st, st.plan);
 }
-function beforeApply(st) {                   // typed values obey the server's limit
-  if (dir() === 'two') {
-    const c2 = Math.max(0, Math.min(angle2(), maxAngle(st) - Math.abs(num('rvAngle'))));
-    if (c2 !== num('rvAngle2')) {
-      g('rvAngle2').value = c2;
-      say(`Second side set to ${c2}° — it is a size the other way, and the two sides ` +
-          `together make one full turn.`);
+/* typed values obey the server's limits; with two sides, the box the user
+   touched last keeps its value and the other one gives way */
+function beforeApply(st) {
+  const x = extents(st), max = maxAngle(st);
+  if (x.mode === 'two' && num('rvAngle2') < 0) {
+    g('rvAngle2').value = 0;
+    say('The second side is a size, not a direction — it turns the other way from the ' +
+        'first; the first angle\'s sign chooses the direction.');
+  }
+  if (x.mode === 'two' && Math.abs(x.angle) + x.angle2 > max) {
+    if (lastTyped === 'angle2') {
+      const a = Math.sign(x.angle || 1) * Math.max(0, max - x.angle2);
+      g('rvAngle').value = a;
+      say(`Angle set to ${a}° — the two sides together make one full turn.`);
+    } else {
+      const a2 = Math.max(0, max - Math.abs(x.angle));
+      g('rvAngle2').value = a2;
+      say(`Second side set to ${a2}° — the two sides together make one full turn.`);
     }
   }
   const a = num('rvAngle'), c = clampAngle(st, a);
   if (c !== a) {
     g('rvAngle').value = c;
-    say(dir() === 'sym' ? `Angle limited to ${c}° — half a turn each side is the full turn.`
-                        : `Angle limited to ${c}° — one full turn.`);
+    say(x.mode === 'sym' ? `Angle limited to ${c}° — half a turn each side is the full turn.`
+                         : `Angle limited to ${c}° — one full turn.`);
   }
 }
 function afterApply(st) { setTaperRingAngle(num('rvAngle')); }
@@ -155,15 +184,17 @@ const rv = tool({
            'ring or type an angle before OK.',
   split: () => 'the revolved cut leaves material on both sides — revolve the ' +
                'full 360°, or move the profile.',
-  describe: p => `${p.angle}°${p.symmetric ? ' each side' : p.angle2 ? ` + ${p.angle2}°` : ''}` +
+  describe: p => `${p.angle}°${p.both ? ' each side' : p.angle2 ? ` + ${p.angle2}°` : ''}` +
                  ` about ${axisWord(p.axis)}`,
 });
 
 export const openRevolve = profileId => rv.open(profileId);
 export function initRevolve() {
   rv.init();
+  g('rvAngle').addEventListener('input', () => { lastTyped = 'angle'; });
+  g('rvAngle2').addEventListener('input', () => { lastTyped = 'angle2'; });
   g('rvFull').onclick = () => {              // a full turn is one thing: one side, 360
     g('rvDir').value = 'one'; sync();
-    g('rvAngle').value = 360; rv.apply();
+    g('rvAngle').value = 360; lastTyped = 'angle'; rv.apply();
   };
 }

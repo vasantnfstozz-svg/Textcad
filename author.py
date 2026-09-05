@@ -38,7 +38,11 @@ _ENUMS = {
 _MM = {"radius", "bolt_radius", "thickness", "height", "width", "depth",
        "length", "amount", "offset", "dx", "dy", "dz", "x", "y", "z",
        "pitch_circle_dia", "rx", "ry", "inner_r", "outer_r", "tip_radius"}
-_DEG = {"angle", "angle_deg", "rotation", "inlet_angle", "exit_angle"}
+_DEG = {"angle", "angle2", "angle_deg", "rotation", "inlet_angle", "exit_angle"}
+# an `axis` that is NOT the world-axis enum: revolve's takes "u" / "v", a world
+# name or a line [[u1, v1], [u2, v2]] in the sketch plane (see its OP_NOTE) —
+# an enum here would tell the AI the one form that cannot work on a face
+_NO_ENUM = {("revolve", "axis"), ("revolve_face", "axis")}
 
 # op -> one-line convention note (anchoring, direction, operand meaning)
 OP_NOTES = {
@@ -61,7 +65,8 @@ OP_NOTES = {
                "axis \"X\"/\"Y\"/\"Z\" lying in the plane, or a line in the sketch's own "
                "coordinates [[u1, v1], [u2, v2]] (one of the profile's straight edges). "
                "The profile must lie entirely to one side. angle is signed; angle2 adds "
-               "a second side the other way; symmetric=true sweeps angle to EACH side.",
+               "a second side the other way; both=true sweeps angle to EACH side "
+               "(Fusion's Symmetric, the same key as extrude's).",
     "revolve_face": "Revolves a flat face of the input body (face_center + face_normal "
                     "from a real pick) about a line in the face's plane, normally one of "
                     "its straight edges: axis=[[u1, v1], [u2, v2]]. Returns only the new "
@@ -97,7 +102,7 @@ OP_NOTES = {
 def _annotate(op_name: str, params: list[dict]) -> list[dict]:
     for p in params:
         n = p["name"]
-        if n in _ENUMS:
+        if n in _ENUMS and (op_name, n) not in _NO_ENUM:
             p["enum"] = _ENUMS[n]
         elif n in _MM:
             p["unit"] = "mm"

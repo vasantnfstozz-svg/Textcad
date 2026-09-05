@@ -118,7 +118,7 @@ def test_edge_lines_are_the_outer_straight_edges_longest_first_and_canonical():
 
 def test_symmetric_sweeps_the_angle_to_each_side_and_is_centred_on_the_plane():
     one = sk.revolve_sketch(rect(), axis="v", angle=90)
-    sym = sk.revolve_sketch(rect(), axis="v", angle=90, symmetric=True)
+    sym = sk.revolve_sketch(rect(), axis="v", angle=90, both=True)
     assert inspector.health(sym) == []
     assert sym.volume == pytest.approx(pappus(20, 800, 180), rel=1e-6)    # 90 EACH side
     assert abs(off_plane(sym, XZ)) < 1e-6
@@ -151,11 +151,11 @@ def test_two_sides_and_symmetric_guards_are_sentences():
     with pytest.raises(ValueError, match="add up to 400"):
         sk.revolve_sketch(rect(), axis="v", angle=300, angle2=100)
     with pytest.raises(ValueError, match="add up to 400"):
-        sk.revolve_sketch(rect(), axis="v", angle=200, symmetric=True)
+        sk.revolve_sketch(rect(), axis="v", angle=200, both=True)
     with pytest.raises(ValueError, match="angle is 0"):
-        sk.revolve_sketch(rect(), axis="v", angle=0, angle2=0, symmetric=True)
+        sk.revolve_sketch(rect(), axis="v", angle=0, angle2=0, both=True)
     with pytest.raises(ValueError):
-        sk.revolve_sketch(rect(), axis="v", angle=90, symmetric="maybe")
+        sk.revolve_sketch(rect(), axis="v", angle=90, both="maybe")
 
 
 # ------------------------------------------------------- a picked face profile ---
@@ -233,7 +233,8 @@ def test_the_axis_list_is_u_v_then_the_working_edges_with_labels_and_params():
     for a in p["axes"][2:]:                       # every alternative carries its own handles
         alt = p["alternatives"][a["name"]]
         assert alt["limits"]["max_angle"] == 360 and len(alt["loops"]) == 1
-    assert p["candidates"] == names
+    assert [a["name"] for a in p["axes"] if a["ok"]] == names
+    assert [a["kind"] for a in p["axes"]] == ["local", "local", "edge", "edge", "edge", "edge"]
 
 
 def test_a_rectangle_over_the_origin_opens_on_its_longest_side_and_says_why_not_u_v():
@@ -243,7 +244,7 @@ def test_a_rectangle_over_the_origin_opens_on_its_longest_side_and_says_why_not_
     byname = {a["name"]: a for a in p["axes"]}
     assert not byname["u"]["ok"] and "crosses u" in byname["u"]["why"]
     assert not byname["v"]["ok"] and "crosses v" in byname["v"]["why"]
-    assert p["candidates"] == ["e1", "e2", "e3", "e4"]
+    assert [a["name"] for a in p["axes"] if a["ok"]] == ["e1", "e2", "e3", "e4"]
     solid = sk.revolve_sketch(d._parts["p"], axis=p["axis_param"], angle=360)
     assert solid.volume == pytest.approx(pappus(10, 800, 360), rel=1e-6)
 
@@ -299,7 +300,7 @@ def test_a_picked_face_plans_in_face_mode_on_its_longest_edge(face):
     byname = {a["name"]: a for a in p["axes"]}
     assert not byname["u"]["ok"] and not byname["v"]["ok"]       # a centred face crosses both
     assert p["axis_name"] == "e1" and "60 mm" in byname["e1"]["label"]
-    assert p["candidates"] == ["e1", "e2", "e3", "e4"]
+    assert [a["name"] for a in p["axes"] if a["ok"]] == ["e1", "e2", "e3", "e4"]
     bb = d._parts["b"].bounding_box()                          # the ring is level with the face
     level = bb.max.Z if face == "top" else bb.min.Z
     assert p["origin"][2] == pytest.approx(level, abs=1e-6)
@@ -323,7 +324,7 @@ def test_a_revolve_face_feature_builds_edits_and_plans_from_its_feature():
     d.edit("rf", "angle", 180)
     d.rebuild()
     assert d.get("rf").volume == pytest.approx(pappus(20, 2400, 180), rel=1e-6)
-    d.edit_many("rf", {"angle": 90, "symmetric": True})
+    d.edit_many("rf", {"angle": 90, "both": True})
     d.rebuild()
     assert d.get("rf").volume == pytest.approx(pappus(20, 2400, 180), rel=1e-6)
 
@@ -378,3 +379,89 @@ def test_a_broken_sweep_is_refused_not_returned(monkeypatch):
     monkeypatch.setattr(sk, "_revolve", lambda *a, **k: b3d.Shell(box.faces()[:-1]))
     with pytest.raises(ValueError, match="came back broken"):
         sk.revolve_sketch(rect(), axis="v", angle=90)
+
+
+# ------------------------------------------------- after the review (2026-09-05)
+
+def test_a_dict_shaped_axis_is_a_sentence_not_a_key_error():
+    """An AI near-miss on the documented [[u1, v1], [u2, v2]] form."""
+    with pytest.raises(ValueError, match='"u" or "v"'):
+        sk.revolve_sketch(rect(), axis=[{"u": 10, "v": 0}, {"u": 10, "v": 40}], angle=90)
+
+
+def test_a_negative_second_side_is_refused_even_when_both_is_set():
+    with pytest.raises(ValueError, match="size, not a direction"):
+        sk.revolve_sketch(rect(), axis="v", angle=90, angle2=-30, both=True)
+
+
+def test_a_stored_line_snaps_to_the_edge_it_lies_along_after_a_resize():
+    """The profile grew along the axis edge after it was picked: the stored line
+    no longer matches the edge's endpoints, but it lies along it — the axis must
+    still be the kernel's own vertices (a rounded line 0.1 µm off sweeps a
+    sliver face, probe §9): 3 sweeps + 2 caps, nothing extra."""
+    grown = rect(h=60, y=30)                                    # 10..30 by 0..60
+    ax = sk.revolve_axis(grown, LEFT)                           # LEFT is 0..40 tall
+    corners = [v.center() for v in grown.faces()[0].vertices()]
+    assert min((ax.position - c).length for c in corners) < 1e-9, "snapped to a real vertex"
+    solid = sk.revolve_sketch(grown, axis=LEFT, angle=90)
+    assert inspector.health(solid) == [] and len(solid.faces()) == 5
+    assert solid.volume == pytest.approx(pappus(10, 1200, 90), rel=1e-6)
+    # a line clear of every edge is a construction line, used as given
+    ax2 = sk.revolve_axis(grown, [[8, 0], [8, 60]])
+    assert XZ.to_local_coords(ax2.position).X == pytest.approx(8)
+
+
+def test_a_face_on_a_body_away_from_the_origin_opens_on_its_edge_not_on_v():
+    """u / v pass through the world origin's foot on the face plane — far from a
+    body that is not centred on it, and 'valid' precisely because they miss the
+    face. Face mode lists the edges first, so the default lies on the face."""
+    d = Document(name="off")
+    d.add("b", "plate", {"width": 60, "depth": 40, "thickness": 12}, [])
+    d.add("m", "move", {"x": 100, "y": 50}, ["b"])
+    d.rebuild()
+    part = d._parts["m"]
+    _, face, c, n = next(x for x in planar_faces(part) if x[3][2] > 0.9)
+    p = plan(d, body_id="m", face_center=c, face_normal=n)
+    assert p["ok"] and p["mode"] == "face"
+    assert [a["kind"] for a in p["axes"]][:4] == ["edge"] * 4
+    assert p["axis_name"] == "e1"
+    byname = {a["name"]: a for a in p["axes"]}
+    assert byname["v"]["ok"] and byname["u"]["ok"], "they miss the face, so they 'work'"
+    bb, o = part.bounding_box(), p["origin"]                    # the default axis lies ON the face
+    assert bb.min.X - 1e-6 <= o[0] <= bb.max.X + 1e-6
+    assert bb.min.Y - 1e-6 <= o[1] <= bb.max.Y + 1e-6
+
+
+def test_the_panel_is_offered_at_most_twelve_edges_and_the_plan_stays_quick():
+    """A traced outline has hundreds of straight segments: the plan was O(N²)
+    in them (1.8 s for a 40-gon, 20 s for a 120-gon) and the dropdown useless."""
+    import time
+    pts = [[30 * math.cos(2 * math.pi * i / 40), 30 * math.sin(2 * math.pi * i / 40)]
+           for i in range(40)]
+    d = Document(name="40gon")
+    d.add("p", "sketch", {"plane": "XZ", "entities": [{"kind": "polygon", "points": pts}]}, [])
+    d.rebuild()
+    t = time.perf_counter()
+    p = plan(d, sketch_id="p")
+    dt = time.perf_counter() - t
+    assert p["ok"]
+    assert sum(a["kind"] == "edge" for a in p["axes"]) == toolplan.MAX_EDGE_AXES
+    assert dt < 3.0, f"plan took {dt:.1f} s"
+
+
+def test_one_axis_the_kernel_chokes_on_is_dropped_not_the_tool_refused(monkeypatch):
+    """OCP errors do not derive from RuntimeError: a candidate the kernel cannot
+    measure costs that candidate, never the whole plan."""
+    real = sk.revolve_extent
+
+    def flaky(sketch, ax):
+        # the LEFT side only: it starts at u = 10 like the two horizontal sides,
+        # but it is the one running along v
+        if (abs(XZ.to_local_coords(ax.position).X - 10) < 1e-6
+                and abs(ax.direction.dot(XZ.x_dir)) < 1e-6):
+            raise RuntimeError("Standard_OutOfRange")
+        return real(sketch, ax)
+    monkeypatch.setattr(sk, "revolve_extent", flaky)
+    p = plan(sketch_doc(), sketch_id="p")
+    assert p["ok"] and p["axis_name"] == "v"
+    assert len([a for a in p["axes"] if a["kind"] == "edge"]) == 3

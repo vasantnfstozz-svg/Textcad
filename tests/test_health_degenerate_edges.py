@@ -35,6 +35,16 @@ def test_a_sphere_and_a_cone_pass_and_a_truly_open_shell_still_fails():
     assert any("not manifold" in p for p in inspector.health(open_shell))
 
 
+def test_measure_and_health_give_one_answer_about_watertightness():
+    """MCP verify_step reads measure()['is_manifold']; the tree reads health().
+    Both must come from the same census, or one caller calls a cone apex broken."""
+    s = hexagon()
+    e = s.faces()[0].outer_wire().edges()[0]
+    solid = sk._revolve(s, axis=Axis(e @ 0, (e @ 1) - (e @ 0)), revolution_arc=90)
+    assert inspector.measure(solid)["is_manifold"] is True
+    assert inspector.health(solid) == []
+
+
 def test_a_fillet_pinched_to_a_point_is_still_a_defect():
     """The boundary of the exemption: a fillet larger than the corner it wraps
     pinches its BSPLINE face to a degenerated edge. OCCT calls the result

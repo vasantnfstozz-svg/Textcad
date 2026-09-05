@@ -452,7 +452,29 @@ def face_sketch_plane(face):
     offset / no flip. The author knows which side they are on, and getting it
     wrong cuts air — which fails loudly instead of quietly building the wrong
     part."""
-    from build123d import Plane, Vector
+    return _face_frame(face, snap=True)
+
+
+def face_profile_plane(face):
+    """The plane a FACE is a PROFILE in (Revolve on a picked face, P3b): the
+    same framing rule as face_sketch_plane, WITHOUT the snap — the face's true
+    plane, because a profile must lie in its plane (a wall tilted under 25 deg
+    sketches as if upright, but its edges sit off that plane —
+    probes/revolve_face_probe.py §7 measured 1.4 mm). Identical to
+    face_sketch_plane on the axis-aligned faces of a box, so (u, v) on a face
+    means what it means in a sketch drawn there. None for a curved face."""
+    return _face_frame(face, snap=False)
+
+
+def _face_frame(face, snap: bool):
+    """ONE framing rule for a flat face — face_sketch_plane is this with `snap`
+    on, face_profile_plane with it off. The principal frame nearest the face's
+    normal (within ~25 deg, |n·k| > 0.9) supplies the ORIENTATION: its x, and its
+    z as the canonical side; the world origin's foot on the plane is the origin.
+    `snap` puts the plane ON that principal plane (a sketch is positioned by the
+    face, not oriented by it); off, the plane is the face's own with the frame's
+    x laid into it. Past ~25 deg no principal frame fits and both take the face's
+    normal with a seeded x. None for a curved face."""
     pl = face_plane(face)
     if pl is None:
         return None
@@ -460,12 +482,16 @@ def face_sketch_plane(face):
     for frame in (Plane.XY, Plane.YZ, Plane.XZ):
         if abs(n.dot(frame.z_dir)) > 0.9:        # this face's axis
             k = frame.z_dir
-            return Plane(origin=k * k.dot(pl.origin),
-                         x_dir=frame.x_dir, z_dir=k)
+            if snap:
+                return Plane(origin=k * k.dot(pl.origin),
+                             x_dir=frame.x_dir, z_dir=k)
+            z = n if n.dot(k) > 0 else n * -1.0                  # the canonical side
+            x = frame.x_dir - z * z.dot(frame.x_dir)              # the frame's x, in the plane
+            return Plane(origin=z * z.dot(pl.origin), x_dir=x.normalized(), z_dir=z)
     # a genuinely oblique flat face (a tapered wall): no principal plane fits,
     # so derive a stable frame from the normal itself
-    seed = next((c for c in (Vector(1, 0, 0), Vector(0, 1, 0), Vector(0, 0, 1))
-                 if abs(n.dot(c)) < 0.9), Vector(1, 0, 0))
+    seed = next((c for c in (b3d.Vector(1, 0, 0), b3d.Vector(0, 1, 0), b3d.Vector(0, 0, 1))
+                 if abs(n.dot(c)) < 0.9), b3d.Vector(1, 0, 0))
     return Plane(origin=n * n.dot(pl.origin),
                  x_dir=(seed - n * n.dot(seed)).normalized(), z_dir=n)
 
@@ -1071,28 +1097,19 @@ _LOCAL_AXES = {"u": "x_dir", "v": "y_dir"}      # a sketch plane's own axes
 MAX_REVOLVE_DEG = 360.0                          # one full turn either way
 
 
-def face_profile_plane(face):
-    """The plane a FACE is a PROFILE in (Revolve on a picked face, P3b): the
-    face's true plane, framed the way face_sketch_plane frames a sketch on it
-    — z toward the nearest principal +axis, x that principal frame's x, origin
-    the world origin's foot on the plane. On the axis-aligned faces of a box
-    the two are the same plane, so (u, v) on a face means what it means in a
-    sketch drawn there. They part where it matters: face_sketch_plane SNAPS a
-    face tilted under ~25 deg onto the principal plane (a sketch's plane is
-    positioned by the face, not oriented by it), and that plane does not
-    contain the face — probes/revolve_face_probe.py §7 measured a tapered
-    wall's edges 1.4 mm off it. A profile must lie in its plane. None for a
-    genuinely curved face."""
-    fp = face_plane(face)
-    if fp is None:
-        return None
-    n = fp.z_dir
-    frame = max((Plane.XY, Plane.YZ, Plane.XZ), key=lambda f: abs(n.dot(f.z_dir)))
-    if n.dot(frame.z_dir) < 0:
-        n = n * -1.0                             # the canonical side, like face_sketch_plane
-    x = frame.x_dir - n * n.dot(frame.x_dir)     # the frame's x, laid into the plane
-    c = face.center()
-    return Plane(origin=n * n.dot(c), x_dir=x.normalized(), z_dir=n)
+def face_profile(solid, face_center: list, face_normal: list | None = None,
+                 verb: str = "revolved"):
+    """A flat face of `solid`, resolved by GEOMETRY (extrude_face's rule: nearest
+    centre, matching normal), as the profile a sketch op reads — the face, its
+    true plane (`face_profile_plane`) and the Sketch carrying that plane. ONE
+    home for the op AND the planner, so the handles and the solid come from the
+    same object. The one sentence for a curved face."""
+    face = resolve_face(solid, face_center, face_normal)
+    pl = face_profile_plane(face)
+    if pl is None:
+        raise ValueError(f"the picked face is {face.geom_type.name} (curved) — only a "
+                         f"FLAT face can be {verb}; tilted flat faces are fine")
+    return face, pl, _on_plane(b3d.Sketch([face]), pl)
 
 
 def _axis_line(axis):
@@ -1107,7 +1124,7 @@ def _axis_line(axis):
     try:
         a, b = axis
         return (float(a[0]), float(a[1])), (float(b[0]), float(b[1]))
-    except (TypeError, ValueError, IndexError):
+    except (TypeError, ValueError, IndexError, KeyError):   # KeyError: [{"u":..}, ..]
         return None
 
 
@@ -1138,11 +1155,11 @@ def revolve_axis(sketch, axis) -> Axis:
         if math.hypot(u2 - u1, v2 - v1) < 1e-6:
             raise ValueError("revolve: the axis line's two points coincide — give two "
                              "different points of the sketch plane, [[u1, v1], [u2, v2]]")
-        pl = sketch_plane_of(sketch)
-        snapped = _snap_to_edge(sketch, pl, line)
+        snapped = _snap_to_edge(sketch, line)
         if snapped is not None:
             a, b = snapped
         else:
+            pl = sketch_plane_of(sketch)
             a = pl.from_local_coords(b3d.Vector(u1, v1, 0))
             b = pl.from_local_coords(b3d.Vector(u2, v2, 0))
         return Axis(a, b - a)
@@ -1151,25 +1168,60 @@ def revolve_axis(sketch, axis) -> Axis:
                      '[[u1, v1], [u2, v2]]')
 
 
-def _snap_to_edge(sketch, pl: Plane, line, tol: float = 1e-3):
-    """The exact world endpoints of the profile's straight edge whose ends match
-    `line` (sketch-plane coordinates, within `tol`, in the line's own order),
-    else None. The stored line is rounded to 0.1 µm (`_r4`), and an axis that
-    far off its edge makes OCCT sweep the edge into a SLIVER face instead of
-    collapsing it — a valid-looking junk solid that even passed the old
-    manifold check (probes/revolve_face_probe.py §9). Snapped to the kernel's
-    own vertices, the edge collapses onto the axis as it should."""
-    (u1, v1), (u2, v2) = line
+def _straight_edges(sketch) -> list:
+    """Every straight edge of the profile's OUTER wires, walked ONCE per Sketch
+    object (cached on it: the document hands back the same object, and a plan
+    asks once per candidate axis): [(a, b, p, q)] — a / b the kernel's own
+    world endpoints, p / q the same in the sketch plane's coordinates rounded
+    to 0.1 µm (`_r4`). Inner wires are left out: material lies on both sides of
+    a hole's edge, so it always straddles. Straight-but-BSPLINE seam edges
+    count (_is_straight). The one walk behind revolve_edge_lines (what the
+    panel offers) and _snap_to_edge (what a stored line resolves to), so the
+    two cannot disagree about which edges exist."""
+    cached = getattr(sketch, "_tc_straight", None)
+    if cached is not None:
+        return cached
+    pl = sketch_plane_of(sketch)
+    out = []
     for f in sketch.faces():
         for e in f.outer_wire().edges():
             if not _is_straight(e):
                 continue
             a, b = e @ 0, e @ 1
             la, lb = pl.to_local_coords(a), pl.to_local_coords(b)
-            if math.hypot(la.X - u1, la.Y - v1) < tol and math.hypot(lb.X - u2, lb.Y - v2) < tol:
-                return a, b
-            if math.hypot(lb.X - u1, lb.Y - v1) < tol and math.hypot(la.X - u2, la.Y - v2) < tol:
-                return b, a
+            out.append((a, b, (_r4(la.X), _r4(la.Y)), (_r4(lb.X), _r4(lb.Y))))
+    try:
+        sketch._tc_straight = out
+    except AttributeError:
+        pass
+    return out
+
+
+def _snap_to_edge(sketch, line, tol: float = 1e-3):
+    """The exact world endpoints of the profile's straight edge that `line`
+    (sketch-plane coordinates) lies ALONG — both of its points within `tol` of
+    the edge's infinite line, directions parallel — ordered the line's way,
+    else None. Collinear, not endpoint-equal: the stored line is the edge as it
+    was when picked, and the profile may since have been resized along it (the
+    spec's construction-line promise); the axis must still be the kernel's own
+    vertices, because a line even 0.1 µm off the edge makes OCCT sweep the edge
+    into a SLIVER face instead of collapsing it — a valid-looking junk solid
+    (probes/revolve_face_probe.py §9)."""
+    (u1, v1), (u2, v2) = line
+    du, dv = u2 - u1, v2 - v1
+    L = math.hypot(du, dv)
+    if L < 1e-9:
+        return None
+    for a, b, p, q in _straight_edges(sketch):
+        eu, ev = q[0] - p[0], q[1] - p[1]
+        E = math.hypot(eu, ev)
+        if E < 1e-9 or abs(du * eu + dv * ev) / (L * E) < 1 - 1e-9:   # not parallel
+            continue
+        off = max(abs((u1 - p[0]) * ev - (v1 - p[1]) * eu),        # both points, off the line
+                  abs((u2 - p[0]) * ev - (v2 - p[1]) * eu)) / E
+        if off > tol:
+            continue
+        return (a, b) if du * eu + dv * ev > 0 else (b, a)
     return None
 
 
@@ -1232,38 +1284,29 @@ def _r4(x: float) -> float:
 
 
 def revolve_edge_lines(sketch) -> list:
-    """The straight edges of the profile's OUTER wires as lines in the sketch
+    """The straight edges of the profile's outline as lines in the sketch
     plane's own coordinates, [((u1, v1), (u2, v2)), ...] — Fusion's "pick a
-    line of the profile as the axis" (P3b). Inner wires are left out: material
-    lies on both sides of a hole's edge, so it always straddles. Endpoints are
-    ordered so the direction's dominant component is positive (the ring's
-    positive drag means the same thing on every rebuild), the longest edge
-    first, an edge two faces share listed once. Straight-but-BSPLINE seam
-    edges count (_is_straight). Coordinates are rounded to 0.1 µm so the
-    stored line and the edge it came from compare equal."""
-    pl = sketch_plane_of(sketch)
+    line of the profile as the axis" (P3b), read off `_straight_edges`.
+    Endpoints are ordered so the direction's dominant component is positive
+    (the ring's positive drag means the same thing on every rebuild), the
+    longest edge first, an edge two faces share listed once."""
     seen, out = set(), []
-    for f in sketch.faces():
-        for e in f.outer_wire().edges():
-            if not _is_straight(e):
-                continue
-            a, b = pl.to_local_coords(e @ 0), pl.to_local_coords(e @ 1)
-            p, q = (_r4(a.X), _r4(a.Y)), (_r4(b.X), _r4(b.Y))
-            du, dv = q[0] - p[0], q[1] - p[1]
-            if math.hypot(du, dv) < 1e-6:
-                continue
-            if (abs(du) >= abs(dv) and du < 0) or (abs(dv) > abs(du) and dv < 0):
-                p, q = q, p
-            if (p, q) in seen:
-                continue
-            seen.add((p, q))
-            out.append((p, q))
+    for _a, _b, p, q in _straight_edges(sketch):
+        du, dv = q[0] - p[0], q[1] - p[1]
+        if math.hypot(du, dv) < 1e-6:
+            continue
+        if (abs(du) >= abs(dv) and du < 0) or (abs(dv) > abs(du) and dv < 0):
+            p, q = q, p
+        if (p, q) in seen:
+            continue
+        seen.add((p, q))
+        out.append((p, q))
     out.sort(key=lambda l: -math.hypot(l[1][0] - l[0][0], l[1][1] - l[0][1]))
     return out
 
 
 def revolve_sketch(sketch, axis="Z", angle: float = 360.0, angle2: float = 0.0,
-                   symmetric: bool = False):
+                   both: bool = False):
     """Spin a sketch about an axis to make a solid of revolution.
 
     axis: "u" / "v" — the sketch plane's own x / y through the sketch origin
@@ -1273,12 +1316,13 @@ def revolve_sketch(sketch, axis="Z", angle: float = 360.0, angle2: float = 0.0,
     axis LINE must lie in the sketch plane and no face of the profile may
     cross it (a profile on XZ at positive x, revolved about Z or "v").
 
-    Extents, Fusion's Direction option (P3b): ONE SIDE sweeps `angle` (signed)
-    from the profile plane; TWO SIDES adds `angle2` (a size, >= 0) the OTHER
-    way; SYMMETRIC sweeps `angle` to EACH side (Autodesk: "a single angle to
-    revolve in each direction"). Built as one sweep of the total, turned back
-    about the axis so the profile plane sits where Fusion puts it — exact, the
-    symmetric centroid lies in the plane (probes/revolve_face_probe.py §5).
+    Extents, Fusion's Direction option (P3b), spelled as extrude_sketch spells
+    them: ONE SIDE sweeps `angle` (signed) from the profile plane; TWO SIDES
+    adds `angle2` (a size, >= 0) the OTHER way; `both` (Fusion's Symmetric)
+    sweeps `angle` to EACH side (Autodesk: "a single angle to revolve in each
+    direction"). Built as one sweep of the total, turned back about the axis so
+    the profile plane sits where Fusion puts it — exact, the symmetric centroid
+    lies in the plane (probes/revolve_face_probe.py §5).
 
     Every way of getting this wrong used to reach the user raw or wrong
     (probes/revolve_axis_probe.py, 2026-09-02/03):
@@ -1295,12 +1339,12 @@ def revolve_sketch(sketch, axis="Z", angle: float = 360.0, angle2: float = 0.0,
     word = _axis_word(axis)
     a1 = float(angle)
     a2 = float(angle2 or 0.0)
-    if _to_bool(symmetric, "symmetric"):
-        a2 = abs(a1)
-    if a2 < 0:
+    if a2 < 0:                                   # checked BEFORE `both` overrides it
         raise ValueError("revolve: the second side's angle is a size, not a direction "
                          "— give it as a positive number; the FIRST angle's sign says "
                          "which way side one turns")
+    if _to_bool(both, "both"):
+        a2 = abs(a1)                             # symmetric: the angle to EACH side
     if not -MAX_REVOLVE_DEG <= a1 <= MAX_REVOLVE_DEG:
         raise ValueError(f"revolve: angle must be between -{MAX_REVOLVE_DEG:g} and "
                          f"{MAX_REVOLVE_DEG:g}, got {a1:g} (the kernel would "
@@ -1335,14 +1379,18 @@ def revolve_sketch(sketch, axis="Z", angle: float = 360.0, angle2: float = 0.0,
             solid = solid.rotate(ax, -sign * a2)
     except Exception as e:      # OCP errors derive from Exception, not RuntimeError
         # probed 2026-09-05: an axis 1e-7 mm off an edge of the profile is a raw
-        # Standard_OutOfRange from BRepPrimAPI_MakeRevol
+        # Standard_OutOfRange from BRepPrimAPI_MakeRevol (the class name stays in
+        # the chain, not in the sentence — the kernel's names are not the user's)
         raise ValueError(
-            f"revolve: the kernel could not sweep this profile about the {word} "
-            f"({type(e).__name__}) — an axis a hair off an edge of the profile does "
-            f"this; turn about the edge itself, or move the axis clear of the "
-            f"profile.") from e
+            f"revolve: the kernel could not sweep this profile about the {word} — "
+            f"an axis a hair off an edge of the profile does this; turn about the "
+            f"edge itself, or move the axis clear of the profile.") from e
     import inspector                                 # local: avoids an import cycle
-    problems = inspector.health(solid)
+    # the rebuild's own per-feature policy (document.py): the cheap census, not
+    # OCCT's ~270 ms validity analysis — the result gets that once, at the end.
+    # The junk this guards against (a sliver face, an open shell) is a census
+    # matter; an intermittent validity flag is healed downstream, not refused here.
+    problems = inspector.health(solid, check_valid=False)
     if problems:                                     # a failed feature beats a corrupt body
         raise ValueError(
             f"revolve: the sweep about the {word} came back broken ({problems[0]}) "
@@ -1352,29 +1400,24 @@ def revolve_sketch(sketch, axis="Z", angle: float = 360.0, angle2: float = 0.0,
 
 def revolve_face(solid, face_center: list, face_normal: list | None = None,
                  axis=None, angle: float = 360.0, angle2: float = 0.0,
-                 symmetric: bool = False):
+                 both: bool = False):
     """Revolve a planar FACE of an existing solid (the Fusion workflow: click a
     face, press Revolve, choose one of its edges as the axis, drag). The face
     is resolved by GEOMETRY at every rebuild — nearest centre, matching normal,
-    the same rule as extrude_face — so the pick survives parameter changes.
-    `axis` is a line in the face's own plane, [[u1, v1], [u2, v2]] in
-    face_profile_plane's coordinates (normally one of the face's straight
-    edges, as the Revolve tool offers them), or "u" / "v" for a face that lies
-    to one side of the plane's axes. Returns ONLY the new solid — Join / Cut
-    are the tree's combiners; the body is referenced, not consumed."""
-    face = resolve_face(solid, face_center, face_normal)
-    pl = face_profile_plane(face)
-    if pl is None:
-        raise ValueError(
-            f"revolve_face: the picked face is {face.geom_type.name} and not "
-            f"flat — only a planar face can be revolved.")
+    the same rule as extrude_face — so the pick survives parameter changes
+    (`face_profile`, shared with the planner). `axis` is a line in the face's
+    own plane, [[u1, v1], [u2, v2]] in face_profile_plane's coordinates
+    (normally one of the face's straight edges, as the Revolve tool offers
+    them), or "u" / "v" for a face that lies to one side of the plane's axes.
+    Returns ONLY the new solid — Join / Cut are the tree's combiners; the body
+    is referenced, not consumed."""
+    _face, _pl, profile = face_profile(solid, face_center, face_normal)
     if axis is None:
         raise ValueError(
             "revolve_face needs an axis: one of the face's straight edges as a "
             "line [[u1, v1], [u2, v2]] in the face's plane (what the Revolve tool "
             'offers), or "u" / "v"')
-    return revolve_sketch(_on_plane(b3d.Sketch([face]), pl), axis, angle, angle2,
-                          symmetric)
+    return revolve_sketch(profile, axis, angle, angle2, both)
 
 
 def loft_sketches(sketches: list):

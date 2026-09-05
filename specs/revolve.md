@@ -96,6 +96,10 @@ angle, press **Full** for 360°, choose New body / Join / Cut, press **OK**.
 > **Status: built 2026-09-05 in one session, under the assumptions below; the
 > user's checklist decides.** The gap the user hit: a FACE picked in the
 > viewport, then Revolve — the tool said "click a sketch, not a face".
+> R8 was bent this once: this page was written WITH the code, not before it
+> (the user asked for P3b to be built in the session), so the checklist below
+> is the approval gate. Reviewed the same evening (`/code-review high`, 8
+> angles): the fixes are folded into the rules below.
 
 ## What you click, what you see
 
@@ -109,15 +113,21 @@ Symmetric) and, for two sides, an **Angle 2** box.
 
 ## Rules
 
-* **Axis candidates** (server, `toolplan.plan_revolve` → `axes`): `u`, `v`
-  (always listed, greyed with the reason when the profile crosses them), then
-  the straight edges of the profile's OUTER wires that work, named `e1…eN`
-  longest first, labelled by position (`edge at u = 10 (40 mm, along v)`).
-  Inner wires are never offered (material lies on both sides of a hole's
-  edge). Straight-but-BSPLINE seam edges count. **Default:** `v`, else `u`,
-  else the longest working edge — so a rectangle drawn across the origin now
-  opens (about one of its sides) where P3 refused it; a centred circle still
-  refuses, and the sentence says to move it or give it a straight edge.
+* **Axis candidates** (server, `toolplan.plan_revolve` → `axes`, each with a
+  `kind`): `u`, `v` (always listed, greyed with the reason when the profile
+  crosses them) and the straight edges of the profile's OUTER wires that work,
+  named `e1…eN` longest first, labelled by position (`edge at u = 10 (40 mm,
+  along v)`) — **at most the 12 longest** (a traced outline has hundreds; the
+  plan stayed under a second only with that cap). Inner wires are never
+  offered (material lies on both sides of a hole's edge). Straight-but-BSPLINE
+  seam edges count. **Default for a sketch:** `v`, else `u`, else the longest
+  working edge — so a rectangle drawn across the origin now opens (about one
+  of its sides) where P3 refused it; a centred circle still refuses, and the
+  sentence says to move it or give it a straight edge. **Default for a picked
+  face: its longest edge** — the edges are listed FIRST, because the face
+  plane's `u` / `v` pass through the world origin's foot, an axis far from any
+  body not centred on the origin (they "work" precisely because they miss the
+  face; review 2026-09-05).
 * **An edge axis is stored as a line in the sketch plane's own coordinates**,
   `axis: [[u1, v1], [u2, v2]]` — never an index or a name. It rides the plane
   exactly as `u` / `v` do (a face or offset move carries it). It does NOT
@@ -140,11 +150,15 @@ Symmetric) and, for two sides, an **Angle 2** box.
   (signed, the ring's sign) from the profile plane. *Two sides* adds
   `angle2 ≥ 0` the other way. *Symmetric* sweeps `angle` to **each** side
   ("a single angle to revolve in each direction") — so 90 symmetric is a
-  half turn. Built as ONE sweep of the total, turned back about the axis
+  half turn; stored as `both: true`, the key Extrude already uses for the
+  same idea. Built as ONE sweep of the total, turned back about the axis
   (exact: the symmetric centroid lies in the profile plane, probe §5). The
-  ghost sweeps both ways too. Limits are the server's one turn: the panel
-  caps one side at 360, symmetric at 180 each way, two sides at 360 together,
-  and says so once.
+  ghost sweeps both ways too. Limits are the server's (`limits.max_angle`,
+  `limits.max_each_side`): one side up to a turn, symmetric half a turn each
+  way, two sides one turn together — with two sides, the box the user touched
+  LAST keeps its value and the other gives way, said once. **Known gap:**
+  Angle 2 is typed only; Fusion gives the second side its own handle. A
+  second ring is a §10 item, not built here.
 
 ## Failures speak (added sentences)
 

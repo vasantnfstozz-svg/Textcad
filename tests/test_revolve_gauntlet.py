@@ -65,3 +65,5 @@ def test_revolving_every_flat_face_about_each_of_its_straight_edges_builds_or_re
                 else:
                     built += 1
     assert built > 0 or tried == 0, f"{name}: no face revolved about any of its edges"
+    if name == "l_bracket":       # a reflex corner: some side's line cuts through the face
+        assert refused > 0, "an edge the face straddles must be refused with a sentence"

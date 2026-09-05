@@ -526,6 +526,14 @@ function buildBody(f) {
       // NEVER dump raw entity JSON (user, 2026-08-25: "we dont need see to
       // entities, and all"). Each shape gets its own dimension rows instead.
       body.appendChild(shapeList(f, v));
+    } else if (k === 'axis' && Array.isArray(v) && v.length === 2 && Array.isArray(v[0])) {
+      // a Revolve axis stored as a LINE in the sketch plane (P3b): shown, not
+      // edited here — the Revolve tool's Axis list is where it changes (the
+      // points editor below is for revolve_profile outlines; it would offer
+      // ＋ / ✕ on the two points and break the axis)
+      val.className = 'pro';
+      val.textContent = `edge (${v[0].join(', ')}) → (${v[1].join(', ')})`;
+      pr.appendChild(val); body.appendChild(pr);
     } else if (Array.isArray(v) && v.length && Array.isArray(v[0])) {
       body.appendChild(pr);                       // label row
       body.appendChild(pointsTable(f.id, k, v));  // editable table below
