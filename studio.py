@@ -191,8 +191,26 @@ def _snapshot() -> None:
     e = _entry()
     e["history"].append(e["doc"].to_data())
     del e["history"][:-MAX_HISTORY]
-    e.setdefault("redo", []).clear()
+    redo = e.setdefault("redo", [])
+    e["redo_before"] = list(redo)    # so a REFUSED step can put it back
+    redo.clear()
     e["dirty"] = None                # unknown until someone asks (see _dirty)
+
+
+def _unsnapshot() -> None:
+    """Undo the _snapshot() a step took before it was refused.
+
+    Popping the history entry is not enough: _snapshot also ENDS THE REDO LINE,
+    and a request that changed nothing must not cost the user their redo. Typo
+    a parameter name after two undos and Ctrl+Y was dead — with the multi-param
+    route now refusing unknown keys, that door is much wider than it was."""
+    e = _entry()
+    if e["history"]:
+        e["history"].pop()
+    prev = e.pop("redo_before", None)
+    if prev is not None:               # never WIPE a redo line we did not take
+        e["redo"] = prev
+    e["dirty"] = None
 
 
 def _rebuild_and_mesh() -> None:
@@ -613,13 +631,19 @@ def _record_version(label: str, source: str) -> dict:
         return {"history_error": str(ex)}
 
 
-def _refused(e: Exception) -> JSONResponse:
+def _refused(e, message: str | None = None,
+             extra: dict | None = None) -> JSONResponse:
     """A request the document turned down: the sentence, the UNCHANGED
     document, and HTTP 400 -- so a script or the MCP that reads the status
     sees the refusal. `ok` in the body is the BUILD's health, not the
-    request's: an edit that changed nothing must not paint the tree red."""
-    return JSONResponse(status_code=400,
-                        content=jsonable_encoder({"error": str(e), **_doc_json()}))
+    request's: an edit that changed nothing must not paint the tree red.
+
+    `message` replaces the exception's own text; `extra` carries a route's
+    own payload (the measure plan's reason codes) alongside it. EVERY refusal
+    of a request goes through here -- a route that answers a refusal with 200
+    is telling a script the opposite of what happened."""
+    return JSONResponse(status_code=400, content=jsonable_encoder(
+        {**(extra or {}), "error": message or str(e), **_doc_json()}))
 
 
 def _doc_json() -> dict:
@@ -1574,13 +1598,13 @@ def get_feature_mesh(feature_id: str):
 
 @app.post("/api/edit")
 def edit(req: EditReq):
-    _hand_edit()
     _snapshot()
     try:
         _doc().edit(req.feature_id, req.param, req.value)
     except (KeyError, ValueError) as e:
-        _entry()["history"].pop()
+        _unsnapshot()
         return _refused(e)
+    _hand_edit()              # AFTER it lands: a refusal is not a hand edit
     _rebuild_and_mesh()
     return _doc_json()
 
@@ -1670,13 +1694,13 @@ def sketch_trim_apply(req: TrimReq):
 def edit_params(req: ParamsReq):
     """Set several params of one feature in a single rebuild — used by the
     sketch editor (reopen a committed sketch, redraw, save all entities)."""
-    _hand_edit()
     _snapshot()
     try:
         _doc().edit_many(req.feature_id, req.params)
     except (KeyError, ValueError) as e:
-        _entry()["history"].pop()
+        _unsnapshot()
         return _refused(e)
+    _hand_edit()              # AFTER it lands: a refusal is not a hand edit
     _rebuild_and_mesh()
     return _doc_json()
 
@@ -1685,9 +1709,11 @@ def edit_params(req: ParamsReq):
 def add_feature(req: FeatureReq):
     _snapshot()
     try:
-        _doc().add(req.id, req.op, req.params, req.inputs)
+        # strict: a param the op cannot take is a sentence NOW, not a
+        # TypeError at the next rebuild with the bad key already stored
+        _doc().add(req.id, req.op, req.params, req.inputs, strict=True)
     except ValueError as e:
-        _entry()["history"].pop()
+        _unsnapshot()
         return _refused(e)
     _rebuild_and_mesh()
     _pending(f"{req.op} added", "tool")
@@ -1817,7 +1843,7 @@ def trace_png(req: TracePngReq):
                        {"plane": req.plane, "offset": req.offset,
                         "entities": ents}, [])
     except Exception as e:        # decode/trace errors -> honest message
-        _entry()["history"].pop()
+        _unsnapshot()
         return _refused(e)
     _rebuild_and_mesh()
     _pending(f"traced {fid}", "tool")
@@ -1859,7 +1885,7 @@ def import_step_file(req: ImportStepReq):
             n += 1
         _doc().add(fid, "import_step", {"file": fname, "scale": req.scale}, [])
     except Exception as e:        # decode/read errors -> honest message
-        _entry()["history"].pop()
+        _unsnapshot()
         if saved_new is not None:
             try:
                 saved_new.unlink()
@@ -1906,7 +1932,7 @@ def import_stl_file(req: ImportStlReq):
             n += 1
         _doc().add(fid, "import_stl", {"file": fname, "scale": req.scale}, [])
     except Exception as e:        # decode/read/mesh errors -> honest message
-        _entry()["history"].pop()
+        _unsnapshot()
         if saved_new is not None:
             try:
                 saved_new.unlink()
@@ -2028,15 +2054,15 @@ def measure_set(req: MeasureSetReq):
                                req.b.model_dump() if req.b else None,
                                req.value, req.side)
     if "error" in plan:
-        return {**plan, **_doc_json()}
-    _hand_edit()
+        return _refused(None, plan["error"], extra=plan)
     _snapshot()
     try:
         measurelib.write(_doc(), plan)
         _doc()._mark_stale()
     except (KeyError, ValueError, IndexError, TypeError) as e:
-        _entry()["history"].pop()          # the plan never landed
-        return {"error": f"could not apply that: {e}", **_doc_json()}
+        _unsnapshot()          # the plan never landed
+        return _refused(e, f"could not apply that: {e}")
+    _hand_edit()              # AFTER it lands: a refusal is not a hand edit
     _rebuild_and_mesh()
     # VERIFY: re-measure the same pick and say what the model actually became
     after = measurelib.measure(_doc(), req.a.model_dump(),
@@ -2089,7 +2115,7 @@ def remove_feature(req: RemoveReq):
     try:
         plan = _doc().remove(req.feature_id, req.mode)
     except (KeyError, ValueError) as e:
-        _entry()["history"].pop()
+        _unsnapshot()
         return _refused(e)
     _rebuild_and_mesh()
     if not _doc().features and MESH_PATH.exists():
@@ -2103,25 +2129,25 @@ def rename_feature(req: RenameReq):
     """Fusion's browser rename: the id is rewritten everywhere it is
     referenced (inputs, rollback bar, part cache). Geometry is untouched,
     so no rebuild — the snapshot still makes it undoable."""
-    _hand_edit()
     _snapshot()
     try:
         _doc().rename(req.feature_id, req.name)
     except (KeyError, ValueError) as e:
-        _entry()["history"].pop()
+        _unsnapshot()
         return _refused(e)
+    _hand_edit()              # AFTER it lands: a refusal is not a hand edit
     return _doc_json()
 
 
 @app.post("/api/feature/suppress")
 def suppress_feature(req: SuppressReq):
-    _hand_edit()
     _snapshot()
     try:
         _doc().get(req.feature_id).suppressed = req.suppressed
     except KeyError as e:
-        _entry()["history"].pop()
+        _unsnapshot()
         return _refused(e)
+    _hand_edit()              # AFTER it lands: a refusal is not a hand edit
     _doc()._mark_stale()
     _rebuild_and_mesh()
     return _doc_json()
@@ -2132,13 +2158,13 @@ def strike_feature(req: StrikeReq):
     """Soft delete / restore (the tree's ✕ and ↩): the geometry goes or comes
     back exactly as delete would do it, but the rows stay, struck out, and
     nothing is rewired — one click undoes it. Also a single Ctrl+Z step."""
-    _hand_edit()
     _snapshot()
     try:
         plan = (_doc().unstrike if req.restore else _doc().strike)(req.feature_id)
     except (KeyError, ValueError) as e:
-        _entry()["history"].pop()
+        _unsnapshot()
         return _refused(e)
+    _hand_edit()              # AFTER it lands: a refusal is not a hand edit
     _rebuild_and_mesh()
     verb = "restored" if req.restore else "struck out"
     _pending(f"{verb} {req.feature_id}", "tool")
@@ -2334,9 +2360,9 @@ def restore_version(req: VersionReq):
         # A version recorded before an op was renamed cannot be rebuilt by this
         # build. It STAYS in the tree as a record: refusing to open it is far
         # better than dropping it, and far better than a 500.
-        return {"error": f"{req.id} was recorded by an older build and this one "
-                         f"cannot open it ({e}). It is still in the history — "
-                         f"nothing was changed.", **_doc_json()}
+        return _refused(e, f"{req.id} was recorded by an older build and this "
+                           f"one cannot open it ({e}). It is still in the "
+                           f"history — nothing was changed.")
     e = _entry()
     _snapshot()                                  # restoring is undoable
     e["doc"] = fresh
@@ -2670,7 +2696,7 @@ def chat(req: ChatReq):
         try:
             plan = _doc().remove(fid)
         except (KeyError, ValueError) as e:
-            _entry()["history"].pop()
+            _unsnapshot()
             return {"reply": f"I could not delete that: {e}", **_doc_json()}
         _rebuild_and_mesh()
         state = "PASS" if _entry()["ok"] else "FAILED verification"
@@ -2687,7 +2713,7 @@ def chat(req: ChatReq):
         try:
             _doc().edit(intent["feature_id"], intent["param"], intent["value"])
         except (KeyError, ValueError) as e:
-            _entry()["history"].pop()
+            _unsnapshot()
             intent = chat_intent(req.message, feedback=str(e))
             continue
         _rebuild_and_mesh()

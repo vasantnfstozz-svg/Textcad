@@ -27,6 +27,7 @@ the recipe is the artifact, not just the STEP it produces.
 
 from __future__ import annotations
 from dataclasses import dataclass, field, asdict
+from functools import lru_cache
 import inspect
 import hashlib
 import json
@@ -100,6 +101,30 @@ COMBINERS = {"fuse": _fuse, "cut": _cut, "intersect": _intersect,
              "loft": _loft}
 
 KNOWN_OPS = set(CREATORS) | set(MODIFIERS) | set(COMBINERS) | {"move"}
+
+
+@lru_cache(maxsize=None)
+def op_params(op: str) -> tuple:
+    """Every parameter `op` accepts, in signature order, as (name, default)
+    pairs — read from the function the rebuild unpacks the params into.
+
+    ONE source, because there were two: the edit guard and the catalogue the
+    AI reads (`author.op_catalog`) each walked the registries with their own
+    copy of the same three rules, so a new op needing a special case had to be
+    remembered twice. Combiners take none; `move` is x, y, z; an op this build
+    does not know (a design written by a newer one) reports none rather than
+    raising — loading such a file must still work."""
+    if op == "move":
+        return (("x", 0), ("y", 0), ("z", 0))
+    fn = CREATORS.get(op) or MODIFIERS.get(op)
+    if fn is None:
+        return ()
+    sig = list(inspect.signature(fn).parameters.values())
+    if op in MODIFIERS:
+        sig = sig[1:]                    # the upstream part
+    return tuple((p.name, None if p.default is inspect._empty else p.default)
+                 for p in sig
+                 if p.kind not in (p.VAR_KEYWORD, p.VAR_POSITIONAL))
 
 # how many inputs an op NEEDS to still mean something (used when a delete
 # takes one of its inputs away: a modifier with none left cannot survive)
@@ -282,11 +307,22 @@ class Document:
 
     # -- authoring ----------------------------------------------------------
     def add(self, id: str, op: str, params: dict | None = None,
-            inputs: list[str] | None = None) -> "Document":
+            inputs: list[str] | None = None, strict: bool = False) -> "Document":
+        """Append a node. `strict` also refuses a param the op cannot take.
+
+        It is OFF by default because `from_data` builds every loaded design
+        through here: a file written by another build must open even if one of
+        its params has since been renamed (it will say so as a failed feature,
+        which is recoverable — refusing to open is not). The doors where the
+        node is being AUTHORED — the API's /api/feature/add and the AI's
+        _to_document — pass strict=True, so a hallucinated key is a sentence
+        now instead of a TypeError at the next rebuild."""
         if op not in KNOWN_OPS:
             raise ValueError(f"unknown op '{op}' — allowed: {sorted(KNOWN_OPS)}")
         if any(f.id == id for f in self.features):
             raise ValueError(f"duplicate feature id '{id}'")
+        if strict:
+            self.check_params(op, params or {}, id)
         for dep in (inputs or []):
             if not any(f.id == dep for f in self.features):
                 raise ValueError(f"feature '{id}' references unknown input '{dep}'")
@@ -308,29 +344,32 @@ class Document:
         not stored yet IS accepted: `through` on an extrude saved as
         {amount} was refused for a month as "no such parameter"."""
         f = self.get(feature_id)
-        allowed = set(f.params) | self.param_names(f.op)
-        bad = [k for k in params if k not in allowed]
-        if bad:
-            raise ValueError(f"'{feature_id}' ({f.op}) has no parameter "
-                             f"{bad[0]!r} -- it takes {sorted(allowed)}")
+        self.check_params(f.op, params, feature_id, stored=f.params)
         f.params.update(params)
         self._mark_stale()
 
     @staticmethod
     def param_names(op: str) -> set:
-        """Every parameter `op` accepts, read from the function the rebuild
-        unpacks the params into -- the same source `author.op_catalog` shows
-        the AI. Combiners take none; `move` is x, y, z."""
-        if op == "move":
-            return {"x", "y", "z"}
-        fn = CREATORS.get(op) or MODIFIERS.get(op)
-        if fn is None:
-            return set()
-        sig = list(inspect.signature(fn).parameters.values())
-        if op in MODIFIERS:
-            sig = sig[1:]                    # the upstream part
-        return {p.name for p in sig
-                if p.kind not in (p.VAR_KEYWORD, p.VAR_POSITIONAL)}
+        """Every parameter `op` accepts (see `op_params`)."""
+        return {name for name, _ in op_params(op)}
+
+    @staticmethod
+    def check_params(op: str, params: dict, feature_id: str,
+                     stored: dict | None = None) -> None:
+        """Refuse a key `op` cannot take, naming EVERY bad one so a save with
+        three typos is not three round trips.
+
+        `stored` (an edit) also allows a key the feature already holds, so a
+        design written by another build stays editable; without it (authoring
+        a NEW node) only the op's own parameters pass. LOADING a file never
+        comes through here -- `Document.from_data` must always open."""
+        allowed = Document.param_names(op) | set(stored or ())
+        bad = [k for k in (params or {}) if k not in allowed]
+        if bad:
+            raise ValueError(
+                f"'{feature_id}' ({op}) has no parameter "
+                + ", ".join(repr(k) for k in bad)
+                + f" -- it takes {sorted(allowed)}")
 
     def get(self, feature_id: str) -> Feature:
         for f in self.features:
@@ -576,8 +615,14 @@ class Document:
                 continue
             swept.add(fid)
             f = by_id.get(fid)
-            if f is not None and f.op not in sk.FACE_REFERENCE_OPS:
-                queue += [d for d in f.inputs    # its own feeders may be idle
+            if f is not None:                 # its own feeders may now be idle
+                # A face reference is the FIRST input: the body the sketch is
+                # drawn on. Skip that one edge, not the whole node, so a face
+                # op that ever gains a second input (a path, a rail) still has
+                # that genuinely disposable geometry swept with it.
+                feeders = (f.inputs[1:] if f.op in sk.FACE_REFERENCE_OPS
+                           else f.inputs)
+                queue += [d for d in feeders
                           if d not in gone and d not in swept]
         return swept
 

@@ -213,9 +213,13 @@ def test_a_parameter_the_op_knows_can_be_set_before_it_is_stored(client):
     """The original report: `through` on an extrude stored as {amount} was
     turned down as "no such parameter" (or, on the multi-param route, stored
     unchecked and failed the build)."""
-    client.post("/api/feature/add", json={"id": "s", "op": "sketch", "params": {
-        "plane": "XY", "offset": 10,
-        "entities": [{"kind": "circle", "r": 5}]}, "inputs": []})
+    # a sketch ON the body's top face, not an absolute-offset one: the flange
+    # is already a body, and CLAUDE.md bans an absolute-offset sketch once one
+    # exists (author.lint_tree refuses the same shape from the AI)
+    client.post("/api/feature/add", json={"id": "s", "op": "sketch_on_face",
+                                          "params": {"face": "top", "offset": 0,
+                                                     "entities": [{"kind": "circle", "r": 5}]},
+                                          "inputs": ["bolts"]})
     client.post("/api/feature/add", json={"id": "post", "op": "extrude",
                                           "params": {"amount": 8}, "inputs": ["s"]})
     r = client.post("/api/edit", json={"feature_id": "post", "param": "through",
@@ -233,3 +237,63 @@ def test_the_multi_param_route_refuses_unknown_keys_before_writing_any(client):
     d = client.get("/api/doc").json()
     assert d["features"][1]["params"] == {"radius": 15}     # radius NOT written
     assert d["features"][1]["status"] == "ok"
+
+
+def test_a_refusal_does_not_cost_the_user_their_redo(client):
+    """_snapshot() ends the redo line. Every refusal popped the history entry
+    it added but never put the redo back, so typing a parameter name wrong
+    after an undo killed Ctrl+Y -- and the refusal's own body said so
+    (can_redo flipped to false while nothing had changed)."""
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 9})
+    client.post("/api/undo")
+    assert client.get("/api/doc").json()["can_redo"]
+    hands = studio._entry()["hand_edits"]
+
+    r = client.post("/api/edit", json={"feature_id": "bore",
+                                       "param": "rdius", "value": 1})
+    assert r.status_code == 400
+    assert r.json()["can_redo"], "the refusal reported the redo line as gone"
+    assert studio._entry()["hand_edits"] == hands, "a refusal is not a hand edit"
+    # and it still works
+    assert client.post("/api/redo").json()["features"][1]["params"]["radius"] == 9
+
+
+def test_the_multi_param_route_keeps_the_redo_line_too(client):
+    client.post("/api/feature/params",
+                json={"feature_id": "bore", "params": {"radius": 9}})
+    client.post("/api/undo")
+    assert client.get("/api/doc").json()["can_redo"]
+    r = client.post("/api/feature/params",
+                    json={"feature_id": "bore", "params": {"bogus": 1}})
+    assert r.status_code == 400 and r.json()["can_redo"]
+    assert client.post("/api/redo").json()["features"][1]["params"]["radius"] == 9
+
+
+def test_adding_a_feature_refuses_a_param_the_op_cannot_take(client):
+    """The guard used to sit only on the EDIT door: /api/feature/add stored
+    any key unchecked and the tree grew a node that failed to build with a
+    TypeError. That door is the AI's."""
+    r = client.post("/api/feature/add", json={
+        "id": "d", "op": "disc",
+        "params": {"radius": 10, "thickness": 3, "diameter": 20}, "inputs": []})
+    assert r.status_code == 400
+    assert "diameter" in r.json()["error"]
+    assert not any(f["id"] == "d" for f in r.json()["features"])
+
+
+def test_every_unknown_key_is_named_at_once(client):
+    r = client.post("/api/feature/params", json={
+        "feature_id": "bore", "params": {"rdius": 1, "thikness": 2}})
+    assert r.status_code == 400
+    assert "rdius" in r.json()["error"] and "thikness" in r.json()["error"]
+
+
+def test_loading_a_design_never_refuses_an_unknown_param():
+    """strict is OFF for from_data on purpose: a file written by another build
+    must OPEN (and say which node is unhappy), never fail to load."""
+    from document import Document
+    doc = Document.from_data({"name": "older", "features": [
+        {"id": "d", "op": "disc",
+         "params": {"radius": 10, "thickness": 3, "legacy_key": 1}, "inputs": []}]})
+    assert doc.get("d").params["legacy_key"] == 1

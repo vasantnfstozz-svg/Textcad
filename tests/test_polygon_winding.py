@@ -45,3 +45,28 @@ def test_the_extruded_pair_is_one_healthy_solid_and_the_points_stay_as_drawn():
     assert inspector.health(solid) == []
     assert solid.volume == pytest.approx(700 * 5)
     assert doc.get("s").params["entities"][1]["points"] == CW["points"]
+
+
+# ------------------------------------- the ring that encloses nothing ---------
+
+BOWTIE = {"kind": "polygon", "points": [[0, 0], [20, 20], [20, 0], [0, 20]]}
+COLLINEAR = {"kind": "polygon", "points": [[0, 0], [10, 0], [20, 0]]}
+
+
+def test_a_ring_that_encloses_nothing_is_refused_where_the_mistake_is():
+    """Signed area 0 means the outline crosses itself or is a straight line.
+    A sign test never sees it, and OCCT builds it: a face of area -0.0 whose
+    sketch reports `ok` and whose EXTRUDE, several nodes later, says
+    "OpenCASCADE reports the solid is invalid" (probed 2026-09-05)."""
+    for bad in (BOWTIE, COLLINEAR):
+        assert sk._signed_area([tuple(p) for p in bad["points"]]) == 0
+        with pytest.raises(ValueError, match="encloses no area"):
+            sk._entity(bad)
+
+
+def test_the_bad_polygon_is_named_by_the_sketch_not_by_the_extrude():
+    doc = Document(name="t-bowtie")
+    doc.add("s", "sketch", {"plane": "XY", "entities": [BOWTIE]})
+    doc.add("b", "extrude", {"amount": 5}, inputs=["s"])
+    assert not doc.rebuild()
+    assert "encloses no area" in " ".join(doc.get("s").problems)

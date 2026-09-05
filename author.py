@@ -16,12 +16,11 @@ every failure back -> retry. Failures are per-node and diagnostic.
 """
 
 from __future__ import annotations
-import inspect
 import json
 import re
 
 import document
-from document import Document, CREATORS, MODIFIERS
+from document import Document, CREATORS, MODIFIERS, op_params
 
 
 # ---------------------------------------------------------------------------
@@ -102,30 +101,21 @@ def _annotate(op_name: str, params: list[dict]) -> list[dict]:
 
 
 def op_catalog() -> list[dict]:
-    """Machine-readable list of every legal operation and its parameters."""
-    cat = []
-    for name, fn in CREATORS.items():
-        params = [{"name": p.name,
-                   "default": (None if p.default is inspect._empty else p.default)}
-                  for p in inspect.signature(fn).parameters.values()]
-        cat.append({"op": name, "kind": "creator", "inputs": 0,
-                    "params": _annotate(name, params), "note": OP_NOTES.get(name)})
-    for name, fn in MODIFIERS.items():
-        sig = list(inspect.signature(fn).parameters.values())[1:]  # skip part
-        params = [{"name": p.name,
-                   "default": (None if p.default is inspect._empty else p.default)}
-                  for p in sig]
-        cat.append({"op": name, "kind": "modifier", "inputs": 1,
-                    "params": _annotate(name, params), "note": OP_NOTES.get(name)})
-    cat.append({"op": "move", "kind": "modifier", "inputs": 1,
-                "note": OP_NOTES.get("move"),
-                "params": _annotate("move", [{"name": "x", "default": 0},
-                           {"name": "y", "default": 0},
-                           {"name": "z", "default": 0}])})
+    """Machine-readable list of every legal operation and its parameters.
+
+    The parameters come from `document.op_params` — the SAME source the edit
+    guard refuses unknown keys against, so what this shows the AI and what the
+    document will accept from it cannot drift apart."""
+    def entry(name, kind, inputs):
+        params = [{"name": n, "default": d} for n, d in op_params(name)]
+        return {"op": name, "kind": kind, "inputs": inputs,
+                "params": _annotate(name, params), "note": OP_NOTES.get(name)}
+
+    cat = [entry(name, "creator", 0) for name in CREATORS]
+    cat += [entry(name, "modifier", 1) for name in MODIFIERS]
+    cat.append(entry("move", "modifier", 1))
     from document import COMBINERS
-    for name in COMBINERS:
-        cat.append({"op": name, "kind": "combiner", "inputs": 2, "params": [],
-                    "note": OP_NOTES.get(name)})
+    cat += [entry(name, "combiner", 2) for name in COMBINERS]
     return cat
 
 
@@ -371,7 +361,8 @@ def _to_document(data: dict) -> Document:
         raise ValueError("JSON must contain a non-empty 'features' list")
     doc = Document(name=str(data.get("name", "untitled"))[:60])
     for f in data["features"]:
-        doc.add(f["id"], f["op"], f.get("params") or {}, f.get("inputs") or [])
+        doc.add(f["id"], f["op"], f.get("params") or {}, f.get("inputs") or [],
+                strict=True)          # a hallucinated key is named, not stored
     lint = lint_tree(doc.features)
     if lint:
         raise ValueError("history lint: " + "; ".join(lint))

@@ -173,7 +173,16 @@ def _entity(e: dict):
         # face did not fail -- it silently gave TWO overlapping faces, which
         # extrude into a self-intersecting solid (probed 2026-09-05). Build
         # every polygon counter-clockwise; the stored points stay as drawn.
-        if _signed_area(pts) < 0:
+        area = _signed_area(pts)
+        # The same shoelace also catches a ring that encloses NOTHING —
+        # collinear points, or a bow-tie whose lobes cancel. OCCT builds it: a
+        # face of area -0.0 that reports `ok` here and blames the extrude
+        # ("OpenCASCADE reports the solid is invalid") several nodes later.
+        # Say it where the mistake is.
+        if abs(area) < 1e-9:
+            raise ValueError("polygon entity encloses no area — its points are "
+                             "collinear or the outline crosses itself")
+        if area < 0:
             pts.reverse()
         s = Polygon(*pts)
     elif k == "path":

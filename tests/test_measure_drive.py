@@ -263,11 +263,15 @@ def test_api_set_refuses_a_derived_measurement_without_touching_the_doc(client):
 
 
 def test_api_set_on_a_stale_index_is_an_error_not_a_500(client):
+    """A refusal, not a crash -- and it says so in the STATUS. This asserted
+    200 while /api/edit and the rest already answered 400, so a script driving
+    the API read "face 4242 is not on this body any more" as success."""
     api_pocket(client)
     res = client.post("/api/measure/set", json={
         "a": {"body": "pk", "kind": "face", "id": 4242}, "value": 10.0})
-    assert res.status_code == 200, res.text
+    assert res.status_code == 400, res.text
     assert "error" in res.json()
+    assert res.json()["features"], "the unchanged document rides along"
 
 
 def test_every_bore_of_a_polar_pattern_is_editable():
