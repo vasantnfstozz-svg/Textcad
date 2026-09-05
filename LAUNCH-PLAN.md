@@ -11,9 +11,12 @@
 > studio.py` is a supervisor + server child; a segfault costs one step, not the
 > session — §10). The three ★P0 data items in §10 closed 2026-09-05 (36584e1:
 > a tail-cut delete wiped the tree, clockwise polygons, refusals sent as 200).
-> Next: P3b (a picked FACE as a Revolve profile, the gap the user hit), then
-> Hole. One tool per session. Every other plan file points here; §7 carries
-> the done-notes, §10 the ranked open items.
+> P3b done 2026-09-05 (4987a15: a picked FACE as a Revolve profile, the
+> outline's own edges as the axis, Two sides / Symmetric; review fixes
+> d82e9d0, ui v155 — §7 P3). Next: the user's P3b checklist
+> (specs/revolve.md, second list), then Hole. One tool per session. Every
+> other plan file points here; §7 carries the done-notes, §10 the ranked open
+> items.
 >
 > It replaces the reverted TOOL-FRAMEWORK-PLAN.md (2026-09-02, another model's
 > session, deleted at the user's request). Its diagnosis was checked against
@@ -401,6 +404,51 @@ user finds in Revolve's first week, against Extrude's history. *Review the
 same day (§10):* 40 findings, 30 acted on; the worst — a world axis outside
 the sketch plane building a wrong-shaped solid — never reached the user.
 
+*P3b done 2026-09-05 (4987a15; review fixes d82e9d0; ui v155)* — the three
+pieces the P3 spec deferred, built in one session at the user's word (R8 bent:
+the spec page was written WITH the code; the checklist is the approval gate).
+**A picked FACE as the profile:** op `revolve_face`, a face-reference op like
+`extrude_face` (never consumes the body), resolved by geometry at every rebuild
+and revolved in its TRUE plane — `sketch._face_frame(face, snap)` is now the
+one framing rule behind `face_sketch_plane` (snap on) and `face_profile_plane`
+(snap off); identical on a box's faces, and a wall tilted under 25° keeps its
+own plane because the snapped one does not contain it (probe §7: edges 1.4 mm
+off — a latent `sketch_on_face` issue, §10). **The outline's own straight
+edges as the axis** (Fusion's "pick a line"): the plan lists `u`, `v` (greyed
+with the reason when crossed) and the 12 longest edges, each with the `param`
+the feature stores — a LINE in the sketch plane, `axis: [[u1,v1],[u2,v2]]`,
+never an index — so a rectangle across the origin now turns about a side where
+P3 refused it; a picked face lists its edges FIRST (its plane's u/v pass
+through the world origin's foot, an axis far from any off-origin body). The
+stored line rides plane moves like u/v; after a profile resize it snaps to the
+edge it lies ALONG, else stands as a construction line ("the stored line",
+fallback when crossed). **Two sides / Symmetric:** `angle2` the other way,
+`both` = the angle to EACH side (Autodesk's reference; extrude's key), built
+as one sweep of the total turned back — exact. **Three kernel truths the
+gauntlet forced out** (`probes/revolve_face_probe.py` §9): an axis microns off
+an edge sweeps a SLIVER face that OCCT calls valid (fixed: the stored line
+snaps to the kernel's own vertices); a hair off is a raw `Standard_OutOfRange`
+(fixed: a barrier + the rebuild's cheap health census inside the op — a failed
+feature beats a corrupt body); and `inspector.health` was a FALSE NEGATIVE on
+every cone apex and sphere pole (build123d's `is_manifold` counts degenerated
+edges) — `inspector.closed_shell` is now THE verdict for health and measure,
+excusing a degenerated edge only on ONE cone / sphere / revolution face; a
+spline fillet pinched to a point stays a defect (the Fillet tool relies on it).
+**Tests:** `tests/test_revolve_p3b.py` (35), `tests/test_health_degenerate_
+edges.py` (4), the gauntlet revolving every corpus face about each of its
+edges, 3 browser journeys — the face one with a REAL viewport click and the
+ribbon button (R5). **Line delta (source):** +528/−131 shipping, +330/−229 in
+review — a new capability, as P3's was; the R10 comparison: `revolve.js` is
+200 lines for two ops, an axis list and three extent modes, still on the
+701-line framework, against the 768-line hand-wired Extrude. *Review (§8 step 8, 8 angles):*
+~20 distinct findings, all verified first; one refuted by measurement (edge
+axes of near-flat spline faces are in-plane); the ones that mattered — an edit
+typed before its plan arrived rewrote a stored edge axis to the select's
+default, the face default fell on `v` for any off-origin body, the plan was
+O(N²) in outline edges (1.8 s for a 40-gon, 20 s for 120; now 0.2 s / 0.5 s).
+Deferred to §10: a handle for Angle 2 (typed only today, against parity rule
+3), the `sketch_on_face` 25° snap.
+
 **P4 — The rest of Tier 1, one tool per session.**
 Order: Fillet/Chamfer on picked edges (needs edge picking + per-edge op) →
 Hole → Pattern → Mirror → Shell → Move/Rotate → Push/Pull naming. Each: spec
@@ -530,6 +578,9 @@ assemblies, the user's personal project.
 
 | Pri | Item | Source |
 |-----|------|--------|
+| done | **`inspector.health` called every cone apex and sphere pole an open shell** — build123d's `is_manifold` counts the faces on DEGENERATED edges (one by construction), so a revolve about the profile's own edge, a plain cone, and anything sphere-bearing tripped it (spheres alone had an exemption), while a sweep about an axis a few microns OFF the edge — a SLIVER face, no apex — passed. `inspector.closed_shell` (one topology map) is the verdict for health AND measure (MCP `verify_step` read the raw flag and disagreed with the tree); a degenerated edge is excused only on ONE cone / sphere / revolution face — a spline fillet pinched to a point stays a defect (`tests/test_fillet_tool.py` radius 6 relies on it). | P3b 2026-09-05 (4987a15, d82e9d0) |
+| P3 | **Revolve's second side has no handle.** Two sides gives Angle 2 a number box only; the ring drags side one. Fusion gives each side its own end to grab (parity rule 3: direct manipulation first). A second ring handle on the far end of the sweep, sharing the one-turn budget the way the boxes do. | P3b review 2026-09-05 |
+| P2 | **`sketch_on_face` snaps a face tilted under 25° to the principal plane — a plane that does not contain the face.** `face_sketch_plane` positions the sketch by the face but orients it by the nearest principal frame (|n·k| > 0.9); on a tapered wall the face's edges sat 1.4 mm off that plane (`probes/revolve_face_probe.py` §7), so a sketch drawn "on" it floats above one edge and cuts into the other. Revolve's face profile uses the true plane (`_face_frame(face, snap=False)`) — the same switch is available to the sketcher, but the offset-method sign rules and every stored face sketch were written for the snapped frame, so it is a decision, not a one-liner. | P3b 2026-09-05 |
 | done | **A kernel call can SEGFAULT and take the server (and every unsaved tab) with it** — `fillet` at radius 2.0 on esp32-remote's 80-edge top rim = 0xC0000005, reproduced (`probes/fillet_segfault_probe.py`); no try/except can catch it. **Fixed 2026-09-05 (1aea14a):** `python studio.py` runs `supervise.py`, a light supervisor that starts the server as a child and relaunches it after a crash the OS reported (NTSTATUS `0xC…`; never after Ctrl+C / Stop-Process / exit 0, so the restart routine still works — exit codes probed). The session file, written after every COMPLETED POST, is the checkpoint: the fatal request never reaches it and the child comes back one step behind. An in-flight marker names the request the dead process was in; the UI waits for the server, reloads the document and speaks the note once. A saved design whose rebuild segfaults comes back UNBUILT (safe restore) instead of killing every restart. Not out-of-process kernel calls (the rebuild cache and meshes live with the Document); a checkpoint-and-relaunch, which also covers crashes no one has met yet. **12 tests** (10 in `tests/test_supervisor.py`, 2 browser journeys) after the review below — the commit message's "14 new tests" was wrong, a miscount of a pytest line that included `test_session_restore.py`. | P4 review 2026-09-04 → fixed 2026-09-05 |
 | done | **Code review of the crash supervisor (1aea14a, 2026-09-05): 6 findings, 4 real and fixed, 2 refuted by measurement; the verification pass found 3 the review had not.** The one that mattered was not in the review at all: POSTs overlap in FastAPI's threadpool, and `edit_params` writes the new value into the feature BEFORE the kernel is asked — so a tree click finishing during the fatal 8-second fillet wrote a checkpoint CONTAINING the radius that was about to crash, and the relaunched server rebuilt straight back into it. The checkpoint is now taken only when no POST is still running, and the in-flight marker is a SET whose file names the oldest (a later request can no longer steal it). Also fixed: an answer landing in a tool session the crash had already closed dereferenced null (one `GONE` throw, caught once in `apply()`, replacing three unguarded sites); the 3 s watcher saw the crash but never told the panel — and its typing guard, tested first, meant a panel with a focused number box NEVER heard (the emit now lives inside `noteRecovery`, so no caller can forget it); and the relaunch had no ceiling, so a crash nobody asked for (tessellation in GET `/api/model`, which the recovered page refetches) would have relaunched for ever — now the second comes back unbuilt and the third stops, while a fatal step the user RETRIES still costs exactly one step, told apart by the in-flight marker. REFUTED with measurements, so nobody redoes them: the 120 s wait for the server (worst real design measured 26.2 s, and two listeners on 8123 proved impossible on this machine — the wait was raised to 5 min anyway and the "start it again" advice dropped, since that sentence is how a second listener would be born), and a spurious `server-recovered` on a transient network failure (no AbortController exists, fetch resolves on every HTTP status, and the browser replays a POST on a dead keep-alive socket rather than rejecting). Probed and acted on: fastapi's TestClient gives each calling thread its OWN event loop, so the in-flight set is locked rather than trusted to a single writer. | review 2026-09-05 |
 | P2 | The browser REPLAYS a POST when a reused keep-alive socket dies mute (probed 2026-09-05: the server saw the identical body twice on two connections). So an `/api/feature/add` or `/api/undo` can in principle apply twice with no crash involved. Not seen in use; the fix is an idempotency key on mutating requests. | review 2026-09-05 |
