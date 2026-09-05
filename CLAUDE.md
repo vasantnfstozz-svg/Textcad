@@ -23,7 +23,7 @@ destructive (pushes, deletes, restarts of their server).
 ## Commands
 
 ```powershell
-python studio.py                 # the user's server: port 8123, opens a browser tab
+python studio.py                 # the user's server: port 8123, opens a browser tab (supervisor + server child)
 python dev.py                    # auto-reload dev server (needs watchfiles; never for the user's server)
 
 python -m pytest tests -q --ignore=tests/e2e    # fast tier (no browser)
@@ -45,11 +45,18 @@ python -m pytest tests -m library -q            # opt-in: health of the user's L
   never as a session background task, never with `dev.py` (its reloader
   watches `designs/` and kills the server on a design-script edit). After a
   backend change, restart it and let it open the browser.
+- `python studio.py` is TWO processes: the light supervisor (`supervise.py`)
+  and the server child that LISTENS (`TEXTCAD_SERVER_CHILD=1`). A kernel
+  segfault (exit 0xC0000005) makes the supervisor relaunch the child with the
+  tabs as of the last completed request and the UI says so; stopping the
+  listener on purpose ends both. They are not duplicate servers.
 - Windows lets several processes listen on one port. Diagnose with
   `Get-NetTCPConnection -LocalPort 8123 -State Listen` then `Get-Process -Id`,
   never `netstat`.
 - Env vars: `TEXTCAD_PORT`, `TEXTCAD_NO_BROWSER=1` (only for automated runs),
-  `TEXTCAD_E2E_PORT`, `TEXTCAD_HISTORY_ROOT` (autoused by tests/conftest.py).
+  `TEXTCAD_E2E_PORT`, `TEXTCAD_HISTORY_ROOT` (autoused by tests/conftest.py),
+  `TEXTCAD_CRASH_TEST=1` (tests only: adds `POST /api/_crash`); supervisor →
+  child: `TEXTCAD_SERVER_CHILD`, `TEXTCAD_RECOVERED`, `TEXTCAD_SAFE_RESTORE`.
   API keys live in the user registry; read via `studio._user_env()`.
 - Set `PYTHONIOENCODING=utf-8` for scripts that print geometry symbols.
 
@@ -57,8 +64,9 @@ python -m pytest tests -m library -q            # opt-in: health of the user's L
 
 1. What does the status bar's `ui v<N>` say? If it is behind `main.js?v=` in
    `static/index.html`, the tab is stale — hard refresh, nothing to fix.
-2. Is exactly ONE `studio.py` listening on 8123, started after the last
-   backend change?
+2. Is exactly ONE process listening on 8123 (the server child — its
+   `studio.py` supervisor never listens), started after the last backend
+   change?
 3. Only then read code. Their live `/api/doc` is the repro recipe.
 
 ## Non-negotiable rules

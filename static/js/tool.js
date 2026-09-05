@@ -129,6 +129,12 @@ export function cancelTool() {
   if (active) active.abandon();
 }
 
+/* The server died under an open session (a kernel crash) and came back as of
+   the last completed step. The panel lets go WITHOUT the usual teardown: the
+   fatal step never landed, rollback state is not persisted, and the feature's
+   last good values are in the restored document. */
+bus.on('server-recovered', () => { cancelProfilePick(); if (active) active.recover(); });
+
 /* ------------- editing in isolation (same trick as edit-sketch) -------------
    Editing a feature in the MIDDLE of a tree rebuilt everything below it on
    every keystroke — 5.4 s a keystroke on esp32-remote (user, 2026-08-26). So
@@ -194,8 +200,8 @@ export function tool(spec) {
   };
   const lower = spec.name.toLowerCase();
 
-  const ctl = { open, openEdit, init, abandon, apply, cancel, replan, plan: fetchPlan,
-                get st() { return st; } };
+  const ctl = { open, openEdit, init, abandon, apply, cancel, replan, recover,
+                plan: fetchPlan, get st() { return st; } };
   for (const op of Object.values(spec.ops)) if (op) byOp[op] = ctl;
 
   /* -------- panel + the one-command-at-a-time lock (rule 9) -------- */
@@ -647,6 +653,11 @@ export function tool(spec) {
   }
   function abandon() {                  // another tool started (see cancelTool)
     if (st && st.editing) { cancel(); return; }   // an unfinished edit is a Cancel
+    hide();
+    releaseModal();
+  }
+  function recover() {                  // the server crashed and came back
+    clearTimeout(timer); timer = null;  // a typed value on its way is dropped
     hide();
     releaseModal();
   }

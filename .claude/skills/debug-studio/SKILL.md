@@ -27,7 +27,10 @@ description: Diagnosis playbook for TextCAD Studio problems — server won't sta
     -RedirectStandardError "$env:TEMP\textcad-dev.err.log"`.
    Background-task launches are fine only for private TEST servers.
 1. **Port 8123 in use (WinError 10048)** — an old `python studio.py` is still
-   alive. Find/stop it before relaunching.
+   alive. Find/stop it before relaunching. Since 2026-09-05 a healthy server is
+   TWO python processes — the `studio.py` supervisor and its LISTENING child
+   (`supervise.py`); stop the listener and the supervisor ends with it. A
+   kernel crash relaunches the child by itself and the chat says so.
 2. **Two Pythons** — Desktop/PATH may resolve `python` to 3.12; everything is
    installed in `C:\Python314\python.exe`. Use absolute paths in configs.
 3. **MCP "Server disconnected"** — module missing (wrong python) OR something
@@ -55,7 +58,9 @@ description: Diagnosis playbook for TextCAD Studio problems — server won't sta
    `Get-Process -Id <OwningProcess>` to prove it is alive, and
    `Get-CimInstance Win32_Process -Filter "ProcessId=N"` to read its
    CommandLine/CreationDate (that is how a reload child is identified). Kill
-   parent AND child, confirm `curl` refuses, then start exactly one.
+   parent AND child, confirm `curl` refuses, then start exactly one. The
+   supervisor + child pair of `python studio.py` is NOT this trap: only the
+   child listens.
    NOTE from Git Bash: `taskkill /PID` gets MSYS-mangled into a PATH
    (`Invalid argument/option - 'C:/Program Files/Git/PID'`) — use PowerShell
    `Stop-Process -Id a,b,c -Force` instead.

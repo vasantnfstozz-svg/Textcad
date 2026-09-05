@@ -3,7 +3,7 @@
 
 import { bus } from './bus.js';
 import { S } from './state.js';
-import { getJSON, isBusy } from './api.js';
+import { getJSON, isBusy, noteRecovery } from './api.js';
 import { initViewport, loadMesh } from './viewport.js';
 import { initTreeFind } from './tree.js';  // + the find box
 import './provenance.js';     // face pick -> which feature made it
@@ -68,6 +68,11 @@ setInterval(async () => {
   if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
   try {
     const d = await getJSON('/api/doc');
+    if (noteRecovery(d)) {              // the server crashed and came back
+      bus.emit('doc-updated', d);       // (restored tabs carry new ids — not
+      loadMesh(true);                   //  a design "arriving" from outside)
+      return;
+    }
     if (docSig(d) !== docSig(S.lastDoc)) {
       const newTab = !S.lastDoc || d.active_tab !== S.lastDoc.active_tab;
       bus.emit('doc-updated', d);
@@ -86,3 +91,7 @@ addMsg('bot', 'Welcome to TextCAD Studio.\n' +
   '• Describe a part to design it from scratch (opens in a new tab)\n' +
   '• Ask for changes ("make the bore 12mm")\n' +
   '• Or build manually: Create tab → Create Sketch, primitives, Extrude… — every path is verified.');
+/* A crash note older than a few minutes is history to a freshly opened page;
+   a recent one (the user hit F5 while Studio was restarting) is still news. */
+if (doc.recovery && Date.now() / 1000 - doc.recovery.at > 300) S.recoveredAt = doc.recovery.at;
+noteRecovery(doc);

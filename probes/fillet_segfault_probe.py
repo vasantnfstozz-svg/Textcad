@@ -18,9 +18,12 @@ design — run it in its own process, never inside the test suite:
     PYTHONPATH=. C:\\Python314\\python.exe probes\\fillet_segfault_probe.py 4      -> refusal
     PYTHONPATH=. C:\\Python314\\python.exe probes\\fillet_segfault_probe.py 2.0    -> exit 139
 
-Still open (BACKLOG / LAUNCH-PLAN §10, P0): the user can type 2.0 themselves and
-lose the server the same way. Guarding that means running kernel ops out of
-process, which is its own piece of work — not something a tool can do.
+The user can still type 2.0 themselves. Since 2026-09-05 that costs one step,
+not the session: `python studio.py` runs supervise.py, which relaunches the
+server child after a crash the OS reported, with every tab as of the last
+COMPLETED request (the session file is the checkpoint), and the UI says what
+happened. tests/test_supervisor.py uses this very fillet as its startup-crash
+case (a saved design whose rebuild segfaults comes back unbuilt).
 """
 import json
 import sys

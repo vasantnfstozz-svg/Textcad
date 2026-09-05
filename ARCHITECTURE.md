@@ -14,7 +14,7 @@ than shipped code it says so. The rules for changing any of this are in
  static/js (tool → selection → params)          browser
         │  POST /api/feature/add  (soon: POST /api/tool/plan first)
         ▼
- studio.py  ── HTTP only; multi-tab STATE ──────────────────────── server
+ studio.py  ── HTTP only; multi-tab STATE; child of supervise.py ── server
         │
         ▼
  document.py  Document.rebuild()
@@ -168,6 +168,24 @@ BRANCHES, snapshot written before index, a broken index is never overwritten,
 eagerly, others lazily; per-port file for non-8123 servers). Versions are
 minted ONLY on explicit Save and on open/reload; tools, imports and AI edits
 mark the tab dirty and add `pending` notes that become the save label.
+
+**Crash recovery** (`supervise.py`, 2026-09-05). The kernel can segfault (a
+fillet at radius 2.0 on esp32-remote's top rim, `probes/fillet_segfault_probe.py`)
+and a segfault is not an exception. `python studio.py` therefore runs a light
+supervisor that starts the server as a child (`TEXTCAD_SERVER_CHILD=1`) and
+relaunches it after a crash the OS reported (NTSTATUS `0xC…` / a POSIX crash
+signal — never after Ctrl+C, Stop-Process or exit 0), passing
+`TEXTCAD_RECOVERED`. The session file is the checkpoint: written after every
+COMPLETED POST, so the fatal request never reaches it. An in-flight marker
+(`.studio-session-inflight.json`, written before a POST, removed after) names
+the request the dead process was in; the child exposes both as `recovery` on
+`/api/doc`, and `api.js` waits for the server, re-emits `doc-updated` and speaks
+the note once (`server-recovered` lets an open tool panel go). A crash before
+the server ever served relaunches with `TEXTCAD_SAFE_RESTORE=1`: tabs come back
+unbuilt, an empty tab active. The child exits on EOF of its stdin pipe, so a
+killed supervisor never leaves an orphan listener. Tests:
+`tests/test_supervisor.py` (real processes, a real access violation),
+`tests/e2e/test_recovery.py` (what the user sees).
 
 **AI.** `author.py` turns a request into a feature-tree JSON through
 validation gates (op catalog, `lint_tree`: no absolute-offset sketch once a

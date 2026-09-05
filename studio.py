@@ -18,14 +18,29 @@ health + spec verification. The LLM never regenerates a design during an edit.
 """
 
 from __future__ import annotations
+import os
+import sys
+
+# `python studio.py` runs the SUPERVISOR (supervise.py -- light, no kernel
+# import) and the server itself as its child. The geometry kernel can segfault
+# (probes/fillet_segfault_probe.py), and a segfault is not an exception: the
+# process is simply gone. The supervisor relaunches it with the tabs as of the
+# last completed request, so a crash costs one step, not the session. Tests
+# and dev.py IMPORT this module, so they never come through here.
+if __name__ == "__main__" and os.environ.get("TEXTCAD_SERVER_CHILD") != "1":
+    from supervise import main as _supervise
+    raise SystemExit(_supervise())
+
 import base64
 import json
 import math
-import os
 import re
-import webbrowser
+import threading
+import time
 from dataclasses import asdict
 from pathlib import Path
+
+import supervise                       # session/in-flight file names, shared
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -240,13 +255,18 @@ def _persist_session() -> None:
         pass
 
 
-def _restore_session() -> int:
+def _restore_session(rebuild: bool = True) -> int:
     """Reopen the previous run's tabs from SESSION_PATH. Only the ACTIVE tab
     is rebuilt here — rebuilding a whole heavy session up front kept the port
     closed for minutes (measured: a 79-feature tab among four). The others
     rebuild lazily on their first switch (see switch_tab); until then their
     tab dot shows grey "not loaded yet", not red. One broken tab never takes
-    down the rest. Returns how many tabs came back."""
+    down the rest. Returns how many tabs came back.
+
+    rebuild=False is the SAFE restore after a startup crash (the supervisor's
+    TEXTCAD_SAFE_RESTORE): a tab whose rebuild segfaults the kernel would
+    otherwise kill every restart. Nothing is built and no tab is activated;
+    the caller opens an empty tab and the user decides which tab to try."""
     if not SESSION_PATH.exists():
         return 0
     try:
@@ -279,17 +299,103 @@ def _restore_session() -> int:
             restored += 1
         except Exception:
             continue
-    if restored:
+    if restored and rebuild:
         STATE["active"] = active_tid or next(reversed(STATE["docs"]))
         _rebuild_and_mesh()                    # the visible tab only
     return restored
 
 
+# ---------------------------------------------------------------------------
+# Crash recovery — the kernel can take the process down (LAUNCH-PLAN §10 ★P0)
+# ---------------------------------------------------------------------------
+# The session file above IS the checkpoint: it holds every tab as of the last
+# COMPLETED request, so the request that segfaults the kernel never reaches it
+# and the relaunched server (see supervise.py) comes back one step behind. Two
+# small things make the crash SPEAK instead of looking like a hang: an
+# in-flight marker naming the request that was running when the process died,
+# and RECOVERY, the note the UI shows once ("the kernel crashed while handling
+# ...; the design is back at the last completed step").
+
+RECOVERY: dict | None = None      # set at startup when the previous process crashed
+
+
+def _inflight_path() -> Path:
+    return supervise.inflight_path(SESSION_PATH)
+
+
+def _mark_inflight(request) -> None:
+    """What we are about to do, in case we never get to say we did it."""
+    try:
+        _inflight_path().write_text(json.dumps(
+            {"method": request.method, "path": request.url.path,
+             "at": time.time()}), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _clear_inflight() -> None:
+    try:
+        _inflight_path().unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _recovery_note() -> dict | None:
+    """Startup: the supervisor's verdict on the previous process
+    (TEXTCAD_RECOVERED = "0xC0000005", or "0xC0000005:startup") joined with the
+    request it died in (a leftover in-flight marker). The marker is consumed
+    either way — a deliberate stop mid-request leaves one too."""
+    marker = None
+    p = _inflight_path()
+    if p.exists():
+        try:
+            marker = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            marker = None
+        _clear_inflight()
+    code = os.environ.get("TEXTCAD_RECOVERED")
+    if not code:
+        return None
+    startup = code.endswith(":startup")
+    return {"code": code.split(":")[0], "startup": startup,
+            "request": None if startup else marker, "at": time.time()}
+
+
+def _watch_parent() -> None:
+    """Child of the supervisor: exit when it goes away (EOF on the pipe it
+    holds open as our stdin), so a listener is never orphaned on the port."""
+    if os.environ.get("TEXTCAD_SERVER_CHILD") != "1":
+        return
+    if sys.stdin is None or sys.stdin.isatty():
+        return
+
+    def watch():
+        try:
+            sys.stdin.buffer.read()
+        except Exception:
+            pass
+        os._exit(0)
+    threading.Thread(target=watch, daemon=True).start()
+
+
+if os.environ.get("TEXTCAD_CRASH_TEST") == "1":
+    @app.post("/api/_crash")
+    def crash_for_test():
+        """TEST ONLY (tests/test_supervisor.py): a real access violation, the
+        same 0xC0000005 an OCCT segfault gives, without an 8-second fillet."""
+        import faulthandler
+        faulthandler._read_null()
+
+
 @app.middleware("http")
 async def _session_autosave(request, call_next):
+    mutating = SESSION_ENABLED and request.method == "POST"
+    if mutating:
+        _mark_inflight(request)
     response = await call_next(request)
-    if SESSION_ENABLED and request.method == "POST":
+    if mutating:
         _persist_session()
+        _clear_inflight()
     return response
 
 
@@ -464,6 +570,7 @@ def _doc_json() -> dict:
         "warnings": doc.warnings,
         "tabs": _tabs_json(),
         "active_tab": STATE["active"],
+        "recovery": RECOVERY,      # the previous process crashed: what, when
         "features": [{
             "id": f.id, "op": f.op, "params": f.params, "inputs": f.inputs,
             "status": f.status, "problems": f.problems, "volume": f.volume,
@@ -2523,50 +2630,30 @@ def chat(req: ChatReq):
 
 
 if __name__ == "__main__":
-    import socket
     import uvicorn
     port = int(os.environ.get("TEXTCAD_PORT", "8123"))
-    url = f"http://127.0.0.1:{port}"
 
     # Bring back the tabs of the previous run (user mandate 2026-08-31: a
     # restart must not close the designs being worked on). With no session
     # to restore, start EMPTY (user mandate 2026-08-05: the demo flange
     # forced a "disc with bolts" on every launch). Samples stay available
     # under File -> Examples; saved work under File -> Open.
-    # The session file is PER PORT: a test/scratch server on another port in
-    # the same repo must never overwrite (or restore) the main server's tabs.
-    if port != 8123:
-        SESSION_PATH = ROOT / f".studio-session-{port}.json"
+    SESSION_PATH = supervise.session_path(ROOT, port)      # per port
     SESSION_ENABLED = True
-    restored = _restore_session()
+    RECOVERY = _recovery_note()
+    if RECOVERY:
+        print(f"Recovered from a crash of the previous server ({RECOVERY['code']}).")
+    # After a STARTUP crash the tabs come back unbuilt (see _restore_session)
+    # and the empty tab opened below is the one the user lands on.
+    restored = _restore_session(
+        rebuild=os.environ.get("TEXTCAD_SAFE_RESTORE") != "1")
     if restored:
         print(f"Restored {restored} open tab(s) from the last session.")
-    else:
+    if STATE["active"] is None:
         _new_tab(Document(name="untitled"))
         _rebuild_and_mesh()
 
-    # Refuse to start a SECOND server on a port that already answers. On
-    # Windows two processes can both bind one port and replies then come from
-    # whichever bound last, which makes the app behave at random -- reads as
-    # "the server crashed" while a stale process quietly serves old code.
-    probe = socket.socket()
-    probe.settimeout(0.4)
-    already = probe.connect_ex(("127.0.0.1", port)) == 0
-    probe.close()
-    if already:
-        print(f"Something is already serving {url}.")
-        print("That is probably TextCAD Studio -- just open the tab.")
-        print("If it is stuck, close it first, or pick another port:")
-        print(f"  set TEXTCAD_PORT=8124 && python studio.py")
-        raise SystemExit(3)
-
-    print(f"TextCAD Studio -> {url}")
-    # new=2 asks for a TAB in the existing window rather than a new window, and
-    # TEXTCAD_NO_BROWSER skips it entirely (user: "always keep one webbrowser,
-    # just open a new tab"). Restarting the server should not pile up windows.
-    if os.environ.get("TEXTCAD_NO_BROWSER") != "1":
-        try:
-            webbrowser.open(url, new=2)
-        except Exception:
-            pass
+    # The port check, the browser tab and the restart-after-crash loop live in
+    # supervise.py -- what `python studio.py` actually runs.
+    _watch_parent()
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
