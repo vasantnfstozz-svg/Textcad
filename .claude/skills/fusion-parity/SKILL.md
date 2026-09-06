@@ -163,6 +163,14 @@ were each learned from a correction — do not regress them.
 - When a click is raycast onto a plane, refuse it when the view is nearly
   edge-on (|ray·normal| < ~0.15) — the hit point runs away to hundreds of mm
   and makes degenerate geometry. Say why in the hint bar (rule 7).
+- **A pick that lives as long as a tool SESSION must say so (2026-09-06).**
+  The viewport cancels every pending profile/face pick on `doc-updated` —
+  right for command-then-select (the document changed under the pick), wrong
+  for Hole's move-by-clicking, which the first build silently disarmed. A
+  session-long pick passes `sticky: true` to `beginProfilePick` and is ended
+  by the tool's `hide()`, never by a document change. A tool declares it with
+  `repick` (tool.js `armRepick`), and the face pick carries `point` — WHERE
+  the face was clicked — for every tool whose input is a point on a face.
 
 ## When unsure about a Fusion behavior
 
