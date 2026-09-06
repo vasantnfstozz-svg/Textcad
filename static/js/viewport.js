@@ -37,6 +37,8 @@ let placeCb = null;              // when set, the next viewport click places a s
 let planePickCb = null;          // when set, click an origin plane / face to sketch on
 const originPlanes = [];         // the 3 clickable origin planes during plane-pick
 let exArrow = null;              // the draggable Extrude manipulator arrow
+let exArrow2 = null;             // a SECOND arrow (Rectangular Pattern's direction 2), same mechanics
+let dragArrow = null;            // whichever arrow the pointer is dragging
 const raycaster = new THREE.Raycaster();
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);   // Z=0 workplane
 
@@ -262,7 +264,7 @@ export function initViewport() {
       half: groundState.half, clip: { ...groundState.clip } } : null,
     /* which extrude gizmos are live — a face-sketch extrude must have ALL
        three (the ghost/ring were silently missing there once) */
-    gizmos: () => ({ arrow: !!exArrow, ghost: !!exGhost, ring: !!taperRing,
+    gizmos: () => ({ arrow: !!exArrow, arrow2: !!exArrow2, ghost: !!exGhost, ring: !!taperRing,
                      axis: !!axisLine, lathe: !!rvGhost, glow: edgeGlow.length,
                      edgePick: !!edgePickCb, hole: !!holeMarker,
                      facePick: !!profilePickCb }),
@@ -420,15 +422,16 @@ export function initViewport() {
   renderer.domElement.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;            // a right/middle drag must still
                                            // navigate, even starting ON a gizmo
-    if (exArrow && !exArrow.dragging && arrowGrab(e)) { e.stopPropagation(); return; }
+    for (const a of [exArrow, exArrow2])
+      if (a && !a.dragging && arrowGrab(e, a)) { e.stopPropagation(); return; }
     if (taperRing && !taperRing.dragging && taperGrab(e)) e.stopPropagation();
   }, true);
   window.addEventListener('pointermove', e => {
-    if (exArrow && exArrow.dragging) arrowDrag(e);
+    if (dragArrow) arrowDrag(e);
     else if (taperRing && taperRing.dragging) taperDrag(e);
   });
   window.addEventListener('pointerup', e => {
-    if (exArrow && exArrow.dragging) arrowRelease(e);
+    if (dragArrow) arrowRelease(e);
     else if (taperRing && taperRing.dragging) taperRelease(e);
   });
 }
@@ -549,7 +552,7 @@ export const pickWhat = (opts = {}) =>
 export function beginProfilePick(onPick, opts = {}) {
   profilePickCb = onPick;
   profilePickOpts = { name: 'Extrude', faces: true, profiles: true, hint: null, sticky: false,
-                      ...opts };
+                      anyFace: false, ...opts };
   renderer.domElement.style.cursor = 'crosshair';
   const h = document.getElementById('placeHint');
   h.textContent = profilePickOpts.hint
@@ -604,8 +607,10 @@ function profilePickAt(e) {
         'click a sketch, not a face. Keep picking, or Esc.');
       return;
     }
-    if (info && flat && info.center) {
-      // the face, WHICH body it is on, and WHERE it was clicked (Hole's centre)
+    if (info && (flat || profilePickOpts.anyFace) && info.center) {
+      // the face, WHICH body it is on, and WHERE it was clicked (Hole's centre);
+      // a tool that takes ANY face (Pattern: a bore's wall names the hole) is
+      // given curved ones too — the server says what the face means
       answerPick('face', { ...info, body: info.body || entry.id,
                            point: [fHit.point.x, fHit.point.y, fHit.point.z] });
       return;
@@ -873,6 +878,23 @@ function planePickAt(e) {
 export function beginExtrudeArrow(originArr, normalArr, amount, onChange, onCommit,
                                    clampFn) {
   endExtrudeArrow();
+  exArrow = makeArrow(originArr, normalArr, amount, onChange, onCommit, clampFn);
+}
+/* a SECOND arrow with the same mechanics — Rectangular Pattern's direction 2.
+   Every helper below takes the arrow it works on (the first by default); the
+   pointer handlers try both, and `dragArrow` is the one a drag holds. */
+export function beginSecondArrow(originArr, normalArr, amount, onChange, onCommit, clampFn) {
+  endSecondArrow();
+  exArrow2 = makeArrow(originArr, normalArr, amount, onChange, onCommit, clampFn);
+}
+export function endSecondArrow() {
+  if (!exArrow2) return;
+  disposeArrow(exArrow2); exArrow2 = null;
+}
+export function setSecondArrowAmount(a) {
+  if (exArrow2 && !exArrow2.dragging) { exArrow2.amount = a; updateArrow(exArrow2); }
+}
+function makeArrow(originArr, normalArr, amount, onChange, onCommit, clampFn) {
   const O = new THREE.Vector3(...originArr);
   const N = new THREE.Vector3(...normalArr).normalize();
   const arrow = new THREE.ArrowHelper(N, O, 1, 0xffb85c);
@@ -891,29 +913,33 @@ export function beginExtrudeArrow(originArr, normalArr, amount, onChange, onComm
     new THREE.MeshBasicMaterial({ visible: false }));
   scene.add(arrow); scene.add(hit);
   // amount 0 is a real value (the tool opens at 0 now) — only default nullish
-  exArrow = { arrow, hit, O, N, amount: Number(amount) || 0, len, onChange,
+  const a = { arrow, hit, O, N, amount: Number(amount) || 0, len, onChange,
               onCommit, clampFn, dragging: false, grab: 0 };
-  updateArrow();
+  updateArrow(a);
+  return a;
 }
 
 export function endExtrudeArrow() {
   if (!exArrow) return;
-  scene.remove(exArrow.arrow); scene.remove(exArrow.hit);
-  exArrow.hit.geometry.dispose(); exArrow.hit.material.dispose();
+  disposeArrow(exArrow); exArrow = null;
+}
+function disposeArrow(a) {
+  if (dragArrow === a) { dragArrow = null; controls.enabled = true; }
+  scene.remove(a.arrow); scene.remove(a.hit);
+  a.hit.geometry.dispose(); a.hit.material.dispose();
   // the ArrowHelper's line and cone own a MATERIAL each — a tool that
   // re-places its handles on every change (Hole) strands them otherwise. Their
   // GEOMETRIES are not ours: three.js 0.160 builds `_lineGeometry` and
   // `_coneGeometry` once at module scope and hands the same two to every
   // ArrowHelper ever made (checked in the pinned build), so disposing them
   // would throw away the buffers the NEXT arrow is drawn from.
-  exArrow.arrow.line.material.dispose(); exArrow.arrow.cone.material.dispose();
-  exArrow = null;
+  a.arrow.line.material.dispose(); a.arrow.cone.material.dispose();
 }
 
 export function hasExtrudeArrow() { return !!exArrow; }
 /* mid-drag? re-placing the arrow under a live drag would strand the drag with
    OrbitControls still disabled, so callers that re-aim it must ask first. */
-export function extrudeArrowDragging() { return !!(exArrow && exArrow.dragging); }
+export function extrudeArrowDragging() { return !!dragArrow; }
 
 /* ---------------- extrude GHOST (instant drag preview) ----------------
    While dragging, a translucent white prism in the TRUE SHAPE of the profile
@@ -1287,7 +1313,7 @@ export function extrudeArrowDebug() {
 
 /* keep the arrow in sync when the distance is typed in the value box */
 export function setExtrudeArrowAmount(a) {
-  if (exArrow && !exArrow.dragging) { exArrow.amount = a; updateArrow(); }
+  if (exArrow && !exArrow.dragging) { exArrow.amount = a; updateArrow(exArrow); }
 }
 
 function toScreen(p) {
@@ -1299,12 +1325,12 @@ function toScreen(p) {
 
 /* the arrow's pointing direction — always a COPY: multiplying a reference to
    exArrow.N would scale the stored normal and corrupt every later calculation. */
-function arrowDir() {
-  const d = exArrow.N.clone();
-  return exArrow.amount >= 0 ? d : d.negate();
+function arrowDir(a = exArrow) {
+  const d = a.N.clone();
+  return a.amount >= 0 ? d : d.negate();
 }
-function arrowBase() {
-  return exArrow.O.clone().add(exArrow.N.clone().multiplyScalar(exArrow.amount));
+function arrowBase(a = exArrow) {
+  return a.O.clone().add(a.N.clone().multiplyScalar(a.amount));
 }
 
 /* screen (client) coords of the arrow's middle — for driving/aiming the drag */
@@ -1320,30 +1346,36 @@ export function extrudeArrowAxisScreen() {
   const tip = base.clone().add(arrowDir().multiplyScalar(exArrow.len));
   return { base: toScreen(base), tip: toScreen(tip) };
 }
+export function secondArrowAxisScreen() {          // the same, for Rectangular Pattern's second arrow
+  if (!exArrow2) return null;
+  const base = arrowBase(exArrow2);
+  const tip = base.clone().add(arrowDir(exArrow2).multiplyScalar(exArrow2.len));
+  return { base: toScreen(base), tip: toScreen(tip) };
+}
 
-function updateArrow() {
-  const len = exArrow.len;
-  const dir = arrowDir();                        // copy — never mutate N
-  const base = arrowBase();
+function updateArrow(a = exArrow) {
+  const len = a.len;
+  const dir = arrowDir(a);                       // copy — never mutate N
+  const base = arrowBase(a);
   const head = len * 0.42;                       // big, easy-to-see head
-  exArrow.arrow.position.copy(base);
-  exArrow.arrow.setDirection(dir);
-  exArrow.arrow.setLength(len, head, head * 0.62);
+  a.arrow.position.copy(base);
+  a.arrow.setDirection(dir);
+  a.arrow.setLength(len, head, head * 0.62);
   const mid = base.clone().add(dir.clone().multiplyScalar(len / 2));
-  exArrow.hit.position.copy(mid);
-  exArrow.hit.scale.set(1, len * 1.2, 1);        // grab a bit beyond the tip
-  exArrow.hit.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+  a.hit.position.copy(mid);
+  a.hit.scale.set(1, len * 1.2, 1);              // grab a bit beyond the tip
+  a.hit.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
 }
 
 /* signed distance along the axis (O + s·N) nearest to the pointer ray */
-function projectAmount(e) {
+function projectAmount(e, a = exArrow) {
   raycaster.setFromCamera(ndcFrom(e), camera);
   const rp = raycaster.ray.origin, rd = raycaster.ray.direction;
-  const r = new THREE.Vector3().subVectors(exArrow.O, rp);
-  const b = exArrow.N.dot(rd), c = rd.dot(rd);
-  const d = exArrow.N.dot(r), ee = rd.dot(r);
+  const r = new THREE.Vector3().subVectors(a.O, rp);
+  const b = a.N.dot(rd), c = rd.dot(rd);
+  const d = a.N.dot(r), ee = rd.dot(r);
   const denom = c - b * b;                        // a = N·N = 1
-  if (Math.abs(denom) < 1e-6) return exArrow.amount;
+  if (Math.abs(denom) < 1e-6) return a.amount;
   return (b * ee - c * d) / denom;
 }
 
@@ -1351,51 +1383,55 @@ function projectAmount(e) {
    nearly head-on to the camera this collapses, so we fall back to the ray
    method — otherwise dragging follows the arrow's ON-SCREEN direction, which is
    what makes a gizmo feel predictable. */
-function axisScreenVector() {
-  const a = exArrow.amount;
-  const p0 = toScreen(exArrow.O.clone().add(exArrow.N.clone().multiplyScalar(a)));
-  const p1 = toScreen(exArrow.O.clone().add(exArrow.N.clone().multiplyScalar(a + 1)));
+function axisScreenVector(ar = exArrow) {
+  const a = ar.amount;
+  const p0 = toScreen(ar.O.clone().add(ar.N.clone().multiplyScalar(a)));
+  const p1 = toScreen(ar.O.clone().add(ar.N.clone().multiplyScalar(a + 1)));
   return { x: p1.x - p0.x, y: p1.y - p0.y };
 }
 
-function arrowGrab(e) {
+function arrowGrab(e, a) {
   raycaster.setFromCamera(ndcFrom(e), camera);
-  if (!raycaster.intersectObject(exArrow.hit, false).length) return false;
-  exArrow.dragging = true;
+  if (!raycaster.intersectObject(a.hit, false).length) return false;
+  a.dragging = true;
+  dragArrow = a;
   controls.enabled = false;
-  const v = axisScreenVector();
+  const v = axisScreenVector(a);
   const len2 = v.x * v.x + v.y * v.y;
   if (len2 > 4) {                        // >2px per mm — screen-space drag
-    exArrow.mode = 'screen';
-    exArrow.axis2D = v; exArrow.axisLen2 = len2;
-    exArrow.startAmount = exArrow.amount;
-    exArrow.startXY = { x: e.clientX, y: e.clientY };
+    a.mode = 'screen';
+    a.axis2D = v; a.axisLen2 = len2;
+    a.startAmount = a.amount;
+    a.startXY = { x: e.clientX, y: e.clientY };
   } else {                               // axis points at the camera — use the ray
-    exArrow.mode = 'ray';
-    exArrow.grab = exArrow.amount - projectAmount(e);
+    a.mode = 'ray';
+    a.grab = a.amount - projectAmount(e, a);
   }
   return true;
 }
 
 function arrowDrag(e) {
+  const ar = dragArrow;
   let a;
-  if (exArrow.mode === 'screen') {
-    const dx = e.clientX - exArrow.startXY.x, dy = e.clientY - exArrow.startXY.y;
-    const along = (dx * exArrow.axis2D.x + dy * exArrow.axis2D.y) / exArrow.axisLen2;
-    a = exArrow.startAmount + along;
+  if (ar.mode === 'screen') {
+    const dx = e.clientX - ar.startXY.x, dy = e.clientY - ar.startXY.y;
+    const along = (dx * ar.axis2D.x + dy * ar.axis2D.y) / ar.axisLen2;
+    a = ar.startAmount + along;
   } else {
-    a = projectAmount(e) + exArrow.grab;
+    a = projectAmount(e, ar) + ar.grab;
   }
-  if (exArrow.clampFn) a = exArrow.clampFn(a);   // barrier (e.g. taper collapse)
-  exArrow.amount = a;
-  updateArrow();
-  exArrow.onChange(exArrow.amount);
+  if (ar.clampFn) a = ar.clampFn(a);     // barrier (e.g. taper collapse)
+  ar.amount = a;
+  updateArrow(ar);
+  ar.onChange(ar.amount);
 }
 
 function arrowRelease() {
-  exArrow.dragging = false;
+  const ar = dragArrow;
+  dragArrow = null;                      // released BEFORE the commit: it may end the arrow
+  ar.dragging = false;
   controls.enabled = true;
-  exArrow.onCommit(exArrow.amount);
+  ar.onCommit(ar.amount);
 }
 
 /* Standard CAD view poses in the Z-up frame (see WORLD_UP).
@@ -2134,7 +2170,8 @@ function selectFace(fid, entry = null, hitPoint = null) {
   // the pick carries WHERE the face was clicked — Hole's centre; the tool's
   // plan turns it into the face's own coordinates, nothing is computed here
   S.pickedFace = (info.center && isFlat) ? { ...info, point } : null;
-  S.pickedCurved = (info.center && !isFlat) ? info : null;
+  S.pickedCurved = (info.center && !isFlat)
+    ? { ...info, body: info.body || (entry ? entry.id : null), point } : null;
   S.pickedProfile = null;              // a face pick replaces a profile pick
   S.pickedEdge = null;
   // 'pick' is the RAW selection event, for tools that need the identity of

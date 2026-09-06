@@ -42,9 +42,10 @@ FOUND 2026-09-06 (each drove a decision in pattern.py / toolplan.plan_pattern):
 §10 Part.rotate(Axis(origin, dir), deg) about an arbitrary axis lands where
     the formula says ((20, 0) about (10, 5) by 90° → (15, 15)).
 §11 Every corpus body takes a 3× polar pattern of a through hole's delta on
-    its largest flat face: valid, one solid, the removed volume = 3 plugs on
-    six of them; on the wedge and the L-bracket the copies leave the face
-    (0 or a notch) — the per-copy measurement of §7 is what tells the user.
+    its largest flat face: valid, one solid, the removed volume = exactly 3
+    plugs on all eight (the first run placed the seed from the face FRAME's
+    origin — the world origin's foot, not the face centre — and two bodies
+    "lost" copies over the edge: the seed must be placed from face.center()).
 """
 import math
 import sys
@@ -257,8 +258,8 @@ for name, make in BODIES.items():
         pl = sk.face_profile_plane(face)
         bb = face.bounding_box()
         span = min(s for s in (bb.size.X, bb.size.Y, bb.size.Z) if s > 1e-6)
-        at_world = pl.from_local_coords(Vector(span * 0.25, 0, 0))
-        at_local = pl.to_local_coords(at_world)
+        c = pl.to_local_coords(face.center())     # from the FACE centre (the frame's origin is the world's foot)
+        at_local = Vector(c.X + span * 0.25, c.Y, 0)
         holed = sk.hole(solid, face_center=list(face.center()), face_normal=list(normal),
                         at=[at_local.X, at_local.Y], diameter=3, depth=1, through=True)
         delta = solid - holed

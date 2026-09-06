@@ -41,6 +41,7 @@ from OCP.TopExp import TopExp_Explorer
 
 import blocks
 import inspector
+import pattern
 import sketch as sk
 
 
@@ -60,11 +61,11 @@ CREATORS["import_step"] = blocks.import_step  # exact BREP import (incl. our own
 MODIFIERS = {
     "with_center_hole": blocks.with_center_hole,
     "with_bolt_circle": blocks.with_bolt_circle,
-    "polar_pattern": blocks.polar_pattern,
+    "polar_pattern": pattern.polar_pattern,    # a body, or a FEATURE's delta, about an axis (P4)
     "rotate": blocks.rotate,
     "mirror": blocks.mirror_copy,
     "scale": blocks.scale_uniform,
-    "linear_pattern": blocks.linear_pattern,
+    "linear_pattern": pattern.linear_pattern,  # … along one or two directions (P4)
     "fillet": blocks.fillet_edges,
     "chamfer": blocks.chamfer_edges,
     "shell": blocks.shell_out,
@@ -124,9 +125,12 @@ def op_params(op: str) -> tuple:
     sig = list(inspect.signature(fn).parameters.values())
     if op in MODIFIERS:
         sig = sig[1:]                    # the upstream part
+    # an underscored parameter is the document's, not the user's: the pattern
+    # ops take the seed's before / after bodies that way (Document._eval)
     return tuple((p.name, None if p.default is inspect._empty else p.default)
                  for p in sig
-                 if p.kind not in (p.VAR_KEYWORD, p.VAR_POSITIONAL))
+                 if p.kind not in (p.VAR_KEYWORD, p.VAR_POSITIONAL)
+                 and not p.name.startswith("_"))
 
 # how many inputs an op NEEDS to still mean something (used when a delete
 # takes one of its inputs away: a modifier with none left cannot survive)
@@ -331,6 +335,76 @@ class Document:
         self.features.append(Feature(id=id, op=op, params=params or {},
                                      inputs=list(inputs or [])))
         return self
+
+    # -- the pattern's seed (specs/pattern.md) --------------------------------
+    PULLED = ("extrude", "revolve", "loft", "sweep", "extrude_face", "revolve_face")
+
+    def ancestors(self, fid: str) -> set:
+        """every feature upstream of `fid`: its inputs, theirs, and so on"""
+        by_id = {f.id: f for f in self.features}
+        seen, todo = set(), list(by_id[fid].inputs) if fid in by_id else []
+        while todo:
+            d = todo.pop()
+            if d in seen or d not in by_id:
+                continue
+            seen.add(d)
+            todo.extend(by_id[d].inputs)
+        return seen
+
+    def delta_features(self, seed: str) -> tuple:
+        """What "pattern THIS feature" means — ONE rule for the op and the plan,
+        and the tree's own folding rule: (before_id, after_id), the body before
+        the seed and the body after it. A modifier of a body (hole, fillet, a
+        pattern…) is its own before / after; a pulled tool (extrude, revolve…)
+        with a folded 2-input boolean is that BOOLEAN's; a bare boolean is its
+        first input / itself; anything else — a creator, a standalone tool
+        body, a fuse of separate bodies — is a BODY seed: (None, the body),
+        the whole body is repeated. A sketch is refused with a sentence."""
+        by_id = {f.id: f for f in self.features}
+        f = by_id.get(seed)
+        if f is None:
+            raise ValueError(f"the seed '{seed}' is not in the tree — pick the feature to repeat again")
+        if f.suppressed:
+            raise ValueError(f"the seed '{seed}' is struck out — restore it, or pick another feature")
+        if f.op in sk.SKETCH_PRODUCERS:
+            raise ValueError("a sketch is not a feature to repeat (sketch patterns come with the "
+                             "sketch tools) — click a hole, a boss, or a body")
+        booleans = ("cut", "fuse", "intersect")
+        if f.op in self.PULLED:
+            bools = [b for b in self.features if b.op in booleans
+                     and len(b.inputs) == 2 and b.inputs[1] == f.id]
+            others = [x for x in self.features if x.id != f.id and f.id in x.inputs
+                      and x not in bools]
+            if len(bools) == 1 and not others:       # the tree folds it: one feature
+                return bools[0].inputs[0], bools[0].id
+            return None, f.id                        # a standalone tool body
+        if f.op in MODIFIERS and f.inputs:
+            src = by_id.get(f.inputs[0])
+            if src is not None and src.op not in sk.SKETCH_PRODUCERS:
+                return src.id, f.id
+            return None, f.id
+        if f.op in booleans and len(f.inputs) == 2:
+            return f.inputs[0], f.id
+        return None, f.id
+
+    def _seed_parts(self, f: Feature, seed: str) -> dict:
+        """the seed's before / after bodies for a pattern's rebuild, checked to
+        be part of the pattern's own body's history"""
+        try:
+            before_id, after_id = self.delta_features(seed)
+        except ValueError as e:
+            raise ValueError(f"{f.op}: {e}") from None
+        if before_id is None:
+            raise ValueError(f"{f.op}: '{seed}' is a whole body, not a feature of one — leave "
+                             f"`seed` empty to repeat the body itself")
+        body = f.inputs[0]
+        if after_id != body and after_id not in self.ancestors(body):
+            raise ValueError(f"{f.op}: '{seed}' is not part of {body}'s history — a pattern "
+                             f"repeats a feature of the body it is on")
+        before, after = self._parts.get(before_id), self._parts.get(after_id)
+        if before is None or after is None:
+            raise ValueError(f"{f.op}: the seed '{seed}' is not built (failed upstream?)")
+        return {"_before": before, "_after": after}
 
     # -- editing (THE point of the tree) -------------------------------------
     def edit(self, feature_id: str, param: str, value) -> None:
@@ -842,7 +916,10 @@ class Document:
         if f.op in MODIFIERS:
             if len(ins) != 1:
                 raise ValueError(f"'{f.op}' needs exactly 1 input")
-            return MODIFIERS[f.op](ins[0], **self._clean(f.params))
+            kw = self._clean(f.params)
+            if f.op in pattern.PATTERN_OPS and kw.get("seed"):
+                kw.update(self._seed_parts(f, kw["seed"]))   # the seed's before / after bodies
+            return MODIFIERS[f.op](ins[0], **kw)
         if f.op == "move":
             if len(ins) != 1:
                 raise ValueError("'move' needs exactly 1 input")

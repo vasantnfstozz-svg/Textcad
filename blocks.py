@@ -178,18 +178,13 @@ def with_bolt_circle(part: Part, count: int, bolt_radius: float,
     return result
 
 
-def polar_pattern(feature: Part, count: int) -> Part:
-    """Return the union of `count` copies of `feature`, evenly rotated about Z.
-    Use to build N-fold symmetric parts (e.g. impeller blades) from ONE feature —
-    guarantees the symmetry the inspector will check for."""
-    if count < 1:
-        raise ValueError("polar_pattern: count must be >= 1")
-    parts = [feature.rotate(Axis.Z, 360.0 * i / count) for i in range(count)]
-    # pairwise tree union: far cheaper than a chain for high counts
-    while len(parts) > 1:
-        parts = [parts[i] + parts[i + 1] if i + 1 < len(parts) else parts[i]
-                 for i in range(0, len(parts), 2)]
-    return parts[0]
+def polar_pattern(feature: Part, count: int, **kw) -> Part:
+    """The union of `count` copies of `feature`, evenly rotated about Z — the
+    N-fold symmetric parts (impeller blades) the AI builds from ONE feature.
+    Lives in pattern.py now (P4: a pattern repeats a FEATURE too; see there
+    for `axis`, `angle`, `seed`); this name stays for the legacy callers."""
+    from pattern import polar_pattern as op
+    return op(feature, count, **kw)
 
 
 # ---------------------------------------------------------------------------
@@ -220,16 +215,13 @@ def scale_uniform(part: Part, factor: float) -> Part:
 
 
 def linear_pattern(feature: Part, count: int, dx: float = 0.0,
-                   dy: float = 0.0, dz: float = 0.0) -> Part:
+                   dy: float = 0.0, dz: float = 0.0, **kw) -> Part:
     """Union of `count` copies of a feature stepped by (dx, dy, dz) each time
-    (copy 0 stays in place). E.g. a row of 4 wheels: count=4, dx=30."""
-    if count < 1:
-        raise ValueError("linear_pattern: count must be >= 1")
-    parts = [Pos(i * dx, i * dy, i * dz) * feature for i in range(count)]
-    while len(parts) > 1:
-        parts = [parts[i] + parts[i + 1] if i + 1 < len(parts) else parts[i]
-                 for i in range(0, len(parts), 2)]
-    return parts[0]
+    (copy 0 stays in place), e.g. a row of 4 wheels: count=4, dx=30. Lives in
+    pattern.py now (P4: `direction`, `distance`, a second direction, `seed`);
+    this name stays for the legacy callers."""
+    from pattern import linear_pattern as op
+    return op(feature, count, dx, dy, dz, **kw)
 
 
 # ---------------------------------------------------------------- edges ----

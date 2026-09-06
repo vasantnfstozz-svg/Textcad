@@ -37,6 +37,8 @@ import build123d as b3d
 from build123d import Plane
 
 import blocks
+import pattern
+import provenance
 import sketch as sk
 
 _AXIS_NAMES = {(0, 0, 1): "+Z", (0, 0, -1): "-Z", (1, 0, 0): "+X",
@@ -761,8 +763,140 @@ def plan_hole(doc, req: dict) -> dict:
     }
 
 
+# ------------------------------------------------------------------ pattern ---
+
+def _perp(d):
+    ref = b3d.Vector(1, 0, 0) if abs(d.X) < 0.9 else b3d.Vector(0, 1, 0)
+    return d.cross(ref).normalized()
+
+
+def _same_dir(a, b) -> bool:
+    try:
+        return sum(float(x) * float(y) for x, y in zip(a, b)) > 0.999
+    except (TypeError, ValueError):
+        return False
+
+
+def plan_pattern(doc, req: dict) -> dict:
+    """The Circular / Rectangular Pattern tools' plan (specs/pattern.md).
+    Input: `seed_id` (a tree row), or `body_id` + `face_center` [+ `face_point`]
+    (a face pick — provenance says which feature made that face, or that it is
+    the body's own), or `feature_id` (edit: an existing pattern, whose stored
+    seed and axis / directions stand in). `axis_pick` (circular) is a face
+    clicked while the panel is open: its axis replaces the current one.
+    `along` (rectangular) names which alternative is direction 1.
+
+    The seed is resolved by ONE rule, `document.delta_features` (the tree's
+    folding rule), and the pattern goes on the seed body's CURRENT state
+    (`input`). Returns what the handles need and nothing the browser could
+    derive (R1): the seed's centre, the ring's frame / radius / axis line for
+    circular, the arrows' directions and the swap alternatives for
+    rectangular, the axis in its ONE stored form and the words for it, and
+    `params` — the stored values a new feature starts from."""
+    tool = str(req.get("tool") or "polar_pattern").lower()
+    circular = tool == "polar_pattern"
+    name = "Circular Pattern" if circular else "Rectangular Pattern"
+    fid = req.get("feature_id")
+    params, tip, seed, body_seed = {}, None, req.get("seed_id"), False
+    if fid:
+        f = _edit_input(doc, fid, (tool,))
+        tip = (f.inputs or [None])[0]
+        params = dict(f.params or {})
+        seed = params.get("seed")
+        if seed is None:                          # a body pattern: the body is the seed
+            seed, body_seed = tip, True
+    elif seed is None and req.get("face_center") is not None:
+        att = provenance.attribute_face(doc, body_id=req.get("body_id"),
+                                        point=req.get("face_point"), center=req.get("face_center"))
+        seed = att.get("feature")
+        if not seed:                              # an unattributable face: the body itself
+            seed, body_seed = att.get("body") or req.get("body_id"), True
+    if not seed:
+        raise ValueError(f"{name} needs a feature or a body to repeat — click a hole, a boss "
+                         f"or a body, or select a row in the tree")
+    before_id, after_id = (None, seed) if body_seed else doc.delta_features(seed)
+    if fid:
+        if after_id != tip and after_id not in doc.ancestors(tip):
+            raise ValueError(f"'{seed}' is not part of {tip}'s history — a pattern repeats a "
+                             f"feature of the body it is on")
+    else:
+        tip = _latest_descendant(doc, after_id)
+    part = doc._parts.get(tip)
+    before = doc._parts.get(before_id) if before_id else None
+    after = doc._parts.get(after_id)
+    if part is None or after is None or (before_id and before is None):
+        raise ValueError(f"'{seed}' is not built (failed upstream?) — fix it first")
+    if before_id:
+        removed, added = pattern.delta(before, after)
+        if removed is None and added is None:
+            raise ValueError(f"'{seed}' neither removed nor added material — there is nothing to repeat")
+        seed_param = seed
+        seed_words = seed if tip == seed else f"{seed} (on {tip})"
+        face = pattern.seed_face(before, removed, added)
+    else:
+        removed, added = None, part
+        seed_param, seed_words, face = None, f"the body {tip}", None
+    centre = pattern.seed_centre(removed, added, part)
+    bb = part.bounding_box()
+    half = round(max(bb.size.X, bb.size.Y, bb.size.Z) * 0.75, 2)
+    out = {"ok": True, "tool": tool, "op": tool, "input": tip, "target_body": tip,
+           "seed": seed_param, "seed_words": seed_words, "centre": _vec(centre)}
+    if circular:
+        axis, pick = params.get("axis"), req.get("axis_pick")
+        if pick:                                  # a click: THAT face's axis, in stored form
+            picked = sk.pick_face(part, pick.get("center"), pick.get("normal"))
+            pattern.face_axis(picked)             # a face that has no axis says so here
+            axis = pattern.stored_face(part, picked)
+        elif axis is None and face is not None and not fid:
+            axis = pattern.stored_face(part, face)    # the default: the seed's face
+        origin, d, words = pattern.axis_of(part, axis)
+        foot = origin + d * (centre - origin).dot(d)
+        rvec = centre - foot
+        radius = rvec.length
+        x = rvec.normalized() if radius > 1e-6 else _perp(d)
+        out.update({
+            "axis": axis, "axis_words": words, "origin": _vec(foot), "axis_dir": _vec(d),
+            "radius": round(radius, 4), "axis_half": half,
+            "frame": {"origin": _vec(foot), "x_dir": _vec(x), "y_dir": _vec(d.cross(x)),
+                      "z_dir": _vec(d)},
+            "params": {"seed": seed_param, "axis": axis},
+            "will_build": f"{tool} of {seed_words} about {words}",
+        })
+        return out
+    # rectangular: the directions are the seed face's own axes (a body: the world's)
+    if face is not None:
+        pl = sk.face_profile_plane(face)
+        alts = [{"name": "x", "label": f"the face's x ({_axis_name(_vec(pl.x_dir))})",
+                 "dir": _vec(pl.x_dir)},
+                {"name": "y", "label": f"the face's y ({_axis_name(_vec(pl.y_dir))})",
+                 "dir": _vec(pl.y_dir)}]
+    else:
+        alts = [{"name": n, "label": f"world {n.upper()}", "dir": v}
+                for n, v in (("x", [1.0, 0.0, 0.0]), ("y", [0.0, 1.0, 0.0]), ("z", [0.0, 0.0, 1.0]))]
+    along, stored, stored2 = req.get("along"), params.get("direction"), params.get("direction2")
+    if along is None and stored is not None:      # edit: the stored direction leads
+        match = next((a for a in alts if _same_dir(a["dir"], stored)), None)
+        if match is None:
+            alts.insert(0, {"name": "stored", "label": "the stored direction",
+                            "dir": [float(c) for c in stored]})
+        along = (match or alts[0])["name"]
+    first = next((a for a in alts if a["name"] == along), alts[0])
+    second = next(a for a in alts if a["name"] != first["name"])
+    d2 = second["dir"]
+    if req.get("along") is None and stored2 is not None:
+        d2 = [float(c) for c in stored2]
+    out.update({
+        "direction": first["dir"], "direction2": d2, "alternatives": alts, "along": first["name"],
+        "arrow_half": half,
+        "params": {"seed": seed_param, "direction": first["dir"], "direction2": d2},
+        "will_build": f"{tool} of {seed_words} along {_axis_name(first['dir'])}",
+    })
+    return out
+
+
 _PLANNERS = {"extrude": plan_extrude, "revolve": plan_revolve, "sketch": plan_sketch,
-             "fillet": plan_fillet, "chamfer": plan_fillet, "hole": plan_hole}
+             "fillet": plan_fillet, "chamfer": plan_fillet, "hole": plan_hole,
+             "polar_pattern": plan_pattern, "linear_pattern": plan_pattern}
 
 
 def plan(doc, req: dict) -> dict:

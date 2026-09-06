@@ -916,6 +916,7 @@ function selectFeature(fid) {
   const was = S.selected === fid;
   S.selected = was ? null : fid;
   if (was) clearHighlight(); else showFeatureOverlay(fid);
+  bus.emit('feature-selected', S.selected);   // a tool waiting for its input (Pattern) takes the row
   for (const n of treeEl().querySelectorAll('.node.sel'))
     n.classList.remove('sel');
   if (!was) {

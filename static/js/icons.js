@@ -26,7 +26,7 @@ export const TOOL_NAMES = {
   curved_blade: 'Blade', with_center_hole: 'Centre bore',
   with_bolt_circle: 'Bolt circle', fillet: 'Fillet', chamfer: 'Chamfer', hole: 'Hole',
   shell: 'Shell', move: 'Move', rotate: 'Rotate', scale: 'Scale',
-  mirror: 'Mirror', polar_pattern: 'Polar', linear_pattern: 'Linear',
+  mirror: 'Mirror', polar_pattern: 'Circular', linear_pattern: 'Rectangular',   // …Pattern (the group's name)
   fuse: 'Join', cut: 'Cut', intersect: 'Intersect',
   import_stl: 'Import STL', import_step: 'Import STEP',
 };

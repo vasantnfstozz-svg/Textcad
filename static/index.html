@@ -321,6 +321,49 @@
   </div>
 </div>
 
+<div id="cpDialog" class="toolpanel" style="display:none">
+  <div class="exhead">✳ Circular Pattern</div>
+  <label>Seed <select id="cpProfile" disabled></select></label>
+  <label>Axis <input id="cpAxis" type="text" readonly value="" title="the seed face's normal through its centre — click a bore's wall or another flat face while the panel is open to re-aim"></label>
+  <div class="exrow">
+    <label>Count <input id="cpCount" type="number" step="1" min="1" value="1"></label>
+    <label>Angle (°) <input id="cpAngle" type="number" step="any" min="1" max="360" value="360" title="360 = a full circle; less spreads the copies from the seed to this angle"></label>
+  </div>
+  <select id="cpOp" style="display:none"><option value="new">New body</option></select>
+  <label id="cpTargetRow" style="display:none">Combine with <select id="cpTarget"></select></label>
+  <div class="exfoot">
+    <button id="cpCancel">Cancel</button>
+    <button class="primary" id="cpOk">OK</button>
+  </div>
+</div>
+
+<div id="rpDialog" class="toolpanel" style="display:none">
+  <div class="exhead">⋯ Rectangular Pattern</div>
+  <label>Seed <select id="rpProfile" disabled></select></label>
+  <div class="exrow">
+    <label>Along <select id="rpAlong" title="which of the seed face's axes is direction 1; direction 2 is the other"></select></label>
+    <label>Distance type
+      <select id="rpDistType" title="Spacing: the copies are this far apart. Extent: they all fit inside this distance">
+        <option value="spacing">Spacing</option>
+        <option value="extent">Extent</option>
+      </select></label>
+  </div>
+  <div class="exrow">
+    <label>Count 1 <input id="rpCount" type="number" step="1" min="1" value="2"></label>
+    <label>Distance 1 (mm) <input id="rpDist" type="number" step="any" value="0"></label>
+  </div>
+  <div class="exrow">
+    <label>Count 2 <input id="rpCount2" type="number" step="1" min="1" value="1"></label>
+    <label>Distance 2 (mm) <input id="rpDist2" type="number" step="any" value="0"></label>
+  </div>
+  <select id="rpOp" style="display:none"><option value="new">New body</option></select>
+  <label id="rpTargetRow" style="display:none">Combine with <select id="rpTarget"></select></label>
+  <div class="exfoot">
+    <button id="rpCancel">Cancel</button>
+    <button class="primary" id="rpOk">OK</button>
+  </div>
+</div>
+
 <!-- ============ measure panel ============ -->
 <div id="measureDialog" style="display:none">
   <div class="mehead">⟺ Measure</div>
@@ -388,6 +431,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=157"></script>
+<script type="module" src="/static/js/main.js?v=158"></script>
 </body>
 </html>

@@ -100,7 +100,15 @@ function currentSelection(explicit) {
   if (S.pickedProfile) return { kind: 'profile', id: S.pickedProfile.id };
   const sel = feats().find(f => f.id === S.selected);
   if (sel && isSketch(sel) && !sel.suppressed) return { kind: 'profile', id: sel.id };
-  if (S.pickedCurved) return { kind: 'curved', type: S.pickedCurved.type };
+  // a tree row that is not a sketch is the FEATURE itself (Pattern's seed)
+  if (sel && !sel.suppressed) return { kind: 'feature', id: sel.id };
+  // a curved face carries where it is and whose it is, so a tool that takes ANY
+  // face (Pattern: a bore's wall names the hole) can read it like a face pick
+  if (S.pickedCurved) {
+    const c = S.pickedCurved;
+    return { kind: 'curved', type: c.type, center: c.center, normal: c.normal || null,
+             body: pickedBody(c), point: c.point || null };
+  }
   return null;
 }
 
@@ -181,8 +189,14 @@ async function releaseIso() {
      panel, ids                 the panel element id and the prefix of its field
                                 ids: <ids>Profile / Op / Target / TargetRow /
                                 Cancel / Ok are the framework's rows
-     ops: {profile, face}       the op created for each input kind; a tool with
-                                only `face` takes no sketch (Hole)
+     ops: {profile, face, feature}  the op created for each input kind; a tool
+                                with only `face` takes no sketch (Hole); one
+                                with `feature` repeats a tree row or the maker
+                                of a clicked face (Pattern) — the plan names the
+                                body it goes on (`input`) and describes the seed
+     anyFace                    the picker hands over curved faces too
+     onRepick(st, data, replan) what a click during the session means when it
+                                is not "move the input" (Pattern: the axis)
      eats                       the face op returns its body CHANGED (Hole): no
                                 Join / Cut row, no target
      repick                     face tools: while the panel is open a click on a
@@ -284,6 +298,7 @@ export function tool(spec) {
     const bods = solids();
     const sel = currentSelection(explicit);
     if (spec.ops.edges) { openEdges(sel, bods); return; }
+    if (spec.ops.feature) { openFeature(sel, bods); return; }
     if (sel && sel.kind === 'edges')     // an edge, for a tool that takes profiles / faces
       say(`⚠ ${spec.name} works on ` +
         `${pickWhat({ profiles: !!spec.ops.profile, faces: !!spec.ops.face })}` +
@@ -374,7 +389,7 @@ export function tool(spec) {
     }
     if (sel && sel.kind !== 'edges')
       say(`⚠ ${spec.name} works on the EDGES of a body — click an edge, not a ` +
-        `${sel.kind === 'profile' ? 'sketch' : 'face'}.`);
+        `${sel.kind === 'profile' ? 'sketch' : sel.kind === 'feature' ? 'tree row' : 'face'}.`);
     const input = { kind: 'edges', edges: [],
                     body: sel && sel.kind === 'edges' ? sel.body : bods.at(-1).id };
     st = session(input);
@@ -408,6 +423,66 @@ export function tool(spec) {
     }
     replan({ toggle: { points: info.points } });
   }
+  /* -------- FEATURE MODE (Pattern: repeat a feature, or a body) --------
+     The seed is a tree row (any non-sketch feature) or the face a click landed
+     on — flat or curved — whose maker the SERVER looks up (provenance: a
+     hole's wall is the hole, a plate's own top is the body). The plan names
+     the body the result goes on (`input`: the seed body's current state). */
+  function openFeature(sel, bods) {
+    if (!bods.length) {
+      say(`⚠ ${spec.name} needs a body — build one first, then click a feature of it.`);
+      return;
+    }
+    if (sel && sel.kind === 'profile') {
+      say(`⚠ ${spec.name} repeats a feature or a body — a sketch is not one (sketch ` +
+        'patterns come with the sketch tools). Click a hole, a boss, or a body.');
+      return;
+    }
+    if (sel && sel.kind === 'edges') {
+      say(`⚠ ${spec.name} repeats a feature or a body — click a face of it, or its row ` +
+        'in the tree, not an edge.');
+      return;
+    }
+    if (sel && (sel.kind === 'face' || sel.kind === 'curved') && sel.body) {
+      st = session({ kind: 'face', center: sel.center, normal: sel.normal || null,
+                     body: sel.body, point: sel.point || null });
+    } else if (sel && sel.kind === 'feature') {
+      st = session({ kind: 'feature', id: sel.id, body: null });   // the plan names the body
+    } else {
+      awaitFeaturePick();
+      return;
+    }
+    clearPick();                      // the plan's handles take over from the pick
+    fill(id('Profile'), ['(the selection)'], '(the selection)');   // the plan brings the words
+    el('Profile').disabled = true;
+    el('Op').value = 'new';
+    begin();
+  }
+  /* nothing selected: a face in the viewport, or a row in the tree */
+  function awaitFeaturePick() {
+    const hint = `${spec.name}: click a hole, a boss or a body — or a row in the tree · Esc cancels`;
+    const onRow = fid => {
+      bus.off('feature-selected', onRow);
+      if (!profilePickArmed() || !fid) return;   // the pick was cancelled meanwhile
+      cancelProfilePick();
+      open();                         // the row IS the selection now
+    };
+    bus.on('feature-selected', onRow);
+    beginProfilePick((kind, data) => {
+      bus.off('feature-selected', onRow);
+      if (kind === 'profile') {
+        say(`⚠ ${spec.name} repeats a feature or a body — a sketch is not one. Click a ` +
+          'hole, a boss, or a body. Keep picking, or Esc.');
+        awaitFeaturePick();
+        return;
+      }
+      clearPick();
+      S.pickedFace = data;            // ANY face: the server names its maker
+      open();
+    }, { name: spec.name, faces: true, profiles: true, hint, anyFace: true });
+    say(hint);
+  }
+
   /* the edge set changed (a click, the chain box): plan again, keep the
      feature if there is one, and re-place the handles */
   async function replan(extra = {}) {
@@ -434,8 +509,10 @@ export function tool(spec) {
       st.input.body = plan.input;
       fill(id('Profile'), [edgesLabel(plan)], edgesLabel(plan));
     }
+    if (st.input.kind === 'feature' && plan.input) st.input.body = plan.input;   // the plan's body
+    if (plan.seed_words) fill(id('Profile'), [plan.seed_words], plan.seed_words);
     spec.gizmos.begin(st, plan);
-    if (spec.repick && st.input.kind === 'face') armRepick();
+    if (spec.repick && (st.input.kind === 'face' || st.input.kind === 'feature')) armRepick();
   }
   /* -------- a tool whose input POINT can move (Hole) --------
      While the session is open, a click on a flat face of the body puts the
@@ -447,18 +524,20 @@ export function tool(spec) {
   function armRepick() {
     if (profilePickArmed()) return;   // ONE pick, until something cancels it
     beginProfilePick((kind, data) => {
-      if (!st || st.input.kind !== 'face') return;
+      if (!st || (st.input.kind !== 'face' && st.input.kind !== 'feature')) return;
       // while the preview is up the viewport shows THIS tool's result body
       const mine = data && (data.body === st.input.body || data.body === st.featureId);
       if (kind !== 'face' || !mine) {
-        say(`⚠ ${spec.name} stays on ${st.input.body} — click a flat face of that body ` +
-          'to move it there, or Cancel.');
+        say(`⚠ ${spec.name} stays on ${st.input.body} — click a face of that body` +
+          `${spec.onRepick ? '' : ' to move it there'}, or Cancel.`);
         return;
       }
+      if (spec.onRepick) { spec.onRepick(st, data, replan); return; }   // the tool says what a click means
       st.input = { ...st.input, center: data.center, normal: data.normal || null,
                    point: data.point || null };
       replan();
-    }, { name: spec.name, faces: true, profiles: false, hint: spec.repick, sticky: true });
+    }, { name: spec.name, faces: true, profiles: false, hint: spec.repick, sticky: true,
+         anyFace: !!spec.anyFace });
   }
 
   /* opening builds NOTHING — the boxes start at the honest zero, the gizmos
@@ -485,22 +564,26 @@ export function tool(spec) {
     unlock();
     const f = feats().find(x => x.id === fid);
     if (!f || !Object.values(spec.ops).includes(f.op)) return;
-    const face = f.op === spec.ops.face;
+    const feature = !!spec.ops.feature && f.op === spec.ops.feature;
+    const face = !feature && f.op === spec.ops.face;
     const edges = f.op === spec.ops.edges;
     const p = f.params || {};
-    st = session(face
-      ? { kind: 'face', center: p.face_center, normal: p.face_normal || null,
-          body: f.inputs[0], point: null }    // the server reads the stored point
-      : edges
-        ? { kind: 'edges', body: f.inputs[0], edges: null }   // null: the server reads the stored ones
-        : { kind: 'profile', id: f.inputs[0] });
+    st = session(feature
+      ? { kind: 'feature', id: p.seed || null, body: f.inputs[0] }   // the server reads the stored seed
+      : face
+        ? { kind: 'face', center: p.face_center, normal: p.face_normal || null,
+            body: f.inputs[0], point: null }    // the server reads the stored point
+        : edges
+          ? { kind: 'edges', body: f.inputs[0], edges: null }   // null: the server reads the stored ones
+          : { kind: 'profile', id: f.inputs[0] });
     st.editing = true;
     st.featureId = f.id;
     st.original = spec.snapshot(f);
     st.lastGood = st.original;
     if (edges) { clearPick(); beginEdgePick(onEdgePick, { name: spec.name }); }
-    const label = face ? `(face of ${f.inputs[0]})`
-      : edges ? `edges of ${f.inputs[0]}` : f.inputs[0];
+    const label = feature ? `${p.seed || 'the body'} on ${f.inputs[0]}`
+      : face ? `(face of ${f.inputs[0]})`
+        : edges ? `edges of ${f.inputs[0]}` : f.inputs[0];
     fill(id('Profile'), [label], label);
     el('Profile').disabled = true;
     el('Profile').title = `changing the profile of an existing ${lower} comes later`;
@@ -531,7 +614,9 @@ export function tool(spec) {
           face_point: i.point || null }
       : i.kind === 'edges'
         ? { tool: spec.tool, body_id: i.body, edges: i.edges }
-        : { tool: spec.tool, sketch_id: i.id };
+        : i.kind === 'feature'
+          ? { tool: spec.tool, seed_id: i.id }
+          : { tool: spec.tool, sketch_id: i.id };
     if (st.editing) req.feature_id = st.featureId;   // the server reads the stored params
     const more = spec.planExtra ? spec.planExtra(st) : {};
     const first = st.firstExtra; st.firstExtra = null;   // consumed once
@@ -574,7 +659,10 @@ export function tool(spec) {
     const i = st.input;
     return await post('/api/feature/add', {
       id: st.featureId, op: spec.ops[i.kind === 'profile' ? 'profile' : i.kind],
-      params: pr, inputs: [i.kind === 'profile' ? i.id : i.body] });
+      params: pr,
+      // a feature tool's body is the plan's: the seed body's current state
+      inputs: [i.kind === 'profile' ? i.id
+               : i.kind === 'feature' ? (st.plan && st.plan.input) || i.body : i.body] });
   }
   async function push(pr) {             // one param set → the feature's health
     const doc = await post('/api/feature/params',

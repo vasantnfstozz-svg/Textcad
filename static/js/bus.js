@@ -5,5 +5,6 @@ const handlers = {};
 
 export const bus = {
   on(event, fn) { (handlers[event] ??= []).push(fn); },
+  off(event, fn) { handlers[event] = (handlers[event] || []).filter(h => h !== fn); },
   emit(event, ...args) { for (const fn of handlers[event] || []) fn(...args); },
 };

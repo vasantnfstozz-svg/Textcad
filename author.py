@@ -203,14 +203,22 @@ RULES AND CONVENTIONS:
 - curved_blade makes ONE turbomachinery-style backswept blade standing on the
   XY plane; combine with polar_pattern for impellers/fans; angles from radial.
 - polar_pattern copies its input N times evenly around Z — features meant to
-  fuse with a body MUST physically overlap it (touching is not enough).
+  fuse with a body MUST physically overlap it (touching is not enough). To
+  repeat a FEATURE of a body (a bolt circle of one hole, teeth from one boss)
+  add it AFTER the body's latest feature with "seed": that feature's id and
+  "axis": {{"face": "top"}} (a flat face: its normal through its centre; a bore's
+  wall: its own axis) — "angle" 360 is a full circle, less spreads the copies
+  from the seed to that angle.
 - "rotate" orients parts: cylinders are upright by default — a WHEEL or axle is
   rotate(axis "X" or "Y", 90). "mirror" returns the mirrored COPY (fuse it with
   the original for symmetric pairs, e.g. left/right fenders).
 - "fillet"/"chamfer" round or bevel edges ("all"/"top"/"bottom") — use small
   values (radius well under half the local thickness or they fail). "shell"
   hollows a solid into walls (open_face "top" makes cups/containers).
-- "linear_pattern" repeats a feature in a straight line (count, dx, dy, dz).
+- "linear_pattern" repeats a body in a straight line (count, dx, dy, dz) — or a
+  FEATURE of a body with "seed" plus "direction" [x, y, z], "distance" and
+  "distance_type" ("spacing" between copies, or "extent" they all fit in);
+  "count2" / "direction2" / "distance2" make it a grid.
 - The final feature in the list is the part. It must be ONE watertight solid,
   so end with a fuse if you built separate pieces.
 - Always include a spec with at least {{"n_solids": 1}}. Match spec strictness

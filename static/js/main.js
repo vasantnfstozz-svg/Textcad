@@ -18,6 +18,7 @@ import { initExtrude } from './extrude.js';
 import { initRevolve } from './revolve.js';
 import { initFillet } from './fillet.js';
 import { initHole } from './hole.js';
+import { initPattern } from './pattern.js';
 import { initMeasure } from './measure.js';
 import { initVersions } from './versions.js';
 
@@ -30,6 +31,7 @@ initExtrude();
 initRevolve();
 initFillet();     // Fillet + Chamfer on picked edges
 initHole();       // Hole at the point clicked on a flat face
+initPattern();    // Circular + Rectangular Pattern of a feature or a body
 initMeasure();    // the Measure tool (face/edge dimensions)
 initRibbon();
 initSplitters();
