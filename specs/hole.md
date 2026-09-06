@@ -89,9 +89,10 @@ the face while the panel is open and the hole moves there.
 | Counterbore seat not wider / not shallower than the hole | `hole: the counterbore diameter (5 mm) must be larger than the hole diameter (6 mm)` · `hole: the counterbore depth (9 mm) must be less than the hole depth (8 mm) — or tick Through all` |
 | Countersink seat not wider, angle out of range, cone deeper than the hole | `hole: the countersink diameter …` · `hole: the countersink angle must be between 0° and 180° (got 200) — 90° is the usual seat` · `hole: the countersink (⌀20 at 90°) is 7.00 mm deep and reaches past the hole's depth (2 mm) — deepen the hole or shrink the countersink` |
 | The point is not on the face (a stored point after the face shrank, an AI coordinate) | `hole: the point (40, 0) is not on the face — the hole's centre must lie on it; click a point on the face` (the feature fails, the body stays whole) |
-| The centre sits inside an existing hole (the centre of an annular face is such a point — probed: the cutter there removes 0 mm³ and the kernel calls it a success) | caught as a point off the face: `hole: the point (0, 0) is not on the face — …`. Behind it the backstop: `hole: nothing was cut — the ⌀6 hole at (0, 0) finds no material under the face (an existing hole is there); move it onto solid material` |
-| The result is an open shell (a ⌀60 hole on a 50 mm face swallows it — probed: OCCT returns it as a "success") | `hole: the ⌀60 hole at (0, 0) leaves a broken solid (solid is not manifold …) — it is wider than the face allows or runs out through an edge; use a smaller diameter or move it inward`; the framework puts back the last value that built |
-| A blind depth past the material under the point | allowed (it comes out the other side, as in Fusion); the chat says once that the material there is N mm and Through all says it on purpose (`limits.material`, kernel-measured) |
+| The centre sits inside an existing hole (the centre of an annular face is such a point — probed: the cutter there removes 0 mm³ and the kernel calls it a success) | caught as a point off the face: `hole: the point (0, 0) is not on the face — …`. Behind it the backstop: `hole: nothing was cut — the ⌀6 hole at (0, 0) finds no material under the face; move it onto solid material` (an ABSOLUTE floor: a cutter that misses leaves the volume unchanged to the last bit, while a real ⌀1 hole in a 200 × 100 × 50 block removes 0.79 mm³ — a floor relative to the body refused it) |
+| The result is an open shell (a ⌀60 hole on a 50 mm face swallows it — probed: OCCT returns it as a "success") | `hole: the ⌀60 hole at (0, 0) leaves a broken solid (an open shell, not watertight) — it is wider than the face allows or runs out through an edge; use a smaller diameter or move it inward`; the framework puts back the last value that built |
+| A blind depth past the material under the point | allowed (it comes out the other side, as in Fusion); the chat says once that the material there is N mm and Through all says it on purpose (`limits.material`, kernel-measured — asked for the first time a blind depth needs it, never for a through hole) |
+| A seat kind chosen, or Through all unticked, before the numbers are there | nothing is applied and nothing is reverted: the tool says once what it waits for (`Counterbore: type a seat ⌀ wider than 6 mm, and a seat depth.` · `The hole is unchanged until it has a depth — drag the arrow or type one (or tick Through all).`). Choosing Counterbore / Countersink SEEDS a seat that fits the hole, so the usual case builds at once |
 | A through hole that cuts the part in two | the framework's pieces warning; the remedy: "the hole cuts the part in two — move it, or make it smaller." |
 | Curved face | `the picked face is CYLINDER (curved) — a hole starts on a FLAT face; tilted flat faces are fine` |
 | Kernel exception | `hole: the kernel could not cut the ⌀6 hole at (5, 5) here — move the hole or change its size` (the kernel's class name stays out of the sentence) |
@@ -100,7 +101,9 @@ the face while the panel is open and the hole moves there.
 
 * `static/js/hole.js` in **100–150 lines**, **no geometry maths**: the circle
   and the arrow come from the plan's `frame`, `origin`, `axis`; `at` and the
-  stored face from the plan.
+  stored face from the plan. (193 after the review: the seeded seat sizes, the
+  half-made states the tool holds back, and the lazily-asked material — the
+  geometry is still all the plan's.)
 * Backend: `sketch.hole` (the op, registered as a MODIFIER), `sketch.hole_frame`
   shared by op and planner, `sketch.material_depth` (the plan's `limits`),
   `toolplan.plan_hole`. `probes/hole_probe.py` records the kernel facts:
@@ -114,9 +117,38 @@ the face while the panel is open and the hole moves there.
   `tests/test_hole_gauntlet.py` (every corpus body, every flat face, three
   types, blind + through, at the centre and toward a vertex — a healthy solid
   or a sentence, never a raw kernel error; every face of the box must build).
-* **4 browser journeys**: click the face + press Hole + type + OK; drag the
+* **6 browser journeys**: click the face + press Hole + type + OK; drag the
   arrow then Through all; Counterbore, then edit-and-cancel restores; a second
-  click on the face moves the hole.
+  click on the face moves the hole; a seat kind chosen on a BUILT hole stays
+  chosen; Through all unticked with no depth waits instead of re-ticking.
+
+## What the code review changed (2026-09-06, 25 findings)
+
+The review of the P4 commit (`e4a9d05..5336c82`) is in the git history; the
+fixes that changed BEHAVIOUR, so this spec stays true:
+
+* **A click while editing MOVES the hole.** The plan overwrote the request with
+  the stored point, so the re-pick the tool arms in edit mode did nothing. The
+  request is the answer now; the stored values are the fallback.
+* **A hole that never said `at` opens where it cuts.** The plan defaulted to the
+  face centre while the op defaults to (0, 0), so opening an AI-authored hole
+  drew the marker elsewhere and OK moved the cut. One default, `sketch.HOLE_AT`.
+* **The face is stored in ONE form** — a name, or a pick's centre + normal. A
+  name beat a centre in the op, so an authored hole could never be moved.
+* **Seat kinds and Through all no longer undo themselves** (see the table).
+* **A small hole in a big part is a hole**, not "nothing was cut".
+* **A through hole may have a seat**: the two "shallower than the hole"
+  comparisons are for a blind one; the reach is `sketch.through_reach` — the
+  shared `THROUGH_MM` (2 m) and past the far side of anything bigger, so
+  "through" can never quietly become blind on a body deeper than the constant.
+* **Measure can drive a hole's diameter** (and its counterbore / countersink ⌀):
+  the bore has no sketch circle behind it, and measure said so in words that
+  were not true.
+* **The marker frame is right-handed**, the drilling direction stays in `axis`.
+* **The plan is cheaper**: no dead fields, no bounding box, and the material
+  under the point is measured only when the tool asks (`measure_material`).
+* **The legacy `with_center_hole` button is "Centre bore"** — two buttons were
+  called Hole.
 * R10: line delta recorded in the commit; `sketch_on_face`'s face branch and
   `toolplan._pick_face` collapse onto one `sketch.pick_face`.
 

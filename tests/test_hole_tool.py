@@ -162,6 +162,76 @@ def test_a_cut_that_removes_nothing_is_refused(monkeypatch):
         sk.hole(b, **TOP, at=[5, 5], diameter=6, depth=8)
 
 
+def test_a_small_hole_in_a_BIG_part_is_cut_not_refused():
+    """"nothing was cut" used to be measured against a millionth of the WHOLE
+    part, so a real ⌀1 hole in a 200 x 100 x 50 block "found no material"
+    (probes/hole_review_probe.py §2). A cutter that truly misses leaves the
+    volume unchanged to the last bit — the floor is absolute."""
+    big = b3d.Box(200, 100, 50)
+    for dia, dep in ((1.0, 1.0), (0.5, 0.5)):
+        out = healthy(sk.hole(big, face="top", at=[10, 10], diameter=dia, depth=dep))
+        assert big.volume - out.volume == pytest.approx(PI * (dia / 2) ** 2 * dep, rel=1e-6)
+
+
+def test_a_through_hole_may_have_a_seat_and_the_reach_is_the_shared_one():
+    """A through hole has no depth for the seat to sit inside, so the two
+    "shallower than the hole" comparisons do not apply to it — they used to run
+    against the bounding-box span and could print "less than 112.4 mm". The
+    reach itself is sketch.THROUGH_MM, the one every through cut uses."""
+    b = box()
+    out = healthy(sk.hole(b, **TOP, at=[5, 5], diameter=6, depth=1, through=True,
+                          kind="counterbore", cbore_diameter=10, cbore_depth=2))
+    assert b.volume - out.volume == pytest.approx(PI * 9 * 20 + PI * (25 - 9) * 2, rel=1e-6)
+    assert sk.THROUGH_MM == 2000.0            # the same reach extrude_sketch uses
+
+
+def test_at_None_is_the_ops_own_default_not_the_face_centre():
+    """`at=None` reaches the op from an AI-authored `"at": null` and from the
+    tool's own params before a plan has landed. It must mean the documented
+    default (0, 0) — the value the PLAN also falls back to — and never the face
+    centre, or the marker and the cut disagree again on an off-origin body."""
+    body = b3d.Pos(20, 10, 0) * b3d.Box(60, 40, 12)        # face centre at (20, 10)
+    for at in (None, [0, 0], sk.HOLE_AT):
+        out = healthy(sk.hole(body, face="top", at=at, diameter=6, depth=4))
+        assert gone(body, out)[1][:2] == pytest.approx([0, 0], abs=1e-4), at
+    with pytest.raises(ValueError, match="`at` must be"):   # junk still speaks
+        sk.hole(body, face="top", at="middle", diameter=6, depth=4)
+
+
+def test_through_reaches_past_a_body_deeper_than_the_constant():
+    """THROUGH_MM is the shared reach, not a ceiling: a body deeper than 2 m
+    measured from the face must still be drilled THROUGH, not quietly left with
+    a blind hole (the bounding-box span the op used before had no ceiling)."""
+    tall = b3d.Box(50, 50, 2400)
+    assert sk.through_reach(tall) > sk.THROUGH_MM
+    out = healthy(sk.hole(tall, face="top", at=[0, 0], diameter=6, depth=1, through=True))
+    assert tall.volume - out.volume == pytest.approx(PI * 9 * 2400, rel=1e-6)
+    assert sk.through_reach(b3d.Box(10, 10, 10)) == sk.THROUGH_MM   # small bodies: the constant
+
+
+def test_the_seat_numbers_are_judged_before_the_face_is_resolved():
+    """A half-typed seat ⌀ is a certain refusal; resolving a face on a big body
+    costs ~400 ms. The seat sentence must come back even when the face itself
+    could never be found."""
+    with pytest.raises(ValueError, match="counterbore diameter"):
+        sk.hole(box(), face="nowhere", at=[0, 0], diameter=6, depth=8,
+                kind="counterbore", cbore_diameter=5, cbore_depth=2)
+
+
+def test_a_kernel_error_while_BUILDING_the_cutter_is_still_a_sentence(monkeypatch):
+    """rule 5 by construction, not by luck: the cutter was built one line ABOVE
+    the try that guards the cut, so a kernel exception raised there would have
+    reached the user as document.py's repr(e) — the class name and all."""
+    def boom(*a, **k):
+        raise Exception("Standard_ConstructionError: BRepPrim_Cylinder")
+    monkeypatch.setattr(sk, "hole_cutter", boom)
+    with pytest.raises(ValueError) as ei:
+        sk.hole(box(), **TOP, at=[5, 5], diameter=6, depth=8)
+    msg = str(ei.value)
+    assert msg.startswith("hole: the kernel could not cut"), msg
+    assert "Standard_" not in msg and "BRepPrim" not in msg
+
+
 def test_a_curved_face_is_refused():
     c = BODIES["cylinder"]()
     side = next(f for f in c.faces() if f.geom_type == b3d.GeomType.CYLINDER)
@@ -236,9 +306,44 @@ def test_plan_places_the_hole_where_the_face_was_clicked():
     assert p["at"] == pytest.approx([5, 5], abs=1e-6)
     assert p["frame"]["origin"] == p["origin"]
     assert p["frame"]["z_dir"] == pytest.approx([0, 0, 1], abs=1e-6)
-    assert p["limits"]["material"] == pytest.approx(12, abs=1e-6)
     assert p["face_center"] == pytest.approx([0, 0, 6], abs=1e-6)
-    assert p["diameter"] is None
+    assert p["face"] is None                    # a PICK: the geometry, not a name
+    # the material under the point costs a kernel boolean — only when asked
+    assert p["limits"] == {}
+    m = ok(toolplan.plan(plate_doc(), {"tool": "hole", "body_id": "b", **TOP_PLATE,
+                                       "face_point": [5, 5, 6], "measure_material": True}))
+    assert m["limits"]["material"] == pytest.approx(12, abs=1e-6)
+
+
+def test_the_plan_carries_no_field_nobody_reads():
+    """R1 the other way round: every key the browser is handed must be one it
+    uses. `diameter`, `normal`, `into_sign` and `limits.through_span` were
+    echoes nothing read — dead wiring the next reader would build on."""
+    p = ok(toolplan.plan(plate_doc(), {"tool": "hole", "body_id": "b", **TOP_PLATE,
+                                       "face_point": [5, 5, 6]}))
+    for dead in ("diameter", "normal", "into_sign"):
+        assert dead not in p, dead
+    assert "through_span" not in p["limits"]
+
+
+def test_the_marker_frame_is_right_handed_on_every_face():
+    """three.js's Matrix4.makeBasis wants a right-handed basis. The frame took
+    x/y from the face's plane and z from its OUTWARD normal, which is the
+    opposite side on half of a box's faces — a mirrored marker waiting for the
+    first non-symmetric handle (probes/hole_review_probe.py §4)."""
+    d = Document(name="hand")
+    d.add("b", "plate", {"width": 60, "depth": 40, "thickness": 12}, [])
+    d.rebuild()
+    for c, n in (([0, 0, 6], [0, 0, 1]), ([0, 0, -6], [0, 0, -1]),
+                 ([30, 0, 0], [1, 0, 0]), ([-30, 0, 0], [-1, 0, 0]),
+                 ([0, 20, 0], [0, 1, 0]), ([0, -20, 0], [0, -1, 0])):
+        p = ok(toolplan.plan(d, {"tool": "hole", "body_id": "b", "face_center": c,
+                                 "face_normal": n}))
+        f = p["frame"]
+        x, y, z = (b3d.Vector(*f[k]) for k in ("x_dir", "y_dir", "z_dir"))
+        assert x.cross(y).dot(z) == pytest.approx(1.0, abs=1e-6), (c, f)
+        # the drilling direction is its own field, and it still points IN
+        assert b3d.Vector(*p["axis"]).dot(b3d.Vector(*n)) < 0
 
 
 def test_plan_on_the_bottom_face_points_up_and_reads_the_sketch_x_y():
@@ -262,11 +367,66 @@ def test_plan_in_edit_mode_reads_the_stored_point_and_face():
                         "diameter": 6, "depth": 4}, ["b"])
     d.rebuild()
     p = ok(toolplan.plan(d, {"tool": "hole", "feature_id": "h"}))
-    assert p["input"] == "b" and p["at"] == [5, 5] and p["diameter"] == 6
+    assert p["input"] == "b" and p["at"] == [5, 5]
     assert p["origin"] == pytest.approx([5, 5, 6], abs=1e-6)
-    # the diameter the tool sends (a box being typed) wins over the stored one
-    p = ok(toolplan.plan(d, {"tool": "hole", "feature_id": "h", "diameter": 8}))
-    assert p["diameter"] == 8
+
+
+def test_a_click_while_editing_MOVES_the_hole():
+    """The tool arms its face pick in edit mode too and the hint says "click a
+    flat face to move the hole" — but the plan overwrote the request with the
+    stored point, so the marker snapped back and nothing was said. The request
+    is the answer; what it does not carry is what the feature stored."""
+    d = plate_doc()
+    d.add("h", "hole", {"face_center": [0, 0, 6], "face_normal": [0, 0, 1], "at": [5, 5],
+                        "diameter": 6, "depth": 4}, ["b"])
+    d.rebuild()
+    moved = ok(toolplan.plan(d, {"tool": "hole", "feature_id": "h", "body_id": "b",
+                                 **TOP_PLATE, "face_point": [-20, -10, 6]}))
+    assert moved["at"] == pytest.approx([-20, -10], abs=1e-6)
+    assert moved["origin"] == pytest.approx([-20, -10, 6], abs=1e-6)
+    # onto ANOTHER face: the axis follows it, and the stored point is not reused
+    other = ok(toolplan.plan(d, {"tool": "hole", "feature_id": "h", "body_id": "b",
+                                 "face_center": [0, 0, -6], "face_normal": [0, 0, -1],
+                                 "face_point": [8, 3, -6]}))
+    assert other["at"] == pytest.approx([8, 3], abs=1e-6)
+    assert other["axis"] == pytest.approx([0, 0, 1], abs=1e-6)
+
+
+def test_the_face_comes_back_in_ONE_stored_form():
+    """`face` (a name) beats `face_center` in the op, so a hole authored with
+    face="top" could never be moved: the tool sent a new centre and the name
+    outlived it. The plan hands back exactly one form — and a click clears the
+    name it replaces."""
+    d = plate_doc()
+    d.add("h", "hole", {"face": "top", "at": [5, 5], "diameter": 6, "depth": 4}, ["b"])
+    d.rebuild()
+    p = ok(toolplan.plan(d, {"tool": "hole", "feature_id": "h"}))
+    assert p["face"] == "top" and p["face_center"] is None and p["face_normal"] is None
+    moved = ok(toolplan.plan(d, {"tool": "hole", "feature_id": "h", "body_id": "b",
+                                 "face_center": [30, 0, 0], "face_normal": [1, 0, 0],
+                                 "face_point": [30, 4, 2]}))
+    assert moved["face"] is None and moved["face_center"] == pytest.approx([30, 0, 0], abs=1e-6)
+    # and the op cuts where the plan says, with exactly those params
+    out = sk.hole(d._parts["b"], face=moved["face"], face_center=moved["face_center"],
+                  face_normal=moved["face_normal"], at=moved["at"], diameter=6, depth=4)
+    _, c = gone(d._parts["b"], out)
+    assert c == pytest.approx([30 - 2, 4, 2], abs=1e-4)
+
+
+def test_a_feature_with_no_at_opens_where_it_actually_cuts():
+    """The op's default `at` is (0, 0) — the frame's origin. The plan defaulted
+    to the FACE CENTRE, so an AI-authored hole without an `at` drew its marker
+    somewhere else and pressing OK (which always re-applies) MOVED the cut."""
+    d = Document(name="noat")
+    d.add("b", "plate", {"width": 60, "depth": 40, "thickness": 12}, [])
+    d.add("m", "move", {"x": 20}, ["b"])                   # the face centre is now (20, 0, 6)
+    d.add("h", "hole", {"face": "top", "diameter": 6, "depth": 4}, ["m"])
+    assert d.rebuild(), [f.problems for f in d.features]
+    _dv, cut = gone(d._parts["m"], d._parts["h"])          # where the op really cut
+    assert cut[:2] == pytest.approx([0, 0], abs=1e-4)      # not the face centre
+    p = ok(toolplan.plan(d, {"tool": "hole", "feature_id": "h"}))
+    assert p["origin"][:2] == pytest.approx(cut[:2], abs=1e-4)
+    assert p["at"] == pytest.approx(list(sk.HOLE_AT), abs=1e-6)
 
 
 def test_plan_agrees_with_the_op():

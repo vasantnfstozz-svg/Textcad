@@ -406,8 +406,11 @@ export function initViewport() {
   bus.on('doc-updated', doc => {
     if (planePickCb) endPlanePick();
     // a command-then-select pick is stale once the document changed under it;
-    // a session's own re-pick (sticky) lives as long as the session
-    if (profilePickCb && !profilePickOpts.sticky) cancelProfilePick();
+    // a session's own re-pick (sticky) lives as long as the session — but only
+    // through the session's OWN rebuilds, which run inside holdViewport. An
+    // undo, another window or a design arriving over MCP is not this session's
+    // doing and may have removed the very feature the pick would move.
+    if (profilePickCb && !(profilePickOpts.sticky && holds)) cancelProfilePick();
     follow(doc);                  // R3: the scene follows the document
   });
 
@@ -536,18 +539,29 @@ let profilePickCb = null;
 // by-clicking) — a document change does not cancel it, the session's end does
 let profilePickOpts = { name: 'Extrude', faces: true, profiles: true, hint: null, sticky: false };
 
+/* WHAT this pick takes, in words — one place, so the hint, the chat line and
+   every refusal sentence say the same thing (a face-only tool must never be
+   told to click "a sketch profile"). */
+export const pickWhat = (opts = {}) =>
+  [opts.profiles !== false && 'a sketch profile', opts.faces !== false && 'a flat face']
+    .filter(Boolean).join(' or ') || 'nothing';
+
 export function beginProfilePick(onPick, opts = {}) {
   profilePickCb = onPick;
   profilePickOpts = { name: 'Extrude', faces: true, profiles: true, hint: null, sticky: false,
                       ...opts };
   renderer.domElement.style.cursor = 'crosshair';
   const h = document.getElementById('placeHint');
-  const what = [profilePickOpts.profiles && 'a sketch profile',
-                profilePickOpts.faces && 'a flat face'].filter(Boolean).join(' or ');
   h.textContent = profilePickOpts.hint
-    || `Select ${what} to ${profilePickOpts.name.toLowerCase()} · Esc to cancel`;
+    || `Select ${pickWhat(profilePickOpts)} to ${profilePickOpts.name.toLowerCase()} ` +
+       '· Esc to cancel';
   h.style.display = 'block';
 }
+
+/* is a pick waiting for a click? A tool with a session-long pick asks before
+   arming, so it re-arms after anything that cancelled it (an external document
+   change) instead of trusting a flag of its own. */
+export const profilePickArmed = () => !!profilePickCb;
 
 export function cancelProfilePick() {
   if (!profilePickCb) return;
@@ -556,15 +570,24 @@ export function cancelProfilePick() {
   document.getElementById('placeHint').style.display = 'none';
 }
 
+/* A one-shot pick is spent by the click that answers it; a STICKY one belongs
+   to an open tool session (Hole's move-by-clicking) and stays armed until the
+   session ends — so the hint stays up and a second click during the rebuild
+   still reaches the tool instead of falling through to the ordinary picker. */
+function answerPick(kind, data) {
+  const cb = profilePickCb;
+  if (!profilePickOpts.sticky) cancelProfilePick();
+  cb(kind, data);
+}
+
 function profilePickAt(e) {
   raycaster.setFromCamera(ndcFrom(e), camera);
   const sHit = raycaster.intersectObjects(sketchMeshes(), false)[0];
   const fHit = raycaster.intersectObjects(bodyMeshes(), false)[0];
-  const cb = profilePickCb;
   // coplanar tie: the profile drawn ON the face wins, same rule as pickAt —
   // unless this tool takes faces only, when the face under it is the pick
   if (sHit && profilePickOpts.profiles && (!fHit || sHit.distance <= fHit.distance + 0.5)) {
-    cancelProfilePick(); cb('profile', sHit.object.userData.sketchId); return;
+    answerPick('profile', sHit.object.userData.sketchId); return;
   }
   if (sHit && !profilePickOpts.profiles && !fHit) {   // a sketch, for a face-only tool
     bus.emit('msg', 'bot', `⚠ ${profilePickOpts.name} starts on a flat face — ` +
@@ -582,15 +605,14 @@ function profilePickAt(e) {
       return;
     }
     if (info && flat && info.center) {
-      cancelProfilePick();
       // the face, WHICH body it is on, and WHERE it was clicked (Hole's centre)
-      cb('face', { ...info, body: info.body || entry.id,
-                   point: [fHit.point.x, fHit.point.y, fHit.point.z] });
+      answerPick('face', { ...info, body: info.body || entry.id,
+                           point: [fHit.point.x, fHit.point.y, fHit.point.z] });
       return;
     }
     if (info) {
       bus.emit('msg', 'bot', `⚠ That face is ${info.type} (curved) — ${profilePickOpts.name} ` +
-        'needs a sketch profile or a FLAT face. Keep picking, or Esc.');
+        `needs ${pickWhat(profilePickOpts)}. Keep picking, or Esc.`);
       return;
     }
   }
@@ -877,7 +899,14 @@ export function beginExtrudeArrow(originArr, normalArr, amount, onChange, onComm
 export function endExtrudeArrow() {
   if (!exArrow) return;
   scene.remove(exArrow.arrow); scene.remove(exArrow.hit);
-  exArrow.hit.geometry.dispose();
+  exArrow.hit.geometry.dispose(); exArrow.hit.material.dispose();
+  // the ArrowHelper's line and cone own a MATERIAL each — a tool that
+  // re-places its handles on every change (Hole) strands them otherwise. Their
+  // GEOMETRIES are not ours: three.js 0.160 builds `_lineGeometry` and
+  // `_coneGeometry` once at module scope and hands the same two to every
+  // ArrowHelper ever made (checked in the pinned build), so disposing them
+  // would throw away the buffers the NEXT arrow is drawn from.
+  exArrow.arrow.line.material.dispose(); exArrow.arrow.cone.material.dispose();
   exArrow = null;
 }
 
@@ -1180,7 +1209,9 @@ export function setHoleMarker(radius) {
 }
 export function endHoleMarker() {
   if (!holeMarker) return;
-  scene.remove(holeMarker.line); holeMarker.line.geometry.dispose(); holeMarker = null;
+  scene.remove(holeMarker.line);
+  holeMarker.line.geometry.dispose(); holeMarker.line.material.dispose();
+  holeMarker = null;
 }
 
 /* ---------------- revolve GHOST (instant drag preview) ----------------

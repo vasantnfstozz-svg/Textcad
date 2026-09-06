@@ -127,6 +127,38 @@ def test_a_block_op_hole_is_not_editable():
     assert r["driver"] is None
 
 
+def test_a_hole_TOOL_bore_is_driven_by_the_holes_own_diameter():
+    """The Hole tool's op EATS its body: there is no sketch circle behind the
+    bore, so the sketch walk found nothing and measure said the bore was "a
+    primitive, or an imported body" — untrue, and it took measure-and-drive
+    away from every hole drilled with the tool. provenance names the feature
+    that made the face (probes/hole_review_probe.py §3), and the radius says
+    which of the hole's round params it is."""
+    doc = Document(name="t-hole-tool")
+    doc.add("b", "plate", {"width": 80, "depth": 60, "thickness": 12})
+    doc.add("h", "hole", {"face": "top", "at": [15, 0], "diameter": 8, "depth": 5,
+                          "kind": "counterbore", "cbore_diameter": 16, "cbore_depth": 2},
+            inputs=["b"])
+    assert doc.rebuild(), doc.tree()
+    bore = measure.measure(doc, sel(doc, "face", cyl_of(doc, 4)))
+    assert bore["kind"] == "diameter" and bore["value"] == pytest.approx(8.0)
+    d = bore["driver"]
+    assert d is not None, "a hole made by the Hole tool must be editable"
+    assert d["feature"] == "h" and d["path"] == ["diameter"]
+    assert d["current"] == pytest.approx(8.0)
+    assert d["transform"] == "value", "a hole stores the DIAMETER, not a radius"
+    # the counterbore seat is its own param, not the bore's
+    assert measure.measure(doc, sel(doc, "face", cyl_of(doc, 8)))["driver"]["path"] \
+        == ["cbore_diameter"]
+    # and typing into it really changes the geometry (re-measured, not inferred)
+    plan = measure.plan_set(doc, sel(doc, "face", cyl_of(doc, 4)), None, 10.0)
+    assert "error" not in plan, plan
+    measure.write(doc, plan)
+    assert doc.rebuild(), doc.tree()
+    assert measure.measure(doc, sel(doc, "face", cyl_of(doc, 5)))["value"] \
+        == pytest.approx(10.0)
+
+
 # ----------------------------------------------------------- the edit loop ---
 
 def test_setting_a_diameter_changes_the_geometry():

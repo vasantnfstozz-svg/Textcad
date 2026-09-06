@@ -223,6 +223,54 @@ def test_counterbore_then_edit_and_cancel_restores(page, fresh_doc, server):
     assert page.errors == []
 
 
+def test_choosing_a_seat_kind_on_a_BUILT_hole_keeps_it(page, fresh_doc, server):
+    """Type is a change field: it applies at once. With the seat boxes still at
+    0 the op refused, the framework reverted to the last good values and put
+    the dropdown back on Simple — the seat kinds were unreachable the moment a
+    depth existed. Choosing one now seeds its sizes (Fusion shows a seat too)."""
+    setup(page)
+    box = feature(server, "b")["volume"]
+    open_hole_at(page, PT)
+    page.fill("#hoDepth", "8")
+    wait_volume(server, "hole1", box - PI * 9 * 8)
+    page.select_option("#hoKind", "counterbore")
+    assert page.is_visible("#hoCbDiaRow")
+    cb_d = float(page.input_value("#hoCbDia"))
+    cb_h = float(page.input_value("#hoCbDepth"))
+    assert cb_d > 6 and 0 < cb_h < 8, f"a seat the op can build: {cb_d} x {cb_h}"
+    f = wait_volume(server, "hole1",
+                    box - PI * 9 * 8 - PI * ((cb_d / 2) ** 2 - 9) * cb_h)
+    assert f["params"]["kind"] == "counterbore"
+    assert page.input_value("#hoKind") == "counterbore", "it used to spring back to Simple"
+    page.click("#hoOk")
+    page.wait_for_selector("#holeDialog", state="hidden")
+    assert page.errors == []
+
+
+def test_unticking_through_all_with_no_depth_waits_instead_of_re_ticking(page, fresh_doc, server):
+    """Through is a change field too, and the Depth box was disabled while it
+    was ticked — so unticking applied depth 0, the op refused, and the revert
+    ticked Through all again: a through hole could not be made blind. The tool
+    holds the half-made state instead, and says what it is waiting for."""
+    setup(page)
+    box = feature(server, "b")["volume"]
+    open_hole_at(page, PT)
+    page.check("#hoThrough")
+    wait_volume(server, "hole1", box - PI * 9 * 12)
+    page.uncheck("#hoThrough")
+    page.wait_for_timeout(1500)
+    assert not page.is_checked("#hoThrough"), "the revert used to tick it again"
+    assert feature(server, "hole1")["volume"] == pytest.approx(box - PI * 9 * 12, rel=1e-4), \
+        "and the hole is untouched until there is a depth"
+    assert not page.eval_on_selector("#hoDepth", "el => el.disabled")
+    page.fill("#hoDepth", "5")
+    f = wait_volume(server, "hole1", box - PI * 9 * 5)
+    assert f["params"]["through"] is False and f["params"]["depth"] == pytest.approx(5)
+    page.click("#hoOk")
+    page.wait_for_selector("#holeDialog", state="hidden")
+    assert page.errors == []
+
+
 def test_a_second_click_on_the_face_moves_the_hole(page, fresh_doc, server):
     """while the panel is open the face pick stays armed: clicking another point
     of the body's face puts the hole there (the plan is asked again, the

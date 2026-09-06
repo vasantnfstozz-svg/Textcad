@@ -22,7 +22,8 @@ import { S } from './state.js';
 import { bus } from './bus.js';
 import { postJSON, planRequest } from './api.js';
 import { holdViewport, cancelPlanePick, beginProfilePick, cancelProfilePick,
-         beginEdgePick, endEdgePick, clearPick } from './viewport.js';
+         beginEdgePick, endEdgePick, clearPick, pickWhat,
+         profilePickArmed } from './viewport.js';
 
 const OPMAP = { join: 'fuse', cut: 'cut', intersect: 'intersect' };   // panel op -> tree op
 const COMBINER_LABEL = Object.fromEntries(Object.entries(OPMAP).map(([k, v]) => [v, k]));
@@ -112,6 +113,12 @@ let isoPending = null;      // the park request in flight: a release never overt
 /* the feature the open tool is live-editing (the tree's failure toasts stay
    quiet about it — the tool explains and repairs its own failures) */
 export const activeToolFeature = () => (active && active.st && active.st.featureId) || null;
+/* is a tool's SESSION open (panel up, its feature mid-edit)? Undo asks: while
+   a tool owns the document, stepping the history under it would strand the
+   session on a feature that no longer exists. Measure sets the modal lock too
+   but keeps no session, and undoing a typed dimension is exactly what its user
+   wants. */
+export const toolSessionOpen = () => !!(active && active.st);
 export const canEdit = op => !!byOp[op];
 export function editFeature(fid) {
   const f = feats().find(x => x.id === fid);
@@ -149,17 +156,23 @@ bus.on('server-recovered', () => {
 function boolOf(fid) {
   return feats().find(x => COMBINER_LABEL[x.op] && (x.inputs || []).includes(fid));
 }
+/* Parking and releasing the bar are the SESSION's own document changes, so
+   they run inside holdViewport: the scene follows once at the end (R3), and a
+   session-long face pick is not cancelled as if the document had changed under
+   it (the reply to /api/rollback carries the whole document, so it emits
+   'doc-updated' like any other POST). */
 async function isolateFor(fid) {
   const comb = boolOf(fid);
   isoActive = true;
-  isoPending = postJSON('/api/rollback', { feature_id: (comb || { id: fid }).id });
+  isoPending = holdViewport(() =>
+    postJSON('/api/rollback', { feature_id: (comb || { id: fid }).id }));
   try { await isoPending; } finally { isoPending = null; }
 }
 async function releaseIso() {
   if (isoPending) await isoPending.catch(() => {});
   if (!isoActive) return;
   isoActive = false;
-  await postJSON('/api/rollback', { feature_id: null });
+  await holdViewport(() => postJSON('/api/rollback', { feature_id: null }));
 }
 
 /* ---------------- the factory ----------------
@@ -182,6 +195,10 @@ async function releaseIso() {
      snapshot(feature)          a normalized copy of EVERY param the tool can
                                 write, for Cancel-in-edit to restore verbatim
      isEmpty(params, st)        honest zero: nothing to build yet
+     hold(params, st)           HALF-MADE: the sentence to say (once) when these
+                                values are a state the op would certainly refuse
+                                because the user is mid-change — nothing is
+                                applied, so the revert cannot undo their choice
      nothing                    the sentence OK says when nothing was built
      gizmos: {begin(st, plan), end()}   handles, from the plan only
      split(n)                   the remedy when the part falls into n pieces
@@ -257,7 +274,7 @@ export function tool(spec) {
   }
   const session = input => ({ input, featureId: null, opId: null, opType: null,
                               opTarget: null, editing: false, plan: null,
-                              lastGood: null, firstExtra: null });
+                              lastGood: null, firstExtra: null, heldWhy: null });
 
   /* -------- open on the current selection (rules 1, 2, 4) -------- */
   function open(explicit) {
@@ -268,7 +285,8 @@ export function tool(spec) {
     const sel = currentSelection(explicit);
     if (spec.ops.edges) { openEdges(sel, bods); return; }
     if (sel && sel.kind === 'edges')     // an edge, for a tool that takes profiles / faces
-      say(`⚠ ${spec.name} works on a sketch profile${spec.ops.face ? ' or a flat face' : ''}` +
+      say(`⚠ ${spec.name} works on ` +
+        `${pickWhat({ profiles: !!spec.ops.profile, faces: !!spec.ops.face })}` +
         ' — click one of those, not an edge.');
     if (sel && sel.kind === 'face' && spec.ops.face) {
       // FACE MODE (Fusion: click a planar face, press the tool, pull)
@@ -326,7 +344,7 @@ export function tool(spec) {
   /* NOTHING selected: Fusion's command-then-select — the USER picks what to
      work on (a sketch profile and / or a flat face); never auto-grab a sketch */
   function awaitPick(profiles) {
-    const canFace = !!spec.ops.face;
+    const opts = { name: spec.name, faces: !!spec.ops.face, profiles };
     beginProfilePick((kind, data) => {
       if (kind === 'profile') { open(data); return; }
       // ONE selection set. This is the only writer that bypasses the
@@ -337,11 +355,9 @@ export function tool(spec) {
       clearPick();
       S.pickedFace = data;            // planar face (and the point clicked) — face mode
       open();
-    }, { name: spec.name, faces: canFace, profiles });   // the picker speaks for THIS tool
-    const what = [profiles && 'a sketch profile', canFace && 'a flat face']
-      .filter(Boolean).join(' or ');
-    say(`${spec.name}: click ${what} in the viewport — your pick, nothing is chosen ` +
-      'for you. Esc cancels.');
+    }, opts);                                          // the picker speaks for THIS tool
+    say(`${spec.name}: click ${pickWhat(opts)} in the viewport — your pick, nothing ` +
+      'is chosen for you. Esc cancels.');
   }
 
   /* -------- EDGE MODE (Fusion: press Fillet, click edges, drag) --------
@@ -399,10 +415,8 @@ export function tool(spec) {
     const mine = st;
     const plan = await fetchPlan(extra);
     if (st !== mine) return;
-    if (!plan) {                      // refused (it said why): the handles stay as they were
-      if (spec.repick && st.input.kind === 'face') armRepick();
-      return;
-    }
+    if (!plan) return;                // refused (it said why): the handles, and the
+                                      // session's own face pick, stay as they were
     if (st.featureId && plan.edges && !plan.edges.length) {
       say(`⚠ ${spec.name} keeps at least one edge while a value is set — Cancel closes the tool.`);
       return;
@@ -413,6 +427,8 @@ export function tool(spec) {
   }
   function adoptPlan(plan) {
     st.plan = plan;
+    // (armRepick asks the viewport whether a pick is armed, so anything that
+    //  cancelled one — an external document change — is re-armed here)
     if (st.input.kind === 'edges') {
       if (plan.picks != null) st.input.edges = plan.picks;   // exact form for the next request
       st.input.body = plan.input;
@@ -424,10 +440,12 @@ export function tool(spec) {
   /* -------- a tool whose input POINT can move (Hole) --------
      While the session is open, a click on a flat face of the body puts the
      input there: the plan places everything again and the feature, if built,
-     follows. The viewport's picker disarms itself after each click, so it is
-     re-armed once the new plan has landed (adoptPlan) — or at once when the
-     click was refused. `spec.repick` is the hint the picker shows. */
+     follows. The pick is STICKY — armed once, ended by hide() — so it survives
+     its own clicks and the session's rebuilds; a click that lands while the
+     plan is in flight still belongs to the tool instead of falling through to
+     the ordinary picker. `spec.repick` is the hint it shows. */
   function armRepick() {
+    if (profilePickArmed()) return;   // ONE pick, until something cancels it
     beginProfilePick((kind, data) => {
       if (!st || st.input.kind !== 'face') return;
       // while the preview is up the viewport shows THIS tool's result body
@@ -435,7 +453,6 @@ export function tool(spec) {
       if (kind !== 'face' || !mine) {
         say(`⚠ ${spec.name} stays on ${st.input.body} — click a flat face of that body ` +
           'to move it there, or Cancel.');
-        armRepick();
         return;
       }
       st.input = { ...st.input, center: data.center, normal: data.normal || null,
@@ -629,6 +646,16 @@ export function tool(spec) {
     // honest zero: never create a zero-thickness solid — geometry appears
     // when the user drags or types
     if (!st.featureId && spec.isEmpty(pr, st)) return;
+    // HALF-MADE: values the op would certainly refuse because the user is
+    // mid-change (a seat kind just chosen, Through just unticked, a seat box
+    // half-typed). Applying them fails and the automatic revert would undo the
+    // very choice that was made, so the tool waits — and says once what for.
+    const held = spec.hold ? spec.hold(pr, st) : null;
+    if (held) {
+      if (st.heldWhy !== held) { st.heldWhy = held; say(held); }
+      return;
+    }
+    st.heldWhy = null;
     let doc = st.featureId ? (await push(pr)).doc : await create(pr);
     let f = featOf(doc);
     if (f && f.status === 'failed') {
@@ -710,7 +737,7 @@ export function tool(spec) {
     const editing = st.editing;
     const typed = !!timer;              // a value typed inside the debounce window
     clearTimeout(timer); timer = null;
-    let created = false, gone = false;
+    let created = false, gone = false, held = null;
     // OK COMMITS the panel's values even if the user never dragged or touched
     // an input, typed inside the debounce window, or pressed OK while a
     // rebuild was still running — in edit mode too. The commit and the one
@@ -719,14 +746,18 @@ export function tool(spec) {
       if (st && (editing || !st.featureId || typed || applyRun)) await apply();
       if (!st) { gone = true; return; }   // the server crashed under us, and
       created = !!st.featureId;           // recover() already said so
+      held = st.heldWhy;                  // nothing built, and the tool knows why
       hide();
       await releaseIso();
     });
     releaseModal();
     if (gone) return;        // OK must not claim a step the crash threw away
-    say(editing ? `${spec.name} updated — the change is in the feature tree.`
+    const outcome = editing ? `${spec.name} updated — the change is in the feature tree.`
       : created ? `${spec.name} created — editable in the feature tree.`
-      : spec.nothing);
+      : held || spec.nothing;
+    // a value the hold gate never applied must not hide behind "updated"
+    say(held && held !== outcome ? `${outcome}
+⚠ ${held}` : outcome);
   }
   function abandon() {                  // another tool started (see cancelTool)
     if (st && st.editing) { cancel(); return; }   // an unfinished edit is a Cancel

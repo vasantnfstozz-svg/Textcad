@@ -20,7 +20,10 @@ export const TOOL_NAMES = {
   // Fusion-style primitive names (op ids unchanged underneath: plate=box, etc.)
   plate: 'Box', disc: 'Cylinder', ball: 'Sphere', cone: 'Cone', tube: 'Pipe',
   hex_plate: 'Hex', polygon_plate: 'Polygon', revolve_profile: 'Turn profile',
-  curved_blade: 'Blade', with_center_hole: 'Hole',
+  // `with_center_hole` bores the CENTRE of a body with no face and no
+  // handles; the Hole TOOL (`hole`, Create tab) is the one the spec means.
+  // Two buttons named "Hole" sent the user to the wrong one.
+  curved_blade: 'Blade', with_center_hole: 'Centre bore',
   with_bolt_circle: 'Bolt circle', fillet: 'Fillet', chamfer: 'Chamfer', hole: 'Hole',
   shell: 'Shell', move: 'Move', rotate: 'Rotate', scale: 'Scale',
   mirror: 'Mirror', polar_pattern: 'Polar', linear_pattern: 'Linear',

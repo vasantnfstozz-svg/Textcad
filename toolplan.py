@@ -700,48 +700,61 @@ def plan_fillet(doc, req: dict) -> dict:
 def plan_hole(doc, req: dict) -> dict:
     """The Hole tool's plan (specs/hole.md). Input: body_id + face_center
     [+ face_normal] + face_point (where the face was clicked, world) — or the
-    feature_id of an existing hole (edit: its stored face and `at` are read
-    here). Returns where the hole sits (`origin`, and `at` in the face's own
-    frame — the form the op stores), the arrow's axis INTO the material, the
-    marker circle's frame, the face in stored form and how much material lies
-    under the point (`limits.material`, kernel-measured). The browser draws
-    what this says and computes nothing (R1)."""
+    feature_id of an existing hole, whose stored face and `at` then stand in
+    for whatever the request does NOT carry. The request is authoritative
+    either way, so a click during an EDIT moves the hole exactly as it does
+    while creating one (it used to be silently ignored).
+
+    Returns where the hole sits (`origin`, and `at` in the face's own frame —
+    the form the op stores), the face in ONE stored form (a NAME, or a centre +
+    normal, never both — two forms can disagree about which face it is), the
+    arrow's axis INTO the material and the marker circle's frame (right-handed,
+    for THREE.Matrix4.makeBasis; the drilling direction is `axis`).
+
+    `limits.material` — how much material lies under the point, kernel-measured
+    — is measured only when the tool asks (`measure_material`), the way Extrude
+    asks for its taper limits: it is an Edge-intersect-Solid boolean costing
+    250-510 ms on a real body, and it answers one advisory sentence that a
+    through hole never needs. The browser draws what this says and computes
+    nothing (R1)."""
     body_id, params = req.get("body_id"), {}
     face_center, face_normal = req.get("face_center"), req.get("face_normal")
-    point, at, diameter = req.get("face_point"), None, req.get("diameter")
+    point, at, face_name = req.get("face_point"), None, None
     fid = req.get("feature_id")
     if fid:
         f = _edit_input(doc, fid, ("hole",))
         body_id = (f.inputs or [None])[0]
         params = f.params or {}
-        face_center, face_normal = params.get("face_center"), params.get("face_normal")
-        at = params.get("at")
-        diameter = diameter if diameter is not None else params.get("diameter")
-    if face_center is None and not params.get("face"):
+        # STORED IS THE FALLBACK, never the override (plan_revolve does the
+        # same with its axis) — otherwise the re-pick the tool arms in edit
+        # mode moves nothing and says nothing
+        face_center = face_center if face_center is not None else params.get("face_center")
+        face_normal = face_normal if face_normal is not None else params.get("face_normal")
+        if point is None:                # no fresh click: the stored face and point stand
+            face_name = params.get("face")
+            at = params.get("at")
+            if at is None:               # never said: the OP's own default, not the
+                at = list(sk.HOLE_AT)    # face centre — the marker must not lie
+    if face_center is None and not face_name:
         raise ValueError("Hole needs a flat face — click a face of a body")
     part, body_id = _pick_body(doc, body_id, "drill")
-    face = sk.pick_face(part, face_center, face_normal, params.get("face"))
-    pl = sk.face_profile_plane(face)
-    if pl is None:
-        raise ValueError(f"that face is {face.geom_type.name} (curved) — a hole starts "
-                         f"on a FLAT face; tilted flat faces are fine")
-    if at is None:                               # the click, in the face's own coordinates
-        p = pl.to_local_coords(b3d.Vector(*point) if point else face.center())
-        at = [round(p.X, 4), round(p.Y, 4)]
-    _pl, centre, n = sk.hole_frame(face, at)     # a point off the face is a sentence
+    face = sk.pick_face(part, face_center, face_normal, face_name)
+    # ONE flat-face guard and ONE framing rule, the op's own: a curved face, a
+    # point off the face and the click -> `at` all speak there
+    pl, centre, n, at = sk.hole_frame(face, at, point)
     into = n * -1.0
-    span = part.bounding_box().size.length + 1.0
     return {
         "ok": True, "tool": "hole", "mode": "face", "op": "hole", "input": body_id,
-        "origin": _vec(centre), "axis": _vec(into), "normal": _vec(n), "at": at,
-        "face_center": _vec(face.center()), "face_normal": _vec(n),
-        # the marker circle's frame: the hole's centre, the face's own axes
-        "frame": {"origin": _vec(centre), "x_dir": _vec(pl.x_dir),
-                  "y_dir": _vec(pl.y_dir), "z_dir": _vec(n)},
-        "into_sign": 1,                          # the axis already points INTO the body
-        "diameter": float(diameter) if diameter else None,
-        "limits": {"material": sk.material_depth(part, centre, into, span),
-                   "through_span": round(span, 3)},
+        "origin": _vec(centre), "axis": _vec(into), "at": at,
+        "face": face_name,
+        "face_center": None if face_name else _vec(face.center()),
+        "face_normal": None if face_name else _vec(n),
+        # the marker circle's frame: the face's own right-handed axes, moved to
+        # the hole's centre
+        "frame": {**_frame(pl), "origin": _vec(centre)},
+        "limits": ({"material": sk.material_depth(part, centre, into,
+                                                  sk.through_reach(part))}
+                   if req.get("measure_material") else {}),
         "target_body": body_id,
         "will_build": f"hole on {body_id} at ({at[0]:g}, {at[1]:g}) "
                       f"along {_axis_name(_vec(into))}",
@@ -763,4 +776,9 @@ def plan(doc, req: dict) -> dict:
     try:
         return fn(doc, req)
     except Exception as e:                      # OCP errors are Exception, not RuntimeError
-        return {"ok": False, "tool": tool, "error": str(e) or type(e).__name__}
+        msg = str(e) or type(e).__name__
+        # the op's sentences name themselves ("hole: …") and the UI already
+        # says which tool ("Hole cannot start: …") — one name is enough
+        if msg.lower().startswith(f"{tool}:"):
+            msg = msg[len(tool) + 1:].strip()
+        return {"ok": False, "tool": tool, "error": msg}

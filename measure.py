@@ -562,6 +562,38 @@ def _face_index_for(doc, shape, sel, body):
     return None
 
 
+# a `hole` feature's own params, by what each one makes round (specs/hole.md)
+_HOLE_BORES = (("diameter", "⌀"), ("cbore_diameter", "counterbore ⌀"),
+               ("csink_diameter", "countersink ⌀"))
+
+
+def _hole_driver(doc, att: dict, radius: float):
+    """A bore drilled by the `hole` op is driven by that feature's own
+    `diameter` — no sketch circle exists to find (the op eats its body), and
+    without this every hole made with the Hole tool answered "read-only … no
+    sketch circle drives this bore (a primitive, or an imported body)", which
+    is untrue and loses measure-and-drive on every hole in a design.
+
+    provenance names the feature that CREATED the face (probed 2026-09-06,
+    probes/hole_review_probe.py §3: both the ⌀6 bore and its ⌀12 counterbore
+    seat came back origin='h', origin_op='hole'), and the radius says which of
+    the three round params it is."""
+    origin = att.get("origin")
+    if not origin or att.get("origin_op") != "hole":
+        return None
+    try:
+        feat = doc.get(origin)
+    except KeyError:
+        return None
+    for key, what in _HOLE_BORES:
+        cur = float(feat.params.get(key) or 0.0)
+        if cur > 0 and abs(cur / 2.0 - radius) <= MATCH_TOL:
+            return {"feature": feat.id, "path": [key], "current": cur,
+                    "transform": "value",      # a hole stores the DIAMETER itself
+                    "label": f"{feat.id} · {what}", "drives": "diameter"}
+    return None
+
+
 def _diameter_driver(doc, shape, sel, body):
     """The sketch entity whose radius drives this round face/edge, or None.
 
@@ -591,6 +623,9 @@ def _diameter_driver(doc, shape, sel, body):
     if fi is None:
         return None
     att = provenance.attribute_face(doc, body_id=body, face_index=fi)
+    hit = _hole_driver(doc, att, radius)
+    if hit:
+        return hit
     sid = att.get("sketch")
     if not sid:
         return None                    # e.g. a hole from a block op, not a sketch

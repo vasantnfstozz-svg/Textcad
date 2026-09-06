@@ -8,7 +8,7 @@ import { postJSON, getJSON } from './api.js';
 import { askText } from './ask.js';
 import { OP_ICONS } from './icons.js';
 import { loadMesh, clearMesh, cancelPlanePick } from './viewport.js';
-import { cancelTool, uid } from './tool.js';
+import { cancelTool, uid, toolSessionOpen } from './tool.js';
 
 const featDialog = () => document.getElementById('featDialog');
 const libDialog = () => document.getElementById('libDialog');
@@ -162,6 +162,10 @@ export async function actionExport() {
 }
 
 export async function actionUndo() {
+  // rule 9: a tool SESSION owns the document while it is open — undoing under
+  // it strands the panel on a feature that has gone (Measure keeps no session,
+  // and undoing a typed dimension is what its user is asking for)
+  if (toolSessionOpen() && modalGuard()) return;
   const doc = await postJSON('/api/undo', {}, 'undoing…');
   if (!doc.error) { loadMesh(true); bus.emit('msg', 'bot', '↶ Undone.'); }
 }
@@ -170,6 +174,7 @@ export async function actionUndo() {
    retreat but never return, so people stop experimenting (user: "it can be
    easily undo and redo in that feature tree"). */
 export async function actionRedo() {
+  if (toolSessionOpen() && modalGuard()) return;   // its feature is mid-edit
   const doc = await postJSON('/api/redo', {}, 'redoing…');
   if (!doc.error) { loadMesh(true); bus.emit('msg', 'bot', '↷ Redone.'); }
 }

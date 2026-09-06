@@ -815,10 +815,13 @@ class ToolPlanReq(BaseModel):
     chain: bool | None = None           #   (edge_ref dicts or [x, y, z] midpoints); tangent chain on/off
     toggle: dict | None = None          #   one clicked edge to add to / remove from `edges`
     face_point: list | None = None      # tool "hole": where the face was clicked (world) — the hole's centre
-    diameter: float | None = None       #   and the hole's diameter, echoed for the marker circle
     # measure where a narrowing taper's walls meet, per face (18 kernel offsets
     # per face — asked for lazily, the first time the tool needs a taper limit)
     measure_collapse: bool = False
+    # tool "hole": measure the material under the point (an Edge ∩ Solid
+    # boolean, 250-510 ms on a real body) — asked for the first time a BLIND
+    # depth needs the advisory, never for a through hole
+    measure_material: bool = False
 
 
 class TrimReq(BaseModel):

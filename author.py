@@ -77,8 +77,12 @@ OP_NOTES = {
     "hole": 'Drills ONE hole into the input body from a flat face and RETURNS THE '
             'BODY WITH THE HOLE (no sketch, no cut feature). Name the face '
             '(face="top"/"bottom"/"+x"/… — never compute a face_center) and place '
-            'it with at=[x, y] in that face\'s sketch coordinates (the same x/y a '
-            'sketch_on_face on that face uses). diameter + depth in mm from the '
+            'it with at=[x, y] in that face\'s own coordinates — on the flat, '
+            'axis-aligned faces of a part exactly the x/y a sketch_on_face on that '
+            'face uses; on a TILTED face the hole measures in the face\'s true '
+            'plane and a sketch measures in the principal plane it snaps to, so '
+            'the two differ (measure from the face itself, do not copy a sketch '
+            'coordinate). diameter + depth in mm from the '
             'face into the material; through=true runs out the far side. kind '
             '"counterbore" adds a flat seat (cbore_diameter > diameter, cbore_depth '
             '< depth), "countersink" a conical one (csink_diameter > diameter, '
@@ -265,6 +269,10 @@ BASE FIRST, THEN SKETCH ON THE BASE — THE OFFSET METHOD
    * a round hole (through or blind, plain / counterbore / countersink) ->
      ONE "hole" feature on the current body: {{"face":"top","at":[x,y],
      "diameter":6,"through":true}} (or "depth":8) — no sketch, no cut
+   * MANY identical round holes (a bolt circle, a grid of tapping holes) ->
+     ONE sketch_on_face holding all the circles, then extrude
+     {{"through":true,"flip":true}} and cut. One "hole" feature each is right
+     for a handful; thirty of them is thirty tree rows and thirty kernel cuts
    * a non-round cut right through -> sketch_on_face face "top" offset 0,
      then extrude {{"through":true,"flip":true}}, then cut
    * something starting partway in (a pilot hole in a 3mm recess floor) ->
