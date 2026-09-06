@@ -13,8 +13,10 @@
 > a tail-cut delete wiped the tree, clockwise polygons, refusals sent as 200).
 > P3b done 2026-09-05 (4987a15: a picked FACE as a Revolve profile, the
 > outline's own edges as the axis, Two sides / Symmetric; review fixes
-> d82e9d0, ui v155 — §7 P3). Next: the user's P3b checklist
-> (specs/revolve.md, second list), then Hole. One tool per session. Every
+> d82e9d0, ui v155 — §7 P3). **P4's second tool, Hole, done 2026-09-06**
+> (5336c82: Fusion's Hole as ONE op that eats its body; all 25 findings of its
+> code review fixed 0c49c42, ui v157 — §7 P4). Next: the user's Hole checklist
+> (specs/hole.md), then Pattern. One tool per session. Every
 > other plan file points here; §7 carries the done-notes, §10 the ranked open
 > items.
 >
@@ -496,6 +498,48 @@ Plus one the review could not see: 1412dc6 broke a Revolve journey by adding
 keys to the `gizmos()` debug hook, which the token rule (only the shipped
 tool's journeys) hid — **when a change touches `viewport.js` or `tool.js`, run
 the other tools' journeys too.**
+
+*Hole done 2026-09-06* (spec `specs/hole.md`, tool 5336c82, review fixes
+0c49c42, ui v157; the user's checklist is theirs to run). `static/js/hole.js`
+is **193 lines with no geometry maths**. Two firsts, and both cost the
+framework a new idea. **The op EATS its body**: `sketch.hole` takes the solid
+and returns the solid WITH the hole — no cutter prism, no Cut row, one `hole1`
+in the tree — so the framework grew `eats` (Operation stays "new", no Target).
+**The input is a POINT on a face**, not a profile: the viewport pick now
+carries WHERE it was clicked, a tool may declare itself face-only (the picker
+refuses sketches in that tool's own words), and a `repick` pick lives as long
+as the SESSION — click another spot and the hole moves there. `at` is stored
+in the face's own frame, so the hole rides an upstream change like everything
+else. Backend: `sketch.hole` / `hole_frame` / `hole_cutter` /
+`material_depth` / `through_reach`, `toolplan.plan_hole`;
+`sketch_on_face`'s face branch and `toolplan._pick_face` collapsed onto one
+`sketch.pick_face`. **Probes:** `probes/hole_probe.py` (build123d's own `Hole`
+objects are double-length builder-mode tools — not used; a hole centred in an
+existing hole removes nothing and "succeeds"; a hole tangent to the face's edge
+comes back an OPEN SHELL the kernel calls valid) and
+`probes/hole_review_probe.py`. **Tests:** `tests/test_hole_tool.py` (42),
+`tests/test_hole_gauntlet.py` (8 bodies × every flat face × 3 kinds × through /
+blind × centre / near-vertex), `tests/e2e/test_hole_tool.py` (6 journeys).
+**Line delta (source, excl. tests/probes/spec): +557/−49 shipping, then
++369/−123 in review.**
+
+*Its review found the same class twice: a tool that lies while it is open.*
+25 findings, all acted on (§10 carries the full note). Four could reach the
+user — a click while EDITING was ignored, a hole authored without an `at`
+opened where it does not cut, a stored face NAME outlived every moved pick,
+and a real ⌀1 hole in a big block was refused as "nothing was cut". Two more
+UNDID the user's own choice: the seat kinds and Through all applied
+zero-valued boxes, the op refused, and the framework's revert put the choice
+back. The lesson is the framework's: **a change field that puts the form into
+a state the op will certainly refuse must not be applied at all** — applying
+and reverting is worse than waiting, because the revert overwrites what the
+user just chose. `spec.hold` is that wait, and OK reports it instead of
+claiming a change that never landed. Then the FIXES were reviewed the same way
+(4 angles) and 7 defects in them were found and fixed — two of them mine and
+new (`at=None` drilling at the face centre, a 2 m ceiling on through holes),
+one a shared-resource mistake three.js invites (`ArrowHelper` hands the same
+two geometries to every arrow; only the materials are the caller's). **Rule
+learned: a fix commit earns a review of its own.**
 
 **P5 — The AI uses the tools (§5 step B).** Incremental authoring through
 the plan endpoint; chat edits point at parameters; the FEATURE-TREE-PLAN

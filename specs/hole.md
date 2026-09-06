@@ -1,7 +1,9 @@
 # Hole — tool spec (P4, LAUNCH-PLAN.md §8 step 1)
 
-> **Status: built 2026-09-06 under the user's "proceed with next thing"; the
-> five-step checklist at the end is the user's to run.** The fourth tool on the
+> **Status: built 2026-09-06 (5336c82), code-reviewed the same day and all 25
+> findings fixed (0c49c42, ui v157 — see "What the code review changed"
+> below); LAUNCH-PLAN §7 P4 stamped. The five-step checklist at the end is the
+> user's to run.** The fourth tool on the
 > framework (`tool.js`), the first whose op EATS its body (the result is the
 > body with the hole — no Join / Cut row) and the first whose input is a POINT
 > on a face, so the framework grew two things every later point tool (Shell's
