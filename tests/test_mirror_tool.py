@@ -363,3 +363,63 @@ def test_the_request_model_carries_own_id_and_plane_pick():
     req = studio.ToolPlanReq(tool="mirror", own_id="m", plane_pick={"world": "YZ"},
                              plane="midx").model_dump()
     assert req["own_id"] == "m" and req["plane_pick"] == {"world": "YZ"} and req["plane"] == "midx"
+
+
+# ---------------------------------------------- P4 review: the five findings ---
+
+@pytest.mark.parametrize("boom", [
+    Exception("BRepAlgoAPI_Common: boom"),                      # a raw OCCT failure
+    ValueError("Cannot intersect shape with empty compound"),   # build123d's own guard
+])
+def test_a_failed_discriminator_keeps_the_refusal_that_is_true(monkeypatch, boom):
+    """`image & seed` only tells the two "it cut nothing" refusals apart, and it
+    is a kernel boolean like any other. When IT fails the cut has already run
+    and demonstrably removed nothing, so the honest sentence is still "lands off
+    the body" — never "the kernel could not build", which blames the op for a
+    boolean that succeeded, and never build123d's own ValueError raw (it went
+    straight through `except ValueError: raise` with no "mirror: " prefix)."""
+    b, h = holed()
+
+    def explode(self, other):
+        raise boom
+    monkeypatch.setattr(b3d.Compound, "__and__", explode)     # what delta() returns
+
+    with pytest.raises(ValueError, match="^mirror: ") as e:
+        mirrored(b, h, {"origin": [200, 0, 0], "normal": [1, 0, 0]})
+    assert "lands off the body (nothing to cut there)" in str(e.value)
+    assert "the kernel could not build" not in str(e.value)
+
+
+def face_at(part, center, normal):
+    """the plan's own input: what the viewport sends for a clicked face"""
+    return {"center": [float(v) for v in center], "normal": [float(v) for v in normal]}
+
+
+def test_a_click_on_the_mirror_image_is_refused_not_snapped_to_another_face():
+    """P4 review: the framework hands Mirror clicks on its OWN result body
+    (tool.js armRepick accepts `st.featureId`), the plan resolves them on the
+    body BEFORE the mirror, and sk.pick_face's nearest-centre match is
+    unbounded — so a face that exists only on the image silently came back as
+    some other face of the input body and the mirror re-aimed without a word.
+    The clicked PLANE decides now: a face of the image lying in a plane the
+    body really has still counts, the rest is refused by sentence."""
+    doc = built(doc_with_hole())
+    part = doc._parts["hole1"]                       # 80 x 80 x 12, x in [-40, 40]
+
+    # a face 200 mm away is on nothing: it used to snap to the nearest face
+    p = toolplan.plan(doc, {"tool": "mirror", "seed_id": "hole1",
+                            "plane_pick": face_at(part, [200, 0, 0], [1, 0, 0])})
+    assert not p["ok"], p
+    assert "that face is not on hole1" in p["error"]
+    assert "not one that only its mirror image has" in p["error"]
+
+    # a real face of the body still resolves, in the one stored form
+    p = toolplan.plan(doc, {"tool": "mirror", "seed_id": "hole1",
+                            "plane_pick": face_at(part, [40, 0, 0], [1, 0, 0])})
+    assert p["ok"] and p["plane"]["face_center"] == [40.0, 0.0, 0.0]
+    assert p["plane_words"] == "the +x face's plane"
+
+    # and a face the IMAGE shares with the body (the doubled plate's top) counts
+    p = toolplan.plan(doc, {"tool": "mirror", "seed_id": "hole1",
+                            "plane_pick": face_at(part, [70, 0, 6], [0, 0, 1])})
+    assert p["ok"] and p["plane"]["face_normal"] == [0.0, 0.0, 1.0], p

@@ -949,6 +949,52 @@ def _same_plane(a, b) -> bool:
     return False
 
 
+def _plane_face(part, pick: dict, tip: str):
+    """The face of `part` whose PLANE the user clicked, in the form Mirror
+    stores (`pattern.stored_face`) — or the sentence that says why there is none.
+
+    Matched by the PLANE, not by the nearest centre: the framework hands this
+    tool clicks on its OWN result body (tool.js `armRepick`), a mirror image has
+    faces the input body has not, and `sk.pick_face`'s nearest-centre match is
+    unbounded — so a click on the doubled plate's top face came back as its +x
+    face and the mirror silently re-aimed (P4 review). A face of the image lying
+    in a plane the body really has (the doubled plate's top, bottom, sides)
+    still counts; anything else is refused. The op resolves the stored face on
+    this same body at every rebuild (`pattern.plane_of`), so a face of the image
+    could not be stored anyway."""
+    c, nrm = pick.get("center"), pick.get("normal")
+    c = b3d.Vector(*(float(v) for v in c)) if c else None
+    nrm = b3d.Vector(*(float(v) for v in nrm)) if nrm else None
+
+    def clicked(o, n) -> bool:                    # the click lies IN this plane, facing it
+        # 1e-2 is `sk.face_plane`'s own tolerance and must not be tightened:
+        # studio.py rounds a picked centre to 2 decimals, so a point that truly
+        # lies in the plane can sit 0.0087 mm off it
+        return (c is not None and abs((c - o).dot(n)) <= 1e-2
+                and (nrm is None or abs(n.dot(nrm)) >= 0.999))
+
+    best = None
+    for f in part.faces():                        # a PLANE face IS (centre, normal) —
+        if f.geom_type != b3d.GeomType.PLANE:     # the form resolve_face already uses
+            continue
+        fc = f.center()
+        if clicked(fc, f.normal_at(fc)) and (best is None or
+                                             (fc - c).length < (best.center() - c).length):
+            best = f
+    if best is not None:
+        return best
+    picked = sk.pick_face(part, pick.get("center"), pick.get("normal"))   # name what was clicked
+    pl = sk.face_plane(picked)                    # a dead-flat BSPLINE wall is a plane too
+    if pl is None:
+        raise ValueError(f"the picked face is {picked.geom_type.name} — a mirror plane is "
+                         f"a flat face, an origin plane or the body's mid-plane")
+    if clicked(b3d.Vector(pl.origin), b3d.Vector(pl.z_dir)):
+        return picked
+    raise ValueError(f"that face is not on {tip} — the mirror plane must be a flat face of "
+                     f"the body being mirrored, not one that only its mirror image has; click a "
+                     f"face of {tip}, an origin plane, or pick a mid-plane in the Plane box")
+
+
 def plan_mirror(doc, req: dict) -> dict:
     """The Mirror tool's plan (specs/mirror.md). The seed is `_seed_plan`'s. The
     plane: `plane_pick` — a face ({center, normal}) or an origin plane
@@ -973,11 +1019,7 @@ def plan_mirror(doc, req: dict) -> dict:
         if pick.get("world"):
             plane = str(pick["world"]).upper()
         else:
-            picked = sk.pick_face(part, pick.get("center"), pick.get("normal"))
-            if sk.face_plane(picked) is None:
-                raise ValueError(f"the picked face is {picked.geom_type.name} — a mirror plane is "
-                                 f"a flat face, an origin plane or the body's mid-plane")
-            plane = pattern.stored_face(part, picked)
+            plane = pattern.stored_face(part, _plane_face(part, pick, s.tip))
     elif req.get("plane"):
         chosen = next((a for a in alts if a["name"] == req["plane"]), None)
         if chosen is not None:

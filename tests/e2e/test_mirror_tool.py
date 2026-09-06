@@ -154,6 +154,11 @@ def test_select_the_hole_row_press_mirror_click_the_yz_plane_and_ok(page, fresh_
     assert f["op"] == "mirror" and f["inputs"] == ["hole1"], f
     assert f["params"] == {"seed": "hole1", "plane": "YZ", "join": True}
     page.wait_for_function("() => document.getElementById('mrPlane').value === 'yz'", timeout=10000)
+    # the blank is the NO-PLANE state only: with YZ in force there is nothing to
+    # fall back to, so the box can never read "no plane" over a built mirror
+    # while the gold quad and the feature still hold one (P4 review)
+    assert page.locator("#mrPlane option[value='']").count() == 0
+    assert page.locator("#mrPlane option").count() == 6            # 3 origin + 3 mid, no placeholder
     page.wait_for_function("() => window.__vp.gizmos().plane", timeout=10000)
     q = page.evaluate("() => window.__vp.planeQuadInfo()")
     assert q["normal"] == pytest.approx([1, 0, 0], abs=1e-6) and q["origin"] == pytest.approx([0, 0, 0], abs=1e-3)
@@ -178,6 +183,11 @@ def test_a_second_click_re_aims_the_plane_and_a_bad_face_is_refused_and_reverted
     open_on_row(page, "hole1")
     click_world(page, on_plane(page, "YZ"))
     wait_plane(server, "mirror1", lambda p: p == "YZ")
+    # the viewport reloads the doubled body after that build and the origin quads
+    # go with it; a click sent before they are back lands on empty space and is
+    # silently dropped (this journey failed here about one run in two)
+    page.wait_for_function("() => window.__vp.originPlaneInfo().length === 3", timeout=15000)
+    page.wait_for_function("() => window.__vp.gizmos().facePick", timeout=15000)
     click_world(page, on_plane(page, "XZ"))
     f = wait_plane(server, "mirror1", lambda p: p == "XZ")
     assert f["volume"] == pytest.approx(BOX - 2 * PLUG, rel=1e-4)
@@ -188,7 +198,58 @@ def test_a_second_click_re_aims_the_plane_and_a_bad_face_is_refused_and_reverted
     page.wait_for_function("() => document.getElementById('mrPlane').value === 'xz'", timeout=15000)
     f = wait_plane(server, "mirror1", lambda p: p == "XZ")        # reverted to the plane that built
     assert f["status"] == "ok"
+    # ... and a SECOND refused face still reverts to the plane that BUILT. The
+    # revert used to re-read the params from the still-refused plan and record
+    # THAT as lastGood, so the next revert fell back to a plane that never built
+    # and left the feature failed under a sentence naming it (P4 review).
+    click_world(page, side_face(page)[0])
+    page.wait_for_function(
+        "() => (document.getElementById('chatLog').textContent.match(/lands off the body/g) || []).length >= 2",
+        timeout=15000)
+    f = wait_plane(server, "mirror1", lambda p: p == "XZ")
+    assert "Reverted to the mirror across the picked face" not in page.text_content("#chatLog")
     page.click("#mrOk")
+    page.wait_for_selector("#mrDialog", state="hidden")
+    assert page.errors == []
+
+
+# ...plus a ⍠10 bore at (-20, -20): clear of the YZ image of hole1 at (-20, 10)
+# by 30 mm, so the mirror stays a healthy solid and only the CLICK is on trial
+BUILD_BORE = BUILD.replace("  await loadMesh(true);", """  await postJSON('/api/feature/add',
+    { id: 'bore', op: 'hole', params: { face: 'top', at: [-20, -20], diameter: 10, depth: 1,
+      through: true }, inputs: ['hole1'] }, 'add');
+  await loadMesh(true);""")
+
+
+def test_a_curved_face_is_refused_by_the_viewport_before_the_server(page, fresh_doc, server):
+    """The PLANE re-pick takes a FLAT face: a click on the bore's cylindrical
+    wall is refused on the spot, in the words the hover already promised (it
+    shows not-allowed over that face), and the mirror keeps the plane that
+    built. Mirror used to carry `anyFace` — which flags the RE-PICK, not the
+    seed pick — so the wall round-tripped to a server refusal instead, and the
+    refusal named only "a flat face" while three origin quads were on screen
+    (P4 review)."""
+    setup(page, build=BUILD_BORE)
+    open_on_row(page, "hole1")
+    click_world(page, on_plane(page, "YZ"))
+    wait_plane(server, "mirror1", lambda p: p == "YZ")
+    before = page.text_content("#chatLog")
+    # the bore's INNER wall on the side away from the camera, 3 mm below the top
+    # (the recipe of the Pattern journey: deeper and the ray meets the top face)
+    cam = page.evaluate("() => window.__vp.camera.position.toArray()")
+    dx, dy = cam[0] + 20, cam[1] + 20
+    L = (dx * dx + dy * dy) ** 0.5
+    click_world(page, [-20 - 5 * dx / L, -20 - 5 * dy / L, 3.0])
+    page.wait_for_function(
+        "() => document.getElementById('chatLog').textContent.includes('(curved)')", timeout=15000)
+    said = page.text_content("#chatLog")[len(before):]
+    # the sentence names EVERY next action, not half of them
+    assert "needs a flat face or an origin plane" in said, said
+    assert "the picked face is CYLINDER" not in said, "the server was asked after all"
+    # the pick stays armed and the plane that built is untouched
+    assert page.evaluate("() => window.__vp.gizmos().facePick")
+    assert wait_plane(server, "mirror1", lambda p: p == "YZ")["status"] == "ok"
+    page.click("#mrCancel")
     page.wait_for_selector("#mrDialog", state="hidden")
     assert page.errors == []
 

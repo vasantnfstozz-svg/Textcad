@@ -33,7 +33,7 @@ function mirrorTool() {
     panel: 'mrDialog', ids: 'mr',
     ops: { feature: 'mirror', face: 'mirror' },
     eats: true,                   // the op returns the body WITH its mirror image: no Join / Cut row
-    anyFace: true,                // a bore's wall is a seed (its hole)
+    // no `anyFace`: it flags the RE-PICK, and a mirror plane must be FLAT
     planePick: true,              // the session pick shows the origin quads too
     repick: 'Click a flat face or an origin plane for the mirror plane · Esc cancels',
     onRepick(st, data, replan) {
@@ -63,8 +63,11 @@ function mirrorTool() {
     gizmos: {
       begin(st, plan) {
         const sel = g('mrPlane');
-        sel.innerHTML = ['<option value="">— click a flat face or an origin plane —</option>',
-          ...plan.alternatives.map(a => `<option value="${a.name}">${a.label}</option>`)].join('');
+        // the blank is the NO-PLANE state ONLY: once a plane is in force the plan's
+        // plane_name is one of the alternatives, so no blank is left to fall back to
+        const blank = '<option value="">— click a flat face or an origin plane —</option>';
+        sel.innerHTML = (plan.plane_name ? '' : blank) +
+          plan.alternatives.map(a => `<option value="${a.name}">${a.label}</option>`).join('');
         sel.value = plan.plane_name || '';
         if (plan.frame) beginPlaneQuad(plan.frame, plan.half);
         if (!st.featureId && plan.plane) ctl.apply();     // the first plane builds the mirror

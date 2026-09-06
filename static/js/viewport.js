@@ -549,7 +549,8 @@ let profilePickOpts = { name: 'Extrude', faces: true, profiles: true, hint: null
    every refusal sentence say the same thing (a face-only tool must never be
    told to click "a sketch profile"). */
 export const pickWhat = (opts = {}) =>
-  [opts.profiles !== false && 'a sketch profile', opts.faces !== false && 'a flat face']
+  [opts.profiles !== false && 'a sketch profile', opts.faces !== false && 'a flat face',
+   opts.planes && 'an origin plane']
     .filter(Boolean).join(' or ') || 'nothing';
 
 export function beginProfilePick(onPick, opts = {}) {

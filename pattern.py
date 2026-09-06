@@ -151,6 +151,17 @@ def _nonempty(part):
     return part
 
 
+def _overlaps(a, b) -> bool:
+    """do two shapes share material? — what tells a copy that lands ON the seed
+    from one that lands off the body. It carries its OWN guard: the boolean is
+    only the discriminator, so a kernel failure here must cost the accurate
+    sentence, not replace it with "the kernel could not build" (P4 review)."""
+    try:
+        return _nonempty(a & b) is not None
+    except Exception:                        # OCP errors are Exception, not RuntimeError
+        return False
+
+
 def delta(before, after):
     """(removed, added): what the feature took away and what it put on — each
     a solid or None (probe §1: a hole's `added` is an empty Compound)."""
@@ -190,7 +201,7 @@ def _repeat(body, removed, added, moves, op: str, what: str, label=None, noun: s
                 v0 = float(result.volume)
                 result = result - image
                 if abs(v0 - float(result.volume)) < _TOL:
-                    if _nonempty(image & removed) is not None:
+                    if _overlaps(image, removed):
                         raise ValueError(f"{op}: {label(k, n)} is the seed itself (it lands where "
                                          f"the seed already is) — {what}")
                     raise ValueError(f"{op}: {label(k, n)} lands off the body (nothing to "

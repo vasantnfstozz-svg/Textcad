@@ -219,7 +219,9 @@ async function releaseIso() {
                                 with `feature` repeats a tree row or the maker
                                 of a clicked face (Pattern) — the plan names the
                                 body it goes on (`input`) and describes the seed
-     anyFace                    the picker hands over curved faces too
+     anyFace                    the session RE-PICK hands over curved faces too
+                                (Circular: a bore names its axis); the SEED pick
+                                of a feature tool always does, flag or not
      onRepick(st, data, replan) what a click during the session means when it
                                 is not "move the input" (Pattern: the axis)
      eats                       the face op returns its body CHANGED (Hole): no
@@ -735,7 +737,7 @@ export function tool(spec) {
       sync();                           // rows and gizmos follow the restored boxes
       if (spec.refresh) spec.refresh(st);
       say(`Reverted to ${spec.describe(st.lastGood)} — the new values broke the solid.`);
-      return back;
+      return { ...back, reverted: true };   // lastGood is what is on the feature now
     }
     return r || failed;               // nothing better is known: the tree says why
   }
@@ -776,11 +778,19 @@ export function tool(spec) {
     st.heldWhy = null;
     let doc = st.featureId ? (await push(pr)).doc : await create(pr);
     let f = featOf(doc);
+    // lastGood is what the kernel VERIFIED, never a re-read: `pr` for a plain
+    // success (a plan landing mid-push swaps st.plan under us, and a tool whose
+    // params come from the plan rather than from a box — Mirror's plane, Hole's
+    // `at`, Fillet's edges — would record it), the milder values a settle typed
+    // into the boxes, and after a REVERT nothing at all: the revert has just put
+    // lastGood back on the feature, so re-reading would store what was refused.
+    let good = pr;
     if (f && f.status === 'failed') {
       const settled = await settle(pr, { doc, f });
       doc = settled.doc; f = settled.f;
+      good = settled.reverted ? null : spec.params(st);
     }
-    if (isOk(f)) st.lastGood = spec.params(st);   // the boxes may have been adjusted
+    if (isOk(f) && good) st.lastGood = good;
     await applyOp();
     if (spec.afterApply) spec.afterApply(st);     // gizmos follow the boxes
   }
