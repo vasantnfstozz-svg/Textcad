@@ -797,6 +797,16 @@ def plan_pattern(doc, req: dict) -> dict:
     circular = tool == "polar_pattern"
     name = "Circular Pattern" if circular else "Rectangular Pattern"
     fid = req.get("feature_id")
+    if not fid:
+        # A NEW session's own feature, once it is built: replanning must read
+        # ITS stored seed / axis and the body it sits on, or _latest_descendant
+        # walks into the pattern the tool just made and the next plan aims the
+        # axis at the already-patterned solid (P4 code review). Ignored while it
+        # is still in flight — then no pattern exists to walk into.
+        own = req.get("own_id")
+        f_own = _feature(doc, own) if own else None
+        if f_own is not None and f_own.op == tool:
+            fid = own
     params, tip, seed, body_seed = {}, None, req.get("seed_id"), False
     if fid:
         f = _edit_input(doc, fid, (tool,))
@@ -874,12 +884,21 @@ def plan_pattern(doc, req: dict) -> dict:
         alts = [{"name": n, "label": f"world {n.upper()}", "dir": v}
                 for n, v in (("x", [1.0, 0.0, 0.0]), ("y", [0.0, 1.0, 0.0]), ("z", [0.0, 0.0, 1.0]))]
     along, stored, stored2 = req.get("along"), params.get("direction"), params.get("direction2")
-    if along is None and stored is not None:      # edit: the stored direction leads
-        match = next((a for a in alts if _same_dir(a["dir"], stored)), None)
-        if match is None:
+    legacy_dist = None
+    if fid and stored is None:                    # a legacy feature: its (dx, dy, dz) step IS
+        legacy = pattern.legacy_step(params)      # a direction and a distance — edit those
+        if legacy is not None:
+            stored, legacy_dist = legacy
+    if stored is not None:
+        # the stored direction is ALWAYS one of the alternatives, not only on the
+        # first plan: it used to be added just when `along` was unset, so the next
+        # replan (the user opening the dropdown) dropped it and re-aimed a diagonal
+        # pattern to world X
+        if not any(_same_dir(a["dir"], stored) for a in alts):
             alts.insert(0, {"name": "stored", "label": "the stored direction",
                             "dir": [float(c) for c in stored]})
-        along = (match or alts[0])["name"]
+        if along is None:                         # edit: it leads until the user picks
+            along = next(a["name"] for a in alts if _same_dir(a["dir"], stored))
     first = next((a for a in alts if a["name"] == along), alts[0])
     second = next(a for a in alts if a["name"] != first["name"])
     d2 = second["dir"]
@@ -888,7 +907,8 @@ def plan_pattern(doc, req: dict) -> dict:
     out.update({
         "direction": first["dir"], "direction2": d2, "alternatives": alts, "along": first["name"],
         "arrow_half": half,
-        "params": {"seed": seed_param, "direction": first["dir"], "direction2": d2},
+        "params": {"seed": seed_param, "direction": first["dir"], "direction2": d2,
+                   **({"distance": legacy_dist} if legacy_dist is not None else {})},
         "will_build": f"{tool} of {seed_words} along {_axis_name(first['dir'])}",
     })
     return out

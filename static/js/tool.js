@@ -67,11 +67,13 @@ function fill(id, items, val) {
 /* ---------------- R4: ONE selection, in one place ----------------
    What a tool works on when it is pressed, in this order: the explicit
    argument (a tree row's action button), the viewport's face pick, the
-   viewport's profile pick, the sketch row selected in the tree, and — only
-   when none of those gave a profile — a curved-face pick, which the tool
-   refuses with a sentence. The tree click already REPLACES the viewport pick
-   (tree.selectFeature calls viewport.clearPick), so this is one set, like
-   Fusion. Direction and sign are the server's (the plan), never decided here. */
+   viewport's profile pick, the sketch row selected in the tree, a curved-face
+   pick (a tool that needs a FLAT face refuses it with a sentence) and, last
+   of all, a non-sketch tree row — the feature itself (Pattern's seed). EVERY
+   viewport pick outranks a tree row: a tree click REPLACES the viewport pick
+   (tree.selectFeature calls viewport.clearPick) but nothing clears the row,
+   so the row comes last. One selection set, like Fusion.
+   Direction and sign are the server's (the plan), never decided here. */
 
 /* the body a picked face belongs to: the body it was PICKED FROM (several
    bodies are visible and clickable), else the newest solid; null when there
@@ -100,15 +102,18 @@ function currentSelection(explicit) {
   if (S.pickedProfile) return { kind: 'profile', id: S.pickedProfile.id };
   const sel = feats().find(f => f.id === S.selected);
   if (sel && isSketch(sel) && !sel.suppressed) return { kind: 'profile', id: sel.id };
-  // a tree row that is not a sketch is the FEATURE itself (Pattern's seed)
-  if (sel && !sel.suppressed) return { kind: 'feature', id: sel.id };
   // a curved face carries where it is and whose it is, so a tool that takes ANY
-  // face (Pattern: a bore's wall names the hole) can read it like a face pick
+  // face (Pattern: a bore's wall names the hole) can read it like a face pick.
+  // It outranks a tree ROW: a tree click clears the viewport pick but not the
+  // other way round, so a row selected minutes ago hid the face just clicked —
+  // and Extrude / Revolve lost their "needs a FLAT face" refusal (P4 review).
   if (S.pickedCurved) {
     const c = S.pickedCurved;
     return { kind: 'curved', type: c.type, center: c.center, normal: c.normal || null,
              body: pickedBody(c), point: c.point || null };
   }
+  // a tree row that is not a sketch is the FEATURE itself (Pattern's seed)
+  if (sel && !sel.suppressed) return { kind: 'feature', id: sel.id };
   return null;
 }
 
@@ -134,6 +139,24 @@ export function editFeature(fid) {
   if (t) t.openEdit(fid);
 }
 
+/* ---- a tool waiting for a TREE ROW (Pattern's seed) ----
+   ONE waiter at a time, dropped whenever the pick it belongs to goes: Esc, the
+   viewport cancelling on a document change, another tool starting, the session
+   ending. The handler used to be removed only INSIDE its own callbacks, so a
+   cancelled wait stayed on the bus and hijacked the next tool's row click —
+   Circular, Esc, Rectangular, click a row, and CIRCULAR opened (P4 review). */
+let rowWait = null;
+function waitForRow(fn) {
+  dropRowWait();                    // a second waiter would answer the same click
+  rowWait = fn;
+  bus.on('feature-selected', fn);
+}
+function dropRowWait() {
+  if (!rowWait) return;
+  bus.off('feature-selected', rowWait);
+  rowWait = null;
+}
+
 /* Close a lingering tool session when ANOTHER tool starts — otherwise its
    gizmos stay in the viewport and swallow the next click. A NEW session's
    committed feature stays (it is a real verified feature); an unfinished EDIT
@@ -141,6 +164,7 @@ export function editFeature(fid) {
    "pick a profile" and never leaves the rollback bar parked. */
 export function cancelTool() {
   cancelProfilePick();
+  dropRowWait();                    // ...and the row click it was waiting for
   releaseIso();
   if (active) active.abandon();
 }
@@ -151,6 +175,7 @@ export function cancelTool() {
    last good values are in the restored document. */
 bus.on('server-recovered', () => {
   cancelProfilePick();
+  dropRowWait();
   isoActive = false; isoPending = null;   // a relaunched server parks no rollback
   if (active) active.recover();           // (releaseIso would post to nothing)
 });
@@ -272,6 +297,7 @@ export function tool(spec) {
     spec.gizmos.end();
     endEdgePick();
     cancelProfilePick();              // a re-pick armed for the session goes with it
+    dropRowWait();
     st = null;
     panel().style.display = 'none';
     if (active === ctl) active = null;
@@ -462,14 +488,14 @@ export function tool(spec) {
   function awaitFeaturePick() {
     const hint = `${spec.name}: click a hole, a boss or a body — or a row in the tree · Esc cancels`;
     const onRow = fid => {
-      bus.off('feature-selected', onRow);
+      dropRowWait();
       if (!profilePickArmed() || !fid) return;   // the pick was cancelled meanwhile
       cancelProfilePick();
       open();                         // the row IS the selection now
     };
-    bus.on('feature-selected', onRow);
+    waitForRow(onRow);
     beginProfilePick((kind, data) => {
-      bus.off('feature-selected', onRow);
+      dropRowWait();
       if (kind === 'profile') {
         say(`⚠ ${spec.name} repeats a feature or a body — a sketch is not one. Click a ` +
           'hole, a boss, or a body. Keep picking, or Esc.');

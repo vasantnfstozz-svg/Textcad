@@ -208,15 +208,18 @@ def _fuse_all(parts):
 def _body_pattern(body, copies, op: str, what: str):
     """a BODY seed: the union of the body and its moved copies (the legacy
     behaviour, kept exactly — separate copies come back as separate pieces,
-    which the document reports; probe §8)"""
+    which the document reports; probe §8).
+
+    What it must NOT do is measure the union against the body and refuse when
+    they match: a body that is already n-fold symmetric about the axis patterns
+    to itself, and every such design in the wild built before this op grew a
+    seed. Refusing here would fail it at REBUILD — the one thing a saved design
+    may never do (P4 code review). A pattern that asks for no motion at all is
+    a different thing, and is refused where the motion is decided, by name."""
     try:
-        out = _fuse_all([body] + copies)
+        return _fuse_all([body] + copies)
     except Exception:
         raise ValueError(f"{op}: the kernel could not fuse the copies — {what}") from None
-    if abs(float(out.volume) - float(body.volume)) < _TOL:
-        raise ValueError(f"{op}: every copy lies on the body itself — a body pattern needs an "
-                         f"axis or a direction beside the body; click a face or a bore for it")
-    return out
 
 
 # ---------------------------------------------------------------- circular ---
@@ -289,6 +292,9 @@ def linear_pattern(feature, count, dx: float = 0.0, dy: float = 0.0, dz: float =
         step = _vec((dx or 0.0, dy or 0.0, dz or 0.0), "the step (dx, dy, dz)", op)
         if n == 1:
             return feature
+        if step.length < 1e-9:                   # every copy lands ON the seed
+            raise ValueError(f"{op}: the step is 0, so all {n} copies land on the seed — give "
+                             f"dx, dy or dz (or a direction and a distance)")
         moves = [(lambda i: (lambda s: Location(step * i) * s))(i) for i in range(1, n)]
         if not seed:
             return _body_pattern(feature, [m(feature) for m in moves], op, what)
@@ -325,6 +331,23 @@ def linear_pattern(feature, count, dx: float = 0.0, dy: float = 0.0, dz: float =
 
 
 # ------------------------------------------------ what the PLAN needs to know ---
+
+def legacy_step(params: dict):
+    """A LEGACY linear_pattern's per-copy step (dx, dy, dz) read as the stored
+    form the tool edits: (direction, distance), or None when there is no step.
+    ONE place turns the old parameters into the new ones — without it the panel
+    opens such a feature aimed at world X and the first distance typed silently
+    re-aims the pattern (P4 code review)."""
+    try:
+        step = Vector(float(params.get("dx") or 0.0), float(params.get("dy") or 0.0),
+                      float(params.get("dz") or 0.0))
+    except (TypeError, ValueError):
+        return None
+    if step.length < 1e-9:
+        return None
+    d = step.normalized()
+    return [round(d.X, 9), round(d.Y, 9), round(d.Z, 9)], round(step.length, 6)
+
 
 def seed_centre(removed, added, body) -> Vector:
     """where the seed IS: the centroid of the material it changed (its removed

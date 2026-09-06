@@ -174,9 +174,19 @@ def test_a_copy_tangent_to_an_edge_is_a_broken_solid_and_refused():
         pattern.polar_pattern(h, 4, axis=AXIS_TOP, seed="hole1", _before=b, _after=h)
 
 
-def test_a_body_pattern_whose_copies_lie_on_the_body_is_refused():
-    with pytest.raises(ValueError, match="every copy lies on the body itself"):
-        pattern.polar_pattern(b3d.Cylinder(10, 5), 4)     # about its own axis: 4 × the same
+def test_a_symmetric_body_patterns_to_itself_instead_of_failing():
+    """A body pattern whose copies land back on the body is a no-op, NOT a
+    failure. Measuring the union against the body and refusing broke every
+    saved design with a rotationally symmetric body pattern — at rebuild, the
+    one thing a design may never do (P4 code review). What is refused is a
+    pattern that asks for no motion at all, by name, below."""
+    out = healthy(pattern.polar_pattern(b3d.Cylinder(10, 5), 4))   # about its own axis
+    assert out.volume == pytest.approx(PI * 100 * 5)
+
+
+def test_a_body_pattern_with_no_step_at_all_is_refused_by_name():
+    with pytest.raises(ValueError, match=r"the step is 0, so all 4 copies land on the seed"):
+        pattern.linear_pattern(box(20, 20, 5), 4)         # count, but no dx / dy / dz
 
 
 # ------------------------------------------------------- rectangular: the op ---
@@ -376,3 +386,125 @@ def test_the_plan_refuses_a_sketch_and_nothing_with_a_sentence():
     assert not p["ok"] and "a sketch is not a feature to repeat" in p["error"]
     p = toolplan.plan(doc, {"tool": "linear_pattern"})
     assert not p["ok"] and "needs a feature or a body to repeat" in p["error"]
+
+
+# ------------------------------------------- what the P4 code review found ---
+# Seven fixes, each with the failure it prevents. The three frontend ones
+# (a cancelled row-wait hijacking the next tool, a tree row hiding a curved
+# pick, a Direction-2-only pattern refused as empty) are in
+# tests/e2e/test_pattern_tool.py — they are browser behaviour.
+
+def doc_with_pattern(at=(20, 0)):
+    doc = doc_with_hole(at)
+    doc.add("pat1", "polar_pattern", {"count": 4, "seed": "hole1", "axis": {"face": "top"}},
+            inputs=["hole1"])
+    return doc
+
+
+def test_renaming_a_seed_renames_it_inside_every_pattern_of_it():
+    """`inputs` is not the only reference in the tree: a pattern NAMES its seed
+    in its params. Renaming used to rewrite only the inputs, so the rename the
+    docstring promises can never break the tree broke every pattern of the
+    renamed feature ("the seed 'hole1' is not in the tree")."""
+    doc = doc_with_pattern()
+    assert doc.rebuild(), doc.get("pat1").problems
+    doc.rename("hole1", "bolt_hole")
+    assert doc.get("pat1").params["seed"] == "bolt_hole"
+    assert doc.rebuild(), doc.get("pat1").problems
+    assert doc.get("pat1").volume == pytest.approx(80 * 80 * 12 - 4 * PLUG, abs=0.05)
+
+
+def test_deleting_a_seed_takes_the_patterns_of_it_along():
+    """The same blind spot on the way out: healing rewired the pattern's INPUT
+    to the seed's upstream body and left `seed` pointing at a ghost."""
+    doc = doc_with_pattern()
+    assert doc.rebuild()
+    plan = doc.remove_plan("hole1")
+    assert "pat1" in plan["deleted"]
+    doc.remove("hole1")
+    assert [f.id for f in doc.features] == ["box1"]
+    assert doc.rebuild()
+
+
+def test_strict_delete_names_a_pattern_as_a_dependent_of_its_seed():
+    doc = doc_with_pattern()
+    assert doc.rebuild()
+    with pytest.raises(ValueError, match=r"cannot remove 'hole1': used by \['pat1'\]"):
+        doc.remove("hole1", mode="strict")
+
+
+def test_striking_a_seed_strikes_the_pattern_that_repeats_it():
+    doc = doc_with_pattern()
+    assert doc.rebuild()
+    doc.strike("hole1")
+    assert doc.get("pat1").suppressed and doc.get("hole1").suppressed
+    assert doc.rebuild(), doc.get("pat1").problems
+    # a struck node is a pass-through: the plate comes back whole, both gone
+    assert doc._parts["pat1"].volume == pytest.approx(80 * 80 * 12, abs=0.05)
+
+
+def test_editing_a_legacy_step_pattern_keeps_its_own_direction_and_distance():
+    """A legacy linear_pattern stores (dx, dy, dz) per copy and no direction.
+    The plan used to ignore it, so the panel opened aimed at world X and the
+    first distance the user has to type re-aimed the pattern from +Y to +X."""
+    doc = doc_with_hole()
+    doc.add("pat1", "linear_pattern", {"count": 4, "dy": 30}, inputs=["hole1"])
+    doc.add("pat2", "linear_pattern", {"count": 3, "dx": 6, "dy": 8}, inputs=["hole1"])
+    built(doc)
+    p = toolplan.plan(doc, {"tool": "linear_pattern", "feature_id": "pat1"})
+    assert p["ok"], p
+    assert p["along"] == "y" and p["direction"] == pytest.approx([0, 1, 0])
+    assert p["params"]["direction"] == pytest.approx([0, 1, 0])
+    assert p["params"]["distance"] == pytest.approx(30)          # the panel opens on 30, not 0
+    # a diagonal step is an alternative of its own, and SURVIVES the next plan
+    q = toolplan.plan(doc, {"tool": "linear_pattern", "feature_id": "pat2"})
+    assert q["along"] == "stored" and q["params"]["distance"] == pytest.approx(10)
+    assert q["direction"] == pytest.approx([0.6, 0.8, 0])
+    q2 = toolplan.plan(doc, {"tool": "linear_pattern", "feature_id": "pat2", "along": "stored"})
+    assert q2["direction"] == pytest.approx([0.6, 0.8, 0])
+    assert "stored" in [a["name"] for a in q2["alternatives"]]
+
+
+def test_the_panels_first_push_on_a_legacy_pattern_moves_nothing():
+    """The measurement behind the fix above: open a legacy body pattern, push
+    exactly what the panel would push from the plan, and the solid must be the
+    one that was there — not the same pattern re-aimed along world X."""
+    doc = doc_with_hole()
+    doc.add("pat1", "linear_pattern", {"count": 4, "dy": 30}, inputs=["hole1"])
+    built(doc)
+    was = doc._parts["pat1"].volume
+    p = toolplan.plan(doc, {"tool": "linear_pattern", "feature_id": "pat1"})
+    doc.edit_many("pat1", {                       # the panel's boxes, as the tool sends them
+        "seed": p["params"]["seed"], "direction": p["params"]["direction"],
+        "direction2": p["params"]["direction2"],
+        # exactly what the panel shows: the plan's distance when it has one,
+        # else the 0 the box opened on
+        "distance": p["params"].get("distance", 0),
+        "count": 4, "distance_type": "spacing", "count2": 1, "distance2": 0})
+    assert doc.rebuild(), doc.get("pat1").problems
+    assert doc._parts["pat1"].volume == pytest.approx(was, rel=1e-9)
+    moved = doc._parts["pat1"] - doc._parts["hole1"]      # where the copies are
+    assert sorted(round(sol.center().Y, 3) for sol in moved.solids()) != [0.0]
+
+
+def test_a_pattern_already_built_this_session_replans_on_its_own_body():
+    """In a NEW session the tool has no `feature_id`, so the planner walked the
+    tree down from the seed — straight into the pattern it had just built, and
+    the next plan aimed the axis at the already-patterned solid. `own_id` says
+    "that one is mine"."""
+    doc = doc_with_hole()
+    built(doc)
+    first = toolplan.plan(doc, {"tool": "polar_pattern", "seed_id": "hole1"})
+    assert first["input"] == "hole1"
+    doc.add("pat1", "polar_pattern", {"count": 4, "seed": "hole1",
+                                      "axis": first["params"]["axis"]}, inputs=[first["input"]])
+    built(doc)
+    stale = toolplan.plan(doc, {"tool": "polar_pattern", "seed_id": "hole1"})
+    assert stale["input"] == "pat1"                        # the walk alone: its own output
+    live = toolplan.plan(doc, {"tool": "polar_pattern", "seed_id": "hole1", "own_id": "pat1"})
+    assert live["ok"] and live["input"] == "hole1" and live["seed"] == "hole1"
+    assert live["radius"] == pytest.approx(20, abs=1e-3)
+    assert live["axis"] == {"face": "top"} or "face_center" in live["axis"]
+    # in flight (created in the browser, not on the server yet): simply ignored
+    assert toolplan.plan(doc, {"tool": "polar_pattern", "seed_id": "hole1",
+                               "own_id": "polar_pattern_9"})["ok"]

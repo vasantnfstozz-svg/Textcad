@@ -42,6 +42,11 @@ function circular() {
     repick: 'Click a bore or a flat face of the body for the axis · type the count · Esc cancels',
     onRepick(st, data, replan) { replan({ axis_pick: { center: data.center, normal: data.normal || null } }); },
     fields: { typed: ['Count', 'Angle'] },
+    /* once this session HAS built its pattern, every replan is about that
+       feature: without it the server walks the tree down from the seed and
+       lands on the pattern's own output, re-aiming the axis at the already-
+       patterned solid (P4 code review) */
+    planExtra: st => (st.featureId ? { own_id: st.featureId } : {}),
     params: st => ({ seed: stored(st).seed ?? null, axis: stored(st).axis ?? null,
                      count: count('cpCount'), angle: num('cpAngle') || FULL }),
     show(st, p) {
@@ -84,8 +89,10 @@ function rectangular() {
     ops: { feature: 'linear_pattern', face: 'linear_pattern' },
     eats: true, anyFace: true,
     fields: { change: ['DistType'], typed: ['Count', 'Dist', 'Count2', 'Dist2'] },
-    /* the directions are the plan's; `along` says which alternative leads */
-    planExtra: st => (st && st.plan ? { along: g('rpAlong').value } : {}),
+    /* the directions are the plan's; `along` says which alternative leads, and
+       `own_id` keeps a replan on the feature this session built (see Circular) */
+    planExtra: st => ({ ...(st.plan ? { along: g('rpAlong').value } : {}),
+                        ...(st.featureId ? { own_id: st.featureId } : {}) }),
     params: st => ({ seed: stored(st).seed ?? null,
                      direction: stored(st).direction ?? null, direction2: stored(st).direction2 ?? null,
                      count: count('rpCount'), distance: num('rpDist'),
@@ -105,7 +112,11 @@ function rectangular() {
                distance_type: p.distance_type || 'spacing',
                count2: Number(p.count2) || 1, distance2: Number(p.distance2) || 0 };
     },
-    isEmpty: (pr, st) => !st.plan || !(pr.count > 1) || !pr.distance,
+    /* honest zero: nothing is built until ONE of the two rows has both a count
+       above 1 and a distance — Direction 2 alone is a pattern too (it used to be
+       refused silently, and OK then blamed "the distance", P4 review) */
+    isEmpty: (pr, st) => !st.plan
+      || !((pr.count > 1 && pr.distance) || (pr.count2 > 1 && pr.distance2)),
     /* half-made: a second row asked for without its distance, or the distance
        taken away — the op would refuse and the revert would undo the choice */
     hold(pr) {
@@ -115,8 +126,8 @@ function rectangular() {
         return 'Direction 2: drag the second arrow or type its distance (or set Count 2 back to 1).';
       return null;
     },
-    nothing: 'Nothing patterned — the distance was 0. Open Rectangular Pattern again, then drag ' +
-             'an arrow or type a distance before OK.',
+    nothing: 'Nothing patterned — no direction had both a count above 1 and a distance. Open ' +
+             'Rectangular Pattern again, then drag an arrow or type a distance before OK.',
     describe: p => `${p.count} × ${p.count2} copies, ${p.distance} / ${p.distance2} mm`,
     split: () => 'separate copies are what a body pattern makes — pattern a feature of the ' +
                  'body instead if you wanted one part.',
@@ -125,6 +136,14 @@ function rectangular() {
         const sel = g('rpAlong');
         sel.innerHTML = plan.alternatives.map(a => `<option value="${a.name}">${a.label}</option>`).join('');
         sel.value = plan.along;
+        // a LEGACY pattern (a per-copy dx / dy / dz step, no stored direction):
+        // the plan read that step as a direction AND a distance — show the
+        // distance, or the first one typed here would re-aim the pattern (R1:
+        // the number is the server's, never derived from the step in JS)
+        if (plan.params && plan.params.distance != null && !st.legacyShown) {
+          st.legacyShown = true;
+          g('rpDist').value = plan.params.distance;
+        }
         beginExtrudeArrow(plan.centre, plan.direction, num('rpDist'),
           v => setBox('rpDist', v),
           async v => { setBox('rpDist', v); await ctl.apply(); });

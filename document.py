@@ -150,6 +150,14 @@ def _kind_of(op: str) -> str:
 
 DELETE_MODES = ("auto", "cascade", "strict")
 
+# A parameter that NAMES another feature. `inputs` is the body a feature works
+# ON; this is the feature it points AT -- a pattern's `seed`, the tree's one
+# reference that is not an input. Rename and delete must walk BOTH: renaming
+# the seed used to break every pattern of it ("the seed 'hole1' is not in the
+# tree") and deleting the seed left a pattern repeating a ghost, because both
+# only ever looked at `inputs` (found by the P4 code review).
+REF_PARAMS = {op: ("seed",) for op in pattern.PATTERN_OPS}
+
 # ---------------------------------------------------------------------------
 # Rebuild cache: a feature's output is a pure function of (op, params, inputs)
 #
@@ -463,6 +471,13 @@ class Document:
             [[f.id, self._sigs.get(f.id), f.suppressed] for f in self.features]
             + [self.rollback], default=str).encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def param_refs(f: "Feature") -> list:
+        """The features `f` names in its PARAMS (a pattern's `seed`) -- see
+        REF_PARAMS. Every id here is as much a dependency as an input."""
+        return [str(f.params[k]) for k in REF_PARAMS.get(f.op, ())
+                if f.params.get(k)]
+
     def rename(self, old: str, new: str) -> None:
         """Rename a feature EVERYWHERE it is referenced (Fusion's browser
         rename). The id doubles as the reference key, so inputs, the rollback
@@ -480,6 +495,9 @@ class Document:
         f.id = new
         for x in self.features:
             x.inputs = [new if d == old else d for d in x.inputs]
+            for k in REF_PARAMS.get(x.op, ()):    # a pattern's seed is a reference too
+                if x.params.get(k) == old:
+                    x.params[k] = new
         if self.rollback == old:
             self.rollback = new
         if old in self._parts:
@@ -589,7 +607,9 @@ class Document:
         kinds = self._kinds()
 
         if mode == "strict":
-            dependents = [f.id for f in self.features if feature_id in f.inputs]
+            dependents = [f.id for f in self.features
+                          if feature_id in f.inputs
+                          or feature_id in self.param_refs(f)]
             if dependents:
                 raise ValueError(
                     f"cannot remove '{feature_id}': used by {dependents}")
@@ -614,7 +634,11 @@ class Document:
                             base_ok = False  # cut's FIRST input is the stock
                     elif keep not in ins:
                         ins.append(keep)     # never feed one node twice
-                if len(ins) < _min_inputs(f.op) or (f.op == "cut" and not base_ok):
+                # a pattern whose SEED is going cannot be healed: rewiring it to
+                # the seed's upstream would repeat a different feature, so it goes
+                lost_seed = any(r in gone for r in self.param_refs(f))
+                if (lost_seed or len(ins) < _min_inputs(f.op)
+                        or (f.op == "cut" and not base_ok)):
                     newly.add(f.id)
                 elif ins != f.inputs:
                     rewired[f.id] = ins
@@ -674,7 +698,8 @@ class Document:
             for f in self.features:
                 if f.id in gone or f.id in swept:
                     continue
-                if fid in rewired.get(f.id, f.inputs):
+                if (fid in rewired.get(f.id, f.inputs)
+                        or fid in self.param_refs(f)):   # a live pattern's seed stays
                     return True
             return False
 

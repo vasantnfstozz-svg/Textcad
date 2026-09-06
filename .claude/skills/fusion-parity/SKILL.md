@@ -23,7 +23,12 @@ were each learned from a correction — do not regress them.
    selected tree row feeds the tool exactly like a viewport pick, an explicit
    argument beats a lingering pick, and clicking a tree row REPLACES the
    viewport pick — one selection set, like Fusion (tree.js selectFeature
-   calls viewport.clearPick).
+   calls viewport.clearPick). **The converse is not true**, so the ORDER
+   matters: a viewport pick does not clear the selected row, which is why the
+   row ranks LAST in tool.js `currentSelection` — below every pick, curved
+   ones included. Put a tree-row kind above a pick kind and a row selected
+   minutes ago silently hides the face just clicked (P4: Pattern's `feature`
+   kind cost Extrude and Revolve their "needs a FLAT face" refusal).
 3. **Direct manipulation first.** Numbers come from dragging handles in the
    viewport (arrow perpendicular to the profile/face, riding the moving face,
    fixed comfortable size, always rendered on top). The panel is only the
@@ -171,6 +176,15 @@ were each learned from a correction — do not regress them.
   by the tool's `hide()`, never by a document change. A tool declares it with
   `repick` (tool.js `armRepick`), and the face pick carries `point` — WHERE
   the face was clicked — for every tool whose input is a point on a face.
+- **Whatever else waits for that pick must die WITH it (2026-09-06).** A tool
+  that also accepts a tree row while it waits subscribes to a bus event
+  (`feature-selected`), and Esc / a document change / another tool cancels the
+  PICK without ever calling the subscription's callbacks. Removing the handler
+  only inside those callbacks leaks it, and the next tool's row click is
+  answered by the previous tool (P4: press Circular, Esc, press Rectangular,
+  click a row — CIRCULAR opened). Keep one waiter in a module-level slot,
+  registered and dropped in one pair of functions (tool.js `waitForRow` /
+  `dropRowWait`), and drop it wherever the pick is cancelled.
 
 ## When unsure about a Fusion behavior
 

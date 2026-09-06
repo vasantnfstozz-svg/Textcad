@@ -59,6 +59,16 @@ a pattern row and the ring / arrows come back at the stored values.
   seed body's latest solid descendant (the tip), the pattern row is appended
   there; `seed: "hole1"` is a param, `seed: null` is a body pattern. The op
   eats its body (a modifier in, a modifier out — no combiner row).
+* **`seed` is a REFERENCE, the tree's only one that is not an input**
+  (`document.REF_PARAMS`). Rename walks it, so renaming a seed renames it
+  inside every pattern of it; delete walks it, so deleting (or striking) a seed
+  takes the patterns of it along — rewiring one to the seed's upstream body
+  would silently make it repeat a DIFFERENT feature.
+* **The tool's own feature, mid-session** (`own_id` on the plan request): once
+  a NEW session has built its pattern, replanning is about THAT feature —
+  otherwise the walk to the tip lands on the pattern's own output and the next
+  plan aims the axis at the already-patterned solid. `feature_id` stays the
+  edit-session key; `own_id` is ignored while the feature is still in flight.
 * **Stored forms are ONE each** (the Hole review's lesson): the circular
   `axis` is `null` (legacy: world Z through the origin), a world name `"+Z"`
   (through the origin — the AI's vocabulary), a face pick / name (`{face_center,
@@ -67,7 +77,10 @@ a pattern row and the ring / arrows come back at the stored values.
   explicit `{origin, dir}` (a body seed from the tree, no face to hang it on).
   The rectangular `direction` / `direction2` are world unit vectors (a
   direction rides a translated face untouched; only a rotated one would move
-  it) — `null` keeps the legacy `dx, dy, dz` step.
+  it) — `null` keeps the legacy `dx, dy, dz` step. EDITING such a legacy
+  feature reads that step as a direction AND a distance (`pattern.legacy_step`,
+  in the plan's `params`), so the panel opens on what the pattern actually does
+  instead of re-aiming it to world X with the first distance typed.
 
 ## The handles and the panel (rules 3, 4, 5)
 
@@ -106,13 +119,14 @@ a pattern row and the ring / arrows come back at the stored values.
 
 | Situation | What is said |
 |---|---|
-| Count 1 (circular) / distance 0 (rectangular) on OK | "Nothing patterned — the count was 1. Open Circular Pattern again and type how many copies before OK." / "Nothing patterned — the distance was 0. Open Rectangular Pattern again, then drag an arrow or type a distance before OK." |
+| Count 1 (circular) on OK, or no rectangular direction with BOTH a count above 1 and a distance (Direction 2 alone IS a pattern) | "Nothing patterned — the count was 1. Open Circular Pattern again and type how many copies before OK." / "Nothing patterned — no direction had both a count above 1 and a distance. Open Rectangular Pattern again, then drag an arrow or type a distance before OK." |
 | Count < 1, not a whole number, angle outside 0 < a ≤ 360 | `polar_pattern: count must be a whole number ≥ 1 (got 0)` · `polar_pattern: the angle must be between 0 and 360 (got 400) — 360 is a full circle` |
 | A seed the tree no longer has, or one struck out | `polar_pattern: the seed 'hole1' is not in the tree — pick the feature to repeat again` |
 | A seed that is not upstream of the body | `polar_pattern: 'hole1' is not part of box1's history — a pattern repeats a feature of the body it is on` |
 | A seed whose delta is empty (a feature that changed nothing) | `polar_pattern: 'fillet1' neither removed nor added material — there is nothing to repeat` |
 | A copy that lands off the body (probe §7: removes exactly 0.0) | `polar_pattern: copy 3 of 6 lands off the body (nothing to cut there) — a smaller count, another axis, or move the seed` |
 | A copy whose cut leaves an open shell (probe §7: tangent to an edge) | `polar_pattern: copy 2 of 4 leaves a broken solid (an open shell) — it runs exactly along an edge; change the count or the angle` (the framework puts back the last value that built) |
+| A legacy body pattern with no step at all (`count`, no `dx / dy / dz`) | `linear_pattern: the step is 0, so all 4 copies land on the seed — give dx, dy or dz (or a direction and a distance)`. A body pattern whose copies land back ON a symmetric body is NOT refused: it built before the op grew a seed, and a saved design may never stop rebuilding. |
 | A body pattern whose copies are separate pieces (probe §8: healthy) | allowed — the framework's pieces warning with the remedy "separate copies are what a body pattern makes; pattern a feature of the body instead if you wanted one part" |
 | An axis / direction that cannot be resolved (the face is gone) | `polar_pattern: the axis face is gone — the face it was taken from no longer exists; click a face for the axis` |
 | A sketch row or a sketch pick as the seed | `Circular Pattern repeats a feature or a body — a sketch is not one (sketch patterns come with the sketch tools). Click a hole, a boss, or a body.` |
@@ -142,7 +156,10 @@ a pattern row and the ring / arrows come back at the stored values.
   a sentence, never a raw kernel error; every face of the box must build).
 * **Browser journeys**: click the hole's wall + Circular + type 6 + OK; drag
   the ring to 180; Rectangular: drag arrow 1, type Count 4, drag arrow 2;
-  edit-and-cancel restores; a click on a bore re-aims the ring.
+  edit-and-cancel restores; a click on a bore re-aims the ring. Plus the three
+  the P4 code review earned: Circular → Esc → Rectangular → a row click opens
+  RECTANGULAR; a curved pick beats a tree row left selected; Direction 2 alone
+  builds.
 
 ## The user's five-step checklist (R9)
 

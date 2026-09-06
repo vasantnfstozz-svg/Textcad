@@ -5,6 +5,7 @@ against the kernel: the volume the copies take away, the stored seed and axis,
 what Cancel put back.
 """
 import math
+import re
 import time
 
 import httpx
@@ -292,4 +293,83 @@ def test_a_click_on_a_bore_re_aims_the_ring(page, fresh_doc, server):
     assert f["inputs"] == ["bore"]
     page.click("#cpOk")
     page.wait_for_selector("#cpDialog", state="hidden")
+    assert page.errors == []
+
+
+# ------------------------------------------- what the P4 code review found ---
+
+def press(page, op):
+    """the ribbon button, with nothing selected: the tool waits for a pick"""
+    page.locator("button.tab", has_text="Modify").click()
+    page.click(f"#ribbon .rbtn[title='{op}']")
+
+
+def test_a_cancelled_wait_for_a_row_does_not_hijack_the_next_tool(page, fresh_doc, server):
+    """Press Circular with nothing selected (it waits for a row or a face),
+    press Esc, then press Rectangular and click a row: RECTANGULAR must open.
+    The waiting handler used to stay on the bus after the Esc and answered the
+    next tool's row click first, opening Circular instead."""
+    setup(page)
+    press(page, "polar_pattern")
+    page.wait_for_timeout(400)
+    assert not page.is_visible("#cpDialog"), "nothing selected: it waits, it does not open"
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    press(page, "linear_pattern")
+    page.wait_for_timeout(400)
+    row(page, "hole1").locator(".nname").click()
+    page.wait_for_selector("#rpDialog", state="visible", timeout=15000)
+    assert not page.is_visible("#cpDialog"), "Circular answered Rectangular's row click"
+    assert page.input_value("#rpProfile") == "hole1"
+    page.click("#rpCancel")
+    page.wait_for_selector("#rpDialog", state="hidden")
+    assert page.errors == []
+
+
+def test_a_curved_pick_outranks_a_tree_row_left_selected(page, fresh_doc, server):
+    """A tree click clears the viewport pick, but a viewport pick never cleared
+    the tree row — so a row selected earlier hid the bore the user just clicked
+    and Pattern seeded from the whole body instead of from the bore."""
+    setup(page, BUILD_BORE)
+    # the PLATE's row, left selected ("b" exactly — "bore" is a row too)
+    page.locator("#tree .nname").filter(has_text=re.compile(r"^b$")).click()
+    page.wait_for_function(
+        "async () => (await import('/static/js/state.js')).S.selected === 'b'", timeout=5000)
+    cam = page.evaluate("() => window.__vp.camera.position.toArray()")
+    dx, dy = cam[0] + 10, cam[1]
+    L = (dx * dx + dy * dy) ** 0.5
+    sp = page.evaluate(TO_SCREEN, [-10 - 5 * dx / L, -5 * dy / L, 3.0])
+    page.mouse.click(sp["x"], sp["y"])                # the ⌀10 bore's wall: a CURVED pick
+    page.wait_for_function(
+        "async () => !!(await import('/static/js/state.js')).S.pickedCurved", timeout=10000)
+    press(page, "polar_pattern")
+    page.wait_for_selector("#cpDialog", state="visible", timeout=15000)
+    assert page.input_value("#cpProfile") == "bore"   # the bore, not "the body bore"
+    page.fill("#cpCount", "2")
+    f = wait_feature(server, "polar_pattern1")
+    assert f["params"]["seed"] == "bore", f
+    page.click("#cpCancel")
+    page.wait_for_selector("#cpDialog", state="hidden")
+    assert page.errors == []
+
+
+def test_direction_2_alone_is_a_pattern(page, fresh_doc, server):
+    """Count 1 with a second row of 3 builds 3 copies. It used to be judged
+    empty — nothing was created, silently, and OK then blamed "the distance"."""
+    setup(page)
+    box = feature(server, "b")["volume"]
+    open_on_row(page, "hole1", "linear_pattern", "#rpDialog")
+    page.wait_for_function("() => window.__vp.gizmos().arrow2", timeout=15000)
+    page.fill("#rpCount", "1")
+    page.fill("#rpCount2", "3")
+    page.wait_for_timeout(500)
+    assert feature(server, "linear_pattern1") is None, "no distance yet: nothing built"
+    page.fill("#rpDist2", "15")
+    f = wait_volume(server, "linear_pattern1", box - 3 * PLUG)
+    assert f["params"]["count"] == 1 and f["params"]["count2"] == 3
+    assert f["params"]["direction2"] == pytest.approx([0, 1, 0])
+    page.click("#rpOk")
+    page.wait_for_selector("#rpDialog", state="hidden")
+    page.wait_for_timeout(800)
+    assert row(page, "linear_pattern1").count() == 1, "OK kept the pattern"
     assert page.errors == []
