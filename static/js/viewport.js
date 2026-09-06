@@ -266,8 +266,11 @@ export function initViewport() {
        three (the ghost/ring were silently missing there once) */
     gizmos: () => ({ arrow: !!exArrow, arrow2: !!exArrow2, ghost: !!exGhost, ring: !!taperRing,
                      axis: !!axisLine, lathe: !!rvGhost, glow: edgeGlow.length,
-                     edgePick: !!edgePickCb, hole: !!holeMarker,
+                     edgePick: !!edgePickCb, hole: !!holeMarker, plane: !!planeQuad,
                      facePick: !!profilePickCb }),
+    /* the mirror plane as drawn: where it sits and which way it faces */
+    planeQuadInfo: () => planeQuad ? { origin: planeQuad.frame.origin,
+                                       normal: planeQuad.frame.z_dir } : null,
     /* the hole marker as drawn: its world centre and radius */
     holeMarkerInfo: () => holeMarker ? {
       centre: new THREE.Vector3().setFromMatrixPosition(holeMarker.line.matrix).toArray(),
@@ -389,7 +392,7 @@ export function initViewport() {
     if (pickMode) pickAt(e);
   });
   renderer.domElement.addEventListener('pointermove', e => {
-    if (planePickCb) planePickHover(e);
+    if (planePickCb || (profilePickCb && profilePickOpts.planes)) planePickHover(e);
     else if (edgePickCb) edgePickHover(e);
   });
   window.addEventListener('keydown', e => {
@@ -552,13 +555,16 @@ export const pickWhat = (opts = {}) =>
 export function beginProfilePick(onPick, opts = {}) {
   profilePickCb = onPick;
   profilePickOpts = { name: 'Extrude', faces: true, profiles: true, hint: null, sticky: false,
-                      anyFace: false, ...opts };
+                      anyFace: false, planes: false, ...opts };
   renderer.domElement.style.cursor = 'crosshair';
   const h = document.getElementById('placeHint');
   h.textContent = profilePickOpts.hint
     || `Select ${pickWhat(profilePickOpts)} to ${profilePickOpts.name.toLowerCase()} ` +
        '· Esc to cancel';
   h.style.display = 'block';
+  // a tool whose pick may be an ORIGIN PLANE (Mirror's plane) shows the three
+  // glass quads the sketch tool shows; a click on one answers ('plane', 'YZ')
+  if (profilePickOpts.planes) buildOriginPlanes();
 }
 
 /* is a pick waiting for a click? A tool with a session-long pick asks before
@@ -571,6 +577,7 @@ export function cancelProfilePick() {
   profilePickCb = null;
   renderer.domElement.style.cursor = pickMode ? 'crosshair' : '';
   document.getElementById('placeHint').style.display = 'none';
+  if (profilePickOpts.planes) clearOriginPlanes();
 }
 
 /* A one-shot pick is spent by the click that answers it; a STICKY one belongs
@@ -620,6 +627,11 @@ function profilePickAt(e) {
         `needs ${pickWhat(profilePickOpts)}. Keep picking, or Esc.`);
       return;
     }
+  }
+  if (profilePickOpts.planes) {                    // an origin plane, outside the body's silhouette
+    const quads = originPlanes.filter(o => o.userData.plane);
+    const pHit = raycaster.intersectObjects(quads, false)[0];
+    if (pHit) { answerPick('plane', pHit.object.userData.plane); return; }
   }
   // clicked empty space — keep waiting (don't cancel)
 }
@@ -1199,6 +1211,35 @@ export function beginAxisLine(originArr, dirArr, half) {
 export function endAxisLine() {
   if (!axisLine) return;
   scene.remove(axisLine); axisLine.geometry.dispose(); axisLine = null;
+}
+
+/* ---------------- a tool's PLANE (Mirror: the mirror plane, a gold square) ----
+   Placed by the plan's frame {origin, x_dir, y_dir, z_dir} and sized by its
+   `half` — where it is and which way it faces are the server's (R1). */
+let planeQuad = null;
+
+export function beginPlaneQuad(frame, half) {
+  endPlaneQuad();
+  const geo = new THREE.PlaneGeometry(2 * half, 2 * half);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color: 0xffc400, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false }));
+  const edge = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({
+    color: 0xffc400, transparent: true, opacity: 0.95, depthTest: false }));
+  const basis = new THREE.Matrix4().makeBasis(
+    new THREE.Vector3(...frame.x_dir).normalize(),
+    new THREE.Vector3(...frame.y_dir).normalize(),
+    new THREE.Vector3(...frame.z_dir).normalize()).setPosition(new THREE.Vector3(...frame.origin));
+  for (const o of [mesh, edge]) {
+    o.matrixAutoUpdate = false; o.matrix.copy(basis); o.renderOrder = 1000; scene.add(o);
+  }
+  planeQuad = { mesh, edge, frame };
+}
+export function endPlaneQuad() {
+  if (!planeQuad) return;
+  for (const o of [planeQuad.mesh, planeQuad.edge]) {
+    scene.remove(o); o.geometry.dispose(); o.material.dispose();
+  }
+  planeQuad = null;
 }
 
 /* ---------------- a tool's POINT marker (Hole: the circle it will cut, gold) ----

@@ -815,9 +815,13 @@ class ToolPlanReq(BaseModel):
     chain: bool | None = None           #   (edge_ref dicts or [x, y, z] midpoints); tangent chain on/off
     toggle: dict | None = None          #   one clicked edge to add to / remove from `edges`
     face_point: list | None = None      # tool "hole": where the face was clicked (world) — the hole's centre
-    seed_id: str | None = None          # tools "polar_pattern" / "linear_pattern": the tree row to repeat
+    seed_id: str | None = None          # tools "polar_pattern" / "linear_pattern" / "mirror": the tree row to repeat
+    own_id: str | None = None           #   the feature THIS session built: a replan is about it (P4 review)
     axis_pick: dict | None = None       #   circular: a face clicked while the panel is open — its axis
     along: str | None = None            #   rectangular: which alternative is direction 1 ("x" / "y" / "z")
+    plane_pick: dict | None = None      #   mirror: a face ({center, normal}) or an origin plane ({world})
+                                        #   clicked while the panel is open — the mirror plane; `plane`
+                                        #   (above) names an alternative chosen in the panel
     # measure where a narrowing taper's walls meet, per face (18 kernel offsets
     # per face — asked for lazily, the first time the tool needs a taper limit)
     measure_collapse: bool = False

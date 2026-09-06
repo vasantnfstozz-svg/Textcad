@@ -32,6 +32,7 @@ failure comes back as {"ok": False, "error": "<what to change>"}.
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 
 import build123d as b3d
 from build123d import Plane
@@ -777,32 +778,24 @@ def _same_dir(a, b) -> bool:
         return False
 
 
-def plan_pattern(doc, req: dict) -> dict:
-    """The Circular / Rectangular Pattern tools' plan (specs/pattern.md).
-    Input: `seed_id` (a tree row), or `body_id` + `face_center` [+ `face_point`]
-    (a face pick — provenance says which feature made that face, or that it is
-    the body's own), or `feature_id` (edit: an existing pattern, whose stored
-    seed and axis / directions stand in). `axis_pick` (circular) is a face
-    clicked while the panel is open: its axis replaces the current one.
-    `along` (rectangular) names which alternative is direction 1.
+def _seed_plan(doc, req: dict, tool: str, name: str, verb: str) -> SimpleNamespace:
+    """The seed of a Pattern / Mirror plan, resolved ONE way (specs/pattern.md,
+    specs/mirror.md). Input: `seed_id` (a tree row), or `body_id` +
+    `face_center` [+ `face_point`] (a face pick — provenance says which feature
+    made that face, or that it is the body's own), or `feature_id` (edit: an
+    existing feature, whose stored seed stands in) / `own_id` (the feature THIS
+    session built: replanning must read ITS stored params and the body it sits
+    on, or `_latest_descendant` walks into the tool's own output and the next
+    plan aims at the already-patterned solid — P4 code review; ignored while
+    the feature is still in flight).
 
-    The seed is resolved by ONE rule, `document.delta_features` (the tree's
-    folding rule), and the pattern goes on the seed body's CURRENT state
-    (`input`). Returns what the handles need and nothing the browser could
-    derive (R1): the seed's centre, the ring's frame / radius / axis line for
-    circular, the arrows' directions and the swap alternatives for
-    rectangular, the axis in its ONE stored form and the words for it, and
-    `params` — the stored values a new feature starts from."""
-    tool = str(req.get("tool") or "polar_pattern").lower()
-    circular = tool == "polar_pattern"
-    name = "Circular Pattern" if circular else "Rectangular Pattern"
+    `document.delta_features` (the tree's folding rule) decides what "the
+    feature" means; the tool goes on the seed body's CURRENT state (`tip`).
+    Returns fid, params (stored), tip, part, before, removed, added, seed_param,
+    seed_words, face (the flat face the seed sits on, None for a body), centre
+    (where the seed is) and half (a handle length: ¾ of the body's extent)."""
     fid = req.get("feature_id")
     if not fid:
-        # A NEW session's own feature, once it is built: replanning must read
-        # ITS stored seed / axis and the body it sits on, or _latest_descendant
-        # walks into the pattern the tool just made and the next plan aims the
-        # axis at the already-patterned solid (P4 code review). Ignored while it
-        # is still in flight — then no pattern exists to walk into.
         own = req.get("own_id")
         f_own = _feature(doc, own) if own else None
         if f_own is not None and f_own.op == tool:
@@ -813,7 +806,7 @@ def plan_pattern(doc, req: dict) -> dict:
         tip = (f.inputs or [None])[0]
         params = dict(f.params or {})
         seed = params.get("seed")
-        if seed is None:                          # a body pattern: the body is the seed
+        if seed is None:                          # a body pattern / mirror: the body is the seed
             seed, body_seed = tip, True
     elif seed is None and req.get("face_center") is not None:
         att = provenance.attribute_face(doc, body_id=req.get("body_id"),
@@ -822,12 +815,12 @@ def plan_pattern(doc, req: dict) -> dict:
         if not seed:                              # an unattributable face: the body itself
             seed, body_seed = att.get("body") or req.get("body_id"), True
     if not seed:
-        raise ValueError(f"{name} needs a feature or a body to repeat — click a hole, a boss "
+        raise ValueError(f"{name} needs a feature or a body to {verb} — click a hole, a boss "
                          f"or a body, or select a row in the tree")
     before_id, after_id = (None, seed) if body_seed else doc.delta_features(seed)
     if fid:
         if after_id != tip and after_id not in doc.ancestors(tip):
-            raise ValueError(f"'{seed}' is not part of {tip}'s history — a pattern repeats a "
+            raise ValueError(f"'{seed}' is not part of {tip}'s history — {tool} works on a "
                              f"feature of the body it is on")
     else:
         tip = _latest_descendant(doc, after_id)
@@ -839,16 +832,37 @@ def plan_pattern(doc, req: dict) -> dict:
     if before_id:
         removed, added = pattern.delta(before, after)
         if removed is None and added is None:
-            raise ValueError(f"'{seed}' neither removed nor added material — there is nothing to repeat")
+            raise ValueError(f"'{seed}' neither removed nor added material — there is nothing to {verb}")
         seed_param = seed
         seed_words = seed if tip == seed else f"{seed} (on {tip})"
         face = pattern.seed_face(before, removed, added)
     else:
         removed, added = None, part
         seed_param, seed_words, face = None, f"the body {tip}", None
-    centre = pattern.seed_centre(removed, added, part)
     bb = part.bounding_box()
-    half = round(max(bb.size.X, bb.size.Y, bb.size.Z) * 0.75, 2)
+    return SimpleNamespace(fid=fid, params=params, tip=tip, part=part, before=before,
+                           removed=removed, added=added, seed_param=seed_param,
+                           seed_words=seed_words, face=face,
+                           centre=pattern.seed_centre(removed, added, part),
+                           half=round(max(bb.size.X, bb.size.Y, bb.size.Z) * 0.75, 2))
+
+
+def plan_pattern(doc, req: dict) -> dict:
+    """The Circular / Rectangular Pattern tools' plan (specs/pattern.md). The
+    seed is `_seed_plan`'s; `axis_pick` (circular) is a face clicked while the
+    panel is open: its axis replaces the current one. `along` (rectangular)
+    names which alternative is direction 1.
+
+    Returns what the handles need and nothing the browser could derive (R1):
+    the seed's centre, the ring's frame / radius / axis line for circular, the
+    arrows' directions and the swap alternatives for rectangular, the axis in
+    its ONE stored form and the words for it, and `params` — the stored values
+    a new feature starts from."""
+    tool = str(req.get("tool") or "polar_pattern").lower()
+    circular = tool == "polar_pattern"
+    s = _seed_plan(doc, req, tool, "Circular Pattern" if circular else "Rectangular Pattern", "repeat")
+    fid, params, tip, part, face = s.fid, s.params, s.tip, s.part, s.face
+    seed_param, seed_words, centre, half = s.seed_param, s.seed_words, s.centre, s.half
     out = {"ok": True, "tool": tool, "op": tool, "input": tip, "target_body": tip,
            "seed": seed_param, "seed_words": seed_words, "centre": _vec(centre)}
     if circular:
@@ -914,9 +928,89 @@ def plan_pattern(doc, req: dict) -> dict:
     return out
 
 
+_ORIGIN_PLANES = (("yz", "YZ"), ("xz", "XZ"), ("xy", "XY"))
+
+
+def _same_plane(a, b) -> bool:
+    """are two STORED planes the same one? (a name, a mid-plane, a face)"""
+    if isinstance(a, str) and isinstance(b, str):
+        return a.strip().upper() == b.strip().upper()
+    if isinstance(a, dict) and isinstance(b, dict):
+        if a.get("mid") and b.get("mid"):
+            return str(a["mid"]).upper() == str(b["mid"]).upper()
+        if a.get("face_center") is not None and b.get("face_center") is not None:
+            try:
+                near = all(abs(float(x) - float(y)) < 1e-3
+                           for x, y in zip(a["face_center"], b["face_center"]))
+            except (TypeError, ValueError):
+                return False
+            return near and _same_dir(a.get("face_normal") or (), b.get("face_normal") or ())
+        return a == b
+    return False
+
+
+def plan_mirror(doc, req: dict) -> dict:
+    """The Mirror tool's plan (specs/mirror.md). The seed is `_seed_plan`'s. The
+    plane: `plane_pick` — a face ({center, normal}) or an origin plane
+    ({world: "YZ"}) clicked while the panel is open — beats `plane` (the name
+    of an alternative chosen in the panel), which beats the stored one (edit /
+    the session's own feature); a NEW session starts with none, so nothing is
+    built until the user picks (rule 4). Returns the plane in its ONE stored
+    form and the words for it, the gold quad's frame (the body's centre
+    projected onto the plane) and size, the alternatives (the three origin
+    planes, the body's three mid-planes, and the current plane if it is
+    neither — a picked face, a legacy plane), the name of the current one, and
+    `params` — `join` is True for a new mirror and the stored value on edit, so
+    a legacy copy-only mirror edited here stays one."""
+    s = _seed_plan(doc, req, "mirror", "Mirror", "mirror")
+    part, params = s.part, s.params
+    alts = [{"name": n, "label": f"the {w} plane (through the origin)", "plane": w}
+            for n, w in _ORIGIN_PLANES]
+    alts += [{"name": f"mid{ax.lower()}", "label": f"the body's mid-plane across {ax}",
+              "plane": {"mid": ax}} for ax in ("X", "Y", "Z")]
+    plane, pick = params.get("plane"), req.get("plane_pick")
+    if pick:
+        if pick.get("world"):
+            plane = str(pick["world"]).upper()
+        else:
+            picked = sk.pick_face(part, pick.get("center"), pick.get("normal"))
+            if sk.face_plane(picked) is None:
+                raise ValueError(f"the picked face is {picked.geom_type.name} — a mirror plane is "
+                                 f"a flat face, an origin plane or the body's mid-plane")
+            plane = pattern.stored_face(part, picked)
+    elif req.get("plane"):
+        chosen = next((a for a in alts if a["name"] == req["plane"]), None)
+        if chosen is not None:
+            plane = chosen["plane"]
+    join = bool(params.get("join", False)) if s.fid else True
+    out = {"ok": True, "tool": "mirror", "op": "mirror", "input": s.tip, "target_body": s.tip,
+           "seed": s.seed_param, "seed_words": s.seed_words, "centre": _vec(s.centre),
+           "half": s.half, "params": {"seed": s.seed_param, "plane": plane, "join": join}}
+    if plane is None:
+        out.update({"plane": None, "plane_words": None, "plane_name": "", "frame": None,
+                    "alternatives": alts, "will_build": f"mirror of {s.seed_words} — no plane yet"})
+        return out
+    pl, words = pattern.plane_of(part, plane)         # an unusable stored plane says so here
+    current = next((a for a in alts if _same_plane(a["plane"], plane)), None)
+    if current is None:                               # a face, or a legacy plane: always offered
+        is_face = isinstance(plane, dict) and (plane.get("face") or plane.get("face_center") is not None)
+        alts.insert(0, {"name": "face" if is_face else "stored", "label": words, "plane": plane})
+        current = alts[0]
+    n, o, x = b3d.Vector(pl.z_dir), b3d.Vector(pl.origin), b3d.Vector(pl.x_dir)
+    c = part.bounding_box().center()
+    foot = c - n * (c - o).dot(n)                     # the quad sits ON the body, in the plane
+    out.update({"plane": plane, "plane_words": words, "plane_name": current["name"],
+                "alternatives": alts,
+                "frame": {"origin": _vec(foot), "x_dir": _vec(x), "y_dir": _vec(n.cross(x)),
+                          "z_dir": _vec(n)},
+                "will_build": f"mirror of {s.seed_words} across {words}"})
+    return out
+
+
 _PLANNERS = {"extrude": plan_extrude, "revolve": plan_revolve, "sketch": plan_sketch,
              "fillet": plan_fillet, "chamfer": plan_fillet, "hole": plan_hole,
-             "polar_pattern": plan_pattern, "linear_pattern": plan_pattern}
+             "polar_pattern": plan_pattern, "linear_pattern": plan_pattern,
+             "mirror": plan_mirror}
 
 
 def plan(doc, req: dict) -> dict:

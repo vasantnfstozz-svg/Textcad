@@ -58,7 +58,11 @@ OP_NOTES = {
     "polygon_plate": "Centered on the origin.",
     "move": "RELATIVE offset in mm from the part's current (origin-centered) position.",
     "rotate": "Spins the part about the chosen axis THROUGH THE ORIGIN.",
-    "mirror": "Mirrors across a principal plane and RETURNS A COPY.",
+    "mirror": "plane \"XY\"/\"XZ\"/\"YZ\" (through the origin), a face {\"face\": \"top\"}, "
+              "the body's mid-plane {\"mid\": \"X\"} or {\"origin\", \"normal\"}. With "
+              "\"join\": true the body is fused with its reflection (one symmetric part); "
+              "with \"seed\": a feature's id that FEATURE is mirrored on the body instead. "
+              "Without either it RETURNS ONLY THE COPY (legacy).",
     "fillet": "vertical = the 4 upright corner edges (round a box's corners); "
               "radius must be < half the adjacent wall thickness. `edges` may "
               "also be a list of picked edges (the Studio tool writes these).",
@@ -210,8 +214,12 @@ RULES AND CONVENTIONS:
   wall: its own axis) — "angle" 360 is a full circle, less spreads the copies
   from the seed to that angle.
 - "rotate" orients parts: cylinders are upright by default — a WHEEL or axle is
-  rotate(axis "X" or "Y", 90). "mirror" returns the mirrored COPY (fuse it with
-  the original for symmetric pairs, e.g. left/right fenders).
+  rotate(axis "X" or "Y", 90). "mirror" with "join": true makes a body symmetric
+  about a plane (its reflection fused on — model one half, mirror it across the
+  face or the mid-plane {{"mid": "X"}} where the halves meet); with "seed": a
+  feature's id it mirrors THAT feature (a hole, a boss) across the plane on the
+  body — add it after the body's latest feature. Without "join" or "seed" it
+  returns only the mirrored COPY (fuse it yourself).
 - "fillet"/"chamfer" round or bevel edges ("all"/"top"/"bottom") — use small
   values (radius well under half the local thickness or they fail). "shell"
   hollows a solid into walls (open_face "top" makes cups/containers).

@@ -63,7 +63,7 @@ MODIFIERS = {
     "with_bolt_circle": blocks.with_bolt_circle,
     "polar_pattern": pattern.polar_pattern,    # a body, or a FEATURE's delta, about an axis (P4)
     "rotate": blocks.rotate,
-    "mirror": blocks.mirror_copy,
+    "mirror": pattern.mirror,                  # a body (join / the legacy copy) or a FEATURE's delta across a plane (P4)
     "scale": blocks.scale_uniform,
     "linear_pattern": pattern.linear_pattern,  # … along one or two directions (P4)
     "fillet": blocks.fillet_edges,
@@ -156,7 +156,7 @@ DELETE_MODES = ("auto", "cascade", "strict")
 # the seed used to break every pattern of it ("the seed 'hole1' is not in the
 # tree") and deleting the seed left a pattern repeating a ghost, because both
 # only ever looked at `inputs` (found by the P4 code review).
-REF_PARAMS = {op: ("seed",) for op in pattern.PATTERN_OPS}
+REF_PARAMS = {op: ("seed",) for op in pattern.SEEDED_OPS}
 
 # ---------------------------------------------------------------------------
 # Rebuild cache: a feature's output is a pure function of (op, params, inputs)
@@ -404,11 +404,11 @@ class Document:
             raise ValueError(f"{f.op}: {e}") from None
         if before_id is None:
             raise ValueError(f"{f.op}: '{seed}' is a whole body, not a feature of one — leave "
-                             f"`seed` empty to repeat the body itself")
+                             f"`seed` empty to work on the body itself")
         body = f.inputs[0]
         if after_id != body and after_id not in self.ancestors(body):
-            raise ValueError(f"{f.op}: '{seed}' is not part of {body}'s history — a pattern "
-                             f"repeats a feature of the body it is on")
+            raise ValueError(f"{f.op}: '{seed}' is not part of {body}'s history — {f.op} works "
+                             f"on a feature of the body it is on")
         before, after = self._parts.get(before_id), self._parts.get(after_id)
         if before is None or after is None:
             raise ValueError(f"{f.op}: the seed '{seed}' is not built (failed upstream?)")
@@ -942,7 +942,7 @@ class Document:
             if len(ins) != 1:
                 raise ValueError(f"'{f.op}' needs exactly 1 input")
             kw = self._clean(f.params)
-            if f.op in pattern.PATTERN_OPS and kw.get("seed"):
+            if f.op in pattern.SEEDED_OPS and kw.get("seed"):
                 kw.update(self._seed_parts(f, kw["seed"]))   # the seed's before / after bodies
             return MODIFIERS[f.op](ins[0], **kw)
         if f.op == "move":

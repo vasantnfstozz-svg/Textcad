@@ -364,6 +364,18 @@
   </div>
 </div>
 
+<div id="mrDialog" class="toolpanel" style="display:none">
+  <div class="exhead">⇋ Mirror</div>
+  <label>Seed <select id="mrProfile" disabled></select></label>
+  <label>Plane <select id="mrPlane" title="the mirror plane: click a flat face or an origin plane in the viewport, or choose one here (the body's mid-planes included)"></select></label>
+  <select id="mrOp" style="display:none"><option value="new">New body</option></select>
+  <label id="mrTargetRow" style="display:none">Combine with <select id="mrTarget"></select></label>
+  <div class="exfoot">
+    <button id="mrCancel">Cancel</button>
+    <button class="primary" id="mrOk">OK</button>
+  </div>
+</div>
+
 <!-- ============ measure panel ============ -->
 <div id="measureDialog" style="display:none">
   <div class="mehead">⟺ Measure</div>
@@ -431,6 +443,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=160"></script>
+<script type="module" src="/static/js/main.js?v=161"></script>
 </body>
 </html>

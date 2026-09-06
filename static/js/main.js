@@ -19,6 +19,7 @@ import { initRevolve } from './revolve.js';
 import { initFillet } from './fillet.js';
 import { initHole } from './hole.js';
 import { initPattern } from './pattern.js';
+import { initMirror } from './mirror.js';
 import { initMeasure } from './measure.js';
 import { initVersions } from './versions.js';
 
@@ -32,6 +33,7 @@ initRevolve();
 initFillet();     // Fillet + Chamfer on picked edges
 initHole();       // Hole at the point clicked on a flat face
 initPattern();    // Circular + Rectangular Pattern of a feature or a body
+initMirror();     // Mirror of a feature or a body across a face / an origin plane / a mid-plane
 initMeasure();    // the Measure tool (face/edge dimensions)
 initRibbon();
 initSplitters();

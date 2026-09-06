@@ -454,18 +454,20 @@ export function tool(spec) {
      on — flat or curved — whose maker the SERVER looks up (provenance: a
      hole's wall is the hole, a plate's own top is the body). The plan names
      the body the result goes on (`input`: the seed body's current state). */
+  const verb = spec.verb || 'repeats';                 // Pattern repeats, Mirror mirrors
+  const sketchNote = spec.sketchNote || 'sketch patterns come with the sketch tools';
   function openFeature(sel, bods) {
     if (!bods.length) {
       say(`⚠ ${spec.name} needs a body — build one first, then click a feature of it.`);
       return;
     }
     if (sel && sel.kind === 'profile') {
-      say(`⚠ ${spec.name} repeats a feature or a body — a sketch is not one (sketch ` +
-        'patterns come with the sketch tools). Click a hole, a boss, or a body.');
+      say(`⚠ ${spec.name} ${verb} a feature or a body — a sketch is not one (${sketchNote}). ` +
+        'Click a hole, a boss, or a body.');
       return;
     }
     if (sel && sel.kind === 'edges') {
-      say(`⚠ ${spec.name} repeats a feature or a body — click a face of it, or its row ` +
+      say(`⚠ ${spec.name} ${verb} a feature or a body — click a face of it, or its row ` +
         'in the tree, not an edge.');
       return;
     }
@@ -497,7 +499,7 @@ export function tool(spec) {
     beginProfilePick((kind, data) => {
       dropRowWait();
       if (kind === 'profile') {
-        say(`⚠ ${spec.name} repeats a feature or a body — a sketch is not one. Click a ` +
+        say(`⚠ ${spec.name} ${verb} a feature or a body — a sketch is not one. Click a ` +
           'hole, a boss, or a body. Keep picking, or Esc.');
         awaitFeaturePick();
         return;
@@ -551,6 +553,8 @@ export function tool(spec) {
     if (profilePickArmed()) return;   // ONE pick, until something cancels it
     beginProfilePick((kind, data) => {
       if (!st || (st.input.kind !== 'face' && st.input.kind !== 'feature')) return;
+      // an origin plane (a tool with `planePick`: Mirror's plane) — the tool says what it means
+      if (kind === 'plane' && spec.onRepick) { spec.onRepick(st, { world: data }, replan); return; }
       // while the preview is up the viewport shows THIS tool's result body
       const mine = data && (data.body === st.input.body || data.body === st.featureId);
       if (kind !== 'face' || !mine) {
@@ -563,7 +567,7 @@ export function tool(spec) {
                    point: data.point || null };
       replan();
     }, { name: spec.name, faces: true, profiles: false, hint: spec.repick, sticky: true,
-         anyFace: !!spec.anyFace });
+         anyFace: !!spec.anyFace, planes: !!spec.planePick });
   }
 
   /* opening builds NOTHING — the boxes start at the honest zero, the gizmos

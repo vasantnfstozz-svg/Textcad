@@ -7,31 +7,19 @@ never a broken "success". Every face of the plain box must build (a copy that
 leaves a pentagon face or an L-bracket's arm may be refused: that IS the
 sentence — probes/pattern_probe.py §11)."""
 import pytest
-from build123d import Vector
 
 import pattern
 import sketch as sk
-from tests.gauntlet import BODIES, planar_faces, assert_op
+from tests.gauntlet import BODIES, holed_faces, assert_op
 
 
 def seeded(name):
     """(body, [(face index, the body WITH the seed hole, the face's axis in
     stored form, the face's x, the face's span)]) for every flat face"""
-    solid = BODIES[name]()
-    cases = []
-    for idx, face, _centre, normal in planar_faces(solid):
-        pl = sk.face_profile_plane(face)
-        bb = face.bounding_box()
-        span = min(s for s in (bb.size.X, bb.size.Y, bb.size.Z) if s > 1e-6)
-        c = pl.to_local_coords(face.center())          # a quarter-span from the FACE centre
-        at = Vector(c.X + span * 0.25, c.Y, 0)         # (the frame's origin is the world's foot)
-        try:
-            holed = sk.hole(solid, face_center=list(face.center()), face_normal=list(normal),
-                            at=[at.X, at.Y], diameter=3, depth=1, through=True)
-        except ValueError:
-            continue                # a hole this face refuses is Hole's own gauntlet's business
-        cases.append((idx, holed, pattern.stored_face(holed, face), list(pl.x_dir), span))
-    return solid, cases
+    solid, cases = holed_faces(name)
+    return solid, [(idx, holed, pattern.stored_face(holed, face),
+                    list(sk.face_profile_plane(face).x_dir), span)
+                   for idx, face, holed, span in cases]
 
 
 @pytest.mark.parametrize("name", sorted(BODIES))

@@ -1,6 +1,8 @@
-"""pattern.py — Circular and Rectangular Pattern (LAUNCH-PLAN.md P4,
-specs/pattern.md): the two ops `polar_pattern` / `linear_pattern`, grown from
-"N copies of a body" to Fusion's "pattern a FEATURE".
+"""pattern.py — Circular and Rectangular Pattern, and Mirror (LAUNCH-PLAN.md P4,
+specs/pattern.md, specs/mirror.md): the ops `polar_pattern` / `linear_pattern`,
+grown from "N copies of a body" to Fusion's "pattern a FEATURE", and `mirror`,
+grown from "the reflected copy of a body" the same way — a mirror is a pattern
+with one copy and a reflection instead of a rotation (probes/mirror_probe.py).
 
 THE IDEA (probes/pattern_probe.py): a feature's DELTA is what it removed
 (the body before it minus the body after it) and what it added (after minus
@@ -27,14 +29,18 @@ from __future__ import annotations
 import math
 
 import build123d as b3d
-from build123d import Axis, Location, Vector
+from build123d import Axis, Location, Plane, Vector
 
 import inspector
 import sketch as sk
 
 PATTERN_OPS = ("polar_pattern", "linear_pattern")
+SEEDED_OPS = PATTERN_OPS + ("mirror",)      # every op that repeats a FEATURE's delta (a `seed` param)
 DISTANCE_TYPES = ("spacing", "extent")
 _TOL = 1e-9          # "exactly nothing": a boolean that misses changes the volume by 0.0
+                     # (probes/mirror_probe.py §10: an image ON the seed differs by ≤ 3e-11)
+_WORLD_NORMALS = {"XY": (0, 0, 1), "XZ": (0, 1, 0), "YZ": (1, 0, 0),
+                  "X": (1, 0, 0), "Y": (0, 1, 0), "Z": (0, 0, 1)}
 
 
 # ------------------------------------------------------------------ vectors ---
@@ -151,7 +157,7 @@ def delta(before, after):
     return _nonempty(before - after), _nonempty(after - before)
 
 
-def _seed(feature, seed, before, after, op):
+def _seed(feature, seed, before, after, op, verb: str = "repeat"):
     """the body to pattern on and the (removed, added) pair to repeat; a body
     seed repeats the body itself (added = the body, removed = None)"""
     if not seed:
@@ -162,39 +168,48 @@ def _seed(feature, seed, before, after, op):
     removed, added = delta(before, after)
     if removed is None and added is None:
         raise ValueError(f"{op}: '{seed}' neither removed nor added material — there is "
-                         f"nothing to repeat")
+                         f"nothing to {verb}")
     return removed, added
 
 
-def _repeat(body, removed, added, moves, op: str, what: str):
+def _repeat(body, removed, added, moves, op: str, what: str, label=None, noun: str = "the pattern"):
     """Apply the delta at every copy (`moves`: shape -> moved shape), measuring
-    each one: a cut that changes nothing landed off the body (probe §7), a fuse
-    that adds nothing lies inside it. Then health (an open shell from a copy
-    tangent to an edge is_valid calls fine — §7)."""
+    each one: a cut that changes nothing either landed off the body (probe §7)
+    or ON the seed itself (a copy that does not move it — a mirror plane
+    through the feature, a seed on the pattern's axis; the image ∩ seed tells
+    the two apart), a fuse that adds nothing lies inside it. Then health (an
+    open shell from a copy tangent to an edge is_valid calls fine — §7).
+    `label(k, n)` names a copy in the sentences, `noun` the whole result."""
     n = len(moves) + 1
+    label = label or (lambda k, n: f"copy {k} of {n}")
     result = body
     for k, move in enumerate(moves, start=2):
         try:
             if removed is not None:
+                image = move(removed)
                 v0 = float(result.volume)
-                result = result - move(removed)
+                result = result - image
                 if abs(v0 - float(result.volume)) < _TOL:
-                    raise ValueError(f"{op}: copy {k} of {n} lands off the body (nothing to "
+                    if _nonempty(image & removed) is not None:
+                        raise ValueError(f"{op}: {label(k, n)} is the seed itself (it lands where "
+                                         f"the seed already is) — {what}")
+                    raise ValueError(f"{op}: {label(k, n)} lands off the body (nothing to "
                                      f"cut there) — {what}")
             if added is not None:
                 v0 = float(result.volume)
                 result = result + move(added)
                 if abs(float(result.volume) - v0) < _TOL:
-                    raise ValueError(f"{op}: copy {k} of {n} adds nothing (it lies inside the "
+                    raise ValueError(f"{op}: {label(k, n)} adds nothing (it lies inside the "
                                      f"body) — {what}")
         except ValueError:
             raise
         except Exception:                        # OCP errors are Exception, not RuntimeError
-            raise ValueError(f"{op}: the kernel could not build copy {k} of {n} — {what}") from None
+            raise ValueError(f"{op}: the kernel could not build {label(k, n)} — {what}") from None
     problems = inspector.health(result, check_valid=False)
     if problems:
-        raise ValueError(f"{op}: the pattern leaves a broken solid ({problems[0]}) — a copy "
-                         f"runs exactly along an edge of the body; {what}")
+        runs = "a copy runs" if n > 2 else "it runs"
+        raise ValueError(f"{op}: {noun} leaves a broken solid ({problems[0]}) — {runs} "
+                         f"exactly along an edge of the body; {what}")
     return result
 
 
@@ -328,6 +343,83 @@ def linear_pattern(feature, count, dx: float = 0.0, dy: float = 0.0, dz: float =
     if not seed:
         return _body_pattern(feature, [m(feature) for m in moves], op, what)
     return _repeat(feature, removed, added, moves, op, what)
+
+
+# ------------------------------------------------------------------- mirror ---
+
+def plane_of(solid, plane, op: str = "mirror"):
+    """The stored `plane`, resolved on `solid` (specs/mirror.md): a world name
+    ("XY" / "XZ" / "YZ" — through the origin, the legacy form), a face
+    ({face_center, face_normal} or {face: "top"} — its plane through the centre
+    of its OUTER wire, resolved by geometry at every rebuild), the body's
+    mid-plane ({mid: "X"} — the bounding-box centre, so it rides a resize) or an
+    explicit {origin, normal}. Returns (Plane, words). A plane is an origin and
+    a normal: the same plane with the normal flipped mirrors the same way
+    (probes/mirror_probe.py §1)."""
+    if isinstance(plane, str):
+        key = plane.strip().upper()
+        if key not in ("XY", "XZ", "YZ"):
+            raise ValueError(f"{op}: plane '{plane}' is not an origin plane — use \"XY\", \"XZ\" or "
+                             f"\"YZ\", a face, a mid-plane ({{mid: \"X\"}}) or {{origin, normal}}")
+        return (Plane(origin=(0, 0, 0), z_dir=Vector(*_WORLD_NORMALS[key])),
+                f"the {key} plane (through the origin)")
+    if isinstance(plane, dict):
+        if plane.get("normal") is not None:
+            o = _vec(plane.get("origin") or (0, 0, 0), "the plane origin", op)
+            n = _unit(plane["normal"], "the plane normal", op)
+            return Plane(origin=o, z_dir=n), (f"the plane through ({o.X:g}, {o.Y:g}, {o.Z:g}) "
+                                              f"with normal ({n.X:.3g}, {n.Y:.3g}, {n.Z:.3g})")
+        if plane.get("mid"):
+            key = str(plane["mid"]).strip().upper()
+            if key not in ("X", "Y", "Z"):
+                raise ValueError(f"{op}: mid must be \"X\", \"Y\" or \"Z\" (got {plane['mid']!r})")
+            c = solid.bounding_box().center()
+            return (Plane(origin=c, z_dir=Vector(*_WORLD_NORMALS[key])),
+                    f"the body's mid-plane across {key}")
+        if plane.get("face") or plane.get("face_center") is not None:
+            try:
+                face = sk.pick_face(solid, plane.get("face_center"), plane.get("face_normal"),
+                                    plane.get("face"))
+            except ValueError as e:
+                raise ValueError(f"{op}: the plane face is gone — {e}; click a face for the plane") from None
+            if sk.face_plane(face) is None:
+                raise ValueError(f"{op}: the picked face is {face.geom_type.name} — a mirror plane "
+                                 f"is a flat face, an origin plane or the body's mid-plane")
+            n = face.normal_at(face.center()).normalized()
+            return (Plane(origin=b3d.Face(face.outer_wire()).center(), z_dir=n),
+                    f"the {face_word(n)} face's plane")
+    raise ValueError(f"{op}: plane must be \"XY\", \"XZ\" or \"YZ\", a face ({{face_center, "
+                     f"face_normal}} or {{face: \"top\"}}), a mid-plane ({{mid: \"X\"}}) or "
+                     f"{{origin, normal}} (got {plane!r})")
+
+
+def mirror(feature, plane="YZ", seed: str | None = None, join: bool = False,
+           _before=None, _after=None):
+    """Mirror: the seed's delta (a feature of `feature`'s history) reflected
+    across `plane` and applied to the body again — what it removed is cut, what
+    it added is fused (probes/mirror_probe.py §2, §5) — or, with no seed, the
+    body itself: fused with its reflection when `join` (Fusion's Join, §6), the
+    reflected COPY alone otherwise (the legacy behaviour every saved design
+    relies on). A body mirrored across its own symmetry plane is itself and is
+    not refused (§7). Returns the body WITH the mirror image."""
+    op = "mirror"
+    pl, _ = plane_of(feature, plane, op)
+    removed, added = _seed(feature, seed, _before, _after, op, verb="mirror")
+    what = "pick a plane beside the feature, through the body"
+    if not seed:
+        try:
+            # the OPERATION, not Shape.mirror: a fresh object. Shape.mirror copies
+            # a sketch's recorded plane (_tc_plane) along, and after a reflection
+            # that plane is stale — a revolve about its "u" / "v" would lie
+            # (tests/test_revolve_tool.py: a mirrored sketch must refuse u / v)
+            copy = b3d.mirror(feature, about=pl)
+        except Exception:                        # OCP errors are Exception, not RuntimeError
+            raise ValueError(f"{op}: the kernel could not build the mirror image — pick another plane") from None
+        if not join:
+            return copy
+        return _body_pattern(feature, [copy], op, "pick another plane")
+    return _repeat(feature, removed, added, [lambda s: s.mirror(pl)], op, what,
+                   label=lambda k, n: f"the mirror image of '{seed}'", noun="the mirror image")
 
 
 # ------------------------------------------------ what the PLAN needs to know ---

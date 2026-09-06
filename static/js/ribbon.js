@@ -17,6 +17,7 @@ import { openRevolve } from './revolve.js';
 import { openFillet, openChamfer } from './fillet.js';
 import { openHole } from './hole.js';
 import { openCircularPattern, openRectangularPattern } from './pattern.js';
+import { openMirror } from './mirror.js';
 import { cancelTool } from './tool.js';
 import { openMeasure, cancelMeasure } from './measure.js';
 
@@ -48,7 +49,8 @@ function startSketch() {
 // the drag-handle tools (born on tool.js): pressed with the current selection
 const TOOLS = { extrude: openExtrude, revolve: openRevolve,
                 fillet: openFillet, chamfer: openChamfer, hole: openHole,
-                polar_pattern: openCircularPattern, linear_pattern: openRectangularPattern };
+                polar_pattern: openCircularPattern, linear_pattern: openRectangularPattern,
+                mirror: openMirror };
 
 // named (non-op) actions that live in the ribbon
 const ACTIONS = {

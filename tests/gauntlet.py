@@ -170,3 +170,24 @@ def assert_op(label: str, call, allow_failure: bool = True):
     if result.volume <= 0:
         raise GauntletFailure(f"{label}: non-positive volume {result.volume}")
     return result
+
+
+def holed_faces(name: str, diameter: float = 3.0):
+    """(solid, [(face index, face, the body WITH a through hole a quarter-span
+    from the face's centre, the face's span)]) for every flat face of a corpus
+    body — the SEED the Pattern and Mirror gauntlets repeat. A face that refuses
+    the hole is skipped: that is Hole's own gauntlet's business."""
+    solid = BODIES[name]()
+    cases = []
+    for idx, face, _centre, normal in planar_faces(solid):
+        pl = sk.face_profile_plane(face)
+        bb = face.bounding_box()
+        span = min(s for s in (bb.size.X, bb.size.Y, bb.size.Z) if s > 1e-6)
+        c = pl.to_local_coords(face.center())          # a quarter-span from the FACE centre
+        try:                                           # (the frame's origin is the world's foot)
+            holed = sk.hole(solid, face_center=list(face.center()), face_normal=list(normal),
+                            at=[c.X + span * 0.25, c.Y], diameter=diameter, depth=1, through=True)
+        except ValueError:
+            continue
+        cases.append((idx, face, holed, span))
+    return solid, cases
