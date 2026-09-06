@@ -500,7 +500,7 @@ tool's journeys) hid — **when a change touches `viewport.js` or `tool.js`, run
 the other tools' journeys too.**
 
 *Hole done 2026-09-06* (spec `specs/hole.md`, tool 5336c82, review fixes
-0c49c42, ui v157; the user's checklist is theirs to run). `static/js/hole.js`
+0c49c42, ui v157; user's checklist passed 2026-09-06). `static/js/hole.js`
 is **193 lines with no geometry maths**. Two firsts, and both cost the
 framework a new idea. **The op EATS its body**: `sketch.hole` takes the solid
 and returns the solid WITH the hole — no cutter prism, no Cut row, one `hole1`
