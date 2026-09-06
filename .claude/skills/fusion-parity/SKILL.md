@@ -159,6 +159,14 @@ were each learned from a correction — do not regress them.
   to the far side on release. Locked in by
   tests/e2e/test_extrude_direction.py (window.__vp.extrudeDirs() reports the
   arrow axis and the ghost's growth vector — assert their dot product > 0).
+- **Every dragged handle that changes a shape shows a GHOST (user, 2026-09-06:
+  "ghost will be helpful for tools").** Extrude's prism, Revolve's lathe,
+  Hole's cylinder — the value box alone is dragging blind. The ghost is the
+  white translucent hint (`viewport.ghostPart`), never grey like a body, and
+  the real solid replaces it on release. It is built from the PLAN's frame /
+  axis / outline (R1) and grows along the op's axis (the dot-product rule
+  above). Pattern is the one tool still without (its copies need the seed's
+  delta mesh from the server) — a follow-up, not a decision.
 - OrbitControls (three 0.160) FREEZES its orbit axis at construction —
   `setFromUnitVectors(object.up,(0,1,0))` lives in update()'s closure, so
   assigning `camera.up` later does nothing. Looking straight down an axis

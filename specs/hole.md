@@ -62,8 +62,17 @@ the face while the panel is open and the hole moves there.
   when unticked. The gold **circle** is the plan's `frame` at the hole's
   centre scaled to the diameter, so it follows the Diameter box as you type
   and it is drawn from the server's frame, not from JS geometry.
-* **No ghost**: the real hole appears on release (one verified rebuild); a cut
-  is drawn only by the kernel.
+* **Ghost while dragging** (user, 2026-09-06 — Extrude's and Revolve's arrows
+  have one, so must Hole's): Extrude's translucent ghost fed the hole's own
+  outline — a circle of the Diameter in the plan's marker frame, plus the
+  seat's wider circle for a counterbore capped at the seat depth (a
+  countersink's cone is not drawn) — grows along the plan's **axis** into the
+  material as the arrow moves (the sign is the dot product of the plan's
+  `frame.z_dir` and `axis`, one tool one axis). Ghosts ignore depth, so the
+  cylinder shows inside the body and pokes out the far side when the depth
+  passes the material. Release = one verified rebuild and the real hole,
+  drawn by the kernel, replaces the ghost. Through all has no arrow and no
+  ghost. The ghost's outline follows the Diameter / seat boxes at once.
 * **Panel** `holeDialog`, ids `ho…`: Face (locked) · Type: Simple /
   Counterbore / Countersink · Diameter (mm), starts at the last hole's size
   (6 mm the first time — a size is not an amount, so it is not a lie) · Depth

@@ -10,11 +10,15 @@
 // face's own coordinates (`at`, what the op stores), the face in stored form,
 // the axis INTO the material, the marker's frame, and how much material lies
 // under the point. A second click on the body's face moves the hole (the
-// framework's `repick`). There is no ghost: a cut is drawn only by the kernel
-// — the value box follows the drag live and the real hole appears on release.
+// framework's `repick`). While the arrow is dragged a GHOST shows the cut —
+// the Extrude ghost fed the hole's own circle (and a counterbore's wider seat)
+// in the plan's frame, grown along the plan's axis into the material — and
+// the real hole, drawn by the kernel, replaces it on release (user, 2026-09-06:
+// the arrow of Extrude and Revolve has one, so must Hole's).
 
 import { tool, g, num, say, setBox } from './tool.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
+         beginExtrudeGhost, setExtrudeGhost, hideExtrudeGhost, endExtrudeGhost,
          beginHoleMarker, setHoleMarker, endHoleMarker } from './viewport.js';
 
 const ROWS = { counterbore: ['hoCbDiaRow', 'hoCbDepthRow'],
@@ -109,11 +113,44 @@ function hold(pr) {
   return null;
 }
 
-/* ---------------- the handles: the circle and the depth arrow ---------------- */
-function arrow(plan) {
-  beginExtrudeArrow(plan.origin, plan.axis, num('hoDepth'),
-    v => setBox('hoDepth', v),                                // dragging: the box follows
-    async v => { setBox('hoDepth', v); await ho.apply(); },   // release: ONE verified rebuild
+/* ---------------- the handles: the circle, the depth arrow, the ghost ----------------
+   The ghost is Extrude's (a translucent prism of an outline in a server frame)
+   given the hole's outline: a circle of the Diameter in the plan's marker
+   frame, plus the seat's wider circle for a counterbore, capped at the seat
+   depth (a countersink's cone is not drawn — the ghost is a drag aid, the
+   solid is exact). It grows along the plan's AXIS whichever way the frame's z
+   points — one tool, one axis (fusion-parity, 2026-09-01) — so the sign is
+   the dot product of two plan vectors, never a guess about the face. */
+const SIDES = 48;
+function circle(r) {
+  return Array.from({ length: SIDES }, (_, i) => {
+    const a = i / SIDES * Math.PI * 2;
+    return [r * Math.cos(a), r * Math.sin(a)];
+  });
+}
+const seated = () => g('hoKind').value === 'counterbore'
+  && num('hoCbDia') > num('hoDia') && num('hoCbDepth') > 0;
+function ghost(st) {
+  endExtrudeGhost();
+  const plan = st && st.plan;
+  if (!plan || through() || !(num('hoDia') > 0)) return;   // through: no arrow, nothing to drag
+  const loops = [{ outer: circle(num('hoDia') / 2), holes: [] }];
+  if (seated()) loops.push({ outer: circle(num('hoCbDia') / 2), holes: [] });
+  const z = plan.frame.z_dir, a = plan.axis;
+  st.ghostSign = z[0] * a[0] + z[1] * a[1] + z[2] * a[2] < 0 ? -1 : 1;
+  beginExtrudeGhost(plan.frame, loops);
+}
+function showGhost(st, depth) {
+  setExtrudeGhost(depth * (st.ghostSign || 1), 0, seated() ? [null, num('hoCbDepth')] : null);
+}
+function arrow(st) {
+  beginExtrudeArrow(st.plan.origin, st.plan.axis, num('hoDepth'),
+    v => { setBox('hoDepth', v); showGhost(st, v); },        // dragging: the box and the ghost follow
+    async v => {                                              // release: ONE verified rebuild
+      setBox('hoDepth', v);
+      await ho.apply();
+      hideExtrudeGhost();                                     // the real hole replaces the ghost
+    },
     v => Math.max(0, v));                                     // a depth has no sign
 }
 const gizmos = {
@@ -121,21 +158,24 @@ const gizmos = {
     st.material = undefined;              // a new point: what lies under it is unknown again
     st.saidThrough = false;
     beginHoleMarker(plan.frame, num('hoDia') / 2);
-    if (!through()) arrow(plan);          // through: nothing to drag, it runs out the far side
+    if (!through()) arrow(st);            // through: nothing to drag, it runs out the far side
+    ghost(st);
     // a depth typed or Through ticked before the plan arrived waits for it
     if (!st.featureId && (through() || num('hoDepth') > 0)) ho.apply();
   },
-  end() { endHoleMarker(); endExtrudeArrow(); },
+  end() { endHoleMarker(); endExtrudeArrow(); endExtrudeGhost(); },
 };
 /* Type or Through changed: the rows follow (sync), a seat kind gets its sizes,
-   and only the ARROW comes or goes — the circle marks where the hole IS, which
-   neither of them moves (re-making it flickered and stranded its material). */
+   and only the ARROW and the ghost come or go — the circle marks where the
+   hole IS, which neither of them moves (re-making it flickered and stranded
+   its material). */
 function refresh(st) {
   if (!st) return;
   seed();
   if (!st.plan) return;
   endExtrudeArrow();
-  if (!through()) arrow(st.plan);
+  if (!through()) arrow(st);
+  ghost(st);
 }
 /* How much material lies under the point is the plan's — and it costs the
    server a kernel boolean (250-510 ms on a real body), so it is asked for the
@@ -188,6 +228,8 @@ const ho = tool({
 export const openHole = () => ho.open();
 export function initHole() {
   ho.init();
-  // the circle follows the Diameter box at once; the hole itself after the usual pause
-  g('hoDia').addEventListener('input', () => setHoleMarker(num('hoDia') / 2));
+  // the circle and the ghost's outline follow the size boxes at once; the
+  // hole itself after the usual pause
+  g('hoDia').addEventListener('input', () => { setHoleMarker(num('hoDia') / 2); ghost(ho.st); });
+  for (const id of ['hoCbDia', 'hoCbDepth']) g(id).addEventListener('input', () => ghost(ho.st));
 }

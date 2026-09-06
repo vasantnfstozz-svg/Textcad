@@ -112,8 +112,13 @@ def open_hole_at(page, pt):
     page.wait_for_function("() => window.__vp.gizmos().hole", timeout=15000)   # the plan landed
 
 
-def drag_arrow(page, px):
-    """grab the arrow at its middle and push it the way it points on screen"""
+def dot(a, b):
+    return sum(x * y for x, y in zip(a, b))
+
+
+def drag_arrow(page, px, release=True):
+    """grab the arrow at its middle and push it the way it points on screen;
+    release=False keeps the button down so the test can look mid-drag"""
     ax = page.evaluate(
         "async () => (await import('/static/js/viewport.js')).extrudeArrowAxisScreen()")
     assert ax, "no arrow to drag"
@@ -126,7 +131,8 @@ def drag_arrow(page, px):
     for k in range(1, 7):
         page.mouse.move(mx + ux * px * k / 6, my + uy * px * k / 6)
         page.wait_for_timeout(30)
-    page.mouse.up()
+    if release:
+        page.mouse.up()
 
 
 # ------------------------------------------------------------------ journeys --
@@ -184,6 +190,60 @@ def test_drag_the_arrow_into_the_plate_then_through_all(page, fresh_doc, server)
     wait_volume(server, "hole1", box - PI * 9 * min(depth, 12))
     page.click("#hoOk")
     page.wait_for_selector("#holeDialog", state="hidden")
+    assert page.errors == []
+
+
+def test_dragging_the_arrow_shows_a_ghost_of_the_cut_that_the_real_hole_replaces(page, fresh_doc, server):
+    """User, 2026-09-06: Extrude's and Revolve's arrows have a ghost, Hole's had
+    none — dragging a number blind. Mid-drag a translucent cylinder of the
+    hole's diameter grows the way the arrow points, INTO the plate (down from
+    its top face — the 2026-09-01 bug class is a ghost growing the other way),
+    its height the depth in the box and its base at the hole's centre; nothing
+    is built until release, when the real hole replaces it. A counterbore adds
+    the seat's wider outline, capped at the seat depth."""
+    setup(page)
+    box = feature(server, "b")["volume"]
+    open_hole_at(page, PT)
+    assert page.evaluate("() => window.__vp.gizmos().ghost"), "the ghost is built with the arrow"
+    assert not page.evaluate("() => window.__vp.extrudeDirs().ghost.visible"), "hidden until a drag"
+    drag_arrow(page, 60, release=False)
+    d = page.evaluate("() => window.__vp.extrudeDirs()")
+    assert d["ghost"]["visible"], d
+    grow = d["ghost"]["grows"]
+    assert dot(grow, d["arrow"]["points"]) > 0, ("the ghost grows against the arrow", d)
+    assert grow[2] < 0, ("the ghost grew UP out of the plate", d)
+    depth = float(page.input_value("#hoDepth"))
+    assert depth > 0
+    tops = page.evaluate("() => window.__vp.ghostLoopTops()")
+    assert len(tops) == 1, tops
+    assert abs(tops[0]["height"]) == pytest.approx(depth, abs=0.06), (tops, depth)
+    assert tops[0]["base"] == pytest.approx(PT, abs=0.05), "the ghost starts at the hole's centre"
+    assert feature(server, "hole1") is None, "nothing built mid-drag: the ghost is the only preview"
+    page.mouse.up()
+    f = wait_feature(server, "hole1")
+    assert f["status"] == "ok" and f["volume"] == pytest.approx(box - PI * 9 * min(depth, 12), rel=1e-3)
+    page.wait_for_function("() => !window.__vp.extrudeDirs().ghost.visible", timeout=10000)
+    # a counterbore: the seat's outline rides along, capped at the seat depth
+    page.select_option("#hoKind", "counterbore")
+    cbd = float(page.input_value("#hoCbDepth"))
+    assert cbd > 0 and float(page.input_value("#hoCbDia")) == 12
+    t0 = time.time()
+    while feature(server, "hole1")["params"].get("kind") != "counterbore":
+        assert time.time() - t0 < 20, "the counterbore never built"
+        time.sleep(0.25)
+    drag_arrow(page, 40, release=False)
+    depth2 = float(page.input_value("#hoDepth"))
+    tops = page.evaluate("() => window.__vp.ghostLoopTops()")
+    assert len(tops) == 2, tops
+    assert abs(tops[0]["height"]) == pytest.approx(depth2, abs=0.06), (tops, depth2)
+    assert abs(tops[1]["height"]) == pytest.approx(min(depth2, cbd), abs=0.06), (tops, cbd)
+    page.mouse.up()
+    f = wait_volume(server, "hole1", box - PI * 9 * min(depth2, 12) - PI * 27 * cbd, rel=1e-3)
+    assert f["params"]["depth"] == pytest.approx(depth2, abs=0.06)
+    page.wait_for_function("() => !window.__vp.extrudeDirs().ghost.visible", timeout=10000)
+    page.click("#hoOk")
+    page.wait_for_selector("#holeDialog", state="hidden")
+    assert not page.evaluate("() => window.__vp.gizmos().ghost"), "the ghost went with the panel"
     assert page.errors == []
 
 
