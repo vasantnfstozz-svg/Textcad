@@ -814,6 +814,8 @@ class ToolPlanReq(BaseModel):
     edges: list | None = None           # tools "fillet"/"chamfer": picked edges of body_id
     chain: bool | None = None           #   (edge_ref dicts or [x, y, z] midpoints); tangent chain on/off
     toggle: dict | None = None          #   one clicked edge to add to / remove from `edges`
+    face_point: list | None = None      # tool "hole": where the face was clicked (world) — the hole's centre
+    diameter: float | None = None       #   and the hole's diameter, echoed for the marker circle
     # measure where a narrowing taper's walls meet, per face (18 kernel offsets
     # per face — asked for lazily, the first time the tool needs a taper limit)
     measure_collapse: bool = False

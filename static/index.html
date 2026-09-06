@@ -290,6 +290,37 @@
   </div>
 </div>
 
+<!-- ============ Hole panel (a flat face + the point clicked on it; specs/hole.md) ============ -->
+<div id="holeDialog" class="toolpanel" style="display:none">
+  <div class="exhead">◎ Hole</div>
+  <label>Face <select id="hoProfile" disabled></select></label>
+  <label>Type
+    <select id="hoKind" title="Simple: a plain bore. Counterbore: a wider flat-bottomed seat at the face. Countersink: a conical seat at the face">
+      <option value="simple">Simple</option>
+      <option value="counterbore">Counterbore</option>
+      <option value="countersink">Countersink</option>
+    </select></label>
+  <div class="exrow">
+    <label>Diameter (mm) <input id="hoDia" type="number" step="any" min="0" value="6"></label>
+    <label>Depth (mm) <input id="hoDepth" type="number" step="any" min="0" value="0"></label>
+  </div>
+  <label class="excheck" title="run the hole out through the far side, whatever the thickness">Through all <input id="hoThrough" type="checkbox"></label>
+  <div class="exrow">
+    <label id="hoCbDiaRow" style="display:none">Counterbore ⌀ (mm) <input id="hoCbDia" type="number" step="any" min="0" value="0"></label>
+    <label id="hoCbDepthRow" style="display:none">Counterbore depth (mm) <input id="hoCbDepth" type="number" step="any" min="0" value="0"></label>
+  </div>
+  <div class="exrow">
+    <label id="hoCsDiaRow" style="display:none">Countersink ⌀ (mm) <input id="hoCsDia" type="number" step="any" min="0" value="0"></label>
+    <label id="hoCsAngleRow" style="display:none">Countersink angle (°) <input id="hoCsAngle" type="number" step="any" min="1" max="179" value="90"></label>
+  </div>
+  <select id="hoOp" style="display:none"><option value="new">New body</option></select>
+  <label id="hoTargetRow" style="display:none">Combine with <select id="hoTarget"></select></label>
+  <div class="exfoot">
+    <button id="hoCancel">Cancel</button>
+    <button class="primary" id="hoOk">OK</button>
+  </div>
+</div>
+
 <!-- ============ measure panel ============ -->
 <div id="measureDialog" style="display:none">
   <div class="mehead">⟺ Measure</div>
@@ -357,6 +388,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=155"></script>
+<script type="module" src="/static/js/main.js?v=156"></script>
 </body>
 </html>

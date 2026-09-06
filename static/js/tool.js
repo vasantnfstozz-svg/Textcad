@@ -93,7 +93,8 @@ function currentSelection(explicit) {
   if (owner) {
     // no normal is invented here: the server resolves the face by its centre
     // and, when the pick gave one, its normal (R1)
-    return { kind: 'face', center: face.center, normal: face.normal || null, body: owner };
+    return { kind: 'face', center: face.center, normal: face.normal || null, body: owner,
+             point: face.point || null };     // where it was clicked (Hole's centre)
   }
   if (S.pickedProfile) return { kind: 'profile', id: S.pickedProfile.id };
   const sel = feats().find(f => f.id === S.selected);
@@ -167,7 +168,13 @@ async function releaseIso() {
      panel, ids                 the panel element id and the prefix of its field
                                 ids: <ids>Profile / Op / Target / TargetRow /
                                 Cancel / Ok are the framework's rows
-     ops: {profile, face}       the op created for each input kind
+     ops: {profile, face}       the op created for each input kind; a tool with
+                                only `face` takes no sketch (Hole)
+     eats                       the face op returns its body CHANGED (Hole): no
+                                Join / Cut row, no target
+     repick                     face tools: while the panel is open a click on a
+                                flat face of the body moves the input there
+                                (the value is the hint the picker shows)
      fields: {change, typed}    the tool's own field-id suffixes: `change` fields
                                 re-apply on change, `typed` ones after a pause
      show(st, params)           write params (or {} = the honest defaults) into
@@ -233,6 +240,7 @@ export function tool(spec) {
   function hide() {
     spec.gizmos.end();
     endEdgePick();
+    cancelProfilePick();              // a re-pick armed for the session goes with it
     st = null;
     panel().style.display = 'none';
     if (active === ctl) active = null;
@@ -268,7 +276,8 @@ export function tool(spec) {
       fill(id('Profile'), ['(selected face)'], '(selected face)');
       el('Profile').disabled = true;
       fill(id('Target'), bods.map(b => b.id), sel.body);
-      el('Op').value = 'join';        // pulling a face usually grows the body
+      // pulling a face usually grows the body; an op that EATS it (Hole) combines nothing
+      el('Op').value = spec.eats ? 'new' : 'join';
       begin();
       return;
     }
@@ -281,6 +290,16 @@ export function tool(spec) {
     const canFace = !!spec.ops.face;
     if (sel && sel.kind === 'face')   // picked a face for a tool without face mode
       say(`⚠ ${spec.name} works on a sketch profile — click a sketch, not a face.`);
+    if (!spec.ops.profile) {          // a FACE-ONLY tool (Hole): no sketch list to offer
+      if (sel && sel.kind === 'profile')
+        say(`⚠ ${spec.name} starts on a FLAT face of a body — click a face, not a sketch.`);
+      if (!bods.length) {
+        say(`⚠ ${spec.name} needs a body — build one first, then click a face of it.`);
+        return;
+      }
+      awaitPick(false);
+      return;
+    }
     const want = sel && sel.kind === 'profile' ? sel.id : null;
     // only UNCONSUMED sketches are offered — a sketch already used must not
     // silently become the profile again; an explicit pick is honoured even if
@@ -302,8 +321,12 @@ export function tool(spec) {
       begin();
       return;
     }
-    // NOTHING selected: Fusion's command-then-select — the USER picks what to
-    // work on (a sketch profile or a flat face); never auto-grab a sketch
+    awaitPick(true);
+  }
+  /* NOTHING selected: Fusion's command-then-select — the USER picks what to
+     work on (a sketch profile and / or a flat face); never auto-grab a sketch */
+  function awaitPick(profiles) {
+    const canFace = !!spec.ops.face;
     beginProfilePick((kind, data) => {
       if (kind === 'profile') { open(data); return; }
       // ONE selection set. This is the only writer that bypasses the
@@ -312,11 +335,13 @@ export function tool(spec) {
       // tool would loop asking for the pick the user had just made. clearPick
       // also takes away the old highlight and the stale readout.
       clearPick();
-      S.pickedFace = data;            // planar face — reuse face mode
+      S.pickedFace = data;            // planar face (and the point clicked) — face mode
       open();
-    }, { name: spec.name, faces: canFace });   // the picker speaks for THIS tool
-    say(`${spec.name}: click a sketch profile${canFace ? ' or a flat face' : ''} in the ` +
-      `viewport — your pick, nothing is chosen for you. Esc cancels.`);
+    }, { name: spec.name, faces: canFace, profiles });   // the picker speaks for THIS tool
+    const what = [profiles && 'a sketch profile', canFace && 'a flat face']
+      .filter(Boolean).join(' or ');
+    say(`${spec.name}: click ${what} in the viewport — your pick, nothing is chosen ` +
+      'for you. Esc cancels.');
   }
 
   /* -------- EDGE MODE (Fusion: press Fillet, click edges, drag) --------
@@ -373,7 +398,11 @@ export function tool(spec) {
     if (!st) return;
     const mine = st;
     const plan = await fetchPlan(extra);
-    if (st !== mine || !plan) return;
+    if (st !== mine) return;
+    if (!plan) {                      // refused (it said why): the handles stay as they were
+      if (spec.repick && st.input.kind === 'face') armRepick();
+      return;
+    }
     if (st.featureId && plan.edges && !plan.edges.length) {
       say(`⚠ ${spec.name} keeps at least one edge while a value is set — Cancel closes the tool.`);
       return;
@@ -390,6 +419,29 @@ export function tool(spec) {
       fill(id('Profile'), [edgesLabel(plan)], edgesLabel(plan));
     }
     spec.gizmos.begin(st, plan);
+    if (spec.repick && st.input.kind === 'face') armRepick();
+  }
+  /* -------- a tool whose input POINT can move (Hole) --------
+     While the session is open, a click on a flat face of the body puts the
+     input there: the plan places everything again and the feature, if built,
+     follows. The viewport's picker disarms itself after each click, so it is
+     re-armed once the new plan has landed (adoptPlan) — or at once when the
+     click was refused. `spec.repick` is the hint the picker shows. */
+  function armRepick() {
+    beginProfilePick((kind, data) => {
+      if (!st || st.input.kind !== 'face') return;
+      // while the preview is up the viewport shows THIS tool's result body
+      const mine = data && (data.body === st.input.body || data.body === st.featureId);
+      if (kind !== 'face' || !mine) {
+        say(`⚠ ${spec.name} stays on ${st.input.body} — click a flat face of that body ` +
+          'to move it there, or Cancel.');
+        armRepick();
+        return;
+      }
+      st.input = { ...st.input, center: data.center, normal: data.normal || null,
+                   point: data.point || null };
+      replan();
+    }, { name: spec.name, faces: true, profiles: false, hint: spec.repick, sticky: true });
   }
 
   /* opening builds NOTHING — the boxes start at the honest zero, the gizmos
@@ -421,7 +473,7 @@ export function tool(spec) {
     const p = f.params || {};
     st = session(face
       ? { kind: 'face', center: p.face_center, normal: p.face_normal || null,
-          body: f.inputs[0] }
+          body: f.inputs[0], point: null }    // the server reads the stored point
       : edges
         ? { kind: 'edges', body: f.inputs[0], edges: null }   // null: the server reads the stored ones
         : { kind: 'profile', id: f.inputs[0] });
@@ -458,7 +510,8 @@ export function tool(spec) {
   async function fetchPlan(extra = {}, quiet = false) {
     const i = st.input;
     const req = i.kind === 'face'
-      ? { tool: spec.tool, body_id: i.body, face_center: i.center, face_normal: i.normal }
+      ? { tool: spec.tool, body_id: i.body, face_center: i.center, face_normal: i.normal,
+          face_point: i.point || null }
       : i.kind === 'edges'
         ? { tool: spec.tool, body_id: i.body, edges: i.edges }
         : { tool: spec.tool, sketch_id: i.id };

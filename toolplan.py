@@ -171,14 +171,11 @@ def _default_target(doc, profile_id: str) -> str | None:
 
 
 def _pick_face(part, params: dict):
-    """The face a sketch_on_face / extrude_face names, the two ways they may
-    name it (by direction, or by a real pick's centre + normal)."""
-    if params.get("face"):
-        return sk.named_face(part, params["face"])
-    if params.get("face_center") is not None:
-        return sk.resolve_face(part, params["face_center"], params.get("face_normal"))
-    raise ValueError('the face is not named — give face="top"/"+x"/... or a '
-                     "face_center from an actual pick")
+    """The face a sketch_on_face / extrude_face / hole names, the two ways they
+    may name it (by direction, or by a real pick's centre + normal) — the op's
+    own rule, sketch.pick_face."""
+    return sk.pick_face(part, params.get("face_center"), params.get("face_normal"),
+                        params.get("face"))
 
 
 def _flat_or_raise(face, verb: str = "extruded"):
@@ -698,8 +695,61 @@ def plan_fillet(doc, req: dict) -> dict:
     }
 
 
+# --------------------------------------------------------------------- hole ---
+
+def plan_hole(doc, req: dict) -> dict:
+    """The Hole tool's plan (specs/hole.md). Input: body_id + face_center
+    [+ face_normal] + face_point (where the face was clicked, world) — or the
+    feature_id of an existing hole (edit: its stored face and `at` are read
+    here). Returns where the hole sits (`origin`, and `at` in the face's own
+    frame — the form the op stores), the arrow's axis INTO the material, the
+    marker circle's frame, the face in stored form and how much material lies
+    under the point (`limits.material`, kernel-measured). The browser draws
+    what this says and computes nothing (R1)."""
+    body_id, params = req.get("body_id"), {}
+    face_center, face_normal = req.get("face_center"), req.get("face_normal")
+    point, at, diameter = req.get("face_point"), None, req.get("diameter")
+    fid = req.get("feature_id")
+    if fid:
+        f = _edit_input(doc, fid, ("hole",))
+        body_id = (f.inputs or [None])[0]
+        params = f.params or {}
+        face_center, face_normal = params.get("face_center"), params.get("face_normal")
+        at = params.get("at")
+        diameter = diameter if diameter is not None else params.get("diameter")
+    if face_center is None and not params.get("face"):
+        raise ValueError("Hole needs a flat face — click a face of a body")
+    part, body_id = _pick_body(doc, body_id, "drill")
+    face = sk.pick_face(part, face_center, face_normal, params.get("face"))
+    pl = sk.face_profile_plane(face)
+    if pl is None:
+        raise ValueError(f"that face is {face.geom_type.name} (curved) — a hole starts "
+                         f"on a FLAT face; tilted flat faces are fine")
+    if at is None:                               # the click, in the face's own coordinates
+        p = pl.to_local_coords(b3d.Vector(*point) if point else face.center())
+        at = [round(p.X, 4), round(p.Y, 4)]
+    _pl, centre, n = sk.hole_frame(face, at)     # a point off the face is a sentence
+    into = n * -1.0
+    span = part.bounding_box().size.length + 1.0
+    return {
+        "ok": True, "tool": "hole", "mode": "face", "op": "hole", "input": body_id,
+        "origin": _vec(centre), "axis": _vec(into), "normal": _vec(n), "at": at,
+        "face_center": _vec(face.center()), "face_normal": _vec(n),
+        # the marker circle's frame: the hole's centre, the face's own axes
+        "frame": {"origin": _vec(centre), "x_dir": _vec(pl.x_dir),
+                  "y_dir": _vec(pl.y_dir), "z_dir": _vec(n)},
+        "into_sign": 1,                          # the axis already points INTO the body
+        "diameter": float(diameter) if diameter else None,
+        "limits": {"material": sk.material_depth(part, centre, into, span),
+                   "through_span": round(span, 3)},
+        "target_body": body_id,
+        "will_build": f"hole on {body_id} at ({at[0]:g}, {at[1]:g}) "
+                      f"along {_axis_name(_vec(into))}",
+    }
+
+
 _PLANNERS = {"extrude": plan_extrude, "revolve": plan_revolve, "sketch": plan_sketch,
-             "fillet": plan_fillet, "chamfer": plan_fillet}
+             "fillet": plan_fillet, "chamfer": plan_fillet, "hole": plan_hole}
 
 
 def plan(doc, req: dict) -> dict:

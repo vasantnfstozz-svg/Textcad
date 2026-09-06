@@ -17,6 +17,7 @@ import { initSettings } from './settings.js';
 import { initExtrude } from './extrude.js';
 import { initRevolve } from './revolve.js';
 import { initFillet } from './fillet.js';
+import { initHole } from './hole.js';
 import { initMeasure } from './measure.js';
 import { initVersions } from './versions.js';
 
@@ -28,6 +29,7 @@ initSketcher();
 initExtrude();
 initRevolve();
 initFillet();     // Fillet + Chamfer on picked edges
+initHole();       // Hole at the point clicked on a flat face
 initMeasure();    // the Measure tool (face/edge dimensions)
 initRibbon();
 initSplitters();

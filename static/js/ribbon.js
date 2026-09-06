@@ -15,6 +15,7 @@ import { lookAtSketch } from './sketch3d.js';
 import { openExtrude } from './extrude.js';
 import { openRevolve } from './revolve.js';
 import { openFillet, openChamfer } from './fillet.js';
+import { openHole } from './hole.js';
 import { cancelTool } from './tool.js';
 import { openMeasure, cancelMeasure } from './measure.js';
 
@@ -45,7 +46,7 @@ function startSketch() {
 
 // the drag-handle tools (born on tool.js): pressed with the current selection
 const TOOLS = { extrude: openExtrude, revolve: openRevolve,
-                fillet: openFillet, chamfer: openChamfer };
+                fillet: openFillet, chamfer: openChamfer, hole: openHole };
 
 // named (non-op) actions that live in the ribbon
 const ACTIONS = {
@@ -94,7 +95,7 @@ const TABS = {
   Create: [
     ['Create', [{ a: 'newsketch' },
                 { a: 'import_stl_file' },
-                'extrude', 'revolve', 'loft', 'sweep']],
+                'extrude', 'revolve', 'loft', 'sweep', 'hole']],
     ['Primitives', ['plate', 'disc', 'ball', 'cone', 'tube', 'polygon_plate',
                     'hex_plate']],
     ['Advanced', ['revolve_profile', 'curved_blade']],

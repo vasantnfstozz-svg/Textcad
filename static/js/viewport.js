@@ -264,7 +264,12 @@ export function initViewport() {
        three (the ghost/ring were silently missing there once) */
     gizmos: () => ({ arrow: !!exArrow, ghost: !!exGhost, ring: !!taperRing,
                      axis: !!axisLine, lathe: !!rvGhost, glow: edgeGlow.length,
-                     edgePick: !!edgePickCb }),
+                     edgePick: !!edgePickCb, hole: !!holeMarker,
+                     facePick: !!profilePickCb }),
+    /* the hole marker as drawn: its world centre and radius */
+    holeMarkerInfo: () => holeMarker ? {
+      centre: new THREE.Vector3().setFromMatrixPosition(holeMarker.line.matrix).toArray(),
+      radius: holeMarker.radius } : null,
     /* screen position of the middle point of a body edge's drawn line — so a
        test clicks where a USER would click on that edge */
     edgeScreen: (bodyId, i) => {
@@ -400,7 +405,9 @@ export function initViewport() {
   // plane-pick is pending would leave the 3 plane quads stranded — cancel it
   bus.on('doc-updated', doc => {
     if (planePickCb) endPlanePick();
-    if (profilePickCb) cancelProfilePick();
+    // a command-then-select pick is stale once the document changed under it;
+    // a session's own re-pick (sticky) lives as long as the session
+    if (profilePickCb && !profilePickOpts.sticky) cancelProfilePick();
     follow(doc);                  // R3: the scene follows the document
   });
 
@@ -524,15 +531,21 @@ function updateGroundGrid() {
    The user picks; nothing is auto-selected for them. */
 
 let profilePickCb = null;
-let profilePickOpts = { name: 'Extrude', faces: true };   // whose pick, and may a face do
+// whose pick, may a face do, may a profile do (Hole: faces only), a hint of its
+// own, and `sticky`: a pick that belongs to an OPEN tool session (Hole's move-
+// by-clicking) — a document change does not cancel it, the session's end does
+let profilePickOpts = { name: 'Extrude', faces: true, profiles: true, hint: null, sticky: false };
 
 export function beginProfilePick(onPick, opts = {}) {
   profilePickCb = onPick;
-  profilePickOpts = { name: 'Extrude', faces: true, ...opts };
+  profilePickOpts = { name: 'Extrude', faces: true, profiles: true, hint: null, sticky: false,
+                      ...opts };
   renderer.domElement.style.cursor = 'crosshair';
   const h = document.getElementById('placeHint');
-  h.textContent = `Select a sketch profile${profilePickOpts.faces ? ' or a flat face' : ''} ` +
-    `to ${profilePickOpts.name.toLowerCase()} · Esc to cancel`;
+  const what = [profilePickOpts.profiles && 'a sketch profile',
+                profilePickOpts.faces && 'a flat face'].filter(Boolean).join(' or ');
+  h.textContent = profilePickOpts.hint
+    || `Select ${what} to ${profilePickOpts.name.toLowerCase()} · Esc to cancel`;
   h.style.display = 'block';
 }
 
@@ -548,9 +561,15 @@ function profilePickAt(e) {
   const sHit = raycaster.intersectObjects(sketchMeshes(), false)[0];
   const fHit = raycaster.intersectObjects(bodyMeshes(), false)[0];
   const cb = profilePickCb;
-  // coplanar tie: the profile drawn ON the face wins, same rule as pickAt
-  if (sHit && (!fHit || sHit.distance <= fHit.distance + 0.5)) {
+  // coplanar tie: the profile drawn ON the face wins, same rule as pickAt —
+  // unless this tool takes faces only, when the face under it is the pick
+  if (sHit && profilePickOpts.profiles && (!fHit || sHit.distance <= fHit.distance + 0.5)) {
     cancelProfilePick(); cb('profile', sHit.object.userData.sketchId); return;
+  }
+  if (sHit && !profilePickOpts.profiles && !fHit) {   // a sketch, for a face-only tool
+    bus.emit('msg', 'bot', `⚠ ${profilePickOpts.name} starts on a flat face — ` +
+      'click a face, not a sketch. Keep picking, or Esc.');
+    return;
   }
   if (fHit) {
     const entry = bodyObjs.find(b => b.mesh === fHit.object);
@@ -563,7 +582,11 @@ function profilePickAt(e) {
       return;
     }
     if (info && flat && info.center) {
-      cancelProfilePick(); cb('face', info); return;
+      cancelProfilePick();
+      // the face, WHICH body it is on, and WHERE it was clicked (Hole's centre)
+      cb('face', { ...info, body: info.body || entry.id,
+                   point: [fHit.point.x, fHit.point.y, fHit.point.z] });
+      return;
     }
     if (info) {
       bus.emit('msg', 'bot', `⚠ That face is ${info.type} (curved) — ${profilePickOpts.name} ` +
@@ -1121,6 +1144,43 @@ export function beginAxisLine(originArr, dirArr, half) {
 export function endAxisLine() {
   if (!axisLine) return;
   scene.remove(axisLine); axisLine.geometry.dispose(); axisLine = null;
+}
+
+/* ---------------- a tool's POINT marker (Hole: the circle it will cut, gold) ----
+   A unit circle placed by the plan's frame {origin, x_dir, y_dir, z_dir} at the
+   hole's centre and SCALED to the radius — the Diameter box changes it without
+   a rebuild, and nothing about where or which way is decided here (R1). */
+let holeMarker = null;
+
+export function beginHoleMarker(frame, radius) {
+  endHoleMarker();
+  const pts = [];
+  for (let i = 0; i <= 64; i++) {
+    const a = i / 64 * Math.PI * 2;
+    pts.push(new THREE.Vector3(Math.cos(a), Math.sin(a), 0));
+  }
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: 0xffc400, transparent: true, opacity: 0.95,
+                                  depthTest: false }));
+  line.renderOrder = 1000;
+  line.matrixAutoUpdate = false;
+  const basis = new THREE.Matrix4().makeBasis(
+    new THREE.Vector3(...frame.x_dir).normalize(),
+    new THREE.Vector3(...frame.y_dir).normalize(),
+    new THREE.Vector3(...frame.z_dir).normalize()).setPosition(new THREE.Vector3(...frame.origin));
+  holeMarker = { line, basis, radius: 0 };
+  scene.add(line);
+  setHoleMarker(radius);
+}
+export function setHoleMarker(radius) {
+  if (!holeMarker) return;
+  const r = Math.max(Number(radius) || 0, 1e-3);
+  holeMarker.radius = r;
+  holeMarker.line.matrix.copy(holeMarker.basis).scale(new THREE.Vector3(r, r, 1));
+}
+export function endHoleMarker() {
+  if (!holeMarker) return;
+  scene.remove(holeMarker.line); holeMarker.line.geometry.dispose(); holeMarker = null;
 }
 
 /* ---------------- revolve GHOST (instant drag preview) ----------------
@@ -2039,7 +2099,10 @@ function selectFace(fid, entry = null, hitPoint = null) {
   // loft wall can be dead flat yet typed BSPLINE, and must still be sketchable.
   // a genuinely CURVED pick is remembered separately so tools can explain it.
   const isFlat = info.planar ?? (info.type === 'PLANE');
-  S.pickedFace = (info.center && isFlat) ? info : null;
+  const point = hitPoint ? [hitPoint.x, hitPoint.y, hitPoint.z] : null;
+  // the pick carries WHERE the face was clicked — Hole's centre; the tool's
+  // plan turns it into the face's own coordinates, nothing is computed here
+  S.pickedFace = (info.center && isFlat) ? { ...info, point } : null;
   S.pickedCurved = (info.center && !isFlat) ? info : null;
   S.pickedProfile = null;              // a face pick replaces a profile pick
   S.pickedEdge = null;
@@ -2095,7 +2158,7 @@ function selectFace(fid, entry = null, hitPoint = null) {
     face: fid,
     center: info.center || null,
     area: info.area ?? null,
-    point: hitPoint ? [hitPoint.x, hitPoint.y, hitPoint.z] : null,
+    point,
   });
   if (info.center && isFlat) {                  // sketching needs a FLAT face
     const btn = document.createElement('button');

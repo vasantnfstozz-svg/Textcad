@@ -548,6 +548,21 @@ def face_outline_2d(solid, face_center: list | None = None,
             "frame": frame}
 
 
+def pick_face(solid, face_center: list | None = None,
+              face_normal: list | None = None, face: str | None = None):
+    """The face an op names, the two ways it may: by DIRECTION (face="top"/
+    "+x"/…, the authoring path — no coordinates to compute, so none to get
+    wrong) or by a real pick's centre + normal (resolved by geometry at every
+    rebuild, so the pick survives parameter changes). ONE rule for
+    sketch_on_face, hole and the planner."""
+    if face:
+        return named_face(solid, face)
+    if face_center is not None:
+        return resolve_face(solid, face_center, face_normal)
+    raise ValueError('the face is not named — give face="top"/"bottom"/"+x"/... '
+                     "or a face_center from an actual pick")
+
+
 def sketch_on_face(solid, face_center: list | None = None,
                    face_normal: list | None = None,
                    entities: list | None = None, offset: float = 0.0,
@@ -574,15 +589,7 @@ def sketch_on_face(solid, face_center: list | None = None,
     thickness and the sketch rides with the face instead of being left behind
     — which is exactly what hardcoded principal-plane offsets did to 251 of
     the 274 sketches authored before this."""
-    if face:
-        # named direction ("top", "+x"): no coordinates to get wrong
-        picked = named_face(solid, face)
-    elif face_center is not None:
-        picked = resolve_face(solid, face_center, face_normal)
-    else:
-        raise ValueError(
-            'sketch_on_face needs either face="top"/"bottom"/"+x"/... or a '
-            'face_center from an actual pick')
+    picked = pick_face(solid, face_center, face_normal, face)
     pl = face_sketch_plane(picked)
     if pl is None:
         raise ValueError(
@@ -1418,6 +1425,161 @@ def revolve_face(solid, face_center: list, face_normal: list | None = None,
             "line [[u1, v1], [u2, v2]] in the face's plane (what the Revolve tool "
             'offers), or "u" / "v"')
     return revolve_sketch(profile, axis, angle, angle2, both)
+
+
+# ---------------------------------------------------------------------------
+# Hole — Fusion's Hole tool as ONE op (LAUNCH-PLAN.md P4, specs/hole.md)
+# ---------------------------------------------------------------------------
+
+HOLE_KINDS = ("simple", "counterbore", "countersink")
+
+
+def hole_frame(face, at):
+    """Where a hole sits on `face`: its true plane (face_profile_plane), the
+    world centre of the point `at` = [u, v] in that plane, and the outward
+    normal there. (u, v) on the axis-aligned faces of a box are the very x / y
+    a sketch drawn on that face uses (probes/hole_probe.py §6: (5, 7, 10) on a
+    top face -> (5, 7); (5, 7, -10) on the bottom face -> (5, 7)), and they
+    ride the face when an upstream dimension moves it. The centre must lie ON
+    the face — a hole may run out over an edge, its centre may not (Fusion's
+    At Point). Shared by the op and the planner, so the marker and the cut
+    agree."""
+    pl = face_profile_plane(face)
+    if pl is None:
+        raise ValueError(
+            f"hole: the picked face is {face.geom_type.name} (curved) — a hole "
+            f"starts on a FLAT face; tilted flat faces are fine")
+    try:
+        u, v = float(at[0]), float(at[1])
+    except (TypeError, IndexError, ValueError, KeyError):
+        raise ValueError("hole: `at` must be [x, y] in the face's sketch "
+                         f"coordinates (got {at!r})") from None
+    centre = pl.from_local_coords(b3d.Vector(u, v, 0))
+    if not face.is_inside(centre, tolerance=1e-3):
+        raise ValueError(
+            f"hole: the point ({u:g}, {v:g}) is not on the face — the hole's "
+            f"centre must lie on it; click a point on the face")
+    return pl, centre, face.normal_at(centre)
+
+
+def material_depth(solid, origin, direction, span: float):
+    """How much material lies under `origin` along `direction` before the
+    first exit, in mm — the first piece of the line that is INSIDE the solid
+    (probes/hole_probe.py §5: Edge ∩ Solid returns exactly those pieces; a box
+    top at (5, 5) gives 20, the wedge's slanted face 45.96). None when the line
+    finds no material at the face. The Hole plan's `limits.material`."""
+    o = b3d.Vector(*origin)
+    d = b3d.Vector(*direction).normalized()
+    try:
+        pieces = b3d.Edge.make_line(o - d * 1e-3, o + d * span).intersect(solid)
+        edges = pieces.edges() if hasattr(pieces, "edges") else []
+    except Exception:                       # a measurement, never a failure
+        return None
+    spans = sorted((min(a, b), max(a, b)) for a, b in
+                   (((e @ 0 - o).dot(d), (e @ 1 - o).dot(d)) for e in edges))
+    for lo, hi in spans:
+        if hi > 1e-6:
+            return round(hi, 4) if lo <= 1e-3 else None
+    return None
+
+
+def hole_cutter(pl: Plane, centre, into, diameter: float, depth: float,
+                kind: str = "simple", cbore_diameter: float = 0.0,
+                cbore_depth: float = 0.0, csink_diameter: float = 0.0,
+                csink_angle: float = 90.0):
+    """The tool a hole removes, in a frame at the hole's centre whose z points
+    INTO the material: the bore, plus a wider counterbore cylinder or a
+    countersink cone whose wide end sits at the face. The cutter starts exactly
+    at the face (probes/hole_probe.py §2: the coplanar cap builds clean — and
+    material beside the hole ABOVE the face, a wall next to a step, is left
+    alone, as in Fusion)."""
+    A = (b3d.Align.CENTER, b3d.Align.CENTER, b3d.Align.MIN)
+    frame = Plane(origin=centre, x_dir=pl.x_dir, z_dir=into)
+    r = diameter / 2.0
+    tool = frame * b3d.Cylinder(r, depth, align=A)
+    if kind == "counterbore":
+        tool = tool + (frame * b3d.Cylinder(cbore_diameter / 2.0, cbore_depth, align=A))
+    elif kind == "countersink":
+        half = math.radians(csink_angle / 2.0)
+        h = (csink_diameter / 2.0 - r) / math.tan(half)
+        tool = tool + (frame * b3d.Cone(bottom_radius=csink_diameter / 2.0,
+                                        top_radius=r, height=h, align=A))
+    return tool
+
+
+def hole(solid, face_center: list | None = None, face_normal: list | None = None,
+         face: str | None = None, at=(0.0, 0.0), diameter: float = 6.0,
+         depth: float = 10.0, through: bool = False, kind: str = "simple",
+         cbore_diameter: float = 0.0, cbore_depth: float = 0.0,
+         csink_diameter: float = 0.0, csink_angle: float = 90.0):
+    """Drill ONE hole into `solid` from a flat face (Fusion's Hole, At Point):
+    the face by name (face="top"/"bottom"/"+x"/… — the authoring path) or by a
+    real pick (face_center + face_normal, resolved by geometry at every
+    rebuild), the centre `at` = [x, y] in that face's sketch coordinates, the
+    bore `diameter` and `depth` from the face INTO the material — or `through`
+    (Fusion's All), which runs out the far side whatever the thickness. `kind`
+    "counterbore" adds a wider flat seat (cbore_diameter, cbore_depth) at the
+    face, "countersink" a conical one (csink_diameter, csink_angle). Returns
+    the body WITH the hole: this op eats its input, no cut feature follows.
+    Every failure is a sentence in the hole's own words, and a cut that comes
+    back broken or removes nothing is refused — a failed feature beats a
+    corrupt body (probes/hole_probe.py §3)."""
+    kind = str(kind or "simple").lower()
+    if kind not in HOLE_KINDS:
+        raise ValueError(f"hole: kind must be one of {list(HOLE_KINDS)} (got {kind!r})")
+    through = _to_bool(through, "through")
+    d = float(diameter or 0.0)
+    if d <= 0:
+        raise ValueError(f"hole: diameter must be positive (got {d:g}) — type a diameter")
+    dep = float(depth or 0.0)
+    if not through and dep <= 0:
+        raise ValueError(f"hole: depth must be positive (got {dep:g}) — drag the arrow "
+                         f"or type a depth, or tick Through all")
+    picked = pick_face(solid, face_center, face_normal, face)
+    pl, centre, n = hole_frame(picked, at)
+    into = n * -1.0
+    if through:                             # past the far side, whatever the body
+        dep = solid.bounding_box().size.length + 1.0
+    cb_d, cb_h = float(cbore_diameter or 0.0), float(cbore_depth or 0.0)
+    cs_d, cs_a = float(csink_diameter or 0.0), float(csink_angle or 0.0)
+    if kind == "counterbore":
+        if cb_d <= d:
+            raise ValueError(f"hole: the counterbore diameter ({cb_d:g} mm) must be larger "
+                             f"than the hole diameter ({d:g} mm)")
+        if cb_h <= 0:
+            raise ValueError(f"hole: the counterbore depth must be positive (got {cb_h:g})")
+        if cb_h >= dep:
+            raise ValueError(f"hole: the counterbore depth ({cb_h:g} mm) must be less than "
+                             f"the hole depth ({dep:g} mm) — or tick Through all")
+    elif kind == "countersink":
+        if cs_d <= d:
+            raise ValueError(f"hole: the countersink diameter ({cs_d:g} mm) must be larger "
+                             f"than the hole diameter ({d:g} mm)")
+        if not 0 < cs_a < 180:
+            raise ValueError(f"hole: the countersink angle must be between 0° and 180° "
+                             f"(got {cs_a:g}) — 90° is the usual seat")
+        h = (cs_d - d) / 2.0 / math.tan(math.radians(cs_a / 2.0))
+        if h >= dep:
+            raise ValueError(f"hole: the countersink (⌀{cs_d:g} at {cs_a:g}°) is {h:.2f} mm "
+                             f"deep and reaches past the hole's depth ({dep:g} mm) — "
+                             f"deepen the hole or shrink the countersink")
+    where = f"⌀{d:g} hole at ({float(at[0]):g}, {float(at[1]):g})"
+    tool = hole_cutter(pl, centre, into, d, dep, kind, cb_d, cb_h, cs_d, cs_a)
+    try:
+        out = solid - tool
+    except Exception as e:      # OCP errors derive from Exception, not RuntimeError
+        raise ValueError(f"hole: the kernel could not cut the {where} here — move the "
+                         f"hole or change its size") from e
+    import inspector                                 # local: avoids an import cycle
+    problems = inspector.health(out, check_valid=False)   # the rebuild's own census
+    if problems:                                     # a failed feature beats a corrupt body
+        raise ValueError(f"hole: the {where} leaves a broken solid ({problems[0]}) — it is "
+                         f"wider than the face allows or runs out through an edge; use a "
+                         f"smaller diameter or move it inward")
+    if solid.volume - out.volume <= 1e-6 * max(solid.volume, 1.0):
+        raise ValueError(f"hole: nothing was cut — the {where} finds no material under "
+                         f"the face (an existing hole is there); move it onto solid material")
+    return out
 
 
 def loft_sketches(sketches: list):

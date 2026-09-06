@@ -34,11 +34,14 @@ _ENUMS = {
     "plane": ["XY", "XZ", "YZ"],
     "edges": ["all", "top", "bottom", "vertical", "horizontal"],
     "open_face": ["top", "bottom", "none"],
+    "kind": ["simple", "counterbore", "countersink"],     # hole
 }
 _MM = {"radius", "bolt_radius", "thickness", "height", "width", "depth",
        "length", "amount", "offset", "dx", "dy", "dz", "x", "y", "z",
-       "pitch_circle_dia", "rx", "ry", "inner_r", "outer_r", "tip_radius"}
-_DEG = {"angle", "angle2", "angle_deg", "rotation", "inlet_angle", "exit_angle"}
+       "pitch_circle_dia", "rx", "ry", "inner_r", "outer_r", "tip_radius",
+       "diameter", "cbore_diameter", "cbore_depth", "csink_diameter"}
+_DEG = {"angle", "angle2", "angle_deg", "rotation", "inlet_angle", "exit_angle",
+        "csink_angle"}
 # an `axis` that is NOT the world-axis enum: revolve's takes "u" / "v", a world
 # name or a line [[u1, v1], [u2, v2]] in the sketch plane (see its OP_NOTE) —
 # an enum here would tell the AI the one form that cannot work on a face
@@ -71,6 +74,16 @@ OP_NOTES = {
                     "from a real pick) about a line in the face's plane, normally one of "
                     "its straight edges: axis=[[u1, v1], [u2, v2]]. Returns only the new "
                     "solid; fuse/cut it with the body.",
+    "hole": 'Drills ONE hole into the input body from a flat face and RETURNS THE '
+            'BODY WITH THE HOLE (no sketch, no cut feature). Name the face '
+            '(face="top"/"bottom"/"+x"/… — never compute a face_center) and place '
+            'it with at=[x, y] in that face\'s sketch coordinates (the same x/y a '
+            'sketch_on_face on that face uses). diameter + depth in mm from the '
+            'face into the material; through=true runs out the far side. kind '
+            '"counterbore" adds a flat seat (cbore_diameter > diameter, cbore_depth '
+            '< depth), "countersink" a conical one (csink_diameter > diameter, '
+            'csink_angle, 90 is usual). One feature per hole; the centre must lie '
+            'on the face.',
     "extrude": "Pulls the sketch normal to its plane, i.e. AWAY from the face a "
                "face-sketch sits on. flip=true pulls the other way (INTO the "
                "body = pocket/hole). through=true ignores the distance and runs "
@@ -249,7 +262,10 @@ BASE FIRST, THEN SKETCH ON THE BASE — THE OFFSET METHOD
      then extrude {{"amount":3,"flip":true}}, then cut
    * boss 4mm tall on the top     -> sketch_on_face face "top" offset 0,
      then extrude {{"amount":4}}, then fuse
-   * hole right through           -> sketch_on_face face "top" offset 0,
+   * a round hole (through or blind, plain / counterbore / countersink) ->
+     ONE "hole" feature on the current body: {{"face":"top","at":[x,y],
+     "diameter":6,"through":true}} (or "depth":8) — no sketch, no cut
+   * a non-round cut right through -> sketch_on_face face "top" offset 0,
      then extrude {{"through":true,"flip":true}}, then cut
    * something starting partway in (a pilot hole in a 3mm recess floor) ->
      sketch_on_face face "top" offset -3, then extrude flip/through, cut
