@@ -1,6 +1,9 @@
 # Pattern — tool spec (P4, LAUNCH-PLAN.md §8 step 1)
 
-> **Status: spec 2026-09-06, being built.** The fifth tool on the framework
+> **Status: built 2026-09-06 (5b52dc1, ui v158), code-reviewed the same day and
+> all 7 findings fixed (ca5725a, ui v159); the user's five-step checklist passed
+> 2026-09-06; LAUNCH-PLAN §7 P4 stamped. The drag ghost (Hole has one since
+> c6a2377) is deferred by the user — LAUNCH-PLAN §10.** The fifth tool on the framework
 > (`tool.js`): two ribbon buttons, **Circular Pattern** and **Rectangular
 > Pattern** (Fusion's names), one declaring function (as Fillet / Chamfer),
 > two ops that already exist and stay backward-compatible — `polar_pattern`

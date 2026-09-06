@@ -15,8 +15,11 @@
 > outline's own edges as the axis, Two sides / Symmetric; review fixes
 > d82e9d0, ui v155 — §7 P3). **P4's second tool, Hole, done 2026-09-06**
 > (5336c82: Fusion's Hole as ONE op that eats its body; all 25 findings of its
-> code review fixed 0c49c42, ui v157 — §7 P4). Next: the user's Hole checklist
-> (specs/hole.md), then Pattern. One tool per session. Every
+> code review fixed 0c49c42, ui v157 — §7 P4). **P4's third tool, Pattern,
+> done 2026-09-06** (5b52dc1: Circular / Rectangular Pattern of a FEATURE's
+> delta; all 7 review findings fixed ca5725a, ui v159; both checklists passed;
+> Hole's drag ghost c6a2377, ui v160 — §7 P4). Next: Mirror, in a fresh chat.
+> One tool per session. Every
 > other plan file points here; §7 carries the done-notes, §10 the ranked open
 > items.
 >
@@ -500,7 +503,8 @@ tool's journeys) hid — **when a change touches `viewport.js` or `tool.js`, run
 the other tools' journeys too.**
 
 *Hole done 2026-09-06* (spec `specs/hole.md`, tool 5336c82, review fixes
-0c49c42, ui v157; user's checklist passed 2026-09-06). `static/js/hole.js`
+0c49c42, ui v157; user's checklist passed 2026-09-06; drag ghost c6a2377, ui
+v160, re-checked by the user the same day). `static/js/hole.js`
 is **193 lines with no geometry maths**. Two firsts, and both cost the
 framework a new idea. **The op EATS its body**: `sketch.hole` takes the solid
 and returns the solid WITH the hole — no cutter prism, no Cut row, one `hole1`
@@ -540,6 +544,42 @@ new (`at=None` drilling at the face centre, a 2 m ceiling on through holes),
 one a shared-resource mistake three.js invites (`ArrowHelper` hands the same
 two geometries to every arrow; only the materials are the caller's). **Rule
 learned: a fix commit earns a review of its own.**
+
+*Pattern done 2026-09-06* (spec `specs/pattern.md` 925ab67, tool 5b52dc1,
+review fixes ca5725a — all 7 findings, ui v159; user's checklist passed
+2026-09-06). `static/js/pattern.js` is **154 lines with no geometry maths**.
+The two ops that existed, `polar_pattern` / `linear_pattern`, now take a
+`seed` and repeat a FEATURE: the document hands the op the seed's before /
+after bodies and the pattern repeats the DELTA (before − after cut again,
+after − before fused again) about an axis or along a direction on the body's
+CURRENT state — a hole, a pocket, a boss, a fillet all pattern the same way;
+no seed = the legacy body pattern, signature-compatible. `document.
+delta_features` is the ONE seed resolver (a modifier is its own before /
+after, a pulled tool with a folded boolean is the boolean's, anything else a
+body seed). The axis lives in ONE stored form (null = world Z, a world name, a
+face pick / name, or `{origin, dir}`). Every copy is measured: one that
+removes exactly nothing is refused by number, an open shell is refused, a
+kernel error is a sentence. Framework grew a fourth selection kind `feature`
+(a tree row feeds a waiting tool), `anyFace` picks and `onRepick` (a session
+click re-aims the AXIS); the viewport a second arrow. Circular = ring (total
+angle) + typed count, opens at 1; Rectangular = two arrows (Distance 1 / 2),
+Spacing / Extent, opens at count 2 / distance 0. **Probes:**
+`probes/pattern_probe.py` (11 findings). **Tests:** `tests/test_pattern_tool.py`
+(38), `tests/test_pattern_gauntlet.py` (16: 8 bodies × every flat face ×
+circular 3 / 5 + rectangular), `tests/e2e/test_pattern_tool.py` (5 journeys).
+**Line delta (source, excl. tests/probes/spec): +500/−112 in existing files,
++527 in two new files (pattern.py 373, pattern.js 154).** *Its review (7
+findings, §10):* a pattern's `seed` is the tree's only REFERENCE that is not
+an input, so `document.REF_PARAMS` was born; a body pattern is never refused
+for producing the same volume (a symmetric body patterns onto itself — 14
+live designs would have failed at rebuild), only zero motion is.
+
+*After both checklists (2026-09-06) the user found ONE thing: no ghost while
+dragging.* Hole got it the same day (c6a2377, ui v160: hole.js feeds Extrude's
+ghost the hole's circle in the plan's frame, +42 net lines, no viewport
+change, +1 journey; the user re-checked it). Pattern's ghost is deferred by
+the user's decision (§10) — its copies need the seed's delta mesh from the
+server. The review of c6a2377 rides with the next tool's (user's call).
 
 **P5 — The AI uses the tools (§5 step B).** Incremental authoring through
 the plan endpoint; chat edits point at parameters; the FEATURE-TREE-PLAN
@@ -622,6 +662,10 @@ assemblies, the user's personal project.
 
 | Pri | Item | Source |
 |-----|------|--------|
+| P3 | **Pattern has no drag ghost (improvement, deferred by the user 2026-09-06: "we will do that later").** Hole (c6a2377), Extrude and Revolve show a translucent ghost while the handle moves; Pattern's ring and arrows move only the number until release, and a pattern rebuild costs the kernel 250–500 ms. Plan: the pattern plan returns a tessellated mesh of the seed's DELTA (before − after / after − before — `document.delta_features` computes it already); the browser instances N−1 translucent copies about the plan's axis / along its directions, following the drag AND the typed count at once (type 6, see five ghosts before the kernel confirms); a browser test compares the ghost copies' positions with the real copies after release, because Full / partial angle and Spacing / Extent would then exist twice — the 2026-09-01 "ghost goes the other way" class. Marks only (dots on the ring, ticks on the arrow) was considered and rejected: honest but far less useful. Roughly half a day. | user checklist 2026-09-06 |
+| P3 | **Pattern's count is typed, not dragged.** Fusion has a quantity handle beside the ring / arrow (parity rule 3). | specs/pattern.md |
+| P3 | **Pattern lacks Fusion's Symmetric distribution and per-copy Suppress.** | specs/pattern.md |
+| done | **Code review of Pattern (5b52dc1; 7 findings, all fixed ca5725a, 2026-09-06).** A pattern's `seed` is the tree's only REFERENCE that is not an input — `document.REF_PARAMS` / `Document.param_refs`: rename rewrites it, delete / strike-out takes patterns of a deleted seed along, the orphan sweep leaves a live seed alone (any future param naming a feature joins REF_PARAMS). A body pattern must NOT be refused for producing the same volume (a symmetric body patterns onto itself; 14 live designs, 21 pattern features, all rebuild) — only zero motion is. `own_id` on a plan request = the feature THIS session built, so a replan never walks into the tool's own output. Frontend: a pick's bus subscription dies WITH the pick; every viewport pick outranks a tree row (fusion-parity skill). | P4 2026-09-06 |
 | done | **`inspector.health` called every cone apex and sphere pole an open shell** — build123d's `is_manifold` counts the faces on DEGENERATED edges (one by construction), so a revolve about the profile's own edge, a plain cone, and anything sphere-bearing tripped it (spheres alone had an exemption), while a sweep about an axis a few microns OFF the edge — a SLIVER face, no apex — passed. `inspector.closed_shell` (one topology map) is the verdict for health AND measure (MCP `verify_step` read the raw flag and disagreed with the tree); a degenerated edge is excused only on ONE cone / sphere / revolution face — a spline fillet pinched to a point stays a defect (`tests/test_fillet_tool.py` radius 6 relies on it). | P3b 2026-09-05 (4987a15, d82e9d0) |
 | P3 | **Revolve's second side has no handle.** Two sides gives Angle 2 a number box only; the ring drags side one. Fusion gives each side its own end to grab (parity rule 3: direct manipulation first). A second ring handle on the far end of the sweep, sharing the one-turn budget the way the boxes do. | P3b review 2026-09-05 |
 | done | **Code review of Hole (P4, e4a9d05..5336c82; 8 angles, 25 verified findings, all acted on 2026-09-06).** The four that could reach the user: a click while EDITING a hole was ignored (the plan overwrote the request with the stored point, so the re-pick the tool itself arms did nothing and said nothing) → the request is the answer, the stored values the fallback; a hole authored without an `at` opened at the FACE CENTRE while the op cuts at (0, 0), so pressing OK on it moved the cut (one default now, `sketch.HOLE_AT`, measured against the kernel's own cut centroid); a `face` NAME outlived every moved `face_center` because the op prefers the name, so an AI-authored hole could never be moved (the plan hands back ONE stored form and a click clears the other); and "nothing was cut" was a millionth of the WHOLE part, so a real ⌀1 hole in a 200 × 100 × 50 block was refused as finding no material (absolute floor — a cutter that misses measures exactly 0.0). Panel traps: choosing Counterbore / Countersink on a built hole applied a ⌀0 seat, the op refused and the revert put the Type box back to Simple (the seat kinds were unreachable), and unticking Through all applied the still-disabled depth 0 and re-ticked itself — a seat kind now seeds sizes that fit, and the framework holds a half-made state instead of applying-and-reverting it (`spec.hold`). Also: measure can drive a hole's ⌀ (the bore has no sketch circle, and the read-only sentence was untrue); the marker frame was LEFT-handed on 3 of a box's 6 faces; a through hole may have a seat and reaches `THROUGH_MM`; the cutter is built inside the try; one `_csink_height`; the plan lost 4 dead fields and a bounding box and measures the material only when asked (250-510 ms per plan on a real body); undo/redo are refused while a tool panel is open (rule 9) and a sticky pick is cancelled by a document change that is NOT this session's; two ribbon buttons were called "Hole" (the legacy one is "Centre bore"). Evidence: `probes/hole_review_probe.py`. **14 new tests** (11 in `tests/test_hole_tool.py` — the plan's edit/move/one-face-form/no-`at` cases, the absolute cut floor, a seat in a through hole, a body deeper than THROUGH_MM, the seat checked before the face, a cutter error as a sentence, and a right-handed sweep over every face of a box; 1 measure-drive; 2 browser journeys). | review 2026-09-06 |
