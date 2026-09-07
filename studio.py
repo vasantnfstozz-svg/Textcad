@@ -2640,8 +2640,15 @@ def export_step():
     is what a CAM import picked up). After writing, the file itself is
     measured and the facts returned, so the UI can show what the reader of
     this file will actually get: never trust, always measure — exports
-    included. A parked rollback bar or a failed tail is handled/refused in
+    included. A parked rollback bar or a failed body is handled/refused in
     Document.to_step rather than silently exporting an intermediate body.
+
+    The readback measures the WHOLE file — every body in it — so `n_solids`
+    is the count a CAM tool will see and `is_valid`/`is_manifold` cover all
+    of them, not just the tree's tail (2026-09-07: bodies other than the
+    tail never reached the file at all, and the deep validity check in
+    rebuild() still only ever sees the tail). That makes this readback the
+    one place the whole delivered design is proven sound.
     """
     doc = _doc()
     path = str(DESIGNS / f"{doc.name}.step")
@@ -2651,7 +2658,10 @@ def export_step():
         return {"error": str(e)}
     m = inspector.measure(path)
     return {"path": path, "n_solids": m.get("n_solids"),
-            "volume": m.get("volume"), "size": m.get("size")}
+            "volume": m.get("volume"), "size": m.get("size"),
+            "is_valid": m.get("is_valid"),
+            "is_manifold": m.get("is_manifold"),
+            "bodies": len(doc.result_bodies())}
 
 
 # ---------------------------------------------------------------------------

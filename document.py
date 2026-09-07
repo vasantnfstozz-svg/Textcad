@@ -927,10 +927,19 @@ class Document:
         if self.rollback is not None:
             self.spec_problems = ["(spec not checked while rolled back)"]
             return ok
-        if ok and self.spec and self.result() is not None:
-            rf = self._result_feature()
+        # The spec is checked against the WHOLE design — every body — not the
+        # tree's tail. Checking result() measured one body of a multi-body
+        # design, so the size/hole/solid-count guarantee covered a fraction of
+        # the part: on designs/esp32-remote it reported the case as 11x57x1mm
+        # (a 249mm3 leaf) instead of the 90x200x12mm it is. The signature has
+        # to span EVERY leaf for the same reason, or editing a body that is
+        # not the tail would hand back a cached verdict about the old geometry.
+        # verify() also runs health() on what it is given, so this is where
+        # non-tail bodies get checked at all — for free, once per rebuild.
+        leaves = self.leaf_solid_ids()
+        if ok and self.spec and leaves:
             spec_sig = hashlib.sha1(json.dumps(
-                [sigs.get(rf.id if rf else ""), self.spec],
+                [[sigs.get(fid) for fid in leaves], self.spec],
                 sort_keys=True, default=str).encode("utf-8")).hexdigest()
             if self._spec_cache and self._spec_cache[0] == spec_sig:
                 self.spec_problems = list(self._spec_cache[1])
@@ -940,7 +949,7 @@ class Document:
             except Exception as e:
                 self.spec_problems = [f"spec is malformed: {e!r}"]
                 return False
-            self.spec_problems = inspector.verify(self.result(), spec_obj)
+            self.spec_problems = inspector.verify(self.result_shape(), spec_obj)
             self._spec_cache = (spec_sig, list(self.spec_problems))
             ok = not self.spec_problems
         return ok
@@ -1190,41 +1199,102 @@ class Document:
         f = self._result_feature()
         return self._parts.get(f.id) if f else None
 
-    def _export_blockers(self) -> list:
-        """Features that keep the tree's TAIL from being the exported body.
+    def result_bodies(self) -> list:
+        """EVERY built solid body of the design — what the export must contain.
 
-        Walking back from the tail: suppressed features and sketches are
-        skipped, a sketch-valued modifier (a moved profile) is skipped, and
-        the first real solid ends the walk. Anything hit before that point
-        with no built part — failed, or stale behind a rollback bar — is a
-        blocker: exporting past it silently hands over an INTERMEDIATE body
-        (usually a bare cutter volume), which reads as "my edits are not in
-        the STEP file" downstream.
+        The one authority on "what is the design", shared by the viewport and
+        the exporter so they can never disagree. It is leaf_solid_ids() turned
+        into parts: a design is its unconsumed bodies, which is one solid in
+        the common case and several whenever the user has a base plus a boss,
+        a mirror with Join off, or a face-sketch chain (sketch_on_face does
+        not consume the body it points at, so the base stays a body of its
+        own). result() is the LAST of these — the tree's tail, useful for
+        "the thing I just made", never for "the thing I designed".
         """
+        return [p for p in (self._parts.get(fid) for fid in self.leaf_solid_ids())
+                if p is not None]
+
+    def result_shape(self):
+        """The whole design as ONE shape to export or measure, or None.
+
+        One body goes out bare — no assembly wrapper, so the everyday case is
+        byte-for-byte what it always was. Several go into a Compound, which a
+        STEP reader shows as N separate bodies; they are NOT fused, because
+        bodies the user has not joined are not joined
+        (probes/multibody_step_probe.py §3, §5).
+
+        Exporting and measuring share this so a file can never contain
+        something other than what was measured and reported.
+        """
+        bodies = self.result_bodies()
+        if not bodies:
+            return None
+        return bodies[0] if len(bodies) == 1 else b3d.Compound(bodies)
+
+    def _export_blockers(self) -> list:
+        """Bodies of the design that did not build — the export is refused.
+
+        A body of the design is any active, non-sketch feature that nothing
+        downstream consumes (the same rule leaf_solid_ids() uses). If one of
+        those has no built part — failed, or stale behind a rollback bar — the
+        file would be handed over with a piece MISSING, which reads as "my
+        edits are not in the STEP file" downstream. So it is named instead.
+
+        Suppressed features and sketches are skipped: a struck-out feature's
+        geometry is deliberately gone, and a 2D profile is not a body. A
+        sketch-valued part (a moved profile) is skipped for the same reason.
+
+        Two ways a body fails, and BOTH block (2026-09-07):
+
+        * no part at all — the build raised, or it is stale behind a rollback
+          bar. The old version walked backwards from the tail and stopped at
+          the first built solid, so a failed branch sitting EARLIER than the
+          tail was never noticed and its body silently vanished from the file.
+        * a part that built but did not pass its health check — an empty
+          solid, an open shell, a non-manifold body. rebuild() keeps the shape
+          for these (only an exception nulls it), so testing `part is None`
+          let them straight through: an empty cut result exported as a STEP
+          holding ZERO solids and the UI called it a successful export, and in
+          a multi-body design the bad body just disappeared behind plausible
+          numbers. A failed feature beats a corrupt body.
+        """
+        consumed = self.consumed_ids()
         blockers = []
-        for f in reversed(self.features):
-            if f.suppressed or f.op in sk.SKETCH_PRODUCERS:
+        for f in self.features:
+            if (f.suppressed or f.id in consumed
+                    or f.op in sk.SKETCH_PRODUCERS):
                 continue
             part = self._parts.get(f.id)
-            if part is None:
+            if part is not None and sk.is_sketch(part):
+                continue            # a 2D profile is not a body of the design
+            if part is None or f.status != "ok":
                 blockers.append(f)
-                continue
-            if sk.is_sketch(part):
-                continue
-            break
         return blockers
 
     def to_step(self, path: str) -> str:
-        """Export the FINISHED DESIGN, never the transient build state.
+        """Export the WHOLE FINISHED DESIGN — every body, never the transient
+        build state.
+
+        Two ways this used to hand over the wrong geometry, both fixed here:
 
         The rollback bar is edit plumbing — the sketch/extrude editors park
         it for isolation while they are open. Exporting while it is parked
         used to write whatever body happened to be last built (2026-08-31:
         a CAM import showed a bare cavity-cutter slab instead of the edited
         part). So a parked bar is released for the export and re-parked
-        after — the restore rebuild is all cache hits — and a tail that
+        after — the restore rebuild is all cache hits — and a body that
         genuinely failed to build is refused BY NAME instead of silently
-        exporting the last intermediate that succeeded.
+        exporting the intermediates that succeeded.
+
+        And it exported result() — ONE body, the tree's tail — while a design
+        legitimately has SEVERAL (2026-09-07: "i can see only half part of
+        design and rest of them are missing"; designs/my-part-6 has four
+        bodies totalling 424161.3 mm3 and the file held 585.6). Now every
+        body in result_bodies() is written, as SEPARATE solids in one file,
+        the way a multi-body part exports from Fusion or SolidWorks — the
+        exporter does not fuse them, because bodies the user has not joined
+        are not joined (probes/multibody_step_probe.py §5). One body still
+        writes as a bare solid, with no assembly wrapper around it (§3).
         """
         if not self._parts:
             raise RuntimeError("nothing to export — rebuild first / fix failures")
@@ -1239,14 +1309,14 @@ class Document:
                     f"'{f.id}' ({f.problems[0]})" if f.problems else f"'{f.id}'"
                     for f in blockers)
                 raise RuntimeError(
-                    "cannot export: the design's final body did not build — "
-                    f"{what}. Fix or delete the failed feature(s), then "
-                    "export again.")
-            part = self.result()
-            if part is None:
+                    "cannot export: a body of the design did not build — "
+                    f"{what}. Fix, strike out or delete the failed "
+                    "feature(s), then export again.")
+            shape = self.result_shape()
+            if shape is None:
                 raise RuntimeError(
                     "nothing to export — rebuild first / fix failures")
-            b3d.export_step(part, path)
+            b3d.export_step(shape, path)
             return path
         finally:
             if parked is not None:

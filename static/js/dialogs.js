@@ -151,14 +151,27 @@ export async function actionExport() {
   const res = await r.json();
   if (res.error) { bus.emit('msg', 'bot', '⚠ ' + res.error); return; }
   // Echo what was MEASURED FROM THE FILE, not what we hope is in it — a
-  // wrong body (stale tab, intermediate solid) shows up instantly as the
-  // wrong size/volume next to the path.
+  // wrong body (stale tab, intermediate solid) or a MISSING one shows up
+  // instantly as the wrong count/size/volume next to the path. Every number
+  // here is a field on the response; nothing is recomputed (R1).
   const facts = (res.size && res.volume != null)
     ? ` — ${res.n_solids} solid${res.n_solids === 1 ? '' : 's'}, `
       + `${res.size.map(v => Math.round(v * 10) / 10).join('×')} mm, `
       + `${(res.volume / 1000).toFixed(1)} cm³ (measured from the file)`
     : '';
-  bus.emit('msg', 'bot', '⬇ Exported: ' + res.path + facts);
+  // A design with several separate bodies is normal CAD, but it changes what
+  // the next program does with the file, so say it plainly instead of leaving
+  // the user to notice a piece is missing downstream.
+  const many = res.bodies > 1
+    ? ` This design has ${res.bodies} separate bodies and all of them are in `
+      + `the file. Join them with Extrude's Join (or a fuse feature) if you `
+      + `want one solid.`
+    : '';
+  const unsound = (res.is_valid === false || res.is_manifold === false)
+    ? ' ⚠ The kernel reports the exported geometry is not a clean solid —'
+      + ' check it before machining.'
+    : '';
+  bus.emit('msg', 'bot', '⬇ Exported: ' + res.path + facts + many + unsound);
 }
 
 export async function actionUndo() {

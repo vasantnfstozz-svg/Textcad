@@ -76,9 +76,13 @@ def _report(doc: Document, ok: bool) -> dict:
         "spec": doc.spec,
         "spec_problems": doc.spec_problems,
     }
-    part = doc.result()
-    if part is not None:
-        rep["measured"] = inspector.measure(part)
+    # the WHOLE design, not just the tree's tail: a multi-body design measured
+    # through result() reported one body's volume and size, so the caller (an
+    # AI, usually) believed a fraction of the part was the part (2026-09-07)
+    shape = doc.result_shape()
+    if shape is not None:
+        rep["measured"] = inspector.measure(shape)
+        rep["bodies"] = len(doc.result_bodies())
     return rep
 
 
