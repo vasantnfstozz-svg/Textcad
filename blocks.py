@@ -485,6 +485,81 @@ def _pick_edges(part: Part, which: str):
                      f"of picked edges")
 
 
+def edge_direction(edge) -> str:
+    """vertical = a straight edge along Z; horizontal = the edge LIES FLAT (a
+    line along X or Y, but also a flat arc: a pocket's rounded floor rim is
+    horizontal to anyone who machines it); other = the rest. The Fillet panel's
+    vocabulary — the AI's legacy groups (_pick_edges) keep theirs."""
+    zs = [(edge @ t).Z for t in (0.0, 0.25, 0.5, 0.75, 1.0)]
+    if max(zs) - min(zs) < 1e-6:
+        return "horizontal"
+    if _gtype(edge) == "LINE" and abs((edge % 0.5).normalized().Z) > 0.999:
+        return "vertical"
+    return "other"
+
+
+def edge_side(edge, faces) -> str | None:
+    """"inside" for a concave edge — two faces meeting at an inside corner, what
+    a cutter has to round anyway — "outside" for a convex one, None for a seam
+    (one face) or a smooth junction (a round meeting a flat tangentially).
+
+    Rule (probes/edge_side_probe.py): with tA the direction from the edge INTO
+    face A along its surface, the edge is concave when tA points the way face
+    B's outward normal does. tA = ±(nA × d): the sign whose test point lies on
+    A, a bounded distance query. The orientation-based shortcut (interior on
+    the left of the oriented wire) was measured wrong on half the edges of a
+    plain pocketed box, in every flip variant, and rejected."""
+    if len(faces) != 2:
+        return None
+    a, b = faces
+    m = edge @ 0.5
+    d = (edge % 0.5).normalized()
+    try:
+        na, nb = a.normal_at(m), b.normal_at(m)
+    except Exception:
+        return None
+    c = na.cross(d)
+    if c.length < 1e-9:
+        return None
+    c = c.normalized()
+    eps = min(0.3, 0.05 * edge.length)
+    ta = c if a.distance_to(m + c * eps) <= a.distance_to(m - c * eps) else -c
+    s = ta.dot(nb)
+    if abs(s) < 0.05:
+        return None
+    return "inside" if s > 0 else "outside"
+
+
+EDGE_GROUPS = ("inside/vertical", "inside/horizontal", "inside/all",
+               "outside/vertical", "outside/horizontal", "outside/all")
+
+
+def edge_groups(part: Part, faces_by_edge: dict | None = None) -> dict:
+    """Every edge of the body sorted into the Fillet panel's groups
+    (EDGE_GROUPS): inside corner / outside edge × upright / flat-lying / all.
+    Classified ONCE per built body (0.7 s for esp32-remote's 609 edges) and kept
+    on the Part object — a rebuild is a new Part — so a plan per click costs set
+    arithmetic only."""
+    cached = getattr(part, "_textcad_edge_groups", None)
+    if cached is not None:
+        return cached
+    faces_by_edge = faces_by_edge or _edge_faces(part)
+    groups = {k: [] for k in EDGE_GROUPS}
+    for e in part.edges():
+        side = edge_side(e, faces_by_edge.get(_shape_key(e), []))
+        if side is None:
+            continue
+        groups[f"{side}/all"].append(e)
+        d = edge_direction(e)
+        if d in ("vertical", "horizontal"):
+            groups[f"{side}/{d}"].append(e)
+    try:
+        part._textcad_edge_groups = groups
+    except Exception:
+        pass                               # a Part that refuses attributes: classify again next time
+    return groups
+
+
 def edges_for(part: Part, edges) -> list:
     """The edges an `edges` param names: a group name, or a list of picked
     edges (dicts from edge_ref, or bare [x, y, z] midpoints)."""

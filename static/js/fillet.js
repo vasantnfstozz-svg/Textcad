@@ -57,6 +57,7 @@ function edgeTool(o) {                 // o = {name, icon, op, ids, param, unit,
     gizmos: {
       begin(st, plan) {
         if (plan.chain != null) g(P + 'Chain').checked = !!plan.chain;
+        paintChips(plan.groups);
         beginEdgeGlow(plan.edges);
         if (!plan.ball) return;                    // nothing picked yet: the hint is up
         beginExtrudeArrow(plan.ball.origin, plan.ball.dir, num(box),
@@ -75,6 +76,28 @@ function edgeTool(o) {                 // o = {name, icon, op, ids, param, unit,
   });
 
   g(P + 'Chain').onchange = () => ctl.replan();   // the box now speaks: planExtra sends it
+
+  /* whole GROUPS of edges in one click (user, 2026-09-07: "select all the
+     vertical or horizontal edges by clicking one option"). The SERVER
+     classifies every edge of the body — inside corner or outside edge, lying
+     flat or upright — and adds the group, or takes it out when it is all
+     picked already. A chip is lit when its whole group is gold, dashed when
+     part of it is, dim when the body has none of that kind: three states,
+     all read off the plan's `groups`, nothing counted here (R1). */
+  const chips = () => Array.from(g(P + 'Groups').querySelectorAll('.egchip'));
+  for (const b of chips())
+    b.onclick = () => ctl.replan({ group_toggle: { side: b.dataset.side, dir: b.dataset.dir } });
+  function paintChips(groups) {
+    for (const b of chips()) {
+      const s = (groups || {})[`${b.dataset.side}/${b.dataset.dir}`];
+      const total = s ? s.total : 0, picked = s ? s.picked : 0;
+      b.disabled = !total;
+      b.classList.toggle('on', total > 0 && picked === total);
+      b.classList.toggle('part', picked > 0 && picked < total);
+      b.title = !total ? 'this body has no such edges (a smooth seam is not a corner)'
+        : `${picked} of ${total} picked — click to ${picked === total ? 'take them out' : 'add them all'}`;
+    }
+  }
   return ctl;
 }
 

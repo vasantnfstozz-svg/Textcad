@@ -438,7 +438,11 @@ export function tool(spec) {
   function onEdgePick(kind, info) {
     if (!st || st.input.kind !== 'edges') return;
     if (kind !== 'edge') {
-      say(`⚠ ${spec.name} works on edges — click an edge of ${st.input.body}, not a face.`);
+      // a whole body of edges at once is the GROUP CHIPS' job (inside/outside
+      // × vertical/horizontal), not a face click — which would grab a face's
+      // edges on a near-miss, with no hover to warn (face-pick edges: deferred)
+      say(`⚠ ${spec.name} works on edges — click an edge of ${st.input.body}, ` +
+        `or use the group buttons in the panel to add many at once.`);
       return;
     }
     // while the preview is up the viewport shows THIS tool's result body: its
@@ -546,8 +550,10 @@ export function tool(spec) {
     // not select" when nothing says otherwise
     if (plan.click === 'removed') {
       const n = had - (plan.edges || []).length;
-      say(`${spec.name}: that edge was already picked — the click released ` +
-        `${n} edge${n === 1 ? '' : 's'}. Click it again to add it back.`);
+      say(`${spec.name}: ${plan.click_n > 1 ? 'those edges were' : 'that edge was'} already picked — ` +
+        `the click released ${n} edge${n === 1 ? '' : 's'}. Click again to add ${n === 1 ? 'it' : 'them'} back.`);
+    } else if (plan.click === 'added' && (plan.click_n || 0) > 1) {
+      say(`${spec.name}: added ${plan.click_n} edges — ${(plan.edges || []).length} picked now.`);
     }
     if (st.featureId) apply();        // not awaited: the next click's plan must not wait for a rebuild
   }

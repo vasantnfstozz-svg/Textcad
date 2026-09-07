@@ -616,6 +616,36 @@ def _expand(part, refs, chain: bool) -> list:
     return grown
 
 
+def _toggle_set(part, refs: list, edges: list, by_edge: dict) -> tuple[list, str, int]:
+    """A whole SET of edges (a group chip, or every edge of a clicked face) as
+    one click: the ones not yet picked join the picks; when every one of them
+    is picked already, the set comes out. Returns (refs, 'added'|'removed', n)."""
+    have = [(r, blocks._shape_key(blocks.resolve_edge(part, r))) for r in refs]
+    keys = {k for _, k in have}
+    missing = [e for e in edges if blocks._shape_key(e) not in keys]
+    if missing:
+        return (refs + [blocks.edge_ref(part, e, by_edge) for e in missing],
+                "added", len(missing))
+    drop = {blocks._shape_key(e) for e in edges}
+    keep = [r for r, k in have if k not in drop]
+    return keep, "removed", len(refs) - len(keep)
+
+
+def _group_words(key: str) -> str:
+    side, dir_ = key.split("/")
+    what = {"vertical": "upright", "horizontal": "flat-lying", "all": ""}[dir_]
+    kind = "inside-corner" if side == "inside" else "outside"
+    return f"{what} {kind} edges".replace("  ", " ").strip()
+
+
+def _groups_state(groups: dict, picked_keys: set) -> dict:
+    """For the panel's chips: how many edges each group has, how many of them
+    are picked right now — the chip's lit / dashed / dim state is read off this."""
+    return {k: {"total": len(es),
+                "picked": sum(1 for e in es if blocks._shape_key(e) in picked_keys)}
+            for k, es in groups.items()}
+
+
 def _toggle_pick(part, refs, click: dict, chain: bool, by_edge: dict) -> list:
     """Fusion's click rule: an edge not yet selected joins the picks; one that
     IS selected — directly or through a pick's tangent chain — takes that pick
@@ -657,20 +687,33 @@ def plan_fillet(doc, req: dict) -> dict:
         raise ValueError(f"{tool.capitalize()} needs the edges of a body — click an edge in the viewport")
     _bf, part = _body_part(doc, body)
     by_edge = blocks._edge_faces(part)
-    tog = req.get("toggle")
+    tog, gtog = req.get("toggle"), req.get("group_toggle")
+    clicked = tog is not None or gtog is not None
     # A legacy GROUP ("all"/"vertical"/…) becomes explicit picks the moment the
     # user clicks — converted BEFORE the chain default is worked out, so a group
     # whose edges have tangent neighbours is not silently grown by that click.
-    if tog is not None and isinstance(refs, str):
+    if clicked and isinstance(refs, str):
         refs = [blocks.edge_ref(part, e, by_edge)
                 for e in blocks.edges_for(part, refs)]
+    # the body's edges by kind — inside corner / outside edge x upright /
+    # flat-lying / all — for the panel's chips (classified once per body)
+    groups = blocks.edge_groups(part, by_edge)
+    click, click_n = None, 0
+    if gtog is not None:                         # a chip: a whole group in one click
+        key = f"{gtog.get('side')}/{gtog.get('dir')}"
+        if key not in groups:
+            raise ValueError(f"no edge group '{key}' — the groups are inside / outside "
+                             f"× vertical / horizontal / all")
+        if not groups[key]:
+            raise ValueError(f"{body} has no {_group_words(key)} — a smooth seam between "
+                             f"a round and a flat is not a corner")
+        refs, click, click_n = _toggle_set(part, refs or [], groups[key], by_edge)
     # THE CHAIN DEFAULT. Fresh picking chains (Fusion). A STORED selection does
     # not: it is already the answer, and re-expanding it can only add edges the
     # user never picked — a chain-off fillet reopened, or an AI-authored group
     # whose edges have tangent neighbours. Keyed on where the edges came from,
     # which only the server knows, so a caller that forgets to say is safe.
     chain = bool(want_chain) if want_chain is not None else not stored
-    click = None
     if tog is not None:                          # a click: add the edge, or take it out
         before = len(refs or [])
         refs = _toggle_pick(part, refs or [], tog, chain, by_edge)
@@ -678,6 +721,7 @@ def plan_fillet(doc, req: dict) -> dict:
         # edge of a picked smooth rim releases the rim, which reads as "the edge
         # will not select" when nothing says otherwise
         click = "removed" if len(refs) < before else "added"
+        click_n = 1
     # the user's own picks in STORED form (unexpanded) — what the tool sends
     # back with the next click, so every request is exact
     picks = (refs if isinstance(refs, str)
@@ -685,7 +729,8 @@ def plan_fillet(doc, req: dict) -> dict:
     if not refs:
         return {"ok": True, "tool": tool, "op": tool, "input": body, "edges": [],
                 "edges_param": [], "picks": [], "ball": None, "chain": chain,
-                "click": click, "will_build": f"{tool} — pick the edges of {body}"}
+                "click": click, "click_n": click_n, "groups": _groups_state(groups, set()),
+                "will_build": f"{tool} — pick the edges of {body}"}
     picked = _expand(part, refs, chain)          # a gone edge raises its sentence
     out_refs = [blocks.edge_ref(part, e, by_edge) for e in picked]
     edges = [{**r, "points": edge_polyline(e), "length": round(e.length, 2)}
@@ -701,6 +746,8 @@ def plan_fillet(doc, req: dict) -> dict:
         "ball": _ball(part, picked[0], by_edge),
         "chain": chain,
         "click": click,
+        "click_n": click_n,
+        "groups": _groups_state(groups, {blocks._shape_key(e) for e in picked}),
         "will_build": f"{tool} {n} edge{'s' if n != 1 else ''} of {body}",
     }
 

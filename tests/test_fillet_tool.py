@@ -356,6 +356,67 @@ def test_the_plan_says_whether_a_click_added_or_released():
                                "edges": [{"mid": mid(lines[0])}]})["click"] is None
 
 
+def doc_pocket():
+    """the box with a 20 x 12 pocket 5 deep: 4 inside uprights, 4 inside floor
+    rims, 4 outside uprights, 12 outside flat edges (two rims + the opening)"""
+    doc = Document(name="pk")
+    doc.add("b", "plate", {"width": 40, "depth": 30, "thickness": 20}, [])
+    doc.add("t", "plate", {"width": 20, "depth": 12, "thickness": 10}, [])
+    doc.add("tm", "move", {"x": 0, "y": 0, "z": 10}, ["t"])
+    doc.add("c", "cut", {}, ["b", "tm"])
+    doc.rebuild()
+    return doc
+
+
+def test_edge_groups_tell_inside_corners_from_outside_edges():
+    """probes/edge_side_probe.py, locked in: concave vs convex by the in-face
+    direction against the other face's normal; flat-lying vs upright; smooth
+    seams and one-face seams belong to no group; classified once per body."""
+    doc = doc_pocket()
+    part = doc._parts["c"]
+    g = blocks.edge_groups(part)
+    assert {k: len(v) for k, v in g.items()} == {
+        "inside/vertical": 4, "inside/horizontal": 4, "inside/all": 8,
+        "outside/vertical": 4, "outside/horizontal": 12, "outside/all": 16}
+    for e in g["inside/all"]:                      # every inside edge is IN the pocket
+        m = e @ 0.5
+        assert abs(m.X) <= 10 + 1e-6 and abs(m.Y) <= 6 + 1e-6 and 5 - 1e-6 <= m.Z <= 10 + 1e-6
+    assert blocks.edge_groups(part) is g, "cached on the body"
+    r = doc_rounded()._parts["g1"]                 # uprights rounded r5
+    gr = {k: len(v) for k, v in blocks.edge_groups(r).items()}
+    assert gr["inside/all"] == 0 and gr["outside/vertical"] == 0, "8 smooth seams are no corner"
+    assert gr["outside/horizontal"] == 16 == gr["outside/all"], "8 lines + 8 flat arcs"
+
+
+def test_a_group_chip_adds_the_whole_group_and_a_second_click_takes_it_out():
+    doc = doc_pocket()
+    req = lambda edges, side, d: {"tool": "fillet", "body_id": "c", "edges": edges,
+                                  "group_toggle": {"side": side, "dir": d}}
+    p = toolplan.plan(doc, req([], "inside", "vertical"))
+    assert p["ok"] and p["click"] == "added" and p["click_n"] == 4 and len(p["edges"]) == 4
+    assert p["groups"]["inside/vertical"] == {"total": 4, "picked": 4}
+    assert p["groups"]["inside/all"] == {"total": 8, "picked": 4}       # the chip shows PART
+    assert p["groups"]["outside/horizontal"] == {"total": 12, "picked": 0}
+    q = toolplan.plan(doc, req(p["picks"], "inside", "horizontal"))
+    assert q["click"] == "added" and q["click_n"] == 4 and len(q["edges"]) == 8
+    assert q["groups"]["inside/all"]["picked"] == 8
+    r = toolplan.plan(doc, req(q["picks"], "inside", "vertical"))      # all picked: out
+    assert r["click"] == "removed" and r["click_n"] == 4 and len(r["edges"]) == 4
+    s = toolplan.plan(doc, req(r["picks"], "inside", "all"))           # partly picked: ADD the rest
+    assert s["click"] == "added" and s["click_n"] == 4 and len(s["edges"]) == 8
+    assert len(s["edges_param"]) == 8 and all(len(e["faces"]) == 2 for e in s["edges_param"])
+    # the round itself builds on the group — an inside round ADDS material
+    v0 = doc._parts["c"].volume
+    assert healthy(blocks.fillet_edges(doc._parts["c"], 2, s["edges_param"])).volume > v0
+    # a group the body lacks is a sentence, not an empty click
+    e = toolplan.plan(doc_rounded(), {"tool": "fillet", "body_id": "g1", "edges": [],
+                                      "group_toggle": {"side": "inside", "dir": "vertical"}})
+    assert e["ok"] is False and "has no upright inside-corner edges" in e["error"]
+    # a plan with NO click still reports the groups, for the chips' first paint
+    z = toolplan.plan(doc, {"tool": "fillet", "body_id": "c", "edges": []})
+    assert z["ok"] and z["click"] is None and z["groups"]["inside/all"] == {"total": 8, "picked": 0}
+
+
 def test_plan_chain_is_on_for_fresh_picking_and_can_be_turned_off():
     """Fusion's default for PICKING. (A stored selection defaults the other way
     — see test_a_chain_off_fillet_is_not_grown_when_it_is_reopened.)"""

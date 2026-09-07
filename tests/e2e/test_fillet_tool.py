@@ -70,6 +70,26 @@ PICKED_EDGE = """async () => {
 PICKED_FACE = "async () => (await import('/static/js/state.js')).S.pickedFace"
 
 
+def chip(page, side, d):
+    return page.locator(f"#flGroups .egchip[data-side='{side}'][data-dir='{d}']")
+
+
+def wait_glow(page, n, timeout=4):
+    """poll until `n` edges are gold — a chip's plan queues behind the previous
+    one, so a fixed sleep races the round trip"""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if glow(page) == n:
+            return
+        page.wait_for_timeout(100)
+    raise AssertionError(f"gold stayed at {glow(page)}, expected {n}")
+
+
+def chip_state(page, side, d):
+    cls = chip(page, side, d).get_attribute("class") or ""
+    return "on" if " on" in f" {cls}" else "part" if "part" in cls else "off"
+
+
 def feature(server, fid):
     doc = httpx.get(f"{server}/api/doc", timeout=30).json()
     return next((f for f in doc["features"] if f["id"] == fid), None)
@@ -211,6 +231,41 @@ def test_an_inside_corner_can_be_picked_and_rounded(page, fresh_doc, server):
     f = wait_feature(server, "fillet1")
     assert f["status"] == "ok", f
     assert f["volume"] > v0 + 1, "an inside round adds material"
+    assert page.errors == []
+
+
+def test_group_chips_pick_whole_sets_in_one_click(page, fresh_doc, server):
+    """The user's ask (2026-09-07): "select all the vertical or horizontal edges
+    by clicking one option". A chip adds a whole group and shows its state (lit /
+    part / dim, all from the plan); clicking it again takes the group out; the
+    chat says how many; the round on the inside group ADDS material (the
+    kernel's number, not ours)."""
+    setup(page, BUILD_POCKET)
+    v0 = feature(server, "c")["volume"]
+    open_tool(page, "fillet")
+    page.wait_for_function(
+        "() => !document.querySelector(\"#flGroups .egchip[data-side='inside'][data-dir='vertical']\").disabled",
+        timeout=15000)
+    assert chip(page, "outside", "vertical").is_enabled()
+    chip(page, "inside", "vertical").click()
+    wait_glow(page, 4)
+    assert chip_state(page, "inside", "vertical") == "on"
+    assert chip_state(page, "inside", "all") == "part"
+    assert "added 4 edges" in page.text_content("#chatLog")
+    chip(page, "inside", "horizontal").click()
+    wait_glow(page, 8)
+    assert chip_state(page, "inside", "all") == "on"
+    # the whole group out again
+    chip(page, "inside", "vertical").click()
+    wait_glow(page, 4)
+    assert chip_state(page, "inside", "vertical") == "off"
+    assert "released 4 edges" in page.text_content("#chatLog")
+    page.fill("#flValue", "1.5")
+    page.wait_for_timeout(2500)
+    f = wait_feature(server, "fillet1")
+    assert f["status"] == "ok", f
+    assert f["volume"] > v0 + 1, "4 inside floor rounds add material"
+    assert len(f["params"]["edges"]) == 4
     assert page.errors == []
 
 

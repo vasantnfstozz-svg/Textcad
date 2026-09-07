@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=38">
+<link rel="stylesheet" href="/static/css/studio.css?v=39">
 </head>
 <body>
 
@@ -267,6 +267,19 @@
   <label>Radius (mm) <input id="flValue" type="number" step="any" min="0" value="0"></label>
   <label><input id="flChain" type="checkbox" checked
     title="clicking one edge of a smooth rim selects the whole rim (Fusion's tangent chain)"> Tangent chain</label>
+  <!-- whole GROUPS of edges in one click: the server classifies every edge of
+       the body (inside corner / outside edge x vertical / horizontal) and adds
+       or takes out the group; edge clicks still adjust one at a time -->
+  <div class="edgegroups" id="flGroups">
+    <span class="eglabel" title="edges where two faces meet at an inside corner — what a cutter has to round anyway">Inside corners</span>
+    <button type="button" class="egchip" data-side="inside" data-dir="vertical">vertical</button>
+    <button type="button" class="egchip" data-side="inside" data-dir="horizontal">horizontal</button>
+    <button type="button" class="egchip" data-side="inside" data-dir="all">all</button>
+    <span class="eglabel" title="edges where two faces meet at an outside corner — the rims and the outer uprights">Outside edges</span>
+    <button type="button" class="egchip" data-side="outside" data-dir="vertical">vertical</button>
+    <button type="button" class="egchip" data-side="outside" data-dir="horizontal">horizontal</button>
+    <button type="button" class="egchip" data-side="outside" data-dir="all">all</button>
+  </div>
   <select id="flOp" style="display:none"><option value="new">New body</option></select>
   <label id="flTargetRow" style="display:none">Combine with <select id="flTarget"></select></label>
   <div class="exfoot">
@@ -282,6 +295,16 @@
   <label>Distance (mm) <input id="chValue" type="number" step="any" min="0" value="0"></label>
   <label><input id="chChain" type="checkbox" checked
     title="clicking one edge of a smooth rim selects the whole rim (Fusion's tangent chain)"> Tangent chain</label>
+  <div class="edgegroups" id="chGroups">
+    <span class="eglabel" title="edges where two faces meet at an inside corner">Inside corners</span>
+    <button type="button" class="egchip" data-side="inside" data-dir="vertical">vertical</button>
+    <button type="button" class="egchip" data-side="inside" data-dir="horizontal">horizontal</button>
+    <button type="button" class="egchip" data-side="inside" data-dir="all">all</button>
+    <span class="eglabel" title="edges where two faces meet at an outside corner">Outside edges</span>
+    <button type="button" class="egchip" data-side="outside" data-dir="vertical">vertical</button>
+    <button type="button" class="egchip" data-side="outside" data-dir="horizontal">horizontal</button>
+    <button type="button" class="egchip" data-side="outside" data-dir="all">all</button>
+  </div>
   <select id="chOp" style="display:none"><option value="new">New body</option></select>
   <label id="chTargetRow" style="display:none">Combine with <select id="chTarget"></select></label>
   <div class="exfoot">
@@ -443,6 +466,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=167"></script>
+<script type="module" src="/static/js/main.js?v=168"></script>
 </body>
 </html>
