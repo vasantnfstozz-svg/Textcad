@@ -506,6 +506,29 @@ keys to the `gizmos()` debug hook, which the token rule (only the shipped
 tool's journeys) hid — **when a change touches `viewport.js` or `tool.js`, run
 the other tools' journeys too.**
 
+*Fillet picking fixed 2026-09-07* (4f15f66 + 9bed191, ui v167; built on
+branch `worktree-fillet-picking` while the main checkout held other sessions'
+uncommitted edits, rebased onto 0f387ab and fast-forwarded; user's checklist
+pending). The third bug came from the user testing the fix: SELECT mode
+(`pickAt`) had its own copy of the depth-only rule and still selected the
+WALL at an inside upright edge — both pickers now share `visibleEdgeHit`. Two bugs from the user's isogrid panel. **No inside corner could be
+picked**: the picker refused any edge with a face a hair nearer, and the two
+walls meeting at an inside corner always are, from every viewing angle. The
+model now names the faces each edge bounds (read off the ancestor map the edge
+polylines already use — a separate pass cost 10% of the mesh) and a face may
+not hide its own boundary: R1, the server states the topology and JS compares
+ids. **A click sometimes did not select**: plan requests could overlap and the
+later one was sent WITHOUT the earlier click; they queue now, and a click that
+RELEASED edges (Chain on: one click releases a whole smooth rim) says so in the
+chat. Also: a raw pick resolves by "lies on the edge" instead of nearest
+midpoint, so the preview body's trimmed neighbours and its own new rims are
+told apart — a rim click is refused with a sentence instead of silently
+un-picking the edge it replaced. **Tests:** 4 fast (all red before), 1 journey
+(a pocket's floor rim and an upright corner rounded: the volume GROWS).
+**Line delta:** source +124/-17. **Lesson:** a picker's occlusion test needs
+topology, not depth alone — "any nearer face hides it" is wrong for exactly
+the concave half of a solid's edges.
+
 *Hole done 2026-09-06* (spec `specs/hole.md`, tool 5336c82, review fixes
 0c49c42, ui v157; user's checklist passed 2026-09-06; drag ghost c6a2377, ui
 v160, re-checked by the user the same day). `static/js/hole.js`

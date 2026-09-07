@@ -21,13 +21,21 @@
 
 | | |
 |---|---|
-| **Range** | `16ade36..HEAD` — ONE code commit: the STEP export handed over one body of a multi-body design |
+| **Range** | `16ade36..HEAD` — THREE code commits from two work sessions: `753c24c` (A: the STEP export handed over one body of a multi-body design) and `4f15f66` + `9bed191` (B: Fillet picking — inside corners, lost clicks, and the Select-mode path). The rest are review handoffs |
 | **Already reviewed** | everything up to `a2f9663` (Mirror, five rounds + the deferred findings, and the two panel fixes) |
-| **Effort** | high — this is a P0 silent-wrong-geometry class: the artifact the user MACHINES FROM was wrong, and the change also moves the spec-verification target |
+| **Effort** | high — A is a P0 silent-wrong-geometry class: the artifact the user MACHINES FROM was wrong, and the change also moves the spec-verification target; B changes the picker every tool and Measure go through |
 | **Branch** | `master` (no pull request — do not try to comment on GitHub) |
-| **Frontend** | `ui v166` |
+| **Frontend** | `ui v167` |
 
-## The bug, as reported and as measured
+Review A and B separately — they touch different code (A: `document.py`,
+`studio.py /api/export`, `mcp_server.py`, `dialogs.js`; B: `viewport.js`
+picking, `tool.js replan`, `blocks.resolve_edge`, `studio._tagged_mesh`,
+`toolplan.plan_fillet`). B was built on a branch and rebased onto A with no
+code conflict.
+
+## A. `753c24c` — the STEP export held one body of a multi-body design
+
+### The bug, as reported and as measured
 
 The user exported a design to STEP, opened it in another program, and "can
 see only half part of design and rest of them are missing".
@@ -48,7 +56,7 @@ Measured on the user's own library (all 50 designs swept, 4 affected):
 
 The `my-part-6` file was a 22×10×15 mm nub in place of a 200×143×88 mm part.
 
-## What changed
+### What changed
 
 **`document.py`**
 
@@ -79,7 +87,7 @@ The `my-part-6` file was a 22×10×15 mm nub in place of a 200×143×88 mm part.
 the file and warns if the kernel calls the geometry unsound. Every number is a
 field on the response — nothing is recomputed in JS (R1).
 
-## Where the risk is
+### Where A's risk is
 
 1. **`_export_blockers` is now stricter in two directions at once.** A design
    that used to export can now be REFUSED — by design ("a failed feature beats
@@ -108,7 +116,7 @@ field on the response — nothing is recomputed in JS (R1).
    time instead. Say if you disagree — the trade is editing speed against
    catching an invalid non-tail body earlier than the export.
 
-## Do not re-report
+### A: do not re-report
 
 - **`/api/mesh.stl` / `_ensure_mesh_file` use `result()`.** No caller anywhere
   in the tree; the viewport uses `/api/model`, which is per-body. Dead path.
@@ -125,7 +133,7 @@ field on the response — nothing is recomputed in JS (R1).
 - **`test_export_lands_in_designs_and_is_measured` asserts `n_solids == 1`.**
   Correct: `sample_flange()` is a linear chain with exactly one leaf.
 
-## Proof
+### A: proof
 
 - Fast tier green (1157 passed before the last two commits' worth of changes;
   re-run at ship).
@@ -138,3 +146,134 @@ field on the response — nothing is recomputed in JS (R1).
   size [200.625, 143.442, 88.284], is_valid true, is_manifold true`.
 - Line delta: +370 / −38 across 6 files (of which +235 is tests), plus a
   130-line probe. This one ADDS more than it deletes — a bug fix, not a phase.
+
+## B. `4f15f66` + `9bed191` — Fillet picking: inside corners, lost clicks, Select mode
+
+Two user-reported bugs (2026-09-07, an isogrid panel: a grid of triangular
+pockets), and a third the user found while testing the fix.
+
+1. **No inside-corner edge could be picked.** `viewport.edgeHitAt` refused an
+   edge whenever ANY face was a hair nearer than the line. The two walls that
+   meet at an inside corner always are, from every viewing angle, so every
+   concave edge was unpickable. Now: the server names the faces each edge
+   bounds (`studio._tagged_mesh`, `edges[i].faces`, read off the ancestor map
+   `_edge_polylines` already builds — a separate `face.edges()` pass cost 10%
+   of the esp32 mesh, `probes/tagged_mesh_hosts_timing_probe.py`), and a face
+   in front does not hide an edge when it is one of that edge's own faces AND
+   was hit within 4 pick-widths of the line (`viewport.ownFaceHit`).
+2. **A click sometimes did not select.** `tool.replan` requests could overlap;
+   each carries the picks the previous ANSWER settled, so the later request
+   went out without the earlier click and, landing last, won. Now one plan
+   request at a time (`planChain`); the rebuild a plan triggers is no longer
+   awaited inside `replanNow` (apply() already coalesces bursts).
+3. **A raw pick resolves by "lies on the edge"**, not nearest midpoint
+   (`blocks._edge_under` / `_edge_distance`: Extrema_ExtPC bounded by the
+   ends, `probes/edge_point_distance_probe.py`, 75 µs a pair). While the
+   preview is up the lines on screen are the ROUNDED body's: its trimmed
+   neighbours lie exactly on their parents; its own new rims lie on no edge of
+   the input body and are now refused with a sentence. Before, a rim click
+   resolved to the edge it replaced and silently un-picked it.
+4. **The plan says whether a click added or removed** (`click`), and the tool
+   says it in the chat when a click RELEASED edges (with Chain on, one click
+   on a picked smooth rim releases the whole rim, which looked like a refusal).
+5. **`9bed191` — Select mode had its own copy of the old rule** (`pickAt`), so
+   after 1. an inside upright edge still selected the WALL when clicked outside
+   the Fillet panel — and select-then-command never saw the edge. Both pickers
+   now share `viewport.visibleEdgeHit`, which also takes the first VISIBLE edge
+   hit rather than the nearest one.
+
+Tests: `tests/test_fillet_tool.py` +3, `tests/test_mesh_pipeline.py` +1 (all
+four measured RED with `blocks.py` / `studio.py` / `toolplan.py` stashed),
+`tests/e2e/test_fillet_tool.py` +2 (a pocket's floor rim and an upright corner
+picked and rounded — the volume GROWS, the kernel's number; an inside edge
+selected in Select mode enters Fillet as its first click). `click_edge` in that
+file now waits for the plan's answer (the gold count changing, up to 3 s)
+instead of a fixed 700 ms.
+
+### Where B's risk is — look hardest here
+
+1. **`ownFaceHit`'s two conditions.** "Own face" alone would let a cylinder's
+   hidden BACK seam be picked through its front (own face, far behind), hence
+   the `<= 4 * reach` distance guard. Is there a real view where a legitimate
+   inside corner fails it (a wall seen at a grazing angle: the face hit runs
+   away along the wall), or where a hidden edge passes it (a wall thinner than
+   4 pick-widths at a zoomed-out view)? A finding here must name the view and
+   the geometry; both are judgement calls, and the old rule was wrong for the
+   entire concave half of every solid.
+2. **`visibleEdgeHit` takes the first VISIBLE hit, not the nearest.** In
+   `pickAt` the sketch-profile tie test still compares against `eHits[0]` (the
+   nearest edge, visible or not). Can a hidden nearer edge now steal a tie from
+   a coplanar profile, or the other way round?
+3. **`_edge_under`'s tolerance** (`PICK_ON_EDGE_TOL = 0.05` mm). A round with
+   a radius under 0.05 mm would have its rims resolve onto the edge again. Is
+   there any OTHER producer of raw `points` picks whose points do NOT lie on
+   the input body's edges within 0.05 — e.g. a body shown in mesh mode
+   (imported STL: `faces` is `[]` and the points are triangle edges)? The
+   fillet op does not apply to those, but the resolver is shared: check
+   `blocks.edges_for` callers.
+4. **`replanNow` no longer awaits `apply()`.** Every caller of `replan` was
+   checked for awaiting its result (`fillet.js` chain box, `mirror.js`
+   `refresh` / `onRepick`, `pattern.js` `onRepick`, `tool.js` 559 / 567 / 570):
+   none does. But look at `okSession` / `cancelSession` — a click's plan still
+   in the chain when OK or Cancel runs adopts its plan after `hide()` nulled
+   `st`; the `st !== mine` guard is what stops it. Is there a path where the
+   guard is not enough (e.g. `adoptPlan` on a session that was re-opened)?
+   And: `applyOnce` (a2f9663) runs `unbuild` for an empty state — with the
+   un-awaited `apply()` from a click's plan, can a click and an emptied box
+   interleave so that `unbuild` removes a feature the click's plan is about?
+5. **Performance of the resolver.** `_edge_under` walks every edge of the
+   input body per click (600 edges: ~45–135 ms measured, with the type filter
+   and the early exit). `_tagged_mesh` gained the `faces` field at ~0 cost
+   (the ancestor map was already built; the rejected separate pass was 10%).
+   `_edge_polylines` now returns a tuple; its only caller is `_tagged_mesh`; a
+   seam edge's face is listed once (`dict.fromkeys`).
+
+### B: proof
+
+- Fast tier 1150 green before the rebase (the rebase had no code conflict;
+  the fillet, mesh, model and Mirror unit tests were re-run on the rebased tree).
+- Browser: fillet 8/8, measure picks 3/3 (Measure uses `pickAt`), hole,
+  mirror, extrude-direction and edit-extrude green.
+  `tests/e2e/test_pattern_tool.py::test_edit_reopens_on_the_stored_values_and_cancel_restores`
+  failed ONCE in a 5-file run and passed 3/3 alone — its last assertion reads
+  the modal lock right after the server shows the restored volume, while the
+  browser still awaits `releaseIso()` before `releaseModal()` (a pre-existing
+  race, not on B's path).
+- Line delta (B, source): +140 / −20; tests +160 / −2. A fix — nothing to delete.
+
+## Ground rules for this repo (they change what counts as a finding)
+
+- Geometry claims are proven by measurement, not by reading. If a finding is
+  geometric, say what to measure; the probes under `probes/` are the pattern.
+- "A failed feature beats a corrupt body" — a refusal with a sentence is
+  correct behaviour, not a bug. Silently returning an invalid or non-manifold
+  solid is the bug.
+- A saved design may never STOP rebuilding, except where the geometry is
+  genuinely broken (see the accepted risk in BACKLOG.md).
+- Never re-derive a backend fact in the frontend (LAUNCH-PLAN.md R1). The
+  picker's occlusion test is viewport hit-testing; the TOPOLOGY it uses (which
+  faces an edge bounds) comes from the server. Every export number is a field
+  on the response.
+- Do not report anything a test run would have caught.
+- Documentation and comments ARE reviewable here: they are the contract the
+  next change reads. But a wording preference is not a finding.
+
+## Already known — do NOT re-report
+
+- A's list above; the pattern edit/cancel race above (a `wait_for_function` on
+  the modal lock would fix the test).
+- Picking on a mesh-mode (imported STL) body keeps the OLD occlusion rule
+  (`faces` is empty there): those bodies cannot be filleted anyway.
+- Five tools hand-type "a value typed before the plan arrived waits for it"
+  (LAUNCH-PLAN §10, P3); `test_revolve_tool.py::test_open_from_the_tree_row_and_drag_the_ring`
+  is order-dependent (§10 P1).
+- The body-pattern health gate is retroactive (BACKLOG.md, accepted risk).
+- 5 pre-existing red browser tests in `tests/e2e/test_tree_delete.py`
+  (LAUNCH-PLAN.md §10 P1, someone else's work).
+- Pattern's drag ghost (§10 P3, deferred by the user).
+
+## After the review
+
+Bring the findings back to the work chat. Each one gets reproduced by
+measurement, then a test that is RED before the fix, then the fix — never a
+fix applied straight from the review (`--fix` skips that discipline).
