@@ -21,46 +21,62 @@
 
 | | |
 |---|---|
-| **Range** | `85821be..072aa95` — only the newest commit is UNREVIEWED |
-| **Already reviewed** | `9644b6d`, `c4d5961`, `85821be` (reviewed 2026-09-07; both findings dealt with — one fixed in `072aa95`, one filed in BACKLOG.md) |
+| **Range** | `072aa95..21429d8` — only the newest commit is UNREVIEWED |
+| **Already reviewed** | `9644b6d`, `c4d5961`, `85821be`, `072aa95` (all reviewed 2026-09-07; every finding dealt with — fixed in `072aa95` and `21429d8`, or filed in BACKLOG.md) |
 | **Base of the whole Mirror change** | `023ca5d` (P4 Mirror as originally shipped) |
 | **Effort** | high |
 | **Branch** | `master` (no pull request — do not try to comment on GitHub) |
 
-`072aa95` is a fix TO the reviewed work, so review it against `85821be` and do
-not re-open what the last review already passed.
+`21429d8` closes the three findings of the review OF `072aa95`, so review it
+against `072aa95` and do not re-open what the earlier reviews passed.
+
+**It changes no runtime behaviour.** The only `.py` edit outside tests and
+probes is a docstring; there is no new branch, no new call, no changed
+condition. So the useful questions are narrow — see below.
 
 ## What changed, in one line each
 
-- **9644b6d** — the 5 findings of the first review of Mirror: the clicked
-  plane is matched by PLANE not nearest centre, the revert records what the
-  kernel VERIFIED, `image & removed` got its own guard, the re-pick knows
-  `planes`, the blank Plane option cannot read "no plane" over a built mirror.
-- **c4d5961** — the 4 P0 silent-wrong-geometry findings of the big review: a
-  PLACEMENT op (rotate / scale / legacy copy-only mirror) folds to a BODY
-  seed instead of a whole-body "delta"; `join` is planned only for a body
-  seed; `_body_pattern` gained the `inspector.health` gate; a body seed is not
-  offered its own mid-planes, and the AI prompt + catalogue were corrected.
-- **85821be** — the 2 follow-ups: `pattern.delta` and `plane_of`'s face
-  reading carry error barriers so no raw kernel exception reaches the tree,
-  and `toolplan._axis_face` bounds a pattern's axis click.
-- **072aa95 (the one to review)** — the P0 the last review found: on an EDIT
+- **c4d5961 / 85821be / 072aa95** (reviewed) — the P0 silent-wrong-geometry
+  work on Mirror: a PLACEMENT op folds to a BODY seed, `join` is planned only
+  for a body seed, `_body_pattern` gained the health gate, error barriers on
+  `pattern.delta` / `plane_of`, a bounded axis click, and finally: on an EDIT
   the stored `join` is honoured only while the stored params and the plan
-  agree about whether there IS a seed. When they disagree the stored seed has
-  stopped resolving, so `join: False` means nothing and the plan fell back to
-  the legacy COPY form, relocating the body 80 mm with zero overlap.
+  AGREE about whether there is a seed.
+- **21429d8 (the one to review)** — the three findings of that last review,
+  all "the contract does not match the code":
+  1. `toolplan.plan_mirror`'s docstring stated the OLD `join` rule; it now
+     states the real one (a NEW mirror joins only with no seed; an EDIT keeps
+     the stored value only while stored params and plan agree there is a seed).
+  2. `specs/mirror.md`'s **Edit** bullet promised the stored `join` is carried
+     unconditionally; it is now conditional, with the measured cost of getting
+     it wrong. Its **Tests** bullet names the guard too.
+  3. `tests/test_mirror_tool.py`'s collapsed-seed test named TWO collapse
+     paths and exercised one. The PLACEMENT path — a stored seed naming a
+     `rotate` / `scale` / legacy copy-only mirror row, which folds to a BODY
+     seed — is now guarded.
+  New: `probes/mirror_seed_collapse_probe.py` (2 sections) measures both
+  paths: of a 76460 mm³ plate the legacy COPY form left 0 mm³ and 5940 mm³
+  where the body actually was; the JOIN form leaves all of it.
 
 ## Where the risk actually is — look hardest here
 
-1. `toolplan.plan_mirror`'s `join` decision and `_seed_plan`'s seed
-   resolution. Every P0 so far has been in the gap between what the tree
-   STORED and what the plan DERIVED. Ask of any new combination: if the seed
-   stops resolving, does the plan turn a feature mirror into something that
-   moves or deletes the body?
-2. `document.delta_features`. It is the one folding rule three tools share, so
-   a wrong answer there is wrong geometry in all of them.
-3. Anything that can refuse at REBUILD. A refusal that fires on a design saved
-   by an older build breaks a file the user already owns.
+1. **Do the words now match the code?** Read `plan_mirror`'s docstring and the
+   spec's Edit bullet against lines 1088–1092 of `toolplan.py`. A contract
+   that is subtly still wrong is the whole point of this commit; that is a
+   finding, and "the docstring is fine" is a valid answer.
+2. **Does the new guard actually guard?** It was measured RED with the
+   `keep_stored` line reverted to `bool(s.fid)` and green with it. If the new
+   block would still pass with the fix reverted, say so — a green regression
+   test is worse than none.
+3. **Is the new scenario's tree honest?** It stores `seed: "rot"` with
+   `join: false` on a row whose input is that same `rotate`. If that
+   combination cannot arise from any real path — the tool, the AI, an older
+   saved design, a tree edit that re-folds a seed — the guard is pinning a
+   fiction, and the REAL collapse path is unguarded. This is the finding worth
+   the most here.
+4. The collapse rule itself (`plan_mirror`'s `join`) and `_seed_plan`'s seed
+   resolution remain the highest-risk code in Mirror: every P0 so far has been
+   in the gap between what the tree STORED and what the plan DERIVED.
 
 ## Ground rules for this repo (they change what counts as a finding)
 
@@ -72,8 +88,11 @@ not re-open what the last review already passed.
 - A saved design may never STOP rebuilding, except where the geometry is
   genuinely broken (see the accepted risk in BACKLOG.md).
 - Never re-derive a backend fact in the frontend (LAUNCH-PLAN.md R1).
-- The fast tier is green and the browser tier for Mirror, Pattern and Hole is
-  green, so do not report anything a test run would have caught.
+- The fast tier is green (1146 passed) and the browser tier for Mirror,
+  Pattern and Hole is green, so do not report anything a test run would have
+  caught.
+- Documentation and comments ARE reviewable here: they are the contract the
+  next change reads. But a wording preference is not a finding.
 
 ## Already known — do NOT re-report
 
