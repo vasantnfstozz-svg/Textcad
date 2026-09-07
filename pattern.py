@@ -164,8 +164,18 @@ def _overlaps(a, b) -> bool:
 
 def delta(before, after):
     """(removed, added): what the feature took away and what it put on — each
-    a solid or None (probe §1: a hole's `added` is an empty Compound)."""
-    return _nonempty(before - after), _nonempty(after - before)
+    a solid or None (probe §1: a hole's `added` is an empty Compound).
+
+    The two booleans carry the barrier. They ran naked, and `_seed` calls this
+    at the op's TOP level, so a kernel failure here escaped as a raw OCP
+    exception and `document.rebuild` stored `repr(e)` — gibberish in the tree,
+    and one of the two banned failure modes (probes/pattern_barrier_probe.py
+    §1). `_nonempty`'s own guard covers only the measuring, not the cut."""
+    try:
+        removed, added = before - after, after - before
+    except Exception:                        # OCP errors are Exception, not RuntimeError
+        raise ValueError("the kernel could not work out what the feature changed") from None
+    return _nonempty(removed), _nonempty(added)
 
 
 def _seed(feature, seed, before, after, op, verb: str = "repeat"):
@@ -176,7 +186,11 @@ def _seed(feature, seed, before, after, op, verb: str = "repeat"):
     if before is None or after is None:
         raise ValueError(f"{op}: the seed '{seed}' needs its before / after bodies — this op "
                          f"runs inside a document, which hands them over")
-    removed, added = delta(before, after)
+    try:
+        removed, added = delta(before, after)
+    except ValueError:                       # the kernel, named by this op and this seed
+        raise ValueError(f"{op}: the kernel could not work out what '{seed}' changed — "
+                         f"pick another feature to {verb}") from None
     if removed is None and added is None:
         raise ValueError(f"{op}: '{seed}' neither removed nor added material — there is "
                          f"nothing to {verb}")
@@ -408,9 +422,16 @@ def plane_of(solid, plane, op: str = "mirror"):
             if sk.face_plane(face) is None:
                 raise ValueError(f"{op}: the picked face is {face.geom_type.name} — a mirror plane "
                                  f"is a flat face, an origin plane or the body's mid-plane")
-            n = face.normal_at(face.center()).normalized()
-            return (Plane(origin=b3d.Face(face.outer_wire()).center(), z_dir=n),
-                    f"the {face_word(n)} face's plane")
+            try:
+                # building a face from the outer wire can fail in the kernel on
+                # a gnarly (imported, self-touching) wire, and this runs at the
+                # op's top level: a raw OCP exception would reach the tree
+                n = face.normal_at(face.center()).normalized()
+                origin = b3d.Face(face.outer_wire()).center()
+            except Exception:                # OCP errors are Exception, not RuntimeError
+                raise ValueError(f"{op}: the kernel could not read the plane of the picked "
+                                 f"face — click another face, or an origin plane") from None
+            return Plane(origin=origin, z_dir=n), f"the {face_word(n)} face's plane"
     raise ValueError(f"{op}: plane must be \"XY\", \"XZ\" or \"YZ\", a face ({{face_center, "
                      f"face_normal}} or {{face: \"top\"}}), a mid-plane ({{mid: \"X\"}}) or "
                      f"{{origin, normal}} (got {plane!r})")

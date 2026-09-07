@@ -555,3 +555,114 @@ def test_a_body_pattern_refuses_a_union_that_is_not_one_sound_solid():
     same = pattern.polar_pattern(square, 4)
     assert inspector.health(same) == []
     assert float(same.volume) == pytest.approx(40 * 40 * 10, abs=0.05)
+
+
+# ------------------------------------------------------------------------
+# The two follow-ups found while fixing the big P4 review's P0s
+# (probes/pattern_barrier_probe.py).
+# ------------------------------------------------------------------------
+
+class _KernelBoom(Exception):
+    """what OCP raises: an Exception, NOT a RuntimeError — an
+    `except RuntimeError` barrier does not catch it"""
+
+
+class _Boom:
+    """a shape whose boolean fails in the kernel"""
+
+    def __sub__(self, other):
+        raise _KernelBoom("StdFail_NotDone: BRepAlgoAPI_Cut::Build() failed")
+
+
+def test_a_kernel_failure_in_the_seeds_delta_becomes_a_sentence():
+    """`delta` subtracted OUTSIDE any barrier and `_seed` calls it at the op's
+    TOP level, so an OCCT failure there escaped as a raw kernel exception and
+    `document.rebuild` stored it as `repr(e)` — gibberish in the tree, and one
+    of the two failure modes the house rules ban outright."""
+    with pytest.raises(ValueError) as e:
+        pattern.delta(_Boom(), _Boom())
+    assert "could not work out what the feature changed" in str(e.value)
+
+    body = b3d.Box(40, 40, 10)
+    for call in (lambda: pattern.mirror(body, "YZ", seed="h",
+                                        _before=_Boom(), _after=_Boom()),
+                 lambda: pattern.polar_pattern(body, 3, axis="+z", seed="h",
+                                               _before=_Boom(), _after=_Boom()),
+                 lambda: pattern.linear_pattern(body, 2, dx=20, seed="h",
+                                                _before=_Boom(), _after=_Boom())):
+        with pytest.raises(ValueError) as e:      # never _KernelBoom
+            call()
+        assert "could not work out what 'h' changed" in str(e.value), str(e.value)
+        assert str(e.value).split(":")[0] in ("mirror", "polar_pattern", "linear_pattern")
+
+    # the plan says the same thing rather than leaking the kernel's words
+    doc = Document("t")
+    doc.add("box1", "plate", {"width": 40, "depth": 40, "thickness": 10})
+    doc.add("hole1", "hole", {"face": "top", "at": [10, 0], "diameter": 6,
+                              "through": True, "depth": 1}, inputs=["box1"])
+    assert doc.rebuild()
+    doc._parts["box1"] = _Boom()                  # the kernel fails on THIS body
+    p = toolplan.plan(doc, {"tool": "polar_pattern", "seed_id": "hole1"})
+    assert not p["ok"] and "could not work out what 'hole1' changed" in p["error"], p
+
+
+def test_a_pattern_axis_click_must_be_a_face_the_body_really_has():
+    """The framework hands this tool clicks on its OWN result body, and
+    `sk.pick_face`'s nearest-centre match is unbounded, so a click on a COPY's
+    bore wall came back as a face of the pre-pattern body 21 mm away and the
+    pattern silently re-aimed to it. Mirror's `_plane_face` rule does not
+    transfer — a mirror plane is the same wherever the face sits, an axis is
+    not — so what is checked is that the click is somewhere the body really has
+    that face: inside the resolved face's own bounding box."""
+    doc = Document("t")
+    doc.add("box1", "plate", {"width": 80, "depth": 80, "thickness": 12})
+    doc.add("hole1", "hole", {"face": "top", "at": [-25, 0], "diameter": 6,
+                              "through": True, "depth": 1}, inputs=["box1"])
+    doc.add("pat", "polar_pattern", {"seed": "hole1", "count": 3,
+                                     "axis": {"face": "top"}}, inputs=["hole1"])
+    assert doc.rebuild(), [f.problems for f in doc.features if f.status != "ok"]
+
+    def pick_of(face):
+        c = face.center()
+        n = face.normal_at(c)
+        return {"center": [round(c.X, 2), round(c.Y, 2), round(c.Z, 2)],
+                "normal": [round(n.X, 3), round(n.Y, 3), round(n.Z, 3)]}
+
+    def plan_with(pick):
+        return toolplan.plan(doc, {"tool": "polar_pattern", "feature_id": "pat",
+                                   "axis_pick": pick})
+
+    bores = sorted((f for f in doc._parts["pat"].faces()
+                    if f.geom_type == b3d.GeomType.CYLINDER),
+                   key=lambda f: (f.center().X, f.center().Y))
+    assert len(bores) == 3                        # the seed and its two copies
+
+    # a wall only a COPY has: refused, with what to click instead
+    p = plan_with(pick_of(bores[-1]))
+    assert not p["ok"], p
+    assert "that face is not on hole1" in p["error"]
+    assert "only a copy has" in p["error"]
+
+    # the SEED's own bore still aims the axis at itself. Its face centre sits
+    # ON the wall, a radius off the axis (measured: -28 for a ⌀6 bore at -25),
+    # which is exactly why the bound is bounding-box containment and not a
+    # distance from the axis
+    seed_bore = min(bores, key=lambda f: f.center().X)
+    sc = seed_bore.center()
+    p = plan_with(pick_of(seed_bore))
+    assert p["ok"], p
+    assert p["axis"]["face_center"] == pytest.approx([sc.X, sc.Y, sc.Z], abs=0.01), p
+    assert "bore" in p["axis_words"] or "axis" in p["axis_words"], p["axis_words"]
+
+    # and the plate's top face, which the RESULT body shares though its
+    # centroid moved when the pattern punched two more holes in it
+    top = max((f for f in doc._parts["pat"].faces()
+               if f.geom_type == b3d.GeomType.PLANE
+               and abs(f.normal_at(f.center()).Z - 1) < 1e-6),
+              key=lambda f: f.center().Z)
+    p = plan_with(pick_of(top))
+    assert p["ok"] and p["axis_words"] == "normal of the top face through its centre", p
+
+    # a click on nothing at all
+    p = plan_with({"center": [200, 0, 0], "normal": [0, 0, 1]})
+    assert not p["ok"] and "that face is not on hole1" in p["error"], p

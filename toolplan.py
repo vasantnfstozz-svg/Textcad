@@ -830,7 +830,11 @@ def _seed_plan(doc, req: dict, tool: str, name: str, verb: str) -> SimpleNamespa
     if part is None or after is None or (before_id and before is None):
         raise ValueError(f"'{seed}' is not built (failed upstream?) — fix it first")
     if before_id:
-        removed, added = pattern.delta(before, after)
+        try:
+            removed, added = pattern.delta(before, after)
+        except ValueError:                        # the same sentence the op gives
+            raise ValueError(f"the kernel could not work out what '{seed}' changed — "
+                             f"pick another feature to {verb}") from None
         if removed is None and added is None:
             raise ValueError(f"'{seed}' neither removed nor added material — there is nothing to {verb}")
         seed_param = seed
@@ -845,6 +849,41 @@ def _seed_plan(doc, req: dict, tool: str, name: str, verb: str) -> SimpleNamespa
                            seed_words=seed_words, face=face,
                            centre=pattern.seed_centre(removed, added, part),
                            half=round(max(bb.size.X, bb.size.Y, bb.size.Z) * 0.75, 2))
+
+
+def _axis_face(part, pick: dict, tip: str):
+    """The face of `part` whose axis the user clicked — or the sentence that
+    says there is none.
+
+    `sk.pick_face`'s nearest-centre match is unbounded and the framework hands
+    this tool clicks on its OWN result body (tool.js `armRepick`), so a click on
+    a COPY's bore wall came back as a face of the pre-pattern body 21 mm away
+    and the pattern silently re-aimed to it (P4 review follow-up,
+    probes/pattern_barrier_probe.py §2 — the same class as the mirror plane's
+    `_plane_face`).
+
+    Mirror's rule cannot be reused, and §3 measures why: a mirror PLANE is the
+    same wherever in it the face sits, but an axis is not — a flat face's axis
+    is its normal THROUGH ITS CENTRE — and that centre MOVES as the pattern
+    punches more holes in the face (0.11 mm on an 80 mm plate), so the clicked
+    centre cannot be matched exactly either. What holds for every face type is
+    that the click must be somewhere `part` really has that face: inside the
+    resolved face's own bounding box. A face the result body shares passes even
+    with its centroid drifted; a copy's face is tens of mm outside it."""
+    picked = sk.pick_face(part, pick.get("center"), pick.get("normal"))
+    c = pick.get("center")
+    if c is not None:
+        bb = picked.bounding_box()
+        # the tolerance covers studio.py's 2-decimal rounding of a picked
+        # centre and the centroid's drift, nothing wider
+        tol = 0.05
+        span = ((bb.min.X, bb.max.X), (bb.min.Y, bb.max.Y), (bb.min.Z, bb.max.Z))
+        if any(float(v) < lo - tol or float(v) > hi + tol
+               for v, (lo, hi) in zip(c, span)):
+            raise ValueError(f"that face is not on {tip} — a pattern's axis comes from a face "
+                             f"of the body being patterned, not one that only a copy has; "
+                             f"click a face of {tip}, or a bore on it")
+    return picked
 
 
 def plan_pattern(doc, req: dict) -> dict:
@@ -868,7 +907,7 @@ def plan_pattern(doc, req: dict) -> dict:
     if circular:
         axis, pick = params.get("axis"), req.get("axis_pick")
         if pick:                                  # a click: THAT face's axis, in stored form
-            picked = sk.pick_face(part, pick.get("center"), pick.get("normal"))
+            picked = _axis_face(part, pick, tip)
             pattern.face_axis(picked)             # a face that has no axis says so here
             axis = pattern.stored_face(part, picked)
         elif axis is None and face is not None and not fid:
