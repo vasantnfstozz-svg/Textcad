@@ -110,7 +110,15 @@ face form (`pattern.stored_face`), read off the body the op will receive.
   rebuilding; Pattern's lesson).
 * **Edit**: tree ✎ or double-click reopens with the quad on the stored plane;
   Cancel restores verbatim — inherited. A LEGACY mirror (copy only) edited
-  here keeps `join` as it was: the plan carries the stored `join`.
+  here keeps `join` as it was — the plan carries the stored `join`, but ONLY
+  while the stored params and the plan agree about whether there is a seed.
+  When they disagree the stored seed has stopped resolving to a feature (it
+  names a whole body, or a PLACEMENT row that now folds to one) and its
+  `join: false` no longer means "a copy", it means nothing: the plan comes back
+  as a body **Join**. Carrying the stored value there replaced the body with a
+  detached reflection, with no Join row to undo from — measured on both
+  collapse paths (`probes/mirror_seed_collapse_probe.py`): of a 76460 mm³
+  plate, 0 and 5940 mm³ still overlapped where the body had been.
 * **Framework extensions this tool forces** (§8 step 5): a session pick may
   show the origin quads (`beginProfilePick(..., { planes: true })`, answered as
   `('plane', 'YZ')`), `armRepick` passes `spec.planePick`, and the feature
@@ -166,7 +174,9 @@ noise on two corpus bodies (probe §10) — by number, that is nothing.
   rides the seed; rename / delete walk the seed; plan tests: a row → no plane,
   the six alternatives, nothing built; a face pick → provenance; `plane_pick`
   face / world → stored form + frame; the select's name → its plane; edit
-  reopens on the stored plane, a legacy plane keeps `join`; `own_id`) and
+  reopens on the stored plane, a legacy plane keeps `join`, and a stored seed
+  that has stopped resolving — a body name, or a placement row that now folds
+  to one — comes back as a body Join on BOTH paths; `own_id`) and
   `tests/test_mirror_gauntlet.py` (every corpus body: a ⌀3 through hole on
   every flat face reflected across each of the body's three mid-planes and
   across the face's own plane, and the BODY across its largest face — a

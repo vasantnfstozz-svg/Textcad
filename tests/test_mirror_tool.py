@@ -560,7 +560,8 @@ def test_editing_a_mirror_whose_seed_stopped_resolving_never_turns_it_into_a_cop
     "no seed, no join": the LEGACY COPY form. Applying that replaces the body
     with a detached reflection and there is no Join row to undo it from
     (measured: an 80 mm plate moved to x 40..120, ZERO overlap with where it
-    was, 76460 mm³ of part silently relocated).
+    was, 76460 mm³ of part silently relocated; on the placement path, 5940 of
+    that 76460 mm³ still overlapped — probes/mirror_seed_collapse_probe.py).
 
     The stored `join` is only meaningful while the stored params and the plan
     AGREE about whether there is a seed; when they disagree the seed collapsed,
@@ -581,6 +582,31 @@ def test_editing_a_mirror_whose_seed_stopped_resolving_never_turns_it_into_a_cop
                          seed=None, join=p["params"]["join"])
     kept = float((doc._parts["hole1"] & out).volume)
     assert kept == pytest.approx(float(doc._parts["hole1"].volume), rel=1e-6)
+
+    # the SECOND collapse path the docstring names: the stored seed is a
+    # PLACEMENT row (rotate / scale / a legacy copy-only mirror). Those fold to
+    # a BODY seed — delta_features' own P0 — so the plan finds no feature where
+    # the stored params claim one, and the legacy copy form would have carried
+    # 92% of the part away (measured: only 5940 of 76460 mm³ still overlapping).
+    placed = doc_with_hole()
+    placed.add("rot", "rotate", {"axis": "Z", "angle_deg": 30}, inputs=["hole1"])
+    placed.add("mp", "mirror", {"seed": "rot", "join": False,
+                                "plane": {"origin": [40, 0, 0], "normal": [1, 0, 0]}},
+               inputs=["rot"])
+    placed.rebuild()
+    assert placed.delta_features("rot") == (None, "rot")    # a placement seeds a BODY
+    assert placed.get("mp").status == "failed"               # the op says so, correctly
+    assert "is a whole body, not a feature of one" in placed.get("mp").problems[0]
+
+    p = toolplan.plan(placed, {"tool": "mirror", "feature_id": "mp"})
+    assert p["ok"] and p["seed"] is None, p
+    assert p["params"]["join"] is True, p["params"]  # a JOIN here too, never the copy
+
+    body = placed._parts["rot"]
+    out = pattern.mirror(body, p["params"]["plane"], seed=None, join=True)
+    assert float((body & out).volume) == pytest.approx(float(body.volume), rel=1e-6)
+    copy = pattern.mirror(body, p["params"]["plane"], seed=None, join=False)
+    assert float((body & copy).volume) < 0.1 * float(body.volume)   # what a copy would cost
 
     # the boundary the fix must not move: the stored value still rules
     # wherever the stored params and the plan agree

@@ -1045,8 +1045,11 @@ def plan_mirror(doc, req: dict) -> dict:
     projected onto the plane) and size, the alternatives (the three origin
     planes, the body's three mid-planes, and the current plane if it is
     neither — a picked face, a legacy plane), the name of the current one, and
-    `params` — `join` is True for a new mirror and the stored value on edit, so
-    a legacy copy-only mirror edited here stays one."""
+    `params` — `join` is what a BODY mirror does, so a NEW mirror joins only
+    when it has no seed; an EDIT keeps the stored value while the stored params
+    and this plan AGREE about whether there is a seed, so a legacy copy-only
+    mirror edited here stays one, and one whose stored seed has stopped
+    resolving comes back as a body Join, never as that copy."""
     s = _seed_plan(doc, req, "mirror", "Mirror", "mirror")
     part, params = s.part, s.params
     alts = [{"name": n, "label": f"the {w} plane (through the origin)", "plane": w}
