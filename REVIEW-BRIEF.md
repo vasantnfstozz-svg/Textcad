@@ -21,180 +21,120 @@
 
 | | |
 |---|---|
-| **Range** | `5ec2dc3..a2f9663` — TWO code commits from two work sessions on the same day: `bc5a7ca` (Mirror's deferred findings) and `a2f9663` (two panel fixes in the tool framework and the shared angle ring). `5ec2dc3` is the docs-only Mirror stamp |
-| **Already reviewed** | everything up to `21429d8` (five rounds, 2026-09-06/07; every finding fixed or filed) |
-| **Base of the whole Mirror change** | `023ca5d` (P4 Mirror as originally shipped) |
-| **Effort** | high — `a2f9663` changes a branch every tool runs through (`tool.js applyOnce`); for `bc5a7ca` medium would do (it closes LOW-priority leftovers; the tool is stamped done) |
+| **Range** | `16ade36..HEAD` — ONE code commit: the STEP export handed over one body of a multi-body design |
+| **Already reviewed** | everything up to `a2f9663` (Mirror, five rounds + the deferred findings, and the two panel fixes) |
+| **Effort** | high — this is a P0 silent-wrong-geometry class: the artifact the user MACHINES FROM was wrong, and the change also moves the spec-verification target |
 | **Branch** | `master` (no pull request — do not try to comment on GitHub) |
+| **Frontend** | `ui v166` |
 
-Review the two commits separately — they touch different code and were
-merged with one one-line conflict in `tool.js applyOnce` (both add a `const`
-after `spec.params`; both lines were kept). Frontend `ui v165`.
+## The bug, as reported and as measured
 
-## A. `bc5a7ca` — Mirror's deferred findings (7 fixed, 4 closed by decision)
+The user exported a design to STEP, opened it in another program, and "can
+see only half part of design and rest of them are missing".
 
-- **pattern.py `_repeat`** — the fuse branch gained the cut branch's second
-  sentence: an image that adds exactly 0.0 AND overlaps the seed "is the seed
-  itself", otherwise "lies inside the body" (`probes/mirror_boss_seed_probe.py`).
-- **toolplan.py `plan_mirror`** — a plane NAME that is none of the alternatives
-  is refused with the names that exist; `"face"` / `"stored"` keep the current
-  plane (they are the names the panel gives it when it is none of the
-  alternatives — inserted AFTER this check, which is why they need the carve-out).
-- **blocks.py `mirror_copy`** — `EXPORTS["mirror"]` delegates to
-  `pattern.mirror(part, plane, join=join)` (lazy import: pattern → sketch →
-  blocks); `_PLANES` and the b3d `mirror` import deleted.
-- **viewport.js `loadModel`** — `if (originPlanes.length) buildOriginPlanes()`
-  after the fit update, so the origin quads follow the body.
-- **tree.js `buildBody`** — an object-valued param renders as `k v · k v`.
-- **tool.js** — `st.lastGoodPlan` (set with `lastGood` from the plan captured
-  at the start of `applyOnce`; for an edit, from the first plan while
-  `lastGood` is the original), `spec.describe(params, st)`, and `okSession`
-  reports a NEW feature that ended `failed` as NOT built with its first problem.
-- **mirror.js** — `planeWords` deleted; `describe` reads `lastGoodPlan.plane_words`.
-- **Tests** — 3 unit tests, 1 browser journey (first plane refused → OK says
-  NOT built), 4 assertions in existing journeys (quad size grows after the
-  body doubles — proven RED with the viewport line reverted; the tree shows
-  `mid X`; the revert sentence carries the plan's words); one existing
-  assertion flipped from "an unknown name changes nothing" to the refusal.
+A Document legitimately has SEVERAL unconsumed leaf bodies —
+`leaf_solid_ids()` returns all of them and `/api/model` renders all of them,
+so the viewport showed the whole design. `to_step()` exported
+`Document.result()`, which is ONE body: the tree's tail.
 
-### Where A's risk is
+Measured on the user's own library (all 50 designs swept, 4 affected):
 
-1. **`okSession`'s `failed` read.** It reads the feature from `feats()`
-   (`S.lastDoc`) right after `await apply()`. If `S.lastDoc` can lag the
-   response that carried the failure (a debounced apply, `applyRun`), the
-   sentence could say "created" over a red row again, or "NOT built" over a
-   green one. The journey covers the plain path only.
-2. **`lastGoodPlan` and the race the comment above it names.** The plan is
-   captured at the START of `applyOnce`, so it matches `pr`; but after a
-   `settle` that typed milder values, `good = spec.params(st)` is re-read from
-   the CURRENT plan while `lastGoodPlan` is the captured one. Mirror has no
-   settle; say whether any tool with one (Fillet) can now describe a revert
-   in the wrong plan's words. Cosmetic at worst — the params stay right.
-3. **`_repeat`'s new branch.** `_overlaps(image, added)` runs only when the fuse
-   added < 1e-9 mm³. Is there a fused image that overlaps the seed's material
-   AND lies inside the body without being the seed itself? (A boss image
-   overlapping half the boss adds material — so no; but say if you find one.)
-4. **`mirror_copy`'s delegation.** Every older script called
-   `mirror(part, "YZ")` positionally and got the copy; the sentences for a bad
-   name now come from `pattern.plane_of` (still `ValueError`). Check nothing in
-   `generate.py` / the Layer-1 prompt quoted the old sentence.
-5. **`buildOriginPlanes` on every load.** It also fires for the SKETCH tool's
-   plane pick (same `originPlanes`), and it resets hover opacity. Intended;
-   say if a load can happen while `planePickCb` is set and break that pick.
+| design | bodies | old export | whole design | shipped |
+|---|---|---|---|---|
+| `my-part-6` | 4 | 585.6 mm³ | 424 161.3 mm³ | **0.1 %** |
+| `esp32-remote` | 2 | 249.1 mm³ | 107 733.9 mm³ | **0.2 %** |
+| `my-part-2` | 2 | 1 297 968.1 mm³ | 1 357 248.8 mm³ | 95.6 % |
+| `my-part-5` | 3 | 413 262.9 mm³ | 414 625.4 mm³ | 99.7 % |
 
-## B. `a2f9663` — two panel fixes the user hit (frontend only, no `.py` outside tests)
+The `my-part-6` file was a 22×10×15 mm nub in place of a 200×143×88 mm part.
 
-- **`static/js/viewport.js` — the angle ring snaps.** `taperDrag` keeps the
-  raw, unwrapped turn in `taperRing.raw` (clamped by the tool's `clampFn`) and
-  shows `snapAngle()` of it: whole degrees, and within `SNAP_BAND` (3°) of a
-  multiple of `SNAP_STEP` (45°) that multiple, clamped again so a mark past the
-  limit is unreachable; `|| 0` keeps a `-0` out. `taperGrab` seeds `raw` from
-  the shown value. Typed values never pass through it. Used by Extrude's taper
-  ring, Revolve and Circular Pattern.
-- **`static/js/tool.js` — honest zero with a preview up.** `applyOnce`: when
-  the values are empty (`spec.isEmpty`), a feature exists, `st.plan` is set and
-  no `hold` claims the state, a create-mode session removes its preview
-  (`unbuild`: combiner then feature — the same two removes Cancel's `teardown`
-  now delegates to, GONE-safe) and runs `afterApply` so the handles sit at 0;
-  an edit session HOLDS with a sentence built from
-  `spec.describe(st.lastGood, st)`. Before, the 0 was pushed, the kernel
-  refused it (`Standard_ConstructionError` for extrude, the op's own sentence
-  for revolve — probed) and `settle` reverted the box to the last good value —
-  the user saw 12 come back into the box they had just emptied.
-- **Tests:** `tests/e2e/test_edit_extrude.py` +2 (create: 12 → 0 → preview
-  gone, box "0", 8 → built, OK; edit: 0 keeps 12 with the sentence, Cancel
-  restores); `tests/e2e/test_revolve_tool.py` ring drag asserts 37.3 → "37" and
-  92 → 90 exactly.
-- **Docs:** fusion-parity skill (rule 4 corollary, gizmo snap rule),
-  LAUNCH-PLAN §10 (a done row, a P3 follow-up, a data point on the flaky ring test).
+## What changed
 
-### Where B's risk is — look hardest here
+**`document.py`**
 
-1. **The `st.plan` guard in `applyOnce`.** Five tools fold "no plan yet" into
-   `isEmpty` (revolve, hole, mirror, both patterns), so the empty branch runs
-   only once `st.plan` is set; otherwise the OLD push path runs. Is there a
-   state with a feature built and `st.plan` null that lasts longer than the
-   plan request — after `changeProfile`, after a refused `replan`, after the
-   server-recovered path? If so the old revert bug is still reachable there.
-2. **`unbuild` inside a running apply.** It posts two removes from inside
-   `holdViewport`; `doc-updated` from the first remove can re-enter `apply()`
-   (coalesced into the burst). Confirm the second `applyOnce` pass cannot find
-   `st.featureId` half-cleared, and that `/api/feature/remove` of the preview
-   extrude never cascades to its SKETCH (Cancel has used the same two calls
-   since P2, so this should be proven — say so if it is).
-3. **The hold in edit mode says "the feature keeps X"** — X is
-   `spec.describe(st.lastGood, st)`. `lastGood` is the original at open and the
-   last VERIFIED values after a push; is there a path where `lastGood` is null
-   in edit mode (a settle that reverted sets `good = null` but leaves
-   `st.lastGood` alone)? A `TypeError` here would be swallowed into the apply
-   burst and the box would silently stop applying. Mirror's `describe` now
-   reads `st.lastGoodPlan` (commit A) — for an edit that is the first plan.
-4. **Snap + clamp ordering.** `raw` is clamped, then the snapped value is
-   clamped again. Extrude's `clampTaper` has side effects (`ensureCollapse`,
-   the one-time apex sentence) — check that two calls per pointer move cannot
-   double-fire the sentence or re-request the collapse depths.
-5. **`hold` before `empty`.** A tool's own `hold` sentence wins over the
-   generic empty handling (Hole's "unchanged until it has a depth" keeps its
-   preview; Pattern's count 1 removes it). Say if any tool's `isEmpty` state
-   should have been a hold, or the reverse.
+- **`result_bodies()`** (new) — `leaf_solid_ids()` turned into parts. The one
+  authority on "what is the design", so the viewport and the exporter cannot
+  disagree. `result()` is the LAST of these and keeps its old meaning.
+- **`result_shape()`** (new) — the whole design as one shape: a bare part when
+  there is one body, a `b3d.Compound` when there are several. **Not fused** —
+  bodies the user has not joined are not joined. Exporting and measuring share
+  this so a file can never hold something other than what was reported.
+- **`_export_blockers()`** — rewritten. Was: walk BACKWARDS from the tail,
+  `break` at the first built solid. So (a) a failed branch sitting earlier than
+  the tail was never seen, and (b) the test was `part is None` only, so a body
+  that BUILT but failed its health check (empty solid, open shell) sailed
+  through. Now: a forward pass over every unconsumed, active, non-sketch
+  feature, blocking on a missing part OR `status != "ok"`.
+- **`to_step()`** — exports `result_shape()`.
+- **the spec check in `rebuild()`** — now `inspector.verify(self.result_shape())`
+  instead of `self.result()`, and the spec cache signature spans EVERY leaf's
+  signature instead of only the tail's.
 
-## Ground rules for this repo (they change what counts as a finding)
+**`studio.py`** `/api/export` also returns `is_valid`, `is_manifold` and
+`bodies`, measured from the written file.
 
-- Geometry claims are proven by measurement, not by reading. If a finding is
-  geometric, say what to measure; the probes under `probes/` are the pattern.
-- "A failed feature beats a corrupt body" — a refusal with a sentence is
-  correct behaviour, not a bug. Silently returning an invalid or non-manifold
-  solid is the bug.
-- A saved design may never STOP rebuilding, except where the geometry is
-  genuinely broken (see the accepted risk in BACKLOG.md).
-- Never re-derive a backend fact in the frontend (LAUNCH-PLAN.md R1). The snap
-  is a UI interaction rule, not a geometric fact; the clamp values still come
-  from the plan.
-- The fast tier is green on both trees (1149 on `bc5a7ca`; 1146 on
-  `a2f9663` before the merge, which has no `.py` change of its own); the
-  R1/R2/R3 grep test plus the Extrude and Revolve journeys were re-run on the
-  merged tree, the 8 Mirror journeys on `bc5a7ca`, the taper-ring and
-  Pattern-ring journeys on `a2f9663`'s final ring code. Do not report anything
-  a test run would have caught.
-- Documentation and comments ARE reviewable here: they are the contract the
-  next change reads. But a wording preference is not a finding.
+**`mcp_server.py`** `_report` measures `result_shape()`, adds `bodies`.
 
-## Already known — do NOT re-report
+**`static/js/dialogs.js`** the export line says how many separate bodies are in
+the file and warns if the kernel calls the geometry unsound. Every number is a
+field on the response — nothing is recomputed in JS (R1).
 
-Closed BY DECISION in A (LAUNCH-PLAN.md §10, specs/mirror.md decision 6):
+## Where the risk is
 
-- A body face wins a click over an origin quad behind it — the quads are glass
-  through the model, sized past its silhouette; nearest-hit-wins was the
-  earlier bug.
-- The plan resolves a picked face through `pattern.plane_of` on purpose (the
-  stored form must round-trip to what the op will build at rebuild).
-- `delta()` runs once per plan and once per rebuild — a cache on the document
-  is not worth its risk for one boolean.
-- `snapshot`'s `?? null`, the shared `originPlanes` teardown (one owner at a
-  time), `planeQuadInfo` echoing the handed frame.
+1. **`_export_blockers` is now stricter in two directions at once.** A design
+   that used to export can now be REFUSED — by design ("a failed feature beats
+   a corrupt body"), with the escape hatch being to strike the feature out.
+   Worth checking: is there a legitimate document shape that this now refuses
+   wrongly? The `sk.is_sketch(part)` skip is the guard for sketch-valued
+   modifiers (a moved profile); a feature with NO part cannot be classified
+   that way and is treated as a body. Is that the right call?
+2. **The spec check moved target.** For a multi-body design the spec now
+   describes the whole design, not the tail. On `esp32-remote` this replaced
+   three bogus size errors with the one true complaint. No design in the
+   library flips from fail to pass. But it IS a semantic change to the
+   anti-hallucination guarantee — read `test_spec_is_checked_against_every_body`
+   and `test_spec_cache_notices_a_change_to_a_body_that_is_not_the_tail` and
+   say whether the cache key is now complete.
+3. **`Compound(bodies)` vs fusing.** Proven in
+   `probes/multibody_step_probe.py`: §2 the file reads back as N solids with
+   the summed volume, §3 one body writes identically wrapped or bare, §4 the
+   bodies stay exact BREP (all `PLANE` faces, no `BSPLINE`) through a
+   round-trip, §5 touching bodies are NOT fused by the writer. Overlapping
+   separate bodies double-count in the volume readback — judged pathological
+   (the user would see two overlapping bodies in the viewport) and left alone.
+4. **The deep `is_valid` pass in `rebuild()` still only sees the tail**
+   (`document.py`, the `rf_deep` block). Deliberate: it costs ~270 ms per body
+   on every rebuild, and the export readback now validates every body at export
+   time instead. Say if you disagree — the trade is editing speed against
+   catching an invalid non-tail body earlier than the export.
 
-Filed or decided with B:
+## Do not re-report
 
-- **Five tools hand-type "a value typed before the plan arrived waits for
-  it"** (LAUNCH-PLAN §10, P3) — the reason the `st.plan` guard exists. A
-  framework-level plan wait is the fix; not this commit.
-- In edit mode a 0 leaves the OLD solid on screen while the box says 0 (the
-  hold design shared with Hole and Pattern; the sentence says so).
-- Draft tapers of 1–3° are not reachable by DRAG on the ring (the 0 mark
-  holds them) — type them; a decision, not a bug.
-- `test_revolve_tool.py::test_open_from_the_tree_row_and_drag_the_ring` is
-  order-dependent (red after other tool journeys, green alone — §10 P1, with
-  today's data point); B's commit ran it alone.
+- **`/api/mesh.stl` / `_ensure_mesh_file` use `result()`.** No caller anywhere
+  in the tree; the viewport uses `/api/model`, which is per-body. Dead path.
+- **`_doc_json`'s `result_pieces` is the tail feature's lump count.** Verified
+  as guarded by checks that are live during a drag.
+- **`mcp_server.build_design` / `design_part` export one body.** Both call
+  `to_step`; they carry no export logic of their own and are fixed by it.
+- **`mcp_server.py:212` (the compressor) exports `build.part`.** Not a
+  Document — single-part path, unaffected.
+- **`measure.py`, `provenance.py`, `toolplan.py` use `result()`.** Not audited
+  as part of this change; they are tool-target concerns, not export. Out of
+  scope on purpose, not an oversight — flag them as new findings if you think
+  they carry the same defect.
+- **`test_export_lands_in_designs_and_is_measured` asserts `n_solids == 1`.**
+  Correct: `sample_flange()` is a linear chain with exactly one leaf.
 
-Older:
+## Proof
 
-- The body-pattern health gate is retroactive (BACKLOG.md, accepted risk).
-- 5 pre-existing red browser tests in `tests/e2e/test_tree_delete.py`
-  (LAUNCH-PLAN.md §10 P1, someone else's work).
-- Pattern's drag ghost (§10 P3, deferred by the user).
-
-## After the review
-
-Bring the findings back to the work chat. Each one gets reproduced by
-measurement, then a test that is RED before the fix, then the fix — never a
-fix applied straight from the review (`--fix` skips that discipline).
+- Fast tier green (1157 passed before the last two commits' worth of changes;
+  re-run at ship).
+- 10 new tests in `tests/test_export_guard.py` — every one of them written RED
+  first and confirmed to fail for the right reason (`n_solids == 1`).
+- `probes/multibody_step_probe.py` — 7 sections, all measured, incl. §6 which
+  exports the user's real `my-part-6` whole.
+- Live server smoke test through the real HTTP API: `POST /api/open/my-part-6`
+  then `POST /api/export` returns `n_solids 4, volume 424161.33,
+  size [200.625, 143.442, 88.284], is_valid true, is_manifold true`.
+- Line delta: +370 / −38 across 6 files (of which +235 is tests), plus a
+  130-line probe. This one ADDS more than it deletes — a bug fix, not a phase.
