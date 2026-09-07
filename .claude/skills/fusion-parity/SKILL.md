@@ -44,7 +44,12 @@ were each learned from a correction — do not regress them.
    apply time as a ONE-SHOT (first positive value flips negative, after that
    the sign is the user's — deliberate upward trim cuts stay possible), and
    THROUGH ALL with an untouched 0 seeds direction INTO the body for face
-   sketches (only the sign matters to a through cut).
+   sketches (only the sign matters to a through cut). A value CLEARED back
+   to 0 with a preview up (user 2026-09-07: "I change 12 to 0 and it reloads
+   12") REMOVES the preview and leaves the box at 0 — never push the 0: the
+   kernel refuses a zero-thickness solid and the revert rewrites the box the
+   user just emptied. An EDIT keeps its feature and says so (tool.js
+   applyOnce, the `empty` branch); both are inherited by every tool.
 5. **Live, real previews.** The preview is the actual verified rebuild
    (throttled, one in flight), never a fake overlay. Cancel removes every
    preview feature; OK keeps them; Esc = cancel.
@@ -167,6 +172,13 @@ were each learned from a correction — do not regress them.
   axis / outline (R1) and grows along the op's axis (the dot-product rule
   above). Pattern is the one tool still without (its copies need the seed's
   delta mesh from the server) — a follow-up, not a decision.
+- **A dragged ANGLE lands on round numbers (user 2026-09-07: "revolve goes
+  to 90.5 — it should recognise 0, 45, 90, 180").** The ring (Extrude taper,
+  Revolve, Circular Pattern) snaps to whole degrees, and within 3° of a
+  multiple of 45° to that multiple, where the handle sticks until the pointer
+  leaves the band; the raw turn accumulates underneath so the handle never
+  lags (viewport.js `snapAngle`). Typed values stay exact — the box is for
+  exact figures. Locked in by test_revolve_tool's ring drag (37.3 → 37, 92 → 90).
 - OrbitControls (three 0.160) FREEZES its orbit axis at construction —
   `setFromUnitVectors(object.up,(0,1,0))` lives in update()'s closure, so
   assigning `camera.up` later does nothing. Looking straight down an axis

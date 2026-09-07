@@ -1095,7 +1095,17 @@ let taperRing = null;
 
 /* the angle accumulates the unwrapped delta of every drag step — 0..±360 for
    Revolve, ±max_taper for Extrude: the tool's clampFn owns the range, the
-   gizmo has no wrap or cap of its own */
+   gizmo has no wrap or cap of its own.
+   A DRAGGED angle lands on round numbers (user 2026-09-07: "revolve goes to
+   90.5 — it should recognise 0, 45, 90, 180"): whole degrees, and within
+   SNAP_BAND of a multiple of SNAP_STEP the multiple itself, where the handle
+   sticks until the pointer leaves the band. The raw turn keeps accumulating
+   underneath so the handle never lags the pointer. Typed values stay exact. */
+const SNAP_STEP = 45, SNAP_BAND = 3;
+function snapAngle(deg) {
+  const near = Math.round(deg / SNAP_STEP) * SNAP_STEP;
+  return (Math.abs(deg - near) <= SNAP_BAND ? near : Math.round(deg)) || 0;   // never -0
+}
 export function beginTaperRing(centerArr, frame, radius, taper0, onChange, onCommit,
                                clampFn) {
   endTaperRing();
@@ -1124,7 +1134,7 @@ export function beginTaperRing(centerArr, frame, radius, taper0, onChange, onCom
   handle.renderOrder = 1002;
   scene.add(circle); scene.add(handle); scene.add(grab);
   taperRing = { circle, handle, grab, C, X, Y, N, R, ringAt,
-                taper: taper0 || 0, onChange, onCommit, clampFn,
+                taper: taper0 || 0, raw: 0, onChange, onCommit, clampFn,
                 lastRaw: 0, dragging: false };
   taperRingPlace();
 }
@@ -1171,6 +1181,7 @@ function taperGrab(e) {
   taperRing.dragging = true;
   controls.enabled = false;
   taperRing.lastRaw = taperAngleAt(e);
+  taperRing.raw = taperRing.taper;                 // the turn starts from what the box shows
   return true;
 }
 
@@ -1180,11 +1191,13 @@ function taperDrag(e) {
   while (d > 180) d -= 360;
   while (d < -180) d += 360;
   taperRing.lastRaw = raw;
-  let t = taperRing.taper + d;
   // no cap of its own (user 2026-09-03: "in Fusion it goes until -90"): the
-  // tool's clampFn holds the server's limit — one limit, one place
-  if (taperRing.clampFn) t = taperRing.clampFn(t);
-  taperRing.taper = t;
+  // tool's clampFn holds the server's limit — one limit, one place. The snap
+  // is clamped too: a mark past the limit (90 on a taper capped at 89) is out
+  // of reach, not one step further than the limit allows
+  const clamp = taperRing.clampFn || (x => x);
+  taperRing.raw = clamp(taperRing.raw + d);
+  taperRing.taper = clamp(snapAngle(taperRing.raw));
   taperRingPlace();
   taperRing.onChange(taperRing.taper);
 }

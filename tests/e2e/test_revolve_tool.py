@@ -139,17 +139,23 @@ def test_open_from_the_tree_row_and_drag_the_ring(page, fresh_doc, server):
     p0 = ring_point(page, 0)
     page.mouse.move(p0["x"], p0["y"])
     page.mouse.down()
-    for d in (15, 30, 45, 60, 75, 90):
+    # a DRAGGED angle lands on round numbers (user 2026-09-07: "it goes to
+    # 90.5 — it should recognise 0, 45, 90, 180"): whole degrees away from the
+    # marks, and within 3° of a multiple of 45 the mark itself — a hand that
+    # stops at 92 gets exactly 90 (viewport.js snapAngle)
+    for d in (15, 30, 37.3, 60, 75, 92):
         p = ring_point(page, d)
         page.mouse.move(p["x"], p["y"])
         page.wait_for_timeout(40)
+        if d == 37.3:
+            assert page.input_value("#rvAngle") == "37", page.input_value("#rvAngle")
     ghost = page.evaluate("() => window.__vp.revolveGhostInfo()")
-    assert ghost["visible"] and 80 < ghost["angle"] < 100, ghost
+    assert ghost["visible"] and ghost["angle"] == 90, ghost
     assert ghost["centre"][1] > 0, "a positive sweep goes toward +y, like the kernel"
     page.mouse.up()
     page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
     deg = float(page.input_value("#rvAngle"))
-    assert 80 <= deg <= 100, deg
+    assert deg == 90, deg
     f = feature(server, "revolve1")
     assert f and f["status"] == "ok", f
     assert f["volume"] == pytest.approx(pappus(20, 60, deg), rel=1e-3)

@@ -767,14 +767,31 @@ export function tool(spec) {
     if (spec.beforeApply) spec.beforeApply(st);
     const pr = spec.params(st);
     const plan = st.plan;               // the plan these values came from (see lastGoodPlan)
+    const empty = spec.isEmpty(pr, st);
     // honest zero: never create a zero-thickness solid — geometry appears
     // when the user drags or types
-    if (!st.featureId && spec.isEmpty(pr, st)) return;
+    if (!st.featureId && empty) return;
     // HALF-MADE: values the op would certainly refuse because the user is
     // mid-change (a seat kind just chosen, Through just unticked, a seat box
     // half-typed). Applying them fails and the automatic revert would undo the
     // very choice that was made, so the tool waits — and says once what for.
-    const held = spec.hold ? spec.hold(pr, st) : null;
+    let held = spec.hold ? spec.hold(pr, st) : null;
+    // BACK TO ZERO with a preview up (a value cleared to retype it, the arrow
+    // dragged home): the preview goes and the box keeps its 0. Pushing the 0
+    // made the kernel refuse it and the revert wrote the OLD value into the box
+    // the user had just emptied (2026-09-07: "I change 12 to 0 and it reloads
+    // 12"). An EDIT keeps its feature and says so instead. Only once the plan
+    // is in: a tool whose params come from it reads them as empty until then,
+    // and an edit reopened and typed at once must still push.
+    if (!held && empty && st.plan) {
+      if (!st.editing) {
+        await unbuild();
+        if (spec.afterApply) spec.afterApply(st);     // the handles sit at 0
+        return;
+      }
+      held = `${spec.name}: nothing can be built from these values — the feature keeps ` +
+             `${spec.describe(st.lastGood, st)} until you type new ones; Cancel puts it back as it was.`;
+    }
     if (held) {
       if (st.heldWhy !== held) { st.heldWhy = held; say(held); }
       return;
@@ -829,14 +846,19 @@ export function tool(spec) {
     startPreview(false);              // a refused profile keeps the panel: choose another
   }
 
+  /* the preview feature(s) go — Cancel, another profile, or the boxes back at
+     zero; the session stays as it is */
+  async function unbuild() {
+    if (st.opId) await post('/api/feature/remove', { feature_id: st.opId });
+    await post('/api/feature/remove', { feature_id: st.featureId });
+    st.opId = st.opType = st.opTarget = st.featureId = null;
+  }
+
   /* -------- Cancel / OK / another tool (rule 5) -------- */
   async function teardown() {
     spec.gizmos.end();
-    await holdViewport(async () => {
-      if (st && st.opId) await postJSON('/api/feature/remove', { feature_id: st.opId });
-      if (st && st.featureId) await postJSON('/api/feature/remove', { feature_id: st.featureId });
-    });
-    if (st) { st.opId = st.opType = st.opTarget = st.featureId = null; }
+    if (st && st.featureId)
+      await holdViewport(unbuild).catch(e => { if (e !== GONE) throw e; });
   }
   /* Cancel and OK are ONE-WAY DOORS. st is only nulled by hide(), several
      awaits away, so without this a second Escape (auto-repeat fires ~31/s), a
