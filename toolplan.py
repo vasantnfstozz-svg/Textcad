@@ -1074,9 +1074,20 @@ def plan_mirror(doc, req: dict) -> dict:
     # `join` is what a BODY mirror does (Fusion's Join). Stamped on a SEEDED
     # row it was a loaded gun: the op branches on the truthiness of `seed`, so
     # the moment a seed arrived empty the feature mirror became a whole-body
-    # Join at twice the size, silently (P4 review, P0 — probe §2). An edit
-    # reads the stored value, so a legacy copy-only mirror stays a copy.
-    join = bool(params.get("join", False)) if s.fid else s.seed_param is None
+    # Join at twice the size, silently (P4 review, P0 — probe §2).
+    #
+    # An edit reads the STORED value, so a legacy copy-only mirror stays a
+    # copy — but ONLY while the stored params and this plan agree about whether
+    # there is a seed. When they disagree the stored seed has stopped resolving
+    # to a feature (it names a whole body, or a PLACEMENT row that now folds to
+    # one) and its `join: False` does not mean "a copy", it means nothing: the
+    # plan came back as the legacy COPY form and applying it replaced the body
+    # with a detached reflection, with no Join row to undo from (the P0 of the
+    # /code-review of c4d5961 — measured: an 80 mm plate relocated to
+    # x 40..120, zero overlap with where it was). A body mirror is a Join.
+    stored_seed, planned_seed = params.get("seed"), s.seed_param is not None
+    keep_stored = bool(s.fid) and bool(stored_seed) == planned_seed
+    join = bool(params.get("join", False)) if keep_stored else not planned_seed
     out = {"ok": True, "tool": "mirror", "op": "mirror", "input": s.tip, "target_body": s.tip,
            "seed": s.seed_param, "seed_words": s.seed_words, "centre": _vec(s.centre),
            "half": s.half, "params": {"seed": s.seed_param, "plane": plane, "join": join}}

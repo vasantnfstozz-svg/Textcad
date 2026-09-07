@@ -550,3 +550,53 @@ def test_the_ai_is_told_every_plane_form_and_the_right_one_for_half_a_body():
     seg = author.AUTHOR_PROMPT.split("model one half")[1].split('with "seed"')[0]
     assert '"face"' in seg, seg                            # the halves meet at a FACE
     assert "mid" in seg and "not" in seg.lower(), seg      # and a mid-plane is ruled out
+
+
+def test_editing_a_mirror_whose_seed_stopped_resolving_never_turns_it_into_a_copy():
+    """The P0 the /code-review of c4d5961 + 85821be found. On an EDIT the plan
+    reads `join` from what was SAVED, and a new seeded mirror now saves
+    join:False — so a row whose stored seed no longer resolves to a feature (it
+    names a whole body, or a PLACEMENT row that now folds to one) came back as
+    "no seed, no join": the LEGACY COPY form. Applying that replaces the body
+    with a detached reflection and there is no Join row to undo it from
+    (measured: an 80 mm plate moved to x 40..120, ZERO overlap with where it
+    was, 76460 mm³ of part silently relocated).
+
+    The stored `join` is only meaningful while the stored params and the plan
+    AGREE about whether there is a seed; when they disagree the seed collapsed,
+    and a body mirror is a JOIN."""
+    doc = doc_with_hole()
+    doc.add("m1", "mirror", {"seed": "box1", "plane": {"face": "+x"}, "join": False},
+            inputs=["hole1"])                      # a seed that names a BODY
+    doc.rebuild()
+    assert doc.get("m1").status == "failed"         # the op says so, correctly
+    assert "is a whole body, not a feature of one" in doc.get("m1").problems[0]
+
+    p = toolplan.plan(doc, {"tool": "mirror", "feature_id": "m1"})
+    assert p["ok"] and p["seed"] is None, p
+    assert p["params"]["join"] is True, p["params"]  # a JOIN, never the copy
+
+    # applying the plan keeps the body where it is
+    out = pattern.mirror(doc._parts["hole1"], p["params"]["plane"],
+                         seed=None, join=p["params"]["join"])
+    kept = float((doc._parts["hole1"] & out).volume)
+    assert kept == pytest.approx(float(doc._parts["hole1"].volume), rel=1e-6)
+
+    # the boundary the fix must not move: the stored value still rules
+    # wherever the stored params and the plan agree
+    legacy = Document("l")
+    legacy.add("b", "plate", {"width": 40, "depth": 30, "thickness": 12})
+    legacy.add("copy1", "mirror", {"plane": "YZ"}, inputs=["b"])       # no seed, no join
+    built(legacy)
+    p = toolplan.plan(legacy, {"tool": "mirror", "feature_id": "copy1"})
+    assert p["params"] == {"seed": None, "plane": "YZ", "join": False}   # stays a copy
+
+    seeded = built(doc_with_mirror())               # stored seed + join:True
+    p = toolplan.plan(seeded, {"tool": "mirror", "feature_id": "mirror1"})
+    assert p["params"]["seed"] == "hole1" and p["params"]["join"] is True
+
+    doc2 = doc_with_hole()                          # stored seed + join:False (what the tool writes now)
+    doc2.add("m2", "mirror", {"seed": "hole1", "plane": "YZ", "join": False}, inputs=["hole1"])
+    built(doc2)
+    p = toolplan.plan(doc2, {"tool": "mirror", "feature_id": "m2"})
+    assert p["params"] == {"seed": "hole1", "plane": "YZ", "join": False}
