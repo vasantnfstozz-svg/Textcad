@@ -21,17 +21,17 @@
 
 | | |
 |---|---|
-| **Range** | `5ec2dc3..bc5a7ca` — ONE code commit, `bc5a7ca` |
-| **Already reviewed** | everything up to `21429d8` (five rounds, 2026-09-06/07; every finding fixed or filed). `5ec2dc3` is the docs-only stamp |
+| **Range** | `5ec2dc3..a2f9663` — TWO code commits from two work sessions on the same day: `bc5a7ca` (Mirror's deferred findings) and `a2f9663` (two panel fixes in the tool framework and the shared angle ring). `5ec2dc3` is the docs-only Mirror stamp |
+| **Already reviewed** | everything up to `21429d8` (five rounds, 2026-09-06/07; every finding fixed or filed) |
 | **Base of the whole Mirror change** | `023ca5d` (P4 Mirror as originally shipped) |
-| **Effort** | medium is enough — this commit closes the LOW-priority leftovers of the earlier reviews; the tool is stamped done |
+| **Effort** | high — `a2f9663` changes a branch every tool runs through (`tool.js applyOnce`); for `bc5a7ca` medium would do (it closes LOW-priority leftovers; the tool is stamped done) |
 | **Branch** | `master` (no pull request — do not try to comment on GitHub) |
 
-`bc5a7ca` closes the ~9 findings the earlier reviews deferred until after the
-stamp: 7 fixed, the rest closed by decision (listed below — do not re-open
-them, the reasons are in LAUNCH-PLAN.md §10 and specs/mirror.md decision 6).
+Review the two commits separately — they touch different code and were
+merged with one one-line conflict in `tool.js applyOnce` (both add a `const`
+after `spec.params`; both lines were kept). Frontend `ui v165`.
 
-## What changed, in one line each
+## A. `bc5a7ca` — Mirror's deferred findings (7 fixed, 4 closed by decision)
 
 - **pattern.py `_repeat`** — the fuse branch gained the cut branch's second
   sentence: an image that adds exactly 0.0 AND overlaps the seed "is the seed
@@ -57,7 +57,7 @@ them, the reasons are in LAUNCH-PLAN.md §10 and specs/mirror.md decision 6).
   `mid X`; the revert sentence carries the plan's words); one existing
   assertion flipped from "an unknown name changes nothing" to the refusal.
 
-## Where the risk actually is — look hardest here
+### Where A's risk is
 
 1. **`okSession`'s `failed` read.** It reads the feature from `feats()`
    (`S.lastDoc`) right after `await apply()`. If `S.lastDoc` can lag the
@@ -82,6 +82,62 @@ them, the reasons are in LAUNCH-PLAN.md §10 and specs/mirror.md decision 6).
    plane pick (same `originPlanes`), and it resets hover opacity. Intended;
    say if a load can happen while `planePickCb` is set and break that pick.
 
+## B. `a2f9663` — two panel fixes the user hit (frontend only, no `.py` outside tests)
+
+- **`static/js/viewport.js` — the angle ring snaps.** `taperDrag` keeps the
+  raw, unwrapped turn in `taperRing.raw` (clamped by the tool's `clampFn`) and
+  shows `snapAngle()` of it: whole degrees, and within `SNAP_BAND` (3°) of a
+  multiple of `SNAP_STEP` (45°) that multiple, clamped again so a mark past the
+  limit is unreachable; `|| 0` keeps a `-0` out. `taperGrab` seeds `raw` from
+  the shown value. Typed values never pass through it. Used by Extrude's taper
+  ring, Revolve and Circular Pattern.
+- **`static/js/tool.js` — honest zero with a preview up.** `applyOnce`: when
+  the values are empty (`spec.isEmpty`), a feature exists, `st.plan` is set and
+  no `hold` claims the state, a create-mode session removes its preview
+  (`unbuild`: combiner then feature — the same two removes Cancel's `teardown`
+  now delegates to, GONE-safe) and runs `afterApply` so the handles sit at 0;
+  an edit session HOLDS with a sentence built from
+  `spec.describe(st.lastGood, st)`. Before, the 0 was pushed, the kernel
+  refused it (`Standard_ConstructionError` for extrude, the op's own sentence
+  for revolve — probed) and `settle` reverted the box to the last good value —
+  the user saw 12 come back into the box they had just emptied.
+- **Tests:** `tests/e2e/test_edit_extrude.py` +2 (create: 12 → 0 → preview
+  gone, box "0", 8 → built, OK; edit: 0 keeps 12 with the sentence, Cancel
+  restores); `tests/e2e/test_revolve_tool.py` ring drag asserts 37.3 → "37" and
+  92 → 90 exactly.
+- **Docs:** fusion-parity skill (rule 4 corollary, gizmo snap rule),
+  LAUNCH-PLAN §10 (a done row, a P3 follow-up, a data point on the flaky ring test).
+
+### Where B's risk is — look hardest here
+
+1. **The `st.plan` guard in `applyOnce`.** Five tools fold "no plan yet" into
+   `isEmpty` (revolve, hole, mirror, both patterns), so the empty branch runs
+   only once `st.plan` is set; otherwise the OLD push path runs. Is there a
+   state with a feature built and `st.plan` null that lasts longer than the
+   plan request — after `changeProfile`, after a refused `replan`, after the
+   server-recovered path? If so the old revert bug is still reachable there.
+2. **`unbuild` inside a running apply.** It posts two removes from inside
+   `holdViewport`; `doc-updated` from the first remove can re-enter `apply()`
+   (coalesced into the burst). Confirm the second `applyOnce` pass cannot find
+   `st.featureId` half-cleared, and that `/api/feature/remove` of the preview
+   extrude never cascades to its SKETCH (Cancel has used the same two calls
+   since P2, so this should be proven — say so if it is).
+3. **The hold in edit mode says "the feature keeps X"** — X is
+   `spec.describe(st.lastGood, st)`. `lastGood` is the original at open and the
+   last VERIFIED values after a push; is there a path where `lastGood` is null
+   in edit mode (a settle that reverted sets `good = null` but leaves
+   `st.lastGood` alone)? A `TypeError` here would be swallowed into the apply
+   burst and the box would silently stop applying. Mirror's `describe` now
+   reads `st.lastGoodPlan` (commit A) — for an edit that is the first plan.
+4. **Snap + clamp ordering.** `raw` is clamped, then the snapped value is
+   clamped again. Extrude's `clampTaper` has side effects (`ensureCollapse`,
+   the one-time apex sentence) — check that two calls per pointer move cannot
+   double-fire the sentence or re-request the collapse depths.
+5. **`hold` before `empty`.** A tool's own `hold` sentence wins over the
+   generic empty handling (Hole's "unchanged until it has a depth" keeps its
+   preview; Pattern's count 1 removes it). Say if any tool's `isEmpty` state
+   should have been a hold, or the reverse.
+
 ## Ground rules for this repo (they change what counts as a finding)
 
 - Geometry claims are proven by measurement, not by reading. If a finding is
@@ -91,15 +147,21 @@ them, the reasons are in LAUNCH-PLAN.md §10 and specs/mirror.md decision 6).
   solid is the bug.
 - A saved design may never STOP rebuilding, except where the geometry is
   genuinely broken (see the accepted risk in BACKLOG.md).
-- Never re-derive a backend fact in the frontend (LAUNCH-PLAN.md R1).
-- The fast tier is green (1149 passed) and the 8 Mirror browser journeys
-  are green, so do not report anything a test run would have caught.
+- Never re-derive a backend fact in the frontend (LAUNCH-PLAN.md R1). The snap
+  is a UI interaction rule, not a geometric fact; the clamp values still come
+  from the plan.
+- The fast tier is green on both trees (1149 on `bc5a7ca`; 1146 on
+  `a2f9663` before the merge, which has no `.py` change of its own); the
+  R1/R2/R3 grep test plus the Extrude and Revolve journeys were re-run on the
+  merged tree, the 8 Mirror journeys on `bc5a7ca`, the taper-ring and
+  Pattern-ring journeys on `a2f9663`'s final ring code. Do not report anything
+  a test run would have caught.
 - Documentation and comments ARE reviewable here: they are the contract the
   next change reads. But a wording preference is not a finding.
 
 ## Already known — do NOT re-report
 
-Closed BY DECISION in this round (LAUNCH-PLAN.md §10, specs/mirror.md decision 6):
+Closed BY DECISION in A (LAUNCH-PLAN.md §10, specs/mirror.md decision 6):
 
 - A body face wins a click over an origin quad behind it — the quads are glass
   through the model, sized past its silhouette; nearest-hit-wins was the
@@ -110,6 +172,22 @@ Closed BY DECISION in this round (LAUNCH-PLAN.md §10, specs/mirror.md decision 
   is not worth its risk for one boolean.
 - `snapshot`'s `?? null`, the shared `originPlanes` teardown (one owner at a
   time), `planeQuadInfo` echoing the handed frame.
+
+Filed or decided with B:
+
+- **Five tools hand-type "a value typed before the plan arrived waits for
+  it"** (LAUNCH-PLAN §10, P3) — the reason the `st.plan` guard exists. A
+  framework-level plan wait is the fix; not this commit.
+- In edit mode a 0 leaves the OLD solid on screen while the box says 0 (the
+  hold design shared with Hole and Pattern; the sentence says so).
+- Draft tapers of 1–3° are not reachable by DRAG on the ring (the 0 mark
+  holds them) — type them; a decision, not a bug.
+- `test_revolve_tool.py::test_open_from_the_tree_row_and_drag_the_ring` is
+  order-dependent (red after other tool journeys, green alone — §10 P1, with
+  today's data point); B's commit ran it alone.
+
+Older:
+
 - The body-pattern health gate is retroactive (BACKLOG.md, accepted risk).
 - 5 pre-existing red browser tests in `tests/e2e/test_tree_delete.py`
   (LAUNCH-PLAN.md §10 P1, someone else's work).
