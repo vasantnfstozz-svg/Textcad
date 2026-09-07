@@ -45,7 +45,8 @@ _DEG = {"angle", "angle2", "angle_deg", "rotation", "inlet_angle", "exit_angle",
 # an `axis` that is NOT the world-axis enum: revolve's takes "u" / "v", a world
 # name or a line [[u1, v1], [u2, v2]] in the sketch plane (see its OP_NOTE) —
 # an enum here would tell the AI the one form that cannot work on a face
-_NO_ENUM = {("revolve", "axis"), ("revolve_face", "axis")}
+_NO_ENUM = {("revolve", "axis"), ("revolve_face", "axis"),
+            ("mirror", "plane")}      # also a face, a mid-plane, {origin, normal}
 
 # op -> one-line convention note (anchoring, direction, operand meaning)
 OP_NOTES = {
@@ -215,11 +216,14 @@ RULES AND CONVENTIONS:
   from the seed to that angle.
 - "rotate" orients parts: cylinders are upright by default — a WHEEL or axle is
   rotate(axis "X" or "Y", 90). "mirror" with "join": true makes a body symmetric
-  about a plane (its reflection fused on — model one half, mirror it across the
-  face or the mid-plane {{"mid": "X"}} where the halves meet); with "seed": a
+  about a plane (its reflection fused on — model one half, then mirror it across
+  the flat FACE where the halves meet, {{"face": "+x"}}, or an origin plane the
+  half sits against; NOT {{"mid": "X"}} — that is the body's OWN centre, so the
+  reflection stays inside it and the part does not grow); with "seed": a
   feature's id it mirrors THAT feature (a hole, a boss) across the plane on the
-  body — add it after the body's latest feature. Without "join" or "seed" it
-  returns only the mirrored COPY (fuse it yourself).
+  body — {{"mid": "X"}} is the plane for that, the body's centre across X — add
+  it after the body's latest feature. Without "join" or "seed" it returns only
+  the mirrored COPY (fuse it yourself).
 - "fillet"/"chamfer" round or bevel edges ("all"/"top"/"bottom") — use small
   values (radius well under half the local thickness or they fail). "shell"
   hollows a solid into walls (open_face "top" makes cups/containers).

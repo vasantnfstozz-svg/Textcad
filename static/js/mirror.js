@@ -44,8 +44,11 @@ function mirrorTool() {
     /* once this session HAS built its mirror, every replan is about that
        feature (Pattern's rule): its stored seed / plane, its own body */
     planExtra: st => (st.featureId ? { own_id: st.featureId } : {}),
+    /* `join` comes from the plan or the feature's own snapshot, never from a
+       default invented here (R1): `?? true` meant that any state without one
+       asked for a whole-body Join, the P0 the server side of this fix closes */
     params: st => ({ seed: stored(st).seed ?? null, plane: stored(st).plane ?? null,
-                     join: stored(st).join ?? true }),
+                     join: !!stored(st).join }),
     show() {},                    // nothing is typed: the plane box is the plan's
     snapshot(f) {
       const p = f.params || {};

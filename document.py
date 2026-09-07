@@ -346,6 +346,11 @@ class Document:
 
     # -- the pattern's seed (specs/pattern.md) --------------------------------
     PULLED = ("extrude", "revolve", "loft", "sweep", "extrude_face", "revolve_face")
+    # ops that RE-PLACE the whole body instead of adding to it or taking from
+    # it, so they have no delta at all (`mirror` only in its legacy copy-only
+    # form — with a seed it repeats a feature's delta, with `join` it ADDS its
+    # reflection, and both of those are real deltas)
+    PLACEMENT = ("rotate", "scale", "mirror")
 
     def ancestors(self, fid: str) -> set:
         """every feature upstream of `fid`: its inputs, theirs, and so on"""
@@ -366,8 +371,9 @@ class Document:
         pattern…) is its own before / after; a pulled tool (extrude, revolve…)
         with a folded 2-input boolean is that BOOLEAN's; a bare boolean is its
         first input / itself; anything else — a creator, a standalone tool
-        body, a fuse of separate bodies — is a BODY seed: (None, the body),
-        the whole body is repeated. A sketch is refused with a sentence."""
+        body, a fuse of separate bodies, a PLACEMENT that only re-places the
+        body — is a BODY seed: (None, the body), the whole body is repeated.
+        A sketch is refused with a sentence."""
         by_id = {f.id: f for f in self.features}
         f = by_id.get(seed)
         if f is None:
@@ -377,6 +383,17 @@ class Document:
         if f.op in sk.SKETCH_PRODUCERS:
             raise ValueError("a sketch is not a feature to repeat (sketch patterns come with the "
                              "sketch tools) — click a hole, a boss, or a body")
+        placed = f.op in self.PLACEMENT
+        if f.op == "mirror":                     # only the legacy copy-only form
+            placed = not (f.params.get("seed") or f.params.get("join"))
+        if placed:
+            # A placement's "before − after" is the body in its old spot and
+            # its "after − before" the body in the new one, so repeating that
+            # "delta" gouged a body-sized lump out of the part somewhere else
+            # and reported success (P4 review, P0 — probes/mirror_p0_probe.py
+            # §1, measured on the user's designs/sat-side-panel). What such a
+            # row produces is a body, and a body is what it seeds.
+            return None, f.id
         booleans = ("cut", "fuse", "intersect")
         if f.op in self.PULLED:
             bools = [b for b in self.features if b.op in booleans

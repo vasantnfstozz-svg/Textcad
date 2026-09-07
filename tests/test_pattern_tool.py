@@ -508,3 +508,50 @@ def test_a_pattern_already_built_this_session_replans_on_its_own_body():
     # in flight (created in the browser, not on the server yet): simply ignored
     assert toolplan.plan(doc, {"tool": "polar_pattern", "seed_id": "hole1",
                                "own_id": "polar_pattern_9"})["ok"]
+
+
+def test_a_placement_op_folds_to_a_body_seed():
+    """P0 of the big Mirror review, generalised: an op that RE-PLACES the whole
+    body (rotate, scale, the legacy copy-only mirror) neither adds material nor
+    takes it away, so it has no delta to repeat. Folded as a modifier its
+    "delta" was the body in the old spot plus the body in the new one, and
+    repeating THAT gouged a body-sized lump out of the part while reporting
+    success (measured, probes/mirror_p0_probe.py §1: rotate 2475 + 2475,
+    scale 0 + 38000, mirror 16000 + 16000). Each folds to a BODY seed."""
+    doc = Document("t")
+    doc.add("box1", "plate", {"width": 40, "depth": 40, "thickness": 10})
+    doc.add("rot", "rotate", {"axis": "Z", "angle_deg": 30}, inputs=["box1"])
+    doc.add("big", "scale", {"factor": 1.5}, inputs=["rot"])
+    doc.add("copy", "mirror", {"plane": {"origin": [60, 0, 0], "normal": [1, 0, 0]}},
+            inputs=["big"])
+    assert doc.rebuild(), [f.problems for f in doc.features if f.status != "ok"]
+
+    assert doc.delta_features("rot") == (None, "rot")
+    assert doc.delta_features("big") == (None, "big")
+    assert doc.delta_features("copy") == (None, "copy")
+
+    # a mirror that ADDS its reflection, and one that repeats a feature, do
+    # have a delta and keep it
+    doc.add("join", "mirror", {"plane": {"face": "+x"}, "join": True}, inputs=["copy"])
+    assert doc.delta_features("join") == ("copy", "join")
+
+
+def test_a_body_pattern_refuses_a_union_that_is_not_one_sound_solid():
+    """P0 of the big Mirror review: `_body_pattern` fused the copies and
+    returned them with NO health gate, so a copy tangent to the body along one
+    edge came back as a success — `is_valid` True, an open shell (measured:
+    dx = the bounding box's own width). What it must NOT do is refuse the two
+    cases every saved design relies on: separate pieces, and a symmetric body
+    that patterns to itself."""
+    diamond = b3d.Rot(0, 0, 45) * b3d.Box(30, 30, 10)      # +x extreme is an edge
+    with pytest.raises(ValueError) as e:
+        pattern.linear_pattern(diamond, 2, dx=diamond.bounding_box().size.X)
+    assert "the pattern leaves a broken solid" in str(e.value)
+    assert "it touches the body along an edge only" in str(e.value)
+
+    apart = pattern.linear_pattern(diamond, 3, dx=100)     # separate pieces: fine
+    assert inspector.health(apart) == [] and len(apart.solids()) == 3
+    square = b3d.Box(40, 40, 10)                           # 4-fold symmetric: itself
+    same = pattern.polar_pattern(square, 4)
+    assert inspector.health(same) == []
+    assert float(same.volume) == pytest.approx(40 * 40 * 10, abs=0.05)

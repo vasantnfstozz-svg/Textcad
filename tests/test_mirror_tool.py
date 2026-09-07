@@ -267,7 +267,9 @@ def test_the_plan_for_a_row_offers_the_planes_and_builds_nothing():
     assert p["plane"] is None and p["frame"] is None and p["plane_name"] == ""
     assert [a["name"] for a in p["alternatives"]] == ["yz", "xz", "xy", "midx", "midy", "midz"]
     assert p["alternatives"][3]["plane"] == {"mid": "X"} and p["alternatives"][0]["plane"] == "YZ"
-    assert p["params"] == {"seed": "hole1", "plane": None, "join": True}
+    # `join` is a BODY mirror's business, and this is a feature's — see
+    # test_a_new_mirror_of_a_feature_is_not_planned_as_a_body_join (P0)
+    assert p["params"] == {"seed": "hole1", "plane": None, "join": False}
     assert "no plane yet" in p["will_build"]
     assert p["centre"] == pytest.approx([20, 10, 0], abs=1e-3)
 
@@ -423,3 +425,128 @@ def test_a_click_on_the_mirror_image_is_refused_not_snapped_to_another_face():
     p = toolplan.plan(doc, {"tool": "mirror", "seed_id": "hole1",
                             "plane_pick": face_at(part, [70, 0, 6], [0, 0, 1])})
     assert p["ok"] and p["plane"]["face_normal"] == [0.0, 0.0, 1.0], p
+
+
+# ------------------------------------------------------------------------
+# The four P0 "silent wrong geometry" findings of the big P4 review, each
+# reproduced by measurement first (probes/mirror_p0_probe.py).
+# ------------------------------------------------------------------------
+
+def test_mirroring_a_legacy_copy_row_means_its_BODY_not_a_body_sized_delta():
+    """P0 §1. A LEGACY copy-only mirror does not add to or take from its input
+    — it RE-PLACES it. Folded as a modifier its "delta" was the whole body in
+    the old spot plus the whole body in the new one (measured: 16000 mm³
+    removed + 16000 added of a 16000 mm³ body), so selecting such a row and
+    pressing Mirror gouged a body-sized lump out of the part somewhere else
+    and reported success. It folds to a BODY seed: what it produces is a body.
+    The user's designs/sat-side-panel corner_dimples_diag2 is such a row."""
+    doc = doc_with_hole()
+    doc.add("copy1", "mirror", {"plane": {"origin": [45, 0, 0], "normal": [1, 0, 0]}},
+            inputs=["hole1"])                        # the legacy call: the copy alone
+    built(doc)
+    assert doc.delta_features("copy1") == (None, "copy1")
+
+    plan = toolplan.plan(doc, {"tool": "mirror", "seed_id": "copy1"})
+    assert plan["ok"] and plan["seed"] is None, plan   # a body, not a feature
+    assert plan["seed_words"] == "the body copy1"
+    assert plan["params"]["join"] is True
+
+    # and a design that stores such a row AS a seed is refused, not gouged
+    doc.add("m2", "mirror", {"seed": "copy1", "plane": "XZ"}, inputs=["copy1"])
+    assert not doc.rebuild()
+    assert "is a whole body, not a feature of one" in doc.get("m2").problems[0]
+
+    # a mirror that really does add material keeps its delta
+    doc2 = doc_with_hole()
+    doc2.add("half", "mirror", {"plane": {"face": "+x"}, "join": True}, inputs=["hole1"])
+    built(doc2)
+    assert doc2.delta_features("half") == ("hole1", "half")
+
+
+def test_a_new_mirror_of_a_feature_is_not_planned_as_a_body_join():
+    """P0 §2. `join` belongs to a BODY mirror. Stamped on a seeded row it was
+    a loaded gun: the op branches on the truthiness of `seed`, so the moment a
+    seed arrived empty the feature mirror became a whole-body Join at twice the
+    size, with no complaint."""
+    doc = built(doc_with_hole())
+    p = toolplan.plan(doc, {"tool": "mirror", "seed_id": "hole1", "plane": "yz"})
+    assert p["params"] == {"seed": "hole1", "plane": "YZ", "join": False}, p["params"]
+
+    p = toolplan.plan(doc, {"tool": "mirror", "seed_id": "box1", "plane": "yz"})
+    assert p["params"] == {"seed": None, "plane": "YZ", "join": True}, p["params"]
+
+    # an edit still reads the STORED value: a legacy copy edited stays a copy
+    doc2 = doc_with_hole()
+    doc2.add("copy1", "mirror", {"plane": "YZ"}, inputs=["hole1"])
+    built(doc2)
+    assert toolplan.plan(doc2, {"tool": "mirror", "feature_id": "copy1"})["params"]["join"] is False
+    doc3 = built(doc_with_mirror())
+    assert toolplan.plan(doc3, {"tool": "mirror", "feature_id": "mirror1"})["params"]["join"] is True
+
+
+def test_a_body_join_tangent_to_its_reflection_is_refused_not_returned_broken():
+    """P0 §3. `_body_pattern` fused and returned with no health gate, so a
+    reflection touching the body along ONE edge came back as a success:
+    2 solids, `is_valid` True, an OPEN SHELL (probe §7). A failed feature
+    beats a corrupt body."""
+    diamond = b3d.Rot(0, 0, 45) * b3d.Box(30, 30, 10)     # its +x extreme is an edge
+    edge_x = diamond.bounding_box().max.X
+    with pytest.raises(ValueError) as e:
+        pattern.mirror(diamond, {"origin": [edge_x, 0, 0], "normal": [1, 0, 0]}, join=True)
+    assert "the mirror image leaves a broken solid" in str(e.value)
+    assert "along an edge only" in str(e.value)
+    assert "not manifold" in str(e.value)
+
+    # what must still build: a reflection that meets a FACE (one solid, 2x) …
+    out = healthy(pattern.mirror(box(), {"origin": [40, 0, 0], "normal": [1, 0, 0]},
+                                 join=True))
+    assert len(out.solids()) == 1 and float(out.volume) == pytest.approx(2 * BOX, abs=0.05)
+    # … a body across its own mid-plane (itself — a saved design must rebuild) …
+    same = healthy(pattern.mirror(box(), {"mid": "X"}, join=True))
+    assert float(same.volume) == pytest.approx(BOX, abs=0.05)
+    # … and separate pieces, which the document reports as pieces
+    apart = healthy(pattern.mirror(box(), {"origin": [200, 0, 0], "normal": [1, 0, 0]},
+                                   join=True))
+    assert len(apart.solids()) == 2
+
+
+def test_a_body_seed_is_not_offered_its_own_mid_planes():
+    """P0 §4. A body's own mid-plane runs through its bounding-box centre, so
+    a Join across it can never grow the part, and on a symmetric body it
+    changes nothing at all while the tool still says "Mirror created"
+    (measured: 19200 -> 19200 mm³). The mid-planes are the plane a FEATURE
+    wants most; they are not offered for a body. A design that already stores
+    one still builds and still shows it (rebuild safety)."""
+    doc = built(doc_with_hole())
+
+    def mids(p):
+        return [a["name"] for a in p["alternatives"]
+                if isinstance(a["plane"], dict) and a["plane"].get("mid")]
+
+    p = toolplan.plan(doc, {"tool": "mirror", "seed_id": "hole1"})
+    assert mids(p) == ["midx", "midy", "midz"]            # a FEATURE seed: kept
+
+    p = toolplan.plan(doc, {"tool": "mirror", "seed_id": "box1"})
+    assert p["seed"] is None and mids(p) == []
+    assert [a["name"] for a in p["alternatives"]] == ["yz", "xz", "xy"]
+
+    doc2 = doc_with_hole()
+    doc2.add("m1", "mirror", {"plane": {"mid": "X"}, "join": True}, inputs=["hole1"])
+    built(doc2)                                            # it still builds …
+    p = toolplan.plan(doc2, {"tool": "mirror", "feature_id": "m1"})
+    assert p["ok"] and p["plane_name"] == "stored"          # … and is still offered
+    assert p["plane_words"] == "the body's mid-plane across X"
+
+
+def test_the_ai_is_told_every_plane_form_and_the_right_one_for_half_a_body():
+    """P0 §4, the AI path. The op catalogue pinned `mirror.plane` to the three
+    origin-plane names, contradicting its own note, and the prompt recommended
+    a mid-plane for "model one half" — the one plane that cannot grow a body."""
+    import author
+    mirror_op = next(e for e in author.op_catalog() if e["op"] == "mirror")
+    plane = next(p for p in mirror_op["params"] if p["name"] == "plane")
+    assert "enum" not in plane, plane                      # a face / mid / origin+normal too
+
+    seg = author.AUTHOR_PROMPT.split("model one half")[1].split('with "seed"')[0]
+    assert '"face"' in seg, seg                            # the halves meet at a FACE
+    assert "mid" in seg and "not" in seg.lower(), seg      # and a mid-plane is ruled out

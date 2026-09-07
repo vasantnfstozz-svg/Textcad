@@ -152,7 +152,8 @@ def test_select_the_hole_row_press_mirror_click_the_yz_plane_and_ok(page, fresh_
     click_world(page, on_plane(page, "YZ"))
     f = wait_volume(server, "mirror1", BOX - 2 * PLUG)
     assert f["op"] == "mirror" and f["inputs"] == ["hole1"], f
-    assert f["params"] == {"seed": "hole1", "plane": "YZ", "join": True}
+    # join is a BODY mirror's business; this is a hole's (P0 of the P4 review)
+    assert f["params"] == {"seed": "hole1", "plane": "YZ", "join": False}
     page.wait_for_function("() => document.getElementById('mrPlane').value === 'yz'", timeout=10000)
     # the blank is the NO-PLANE state only: with YZ in force there is nothing to
     # fall back to, so the box can never read "no plane" over a built mirror

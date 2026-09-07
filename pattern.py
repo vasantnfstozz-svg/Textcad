@@ -231,21 +231,33 @@ def _fuse_all(parts):
     return parts[0]
 
 
-def _body_pattern(body, copies, op: str, what: str):
+def _body_pattern(body, copies, op: str, what: str, noun: str = "the pattern"):
     """a BODY seed: the union of the body and its moved copies (the legacy
     behaviour, kept exactly — separate copies come back as separate pieces,
-    which the document reports; probe §8).
+    which the document reports; probe §8), CHECKED, like `_repeat`'s: a copy
+    that meets the body along one edge only fuses into an open shell that
+    `is_valid` calls fine, and it used to be handed back as a success (P4
+    review, P0 — probes/mirror_p0_probe.py §3). A failed feature beats a
+    corrupt body.
 
     What it must NOT do is measure the union against the body and refuse when
     they match: a body that is already n-fold symmetric about the axis patterns
     to itself, and every such design in the wild built before this op grew a
     seed. Refusing here would fail it at REBUILD — the one thing a saved design
     may never do (P4 code review). A pattern that asks for no motion at all is
-    a different thing, and is refused where the motion is decided, by name."""
+    a different thing, and is refused where the motion is decided, by name.
+    Separate pieces stay legal for the same reason (measured: every body
+    pattern in the user's designs/ is healthy, up to 34 separate solids)."""
     try:
-        return _fuse_all([body] + copies)
+        result = _fuse_all([body] + copies)
     except Exception:
         raise ValueError(f"{op}: the kernel could not fuse the copies — {what}") from None
+    problems = inspector.health(result, check_valid=False)
+    if problems:
+        touches = "a copy touches" if len(copies) > 1 else "it touches"
+        raise ValueError(f"{op}: {noun} leaves a broken solid ({problems[0]}) — {touches} "
+                         f"the body along an edge only; {what}")
+    return result
 
 
 # ---------------------------------------------------------------- circular ---
@@ -428,7 +440,8 @@ def mirror(feature, plane="YZ", seed: str | None = None, join: bool = False,
             raise ValueError(f"{op}: the kernel could not build the mirror image — pick another plane") from None
         if not join:
             return copy
-        return _body_pattern(feature, [copy], op, "pick another plane")
+        return _body_pattern(feature, [copy], op, "pick another plane",
+                             noun="the mirror image")
     return _repeat(feature, removed, added, [lambda s: s.mirror(pl)], op, what,
                    label=lambda k, n: f"the mirror image of '{seed}'", noun="the mirror image")
 

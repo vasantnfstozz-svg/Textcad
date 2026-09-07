@@ -1012,8 +1012,16 @@ def plan_mirror(doc, req: dict) -> dict:
     part, params = s.part, s.params
     alts = [{"name": n, "label": f"the {w} plane (through the origin)", "plane": w}
             for n, w in _ORIGIN_PLANES]
-    alts += [{"name": f"mid{ax.lower()}", "label": f"the body's mid-plane across {ax}",
-              "plane": {"mid": ax}} for ax in ("X", "Y", "Z")]
+    if s.seed_param is not None:
+        # The body's own mid-plane runs through its bounding-box centre, so a
+        # BODY Join across it can never leave that box — the part cannot grow,
+        # and on a symmetric body nothing changes at all while the tool still
+        # says "Mirror created" (P4 review, P0 — probes/mirror_p0_probe.py §4).
+        # For a FEATURE it is the plane a machinist reaches for first. A design
+        # that already stores one still builds and is still offered, below, as
+        # the current plane — a saved design may never stop rebuilding.
+        alts += [{"name": f"mid{ax.lower()}", "label": f"the body's mid-plane across {ax}",
+                  "plane": {"mid": ax}} for ax in ("X", "Y", "Z")]
     plane, pick = params.get("plane"), req.get("plane_pick")
     if pick:
         if pick.get("world"):
@@ -1024,7 +1032,12 @@ def plan_mirror(doc, req: dict) -> dict:
         chosen = next((a for a in alts if a["name"] == req["plane"]), None)
         if chosen is not None:
             plane = chosen["plane"]
-    join = bool(params.get("join", False)) if s.fid else True
+    # `join` is what a BODY mirror does (Fusion's Join). Stamped on a SEEDED
+    # row it was a loaded gun: the op branches on the truthiness of `seed`, so
+    # the moment a seed arrived empty the feature mirror became a whole-body
+    # Join at twice the size, silently (P4 review, P0 — probe §2). An edit
+    # reads the stored value, so a legacy copy-only mirror stays a copy.
+    join = bool(params.get("join", False)) if s.fid else s.seed_param is None
     out = {"ok": True, "tool": "mirror", "op": "mirror", "input": s.tip, "target_body": s.tip,
            "seed": s.seed_param, "seed_words": s.seed_words, "centre": _vec(s.centre),
            "half": s.half, "params": {"seed": s.seed_param, "plane": plane, "join": join}}
