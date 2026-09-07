@@ -18,8 +18,12 @@
 > code review fixed 0c49c42, ui v157 — §7 P4). **P4's third tool, Pattern,
 > done 2026-09-06** (5b52dc1: Circular / Rectangular Pattern of a FEATURE's
 > delta; all 7 review findings fixed ca5725a, ui v159; both checklists passed;
-> Hole's drag ghost c6a2377, ui v160 — §7 P4). Next: Mirror, in a fresh chat.
-> One tool per session. Every
+> Hole's drag ghost c6a2377, ui v160 — §7 P4). **P4's fourth tool, Mirror,
+> done 2026-09-07** (023ca5d: a FEATURE's delta or a BODY mirrored across a
+> face / an origin plane / a mid-plane; five review rounds 9644b6d, c4d5961,
+> 85821be, 072aa95, 21429d8 + the deferred findings in the commit after the
+> stamp, ui v164; user's checklist passed 2026-09-07 — §7 P4). Next: Shell,
+> in a fresh chat. One tool per session. Every
 > other plan file points here; §7 carries the done-notes, §10 the ranked open
 > items.
 >
@@ -574,6 +578,38 @@ an input, so `document.REF_PARAMS` was born; a body pattern is never refused
 for producing the same volume (a symmetric body patterns onto itself — 14
 live designs would have failed at rebuild), only zero motion is.
 
+*Mirror done 2026-09-07* (spec `specs/mirror.md` 6156cf6, tool 023ca5d,
+review fixes 9644b6d / c4d5961 / 85821be / 072aa95 / 21429d8 + the deferred
+findings in the commit after this stamp, ui v164; user's checklist passed
+2026-09-07). `static/js/mirror.js` is **89 lines with no geometry maths**. The
+op that existed, `mirror`, now takes a `seed` like the patterns: the document
+hands it the seed's before / after bodies and the DELTA is reflected across a
+plane on the body's CURRENT state (removed cut again, added fused again — a
+hole, a pocket, a boss, a fillet all mirror the same way); no seed + `join` =
+the body fused with its reflection (Fusion's Join, one symmetric solid); the
+legacy copy-only call still builds every saved design. The plane lives in ONE
+stored form (an origin-plane name, a face pick / name, the body's mid-plane
+`{mid: "X"}`, or `{origin, normal}`) and is CLICKED — a flat face or one of
+the three origin quads, which follow the body — or chosen in the panel; no
+drag, no ghost, a gold quad marks it. Every image is measured: one that
+changes exactly nothing is refused by number and told apart from one that IS
+the seed (image ∩ seed, for a cut and for a fuse), an open shell is refused,
+a kernel error is a sentence. The framework grew the origin-quad pick
+(`planePick`), `spec.verb` / `sketchNote`, `lastGoodPlan` (the revert
+sentence in the PLAN's words, R1) and an honest OK over a red first build.
+**Probes:** `probes/mirror_probe.py` (10 findings), `mirror_p0_probe.py` (4),
+`pattern_barrier_probe.py` (3), `mirror_seed_collapse_probe.py` (2),
+`mirror_boss_seed_probe.py` (3). **Tests:** `tests/test_mirror_tool.py` (45),
+`tests/test_mirror_gauntlet.py` (16: every corpus body × every flat face and
+mid-plane), `tests/e2e/test_mirror_tool.py` (8 journeys). **Line delta
+(source, excl. tests/probes/spec): tool 023ca5d +326/−67 in existing files
++82 new; the six fix commits +≈190/−≈60.** *Its reviews (five rounds, §10):*
+every P0 lived in the gap between what the tree STORED and what the plan
+DERIVED — a PLACEMENT row folds to a body seed, `join` is a body mirror's
+business, a stored seed that stops resolving must never come back as the
+legacy copy, a body union gets the health gate; and twice a test had locked
+the bug in and was part of the fix.
+
 *After both checklists (2026-09-06) the user found ONE thing: no ghost while
 dragging.* Hole got it the same day (c6a2377, ui v160: hole.js feeds Extrude's
 ghost the hole's circle in the plan's frame, +42 net lines, no viewport
@@ -665,6 +701,7 @@ assemblies, the user's personal project.
 | P3 | **Pattern has no drag ghost (improvement, deferred by the user 2026-09-06: "we will do that later").** Hole (c6a2377), Extrude and Revolve show a translucent ghost while the handle moves; Pattern's ring and arrows move only the number until release, and a pattern rebuild costs the kernel 250–500 ms. Plan: the pattern plan returns a tessellated mesh of the seed's DELTA (before − after / after − before — `document.delta_features` computes it already); the browser instances N−1 translucent copies about the plan's axis / along its directions, following the drag AND the typed count at once (type 6, see five ghosts before the kernel confirms); a browser test compares the ghost copies' positions with the real copies after release, because Full / partial angle and Spacing / Extent would then exist twice — the 2026-09-01 "ghost goes the other way" class. Marks only (dots on the ring, ticks on the arrow) was considered and rejected: honest but far less useful. Roughly half a day. | user checklist 2026-09-06 |
 | P3 | **Pattern's count is typed, not dragged.** Fusion has a quantity handle beside the ring / arrow (parity rule 3). | specs/pattern.md |
 | P3 | **Pattern lacks Fusion's Symmetric distribution and per-copy Suppress.** | specs/pattern.md |
+| done | **Code review of Mirror (023ca5d → 21429d8, five rounds 2026-09-06/07: 4 P0 silent-wrong-geometry + the P0 the P0 pass itself opened, ~12 more real findings, all fixed; the ~9 deferred ones closed in the commit after this stamp).** The P0s, each reproduced by measurement first (`probes/mirror_p0_probe.py`): a `rotate` / `scale` / copy-only `mirror` row named as a seed has no delta and folded to a body-sized one (it gouged 2475 + 2475 mm³ of the plate) → `document.PLACEMENT` folds to a BODY seed; `join: True` stamped on a FEATURE seed became a whole-body Join at twice the size the moment the seed came back empty → `join` is planned only for a body seed; an image tangent to an edge is an open shell that `is_valid` passes → `_body_pattern` ends in `inspector.health` (which PASSES separate closed solids, so the legacy pieces still build); a body across its own mid-plane "created" nothing → mid-planes are offered for FEATURE seeds only. And the one the fix opened: a stored seed that stopped resolving came back from an EDIT as the legacy COPY and relocated an 80 mm plate with zero overlap → the stored `join` counts only while the stored params and the plan AGREE there is a seed (`probes/mirror_seed_collapse_probe.py`). **The deferred set (the commit after this stamp):** an unknown plane NAME sent to the plan was ignored in silence (refused with the names that exist; the current plane's own name, `face` / `stored`, keeps it); a boss ON the mirror plane was told it "lies inside the body" (image ∩ seed tells the two apart for a fuse as for a cut, `probes/mirror_boss_seed_probe.py`); the origin quads were built once at arm time and sat over HALF the doubled plate (they follow the fit in `loadModel`); the tree showed a stored plane as `[object Object]` (an object param reads as its parts); the revert sentence made its plane words in JS (R1 → `st.lastGoodPlan`, the PLAN's `plane_words`); OK on a NEW feature whose FIRST values the kernel refused said "created" over a red row (the framework now says NOT built and why — every tool's); `blocks.EXPORTS["mirror"]` still had the copy-only grammar while the tree had the new one (one grammar: every plane form + `join`; `blocks._PLANES` and its b3d import went with it). **Closed by decision, not code:** a body face wins a click over an origin quad behind it — the quads are glass THROUGH the model and sized past its silhouette, and "nearest hit wins" made faces unpickable from whole view angles (the bug that rule fixed; specs/mirror.md decision 6); the plan resolves a picked face through `plane_of` on purpose (the stored form must round-trip to what the op will build at rebuild) and `delta()` runs once per plan and once per rebuild (a cache on the document is not worth its risk for one boolean); `snapshot`'s `?? null`, the shared `originPlanes` teardown (one owner at a time — a tool cancels the sketch pick on open) and `planeQuadInfo` echoing the handed frame are nits. The retroactive body-pattern health gate stays an accepted risk (BACKLOG.md). | P4 2026-09-06/07 |
 | done | **Code review of Pattern (5b52dc1; 7 findings, all fixed ca5725a, 2026-09-06).** A pattern's `seed` is the tree's only REFERENCE that is not an input — `document.REF_PARAMS` / `Document.param_refs`: rename rewrites it, delete / strike-out takes patterns of a deleted seed along, the orphan sweep leaves a live seed alone (any future param naming a feature joins REF_PARAMS). A body pattern must NOT be refused for producing the same volume (a symmetric body patterns onto itself; 14 live designs, 21 pattern features, all rebuild) — only zero motion is. `own_id` on a plan request = the feature THIS session built, so a replan never walks into the tool's own output. Frontend: a pick's bus subscription dies WITH the pick; every viewport pick outranks a tree row (fusion-parity skill). | P4 2026-09-06 |
 | done | **`inspector.health` called every cone apex and sphere pole an open shell** — build123d's `is_manifold` counts the faces on DEGENERATED edges (one by construction), so a revolve about the profile's own edge, a plain cone, and anything sphere-bearing tripped it (spheres alone had an exemption), while a sweep about an axis a few microns OFF the edge — a SLIVER face, no apex — passed. `inspector.closed_shell` (one topology map) is the verdict for health AND measure (MCP `verify_step` read the raw flag and disagreed with the tree); a degenerated edge is excused only on ONE cone / sphere / revolution face — a spline fillet pinched to a point stays a defect (`tests/test_fillet_tool.py` radius 6 relies on it). | P3b 2026-09-05 (4987a15, d82e9d0) |
 | P3 | **Revolve's second side has no handle.** Two sides gives Angle 2 a number box only; the ring drags side one. Fusion gives each side its own end to grab (parity rule 3: direct manipulation first). A second ring handle on the far end of the sweep, sharing the one-turn budget the way the boxes do. | P3b review 2026-09-05 |

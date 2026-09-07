@@ -1,7 +1,10 @@
 # Mirror — tool spec (P4, LAUNCH-PLAN.md §8 step 1)
 
-> **Status: written 2026-09-06 with the kernel probe (`probes/mirror_probe.py`,
-> §1–§10) — awaiting the user's read (R8).** The sixth tool on the framework
+> **Status: DONE 2026-09-07 — tool 023ca5d, five review rounds (9644b6d,
+> c4d5961, 85821be, 072aa95, 21429d8) + the deferred findings in the commit
+> after the stamp, ui v164; user's checklist passed 2026-09-07.** Written
+> 2026-09-06 with the kernel probe (`probes/mirror_probe.py`, §1–§10). The
+> sixth tool on the framework
 > (`tool.js`): one ribbon button, **Mirror** (Fusion's name), on the op that
 > already exists — `mirror` — grown the way Pattern grew `polar_pattern`: it
 > now mirrors a FEATURE (a hole, a boss, a fillet — its delta reflected across
@@ -32,6 +35,10 @@
 >    there is one way to compute here.
 > 5. An image that lands ON the seed (the plane runs through it) or OFF the
 >    body is refused with a sentence, never a silent no-op (probe §3, §4).
+> 6. **A body face wins a click over an origin quad behind it** (P4 review,
+>    closed by decision 2026-09-07). The quads are glass THROUGH the model and
+>    sized past its silhouette; "nearest hit wins" once made faces unpickable
+>    from whole view angles. Click a quad where it shows outside the part.
 
 ## What you click, what you see
 
