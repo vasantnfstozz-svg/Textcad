@@ -30,7 +30,7 @@ from build123d import (
     Box, Cylinder, Sphere, Cone, Pos, PolarLocations, Locations,
     BuildSketch, RegularPolygon, BuildLine, Polyline, Spline, make_face,
     trace, extrude, revolve, Axis, Plane, Part, Mesher, Solid, Compound,
-    mirror as _b3d_mirror, scale as _b3d_scale,
+    scale as _b3d_scale,
     fillet as _b3d_fillet, chamfer as _b3d_chamfer, offset as _b3d_offset,
     import_step as b3d_import_step,
 )
@@ -40,7 +40,6 @@ import inspector          # health of every fillet / chamfer result
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
 
 _AXES = {"X": Axis.X, "Y": Axis.Y, "Z": Axis.Z}
-_PLANES = {"XY": Plane.XY, "XZ": Plane.XZ, "YZ": Plane.YZ}
 
 
 # ---------------------------------------------------------------------------
@@ -199,12 +198,15 @@ def rotate(part: Part, axis: str = "Z", angle_deg: float = 90.0) -> Part:
     return part.rotate(_AXES[axis], angle_deg)
 
 
-def mirror_copy(part: Part, plane: str = "YZ") -> Part:
-    """The MIRRORED COPY of a part about a principal plane ("XY", "XZ", "YZ").
-    Returns only the copy — fuse it with the original for a symmetric pair."""
-    if plane not in _PLANES:
-        raise ValueError('mirror: plane must be "XY", "XZ" or "YZ"')
-    return _b3d_mirror(part, about=_PLANES[plane])
+def mirror_copy(part: Part, plane="YZ", join: bool = False) -> Part:
+    """`mirror` in a script — ONE grammar with the feature tree's op
+    (`pattern.mirror`, specs/mirror.md). `plane` is an origin plane name
+    ("XY" / "XZ" / "YZ"), the body's mid-plane ({"mid": "X"}) or an explicit
+    {"origin", "normal"}; `join=True` returns the part fused with its
+    reflection (Fusion's Join: one symmetric solid), the default the reflected
+    COPY alone, as every older script expects. A picked face needs the tree."""
+    import pattern                      # pattern -> sketch -> blocks: never at import time
+    return pattern.mirror(part, plane, join=join)
 
 
 def scale_uniform(part: Part, factor: float) -> Part:

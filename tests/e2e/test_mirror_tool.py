@@ -208,7 +208,10 @@ def test_a_second_click_re_aims_the_plane_and_a_bad_face_is_refused_and_reverted
         "() => (document.getElementById('chatLog').textContent.match(/lands off the body/g) || []).length >= 2",
         timeout=15000)
     f = wait_plane(server, "mirror1", lambda p: p == "XZ")
-    assert "Reverted to the mirror across the picked face" not in page.text_content("#chatLog")
+    said = page.text_content("#chatLog")
+    assert "Reverted to the mirror across the picked face" not in said
+    # the revert sentence names the plane in the PLAN's words (R1), not in words made in JS
+    assert "Reverted to the mirror across the XZ plane (through the origin)" in said, said
     page.click("#mrOk")
     page.wait_for_selector("#mrDialog", state="hidden")
     assert page.errors == []
@@ -268,6 +271,11 @@ def test_the_plane_box_chooses_a_mid_plane(page, fresh_doc, server):
     page.click("#mrOk")
     page.wait_for_selector("#mrDialog", state="hidden")
     assert feature(server, "mirror1")["params"]["plane"] == {"mid": "X"}
+    # the tree shows the stored plane by its parts, not as "[object Object]" (P4 review)
+    page.wait_for_function(
+        "() => (document.querySelector('#tree .node[data-fid=\"mirror1\"] .nbody') || {}).textContent"
+        ".includes('mid X')", timeout=10000)
+    assert "[object Object]" not in page.text_content("#tree")
     assert page.errors == []
 
 
@@ -284,12 +292,18 @@ def test_a_body_seed_doubles_across_its_face_and_cancel_restores(page, fresh_doc
     page.wait_for_selector("#mrDialog", state="visible", timeout=15000)
     page.wait_for_function("() => window.__vp.gizmos().facePick", timeout=15000)
     assert page.input_value("#mrProfile") == "the body hole1"
+    size0 = page.evaluate("() => window.__vp.originPlaneInfo()[0].size")
     pt, normal = side_face(page)
     click_world(page, pt)                                          # a side face the camera sees
     f = wait_volume(server, "mirror1", 2 * (BOX - PLUG))
     assert f["params"]["seed"] is None and f["params"]["join"] is True
     assert f["params"]["plane"]["face_normal"] == pytest.approx(normal, abs=1e-3)
     assert f["pieces"] == 1
+    # the origin quads follow the body: built once at arm time they kept the
+    # size and centre of HALF the doubled plate (P4 review)
+    page.wait_for_function(
+        f"() => window.__vp.originPlaneInfo().length === 3 && window.__vp.originPlaneInfo()[0].size > {size0} * 1.3",
+        timeout=15000)
     page.click("#mrCancel")
     page.wait_for_selector("#mrDialog", state="hidden")
     page.wait_for_timeout(800)
@@ -333,4 +347,23 @@ def test_ok_without_a_plane_adds_no_row_and_says_so(page, fresh_doc, server):
     assert feature(server, "mirror1") is None
     assert "Nothing mirrored" in page.text_content("#chatLog")
     assert page.evaluate(MODAL) is None and page.evaluate(QUADS) == []
+    assert page.errors == []
+
+
+def test_a_first_plane_the_kernel_refuses_is_not_reported_as_created(page, fresh_doc, server):
+    """the FIRST plane of a new mirror throws the image off the plate: there is
+    nothing good to revert to, the row is red — and OK says so instead of
+    "Mirror created" (P4 review; the framework's sentence, so every tool's)"""
+    setup(page)
+    open_on_row(page, "hole1")
+    click_world(page, side_face(page)[0])                          # a side face: the image lands off the plate
+    f = wait_feature(server, "mirror1")
+    assert f["status"] == "failed" and "lands off the body" in " ".join(f["problems"]), f
+    page.click("#mrOk")
+    page.wait_for_selector("#mrDialog", state="hidden")
+    page.wait_for_timeout(500)
+    said = page.text_content("#chatLog")
+    assert "Mirror was NOT built" in said and "lands off the body" in said, said
+    assert "Mirror created" not in said
+    assert page.evaluate(MODAL) is None
     assert page.errors == []

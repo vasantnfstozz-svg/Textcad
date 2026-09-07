@@ -24,6 +24,7 @@ import build123d as b3d
 import pytest
 from build123d import Cylinder, Location, Pos
 
+import blocks
 import inspector
 import pattern
 import sketch as sk
@@ -302,8 +303,10 @@ def test_the_panels_choice_names_an_alternative():
     assert p["plane"] == {"mid": "Y"} and p["plane_name"] == "midy"
     assert p["plane_words"] == "the body's mid-plane across Y"
     assert p["frame"]["z_dir"] == pytest.approx([0, 1, 0], abs=1e-6)
+    # an unknown name used to change nothing IN SILENCE — this line locked that
+    # in; it is refused with the names that exist (P4 review, and the test below)
     p = toolplan.plan(doc, {"tool": "mirror", "seed_id": "hole1", "plane": "nonsense"})
-    assert p["ok"] and p["plane"] is None                          # an unknown name changes nothing
+    assert not p["ok"] and "'nonsense' is not a plane Mirror offers here" in p["error"]
 
 
 def test_the_plan_for_a_face_pick_asks_provenance_who_made_the_face():
@@ -626,3 +629,60 @@ def test_editing_a_mirror_whose_seed_stopped_resolving_never_turns_it_into_a_cop
     built(doc2)
     p = toolplan.plan(doc2, {"tool": "mirror", "feature_id": "m2"})
     assert p["params"] == {"seed": "hole1", "plane": "YZ", "join": False}
+
+
+# ------------------------------------- the deferred findings (2026-09-07) ---
+
+def test_a_boss_on_the_plane_is_the_seed_itself_and_one_inside_the_body_adds_nothing():
+    """probes/mirror_boss_seed_probe.py: a fuse that adds exactly 0.0 has the
+    cut branch's two causes and is told apart the same way (image ∩ seed).
+    Before: both said "adds nothing (it lies inside the body)", so a boss on
+    the mid-plane was sent looking for a plane beside a body it was inside."""
+    b = box()
+    boss = Cylinder(5, 6).moved(Pos(0, 20, 9))            # ⌀10 × 6, standing on the top, ON x = 0
+    after = healthy(b + boss)
+    with pytest.raises(ValueError, match="is the seed itself"):
+        pattern.mirror(after, {"mid": "X"}, seed="boss1", _before=b, _after=after)
+    with pytest.raises(ValueError, match=r"adds nothing \(it lies inside the body\)"):
+        pattern.mirror(after, TOP, seed="boss1", _before=b, _after=after)     # across its base face
+    boss2 = Cylinder(5, 6).moved(Pos(15, 20, 9))
+    after2 = healthy(b + boss2)
+    m = healthy(pattern.mirror(after2, {"mid": "X"}, seed="boss1", _before=b, _after=after2))
+    assert float(m.volume) == pytest.approx(BOX + 2 * PI * 25 * 6, rel=1e-6)
+
+
+def body_mirror(plane):
+    doc = doc_with_hole()
+    doc.add("mirror1", "mirror", {"seed": None, "plane": plane, "join": True}, inputs=["hole1"])
+    return built(doc)
+
+
+def test_an_unknown_plane_name_is_refused_and_the_current_planes_own_name_keeps_it():
+    """the panel sends the NAME of an alternative; a name that is none of them
+    used to be ignored in silence (the stored plane stayed, the caller never
+    knew). The current plane's own names, "face" / "stored", keep it."""
+    doc = built(doc_with_hole())
+    p = toolplan.plan(doc, {"tool": "mirror", "seed_id": "hole1", "plane": "diagonal"})
+    assert not p["ok"] and "'diagonal' is not a plane Mirror offers here" in p["error"], p
+    assert "yz, xz, xy, midx, midy, midz" in p["error"]
+    face = {"face_center": [40.0, 0.0, 0.0], "face_normal": [1.0, 0.0, 0.0]}
+    p = toolplan.plan(body_mirror(face), {"tool": "mirror", "feature_id": "mirror1", "plane": "face"})
+    assert p["ok"] and p["plane_name"] == "face", p
+    assert p["plane"]["face_center"] == pytest.approx([40, 0, 0])
+    p = toolplan.plan(body_mirror({"mid": "X"}), {"tool": "mirror", "feature_id": "mirror1", "plane": "stored"})
+    assert p["ok"] and p["plane_name"] == "stored" and p["plane"] == {"mid": "X"}, p
+
+
+def test_the_scripts_mirror_speaks_the_trees_grammar():
+    """blocks.EXPORTS["mirror"] — the AI's SCRIPT path (generate.py) — takes
+    every plane form and `join` exactly as the tree's op does: one grammar. The
+    legacy call (a name, no join) is still the reflected COPY alone."""
+    fn = blocks.EXPORTS["mirror"]
+    assert fn is blocks.mirror_copy
+    copy = fn(Pos(20, 0, 0) * box(), "YZ")
+    assert copy.center().X == pytest.approx(-20, abs=1e-6) and float(copy.volume) == pytest.approx(BOX)
+    joined = healthy(fn(Pos(40, 0, 0) * box(), "YZ", join=True))      # x 0..80 fused with x -80..0
+    assert float(joined.volume) == pytest.approx(2 * BOX) and len(joined.solids()) == 1
+    assert float(fn(box(), {"mid": "X"}, join=True).volume) == pytest.approx(BOX)   # itself, never refused
+    with pytest.raises(ValueError, match="not an origin plane"):
+        fn(box(), "AB")

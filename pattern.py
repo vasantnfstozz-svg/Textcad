@@ -221,9 +221,17 @@ def _repeat(body, removed, added, moves, op: str, what: str, label=None, noun: s
                     raise ValueError(f"{op}: {label(k, n)} lands off the body (nothing to "
                                      f"cut there) — {what}")
             if added is not None:
+                image = move(added)
                 v0 = float(result.volume)
-                result = result + move(added)
+                result = result + image
                 if abs(float(result.volume) - v0) < _TOL:
+                    # a fuse that adds exactly nothing has the cut's two causes,
+                    # told apart the same way: a boss ON the plane is its own
+                    # image (probes/mirror_boss_seed_probe.py §1), one reflected
+                    # across its base face hangs inside the body (§2)
+                    if _overlaps(image, added):
+                        raise ValueError(f"{op}: {label(k, n)} is the seed itself (it lands where "
+                                         f"the seed already is) — {what}")
                     raise ValueError(f"{op}: {label(k, n)} adds nothing (it lies inside the "
                                      f"body) — {what}")
         except ValueError:

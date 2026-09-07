@@ -23,8 +23,6 @@ import { beginPlaneQuad, endPlaneQuad } from './viewport.js';
 /* the stored forms the plan chose (seed, plane, join); before the plan lands
    (OK pressed straight after an edit opened) the feature's OWN stand in */
 const stored = st => (st && st.plan && st.plan.params) || (st && st.original) || {};
-const planeWords = p => typeof p === 'string' ? `the ${p} plane`
-  : p && p.mid ? `the mid-plane across ${p.mid}` : p ? 'the picked face' : 'no plane';
 
 function mirrorTool() {
   const ctl = tool({
@@ -57,7 +55,10 @@ function mirrorTool() {
     isEmpty: (pr, st) => !st.plan || !pr.plane,    // honest zero: no plane, nothing built
     nothing: 'Nothing mirrored — no plane was chosen. Open Mirror again and click a flat face ' +
              'or an origin plane before OK.',
-    describe: p => `the mirror across ${planeWords(p.plane)}`,
+    /* the words are the plan's that built those values (tool.js lastGoodPlan),
+       never re-derived here from the stored form (R1) */
+    describe: (p, st) => `the mirror across ${(st && st.lastGoodPlan && st.lastGoodPlan.plane_words)
+                                              || 'the plane that last built'}`,
     split: () => 'the mirror image does not touch the body — pick a plane on the body (a face ' +
                  'or its mid-plane) for one part.',
     /* the kernel refused the new plane and the feature is back on the last one

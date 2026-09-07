@@ -316,7 +316,7 @@ export function tool(spec) {
   }
   const session = input => ({ input, featureId: null, opId: null, opType: null,
                               opTarget: null, editing: false, plan: null,
-                              lastGood: null, firstExtra: null, heldWhy: null });
+                              lastGood: null, lastGoodPlan: null, firstExtra: null, heldWhy: null });
 
   /* -------- open on the current selection (rules 1, 2, 4) -------- */
   function open(explicit) {
@@ -541,6 +541,9 @@ export function tool(spec) {
     }
     if (st.input.kind === 'feature' && plan.input) st.input.body = plan.input;   // the plan's body
     if (plan.seed_words) fill(id('Profile'), [plan.seed_words], plan.seed_words);
+    // an edit opens on values that built (lastGood = the original): this first
+    // plan is the one that describes them, for the revert sentence
+    if (st.lastGood && !st.lastGoodPlan) st.lastGoodPlan = plan;
     spec.gizmos.begin(st, plan);
     if (spec.repick && (st.input.kind === 'face' || st.input.kind === 'feature')) armRepick();
   }
@@ -736,7 +739,7 @@ export function tool(spec) {
       spec.show(st, st.lastGood);
       sync();                           // rows and gizmos follow the restored boxes
       if (spec.refresh) spec.refresh(st);
-      say(`Reverted to ${spec.describe(st.lastGood)} — the new values broke the solid.`);
+      say(`Reverted to ${spec.describe(st.lastGood, st)} — the new values broke the solid.`);
       return { ...back, reverted: true };   // lastGood is what is on the feature now
     }
     return r || failed;               // nothing better is known: the tree says why
@@ -763,6 +766,7 @@ export function tool(spec) {
   async function applyOnce() {
     if (spec.beforeApply) spec.beforeApply(st);
     const pr = spec.params(st);
+    const plan = st.plan;               // the plan these values came from (see lastGoodPlan)
     // honest zero: never create a zero-thickness solid — geometry appears
     // when the user drags or types
     if (!st.featureId && spec.isEmpty(pr, st)) return;
@@ -790,7 +794,10 @@ export function tool(spec) {
       doc = settled.doc; f = settled.f;
       good = settled.reverted ? null : spec.params(st);
     }
-    if (isOk(f) && good) st.lastGood = good;
+    // ...and the plan they came from rides along: a tool whose values have no
+    // box (Mirror's plane) describes them in the PLAN's words, never in words
+    // re-derived from the stored form in JS (LAUNCH-PLAN R1)
+    if (isOk(f) && good) { st.lastGood = good; st.lastGoodPlan = plan; }
     await applyOp();
     if (spec.afterApply) spec.afterApply(st);     // gizmos follow the boxes
   }
@@ -865,7 +872,7 @@ export function tool(spec) {
     const editing = st.editing;
     const typed = !!timer;              // a value typed inside the debounce window
     clearTimeout(timer); timer = null;
-    let created = false, gone = false, held = null;
+    let created = false, gone = false, held = null, failed = null;
     // OK COMMITS the panel's values even if the user never dragged or touched
     // an input, typed inside the debounce window, or pressed OK while a
     // rebuild was still running — in edit mode too. The commit and the one
@@ -875,12 +882,20 @@ export function tool(spec) {
       if (!st) { gone = true; return; }   // the server crashed under us, and
       created = !!st.featureId;           // recover() already said so
       held = st.heldWhy;                  // nothing built, and the tool knows why
+      // the FIRST values the kernel refused leave a red row with nothing good
+      // to revert to (a new mirror whose first plane throws the image off the
+      // body): OK must say so, not "created" (P4 review)
+      const f = created && feats().find(x => x.id === st.featureId);
+      failed = f && f.status === 'failed' ? f : null;
       hide();
       await releaseIso();
     });
     releaseModal();
     if (gone) return;        // OK must not claim a step the crash threw away
-    const outcome = editing ? `${spec.name} updated — the change is in the feature tree.`
+    const outcome = failed
+      ? `${spec.name} was NOT built — ${humanProblem((failed.problems || [])[0] || 'the kernel refused it')}. ` +
+        'Its row is red in the feature tree: double-click it to change the values, or ✕ to remove it.'
+      : editing ? `${spec.name} updated — the change is in the feature tree.`
       : created ? `${spec.name} created — editable in the feature tree.`
       : held || spec.nothing;
     // a value the hold gate never applied must not hide behind "updated"

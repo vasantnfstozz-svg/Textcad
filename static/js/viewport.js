@@ -1697,6 +1697,10 @@ async function loadModel(job, force) {
       fitRadius = sphere.radius || 100;
       fitCenter.copy(sphere.center);
       updateGroundGrid();               // the plate grows with the model
+      // the origin quads are placed and sized from this fit: while a pick shows
+      // them (the sketch tool's, Mirror's) they follow the body, or a plate that
+      // doubled across a plane sits over quads built for half of it (P4 review)
+      if (originPlanes.length) buildOriginPlanes();
     }
     if (fit) {
       camera.near = fitRadius / 100; camera.far = fitRadius * 100;

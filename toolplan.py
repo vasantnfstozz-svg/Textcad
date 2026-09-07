@@ -1071,9 +1071,17 @@ def plan_mirror(doc, req: dict) -> dict:
         else:
             plane = pattern.stored_face(part, _plane_face(part, pick, s.tip))
     elif req.get("plane"):
+        # "face" / "stored" are the names the panel gives the plane already in
+        # force when it is none of the alternatives (inserted below): choosing
+        # it again keeps it. Any other unknown name is refused with the names
+        # that exist, never ignored in silence (P4 review)
         chosen = next((a for a in alts if a["name"] == req["plane"]), None)
         if chosen is not None:
             plane = chosen["plane"]
+        elif req["plane"] not in ("face", "stored"):
+            raise ValueError(f"'{req['plane']}' is not a plane Mirror offers here — choose one of "
+                             f"{', '.join(a['name'] for a in alts)}, or click a flat face or an "
+                             f"origin plane")
     # `join` is what a BODY mirror does (Fusion's Join). Stamped on a SEEDED
     # row it was a loaded gun: the op branches on the truthiness of `seed`, so
     # the moment a seed arrived empty the feature mirror became a whole-body

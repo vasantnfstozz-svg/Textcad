@@ -539,7 +539,13 @@ function buildBody(f) {
       body.appendChild(pointsTable(f.id, k, v));  // editable table below
     } else {
       val.className = 'pro';
-      val.textContent = Array.isArray(v) ? JSON.stringify(v) : v;
+      // a stored form with named parts (Mirror's plane {mid: "X"} or a face
+      // {face_center, face_normal}, a Pattern axis {origin, dir}) reads as its
+      // parts, never as "[object Object]" (P4 review)
+      val.textContent = Array.isArray(v) ? JSON.stringify(v)
+        : v && typeof v === 'object' ? Object.entries(v).map(([pk, pv]) =>
+            `${pk} ${Array.isArray(pv) ? pv.join(', ') : pv}`).join(' · ')
+        : v;
       pr.appendChild(val); body.appendChild(pr);
     }
   }
