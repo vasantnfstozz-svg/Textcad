@@ -1244,24 +1244,29 @@ def _face_triangles(face, tol):
     return verts, tris
 
 
-def _edge_polylines(part) -> dict:
-    """Every edge's polyline, taken from the shared triangulation.
+def _edge_polylines(part) -> tuple[dict, dict]:
+    """Every edge's polyline, taken from the shared triangulation — and, keyed
+    the same way, the faces each edge bounds (their shape keys), read off the
+    same ancestor map: the picker's own-face rule needs them, and a separate
+    face.edges() pass cost 6.6% of the mesh (probes/tagged_mesh_hosts_timing_probe.py).
 
     Sampling each edge's curve instead cost 2.5 s on esp32-remote (609 edges,
     41 points each); this is the mesh's own discretisation, already computed."""
-    out = {}
+    out, faces_of = {}, {}
     try:
         emap = TopTools_IndexedDataMapOfShapeListOfShape()
         TopExp.MapShapesAndAncestors_s(part.wrapped,
                                        TopAbs_ShapeEnum.TopAbs_EDGE,
                                        TopAbs_ShapeEnum.TopAbs_FACE, emap)
     except Exception:
-        return out
+        return out, faces_of
     for i in range(1, emap.Extent() + 1):
         edge = TopoDS.Edge_s(emap.FindKey(i))
         hosts = emap.FindFromIndex(i)
         picks = [hosts.First()] if hosts.Extent() == 1 else [hosts.First(),
                                                              hosts.Last()]
+        # a SEAM edge lists its one round face twice in the ancestor map
+        faces_of[_shape_key(edge)] = list(dict.fromkeys(_shape_key(p) for p in picks))
         for pick in picks:
             try:
                 f = TopoDS.Face_s(pick)
@@ -1286,7 +1291,7 @@ def _edge_polylines(part) -> dict:
                 break
             except Exception:
                 continue
-    return out
+    return out, faces_of
 
 
 def _tagged_mesh(part, body_id: str | None = None) -> dict:
@@ -1467,7 +1472,11 @@ def _tagged_mesh(part, body_id: str | None = None) -> dict:
         edge_list = part.edges()
 
     edges_meta = []
-    edge_polys = _edge_polylines(part) if not mesh_mode else {}
+    edge_polys, edge_hosts = _edge_polylines(part) if not mesh_mode else ({}, {})
+    # the ids of the faces each edge bounds — the picker's occlusion rule needs
+    # them: an inside corner's line sits a hair BEHIND the two walls that meet
+    # there from every viewing angle, and only its own faces may not hide it
+    face_index = {_shape_key(face): fi for fi, face in rich_faces}
     for ei, edge in enumerate(edge_list):
         gt = str(edge.geom_type).replace("GeomType.", "")
         # the polyline the shared mesh already computed for this edge: it costs
@@ -1480,7 +1489,9 @@ def _tagged_mesh(part, body_id: str | None = None) -> dict:
             except Exception:
                 continue
         em = {"id": ei, "type": gt, "length": round(edge.length, 2),
-              "points": poly}
+              "points": poly,
+              "faces": [face_index[k] for k in edge_hosts.get(_shape_key(edge), [])
+                        if k in face_index]}
         # a round edge carries its DIAMETER, so clicking the line of a circle
         # can read one out with no round trip. arc_center only: edge.center()
         # is a point on the circle, not its centre (probed 2026-08-27).

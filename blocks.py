@@ -35,6 +35,9 @@ from build123d import (
     import_step as b3d_import_step,
 )
 from OCP.BRep import BRep_Tool
+from OCP.BRepAdaptor import BRepAdaptor_Curve      # point-to-edge distance (resolve_edge)
+from OCP.Extrema import Extrema_ExtPC
+from OCP.gp import gp_Pnt
 
 import inspector          # health of every fillet / chamfer result
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
@@ -348,13 +351,62 @@ def _poly_mid(points) -> list[float]:
     return list(pts[-1])
 
 
+def _edge_distance(edge, pt) -> float:
+    """Distance from a point to the edge ITSELF — bounded by its ends, never the
+    infinite line (probes/edge_point_distance_probe.py: 75 us a pair)."""
+    ad = BRepAdaptor_Curve(edge.wrapped)
+    g = gp_Pnt(float(pt[0]), float(pt[1]), float(pt[2]))
+    best = min(ad.Value(ad.FirstParameter()).Distance(g),
+               ad.Value(ad.LastParameter()).Distance(g))
+    ext = Extrema_ExtPC(g, ad)
+    if ext.IsDone():
+        for i in range(1, ext.NbExt() + 1):
+            best = min(best, ext.SquareDistance(i) ** 0.5)
+    return best
+
+
+PICK_ON_EDGE_TOL = 0.05     # mm; the drawn points are the mesh's own nodes, to 1e-4
+
+
+def _edge_under(part: Part, points, gtype: str | None = None):
+    """The edge of `part` a drawn line lies ON — its two ends and its middle all
+    within PICK_ON_EDGE_TOL of the edge — or None when it lies on none."""
+    pts = [tuple(float(c) for c in p) for p in points]
+    samples = (pts[0], pts[len(pts) // 2], pts[-1])
+    best, best_d = None, None
+    for e in part.edges():
+        if gtype and _gtype(e) != gtype:
+            continue
+        d = 0.0
+        for q in samples:
+            d = max(d, _edge_distance(e, q))
+            if d > PICK_ON_EDGE_TOL:
+                break
+        if d <= PICK_ON_EDGE_TOL and (best_d is None or d < best_d):
+            best, best_d = e, d
+    return best
+
+
 def resolve_edge(part: Part, ref: dict):
     """The edge of `part` a stored pick means — by the two faces it separates
     when the pick recorded them, else by the nearest midpoint (+ direction).
-    A raw viewport pick carries the edge's drawn `points` instead of a midpoint.
-    Raises the sentence the feature shows when the edge is gone."""
+    Raises the sentence the feature shows when the edge is gone.
+
+    A RAW viewport pick carries the drawn `points` of a line on screen instead:
+    an edge of this body — or of the PREVIEW body a round is being tried on,
+    whose unchanged and TRIMMED edges lie exactly on their parents while the
+    round's own new rims lie on none. So the identity is "lies on", never
+    "nearest midpoint": nearest answered a click on a new rim with the edge it
+    replaced, and the click silently un-picked it."""
     if ref.get("mid") is None and ref.get("points"):
-        ref = {**ref, "mid": _poly_mid(ref["points"])}
+        e = _edge_under(part, ref["points"], ref.get("type"))
+        if e is None:
+            x, y, z = _poly_mid(ref["points"])
+            raise ValueError(
+                f"the line clicked at ({x:g}, {y:g}, {z:g}) is not an edge of this "
+                f"body — it is a rim the round or bevel being previewed has made. "
+                f"Click an edge of the body itself; the gold lines are the ones picked so far.")
+        return e
     faces = ref.get("faces") or []
     if len(faces) == 2:
         fa, fb = (resolve_face(part, f["center"], f.get("normal")) for f in faces)

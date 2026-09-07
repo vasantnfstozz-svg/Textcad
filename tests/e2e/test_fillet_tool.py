@@ -28,6 +28,22 @@ async () => {
     { id: 'g1', op: 'fillet', params: { radius: 5, edges: 'vertical' }, inputs: ['b'] }, 'add');
 }
 """
+# the box with a 20 x 12 pocket cut 5 deep into its top: the pocket floor's rim
+# and its four upright corners are INSIDE corners (the two faces meeting at each
+# sit in front of the line from every viewing angle)
+BUILD_POCKET = """
+async () => {
+  const { postJSON } = await import('/static/js/api.js');
+  await postJSON('/api/feature/add',
+    { id: 'b', op: 'plate', params: { width: 40, depth: 30, thickness: 20 }, inputs: [] }, 'add');
+  await postJSON('/api/feature/add',
+    { id: 't', op: 'plate', params: { width: 20, depth: 12, thickness: 10 }, inputs: [] }, 'add');
+  await postJSON('/api/feature/add',
+    { id: 'tm', op: 'move', params: { x: 0, y: 0, z: 10 }, inputs: ['t'] }, 'add');
+  await postJSON('/api/feature/add',
+    { id: 'c', op: 'cut', params: {}, inputs: ['b', 'tm'] }, 'add');
+}
+"""
 # indices of a body's edges in the viewport payload, by a predicate on their points
 EDGE_INDICES = """
 ([body, kind]) => {
@@ -35,6 +51,9 @@ EDGE_INDICES = """
   const zs = b.data.edges.flatMap(e => e.points.map(p => p[2]));
   const zmax = Math.max(...zs);
   return b.data.edges.filter(e => {
+    if (kind === 'inside') return e.type === 'LINE' &&                    // within the pocket footprint
+      e.points.every(p => Math.abs(p[0]) < 15 && Math.abs(p[1]) < 12) &&
+      !e.points.every(p => Math.abs(p[2] - zmax) < 1e-3);                // but not its opening rim on top
     if (kind === 'top') return e.type === 'LINE' && e.points.every(p => Math.abs(p[2] - zmax) < 1e-3);
     if (kind === 'topline') return e.type === 'LINE' && e.points.every(p => Math.abs(p[2] - zmax) < 1e-3);
     if (kind === 'topcircle') return e.type === 'CIRCLE' && e.points.every(p => Math.abs(p[2] - zmax) < 1e-3);
@@ -77,11 +96,20 @@ def glow(page):
 
 
 def click_edge(page, body, idx):
-    """click where the USER would: on the drawn line's middle point"""
+    """click where the USER would: on the drawn line's middle point — then wait
+    for the plan's answer (the gold count changing), up to 3 s. A fixed 700 ms
+    was a race: clicks now queue instead of dropping the one in flight, so a
+    late answer landed on the NEXT assertion (4 gold after 3 clicks)."""
     s = page.evaluate("([b, i]) => window.__vp.edgeScreen(b, i)", [body, idx])
     assert s, f"edge {idx} of {body} is off screen"
+    before = glow(page)
     page.mouse.click(s["x"], s["y"])
-    page.wait_for_timeout(700)                 # the plan round trip
+    t0 = time.time()
+    while time.time() - t0 < 3:                # a refused / hidden edge takes the whole wait
+        page.wait_for_timeout(100)
+        if glow(page) != before:
+            page.wait_for_timeout(200)         # the handles settle
+            return
 
 
 def click_visible_edges(page, body, indices, want):
@@ -156,6 +184,28 @@ def test_pick_a_top_edge_drag_and_type(page, fresh_doc, server):
     f = wait_feature(server, "fillet1")
     assert f["volume"] == pytest.approx(24000 - round_removed(L, 5), rel=1e-4)
     assert len(f["params"]["edges"]) == 1 and len(f["params"]["edges"][0]["faces"]) == 2
+    assert page.errors == []
+
+
+def test_an_inside_corner_can_be_picked_and_rounded(page, fresh_doc, server):
+    """The user's grid of triangular pockets (2026-09-07): every inside corner
+    refused the click, because the picker rejected an edge whenever a face was
+    a hair nearer — and the two walls meeting at an inside corner always are.
+    A pocket floor's rim and its upright corners pick like outside edges, and
+    the round ADDS material there (the kernel's number, not ours)."""
+    setup(page, BUILD_POCKET)
+    open_tool(page, "fillet")
+    inside = page.evaluate(EDGE_INDICES, ["c", "inside"])
+    assert len(inside) == 8, inside                  # 4 floor edges + 4 upright corners
+    click_visible_edges(page, "c", inside, 2)
+    assert glow(page) == 2, "sharp pocket corners: no chain, two picks are two edges"
+    v0 = feature(server, "c")["volume"]
+    assert v0 == pytest.approx(24000 - 20 * 12 * 5)
+    page.fill("#flValue", "2")
+    page.wait_for_timeout(1500)
+    f = wait_feature(server, "fillet1")
+    assert f["status"] == "ok", f
+    assert f["volume"] > v0 + 1, "an inside round adds material"
     assert page.errors == []
 
 

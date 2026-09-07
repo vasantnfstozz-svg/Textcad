@@ -663,15 +663,32 @@ export function endEdgePick() {
 }
 export function edgePickActive() { return !!edgePickCb; }
 
-/* the edge line under the pointer, or null — a face in front of it hides it */
+/* the edge line under the pointer, or null — a face in front of it hides it.
+   Not one of its OWN two faces: an inside corner's line (a pocket wall meeting
+   the floor, two walls meeting) sits a hair BEHIND those faces from every
+   viewing angle, so "any nearer face hides the line" refused every concave
+   edge (user, 2026-09-07: no inside corner of a grid of pockets could be
+   rounded). A face cannot hide its own boundary — the server names the faces
+   each edge bounds (R1) — and the face must have been hit right beside the
+   line, so a cylinder's hidden back seam stays hidden behind its front. */
 function edgeHitAt(e) {
   raycaster.setFromCamera(ndcFrom(e), camera);
   const fHit = raycaster.intersectObjects(bodyMeshes(), false)[0];
   const depth = fHit ? fHit.distance : camera.position.distanceTo(controls.target);
-  raycaster.params.Line.threshold = worldPerPixel(depth) * EDGE_PICK_PX;
+  const reach = worldPerPixel(depth) * EDGE_PICK_PX;
+  raycaster.params.Line.threshold = reach;
   const eHit = raycaster.intersectObjects(edgeLines, false)[0];
-  if (eHit && (!fHit || eHit.distance <= fHit.distance + 1e-3)) return { edge: eHit, face: null };
+  if (eHit && (!fHit || eHit.distance <= fHit.distance + 1e-3 || ownFaceHit(eHit, fHit, reach)))
+    return { edge: eHit, face: null };
   return { edge: null, face: fHit || null };
+}
+function ownFaceHit(eHit, fHit, reach) {
+  const line = eHit.object;
+  if (fHit.object.userData.body !== line.userData.body) return false;
+  const src = bodyObjs.find(b => b.mesh === fHit.object);
+  const fid = src && src.data.faceId[fHit.face.a];
+  return (line.userData.faces || []).includes(fid) &&
+    eHit.point.distanceTo(fHit.point) <= 4 * reach;      // beside the line, not far along the face
 }
 function unhoverEdge() {
   if (hoverLine) { hoverLine.material.color.setHex(hoverColor); hoverLine = null; }
@@ -1568,6 +1585,7 @@ function addBodies(bodies) {
         color: 0x232830, transparent: true, opacity: 0.68 }));
       line.userData.edgeId = e.id;
       line.userData.body = b.id;
+      line.userData.faces = e.faces || [];       // the faces it bounds (edgeHitAt)
       scene.add(line); edgeLines.push(line);
     }
   }

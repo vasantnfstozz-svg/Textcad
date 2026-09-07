@@ -670,8 +670,14 @@ def plan_fillet(doc, req: dict) -> dict:
     # whose edges have tangent neighbours. Keyed on where the edges came from,
     # which only the server knows, so a caller that forgets to say is safe.
     chain = bool(want_chain) if want_chain is not None else not stored
+    click = None
     if tog is not None:                          # a click: add the edge, or take it out
+        before = len(refs or [])
         refs = _toggle_pick(part, refs or [], tog, chain, by_edge)
+        # said in the browser when a click REMOVED: with chain on, a click on any
+        # edge of a picked smooth rim releases the rim, which reads as "the edge
+        # will not select" when nothing says otherwise
+        click = "removed" if len(refs) < before else "added"
     # the user's own picks in STORED form (unexpanded) — what the tool sends
     # back with the next click, so every request is exact
     picks = (refs if isinstance(refs, str)
@@ -679,7 +685,7 @@ def plan_fillet(doc, req: dict) -> dict:
     if not refs:
         return {"ok": True, "tool": tool, "op": tool, "input": body, "edges": [],
                 "edges_param": [], "picks": [], "ball": None, "chain": chain,
-                "will_build": f"{tool} — pick the edges of {body}"}
+                "click": click, "will_build": f"{tool} — pick the edges of {body}"}
     picked = _expand(part, refs, chain)          # a gone edge raises its sentence
     out_refs = [blocks.edge_ref(part, e, by_edge) for e in picked]
     edges = [{**r, "points": edge_polyline(e), "length": round(e.length, 2)}
@@ -694,6 +700,7 @@ def plan_fillet(doc, req: dict) -> dict:
         "picks": picks,
         "ball": _ball(part, picked[0], by_edge),
         "chain": chain,
+        "click": click,
         "will_build": f"{tool} {n} edge{'s' if n != 1 else ''} of {body}",
     }
 

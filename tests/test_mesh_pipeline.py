@@ -139,6 +139,20 @@ def test_edges_follow_the_mesh_and_stay_on_the_part():
             assert bb.min.Z - 0.5 <= z <= bb.max.Z + 0.5
 
 
+def test_every_edge_names_the_faces_it_bounds():
+    """The picker's occlusion rule (viewport.edgeHitAt): a face cannot hide its
+    own boundary, so an inside corner's line — a hair behind the two walls that
+    meet there from every angle — picks like an outside edge. Each edge carries
+    the ids of its faces: one incidence per (face, edge) pair of the solid,
+    every id a real face of the payload."""
+    doc = block_doc()
+    part = doc._parts["body"]
+    m = studio._tagged_mesh(part, body_id="body")
+    ids = {f["id"] for f in m["faces"]}
+    assert all(1 <= len(e["faces"]) <= 2 and set(e["faces"]) <= ids for e in m["edges"])
+    assert sum(len(e["faces"]) for e in m["edges"]) == sum(len(f.edges()) for f in part.faces())
+
+
 def test_a_curved_face_is_not_a_coarse_polygon():
     """A small bore must still read as round: the angular tolerance is what
     keeps 4 mm holes from turning into hexagons."""

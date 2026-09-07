@@ -291,6 +291,71 @@ def test_plan_midpoint_straight_from_the_model_edge_line():
     assert p["ok"] and p["edges"][0]["mid"] == mid(e)
 
 
+def preview(doc, radius=3):
+    """the body the viewport shows while a round is being tried: the box with
+    its first top edge rounded — the top edges beside it TRIMMED by the radius,
+    and the round's own two rims where the new face meets the top and the wall"""
+    b = doc._parts["b"]
+    e = top(b)[0]
+    return e, healthy(blocks.fillet_edges(b, radius, [blocks.edge_ref(b, e)]))
+
+
+def test_a_click_on_a_trimmed_preview_edge_means_the_edge_it_came_from():
+    """While the preview is up the lines on screen are the ROUNDED body's. A top
+    edge beside the round is shorter by the radius and its midpoint has moved by
+    half of it; it still lies ON its parent, and lying-on is the identity."""
+    doc = doc_box()
+    e, res = preview(doc)
+    zt = (e @ 0.5).Z
+    trimmed = [x for x in res.edges() if blocks._gtype(x) == "LINE"
+               and abs((x @ 0.5).Z - zt) < 1e-6 and round(x.length, 6) not in (30, 40)]
+    assert len(trimmed) == 2 and all(round(x.length) in (27, 37) for x in trimmed)
+    for t in trimmed:
+        poly = toolplan.edge_polyline(t)
+        p = toolplan.plan(doc, {"tool": "fillet", "body_id": "b", "edges": [], "chain": False,
+                                "toggle": {"points": poly, "type": "LINE"}})
+        assert p["ok"] and len(p["edges"]) == 1 and p["click"] == "added"
+        parent = blocks.resolve_edge(doc._parts["b"], {"points": poly})
+        assert round(parent.length) == round(t.length) + 3, "the UNTRIMMED edge"
+        assert max(blocks._edge_distance(parent, q) for q in poly) < 1e-6, "the line lies on it"
+        assert p["edges"][0]["mid"] == mid(parent)
+
+
+def test_a_rim_the_preview_made_is_refused_not_swapped_for_the_edge_it_replaced():
+    """The round's own rims — where the new face meets the top and the wall —
+    are edges of NO body in the tree. Nearest-midpoint answered with the rounded
+    edge itself, so a click on a rim silently un-picked the edge it replaced."""
+    doc = doc_box()
+    b = doc._parts["b"]
+    e, res = preview(doc)
+    rims = [x for x in res.edges() if blocks._gtype(x) == "LINE"
+            and abs(x.length - e.length) < 1e-6 and 2.9 < (x @ 0.5 - e @ 0.5).length < 3.1]
+    assert len(rims) == 2
+    for rim in rims:
+        p = toolplan.plan(doc, {"tool": "fillet", "body_id": "b", "chain": False,
+                                "edges": [blocks.edge_ref(b, e)],
+                                "toggle": {"points": toolplan.edge_polyline(rim), "type": "LINE"}})
+        assert p["ok"] is False
+        assert "not an edge of this body" in p["error"] and "previewed" in p["error"]
+
+
+def test_the_plan_says_whether_a_click_added_or_released():
+    """With chain on, a click on any edge of a picked smooth rim releases the
+    whole rim; the browser says so instead of looking like a refused click."""
+    doc = doc_rounded()
+    g = doc._parts["g1"]
+    lines = [x for x in top(g) if blocks._gtype(x) == "LINE"]
+    arcs = [x for x in top(g) if blocks._gtype(x) == "CIRCLE"]
+    p = toolplan.plan(doc, {"tool": "fillet", "body_id": "g1", "edges": [],
+                            "toggle": {"points": toolplan.edge_polyline(lines[0]), "type": "LINE"}})
+    assert p["ok"] and p["click"] == "added" and len(p["edges"]) == 8
+    q = toolplan.plan(doc, {"tool": "fillet", "body_id": "g1", "edges": p["picks"],
+                            "toggle": {"points": toolplan.edge_polyline(arcs[0]), "type": "CIRCLE"}})
+    assert q["ok"] and q["click"] == "removed" and q["edges"] == []
+    assert toolplan.plan(doc, {"tool": "fillet", "body_id": "g1",
+                               "edges": [{"mid": mid(lines[0])}]})["click"] is None
+
+
 def test_plan_chain_is_on_for_fresh_picking_and_can_be_turned_off():
     """Fusion's default for PICKING. (A stored selection defaults the other way
     — see test_a_chain_off_fillet_is_not_grown_when_it_is_reopened.)"""

@@ -515,7 +515,19 @@ export function tool(spec) {
 
   /* the edge set changed (a click, the chain box): plan again, keep the
      feature if there is one, and re-place the handles */
-  async function replan(extra = {}) {
+  /* ONE plan request at a time. Each request carries the picks the previous
+     answer settled (`st.input.edges`), so two in flight at once meant the
+     later click was sent WITHOUT the earlier one — and its answer, landing
+     last, won (user, 2026-09-07: "after selecting one edge sometimes another
+     edge is not selecting"). The rebuild a plan triggers is not waited for:
+     apply() coalesces bursts into one trailing rebuild on its own. */
+  let planChain = Promise.resolve();
+  function replan(extra = {}) {
+    const run = planChain.then(() => replanNow(extra));
+    planChain = run.catch(() => {});
+    return run;
+  }
+  async function replanNow(extra) {
     if (!st) return;
     const mine = st;
     const plan = await fetchPlan(extra);
@@ -526,9 +538,18 @@ export function tool(spec) {
       say(`⚠ ${spec.name} keeps at least one edge while a value is set — Cancel closes the tool.`);
       return;
     }
+    const had = ((st.plan && st.plan.edges) || []).length;
     spec.gizmos.end();
     adoptPlan(plan);
-    if (st.featureId) await apply();
+    // a click that RELEASED edges says so (rule 7): with Chain on, one click on
+    // a picked smooth rim releases the whole rim, which reads as "the edge will
+    // not select" when nothing says otherwise
+    if (plan.click === 'removed') {
+      const n = had - (plan.edges || []).length;
+      say(`${spec.name}: that edge was already picked — the click released ` +
+        `${n} edge${n === 1 ? '' : 's'}. Click it again to add it back.`);
+    }
+    if (st.featureId) apply();        // not awaited: the next click's plan must not wait for a rebuild
   }
   function adoptPlan(plan) {
     st.plan = plan;
