@@ -63,6 +63,11 @@ EDGE_INDICES = """
 }
 """
 MODAL = "async () => (await import('/static/js/state.js')).S.modalTool"
+PICKED_EDGE = """async () => {
+  const { S } = await import('/static/js/state.js');
+  return S.pickedEdge ? S.pickedEdge.id : null;
+}"""
+PICKED_FACE = "async () => (await import('/static/js/state.js')).S.pickedFace"
 
 
 def feature(server, fid):
@@ -206,6 +211,32 @@ def test_an_inside_corner_can_be_picked_and_rounded(page, fresh_doc, server):
     f = wait_feature(server, "fillet1")
     assert f["status"] == "ok", f
     assert f["volume"] > v0 + 1, "an inside round adds material"
+    assert page.errors == []
+
+
+def test_select_mode_picks_an_inside_corner_and_fillet_takes_it(page, fresh_doc, server):
+    """The user's report ON the fix (2026-09-07): in SELECT mode a click on an
+    inside upright edge still selected the WALL — pickAt had its own copy of the
+    old depth-only rule. Both pickers now share visibleEdgeHit. And
+    select-then-command: the picked edge enters Fillet as its first click
+    (fusion-parity rule 2), so the tool opens with one edge gold."""
+    setup(page, BUILD_POCKET)
+    inside = page.evaluate(EDGE_INDICES, ["c", "inside"])
+    picked = None
+    for i in inside:
+        s = page.evaluate("([b, i]) => window.__vp.edgeScreen(b, i)", ["c", i])
+        if not s:
+            continue
+        page.mouse.click(s["x"], s["y"])
+        page.wait_for_timeout(300)
+        if page.evaluate(PICKED_EDGE) == i:
+            picked = i
+            break
+    assert picked is not None, "no inside edge could be selected in Select mode"
+    assert page.evaluate(PICKED_FACE) is None, "the wall must not win over its own edge"
+    open_tool(page, "fillet")
+    page.wait_for_timeout(1200)
+    assert glow(page) == 1, "the selected edge is the tool's first click"
     assert page.errors == []
 
 

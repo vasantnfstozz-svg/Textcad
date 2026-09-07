@@ -677,10 +677,16 @@ function edgeHitAt(e) {
   const depth = fHit ? fHit.distance : camera.position.distanceTo(controls.target);
   const reach = worldPerPixel(depth) * EDGE_PICK_PX;
   raycaster.params.Line.threshold = reach;
-  const eHit = raycaster.intersectObjects(edgeLines, false)[0];
-  if (eHit && (!fHit || eHit.distance <= fHit.distance + 1e-3 || ownFaceHit(eHit, fHit, reach)))
-    return { edge: eHit, face: null };
-  return { edge: null, face: fHit || null };
+  const eHit = visibleEdgeHit(raycaster.intersectObjects(edgeLines, false), fHit, reach);
+  return eHit ? { edge: eHit, face: null } : { edge: null, face: fHit || null };
+}
+/* the nearest edge hit that the face in front does not hide — ONE rule for the
+   Fillet picker (edgeHitAt) and for Select mode (pickAt), which had its own
+   copy of the old depth-only rule and kept selecting the WALL at an inside
+   upright edge after the picker was fixed (user, 2026-09-07) */
+function visibleEdgeHit(eHits, fHit, reach) {
+  return eHits.find(h => !fHit || h.distance <= fHit.distance + 1e-3 ||
+                         ownFaceHit(h, fHit, reach)) || null;
 }
 function ownFaceHit(eHit, fHit, reach) {
   const line = eHit.object;
@@ -2159,7 +2165,8 @@ function pickAt(e) {
   // whatever the part's size or the zoom.
   const depth = fHit ? fHit.distance
                      : camera.position.distanceTo(controls.target);
-  raycaster.params.Line.threshold = worldPerPixel(depth) * EDGE_PICK_PX;
+  const reach = worldPerPixel(depth) * EDGE_PICK_PX;
+  raycaster.params.Line.threshold = reach;
   const eHits = raycaster.intersectObjects(edgeLines, false);
   // a SKETCH PROFILE drawn on a face is COPLANAR with it — on a tie the
   // profile wins, or the rectangle you just sketched could never be picked
@@ -2170,9 +2177,9 @@ function pickAt(e) {
     selectProfile(sHit.object.userData.sketchId, sHit.object);
     return;
   }
-  if (eHits.length && (!fHit || eHits[0].distance <= fHit.distance + 1e-3)) {
-    selectEdge(eHits[0].object.userData.edgeId,
-               eHits[0].object.userData.body);
+  const eHit = visibleEdgeHit(eHits, fHit, reach);
+  if (eHit) {
+    selectEdge(eHit.object.userData.edgeId, eHit.object.userData.body);
   } else if (fHit) {
     const entry = bodyObjs.find(b => b.mesh === fHit.object);
     // the raycast hit point rides along: it is the best possible interior
