@@ -61,7 +61,8 @@ condition. So the useful questions are narrow — see below.
 ## Where the risk actually is — look hardest here
 
 1. **Do the words now match the code?** Read `plan_mirror`'s docstring and the
-   spec's Edit bullet against lines 1088–1092 of `toolplan.py`. A contract
+   spec's Edit bullet against lines 1091–1093 of `toolplan.py` (the
+   `stored_seed` / `keep_stored` / `join` triple). A contract
    that is subtly still wrong is the whole point of this commit; that is a
    finding, and "the docstring is fine" is a valid answer.
 2. **Does the new guard actually guard?** It was measured RED with the
