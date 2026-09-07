@@ -16,15 +16,25 @@ description: The pre-commit shipping routine for TextCAD — full test suite, se
    (`git` is at `C:\Program Files\Git\cmd\git.exe`), then **`git push`** —
    the private backup at https://github.com/Vasan0021/textcad only protects
    what actually gets pushed (gh CLI is authenticated via keyring).
-6. **Recommend the code review — say it, every time.** Right after the CODE
-   commit, tell the user in one line: "recommended now: `/code-review high`"
-   (the user runs it; it fans out subagents, so it is theirs to spend). It
-   runs on HEAD, so recommend it BEFORE any follow-up docs/plan commit — or
-   name the code commit hash in the recommendation. Worth it after every
-   shipped phase or tool (the 2026-09-03 taper review found 4 real bugs the
-   tests had not); skip it for docs, plan and memory commits. Order: commit →
-   review → fix findings → THEN the user's five-step checklist, so the user
-   never tests bugs a robot would have caught.
+6. **Refresh `REVIEW-BRIEF.md`, then recommend the review — every time.**
+   The user reviews in a SEPARATE chat on a different model, which starts with
+   no context, so the brief is the handoff. **Rewrite it (never append) with:
+   the commit range and its base, one line per commit, where the risk is
+   concentrated, this repo's ground rules for what counts as a finding, and
+   the known-and-deferred list so nothing is re-reported.** Then say in one
+   line: "recommended now, in the review chat: `/code-review high — read
+   REVIEW-BRIEF.md first: it names the commit range, the base, and what not to
+   re-report`". That typed line is FIXED and must not be reworded — the brief
+   carries everything that varies, which is what keeps the review cheap.
+   The user runs it (it fans out subagents, so it is theirs to spend). It runs
+   on HEAD, so refresh the brief and recommend BEFORE any follow-up docs/plan
+   commit. Worth it after every shipped phase or tool (the 2026-09-03 taper
+   review found 4 real bugs the tests had not, and the 2026-09-07 Mirror
+   review found a P0 the whole P0 pass had introduced); skip it for docs, plan
+   and memory commits. Order: commit → refresh brief → review → reproduce each
+   finding by measurement → red test → fix → THEN the user's five-step
+   checklist, so the user never tests bugs a robot would have caught. Never
+   `--fix`: it applies findings straight to the tree and skips that order.
 7. **Update memory** (the project memory file) with what shipped, the commit
    hash, and any lessons/bugs discovered.
 8. Tell the user what to do to SEE it (usually Ctrl+F5) and how to verify it

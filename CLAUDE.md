@@ -152,3 +152,8 @@ ranked view) · workstream sheets `FEATURE-TREE-PLAN.md`, `MANUAL-DESIGN.md`,
 `MEASURE-PLAN.md`, `VERSION-TREE-PLAN.md`, `SKETCH-MODE-PLAN.md` (history).
 Priorities: P0 silent wrong geometry or data loss · P1 blocks basic design ·
 P2 hurts daily use · P3 polish. Done means ship-checked, with the commit hash.
+
+`REVIEW-BRIEF.md` is the handoff to the user's code-review chat, which runs on
+a different model with no context: REWRITE it (never append) after every code
+commit — range, base, one line per commit, where the risk is, the ground rules,
+and what must not be re-reported. See the `ship-check` skill, step 6.

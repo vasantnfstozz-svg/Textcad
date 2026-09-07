@@ -38,6 +38,23 @@ complete. Details + Done history: MANUAL-DESIGN.md.
 
 ## To triage (dump new problems here if they don't clearly belong to a workstream file)
 
+- [ ] **The body-pattern health gate is retroactive: no grandfathering.**
+  `pattern._body_pattern` now runs `inspector.health` on the fused union
+  (c4d5961, closing a P0 where a tangent join came back as a 2-solid open
+  shell "success"). It runs on EVERY rebuild, so a design saved BEFORE that
+  commit whose copies happen to touch along an edge would go red the next time
+  it loads, where it used to open. Raised by the `/code-review` of
+  c4d5961 + 85821be (2026-09-07). **Measured clean against every design in
+  `designs/` — up to 34 separate solids, all healthy — so nothing of the
+  user's is affected.** Kept as-is deliberately: the alternative is handing
+  back a non-manifold body in silence, which is the banned failure mode, and
+  the refusal is a sentence that names the edge. The rule it sits against
+  ("a saved design may never stop rebuilding") exists to stop refusals of
+  geometry that is FINE; this geometry is genuinely broken. **P3** — accepted
+  risk, recorded so it is not rediscovered as a surprise. If it ever bites a
+  real file, the fix is to warn rather than fail for a pattern whose feature
+  was saved by an older build.
+
 - [ ] **Right-edge tool panels cover the AI-designer pane.** `#measureDialog`
   and `#extrudeDialog` are both `position:fixed; right:24px`, so an open tool
   panel sits on top of the chat column (visible in the Measure UI verification,
