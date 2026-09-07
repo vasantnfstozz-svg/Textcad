@@ -345,6 +345,35 @@ export function initViewport() {
       const r = renderer.domElement.getBoundingClientRect();
       return { x: s.x, y: s.y, cx: s.x - r.left, cy: s.y - r.top };
     },
+    /* Every edge hit under a screen point, with the numbers the own-face
+       escape could be decided on: `own` (the hit face is one of the edge's
+       two), `behind` mm deeper than the face hit, `world` mm from it, `px`
+       apart from it on screen. This is how that rule is MEASURED instead of
+       argued about — probes/own_face_reach_probe.py reads it. */
+    edgeHitReport: (cx, cy) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      raycaster.setFromCamera(new THREE.Vector2(
+        (cx / rect.width) * 2 - 1, -(cy / rect.height) * 2 + 1), camera);
+      const fHit = raycaster.intersectObjects(bodyMeshes(), false)[0];
+      const depth = fHit ? fHit.distance : camera.position.distanceTo(controls.target);
+      raycaster.params.Line.threshold = worldPerPixel(depth) * EDGE_PICK_PX;
+      const src = fHit && bodyObjs.find(b => b.mesh === fHit.object);
+      const fid = src && src.data.faceId[fHit.face.a];
+      const round = (v, n) => Math.round(v * 10 ** n) / 10 ** n;
+      return {
+        face: fid == null ? null : fid,
+        faceDepth: fHit ? round(fHit.distance, 3) : null,
+        mmPerPx: round(worldPerPixel(depth), 4),
+        hits: raycaster.intersectObjects(edgeLines, false).map(h => ({
+          edge: h.object.userData.edgeId,
+          own: (h.object.userData.faces || []).includes(fid),
+          behind: fHit ? round(h.distance - fHit.distance, 6) : null,
+          world: fHit ? round(h.point.distanceTo(fHit.point), 6) : null,
+          px: fHit ? round(pxApart(h.point, fHit.point), 2) : null,
+          beside: !!fHit && ownFaceHit(h, fHit, worldPerPixel(depth) * EDGE_PICK_PX),
+        })),
+      };
+    },
     pickAtWorld: (world) => {
       const rect = renderer.domElement.getBoundingClientRect();
       const v = new THREE.Vector3(...world).project(camera);
@@ -693,8 +722,18 @@ function ownFaceHit(eHit, fHit, reach) {
   if (fHit.object.userData.body !== line.userData.body) return false;
   const src = bodyObjs.find(b => b.mesh === fHit.object);
   const fid = src && src.data.faceId[fHit.face.a];
+  // "beside the line" is a WORLD distance on purpose. On screen these two
+  // points are always within the 5 px the raycaster used to find the edge at
+  // all (max 4.02 px over 853 measured samples), so a pixel bound accepts
+  // every own-face hit and guards nothing. The bound scales with the zoom
+  // because the click tolerance does. It was 4x the reach, which at a 400 mm
+  // view is 11.5 mm: a face hit 10 mm along the face from the line counted as
+  // beside it and the edge was picked through the material in front of it.
+  // A legitimate click's face hit lands within 1.1x the reach (p90) and 1.5x
+  // at worst — probes/own_face_reach_probe.py, 853 samples across 3 zooms,
+  // 3 directions and 6 click offsets on a pocketed box.
   return (line.userData.faces || []).includes(fid) &&
-    eHit.point.distanceTo(fHit.point) <= 4 * reach;      // beside the line, not far along the face
+    eHit.point.distanceTo(fHit.point) <= 2 * reach;
 }
 function unhoverEdge() {
   if (hoverLine) { hoverLine.material.color.setHex(hoverColor); hoverLine = null; }
@@ -2135,6 +2174,15 @@ export function clearPick() {
   S.pickedEdge = null;
   document.getElementById('pickInfo').style.display = 'none';
   bus.emit('pick', { kind: null, clear: true });
+}
+
+/* How far apart two model points look ON SCREEN, in pixels. A world distance
+   and a screen distance are not interchangeable: a pair separated ALONG the
+   view axis is far apart in the model and on top of each other on screen, and
+   a pair on a face seen edge-on is the other way round. */
+function pxApart(a, b) {
+  const p = toScreen(a), q = toScreen(b);
+  return Math.hypot(p.x - q.x, p.y - q.y);
 }
 
 /* How much model one screen pixel covers at a given depth (perspective). */

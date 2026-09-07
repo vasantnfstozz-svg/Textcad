@@ -177,6 +177,18 @@ REF_PARAMS = {op: ("seed",) for op in pattern.SEEDED_OPS}
 CACHE_MAX = 400          # entries; a part is a shape handle, not a mesh
 
 
+def _deep_valid(part):
+    """OpenCASCADE's validity analysis on ONE body: True, False, or None when
+    the kernel could not answer. ~270 ms on a large solid, which is why the
+    per-feature pass skips it (inspector.health(check_valid=False)) and only
+    the finished bodies pay it.
+
+    Named at module level so a test can stand in for it: an invalid solid
+    cannot be built to order, and the rule worth locking is which bodies are
+    checked, not what the kernel says about them."""
+    return inspector._try(lambda: bool(part.is_valid))
+
+
 def n_solids(part) -> int:
     """How many SEPARATE lumps this shape is. 0.4 ms for a 73-feature design.
 
@@ -318,6 +330,12 @@ class Document:
     _geom_version: str = field(default="", repr=False)       # what is drawable
     _sigs: dict = field(default_factory=dict, repr=False)   # feature id -> content signature
     _healing: bool = field(default=False, repr=False)         # heal re-entry guard
+    # how many bodies the LAST to_step() actually wrote. Recorded there, while
+    # the rollback bar is still released: a caller cannot count them afterwards
+    # (to_step re-parks the bar on its way out, and result_bodies() then
+    # describes the isolated build state again, not the file).
+    exported_bodies: int = field(default=0, repr=False)
+    _valid_cache: dict = field(default_factory=dict, repr=False)   # sig -> is_valid
 
     # -- authoring ----------------------------------------------------------
     def add(self, id: str, op: str, params: dict | None = None,
@@ -854,9 +872,9 @@ class Document:
                 else:
                     # check_valid=False here: OpenCASCADE's validity analysis is
                     # ~270 ms on a large solid, and the rebuild would pay it once
-                    # per feature. The RESULT still gets the full check, in the
-                    # deep-check pass right after this loop, so an invalid part
-                    # can never reach the user unreported.
+                    # per feature. Every BODY of the design still gets the full
+                    # check, in the deep-check pass right after this loop, so an
+                    # invalid part can never reach the user unreported.
                     f.problems = inspector.health(part, check_valid=False)
                     f.volume = round(part.volume, 2)
                     f.pieces = n_solids(part)
@@ -909,18 +927,42 @@ class Document:
                     ". Untick 'through' for the old behaviour."]
                 return ok
 
-        # Deep check on the RESULT only. Intermediates were checked without
-        # OpenCASCADE validity above for speed; the part the user actually gets
-        # is validated in full, and a failure here is a real failure.
-        rf_deep = self._result_feature()
-        if rf_deep is not None and rf_deep.status == "ok":
-            part = self._parts.get(rf_deep.id)
-            if part is not None and not sk.is_sketch(part):
-                if inspector._try(lambda: bool(part.is_valid)) is False:
-                    rf_deep.problems = list(rf_deep.problems) + [
-                        "OpenCASCADE reports the solid is invalid"]
-                    rf_deep.status = "failed"
-                    ok = False
+        # Deep check on EVERY BODY OF THE DESIGN. Intermediates were checked
+        # without OpenCASCADE validity above for speed; the bodies the user
+        # actually gets are validated in full, and a failure here is a real
+        # failure. It used to check the tree's TAIL alone — but a design
+        # legitimately has several bodies (result_bodies(), the same rule the
+        # viewport and the exporter follow), so an invalid body that was not the
+        # tail was never validated: its row stayed green and _export_blockers,
+        # which trusts `status`, handed it to the STEP file (2026-09-07 review;
+        # the same class as the export that shipped one body of four).
+        #
+        # The verdict rides the body's content signature, so checking N bodies
+        # instead of one does not cost N times ~270 ms on every rebuild: a body
+        # that did not change is not re-validated. (The tail used to pay it on
+        # every single rebuild, cache hit or not, so this is cheaper than what
+        # it replaces for an unchanged design.)
+        by_id_deep = {f.id: f for f in self.features}
+        for fid in self.leaf_solid_ids():
+            fd = by_id_deep.get(fid)
+            if fd is None or fd.status != "ok":
+                continue
+            part = self._parts.get(fid)
+            if part is None or sk.is_sketch(part):
+                continue
+            sig = sigs.get(fid)
+            verdict = self._valid_cache.get(sig) if sig else None
+            if verdict is None:
+                verdict = _deep_valid(part)
+                if sig:
+                    self._valid_cache[sig] = verdict
+                    while len(self._valid_cache) > CACHE_MAX:
+                        self._valid_cache.pop(next(iter(self._valid_cache)))
+            if verdict is False:
+                fd.problems = list(fd.problems) + [
+                    "OpenCASCADE reports the solid is invalid"]
+                fd.status = "failed"
+                ok = False
 
         self._check_dangling()
         self.spec_problems = []
@@ -934,8 +976,13 @@ class Document:
         # (a 249mm3 leaf) instead of the 90x200x12mm it is. The signature has
         # to span EVERY leaf for the same reason, or editing a body that is
         # not the tail would hand back a cached verdict about the old geometry.
-        # verify() also runs health() on what it is given, so this is where
-        # non-tail bodies get checked at all — for free, once per rebuild.
+        # verify() also runs health() on what it is given — including
+        # OpenCASCADE's validity analysis, over the WHOLE design rather than
+        # the tail. Every body has already been validated one by one in the
+        # deep pass above, so this repeats work; it is left as it is because
+        # verify() is a self-contained guarantee for every caller (the MCP and
+        # the export readback use it too), it only runs when a spec is set,
+        # and the result is cached on the signature of every leaf below.
         leaves = self.leaf_solid_ids()
         if ok and self.spec and leaves:
             spec_sig = hashlib.sha1(json.dumps(
@@ -1296,6 +1343,7 @@ class Document:
         are not joined (probes/multibody_step_probe.py §5). One body still
         writes as a bare solid, with no assembly wrapper around it (§3).
         """
+        self.exported_bodies = 0                 # never a stale count from before
         if not self._parts:
             raise RuntimeError("nothing to export — rebuild first / fix failures")
         parked = self.rollback
@@ -1317,6 +1365,7 @@ class Document:
                 raise RuntimeError(
                     "nothing to export — rebuild first / fix failures")
             b3d.export_step(shape, path)
+            self.exported_bodies = len(self.result_bodies())   # what WAS written
             return path
         finally:
             if parked is not None:

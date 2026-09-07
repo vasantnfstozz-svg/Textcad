@@ -548,6 +548,74 @@ the real need. **Tests:** 3 fast, 1 journey. **Probe:** `edge_side_probe.py`
 (the distance rule beats the orientation shortcut, which was wrong on half the
 edges of a plain pocketed box).
 
+*The 6 findings of the combined review of 16ade36..HEAD, 2026-09-07* (ui
+v169). One review covered the STEP export (A), the fillet picking pair (B) and
+the edge-group chips (C). Every finding was reproduced first, then a test that
+was RED before the fix.
+
+1. **A queued click landed on a session opened after it** (`tool.js replan`).
+   The plan queue that 4f15f66 added bound its session when the queue got to
+   the click, not when the click was made — and Cancel / OK do not drain the
+   queue (`settled()` waits for rebuilds, not plans). So a chip click still
+   waiting its turn ran against whatever session was open by then: gold edges
+   nobody picked in a fresh session, and in an EDIT session **that feature's
+   stored edges rewritten with a group the user never chose**. The session is
+   bound at click time now. 1 journey (measured: 4 gold edges in a session
+   that picked nothing).
+2. **The export's body count described the parked build state** (`studio.py`,
+   `document.to_step`). `bodies` was counted after `to_step` returned — and
+   `to_step` RE-PARKS the rollback bar on its way out, so with an editor open
+   the file held every body and the response said "1": the "this design has N
+   separate bodies" sentence that the whole multi-body export was written for
+   never appeared. Counted inside `to_step` now, while the bar is released
+   (`Document.exported_bodies`). 1 test through the HTTP API.
+3. **A lit chip added instead of removing** (`toolplan._toggle_set`). The chip
+   is lit from the picks GROWN into their tangent chains; the click compared
+   the RAW picks. On a machinable pocket (rounded corners) one chained click
+   lights inside/horizontal 8 of 8 and the tooltip says "click to take them
+   out" — the click then added the other 7. Both ends read the same set now,
+   and the count reported is edges, not picks. 2 tests.
+4. **One odd edge could take the whole panel down** (`blocks.edge_side`,
+   `edge_direction`, `edge_groups`). The chips made the classifier measure
+   EVERY edge on EVERY plan, and only the normals were guarded — so an edge
+   the kernel will not answer for would abort `plan_fillet` and the panel
+   would not open at all (rule 5). Guarded per edge; a refusal costs that edge
+   and nothing else. 1 test + the corpus (`gauntlet.BODIES`, 8 bodies).
+5. **The picker could select an edge through 10 mm of material**
+   (`viewport.ownFaceHit`). An edge may be picked though its own face is in
+   front of it — an inside corner's line sits a hair behind its two faces —
+   bounded by 4× the click reach, a world length that GROWS with the zoom: at
+   a 400 mm view that is 11.5 mm. Measured on the real body
+   (`probes/own_face_reach_probe.py`, 853 samples over 3 zooms × 3 directions
+   × 6 click offsets): a legitimate click's face hit lands within 1.1× the
+   reach (p90), and the shipped bound accepted a face hit 10.0 mm from the
+   line — on a dead-centre click. Bound is 2× now. **The review's proposed fix
+   — compare in pixels — was measured and rejected**: every own-face hit is
+   inside the 5 px pick threshold by construction (max 4.02 px of 853), so a
+   pixel bound accepts them all and guards nothing. 1 journey, driven through
+   the rule itself (`__vp.edgeHitReport`).
+6. **The deep validity check saw only the tail** (`document.rebuild`). OCCT's
+   validity analysis is skipped per feature for speed (~270 ms) and paid on
+   "the result" — which was `_result_feature()`, the tree's tail. A design
+   legitimately has SEVERAL bodies, so an invalid body that was not the tail
+   was never validated: green row, and `_export_blockers` (which trusts
+   `status`) would hand it to the file. Same class as the export bug it was
+   written beside. Every body is validated now, with the verdict cached on its
+   content signature — so N bodies do not cost N × 270 ms per rebuild, and an
+   unchanged design pays nothing where the tail used to pay every time.
+   2 tests. **Swept the whole live library: 51 designs, 0 with a body OCCT
+   calls invalid, second rebuild ~0.0 s everywhere.** (`esp32-remote` reports
+   a spec mismatch — 36 solids vs `n_solids: 1` — which is 753c24c's doing and
+   an improvement: against the tail it reported 4 problems, including the size
+   being 11×57×1 mm. The design really is a body plus 35 lettering solids; the
+   spec is the user's to update.)
+
+Two comments that had gone false with A were corrected (`studio.py`'s export
+docstring and the per-feature health note in `document.rebuild`). Line delta:
+source +197/−58, tests +337/−2, one new probe (247). Fast tier 1181 green;
+browser: fillet 11, pattern/mirror/hole 23, measure/face/extrude/revolve 20
+(the known order-dependent revolve ring test passes on its own — §10 P1).
+
 *Hole done 2026-09-06* (spec `specs/hole.md`, tool 5336c82, review fixes
 0c49c42, ui v157; user's checklist passed 2026-09-06; drag ghost c6a2377, ui
 v160, re-checked by the user the same day). `static/js/hole.js`

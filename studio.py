@@ -2658,9 +2658,9 @@ def export_step():
     The readback measures the WHOLE file — every body in it — so `n_solids`
     is the count a CAM tool will see and `is_valid`/`is_manifold` cover all
     of them, not just the tree's tail (2026-09-07: bodies other than the
-    tail never reached the file at all, and the deep validity check in
-    rebuild() still only ever sees the tail). That makes this readback the
-    one place the whole delivered design is proven sound.
+    tail never reached the file at all). rebuild() now validates every body
+    of the design too, so this readback is the second, independent proof —
+    taken from the written FILE rather than from the shapes in memory.
     """
     doc = _doc()
     path = str(DESIGNS / f"{doc.name}.step")
@@ -2673,7 +2673,11 @@ def export_step():
             "volume": m.get("volume"), "size": m.get("size"),
             "is_valid": m.get("is_valid"),
             "is_manifold": m.get("is_manifold"),
-            "bodies": len(doc.result_bodies())}
+            # what to_step WROTE, counted inside it while the rollback bar was
+            # released. Counting here instead reported the parked build state:
+            # with an editor open the file held every body and the response
+            # said "1", so the sentence about them never appeared.
+            "bodies": doc.exported_bodies}
 
 
 # ---------------------------------------------------------------------------

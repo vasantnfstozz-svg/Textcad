@@ -527,13 +527,18 @@ export function tool(spec) {
      apply() coalesces bursts into one trailing rebuild on its own. */
   let planChain = Promise.resolve();
   function replan(extra = {}) {
-    const run = planChain.then(() => replanNow(extra));
+    const mine = st;                  // the session this click belongs to, bound
+    // NOW and not when the queue gets to it: Cancel / OK do not drain the queue
+    // (settled() waits for rebuilds, not for plans), so a click still waiting
+    // its turn used to run against whatever session was open by then — its
+    // group landed in a fresh session as gold edges nobody picked, and in an
+    // EDIT session it rewrote that feature's stored edges (review 2026-09-07).
+    const run = planChain.then(() => replanNow(extra, mine));
     planChain = run.catch(() => {});
     return run;
   }
-  async function replanNow(extra) {
-    if (!st) return;
-    const mine = st;
+  async function replanNow(extra, mine) {
+    if (!st || st !== mine) return;   // the session it was made in is gone
     const plan = await fetchPlan(extra);
     if (st !== mine) return;
     if (!plan) return;                // refused (it said why): the handles, and the

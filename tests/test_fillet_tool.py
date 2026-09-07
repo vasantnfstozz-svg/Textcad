@@ -368,6 +368,137 @@ def doc_pocket():
     return doc
 
 
+class _BadEdge:
+    """An edge the kernel will not answer for. OCP failures derive from
+    Exception, not RuntimeError, so a barrier that catches RuntimeError misses
+    them entirely (house rule 5)."""
+
+    def __init__(self, key=-4242):
+        self.wrapped = key
+
+    def __matmul__(self, t):
+        raise Exception("Standard_Failure: no point on this edge")
+
+    def __mod__(self, t):
+        raise Exception("Standard_Failure: no tangent on this edge")
+
+    @property
+    def length(self):
+        raise Exception("Standard_Failure: no length on this edge")
+
+
+class _UnkeyedEdge(_BadEdge):
+    """...and one that cannot even be identified (our own bug, not the kernel's)"""
+
+    @property
+    def wrapped(self):
+        raise Exception("Standard_Failure: no shape behind this edge")
+
+    def __init__(self):
+        pass
+
+
+class _StubPart:
+    """a body whose edge list we choose"""
+
+    def __init__(self, edges):
+        self._edges = edges
+
+    def edges(self):
+        return self._edges
+
+
+def test_a_kernel_refusal_on_one_edge_costs_that_edge_and_nothing_else():
+    """Rule 5: a kernel exception must never reach the user. The chips made
+    edge_groups measure EVERY edge of the body on EVERY plan, so one edge the
+    kernel will not answer for would take the whole Fillet panel down with it —
+    before the chips such an edge only misbehaved on its own (review
+    2026-09-07). It belongs to no group; the rest of the body is unaffected."""
+    doc = doc_pocket()
+    part = doc._parts["c"]
+    faces = list(part.faces())[:2]
+    assert blocks.edge_side(_BadEdge(), faces) is None
+    assert blocks.edge_direction(_BadEdge()) == "other"
+    good = {k: len(v) for k, v in blocks.edge_groups(part).items()}
+    bad, unkeyed = _BadEdge(), _UnkeyedEdge()
+    by_edge = dict(blocks._edge_faces(part))
+    by_edge[blocks._shape_key(bad)] = faces        # it even has two faces to measure against
+    stub = _StubPart(list(part.edges()) + [bad, unkeyed])
+    g = blocks.edge_groups(stub, by_edge)
+    assert {k: len(v) for k, v in g.items()} == good
+
+
+@pytest.mark.parametrize("name", sorted(__import__("gauntlet").BODIES))
+def test_edge_groups_answers_for_every_corpus_body(name):
+    """Rule 4: an operation is the feature TIMES the geometry. The classifier
+    runs over every edge of whatever the user has open — cones, tori, fused
+    seams — so it answers for the whole corpus or the panel cannot open."""
+    from gauntlet import BODIES
+    g = blocks.edge_groups(BODIES[name]())
+    assert set(g) == set(blocks.EDGE_GROUPS)
+    assert all(isinstance(v, list) for v in g.values())
+    assert len(g["inside/all"]) >= len(g["inside/vertical"])
+    assert len(g["outside/all"]) >= len(g["outside/horizontal"])
+
+
+def doc_round_pocket():
+    """the same box, but the pocket's upright corners are ROUNDED r3 (the shop
+    rule: no sharp internal corners in a milled part). Its floor rim is then one
+    tangent chain of 8 — 4 lines and 4 flat arcs — so ONE chained click picks
+    the whole inside/horizontal group."""
+    doc = Document(name="rp")
+    doc.add("b", "plate", {"width": 40, "depth": 30, "thickness": 20}, [])
+    doc.add("t", "plate", {"width": 20, "depth": 12, "thickness": 10}, [])
+    doc.add("tf", "fillet", {"radius": 3, "edges": "vertical"}, ["t"])
+    doc.add("tm", "move", {"x": 0, "y": 0, "z": 10}, ["tf"])
+    doc.add("c", "cut", {}, ["b", "tm"])
+    doc.rebuild()
+    return doc
+
+
+def test_a_lit_chip_takes_its_group_out_when_a_chained_click_lit_it():
+    """The chip's lit / part / dim state is read off the PICKED edges — which
+    are the picks grown into their tangent chains — while the chip's click used
+    to compare the raw picks. On a machinable pocket (rounded corners) one
+    chained click lights inside/horizontal 8 of 8 and the tooltip says "click to
+    take them out"; the click then ADDED the other 7 and the chat said so, and
+    it took a second click to remove anything (review 2026-09-07)."""
+    doc = doc_round_pocket()
+    part = doc._parts["c"]
+    g = blocks.edge_groups(part)
+    assert len(g["inside/horizontal"]) == 8 == len(g["inside/all"])
+    assert len(g["inside/vertical"]) == 0, "the rounded corners are smooth seams"
+    line = next(e for e in g["inside/horizontal"] if blocks._gtype(e) == "LINE")
+    p = toolplan.plan(doc, {"tool": "fillet", "body_id": "c", "edges": [],
+                            "toggle": {"points": toolplan.edge_polyline(line)}})
+    assert p["chain"] is True and len(p["edges"]) == 8, "one click chains the whole rim"
+    assert len(p["picks"]) == 1, "as ONE pick"
+    assert p["groups"]["inside/horizontal"] == {"total": 8, "picked": 8}, "the chip is LIT"
+    q = toolplan.plan(doc, {"tool": "fillet", "body_id": "c", "edges": p["picks"],
+                            "group_toggle": {"side": "inside", "dir": "horizontal"}})
+    assert q["click"] == "removed", "a lit chip takes its group out on the FIRST click"
+    assert q["click_n"] == 8, "and says how many edges went, not how many picks"
+    assert q["edges"] == [] and q["groups"]["inside/horizontal"]["picked"] == 0
+
+
+def test_a_chip_adds_only_what_the_chain_has_not_already_picked():
+    """The other half of the same rule: a chip that is PART lit adds the rest
+    and counts only those — never the edges the chain already brought in."""
+    doc = doc_round_pocket()
+    part = doc._parts["c"]
+    g = blocks.edge_groups(part)
+    line = next(e for e in g["inside/horizontal"] if blocks._gtype(e) == "LINE")
+    p = toolplan.plan(doc, {"tool": "fillet", "body_id": "c", "edges": [],
+                            "toggle": {"points": toolplan.edge_polyline(line)},
+                            "chain": False})
+    assert len(p["edges"]) == 1 and p["groups"]["inside/horizontal"]["picked"] == 1
+    q = toolplan.plan(doc, {"tool": "fillet", "body_id": "c", "edges": p["picks"],
+                            "chain": False,
+                            "group_toggle": {"side": "inside", "dir": "horizontal"}})
+    assert q["click"] == "added" and q["click_n"] == 7, "the one already picked is not added again"
+    assert len(q["edges"]) == 8
+
+
 def test_edge_groups_tell_inside_corners_from_outside_edges():
     """probes/edge_side_probe.py, locked in: concave vs convex by the in-face
     direction against the other face's normal; flat-lying vs upright; smooth

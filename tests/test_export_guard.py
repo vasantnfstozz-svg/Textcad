@@ -12,6 +12,7 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
+import document
 import studio
 
 
@@ -199,10 +200,36 @@ def test_export_response_measures_the_WHOLE_design(client):
     assert d["volume"] == pytest.approx(whole, rel=1e-6)
 
 
+def test_the_body_count_still_describes_the_file_with_the_bar_parked(client):
+    """`bodies` is what the browser's "this design has N separate bodies and
+    all of them are in the file" sentence reads. It was counted AFTER to_step
+    returned — and to_step RE-PARKS the rollback bar on its way out, so with an
+    editor open (the very case the parked-bar guard exists for) the count
+    described the isolated build state, not the file: 2 solids written, one
+    body reported, and the sentence the multi-body export was written for never
+    appeared (review 2026-09-07)."""
+    c = client
+    c.post("/api/feature/add", json={
+        "id": "sk", "op": "sketch_on_face",
+        "params": {"face_center": [0, 0, 5], "face_normal": [0, 0, 1],
+                   "entities": [{"kind": "circle", "mode": "add",
+                                 "x": 0, "y": 0, "r": 6}]},
+        "inputs": ["bolts"]})
+    c.post("/api/feature/add", json={
+        "id": "boss", "op": "extrude", "params": {"amount": 9}, "inputs": ["sk"]})
+    d = c.post("/api/export").json()
+    assert d["n_solids"] == 2 and d["bodies"] == 2, d       # bar off: both agree
+    assert c.post("/api/rollback", json={"feature_id": "bolts"}).json()["rollback"] == "bolts"
+    assert len(studio._doc().result_bodies()) == 1, "precondition: the parked state is ONE body"
+    d = c.post("/api/export").json()
+    assert d["n_solids"] == 2, "the FILE holds every body"
+    assert d["bodies"] == 2, "and the count the sentence reads must describe the file"
+
+
 def test_export_response_proves_the_file_is_sound(client):
     """is_valid / is_manifold are measured from the WRITTEN FILE, so they
-    cover every body in it — rebuild()'s deep validity check only ever looks
-    at the tree's tail, which is why this readback is the guarantee."""
+    cover every body in it. rebuild() validates each body separately; this
+    readback proves the thing that was actually handed over."""
     d = client.post("/api/export").json()
     assert d["is_valid"] is True
     assert d["is_manifold"] is True
@@ -296,3 +323,55 @@ def test_export_refuses_when_one_of_several_bodies_is_unhealthy(tmp_path):
     with pytest.raises(RuntimeError) as e:
         doc.to_step(str(tmp_path / "nope.step"))
     assert "gone" in str(e.value)
+
+
+def _two_body_doc():
+    from document import Document
+    doc = Document(name="two-bodies")
+    doc.add("base", "plate", {"width": 40, "depth": 40, "thickness": 10})
+    doc.add("boss", "plate", {"width": 10, "depth": 10, "thickness": 4})
+    return doc
+
+
+def test_the_deep_validity_check_sees_every_body_not_just_the_tail(monkeypatch):
+    """rebuild()'s deep pass — OpenCASCADE's validity analysis, the one check
+    the per-feature pass skips for speed — ran on the tree's TAIL only. A design
+    legitimately has SEVERAL bodies (that is the whole point of the multi-body
+    export), so an invalid body that was not the tail was never validated: its
+    row stayed green and _export_blockers, which trusts `status`, let it into
+    the file. An invalid solid reported as ok is the second of the two banned
+    failures (house rule 5).
+
+    A genuinely invalid solid cannot be built to order, so the check itself is
+    stood in for — what is under test is WHICH bodies it is run on."""
+    doc = _two_body_doc()
+    seen = []
+
+    def spy(part):
+        seen.append(round(part.volume, 2))
+        return len(seen) != 1              # the FIRST body (not the tail) is invalid
+
+    monkeypatch.setattr(document, "_deep_valid", spy)
+    assert doc.rebuild() is False, "an invalid body must fail the rebuild"
+    assert doc.leaf_solid_ids() == ["base", "boss"]        # precondition: two bodies
+    assert len(seen) == 2, f"only {len(seen)} body validated, not every body"
+    assert doc.get("base").status == "failed"
+    assert any("invalid" in p for p in doc.get("base").problems), doc.get("base").problems
+    assert doc.get("boss").status == "ok", "the sound body is untouched"
+
+
+def test_the_deep_check_is_paid_once_per_body_per_change(monkeypatch):
+    """~270 ms a body: checking every body instead of one must not mean paying
+    it again on every rebuild. The verdict rides the body's content signature,
+    so a rebuild that changes nothing pays nothing — which also removes the
+    repeat the TAIL used to pay on every single rebuild."""
+    doc = _two_body_doc()
+    calls = []
+    monkeypatch.setattr(document, "_deep_valid", lambda part: calls.append(1) or True)
+    assert doc.rebuild() is True
+    assert len(calls) == 2, "one per body"
+    assert doc.rebuild() is True
+    assert len(calls) == 2, "nothing changed: no body is validated again"
+    doc.get("base").params["width"] = 55
+    assert doc.rebuild() is True
+    assert len(calls) == 3, "only the body that changed is validated again"

@@ -489,12 +489,19 @@ def edge_direction(edge) -> str:
     """vertical = a straight edge along Z; horizontal = the edge LIES FLAT (a
     line along X or Y, but also a flat arc: a pocket's rounded floor rim is
     horizontal to anyone who machines it); other = the rest. The Fillet panel's
-    vocabulary — the AI's legacy groups (_pick_edges) keep theirs."""
-    zs = [(edge @ t).Z for t in (0.0, 0.25, 0.5, 0.75, 1.0)]
-    if max(zs) - min(zs) < 1e-6:
-        return "horizontal"
-    if _gtype(edge) == "LINE" and abs((edge % 0.5).normalized().Z) > 0.999:
-        return "vertical"
+    vocabulary — the AI's legacy groups (_pick_edges) keep theirs.
+
+    An edge the kernel will not answer for is "other": this runs over EVERY
+    edge of the open body, so one refusal must cost that edge and nothing more
+    (rule 5 — OCP failures derive from Exception, not RuntimeError)."""
+    try:
+        zs = [(edge @ t).Z for t in (0.0, 0.25, 0.5, 0.75, 1.0)]
+        if max(zs) - min(zs) < 1e-6:
+            return "horizontal"
+        if _gtype(edge) == "LINE" and abs((edge % 0.5).normalized().Z) > 0.999:
+            return "vertical"
+    except Exception:
+        pass
     return "other"
 
 
@@ -512,19 +519,23 @@ def edge_side(edge, faces) -> str | None:
     if len(faces) != 2:
         return None
     a, b = faces
-    m = edge @ 0.5
-    d = (edge % 0.5).normalized()
+    # EVERY measurement here is guarded, not just the normals: this runs over
+    # every edge of the open body on every plan, so an edge the kernel refuses
+    # to place, aim or measure belongs to no group rather than costing the
+    # panel it is one edge of (rule 5, review 2026-09-07).
     try:
+        m = edge @ 0.5
+        d = (edge % 0.5).normalized()
         na, nb = a.normal_at(m), b.normal_at(m)
+        c = na.cross(d)
+        if c.length < 1e-9:
+            return None
+        c = c.normalized()
+        eps = min(0.3, 0.05 * edge.length)
+        ta = c if a.distance_to(m + c * eps) <= a.distance_to(m - c * eps) else -c
+        s = ta.dot(nb)
     except Exception:
         return None
-    c = na.cross(d)
-    if c.length < 1e-9:
-        return None
-    c = c.normalized()
-    eps = min(0.3, 0.05 * edge.length)
-    ta = c if a.distance_to(m + c * eps) <= a.distance_to(m - c * eps) else -c
-    s = ta.dot(nb)
     if abs(s) < 0.05:
         return None
     return "inside" if s > 0 else "outside"
@@ -546,11 +557,14 @@ def edge_groups(part: Part, faces_by_edge: dict | None = None) -> dict:
     faces_by_edge = faces_by_edge or _edge_faces(part)
     groups = {k: [] for k in EDGE_GROUPS}
     for e in part.edges():
-        side = edge_side(e, faces_by_edge.get(_shape_key(e), []))
+        try:                               # one edge cannot cost the whole panel
+            side = edge_side(e, faces_by_edge.get(_shape_key(e), []))
+            d = edge_direction(e)
+        except Exception:
+            continue
         if side is None:
             continue
         groups[f"{side}/all"].append(e)
-        d = edge_direction(e)
         if d in ("vertical", "horizontal"):
             groups[f"{side}/{d}"].append(e)
     try:

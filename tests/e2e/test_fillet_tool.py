@@ -69,6 +69,27 @@ PICKED_EDGE = """async () => {
 }"""
 PICKED_FACE = "async () => (await import('/static/js/state.js')).S.pickedFace"
 
+# hold every plan request for `ms` in the BROWSER, so the driver stays free to
+# click while one is in flight — the only way to queue a second request on purpose
+DELAY_PLANS = """
+(ms) => {
+  const orig = window.fetch;
+  window.fetch = (u, o) => (String(u).includes('/api/tool/plan')
+    ? new Promise(r => setTimeout(() => r(orig(u, o)), ms))
+    : orig(u, o));
+}
+"""
+
+
+def wait_modal_free(page, timeout=3):
+    """the one-command lock is released when the session's last change lands"""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if page.evaluate(MODAL) is None:
+            return
+        page.wait_for_timeout(100)
+    raise AssertionError("the tool never released the one-command lock")
+
 
 def chip(page, side, d):
     return page.locator(f"#flGroups .egchip[data-side='{side}'][data-dir='{d}']")
@@ -424,4 +445,108 @@ def test_esc_cancels_the_open_tool(page, fresh_doc, server):
     assert page.evaluate(MODAL) is None and glow(page) == 0
     assert not page.evaluate("() => window.__vp.gizmos()")["edgePick"]
     assert feature(server, "fillet1") is None
+    assert page.errors == []
+
+
+def test_a_queued_chip_click_belongs_to_the_session_it_was_made_in(page, fresh_doc, server):
+    """A plan request that WAITS its turn still belongs to the session it was
+    made in. Two chips clicked in a row queue the second one; Cancel (or OK)
+    does not drain that queue — `settled()` waits for rebuilds, not for plans —
+    so the queued click used to run against whatever session was open by the
+    time it got its turn, and its group landed there: gold edges nobody picked
+    in a fresh session, and, when the new session is an EDIT, the stored edges
+    of that feature rewritten with a group the user never chose for it.
+    """
+    setup(page, BUILD_POCKET)
+    open_tool(page, "fillet")
+    page.wait_for_function(
+        "() => { const c = document.querySelector(\"#flGroups .egchip"
+        "[data-side='inside'][data-dir='vertical']\"); return c && !c.disabled; }",
+        timeout=15000)
+    page.evaluate(DELAY_PLANS, 3000)        # the round trip is slow: the queue is real
+    chip(page, "inside", "vertical").click()      # in flight
+    chip(page, "inside", "horizontal").click()    # queued behind it
+    page.click("#flCancel")
+    page.wait_for_selector("#flDialog", state="hidden")
+    wait_modal_free(page)
+    open_tool(page, "fillet")               # a NEW session: nothing is picked in it
+    page.wait_for_timeout(9000)             # both delayed plans land
+    assert glow(page) == 0, "a queued chip click landed on the session opened after it"
+    assert chip_state(page, "inside", "horizontal") == "off"
+    assert page.errors == []
+
+
+# aim the camera exactly (direction from the target, distance) so a picking rule
+# can be measured at a chosen zoom instead of at whatever the fit left behind
+AIM = """
+([dir, dist]) => {
+  const c = window.__vp.camera, ctl = window.__vp.getControls();
+  const L = Math.hypot(...dir);
+  ctl.target.set(0, 0, 0);
+  c.position.set(dir[0] / L * dist, dir[1] / L * dist, dir[2] / L * dist);
+  c.lookAt(ctl.target); ctl.update(); c.updateMatrixWorld(true);
+}
+"""
+EDGE_MIDS = """
+(body) => {
+  const b = window.__vp.bodyObjsRaw().find(x => x.id === body);
+  return b.data.edges.map(e => {
+    const P = e.points, n = P.length;
+    return { id: e.id,
+             mid: n % 2 === 0 ? [0, 1, 2].map(k => (P[n / 2 - 1][k] + P[n / 2][k]) / 2)
+                              : P[Math.floor(n / 2)],
+             zs: P.map(p => p[2]) };
+  });
+}
+"""
+
+
+def test_a_face_hit_far_from_the_line_is_not_beside_it(page, fresh_doc, server):
+    """An edge whose own face is nearer than it can still be picked — an inside
+    corner's line sits a hair behind its two faces, and without that escape no
+    concave edge could be filleted (4f15f66). The escape has to be BOUNDED or
+    an edge is pickable through the material in front of it.
+
+    The bound was 4x the click reach, and the reach is a world length that
+    grows with zoom: at a 400 mm view that is 11.5 mm, so a face hit 9.9 mm
+    along the face from the line counted as "right beside" it and the edge
+    behind it was picked (probes/own_face_reach_probe.py, 853 samples: a
+    legitimate click's face hit lands within 1.1x the reach, p90). Measured
+    here on the real body, through the rule itself: nothing 6 mm from the line
+    is beside it at any of these zooms.
+
+    (The review of 2026-09-07 proposed comparing in PIXELS instead. The probe
+    measured that too: every own-face hit is inside the 5 px pick threshold by
+    construction — max 4.02 px over all 853 samples — so a pixel bound accepts
+    every one of them and guards nothing at all.)"""
+    setup(page, BUILD_POCKET)
+    edges = page.evaluate(EDGE_MIDS, "c")
+    inside = [e for e in edges
+              if abs(e["mid"][0]) < 11 and abs(e["mid"][1]) < 7 and min(e["zs"]) > 4.9]
+    assert len(inside) == 12, inside     # 4 uprights, 4 floor rims, 4 opening rims
+    far, near = [], []
+    for direction in ([1, 1, 0.9], [-1, -1, 0.9], [1, 0.12, 0.06]):
+        for dist in (60, 160, 400):
+            page.evaluate(AIM, [direction, dist])
+            page.wait_for_timeout(60)
+            for e in inside:
+                s = page.evaluate("(p) => window.__vp.worldToScreen(p)", e["mid"])
+                if not s:
+                    continue
+                for dx, dy in ((0, 0), (3, 0), (-3, 0), (0, 3), (0, -3), (4, 1)):
+                    rep = page.evaluate("([x, y]) => window.__vp.edgeHitReport(x, y)",
+                                        [s["cx"] + dx, s["cy"] + dy])
+                    for h in rep["hits"]:
+                        if not h["own"] or h["behind"] is None or h["behind"] <= 1e-3:
+                            continue        # already in front: the escape is not consulted
+                        # 6 mm on a 40 x 30 x 20 body is 15% of its width:
+                        # unambiguously NOT "right beside the line"
+                        (far if h["world"] > 6 else near).append((dist, dx, dy, h))
+    assert near, "no click reached the escape at all — the sweep proves nothing"
+    assert far, "no far-from-the-line sample was produced — the sweep proves nothing"
+    bad = [f for f in far if f[3]["beside"]]
+    assert not bad, ("a face hit millimetres from the line counted as beside it: "
+                     + str(bad[:3]))
+    # ...and the escape still does its job: a click ON an inside corner is beside it
+    assert any(h["beside"] for _, _, _, h in near), "no inside corner survived the bound"
     assert page.errors == []

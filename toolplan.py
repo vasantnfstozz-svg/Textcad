@@ -616,19 +616,36 @@ def _expand(part, refs, chain: bool) -> list:
     return grown
 
 
-def _toggle_set(part, refs: list, edges: list, by_edge: dict) -> tuple[list, str, int]:
+def _toggle_set(part, refs: list, edges: list, by_edge: dict,
+                chain: bool) -> tuple[list, str, int]:
     """A whole SET of edges (a group chip, or every edge of a clicked face) as
     one click: the ones not yet picked join the picks; when every one of them
-    is picked already, the set comes out. Returns (refs, 'added'|'removed', n)."""
-    have = [(r, blocks._shape_key(blocks.resolve_edge(part, r))) for r in refs]
-    keys = {k for _, k in have}
-    missing = [e for e in edges if blocks._shape_key(e) not in keys]
+    is picked already, the set comes out. Returns (refs, 'added'|'removed', n).
+
+    "Picked already" means the same thing the CHIP is lit from — the picks
+    grown into their tangent chains, not the raw picks. Comparing the raw ones
+    made a chip that read "8 of 8 picked — click to take them out" ADD the
+    other 7 on that click (one chained click on a rounded pocket's floor rim
+    lights the whole group from a single pick), and it took a second click to
+    remove anything (review 2026-09-07). A pick whose chain reaches into the
+    set comes out whole, which is the rule a single click already follows
+    (_toggle_pick) — and the count returned is the number of EDGES that went,
+    not of picks, because that is what the browser says out loud.
+    """
+    have = [(r, {blocks._shape_key(e) for e in _expand(part, [r], chain)}) for r in refs]
+    picked_keys = set().union(*[ks for _, ks in have]) if have else set()
+    missing = [e for e in edges if blocks._shape_key(e) not in picked_keys]
     if missing:
         return (refs + [blocks.edge_ref(part, e, by_edge) for e in missing],
                 "added", len(missing))
     drop = {blocks._shape_key(e) for e in edges}
-    keep = [r for r, k in have if k not in drop]
-    return keep, "removed", len(refs) - len(keep)
+    keep, kept_keys = [], set()
+    for r, ks in have:
+        if ks & drop:
+            continue
+        keep.append(r)
+        kept_keys |= ks
+    return keep, "removed", len(picked_keys - kept_keys)
 
 
 def _group_words(key: str) -> str:
@@ -699,6 +716,14 @@ def plan_fillet(doc, req: dict) -> dict:
     # flat-lying / all — for the panel's chips (classified once per body)
     groups = blocks.edge_groups(part, by_edge)
     click, click_n = None, 0
+    # THE CHAIN DEFAULT. Fresh picking chains (Fusion). A STORED selection does
+    # not: it is already the answer, and re-expanding it can only add edges the
+    # user never picked — a chain-off fillet reopened, or an AI-authored group
+    # whose edges have tangent neighbours. Keyed on where the edges came from,
+    # which only the server knows, so a caller that forgets to say is safe.
+    # Worked out BEFORE the chips, which ask what is picked right now and get
+    # the same answer the chip is lit from.
+    chain = bool(want_chain) if want_chain is not None else not stored
     if gtog is not None:                         # a chip: a whole group in one click
         key = f"{gtog.get('side')}/{gtog.get('dir')}"
         if key not in groups:
@@ -707,13 +732,7 @@ def plan_fillet(doc, req: dict) -> dict:
         if not groups[key]:
             raise ValueError(f"{body} has no {_group_words(key)} — a smooth seam between "
                              f"a round and a flat is not a corner")
-        refs, click, click_n = _toggle_set(part, refs or [], groups[key], by_edge)
-    # THE CHAIN DEFAULT. Fresh picking chains (Fusion). A STORED selection does
-    # not: it is already the answer, and re-expanding it can only add edges the
-    # user never picked — a chain-off fillet reopened, or an AI-authored group
-    # whose edges have tangent neighbours. Keyed on where the edges came from,
-    # which only the server knows, so a caller that forgets to say is safe.
-    chain = bool(want_chain) if want_chain is not None else not stored
+        refs, click, click_n = _toggle_set(part, refs or [], groups[key], by_edge, chain)
     if tog is not None:                          # a click: add the edge, or take it out
         before = len(refs or [])
         refs = _toggle_pick(part, refs or [], tog, chain, by_edge)
