@@ -529,6 +529,25 @@ un-picking the edge it replaced. **Tests:** 4 fast (all red before), 1 journey
 topology, not depth alone — "any nearer face hides it" is wrong for exactly
 the concave half of a solid's edges.
 
+*Fillet edge GROUPS 2026-09-07* (ui v168, css v39; same branch). The user's
+esp32 wish: "select all the vertical or horizontal edges by clicking one
+option". Six chips in the Fillet / Chamfer panel — **inside corners** and
+**outside edges**, each × vertical / horizontal / all — add a whole group in
+one click, or take it out; the chat says how many; each chip is lit / dashed /
+dim from the plan. **Inside vs outside is measured** (`blocks.edge_side`): a
+concave edge's in-face direction points the way the other face's normal does;
+a smooth seam (a round meeting a flat) is neither. `blocks.edge_groups` is
+classified once per body (0.7 s on esp32's 609 edges) and cached on the Part;
+a plan per click is set arithmetic. **Horizontal means LIES FLAT**, so a
+pocket's rounded floor rim counts — the person machining it does not care that
+it is an arc. `toolplan` grew `group_toggle`; `_toggle_set` adds a group's
+missing edges or removes a fully-picked one. **Deferred:** face-click-adds-all-
+edges (Fusion has it) — a >5 px near-miss would grab a face's edges with no
+hover to warn, and it broke the chamfer rides-along journey; the chips cover
+the real need. **Tests:** 3 fast, 1 journey. **Probe:** `edge_side_probe.py`
+(the distance rule beats the orientation shortcut, which was wrong on half the
+edges of a plain pocketed box).
+
 *Hole done 2026-09-06* (spec `specs/hole.md`, tool 5336c82, review fixes
 0c49c42, ui v157; user's checklist passed 2026-09-06; drag ghost c6a2377, ui
 v160, re-checked by the user the same day). `static/js/hole.js`

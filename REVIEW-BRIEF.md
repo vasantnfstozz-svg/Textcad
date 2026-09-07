@@ -21,7 +21,7 @@
 
 | | |
 |---|---|
-| **Range** | `16ade36..HEAD` — THREE code commits from two work sessions: `753c24c` (A: the STEP export handed over one body of a multi-body design) and `4f15f66` + `9bed191` (B: Fillet picking — inside corners, lost clicks, and the Select-mode path). The rest are review handoffs |
+| **Range** | `16ade36..HEAD` — FOUR code commits: `753c24c` (A: the STEP export handed over one body of a multi-body design), `4f15f66` + `9bed191` (B: Fillet picking — inside corners, lost clicks, Select mode) and `cce07ae` (C: Fillet edge-group chips). The rest are review handoffs |
 | **Already reviewed** | everything up to `a2f9663` (Mirror, five rounds + the deferred findings, and the two panel fixes) |
 | **Effort** | high — A is a P0 silent-wrong-geometry class: the artifact the user MACHINES FROM was wrong, and the change also moves the spec-verification target; B changes the picker every tool and Measure go through |
 | **Branch** | `master` (no pull request — do not try to comment on GitHub) |
@@ -240,6 +240,68 @@ instead of a fixed 700 ms.
   browser still awaits `releaseIso()` before `releaseModal()` (a pre-existing
   race, not on B's path).
 - Line delta (B, source): +140 / −20; tests +160 / −2. A fix — nothing to delete.
+
+## C. `cce07ae` — Fillet / Chamfer edge-group chips
+
+The user's ask (2026-09-07): esp32 has many inside vertical edges that cannot be
+picked one by one — "select all the vertical or horizontal edges by clicking one
+option". Six chips per panel (inside corners / outside edges × vertical /
+horizontal / all) add a whole group in one click or take it out; the chat says
+how many; each chip is lit / dashed / dim, read off the plan (R1).
+
+- **`blocks.edge_side`** — concave ("inside") vs convex ("outside"): with `tA`
+  the in-surface direction from the edge INTO face A (`±(nA × d)`, the sign
+  whose test point lies on A), the edge is concave when `tA·nB > 0.05`, convex
+  when `< −0.05`, neither in between (a round meeting a flat tangentially). A
+  one-face seam is None. Probed in `probes/edge_side_probe.py`.
+- **`blocks.edge_direction`** — vertical = a straight edge along Z; horizontal =
+  the edge LIES FLAT (a line along X/Y **or a flat arc** — a pocket's rounded
+  floor rim is horizontal to the machinist); other = the rest.
+- **`blocks.edge_groups`** — the six groups, classified once per Part and cached
+  on it (`part._textcad_edge_groups`); a rebuild is a new Part, so a stale cache
+  cannot outlive a change.
+- **`toolplan.plan_fillet`** — `group_toggle {side, dir}` (in `ToolPlanReq`):
+  `_toggle_set` adds the group's not-yet-picked edges, or removes the group when
+  all of it is picked. The plan reports `click`/`click_n` and
+  `groups {key: {total, picked}}`. A group the body lacks is a refusal sentence.
+- **Frontend** — the chip grid in both panels; `fillet.js paintChips` reads
+  `plan.groups`; `tool.js` says "added/released N edges" for a multi-edge toggle.
+- **Deferred** — face-click-adds-all-edges (Fusion has it): a >5 px near-miss
+  would grab a face's edges with no hover to warn, and it broke the chamfer
+  rides-along journey; the chips cover the actual need, so it was dropped.
+
+### Where C's risk is
+
+1. **`edge_side` is geometry by measurement — check the threshold.** The 0.05
+   dead-band around `tA·nB` decides "neither". A near-tangent real corner
+   (a shallow draft against a wall) could fall in it and vanish from every
+   group. Say whether 0.05 is right, or name a body where a corner the user
+   would fillet is classified None. The probe's rounded-box case is the
+   intended None; a *shallow* one is the risk.
+2. **The per-Part cache.** `edge_groups` stores on `part._textcad_edge_groups`.
+   Is a `Part` ever mutated in place and reused (not rebuilt) such that the
+   cache would describe stale topology? Every edit rebuilds to a new Part, so
+   this should be safe — confirm no in-place modifier path.
+3. **`_toggle_set` identity.** It matches picked edges to a group by
+   `_shape_key(resolve_edge(part, r))`. A stored pick that resolves to the
+   nearest edge (its faces gone) could mis-match; but a group click on a live
+   body resolves exactly. Worth a glance where a group is toggled after an
+   upstream change reopened the tool.
+4. **"horizontal = lies flat" includes arcs.** A cylinder's flat top rim is one
+   circle (horizontal); its seam is vertical-ish but one-face (None). Confirm no
+   group wrongly swallows a curved wall's edge as "horizontal".
+
+### C: proof
+
+- 3 fast tests (`test_edge_groups_tell_inside_corners_from_outside_edges`, the
+  chip add/remove/partial sequence with the material-adding build and the
+  missing-group sentence, a no-click plan still reporting groups); the census is
+  measured against a pocketed box, a rounded box and a boss on a plate.
+- 1 browser journey (inside vertical → 4 gold, + inside horizontal → 8, a group
+  out → 4, chip states, chat lines, r1.5 builds and the volume GROWS).
+- Fast tier 1167 green; the 9 Fillet/Chamfer journeys green.
+- Line delta (C): +332 / −9 across 10 files, of which +116 is tests; plus a
+  probe. Adds more than it deletes — a new capability.
 
 ## Ground rules for this repo (they change what counts as a finding)
 
