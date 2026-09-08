@@ -529,7 +529,9 @@ un-picking the edge it replaced. **Tests:** 4 fast (all red before), 1 journey
 topology, not depth alone — "any nearer face hides it" is wrong for exactly
 the concave half of a solid's edges.
 
-*Fillet edge GROUPS 2026-09-07* (ui v168, css v39; same branch). The user's
+*Fillet edge GROUPS 2026-09-07 — SUPERSEDED 2026-09-08 by face / tree-row
+selection (record below); the chips and `blocks.edge_groups` are gone.* (ui
+v168, css v39; same branch). The user's
 esp32 wish: "select all the vertical or horizontal edges by clicking one
 option". Six chips in the Fillet / Chamfer panel — **inside corners** and
 **outside edges**, each × vertical / horizontal / all — add a whole group in
@@ -615,6 +617,64 @@ docstring and the per-feature health note in `document.rebuild`). Line delta:
 source +197/−58, tests +337/−2, one new probe (247). Fast tier 1181 green;
 browser: fillet 11, pattern/mirror/hole 23, measure/face/extrude/revolve 20
 (the known order-dependent revolve ring test passes on its own — §10 P1).
+
+*Fillet picks FACES and TREE ROWS 2026-09-08* (ui v171, css v40; branch
+`worktree-fillet-select`, on top of the lint pass f1bca51). The user, on
+testing the chips: "instead of dividing all edges into vertical and horizontal
+and inside and outside, I can select a body, like from the feature tree — if I
+am selecting an extrude and pressing Fillet, those selected face or body edges
+should be selected … I can add a body by clicking a face or body; another
+click on the selected body should deselect." That is Fusion's Fillet exactly
+(its selection filter reads Edges / Faces / Features), so the six chips are
+GONE — with `blocks.edge_side / edge_direction / edge_groups` and
+`group_toggle` — and the tool has **three selection kinds, every one a toggle
+the server decides**: an **edge** (as before), a **face** (every edge two faces
+meet at on it, as one set: the missing ones come in, a fully picked set goes
+out), a **tree row** (the edges of the faces that feature MADE, as they exist
+now). The row rule is provenance's, run forward for one feature
+(`provenance.feature_faces`): a face of the body is the feature's when it is a
+trimmed survivor of a face the feature's OUTPUT has and its INPUT did not,
+`delta_features` deciding what those are (the tree's folding rule). Measured
+on a pocketed box (`probes/feature_edges_probe.py`): the cut's row = its 12
+pocket edges; the base plate's row = its outer 12 PLUS the pocket's opening
+(the top face is the plate's, as it is now — Fusion agrees); a fillet's row =
+its bands' 16 edges; the tool prism's row = the pocket too. Seams are never
+offered. A face click resolves by nearest centre and is REFUSED when the
+centre lies outside the resolved face's bbox — the picker hands the tool clicks
+on its own PREVIEW body, and a new round's band would otherwise name the wall
+beside it and round ITS edges (the same guard as Pattern's `_axis_face`).
+Select-then-command works for all three; a row picked before the tool also
+names the body. The face under the pointer glows while the picker is armed
+(the missing hover that had deferred face picks). **The cost that was hiding:**
+the first row click on esp32-remote's 48-edge ring took **55 s**. cProfile put
+31.5 of 33.7 s in `toolplan._expand` — not in feature_faces (1.5 s cold, then
+cached) but in RESOLVING the picks: `resolve_face` measured all 254 face
+centres for both stored faces of every edge (96 calls, 15 s) and
+`tangent_chain` rebuilt its vertex table from `part.edges()` per edge
+(12.7 s) — a cost every multi-edge plan had paid since the tool shipped, that
+a one-edge click never showed. Both are enumerated once per built Part
+(`blocks._face_rows`, `blocks._edge_topo` with the end tangents): 5.8 s cold,
+**0.37 s** warm. **The memo's key was a P0 for an hour:** stored as attributes
+on the Part (as yesterday's `edge_groups` was), they rode along in build123d's
+`__deepcopy__` — `moved()` and `Pos * part` copy first and move second — so a
+moved plate resolved a face by its parent's centres at the OLD position. The
+full fast tier caught it (`test_revolve_p3b`'s moved plate, green alone, red
+after any test that had touched the cached plate — Parts are shared across
+Documents by the rebuild cache) and `probes/shape_cache_probe.py` measured it
+(cached centre −20, real 80). The memo lives beside the shape now
+(`blocks._cached`: a WeakKeyDictionary on the Python object, each entry checked
+against the TopoDS shape with IsEqual, so a copy, a re-used id and an in-place
+move all miss). **Tests:** fast `test_fillet_tool.py` 53 (8 new for the 6 chip
+tests removed, incl. the moved-copy memo), 11 journeys (2 rewritten: the cut's row → open
+with 12 gold, row again → 0, floor face → 4, row → 12, face → 8, radius 1.5
+builds on the 8; the queued-click journey now queues two face clicks).
+**Line delta:** source +401/−280 — R10 NOT met: the chips' 154 lines left,
+but the memo (+~110 with its key) and the hover face (+~30) came in; tests
++219/−211; two new probes. **Debt found:** two requests in the kernel at once (§10
+P2 below). **Lesson:** a selection that grows to dozens of edges pays every
+per-edge cost dozens of times — profile the real design before shipping any
+multi-select; the chips would have shown the same 55 s on their first big
+group.
 
 *Hole done 2026-09-06* (spec `specs/hole.md`, tool 5336c82, review fixes
 0c49c42, ui v157; user's checklist passed 2026-09-06; drag ghost c6a2377, ui
@@ -826,6 +886,7 @@ assemblies, the user's personal project.
 | done | **Code review of the crash supervisor (1aea14a, 2026-09-05): 6 findings, 4 real and fixed, 2 refuted by measurement; the verification pass found 3 the review had not.** The one that mattered was not in the review at all: POSTs overlap in FastAPI's threadpool, and `edit_params` writes the new value into the feature BEFORE the kernel is asked — so a tree click finishing during the fatal 8-second fillet wrote a checkpoint CONTAINING the radius that was about to crash, and the relaunched server rebuilt straight back into it. The checkpoint is now taken only when no POST is still running, and the in-flight marker is a SET whose file names the oldest (a later request can no longer steal it). Also fixed: an answer landing in a tool session the crash had already closed dereferenced null (one `GONE` throw, caught once in `apply()`, replacing three unguarded sites); the 3 s watcher saw the crash but never told the panel — and its typing guard, tested first, meant a panel with a focused number box NEVER heard (the emit now lives inside `noteRecovery`, so no caller can forget it); and the relaunch had no ceiling, so a crash nobody asked for (tessellation in GET `/api/model`, which the recovered page refetches) would have relaunched for ever — now the second comes back unbuilt and the third stops, while a fatal step the user RETRIES still costs exactly one step, told apart by the in-flight marker. REFUTED with measurements, so nobody redoes them: the 120 s wait for the server (worst real design measured 26.2 s, and two listeners on 8123 proved impossible on this machine — the wait was raised to 5 min anyway and the "start it again" advice dropped, since that sentence is how a second listener would be born), and a spurious `server-recovered` on a transient network failure (no AbortController exists, fetch resolves on every HTTP status, and the browser replays a POST on a dead keep-alive socket rather than rejecting). Probed and acted on: fastapi's TestClient gives each calling thread its OWN event loop, so the in-flight set is locked rather than trusted to a single writer. | review 2026-09-05 |
 | P2 | The browser REPLAYS a POST when a reused keep-alive socket dies mute (probed 2026-09-05: the server saw the identical body twice on two connections). So an `/api/feature/add` or `/api/undo` can in principle apply twice with no crash involved. Not seen in use; the fix is an idempotency key on mutating requests. | review 2026-09-05 |
 | P1 | **The BROWSER tier is not green: 8 of 137 fail, all pre-existing** (measured 2026-09-05 against a clean worktree at 083855d — identical failures, so today's review fixes cause none of them). Seven belong to the delete / strike-out work of an earlier concurrent session: `test_tree_delete.py` (5), `test_tree_history.py::test_sketch_nests_with_its_consumer`, `test_small_face_and_fold.py::test_deleting_the_folded_row_removes_the_boolean_too` — a consumed sketch no longer nests under its consumer, so the delete button the tests reach for is not there. The eighth, `test_revolve_tool.py::test_open_from_the_tree_row_and_drag_the_ring`, is ORDER-DEPENDENT: green alone and green after the recovery journeys, red when it follows the measure / taper / snap / origin-plane files (the revolve ghost never appears). **Re-measured 2026-09-06 (the Hole review fixes):** it is red after `test_hole_tool test_extrude_direction test_fillet_tool` too — so the trigger is not those four files, it is length or a leaked gizmo/pick from ANY earlier tool journey. **Re-measured 2026-09-07:** red straight after `test_edit_extrude.py` alone (7 tests) — the angle box never leaves 0 during the drag, so the ring GRAB itself does not take (the pointerdown lands somewhere else); green alone in 37 s. Attributed to the baseline: the identical sequence on a stashed-clean tree fails identically (`ghost visible: False`), so today's fixes do not cause it. R6 says red means red — this is the debt to clear before launch, and the order-dependent one first, because it hides a real bug or a real test flaw and no one can tell which while it only fails in company. | measured 2026-09-05 |
+| P2 | **Two requests can be in the kernel at once.** FastAPI runs the sync endpoints in a threadpool, and OCCT is not thread-safe: a tree row click starts the tree's own highlight (GET `/api/feature-mesh/<fid>.stl`, a tessellation) and a tool click that lands while it runs plans on the same kernel concurrently. Seen once in four runs of the Fillet row→face journey (2026-09-08): the face click's plan was lost — gold stayed put, no toggle — and with 300 ms between the clicks it never happened. Fillet's face and row selection makes "click a row, then a face" an everyday sequence. Fix: one lock around every kernel-touching request (a plan, a rebuild, a mesh, an export), or the tree overlay served from the mesh the viewport already holds. The journey waits 400 ms after a row click meanwhile. | 2026-09-08 |
 | done | **Clockwise `polygon` sketch entities silently refused to fuse.** OCCT takes the point order as the face's orientation: a clockwise polygon is a face whose normal points −Z, and adding it to a normal face raised nothing — it gave TWO overlapping faces (probed: 2 faces of total area 700 where the same points reversed gave 1), which extrude into a self-intersecting solid. `sketch._entity` builds every polygon counter-clockwise (shoelace sign); the stored points stay as drawn. Paths are unaffected, `make_face` orients them (probed). `tests/test_polygon_winding.py` (5, incl. a kernel-measured healthy solid of volume 3500). | fixed 2026-09-05 (36584e1) |
 | done | **A refused edit was reported as success.** The server had refused an unknown parameter with a sentence since July, but the reply was HTTP 200 with `ok: true` beside `error` (`ok` is the BUILD's health, read by the tree badge), so a script or the MCP reading the status saw success — and `/api/feature/params` stored ANY key unchecked, failing the build. Now all 12 refusal sites return HTTP 400 through `_refused()` with the same body (the browser's `postJSON` never read the status; nothing changes there), `Document.edit_many` checks every key before writing any, and a parameter the op's signature knows is accepted even when the feature has not stored it yet: `through` on an extrude saved as `{amount}` — the original report — works. 3 tests in `tests/test_api.py`. | fixed 2026-09-05 (36584e1) |
 | done | **`/api/feature/remove` wiped a 14-feature tree from its last cut** (gear-case, `clamp_pedestal_cut`, 2026-08-31). Diagnosed with a dry-run plan on the design itself: the orphan sweep starts at the cut's tool prism and follows every input of what it sweeps; the pedestal sketch was drawn ON the body (`sketch_on_face`, inputs = the body), the body's only consumer was the deleted cut, so it counted as leftover tool geometry and the walk climbed to the base sketch — "14 features removed, 0 left". The walk stops at a face reference now (`sk.FACE_REFERENCE_OPS`, the set that already keeps a sketched-on body visible); the same dry run says 3 removed, 11 left. Strict and cascade modes were never affected. 1 test in `tests/test_delete_repair.py` (the gear-case shape). | fixed 2026-09-05 (36584e1) |

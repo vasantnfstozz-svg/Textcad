@@ -14,7 +14,12 @@ were each learned from a correction — do not regress them.
 1. **Inputs are profiles AND faces AND bodies.** Fusion's create tools accept
    sketch profiles *or planar faces of existing solids* interchangeably.
    If a tool takes "a profile", wire BOTH paths (Extrude does: sketch mode +
-   face mode via `S.pickedFace`). Never assume "sketch only".
+   face mode via `S.pickedFace`). Never assume "sketch only". An EDGE tool
+   (Fillet / Chamfer) takes Fusion's three selection kinds — an edge, a FACE
+   (every edge of it) and a FEATURE (a tree row: the edges of the faces that
+   feature made, as they are now, `provenance.feature_faces`) — each a toggle
+   the SERVER decides, so a second click on the same face or row deselects it
+   (user mandate 2026-09-08, replacing the vertical/horizontal group chips).
 2. **Select-then-command must work.** Whatever is picked in the viewport when
    a tool is pressed is the tool's input (face picked → Extrude extrudes THAT
    face, not the last sketch). Command-then-select is the fallback, not the

@@ -678,14 +678,15 @@ export function beginEdgePick(onPick, opts = {}) {
   edgePickCb = onPick;
   renderer.domElement.style.cursor = 'crosshair';
   const h = document.getElementById('placeHint');
-  h.textContent = `Click the edges to ${(opts.name || 'fillet').toLowerCase()} — ` +
-    'a click adds an edge, another click removes it · Esc cancels';
+  h.textContent = `Click edges, faces or a row of the tree to ${(opts.name || 'fillet').toLowerCase()} — ` +
+    'a click adds, clicking the same one again removes · Esc cancels';
   h.style.display = 'block';
 }
 export function endEdgePick() {
   if (!edgePickCb) return;
   edgePickCb = null;
   unhoverEdge();
+  unhoverFace();
   renderer.domElement.style.cursor = pickMode ? 'crosshair' : '';
   document.getElementById('placeHint').style.display = 'none';
 }
@@ -737,21 +738,46 @@ function ownFaceHit(eHit, fHit, reach) {
 function unhoverEdge() {
   if (hoverLine) { hoverLine.material.color.setHex(hoverColor); hoverLine = null; }
 }
+/* the FACE under the pointer glows too while the picker is armed: a face is a
+   pick (every edge of it), so the hover has to say which face a click would
+   mean — the near-miss that once made face picks unsafe was one with no hover
+   to warn. An edge within reach wins over the face behind it. */
+let hoverFace = null;
+function unhoverFace() {
+  if (hoverFace) { scene.remove(hoverFace); hoverFace.geometry.dispose(); hoverFace = null; }
+}
+function hoverFaceAt(fHit) {
+  const entry = fHit && bodyObjs.find(b => b.mesh === fHit.object);
+  const fid = entry ? entry.data.faceId[fHit.face.a] : null;
+  const key = entry ? `${entry.id}/${fid}` : null;
+  if (hoverFace && hoverFace.userData.key === key) return;
+  unhoverFace();
+  const g = entry && faceGeometry(entry.data, fid);
+  if (!g) return;
+  hoverFace = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+    color: HOVER_COLOR, transparent: true, opacity: 0.22, side: THREE.DoubleSide,
+    depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }));
+  hoverFace.userData.key = key;
+  hoverFace.renderOrder = 998;
+  scene.add(hoverFace);
+}
 function edgePickHover(e) {
   if (hoverPending) return;                  // one raycast per frame, not per event
   hoverPending = true;
   requestAnimationFrame(() => {
     hoverPending = false;
     if (!edgePickCb) return;
-    const { edge } = edgeHitAt(e);
+    const { edge, face } = edgeHitAt(e);
     const line = edge ? edge.object : null;
-    if (line === hoverLine) return;
-    unhoverEdge();
-    if (line) {
-      hoverLine = line; hoverColor = line.material.color.getHex();
-      line.material.color.setHex(HOVER_COLOR);
+    hoverFaceAt(line ? null : face);
+    if (line !== hoverLine) {
+      unhoverEdge();
+      if (line) {
+        hoverLine = line; hoverColor = line.material.color.getHex();
+        line.material.color.setHex(HOVER_COLOR);
+      }
     }
-    renderer.domElement.style.cursor = line ? 'crosshair' : 'not-allowed';
+    renderer.domElement.style.cursor = line || face ? 'crosshair' : 'not-allowed';
   });
 }
 function edgePickAt(e) {

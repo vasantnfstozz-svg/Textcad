@@ -618,19 +618,20 @@ def _expand(part, refs, chain: bool) -> list:
 
 def _toggle_set(part, refs: list, edges: list, by_edge: dict,
                 chain: bool) -> tuple[list, str, int]:
-    """A whole SET of edges (a group chip, or every edge of a clicked face) as
-    one click: the ones not yet picked join the picks; when every one of them
-    is picked already, the set comes out. Returns (refs, 'added'|'removed', n).
+    """A whole SET of edges (every edge of a clicked face, or the edges a tree
+    row's feature made) as one click: the ones not yet picked join the picks;
+    when every one of them is picked already, the set comes out — so a second
+    click on the same face or row deselects it. Returns (refs, 'added'|'removed', n).
 
-    "Picked already" means the same thing the CHIP is lit from — the picks
-    grown into their tangent chains, not the raw picks. Comparing the raw ones
-    made a chip that read "8 of 8 picked — click to take them out" ADD the
-    other 7 on that click (one chained click on a rounded pocket's floor rim
-    lights the whole group from a single pick), and it took a second click to
-    remove anything (review 2026-09-07). A pick whose chain reaches into the
-    set comes out whole, which is the rule a single click already follows
-    (_toggle_pick) — and the count returned is the number of EDGES that went,
-    not of picks, because that is what the browser says out loud.
+    "Picked already" means the picks grown into their tangent chains, not the
+    raw picks. Comparing the raw ones made a fully picked set ADD its other 7
+    edges on the click meant to take it out (one chained click on a rounded
+    pocket's floor rim picks the whole rim from a single pick), and it took a
+    second click to remove anything (review 2026-09-07). A pick whose chain
+    reaches into the set comes out whole, which is the rule a single click
+    already follows (_toggle_pick) — and the count returned is the number of
+    EDGES that went, not of picks, because that is what the browser says out
+    loud.
     """
     have = [(r, {blocks._shape_key(e) for e in _expand(part, [r], chain)}) for r in refs]
     picked_keys = set().union(*[ks for _, ks in have]) if have else set()
@@ -648,19 +649,35 @@ def _toggle_set(part, refs: list, edges: list, by_edge: dict,
     return keep, "removed", len(picked_keys - kept_keys)
 
 
-def _group_words(key: str) -> str:
-    side, dir_ = key.split("/")
-    what = {"vertical": "upright", "horizontal": "flat-lying", "all": ""}[dir_]
-    kind = "inside-corner" if side == "inside" else "outside"
-    return f"{what} {kind} edges".replace("  ", " ").strip()
+def _corners(edges, by_edge: dict) -> list:
+    """The edges of a set that TWO faces meet at. A cylinder's seam is a line
+    on the mesh but bounds one face — a fillet has nothing to round there, and
+    a fused boss's row must not offer it (probes/feature_edges_probe.py)."""
+    return [e for e in edges if len(by_edge.get(blocks._shape_key(e), [])) == 2]
 
 
-def _groups_state(groups: dict, picked_keys: set) -> dict:
-    """For the panel's chips: how many edges each group has, how many of them
-    are picked right now — the chip's lit / dashed / dim state is read off this."""
-    return {k: {"total": len(es),
-                "picked": sum(1 for e in es if blocks._shape_key(e) in picked_keys)}
-            for k, es in groups.items()}
+def _face_of(part, pick: dict, body: str):
+    """The face of `body` a click on a face means — or the sentence that says
+    there is none. `resolve_face` is a nearest-centre match that never fails,
+    and the picker hands this tool clicks on its own PREVIEW body too: the band
+    a fillet just drew has no twin on the input body, so its centre would
+    silently name the wall beside it and round that wall's edges. A face the
+    body really has holds the clicked centre inside its own bounding box
+    (probes/feature_edges_probe.py §3: a band's centre lies 1.46 mm off the
+    nearest wall; a trimmed survivor's centre exactly on it) — the same guard
+    as Pattern's `_axis_face`; the tolerance covers the payload's 2-decimal
+    rounding of a centre and nothing wider."""
+    c = pick.get("center") if isinstance(pick, dict) else None
+    if c is None:
+        raise ValueError("that face has no centre to name it by — click one of its edges instead")
+    face = blocks.resolve_face(part, c, pick.get("normal"))
+    bb = face.bounding_box()
+    tol = 0.05
+    span = ((bb.min.X, bb.max.X), (bb.min.Y, bb.max.Y), (bb.min.Z, bb.max.Z))
+    if any(float(v) < lo - tol or float(v) > hi + tol for v, (lo, hi) in zip(c, span)):
+        raise ValueError(f"that face is not on {body} — a round or bevel this tool drew has no "
+                         f"edges of its own to pick; click a face of {body}, or an edge")
+    return face
 
 
 def _toggle_pick(part, refs, click: dict, chain: bool, by_edge: dict) -> list:
@@ -682,6 +699,12 @@ def plan_fillet(doc, req: dict) -> dict:
     fillet / chamfer (edit: its stored edges are read here). `chain` (default
     on) grows every pick into its tangent chain, Fusion's default.
 
+    A click arrives as ONE of Fusion's three selection kinds and the server
+    decides add-or-remove: `toggle` (one edge), `face_toggle` (a face: every
+    edge of it) or `feature_toggle` (a tree row: the edges of the faces that
+    feature made, as they are now — provenance.feature_faces). A row picked
+    before the tool also names the body (`body_id` may be empty then).
+
     Returns the resolved edges in their STORED form (`edges_param`, what the op
     will be given, so the tree never carries an index), each with the points to
     draw it gold, and the ball handle's origin and direction — the browser
@@ -700,39 +723,53 @@ def plan_fillet(doc, req: dict) -> dict:
         if refs is None:
             refs = (f.params or {}).get("edges", "all")
             stored = True
+    tog, ftog, ctog = req.get("toggle"), req.get("feature_toggle"), req.get("face_toggle")
+    clicked = tog is not None or ftog is not None or ctog is not None
+    # a tree row picked BEFORE the tool names the body: the one its feature is
+    # on, walked to its current state (select-then-command chose no body yet)
+    if not body and ftog is not None:
+        provenance.edge_feature(doc, ftog)          # a sketch row is refused here
+        body = _latest_descendant(doc, doc.delta_features(ftog)[1])
     if not body:
-        raise ValueError(f"{tool.capitalize()} needs the edges of a body — click an edge in the viewport")
+        raise ValueError(f"{tool.capitalize()} needs the edges of a body — click an edge, "
+                         f"a face, or a row of the tree")
     _bf, part = _body_part(doc, body)
     by_edge = blocks._edge_faces(part)
-    tog, gtog = req.get("toggle"), req.get("group_toggle")
-    clicked = tog is not None or gtog is not None
     # A legacy GROUP ("all"/"vertical"/…) becomes explicit picks the moment the
     # user clicks — converted BEFORE the chain default is worked out, so a group
     # whose edges have tangent neighbours is not silently grown by that click.
     if clicked and isinstance(refs, str):
         refs = [blocks.edge_ref(part, e, by_edge)
                 for e in blocks.edges_for(part, refs)]
-    # the body's edges by kind — inside corner / outside edge x upright /
-    # flat-lying / all — for the panel's chips (classified once per body)
-    groups = blocks.edge_groups(part, by_edge)
-    click, click_n = None, 0
+    click, click_n, click_of = None, 0, None
     # THE CHAIN DEFAULT. Fresh picking chains (Fusion). A STORED selection does
     # not: it is already the answer, and re-expanding it can only add edges the
     # user never picked — a chain-off fillet reopened, or an AI-authored group
     # whose edges have tangent neighbours. Keyed on where the edges came from,
     # which only the server knows, so a caller that forgets to say is safe.
-    # Worked out BEFORE the chips, which ask what is picked right now and get
-    # the same answer the chip is lit from.
     chain = bool(want_chain) if want_chain is not None else not stored
-    if gtog is not None:                         # a chip: a whole group in one click
-        key = f"{gtog.get('side')}/{gtog.get('dir')}"
-        if key not in groups:
-            raise ValueError(f"no edge group '{key}' — the groups are inside / outside "
-                             f"× vertical / horizontal / all")
-        if not groups[key]:
-            raise ValueError(f"{body} has no {_group_words(key)} — a smooth seam between "
-                             f"a round and a flat is not a corner")
-        refs, click, click_n = _toggle_set(part, refs or [], groups[key], by_edge, chain)
+    # A FACE or a FEATURE is a whole SET of edges in one click (Fusion's other
+    # two selection kinds): the ones not picked yet come in; when every one of
+    # them is picked already the set goes out, so the second click on the same
+    # face or row deselects it (user, 2026-09-08). A seam is never offered.
+    if ftog is not None:                         # a tree row: the edges its feature made
+        keys = provenance.feature_faces(doc, ftog, body)
+        edges = _corners([e for e in part.edges()
+                          if any(blocks._shape_key(f) in keys
+                                 for f in by_edge.get(blocks._shape_key(e), []))], by_edge)
+        if not edges:
+            raise ValueError(f"'{ftog}' has no edges left on {body} — later features consumed "
+                             f"its faces; click another row, a face or an edge")
+        refs, click, click_n = _toggle_set(part, refs or [], edges, by_edge, chain)
+        click_of = ftog
+    if ctog is not None:                         # a face: every edge of it
+        face = _face_of(part, ctog, body)
+        edges = _corners(face.edges(), by_edge)
+        if not edges:
+            raise ValueError("no other face meets that one at an edge — click another face, "
+                             "or an edge")
+        refs, click, click_n = _toggle_set(part, refs or [], edges, by_edge, chain)
+        click_of = "face"
     if tog is not None:                          # a click: add the edge, or take it out
         before = len(refs or [])
         refs = _toggle_pick(part, refs or [], tog, chain, by_edge)
@@ -748,7 +785,7 @@ def plan_fillet(doc, req: dict) -> dict:
     if not refs:
         return {"ok": True, "tool": tool, "op": tool, "input": body, "edges": [],
                 "edges_param": [], "picks": [], "ball": None, "chain": chain,
-                "click": click, "click_n": click_n, "groups": _groups_state(groups, set()),
+                "click": click, "click_n": click_n, "click_of": click_of,
                 "will_build": f"{tool} — pick the edges of {body}"}
     picked = _expand(part, refs, chain)          # a gone edge raises its sentence
     out_refs = [blocks.edge_ref(part, e, by_edge) for e in picked]
@@ -766,7 +803,7 @@ def plan_fillet(doc, req: dict) -> dict:
         "chain": chain,
         "click": click,
         "click_n": click_n,
-        "groups": _groups_state(groups, {blocks._shape_key(e) for e in picked}),
+        "click_of": click_of,
         "will_build": f"{tool} {n} edge{'s' if n != 1 else ''} of {body}",
     }
 

@@ -368,184 +368,125 @@ def doc_pocket():
     return doc
 
 
-class _BadEdge:
-    """An edge the kernel will not answer for. OCP failures derive from
-    Exception, not RuntimeError, so a barrier that catches RuntimeError misses
-    them entirely (house rule 5)."""
+# ------------------------------------------- faces and tree rows as picks ---
+# Fusion's Fillet takes edges, FACES (every edge of one) and FEATURES (the
+# edges of the faces a feature made, as they are now). The user (2026-09-08):
+# "if I am selecting an extrude and pressing Fillet, those selected face or
+# body edges should be selected … another click on the selected body should
+# deselect". The rule and every number here: probes/feature_edges_probe.py.
 
-    def __init__(self, key=-4242):
-        self.wrapped = key
-
-    def __matmul__(self, t):
-        raise Exception("Standard_Failure: no point on this edge")
-
-    def __mod__(self, t):
-        raise Exception("Standard_Failure: no tangent on this edge")
-
-    @property
-    def length(self):
-        raise Exception("Standard_Failure: no length on this edge")
+FLOOR = {"center": [0, 0, 5], "normal": [0, 0, 1]}          # the pocket's floor
 
 
-class _UnkeyedEdge(_BadEdge):
-    """...and one that cannot even be identified (our own bug, not the kernel's)"""
-
-    @property
-    def wrapped(self):
-        raise Exception("Standard_Failure: no shape behind this edge")
-
-    def __init__(self):
-        pass
+def zs(edges):
+    return sorted({round(e["mid"][2], 3) for e in edges})
 
 
-class _StubPart:
-    """a body whose edge list we choose"""
-
-    def __init__(self, edges):
-        self._edges = edges
-
-    def edges(self):
-        return self._edges
+def plan(doc, **req):
+    return toolplan.plan(doc, {"tool": "fillet", "edges": [], **req})
 
 
-def test_a_kernel_refusal_on_one_edge_costs_that_edge_and_nothing_else():
-    """Rule 5: a kernel exception must never reach the user. The chips made
-    edge_groups measure EVERY edge of the body on EVERY plan, so one edge the
-    kernel will not answer for would take the whole Fillet panel down with it —
-    before the chips such an edge only misbehaved on its own (review
-    2026-09-07). It belongs to no group; the rest of the body is unaffected."""
+def test_a_face_click_adds_its_edges_and_a_second_click_takes_them_out():
     doc = doc_pocket()
-    part = doc._parts["c"]
-    faces = list(part.faces())[:2]
-    assert blocks.edge_side(_BadEdge(), faces) is None
-    assert blocks.edge_direction(_BadEdge()) == "other"
-    good = {k: len(v) for k, v in blocks.edge_groups(part).items()}
-    bad, unkeyed = _BadEdge(), _UnkeyedEdge()
-    by_edge = dict(blocks._edge_faces(part))
-    by_edge[blocks._shape_key(bad)] = faces        # it even has two faces to measure against
-    stub = _StubPart(list(part.edges()) + [bad, unkeyed])
-    g = blocks.edge_groups(stub, by_edge)
-    assert {k: len(v) for k, v in g.items()} == good
+    p = plan(doc, body_id="c", face_toggle=FLOOR)
+    assert p["ok"] and (p["click"], p["click_n"], p["click_of"]) == ("added", 4, "face")
+    assert len(p["edges"]) == 4 and zs(p["edges"]) == [5.0]     # the floor's rim, nothing else
+    q = plan(doc, body_id="c", edges=p["picks"], face_toggle=FLOOR)
+    assert (q["click"], q["click_n"]) == ("removed", 4) and q["edges"] == []
+    # a face with ONE of its edges picked already: the click adds the other three
+    one = plan(doc, body_id="c", toggle={"mid": [10, 0, 5]})
+    assert len(one["edges"]) == 1
+    r = plan(doc, body_id="c", edges=one["picks"], face_toggle=FLOOR)
+    assert (r["click"], r["click_n"]) == ("added", 3) and len(r["edges"]) == 4
 
 
-@pytest.mark.parametrize("name", sorted(__import__("gauntlet").BODIES))
-def test_edge_groups_answers_for_every_corpus_body(name):
-    """Rule 4: an operation is the feature TIMES the geometry. The classifier
-    runs over every edge of whatever the user has open — cones, tori, fused
-    seams — so it answers for the whole corpus or the panel cannot open."""
-    from gauntlet import BODIES
-    g = blocks.edge_groups(BODIES[name]())
-    assert set(g) == set(blocks.EDGE_GROUPS)
-    assert all(isinstance(v, list) for v in g.values())
-    assert len(g["inside/all"]) >= len(g["inside/vertical"])
-    assert len(g["outside/all"]) >= len(g["outside/horizontal"])
+def test_a_tree_row_adds_the_edges_its_feature_made_and_again_takes_them_out():
+    doc = doc_pocket()
+    p = plan(doc, body_id="c", feature_toggle="c")
+    assert p["ok"] and (p["click"], p["click_n"], p["click_of"]) == ("added", 12, "c")
+    assert zs(p["edges"]) == [5.0, 7.5, 10.0]        # floor rim, uprights, the opening's rim
+    q = plan(doc, body_id="c", edges=p["picks"], feature_toggle="c")
+    assert (q["click"], q["click_n"]) == ("removed", 12) and q["edges"] == []
+    # the base plate's faces AS THEY ARE NOW: the outer twelve and the opening
+    b = plan(doc, body_id="c", feature_toggle="b")
+    assert len(b["edges"]) == 16 and zs(b["edges"]) == [-10.0, 0.0, 10.0]
+    # the tool prism's row means the pocket too — its faces ARE the pocket's
+    t = plan(doc, body_id="c", feature_toggle="tm")
+    assert len(t["edges"]) == 12
+    # ...and the row's edges are what the op is given (stored form, R1)
+    assert len(p["edges_param"]) == 12 and all("faces" in r for r in p["edges_param"])
 
 
-def doc_round_pocket():
-    """the same box, but the pocket's upright corners are ROUNDED r3 (the shop
-    rule: no sharp internal corners in a milled part). Its floor rim is then one
-    tangent chain of 8 — 4 lines and 4 flat arcs — so ONE chained click picks
-    the whole inside/horizontal group."""
-    doc = Document(name="rp")
-    doc.add("b", "plate", {"width": 40, "depth": 30, "thickness": 20}, [])
-    doc.add("t", "plate", {"width": 20, "depth": 12, "thickness": 10}, [])
-    doc.add("tf", "fillet", {"radius": 3, "edges": "vertical"}, ["t"])
-    doc.add("tm", "move", {"x": 0, "y": 0, "z": 10}, ["tf"])
-    doc.add("c", "cut", {}, ["b", "tm"])
+def test_a_row_picked_before_the_tool_names_the_body_it_is_on():
+    doc = doc_pocket()
+    p = plan(doc, feature_toggle="tm")                    # no body_id at all
+    assert p["ok"] and p["input"] == "c" and len(p["edges"]) == 12
+    p = toolplan.plan(doc, {"tool": "chamfer", "edges": [], "feature_toggle": "b"})
+    assert p["ok"] and p["input"] == "c" and len(p["edges"]) == 16
+
+
+def test_rows_that_are_not_edges_of_this_body_speak():
+    doc = doc_pocket()
+    doc.add("x", "plate", {"width": 5, "depth": 5, "thickness": 5}, [])
+    doc.add("sk1", "sketch", {"plane": "XY", "entities": [{"kind": "circle", "cx": 0, "cy": 0, "r": 3}]})
     doc.rebuild()
-    return doc
+    r = plan(doc, body_id="c", feature_toggle="x")
+    assert not r["ok"] and "not part of c's history" in r["error"]
+    r = plan(doc, body_id="c", feature_toggle="nope")
+    assert not r["ok"] and "no feature 'nope'" in r["error"]
+    r = plan(doc, body_id="c", feature_toggle="sk1")
+    assert not r["ok"] and "a sketch has no edges" in r["error"]
+    r = plan(doc, feature_toggle="sk1")                    # a sketch row names no body either
+    assert not r["ok"] and "a sketch has no edges" in r["error"]
+    r = plan(doc)
+    assert not r["ok"] and "needs the edges of a body" in r["error"]
 
 
-def test_a_lit_chip_takes_its_group_out_when_a_chained_click_lit_it():
-    """The chip's lit / part / dim state is read off the PICKED edges — which
-    are the picks grown into their tangent chains — while the chip's click used
-    to compare the raw picks. On a machinable pocket (rounded corners) one
-    chained click lights inside/horizontal 8 of 8 and the tooltip says "click to
-    take them out"; the click then ADDED the other 7 and the chat said so, and
-    it took a second click to remove anything (review 2026-09-07)."""
-    doc = doc_round_pocket()
-    part = doc._parts["c"]
-    g = blocks.edge_groups(part)
-    assert len(g["inside/horizontal"]) == 8 == len(g["inside/all"])
-    assert len(g["inside/vertical"]) == 0, "the rounded corners are smooth seams"
-    line = next(e for e in g["inside/horizontal"] if blocks._gtype(e) == "LINE")
-    p = toolplan.plan(doc, {"tool": "fillet", "body_id": "c", "edges": [],
-                            "toggle": {"points": toolplan.edge_polyline(line)}})
-    assert p["chain"] is True and len(p["edges"]) == 8, "one click chains the whole rim"
-    assert len(p["picks"]) == 1, "as ONE pick"
-    assert p["groups"]["inside/horizontal"] == {"total": 8, "picked": 8}, "the chip is LIT"
-    q = toolplan.plan(doc, {"tool": "fillet", "body_id": "c", "edges": p["picks"],
-                            "group_toggle": {"side": "inside", "dir": "horizontal"}})
-    assert q["click"] == "removed", "a lit chip takes its group out on the FIRST click"
-    assert q["click_n"] == 8, "and says how many edges went, not how many picks"
-    assert q["edges"] == [] and q["groups"]["inside/horizontal"]["picked"] == 0
+def test_a_face_only_the_preview_has_is_refused_a_survivor_accepted():
+    """the picker hands the tool clicks on its own PREVIEW body: a fillet band's
+    centre would resolve to the nearest wall of the input body and round ITS
+    edges — refused; the preview's top face is the input's top face, trimmed"""
+    doc = doc_rounded()                                   # b, then g1 rounds its uprights
+    band = next(f for f in doc._parts["g1"].faces() if blocks._gtype(f) == "CYLINDER")
+    c = band.center()
+    r = plan(doc, body_id="b", face_toggle={"center": [c.X, c.Y, c.Z]})
+    assert not r["ok"] and "not on b" in r["error"]
+    p = plan(doc, body_id="b", face_toggle={"center": [0, 0, 10], "normal": [0, 0, 1]})
+    assert p["ok"] and len(p["edges"]) == 4               # b's top has 4 edges (g1's has 8)
+    r = plan(doc, body_id="b", face_toggle={})
+    assert not r["ok"] and "no centre" in r["error"]
 
 
-def test_a_chip_adds_only_what_the_chain_has_not_already_picked():
-    """The other half of the same rule: a chip that is PART lit adds the rest
-    and counts only those — never the edges the chain already brought in."""
-    doc = doc_round_pocket()
-    part = doc._parts["c"]
-    g = blocks.edge_groups(part)
-    line = next(e for e in g["inside/horizontal"] if blocks._gtype(e) == "LINE")
-    p = toolplan.plan(doc, {"tool": "fillet", "body_id": "c", "edges": [],
-                            "toggle": {"points": toolplan.edge_polyline(line)},
-                            "chain": False})
-    assert len(p["edges"]) == 1 and p["groups"]["inside/horizontal"]["picked"] == 1
-    q = toolplan.plan(doc, {"tool": "fillet", "body_id": "c", "edges": p["picks"],
-                            "chain": False,
-                            "group_toggle": {"side": "inside", "dir": "horizontal"}})
-    assert q["click"] == "added" and q["click_n"] == 7, "the one already picked is not added again"
-    assert len(q["edges"]) == 8
+def test_a_seam_is_not_an_edge_a_face_or_a_row_offers():
+    """a fused boss: its wall's seam bounds ONE face — a line on the mesh, not a
+    corner. Neither the wall nor the boss's row offers it."""
+    doc = Document(name="boss")
+    doc.add("b", "plate", {"width": 40, "depth": 30, "thickness": 20}, [])
+    doc.add("p", "disc", {"radius": 6, "thickness": 5}, [])
+    doc.add("pm", "move", {"x": 5, "y": 0, "z": 12.5}, ["p"])
+    doc.add("f", "fuse", {}, ["b", "pm"])
+    doc.rebuild()
+    p = plan(doc, body_id="f", feature_toggle="f")
+    assert len(p["edges"]) == 2 and {e["type"] for e in p["edges"]} == {"CIRCLE"}
+    wall = next(f for f in doc._parts["f"].faces() if blocks._gtype(f) == "CYLINDER")
+    c = wall.center()
+    q = plan(doc, body_id="f", face_toggle={"center": [c.X, c.Y, c.Z]})
+    assert q["ok"] and len(q["edges"]) == 2 and {e["type"] for e in q["edges"]} == {"CIRCLE"}
 
 
-def test_edge_groups_tell_inside_corners_from_outside_edges():
-    """probes/edge_side_probe.py, locked in: concave vs convex by the in-face
-    direction against the other face's normal; flat-lying vs upright; smooth
-    seams and one-face seams belong to no group; classified once per body."""
+def test_a_row_whose_faces_were_consumed_speaks():
+    """the tool prism 't' sits at z -5..5 before its move: only its top face
+    coincides with the pocket floor, so it still owns 4 edges — while a feature
+    with NO face left on the body says so instead of picking nothing quietly"""
     doc = doc_pocket()
-    part = doc._parts["c"]
-    g = blocks.edge_groups(part)
-    assert {k: len(v) for k, v in g.items()} == {
-        "inside/vertical": 4, "inside/horizontal": 4, "inside/all": 8,
-        "outside/vertical": 4, "outside/horizontal": 12, "outside/all": 16}
-    for e in g["inside/all"]:                      # every inside edge is IN the pocket
-        m = e @ 0.5
-        assert abs(m.X) <= 10 + 1e-6 and abs(m.Y) <= 6 + 1e-6 and 5 - 1e-6 <= m.Z <= 10 + 1e-6
-    assert blocks.edge_groups(part) is g, "cached on the body"
-    r = doc_rounded()._parts["g1"]                 # uprights rounded r5
-    gr = {k: len(v) for k, v in blocks.edge_groups(r).items()}
-    assert gr["inside/all"] == 0 and gr["outside/vertical"] == 0, "8 smooth seams are no corner"
-    assert gr["outside/horizontal"] == 16 == gr["outside/all"], "8 lines + 8 flat arcs"
-
-
-def test_a_group_chip_adds_the_whole_group_and_a_second_click_takes_it_out():
-    doc = doc_pocket()
-    req = lambda edges, side, d: {"tool": "fillet", "body_id": "c", "edges": edges,
-                                  "group_toggle": {"side": side, "dir": d}}
-    p = toolplan.plan(doc, req([], "inside", "vertical"))
-    assert p["ok"] and p["click"] == "added" and p["click_n"] == 4 and len(p["edges"]) == 4
-    assert p["groups"]["inside/vertical"] == {"total": 4, "picked": 4}
-    assert p["groups"]["inside/all"] == {"total": 8, "picked": 4}       # the chip shows PART
-    assert p["groups"]["outside/horizontal"] == {"total": 12, "picked": 0}
-    q = toolplan.plan(doc, req(p["picks"], "inside", "horizontal"))
-    assert q["click"] == "added" and q["click_n"] == 4 and len(q["edges"]) == 8
-    assert q["groups"]["inside/all"]["picked"] == 8
-    r = toolplan.plan(doc, req(q["picks"], "inside", "vertical"))      # all picked: out
-    assert r["click"] == "removed" and r["click_n"] == 4 and len(r["edges"]) == 4
-    s = toolplan.plan(doc, req(r["picks"], "inside", "all"))           # partly picked: ADD the rest
-    assert s["click"] == "added" and s["click_n"] == 4 and len(s["edges"]) == 8
-    assert len(s["edges_param"]) == 8 and all(len(e["faces"]) == 2 for e in s["edges_param"])
-    # the round itself builds on the group — an inside round ADDS material
-    v0 = doc._parts["c"].volume
-    assert healthy(blocks.fillet_edges(doc._parts["c"], 2, s["edges_param"])).volume > v0
-    # a group the body lacks is a sentence, not an empty click
-    e = toolplan.plan(doc_rounded(), {"tool": "fillet", "body_id": "g1", "edges": [],
-                                      "group_toggle": {"side": "inside", "dir": "vertical"}})
-    assert e["ok"] is False and "has no upright inside-corner edges" in e["error"]
-    # a plan with NO click still reports the groups, for the chips' first paint
-    z = toolplan.plan(doc, {"tool": "fillet", "body_id": "c", "edges": []})
-    assert z["ok"] and z["click"] is None and z["groups"]["inside/all"] == {"total": 8, "picked": 0}
+    t = plan(doc, body_id="c", feature_toggle="t")
+    assert t["ok"] and len(t["edges"]) == 4 and zs(t["edges"]) == [5.0]
+    doc.add("t2", "plate", {"width": 4, "depth": 4, "thickness": 4}, [])
+    doc.add("t2m", "move", {"x": 30, "y": 30, "z": 30}, ["t2"])
+    doc.add("c2", "cut", {}, ["c", "t2m"])                  # cuts nothing: the tool is off the body
+    doc.rebuild()
+    r = plan(doc, body_id="c2", feature_toggle="c2")
+    assert not r["ok"] and "has no edges left on c2" in r["error"]
 
 
 def test_plan_chain_is_on_for_fresh_picking_and_can_be_turned_off():
@@ -691,3 +632,37 @@ def test_edge_polyline_shapes():
     assert len(pl) == 3 and len(pc) == 25
     assert pl[0] == [round(v, 4) for v in tuple(line @ 0)]
     assert all(abs((x * x + y * y) ** 0.5 - 10) < 1e-3 for x, y, _ in pc)
+
+
+# ------------------------------------------------ the per-body memo's key ---
+
+def test_a_moved_copy_does_not_inherit_its_parents_faces():
+    """blocks._face_rows / _edge_topo remember a body's faces so a 48-edge plan
+    costs 0.4 s instead of 34 s. Stored as ATTRIBUTES on the Part they rode
+    along in build123d's deepcopy — moved() and `Pos * part` copy first and move
+    second — so a moved plate resolved a face by its parent's centres (caught by
+    test_revolve_p3b in the full tier, 2026-09-08; probes/shape_cache_probe.py).
+    The memo lives beside the shape now: a copy misses, an in-place move misses."""
+    from copy import deepcopy
+
+    from build123d import Location, Pos
+
+    b = box()
+    top = blocks.resolve_face(b, [0, 0, 10], [0, 0, 1])            # fills b's memo
+    assert [round(v, 3) for v in tuple(top.center())] == [0, 0, 10]
+    by_edge = blocks._edge_faces(b)
+    assert len(by_edge) == 12
+    moved = Pos(100, 50, 0) * b
+    got = blocks.resolve_face(moved, [100, 50, 10], [0, 0, 1])
+    assert [round(v, 3) for v in tuple(got.center())] == [100, 50, 10], "the moved body's own top"
+    e = blocks.resolve_edge(moved, {"mid": [100, 65, 10]})           # a top edge, at its new place
+    assert [round(v, 3) for v in tuple(e @ 0.5)] == [100, 65, 10]
+    assert blocks._edge_faces(moved) is not by_edge, "a copy has its own adjacency"
+    # in place: the same Python object, a different TopoDS location
+    r = deepcopy(b)
+    blocks.resolve_face(r, [0, 0, 10], [0, 0, 1])
+    r.move(Location((0, 0, 5)))
+    got = blocks.resolve_face(r, [0, 0, 15], [0, 0, 1])
+    assert [round(v, 3) for v in tuple(got.center())] == [0, 0, 15]
+    # and the memo does hold for the same, unmoved body
+    assert blocks._edge_faces(b) is by_edge

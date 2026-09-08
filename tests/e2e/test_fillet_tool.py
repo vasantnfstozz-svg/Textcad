@@ -91,12 +91,8 @@ def wait_modal_free(page, timeout=3):
     raise AssertionError("the tool never released the one-command lock")
 
 
-def chip(page, side, d):
-    return page.locator(f"#flGroups .egchip[data-side='{side}'][data-dir='{d}']")
-
-
 def wait_glow(page, n, timeout=4):
-    """poll until `n` edges are gold — a chip's plan queues behind the previous
+    """poll until `n` edges are gold — a click's plan queues behind the previous
     one, so a fixed sleep races the round trip"""
     t0 = time.time()
     while time.time() - t0 < timeout:
@@ -106,9 +102,30 @@ def wait_glow(page, n, timeout=4):
     raise AssertionError(f"gold stayed at {glow(page)}, expected {n}")
 
 
-def chip_state(page, side, d):
-    cls = chip(page, side, d).get_attribute("class") or ""
-    return "on" if " on" in f" {cls}" else "part" if "part" in cls else "off"
+def face_screen(page, world):
+    """where a world point on a face sits on screen — the viewport's own projection"""
+    s = page.evaluate("(p) => window.__vp.worldToScreen(p)", world)
+    assert s, f"{world} is off screen"
+    return s
+
+
+def click_face(page, world, want):
+    """click a FACE where the user would (a point on it) and wait for the gold
+    count to reach `want` — a face is a whole set of edges, added or taken out"""
+    s = face_screen(page, world)
+    page.mouse.click(s["x"], s["y"])
+    wait_glow(page, want)
+
+
+def click_row(page, fid, want):
+    """click a row of the tree — a selection surface too — and wait for the gold.
+    A row click also starts the tree's own highlight, an STL of the feature
+    fetched from the server; a face click landing while that GET still has the
+    kernel busy ran its plan concurrently and lost it once in four runs (gold
+    stayed put, no toggle). The highlight is given time to land first."""
+    page.evaluate(f"""() => document.querySelector("#tree .node[data-fid='{fid}'] .nrow").click()""")
+    wait_glow(page, want)
+    page.wait_for_timeout(400)
 
 
 def feature(server, fid):
@@ -158,11 +175,26 @@ def click_edge(page, body, idx):
             return
 
 
+def edge_pickable(page, body, idx):
+    """would a click on this edge's middle pick THIS edge? The viewport's own
+    hit report, read with the picker's rule: the first hit a face in front does
+    not hide (its own two faces never do) must be this edge."""
+    s = page.evaluate("([b, i]) => window.__vp.edgeScreen(b, i)", [body, idx])
+    if not s:
+        return False
+    rep = page.evaluate("([x, y]) => window.__vp.edgeHitReport(x, y)", [s["cx"], s["cy"]])
+    seen = [h for h in rep["hits"] if h["behind"] is None or h["behind"] <= 1e-3 or h["beside"]]
+    return bool(seen) and seen[0]["edge"] == idx
+
+
 def click_visible_edges(page, body, indices, want):
-    """click edges until `want` of them glow — a hidden one is refused by the
-    viewport (a face sits in front of it), like a real click would be"""
+    """click edges until `want` of them glow — a hidden one (a face sits in
+    front of it) is skipped, because a click there would now pick that FACE,
+    every edge of it, as the user meant when they clicked a face"""
     picked = []
     for i in indices:
+        if not edge_pickable(page, body, i):
+            continue
         before = glow(page)
         click_edge(page, body, i)
         if glow(page) > before:
@@ -255,38 +287,40 @@ def test_an_inside_corner_can_be_picked_and_rounded(page, fresh_doc, server):
     assert page.errors == []
 
 
-def test_group_chips_pick_whole_sets_in_one_click(page, fresh_doc, server):
-    """The user's ask (2026-09-07): "select all the vertical or horizontal edges
-    by clicking one option". A chip adds a whole group and shows its state (lit /
-    part / dim, all from the plan); clicking it again takes the group out; the
-    chat says how many; the round on the inside group ADDS material (the
-    kernel's number, not ours)."""
+def test_a_face_or_a_tree_row_adds_its_edges_and_a_second_click_takes_them_out(page, fresh_doc, server):
+    """The user's ask (2026-09-08): "if I am selecting an extrude and pressing
+    Fillet, those selected face or body edges should be selected … I can add a
+    body by clicking a face or body; another click on the selected body should
+    deselect". Fusion's three selection kinds. Select-then-command from the
+    TREE: the cut's row, then Fillet, opens with the pocket's 12 edges gold; the
+    row again takes them out; the floor face adds its 4; the row adds the 8
+    missing; the face again releases its 4; the round builds on the 8 left (the
+    kernel's number, not ours) and the chat says what each click did."""
     setup(page, BUILD_POCKET)
     v0 = feature(server, "c")["volume"]
+    # look steeply into the pocket: at the fit's shallow angle the floor's
+    # centre projects within picking reach of its far rim, and a click there
+    # means that EDGE (as it should) rather than the face
+    page.evaluate(AIM, [[0.35, -0.6, 1.0], 110])
+    page.wait_for_timeout(100)
+    page.evaluate("""() => document.querySelector("#tree .node[data-fid='c'] .nrow").click()""")
+    page.wait_for_timeout(300)
     open_tool(page, "fillet")
-    page.wait_for_function(
-        "() => !document.querySelector(\"#flGroups .egchip[data-side='inside'][data-dir='vertical']\").disabled",
-        timeout=15000)
-    assert chip(page, "outside", "vertical").is_enabled()
-    chip(page, "inside", "vertical").click()
-    wait_glow(page, 4)
-    assert chip_state(page, "inside", "vertical") == "on"
-    assert chip_state(page, "inside", "all") == "part"
-    assert "added 4 edges" in page.text_content("#chatLog")
-    chip(page, "inside", "horizontal").click()
-    wait_glow(page, 8)
-    assert chip_state(page, "inside", "all") == "on"
-    # the whole group out again
-    chip(page, "inside", "vertical").click()
-    wait_glow(page, 4)
-    assert chip_state(page, "inside", "vertical") == "off"
+    wait_glow(page, 12)
+    assert "added 12 edges — the edges of c" in page.text_content("#chatLog")
+    click_row(page, "c", 0)                    # the lit row again: deselect
+    assert "released 12 edges" in page.text_content("#chatLog")
+    click_face(page, [0, 0, 5], 4)             # the pocket floor
+    assert "added 4 edges — that face's edges" in page.text_content("#chatLog")
+    click_row(page, "c", 12)                   # the rest of the pocket joins
+    click_face(page, [0, 0, 5], 8)             # the floor's four out again
     assert "released 4 edges" in page.text_content("#chatLog")
     page.fill("#flValue", "1.5")
     page.wait_for_timeout(2500)
     f = wait_feature(server, "fillet1")
     assert f["status"] == "ok", f
-    assert f["volume"] > v0 + 1, "4 inside floor rounds add material"
-    assert len(f["params"]["edges"]) == 4
+    assert len(f["params"]["edges"]) == 8
+    assert abs(f["volume"] - v0) > 1
     assert page.errors == []
 
 
@@ -448,31 +482,30 @@ def test_esc_cancels_the_open_tool(page, fresh_doc, server):
     assert page.errors == []
 
 
-def test_a_queued_chip_click_belongs_to_the_session_it_was_made_in(page, fresh_doc, server):
+def test_a_queued_click_belongs_to_the_session_it_was_made_in(page, fresh_doc, server):
     """A plan request that WAITS its turn still belongs to the session it was
-    made in. Two chips clicked in a row queue the second one; Cancel (or OK)
+    made in. Two faces clicked in a row queue the second one; Cancel (or OK)
     does not drain that queue — `settled()` waits for rebuilds, not for plans —
     so the queued click used to run against whatever session was open by the
-    time it got its turn, and its group landed there: gold edges nobody picked
+    time it got its turn, and its edges landed there: gold edges nobody picked
     in a fresh session, and, when the new session is an EDIT, the stored edges
-    of that feature rewritten with a group the user never chose for it.
+    of that feature rewritten with a set the user never chose for it.
     """
     setup(page, BUILD_POCKET)
+    page.evaluate(AIM, [[0.35, -0.6, 1.0], 110])   # steep: the faces, not their rims
     open_tool(page, "fillet")
-    page.wait_for_function(
-        "() => { const c = document.querySelector(\"#flGroups .egchip"
-        "[data-side='inside'][data-dir='vertical']\"); return c && !c.disabled; }",
-        timeout=15000)
+    page.wait_for_timeout(800)              # the session's first plan lands
     page.evaluate(DELAY_PLANS, 3000)        # the round trip is slow: the queue is real
-    chip(page, "inside", "vertical").click()      # in flight
-    chip(page, "inside", "horizontal").click()    # queued behind it
+    s = face_screen(page, [0, 0, 5])        # the pocket floor: in flight
+    page.mouse.click(s["x"], s["y"])
+    s = face_screen(page, [0, 12, 10])      # the top face: queued behind it
+    page.mouse.click(s["x"], s["y"])
     page.click("#flCancel")
     page.wait_for_selector("#flDialog", state="hidden")
     wait_modal_free(page)
     open_tool(page, "fillet")               # a NEW session: nothing is picked in it
     page.wait_for_timeout(9000)             # both delayed plans land
-    assert glow(page) == 0, "a queued chip click landed on the session opened after it"
-    assert chip_state(page, "inside", "horizontal") == "off"
+    assert glow(page) == 0, "a queued face click landed on the session opened after it"
     assert page.errors == []
 
 

@@ -25,6 +25,7 @@ import os
 import re
 import struct
 import tempfile
+import weakref
 from pathlib import Path
 from build123d import (
     Box, Cylinder, Sphere, Cone, Pos, PolarLocations, BuildSketch, RegularPolygon, BuildLine, Polyline, Spline, make_face,
@@ -250,25 +251,47 @@ def resolve_face(solid, face_center: list, face_normal: list | None = None):
     same-facing normal) — so a stored pick survives parameter changes instead
     of breaking like a face index would. Shared by sketch_on_face, extrude_face,
     the face-outline projection and the edge pick (two faces name an edge)."""
-    faces = solid.faces()
-    if not faces:
+    rows = _face_rows(solid)
+    if not rows:
         raise ValueError("solid has no faces")
     cx, cy, cz = (float(v) for v in face_center)
 
-    def score(f):
-        c = f.center()
-        d = (c.X - cx) ** 2 + (c.Y - cy) ** 2 + (c.Z - cz) ** 2
-        if face_normal:
-            try:
-                n = f.normal_at(f.center())
-                align = (n.X * face_normal[0] + n.Y * face_normal[1]
-                         + n.Z * face_normal[2])
-                d += (1.0 - align) * 25.0          # nudge toward same-facing
-            except Exception:
-                pass
+    def score(row):
+        _f, (x, y, z), n = row
+        d = (x - cx) ** 2 + (y - cy) ** 2 + (z - cz) ** 2
+        if face_normal and n is not None:
+            align = n[0] * face_normal[0] + n[1] * face_normal[1] + n[2] * face_normal[2]
+            d += (1.0 - align) * 25.0          # nudge toward same-facing
         return d
 
-    return min(faces, key=score)
+    return min(rows, key=score)[0]
+
+
+def _face_rows(solid) -> list:
+    """(face, centre, normal) for every face of a shape, measured ONCE per shape
+    object and kept beside it (_cached). resolve_face is asked for BOTH stored
+    faces of every picked edge on every plan, and a face centre is a BRepGProp
+    integration (0.14 ms): 254 faces x 96 calls was 15 s of a 33 s click on
+    esp32-remote (profiled 2026-09-08). A face the kernel will not measure is
+    never the nearest; a normal it will not give costs that face its nudge, as
+    before."""
+    return _cached(solid, "faces", lambda: _measure_face_rows(solid))
+
+
+def _measure_face_rows(solid) -> list:
+    rows = []
+    for f in solid.faces():
+        try:
+            c = f.center()
+        except Exception:
+            continue
+        try:
+            n = f.normal_at(c)
+            n = (float(n.X), float(n.Y), float(n.Z))
+        except Exception:
+            n = None
+        rows.append((f, (float(c.X), float(c.Y), float(c.Z)), n))
+    return rows
 
 
 def _shape_key(shape):
@@ -285,13 +308,81 @@ def _gtype(edge) -> str:
     return str(edge.geom_type).split(".")[-1]
 
 
-def _edge_faces(part: Part) -> dict:
-    """edge key -> the faces that share it, for the whole part in one pass."""
-    m = {}
+_SHAPE_CACHES = weakref.WeakKeyDictionary()     # shape -> {slot: (its TopoDS shape, value)}
+
+
+def _cached(shape, slot: str, build):
+    """A per-shape memo that lives BESIDE the shape, never on it. Stored as an
+    attribute it rides along in build123d's __deepcopy__ — and moved() /
+    `Pos * part` copy first and move second, so a moved body inherited its
+    parent's face centres at the OLD position and resolve_face named the wrong
+    face (probes/shape_cache_probe.py; the fast tier caught it on a moved
+    plate). Weak-keyed on the Python object, so a copy is a miss and the entry
+    dies with the shape; checked against the TopoDS shape itself (IsEqual: same
+    TShape, same location), so an in-place move is a miss too."""
+    slots = _SHAPE_CACHES.get(shape)
+    if slots is None:
+        slots = {}
+        try:
+            _SHAPE_CACHES[shape] = slots
+        except TypeError:                  # a shape that cannot be a weak key: no memo
+            return build()
+    hit = slots.get(slot)
+    if hit is not None and hit[0].IsEqual(shape.wrapped):
+        return hit[1]
+    value = build()
+    slots[slot] = (shape.wrapped, value)
+    return value
+
+
+def _edge_topo(part: Part) -> dict:
+    """The topology an edge tool asks for over and over — every edge, which
+    faces share each edge, which edges bound each face, and the two ends of
+    every edge (the tangent chain's walk) — enumerated ONCE per built body and
+    kept beside it (_cached; a rebuild is a new Part, so nothing goes stale).
+    build123d's faces() / edges() are not memoised: on esp32-remote (254 faces,
+    609 edges) faces() costs 33 ms and a face's edges() 11 ms, and one plan on
+    a 48-edge selection paid for them again for EVERY stored edge — 33 s per
+    click (profiled 2026-09-08; probes/feature_edges_probe.py --big)."""
+    return _cached(part, "edges", lambda: _build_edge_topo(part))
+
+
+def _build_edge_topo(part: Part) -> dict:
+    edge_faces, face_edges = {}, {}
     for f in part.faces():
-        for e in f.edges():
-            m.setdefault(_shape_key(e), []).append(f)
-    return m
+        es = list(f.edges())
+        face_edges[_shape_key(f)] = es
+        for e in es:
+            edge_faces.setdefault(_shape_key(e), []).append(f)
+    edges = list(part.edges())
+    # vertex -> the edges ending there, each with its tangent AT that end; and
+    # per edge its two (vertex, tangent) ends — so the chain walk is lookups
+    # and dot products (evaluating tangents in the walk was 0.7 s a click)
+    ends, edge_ends = {}, {}
+    for e in edges:
+        mine = []
+        for t in (0.0, 1.0):
+            try:
+                p, tan = e @ t, e % t
+            except Exception:
+                continue                   # an edge the kernel will not place joins no chain
+            vkey = (round(p.X, 4), round(p.Y, 4), round(p.Z, 4))
+            ends.setdefault(vkey, []).append((e, tan))
+            mine.append((vkey, tan))
+        edge_ends[_shape_key(e)] = mine
+    return {"edges": edges, "edge_faces": edge_faces, "face_edges": face_edges,
+            "ends": ends, "edge_ends": edge_ends}
+
+
+def _edge_faces(part: Part) -> dict:
+    """edge key -> the faces that share it, for the whole part (cached: _edge_topo)."""
+    return _edge_topo(part)["edge_faces"]
+
+
+def _face_edges(part: Part, face) -> list:
+    """the edges bounding a face of `part` (cached: _edge_topo)"""
+    es = _edge_topo(part)["face_edges"].get(_shape_key(face))
+    return es if es is not None else list(face.edges())
 
 
 def edge_ref(part: Part, edge, faces_by_edge: dict | None = None) -> dict:
@@ -373,7 +464,7 @@ def _edge_under(part: Part, points, gtype: str | None = None):
     pts = [tuple(float(c) for c in p) for p in points]
     samples = (pts[0], pts[len(pts) // 2], pts[-1])
     best, best_d = None, None
-    for e in part.edges():
+    for e in _edge_topo(part)["edges"]:
         if gtype and _gtype(e) != gtype:
             continue
         d = 0.0
@@ -415,8 +506,8 @@ def resolve_edge(part: Part, ref: dict):
         # skipped and the feature quietly rounds a different edge.
         shared = []
         if _shape_key(fa) != _shape_key(fb):
-            kb = {_shape_key(e) for e in fb.edges()}
-            shared = [e for e in fa.edges() if _shape_key(e) in kb]
+            kb = {_shape_key(e) for e in _face_edges(part, fb)}
+            shared = [e for e in _face_edges(part, fa) if _shape_key(e) in kb]
         if not shared:
             x, y, z = ref.get("mid", [0, 0, 0])
             raise ValueError(
@@ -426,34 +517,30 @@ def resolve_edge(part: Part, ref: dict):
         return shared[0] if len(shared) == 1 else _nearest_edge(shared, ref)
     if len(faces) == 1:                         # a SEAM of a round face touches one face
         fa = resolve_face(part, faces[0]["center"], faces[0].get("normal"))
-        return _nearest_edge(fa.edges(), ref)
+        return _nearest_edge(_face_edges(part, fa), ref)
     if ref.get("mid") is None:
         raise ValueError("a picked edge needs its midpoint ('mid': [x, y, z]) — "
                          "pick it in the viewport")
-    return _nearest_edge(part.edges(), ref)
+    return _nearest_edge(_edge_topo(part)["edges"], ref)
 
 
 def tangent_chain(part: Part, edge, tol: float = 0.99) -> list:
     """`edge` plus every edge smoothly connected to it (Fusion's tangent chain):
     walk shared vertices while the tangents agree. A rounded rim is one chain;
-    a sharp box edge is a chain of one (probed 2026-09-04)."""
-    def vk(p):
-        return (round(p.X, 4), round(p.Y, 4), round(p.Z, 4))
-
-    ends = {}
-    for e in part.edges():
-        for t in (0.0, 1.0):
-            ends.setdefault(vk(e @ t), []).append((e, t))
+    a sharp box edge is a chain of one (probed 2026-09-04). The vertex table is
+    the body's, built once (_edge_topo): rebuilding it here cost 265 ms per
+    picked edge on esp32-remote."""
+    topo = _edge_topo(part)
+    ends, own = topo["ends"], topo["edge_ends"]
     seen = {_shape_key(edge)}
     out, todo = [edge], [edge]
     while todo:
         e = todo.pop()
-        for t in (0.0, 1.0):
-            tan = e % t
-            for other, ot in ends.get(vk(e @ t), []):
+        for vkey, tan in own.get(_shape_key(e), []):
+            for other, otan in ends.get(vkey, []):
                 if _shape_key(other) in seen:
                     continue
-                if abs(tan.dot(other % ot)) > tol:
+                if abs(tan.dot(otan)) > tol:
                     seen.add(_shape_key(other))
                     out.append(other)
                     todo.append(other)
@@ -482,95 +569,6 @@ def _pick_edges(part: Part, which: str):
         return picked
     raise ValueError(f'edges must be one of {", ".join(_EDGE_RULES)}, or a list '
                      f"of picked edges")
-
-
-def edge_direction(edge) -> str:
-    """vertical = a straight edge along Z; horizontal = the edge LIES FLAT (a
-    line along X or Y, but also a flat arc: a pocket's rounded floor rim is
-    horizontal to anyone who machines it); other = the rest. The Fillet panel's
-    vocabulary — the AI's legacy groups (_pick_edges) keep theirs.
-
-    An edge the kernel will not answer for is "other": this runs over EVERY
-    edge of the open body, so one refusal must cost that edge and nothing more
-    (rule 5 — OCP failures derive from Exception, not RuntimeError)."""
-    try:
-        zs = [(edge @ t).Z for t in (0.0, 0.25, 0.5, 0.75, 1.0)]
-        if max(zs) - min(zs) < 1e-6:
-            return "horizontal"
-        if _gtype(edge) == "LINE" and abs((edge % 0.5).normalized().Z) > 0.999:
-            return "vertical"
-    except Exception:
-        pass
-    return "other"
-
-
-def edge_side(edge, faces) -> str | None:
-    """"inside" for a concave edge — two faces meeting at an inside corner, what
-    a cutter has to round anyway — "outside" for a convex one, None for a seam
-    (one face) or a smooth junction (a round meeting a flat tangentially).
-
-    Rule (probes/edge_side_probe.py): with tA the direction from the edge INTO
-    face A along its surface, the edge is concave when tA points the way face
-    B's outward normal does. tA = ±(nA × d): the sign whose test point lies on
-    A, a bounded distance query. The orientation-based shortcut (interior on
-    the left of the oriented wire) was measured wrong on half the edges of a
-    plain pocketed box, in every flip variant, and rejected."""
-    if len(faces) != 2:
-        return None
-    a, b = faces
-    # EVERY measurement here is guarded, not just the normals: this runs over
-    # every edge of the open body on every plan, so an edge the kernel refuses
-    # to place, aim or measure belongs to no group rather than costing the
-    # panel it is one edge of (rule 5, review 2026-09-07).
-    try:
-        m = edge @ 0.5
-        d = (edge % 0.5).normalized()
-        na, nb = a.normal_at(m), b.normal_at(m)
-        c = na.cross(d)
-        if c.length < 1e-9:
-            return None
-        c = c.normalized()
-        eps = min(0.3, 0.05 * edge.length)
-        ta = c if a.distance_to(m + c * eps) <= a.distance_to(m - c * eps) else -c
-        s = ta.dot(nb)
-    except Exception:
-        return None
-    if abs(s) < 0.05:
-        return None
-    return "inside" if s > 0 else "outside"
-
-
-EDGE_GROUPS = ("inside/vertical", "inside/horizontal", "inside/all",
-               "outside/vertical", "outside/horizontal", "outside/all")
-
-
-def edge_groups(part: Part, faces_by_edge: dict | None = None) -> dict:
-    """Every edge of the body sorted into the Fillet panel's groups
-    (EDGE_GROUPS): inside corner / outside edge × upright / flat-lying / all.
-    Classified ONCE per built body (0.7 s for esp32-remote's 609 edges) and kept
-    on the Part object — a rebuild is a new Part — so a plan per click costs set
-    arithmetic only."""
-    cached = getattr(part, "_textcad_edge_groups", None)
-    if cached is not None:
-        return cached
-    faces_by_edge = faces_by_edge or _edge_faces(part)
-    groups = {k: [] for k in EDGE_GROUPS}
-    for e in part.edges():
-        try:                               # one edge cannot cost the whole panel
-            side = edge_side(e, faces_by_edge.get(_shape_key(e), []))
-            d = edge_direction(e)
-        except Exception:
-            continue
-        if side is None:
-            continue
-        groups[f"{side}/all"].append(e)
-        if d in ("vertical", "horizontal"):
-            groups[f"{side}/{d}"].append(e)
-    try:
-        part._textcad_edge_groups = groups
-    except Exception:
-        pass                               # a Part that refuses attributes: classify again next time
-    return groups
 
 
 def edges_for(part: Part, edges) -> list:

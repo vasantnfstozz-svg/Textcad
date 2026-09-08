@@ -814,7 +814,8 @@ class ToolPlanReq(BaseModel):
     edges: list | None = None           # tools "fillet"/"chamfer": picked edges of body_id
     chain: bool | None = None           #   (edge_ref dicts or [x, y, z] midpoints); tangent chain on/off
     toggle: dict | None = None          #   one clicked edge to add to / remove from `edges`
-    group_toggle: dict | None = None    #   a whole GROUP of edges ({side, dir}: the panel's chips) to add / take out
+    face_toggle: dict | None = None     #   a clicked FACE ({center, normal}): every edge of it, added / taken out
+    feature_toggle: str | None = None   #   a TREE ROW: the edges of the faces that feature made, added / taken out
     face_point: list | None = None      # tool "hole": where the face was clicked (world) — the hole's centre
     seed_id: str | None = None          # tools "polar_pattern" / "linear_pattern" / "mirror": the tree row to repeat
     own_id: str | None = None           #   the feature THIS session built: a replan is about it (P4 review)

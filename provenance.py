@@ -50,6 +50,7 @@ from OCP.TopAbs import TopAbs_ShapeEnum, TopAbs_State
 from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS
 from OCP.gp import gp_Pnt
+from build123d import Face
 
 import sketch as sk
 
@@ -335,6 +336,74 @@ def feature_index(doc, fid):
     rows = _index_of(part)
     cache[fid] = (part, rows)
     return rows
+
+
+def _points(doc, fid):
+    """One interior point per face of a feature's cached solid, in
+    feature_index order — built once per rebuild, like the index (the host
+    test needs one per face, and sampling a face is the costly part)."""
+    part = doc._parts.get(fid)
+    if part is None:
+        return []
+    cache = _cache(doc)
+    ckey = ("__pts__", fid)
+    hit = cache.get(ckey)
+    if hit is not None and hit[0] is part:
+        return hit[1]
+    pts = [interior_point(Face(row[0])) for row in feature_index(doc, fid)]
+    cache[ckey] = (part, pts)
+    return pts
+
+
+def edge_feature(doc, fid):
+    """The feature a tree row names, for an edge tool — or the sentence."""
+    f = next((x for x in doc.features if x.id == fid), None)
+    if f is None:
+        raise ValueError(f"no feature '{fid}' in this design — click a row of the tree")
+    if f.op in sk.SKETCH_PRODUCERS:
+        raise ValueError("a sketch has no edges — click the row of what it was extruded "
+                         "into, a face, or an edge")
+    return f
+
+
+def feature_faces(doc, fid, body_id) -> set:
+    """The forward direction of attribute_face, for one feature at once: the
+    identities (blocks._shape_key) of the faces of body `body_id` that feature
+    `fid` MADE. Fusion's Fillet takes a FEATURE as a selection, meaning the
+    edges of the faces it created as they exist now — this is the faces half.
+
+    A face of the body is the feature's when it is a trimmed survivor (this
+    module's host test) of a face the feature's own output has and its input
+    did not; `document.delta_features` says what output and input mean (the
+    tree's folding rule — a pulled tool with a folded cut is that cut's before
+    and after; a creator or a placement is a whole body, so every face is its).
+    Measured in probes/feature_edges_probe.py: a cut's row is its pocket's
+    five faces, the base plate's row its six faces AS THEY ARE NOW (the top
+    with the pocket's opening in it), a fillet's row its bands; ~40 ms on a
+    pocketed box with the indexes and points cached per rebuild.
+
+    Raises a sentence for a row that is not a feature of this body: a sketch,
+    an unknown or struck-out row, one outside the body's history, an unbuilt one."""
+    edge_feature(doc, fid)
+    before_id, after_id = doc.delta_features(fid)
+    if after_id != body_id and after_id not in doc.ancestors(body_id):
+        raise ValueError(f"'{fid}' is not part of {body_id}'s history — click a feature of "
+                         f"the body the edges are on")
+    if doc._parts.get(after_id) is None or (before_id and doc._parts.get(before_id) is None):
+        raise ValueError(f"'{fid}' is not built (failed upstream?) — fix it first")
+    before_rows = feature_index(doc, before_id) if before_id else []
+    new_rows = []
+    for row, pt in zip(feature_index(doc, after_id), _points(doc, after_id)):
+        if pt is None:
+            continue
+        if before_rows and _hosts(before_rows, row[1], row[2], row[3], pt, len(row[2]) > 1):
+            continue                         # the input had it already: not this feature's
+        new_rows.append(row)
+    keys = set()
+    for row, pt in zip(feature_index(doc, body_id), _points(doc, body_id)):
+        if pt is not None and _hosts(new_rows, row[1], row[2], row[3], pt, len(row[2]) > 1):
+            keys.add(hash(row[0]))
+    return keys
 
 
 # ---------------------------------------------------------------------------

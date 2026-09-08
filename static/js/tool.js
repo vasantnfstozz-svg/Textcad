@@ -404,56 +404,90 @@ export function tool(spec) {
   }
 
   /* -------- EDGE MODE (Fusion: press Fillet, click edges, drag) --------
-     The panel opens at once, on whatever edge is already picked or on nothing,
-     and every click in the viewport goes to the SERVER as a toggle: it knows
-     the tangent chains, so it decides add-or-remove and hands back the picks. */
+     The panel opens at once, on whatever is already picked or on nothing, and
+     every click goes to the SERVER as a toggle — it knows the tangent chains
+     and which faces a feature made, so it decides add-or-remove and hands back
+     the picks. Fusion's three selection kinds (user, 2026-09-08: "select a
+     body, like from the feature tree … those selected face or body edges
+     should be selected … another click should deselect"): an EDGE, a FACE
+     (every edge of it) and a FEATURE — a tree row, meaning the edges of the
+     faces that feature made, as they are now. A second click on the same face
+     or row takes its edges out again; a gold edge is released by clicking it. */
   const edgesLabel = plan => plan && plan.edges && plan.edges.length
     ? `${plan.edges.length} edge${plan.edges.length === 1 ? '' : 's'} of ${plan.input}`
     : '(click edges)';
+  // select-then-command (parity rule 2): whatever was picked before the tool —
+  // an edge, a face, a tree row — enters as the FIRST CLICK, the same path as
+  // clicking with the panel open, so the server's chain default sees an empty
+  // selection (fresh picking) rather than a lone unexplained pick
+  const firstClick = sel => !sel ? null
+    : sel.kind === 'edges' ? { toggle: { points: sel.edges[0].points } }
+    : sel.kind === 'face' || sel.kind === 'curved'
+      ? { face_toggle: { center: sel.center, normal: sel.normal || null } }
+    : sel.kind === 'feature' ? { feature_toggle: sel.id } : null;
   function openEdges(sel, bods) {
     if (!bods.length) {
       say(`⚠ ${spec.name} needs a body — build one first, then click its edges.`);
       return;
     }
-    if (sel && sel.kind !== 'edges')
-      say(`⚠ ${spec.name} works on the EDGES of a body — click an edge, not a ` +
-        `${sel.kind === 'profile' ? 'sketch' : sel.kind === 'feature' ? 'tree row' : 'face'}.`);
+    if (sel && sel.kind === 'profile')
+      say(`⚠ ${spec.name} works on the edges of a body — a sketch has none. Click an ` +
+        'edge, a face, or the row of a feature.');
+    const first = firstClick(sel);
+    const row = !!first && sel.kind === 'feature';
+    // a row names its own body (the server walks the feature to its current
+    // state), so none is chosen here for it
     const input = { kind: 'edges', edges: [],
-                    body: sel && sel.kind === 'edges' ? sel.body : bods.at(-1).id };
+                    body: row ? null : (sel && sel.body) || bods.at(-1).id };
     st = session(input);
-    // select-then-command: the edge already picked enters as a CLICK, the same
-    // path as clicking in the viewport — so the server's chain default sees an
-    // empty selection (fresh picking) rather than a lone unexplained edge
-    if (sel && sel.kind === 'edges')
-      st.firstExtra = { toggle: { points: sel.edges[0].points } };
+    st.firstExtra = first;
+    st.lastRow = row ? sel.id : null;
     clearPick();                      // the plan's gold edges take over from the pick
     fill(id('Profile'), ['(click edges)'], '(click edges)');
     el('Profile').disabled = true;
     el('Op').value = 'new';
     beginEdgePick(onEdgePick, { name: spec.name });
+    waitForRow(onRow);                // the tree stays a selection surface all session
     begin();
-    say(`${spec.name}: click the edges of ${input.body} — a click adds an edge, ` +
-      'clicking it again removes it. Esc cancels.');
+    say(`${spec.name}: click edges, faces or a row of the tree` +
+      `${input.body ? ` on ${input.body}` : ''} — a click adds, clicking the same ` +
+      'thing again removes. Esc cancels.');
   }
   function onEdgePick(kind, info) {
     if (!st || st.input.kind !== 'edges') return;
-    if (kind !== 'edge') {
-      // a whole body of edges at once is the GROUP CHIPS' job (inside/outside
-      // × vertical/horizontal), not a face click — which would grab a face's
-      // edges on a near-miss, with no hover to warn (face-pick edges: deferred)
-      say(`⚠ ${spec.name} works on edges — click an edge of ${st.input.body}, ` +
-        `or use the group buttons in the panel to add many at once.`);
-      return;
-    }
+    // a row opened the tool and its first plan has not named the body yet: the
+    // click says which body it is on
+    if (!st.input.body) st.input.body = info.body || null;
     // while the preview is up the viewport shows THIS tool's result body: its
-    // unchanged edges are the input body's edges, so clicks on it count too
+    // unchanged edges and faces are the input body's, so clicks on it count too
     const mine = info.body === st.input.body || info.body === st.featureId;
     if (info.body && !mine) {
-      say(`⚠ ${spec.name} works on ONE body at a time — that edge belongs to ` +
+      say(`⚠ ${spec.name} works on ONE body at a time — that ${kind} belongs to ` +
         `${info.body}; the selection is on ${st.input.body}.`);
       return;
     }
+    // a face means every edge of it, toggled as one set; the server names the
+    // face by its centre and refuses one only the preview has (a new round)
+    if (kind === 'face') {
+      replan({ face_toggle: { center: info.center || null, normal: info.normal || null } });
+      return;
+    }
     replan({ toggle: { points: info.points } });
+  }
+  /* a tree row while the panel is open: the edges of the faces that feature
+     made, as they are now — added, or taken out when they are all picked. The
+     tree toggles its own selection, so clicking the lit row again arrives as
+     null: it means the same row, toggled again (the user's "deselect"). */
+  function onRow(fid) {
+    if (!st || st.input.kind !== 'edges') return;
+    const rowId = fid || st.lastRow;
+    if (!rowId) return;
+    st.lastRow = rowId;
+    if (rowId === st.featureId) {
+      say(`⚠ that row is this ${lower}'s own result — click another feature, a face or an edge.`);
+      return;
+    }
+    replan({ feature_toggle: rowId });
   }
   /* -------- FEATURE MODE (Pattern: repeat a feature, or a body) --------
      The seed is a tree row (any non-sketch feature) or the face a click landed
@@ -550,17 +584,27 @@ export function tool(spec) {
     const had = ((st.plan && st.plan.edges) || []).length;
     spec.gizmos.end();
     adoptPlan(plan);
-    // a click that RELEASED edges says so (rule 7): with Chain on, one click on
-    // a picked smooth rim releases the whole rim, which reads as "the edge will
-    // not select" when nothing says otherwise
+    speakClick(plan, had);
+    if (st.featureId) apply();        // not awaited: the next click's plan must not wait for a rebuild
+  }
+  /* what a click did, in the chat (rule 7) — for a click during the session
+     AND for the pick that opened the tool (setupTool's first plan carries it).
+     A click that RELEASED edges says so: with Chain on, one click on a picked
+     smooth rim releases the whole rim, which reads as "the edge will not
+     select" when nothing says otherwise. A face or a row says what it was —
+     the server names it (`click_of`) — and how many edges it brought. */
+  function speakClick(plan, had) {
+    const of = plan.click_of === 'face' ? "that face's edges"
+      : plan.click_of ? `the edges of ${plan.click_of}` : null;
     if (plan.click === 'removed') {
       const n = had - (plan.edges || []).length;
-      say(`${spec.name}: ${plan.click_n > 1 ? 'those edges were' : 'that edge was'} already picked — ` +
-        `the click released ${n} edge${n === 1 ? '' : 's'}. Click again to add ${n === 1 ? 'it' : 'them'} back.`);
-    } else if (plan.click === 'added' && (plan.click_n || 0) > 1) {
-      say(`${spec.name}: added ${plan.click_n} edges — ${(plan.edges || []).length} picked now.`);
+      say(`${spec.name}: ${of ? `${of} were all` : plan.click_n > 1 ? 'those edges were' : 'that edge was'} ` +
+        `picked already — the click released ${n} edge${n === 1 ? '' : 's'}. ` +
+        `Click again to add ${n === 1 ? 'it' : 'them'} back.`);
+    } else if (plan.click === 'added' && ((plan.click_n || 0) > 1 || of)) {
+      say(`${spec.name}: added ${plan.click_n} edge${plan.click_n === 1 ? '' : 's'}` +
+        `${of ? ` — ${of}` : ''} — ${(plan.edges || []).length} picked now.`);
     }
-    if (st.featureId) apply();        // not awaited: the next click's plan must not wait for a rebuild
   }
   function adoptPlan(plan) {
     st.plan = plan;
@@ -647,7 +691,7 @@ export function tool(spec) {
     st.featureId = f.id;
     st.original = spec.snapshot(f);
     st.lastGood = st.original;
-    if (edges) { clearPick(); beginEdgePick(onEdgePick, { name: spec.name }); }
+    if (edges) { clearPick(); beginEdgePick(onEdgePick, { name: spec.name }); waitForRow(onRow); }
     const label = feature ? `${p.seed || 'the body'} on ${f.inputs[0]}`
       : face ? `(face of ${f.inputs[0]})`
         : edges ? `edges of ${f.inputs[0]}` : f.inputs[0];
@@ -704,6 +748,7 @@ export function tool(spec) {
         && [...el('Target').options].some(o => o.value === plan.target_body))
       el('Target').value = plan.target_body;
     adoptPlan(plan);
+    if (plan.click) speakClick(plan, 0);        // the pick that opened the tool was a click too
   }
 
   /* -------- the verified preview (rules 4, 5, 6, 7) -------- */

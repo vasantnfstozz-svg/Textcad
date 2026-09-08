@@ -16,7 +16,11 @@
 
 Press **Fillet** (or **Chamfer**) and click the edges of a body in the
 viewport: each edge you hover lights up, each edge you click turns **gold** and
-stays selected; clicking a gold edge releases it. A **ball** sits at the middle
+stays selected; clicking a gold edge releases it. A **face** you hover glows
+too, and clicking it selects every edge of it; a **row of the tree** selects
+the edges of the faces that feature made (a pocket's row: its floor rim, its
+uprights, its opening); clicking the same face or row again takes its edges
+out. A **ball** sits at the middle
 of the first picked edge, the radius box reads **0** — nothing has changed yet.
 Drag the ball into the body and the box follows; release, and every selected
 edge is rounded (bevelled) by that value after one verified rebuild. Type an
@@ -26,11 +30,29 @@ at the stored value.
 
 ## Inputs (rules 1, 2)
 
-* **One or more EDGES of one body**, picked in the viewport. Select-then-command
-  works: edges already gold when you press the tool are its input; with nothing
-  picked the tool waits for clicks (command-then-select). Faces and sketches are
-  refused with a sentence. A selection can only grow on the body the first edge
-  belongs to; clicking another body's edge says so.
+* **One or more EDGES of one body**, picked three ways — Fusion's three
+  selection kinds, every click a TOGGLE the server decides (2026-09-08, the
+  user: "if I am selecting an extrude and pressing Fillet, those selected face
+  or body edges should be selected … another click on the selected body should
+  deselect"):
+  * an **edge** — one edge (its tangent chain, when Chain is on);
+  * a **face** — every edge two faces meet at on it, as one set: the ones not
+    picked yet come in, and when they are all picked the set goes out. The
+    server names the face by its centre and refuses a face only the PREVIEW
+    has (a round the tool itself just drew has no edges on the input body);
+  * a **row of the tree** — the edges of the faces that feature made, as they
+    exist now (`provenance.feature_faces`: a face of the body is the feature's
+    when it is a trimmed survivor of a face the feature's output has and its
+    input did not; the tree's folding rule says what output and input mean).
+    A pocket's row is its 12 edges; the base plate's row its outer edges AND
+    the pocket's opening (the top face is the plate's, as it is now); a
+    fillet's row its bands' edges. A sketch row is refused with a sentence.
+  Select-then-command works for all three: an edge, a face or a row picked
+  when you press the tool enters as its first click, and a row also names the
+  body (the feature's current state). With nothing picked the tool waits for
+  clicks (command-then-select). A selection can only grow on the body the
+  first pick belongs to; clicking another body's edge or face says so. A
+  cylinder's seam bounds one face and is never offered.
 * **Tangent chain** (Fusion default ON): clicking one edge of a rounded rim
   selects the whole smoothly connected loop. The server works the chain out and
   hands the edges back; a checkbox in the panel turns it off.
