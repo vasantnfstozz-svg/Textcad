@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from history import History, HistoryError
+from history import History
 
 SOURCE = "backfill:git"
 _FALLBACK_GIT = r"C:\Program Files\Git\cmd\git.exe"

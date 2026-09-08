@@ -443,7 +443,6 @@ def test_corner_fillet_arcs_are_not_reported_as_diameters():
     """A rounded-corner boss face has four r=3 ARCS. Someone asking "what is
     this bore" does not mean the corner radius, so partial circles must stay
     out of the ⌀ rows."""
-    from build123d import Part
     doc = Document(name="t-fillets")
     doc.add("b", "plate", {"width": 60, "depth": 40, "thickness": 10})
     doc.add("f", "fillet", {"radius": 3, "edges": "vertical"}, inputs=["b"])

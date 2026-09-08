@@ -29,7 +29,6 @@ is real geometry: _eval is ~20 s of a 28 s cold rebuild, health ~4 s.
 These tests exist so the speed cannot come back as lost checking. They assert
 BEHAVIOUR, never wall-clock, for exactly the reason above.
 """
-import pytest
 
 import inspector
 from document import Document

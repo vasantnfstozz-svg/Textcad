@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import re
 
-import document
 from document import Document, CREATORS, MODIFIERS, op_params
 
 

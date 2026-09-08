@@ -17,7 +17,7 @@
 // There is no ghost: the copies are drawn only by the kernel — the value box
 // follows the drag live and the real pattern appears on release.
 
-import { tool, g, num, say, setBox } from './tool.js';
+import { tool, g, num, setBox } from './tool.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          beginSecondArrow, endSecondArrow, setSecondArrowAmount,
          beginAxisLine, endAxisLine,

@@ -26,7 +26,6 @@ copy tangent to an edge — §7) and a kernel exception are all refused, never a
 """
 from __future__ import annotations
 
-import math
 
 import build123d as b3d
 from build123d import Axis, Location, Plane, Vector

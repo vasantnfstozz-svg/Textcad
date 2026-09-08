@@ -16,7 +16,6 @@ centroid, the planned axis by building with it.
 """
 import math
 
-import build123d as b3d
 import pytest
 
 import sketch as sk

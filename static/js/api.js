@@ -51,7 +51,7 @@ export async function planRequest(req) {
 export async function waitForServer(ms = 300000) {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) {
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => { setTimeout(r, 1000); });
     try { return await getJSON('/api/doc'); } catch (e) { /* still restarting */ }
   }
   return null;

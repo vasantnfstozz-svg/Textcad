@@ -21,122 +21,70 @@
 
 | | |
 |---|---|
-| **Range** | `6e6f3fe..HEAD` — ONE code commit: the six findings of the review of `16ade36..6e6f3fe` (A the STEP export, B fillet picking, C the edge-group chips), each reproduced first and each with a test that was RED before the fix |
-| **Already reviewed** | everything up to `6e6f3fe`. The four code commits in it were reviewed and this commit is the answer — **do not re-review them** |
-| **Effort** | high — two of the six change code every tool goes through (`tool.js replan`, `viewport.js` picking) and one changes what `rebuild()` calls a failure |
+| **Range** | `bdd8ebf..HEAD` — ONE commit: the first lint pass over the whole project (Ruff for Python, ESLint for JavaScript). It found **no real bug**; it removed dead code and added the two linters plus an edit hook |
+| **Already reviewed** | everything up to `bdd8ebf` (the review answer of 2026-09-07). **Do not re-review it** |
+| **Effort** | low is enough — nothing in this commit is meant to change behaviour, so the whole review is one question |
 | **Branch** | `master` (no pull request — do not try to comment on GitHub) |
-| **Frontend** | `ui v169` (css unchanged at v39) |
+| **Frontend** | `ui v170` (css unchanged at v39) |
 
-This commit is a review answer, so the useful question is not "is there a bug
-in the old code" — that review already happened. It is **"is each fix the
-right fix, and does it break something the old behaviour was holding up?"**
+The one question: **did any removed line actually do something?** Every
+removal was reported by a linter as unused and then checked by hand, but the
+checks were reading, not running, and the fast test tier does not execute
+every browser path.
 
-## The six, and where each one's risk is
+## What was removed, and where the risk is
 
-### 1. `tool.js replan` — the session is bound at click time
+### 1. `static/js/viewport.js` — the module-level `mesh` variable
 
-`replan()` now captures `st` when the click happens and passes it to
-`replanNow(extra, mine)`, which returns early if `st !== mine`. Before, `mine`
-was bound after the queue wait.
+Declared at the top, written in `disposeModel()` (`mesh = null`) and in the
+body loader (`mesh = m` for the result body), **never read** — every reader in
+the file uses `bodyObjs[i].mesh` or a local `const mesh`. Both writes and the
+declaration are gone. ESLint's `no-undef` confirms no reader remains.
 
-**Look at:** every caller of `replan` (`fillet.js` chain box + 6 chips,
-`pattern.js` axis re-pick + Along box, `mirror.js` plane pick / box / refresh,
-`tool.js` onEdgePick and line 600). Is there a caller that *relies* on a
-queued plan running against a session opened later? I could not find one — a
-plan describes the session it was made in — but that is the regression this
-change could cause, and it would show as "the panel stopped updating".
+**Look at:** is there a reader OUTSIDE the file — a `__vp` debug hook, a test
+that pokes `viewport.mesh`? I searched `static/js` and `tests/e2e`; nothing.
 
-**Proof:** `tests/e2e/test_fillet_tool.py::test_a_queued_chip_click_belongs_to_the_session_it_was_made_in`.
-Red before: 4 gold edges appeared in a session that picked nothing. The test
-delays `/api/tool/plan` **in the browser** (a `window.fetch` wrapper) rather
-than in the driver, so the driver stays free to click while one is in flight —
-that is the only way to queue a second request on purpose. If you think that
-is fragile, say so.
+### 2. `static/js/tool.js` — the dead store in `applyOnce`
 
-### 2. `document.to_step` / `studio.py /api/export` — `Document.exported_bodies`
+`doc = settled.doc; f = settled.f;` lost its first half: `doc` is a local of
+`applyOnce` that nothing reads after the settle (`applyOp()` reads `S.doc`).
+Also new: an `eslint-disable-next-line no-unmodified-loop-condition` on the
+apply loop with the reason `hide() sets st = null during the await`
+(`tool.js:303`). **Check that reason is true**, because if it is not, the loop
+`while (applyPending && st)` has a condition that never changes.
 
-`to_step` records `len(result_bodies())` **inside** the try, while the rollback
-bar is released, and resets it to 0 on entry. `/api/export` echoes that instead
-of counting after the call.
+### 3. Four unused imports and three unused results, JavaScript
 
-**Look at:** a new mutable field on `Document` (`exported_bodies`). It is reset
-at the top of `to_step` so a failed export cannot leave a stale count, and
-`/api/export` returns `{"error": …}` on failure before reading it. Is there a
-path that reads it without an export having happened (it would read 0)? Should
-it have been the file's own `n_solids` instead — one number, measured, no
-state? I kept them separate on purpose: `n_solids` is solids in the FILE,
-`bodies` is bodies of the DESIGN, and the sentence offers "join them with
-Extrude's Join", which is advice about features.
+`doctabs.js` (`S`), `fillet.js` and `pattern.js` (`say`), `tree.js`
+(`openFeatDialog`); `sketch3d.js` dropped `const c =` before
+`ctx.setOrbitUp(...)`, `sketcher.js` dropped `const cur = pathCursor()` in
+`pathGhost` (`pathCursor` is pure — three lines, no side effect), `api.js`
+wraps the `setTimeout` in a promise executor in braces so its id is not the
+executor's return value (a lint rule, no behaviour change).
 
-### 3. `toolplan._toggle_set` — compares the chain-expanded picks
+### 4. Python: 17 unused imports, 2 f-strings with no placeholders
 
-Now takes `chain` and calls `_expand(part, [r], chain)` per ref; the chain
-default moved ABOVE the chip block in `plan_fillet` (it does not depend on
-anything in between). Removal drops any pick whose chain reaches into the set,
-and reports the number of EDGES released.
+Removed by `ruff --fix`, then read. `blocks.py` lost `Locations` from its
+build123d import, `pattern.py` lost `math`, `author.py` lost `document`,
+`backfill.py` lost `HistoryError`, `assembly.py` lost `build123d`; the rest are
+in tests. `generate.py` (the old prototype) gained `if TYPE_CHECKING: import
+check` so its `"check.Spec | None"` annotation names a real module.
+`tests/e2e/test_sketch_scale.py` lost a walrus that assigned a name nothing
+read.
 
-**Look hardest here.** Two things: (a) **cost** — the add path is one `_expand`
-over all refs (as before), but the remove path is one per ref, and
-`blocks.tangent_chain` rebuilds an end-point map over every edge of the body on
-every call. On esp32-remote (609 edges) with a dozen picks that could be slow;
-I did not measure it. (b) does dropping a whole pick whose chain merely
-*touches* the group release edges outside the group? Yes, deliberately — it is
-the rule a single click already follows (`_toggle_pick`), and the browser says
-"the click released N edges". Is that the right call for a chip?
+### 5. New tooling — `ruff.toml`, `.claude/lint/`, `.claude/hooks/py_lint_check.py`
 
-### 4. `blocks.edge_side` / `edge_direction` / `edge_groups` — guarded per edge
-
-All the geometry in `edge_side` is inside the try now (was: the normals only),
-`edge_direction` returns `"other"` on a refusal, and the `edge_groups` loop
-skips an edge whose classification raises — including `_shape_key`.
-
-**Look at:** three bare `except Exception` blocks that swallow silently. The
-alternative is a panel that will not open, which is worse, but nothing is
-reported anywhere. Should a skipped edge leave a note? Also: `_edge_faces` is
-NOT guarded — it was in the path before the chips, so its exposure is
-unchanged, but say so if you disagree.
-
-### 5. `viewport.ownFaceHit` — the bound is 2× the reach, not 4×
-
-**This one contradicts the last review, and it was settled by measurement.**
-The previous review called `4 * reach` a pixel/world unit mix-up and proposed
-comparing in pixels. `probes/own_face_reach_probe.py` (new, 853 samples on a
-pocketed box: 3 zooms × 3 directions × 6 click offsets, through
-`__vp.edgeHitReport`) found:
-
-- a **pixel** bound guards nothing: every own-face hit is inside the 5 px pick
-  threshold by construction (max 4.02 px of 853), because both points sit on
-  the click ray. The proposed fix would have made the escape unconditional.
-- the world bound is right in KIND (the click tolerance really is a world
-  length that grows with zoom) and 4× too loose: a legitimate click's face hit
-  lands within 1.1× the reach (p90), 1.5× at worst, while 4× at a 400 mm view
-  is 11.5 mm — and a **dead-centre** click was measured selecting an edge whose
-  line is 10.0 mm behind the face in front of it.
-
-**Look at:** is 2× enough margin? The measured worst legitimate case is 1.5×
-(a 4 px offset at a 60 mm view). Everything I sampled was a pocketed box; a
-large curved body could differ. And `__vp.edgeHitReport` is new production
-code that exists only for the probe and the test — the same kind of hook as
-`edgeScreen` / `pickAtWorld`, but say if it should not ship.
-
-**Proof:** `test_a_face_hit_far_from_the_line_is_not_beside_it` drives the real
-rule (`beside` comes from `ownFaceHit` itself, not a copy of it) and asserts
-nothing 6 mm from the line is "beside" it. All 11 fillet journeys pass,
-including both inside-corner ones the user hand-tested.
-
-### 6. `document.rebuild` — every body is deep-checked, verdict cached
-
-Was: OCCT validity on `_result_feature()` (the tail) only. Now: on every
-`leaf_solid_ids()` body, memoised in `_valid_cache` keyed on the same content
-signature the part cache uses, bounded by `CACHE_MAX`. `_deep_valid` is a new
-module-level function so a test can stand in for it.
-
-**Look at:** (a) the cache — the signature is the same one `_cache` uses, so a
-different body cannot collide, but check that reasoning. (b) this can turn a
-body that was green RED, which then blocks the export. I swept the user's whole
-library: **51 designs, 0 with a body OCCT calls invalid**, and second rebuilds
-~0.0 s. (c) `_valid_cache` is per-Document while `_cache` is shared across
-documents — deliberate (it is small and per-design), or an inconsistency?
+- `ruff.toml` selects `F, E7, E9, B, PLE` and ignores eight rules with a
+  reason each. **`B023` is ignored** because all 32 hits were checked to be a
+  lambda called inside the same loop iteration (the gauntlet tests'
+  `assert_op(label, lambda: ...)`) or an IIFE that binds the variable
+  (`pattern.py`'s `(lambda t: (lambda s: ...))(t)`). If you find one that is
+  called AFTER its loop moves on, that is a real finding.
+- `.claude/lint/` holds `package.json` + `eslint.config.mjs`; `npm install`
+  there, then `npm run lint`. `node_modules` and the lockfile are ignored.
+- The hook runs `ruff check --select E9,F63,F7,F82,PLE` on every edited `.py`
+  and blocks with the output. **A hook must never break a tool call**: check
+  it exits 0 on every path, including "ruff not installed" and "not a .py".
 
 ## Ground rules for this repo (they change what counts as a finding)
 
@@ -153,11 +101,15 @@ documents — deliberate (it is small and per-design), or an inconsistency?
 
 ## Already known — do NOT re-report
 
-- Everything in `16ade36..6e6f3fe` that this commit does not touch: that review
-  is closed. In particular the picking-on-mesh-mode-bodies note, the pattern
-  edit/cancel race, and the retroactive body-pattern health gate.
-- The proposed pixel-space fix for `ownFaceHit` (finding 5) — measured and
-  rejected, with the numbers above. Re-propose it only with a measurement.
+- Everything in `16ade36..bdd8ebf`: those two reviews are closed (STEP export,
+  fillet picking, edge-group chips, and the six fixes). In particular the
+  pixel-space `ownFaceHit` proposal was measured and rejected.
+- Style-class lint output that is deliberately ignored: `a = x; b = y` on one
+  line (`E702`), single-letter geometry names (`E741`), lambda assignment,
+  `raise` without `from`, `zip` without `strict`.
+- ESLint's `no-use-before-define` is configured with `variables: false`: a
+  module-level `let` declared lower in the file and used inside a function is
+  legal and common here. Do not report those.
 - Five tools hand-type "a value typed before the plan arrived waits for it"
   (LAUNCH-PLAN §10, P3).
 - `test_revolve_tool.py::test_open_from_the_tree_row_and_drag_the_ring` is
@@ -166,8 +118,7 @@ documents — deliberate (it is small and per-design), or an inconsistency?
 - 5 pre-existing red browser tests in `tests/e2e/test_tree_delete.py` (§10 P1,
   someone else's work).
 - Pattern's drag ghost (§10 P3, deferred by the user).
-- `designs/esp32-remote` reports a spec mismatch (36 solids vs `n_solids: 1`).
-  That is 753c24c's spec-target change and an improvement on what it replaced;
+- `designs/esp32-remote` reports a spec mismatch (36 solids vs `n_solids: 1`);
   the spec is the user's to update, not the code's.
 
 ## After the review

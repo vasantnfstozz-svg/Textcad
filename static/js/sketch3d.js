@@ -105,7 +105,7 @@ export function enterSketch3D(frameSpec, opts = {}) {
   ctx.groundGrid.visible = false;
   // orbit around the PLANE's up so the flat-on sketch view is never a gimbal
   // pole (looking down world -Y at XZ was exactly phi=pi => orbit was dead)
-  const c = ctx.setOrbitUp(frame.y.toArray());
+  ctx.setOrbitUp(frame.y.toArray());
   // Sketch mode changes exactly ONE thing about navigation: LEFT stops
   // orbiting because it draws. RIGHT=pan / MIDDLE=orbit / wheel=zoom are the
   // app-wide mapping set in viewport.buildControls — do not diverge here, the

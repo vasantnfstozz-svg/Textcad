@@ -9,7 +9,6 @@ round 1 (2026-07-28):
 """
 import pytest
 
-import build123d as b3d
 import blocks
 import author
 from document import Document

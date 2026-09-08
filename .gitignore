@@ -24,3 +24,8 @@ _studio_mesh.stl
 .studio-session.json
 .studio-session.tmp
 .studio-session-*.json
+
+# lint tooling (CLAUDE.md, Commands): ESLint's packages install locally, never committed
+.claude/lint/node_modules/
+.claude/lint/package-lock.json
+.ruff_cache/

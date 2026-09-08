@@ -10,7 +10,7 @@ import shutil
 import pytest
 
 import backfill
-from backfill import SOURCE, Commit, Report
+from backfill import SOURCE, Report
 from history import History
 
 pytestmark = pytest.mark.skipif(shutil.which("git") is None

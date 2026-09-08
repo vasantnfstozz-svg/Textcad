@@ -9,7 +9,6 @@ Run against the e2e suite's OWN server: verifying this on the user's live
 instance raced another agent switching tabs mid-drag, and the picks landed on
 a different design entirely.
 """
-import re
 
 import pytest
 

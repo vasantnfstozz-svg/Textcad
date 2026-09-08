@@ -9,7 +9,6 @@
 // changes ... if i press, the edits i did, no need to be saved."
 
 import { bus } from './bus.js';
-import { S } from './state.js';
 import { postJSON } from './api.js';
 import { loadMesh, clearMesh } from './viewport.js';
 import { actionNew } from './dialogs.js';

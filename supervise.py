@@ -146,7 +146,7 @@ def main() -> int:
         print(f"Something is already serving {url}.")
         print("That is probably TextCAD Studio -- just open the tab.")
         print("If it is stuck, close it first, or pick another port:")
-        print(f"  set TEXTCAD_PORT=8124 && python studio.py")
+        print("  set TEXTCAD_PORT=8124 && python studio.py")
         return 3
 
     _quiet_crash_dialogs()

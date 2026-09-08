@@ -48,7 +48,7 @@ def test_tilted_face_taper_is_on_the_right_side_or_refused():
             msg = " ".join(f.problems).lower()
             assert "taper" in msg and ("smaller" in msg or "shorter" in msg), (taper, f.problems)
     assert built >= 1, "the shallow -5 deg taper must still build"
-from build123d import Edge, Kind, Line, Spline, Wire
+from build123d import Kind, Line, Spline, Wire
 
 import sketch as sk
 from gauntlet import BODIES, assert_op, face_edge_kinds, planar_faces

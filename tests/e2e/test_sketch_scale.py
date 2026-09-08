@@ -109,9 +109,9 @@ def test_modify_tab_scale_routes_a_sketch_into_drag_scale(page, fresh_doc,
     page.click("#tabstrip >> text=Modify")
     page.wait_for_timeout(300)
     page.click("#ribbon .rbtn[title='scale']")
-    page.wait_for_function(IS_ACTIVE := (
-        "async () => (await import('/static/js/sketch3d.js')).sketch3DActive()"
-    ), timeout=20000)
+    page.wait_for_function(
+        "async () => (await import('/static/js/sketch3d.js')).sketch3DActive()",
+        timeout=20000)
     page.wait_for_timeout(800)
     # GRAB the vertical arrow (rect bbox -5..15 x 0..10 -> ruler at x=18),
     # drag +40mm = x2, release, then click away to finish the scale

@@ -1,0 +1,13 @@
+{
+  "name": "textcad-lint",
+  "private": true,
+  "description": "ESLint for static/js (see CLAUDE.md, Commands). Run `npm install` once in this folder, then `npm run lint`. Dev tooling only: the app has no build step and no runtime dependency on this.",
+  "scripts": {
+    "lint": "cd ../.. && node .claude/lint/node_modules/eslint/bin/eslint.js --config .claude/lint/eslint.config.mjs --no-config-lookup static/js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.10.0",
+    "globals": "^17.12.0"
+  }
+}

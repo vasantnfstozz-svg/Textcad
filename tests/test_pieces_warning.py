@@ -11,7 +11,6 @@ mystery lump. Same for a cut that severs a plate.
 Nothing here makes it an error: two pieces is sometimes exactly what you meant.
 It must simply never be silent.
 """
-import pytest
 from fastapi.testclient import TestClient
 
 import studio

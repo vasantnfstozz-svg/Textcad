@@ -2114,7 +2114,7 @@ def measure_set(req: MeasureSetReq):
                f"{after.get('kind') or 'nothing measurable'} instead of "
                f"{plan.get('kind')}"
                if not same_kind else
-               f"the model came out at "
+               "the model came out at "
                + (f"{achieved:g} mm" if achieved is not None else "something else"))
         out["reverted"] = _revert_last()
         out["warning"] = (

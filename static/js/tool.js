@@ -840,7 +840,7 @@ export function tool(spec) {
     let good = pr;
     if (f && f.status === 'failed') {
       const settled = await settle(pr, { doc, f });
-      doc = settled.doc; f = settled.f;
+      f = settled.f;
       good = settled.reverted ? null : spec.params(st);
     }
     // ...and the plan they came from rides along: a tool whose values have no
@@ -863,6 +863,7 @@ export function tool(spec) {
     if (!st) return Promise.resolve();
     if (applyRun) { applyPending = true; return applyRun; }
     applyRun = holdViewport(async () => {
+      // eslint-disable-next-line no-unmodified-loop-condition -- hide() sets st = null during the await
       do { applyPending = false; await applyOnce(); } while (applyPending && st);
     }).catch(e => { if (e !== GONE) throw e; })   // no session left to finish
       .finally(() => { applyRun = null; });

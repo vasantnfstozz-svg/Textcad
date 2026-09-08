@@ -10,7 +10,6 @@ Locks in, through the real UI:
   4. the Add Feature dialog suggests an id (fillet1 style) so the user
      never has to invent one.
 """
-import time
 
 import httpx
 import pytest

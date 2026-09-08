@@ -1,0 +1,20 @@
+# Ruff, added 2026-09-08 with the first lint pass (which found no real bug, only
+# dead code). `python -m ruff check .` must stay at ZERO so that any hit is a new
+# problem. The edit hook (.claude/hooks/py_lint_check.py) runs only the
+# crash-class subset on every .py edit; this file is the ship-time set.
+target-version = "py314"
+extend-exclude = ["probes", "designs", ".claude", ".playwright-mcp"]
+
+[lint]
+select = ["F", "E7", "E9", "B", "PLE"]
+ignore = [
+  "E702",  # `a = x; b = y` on one line: used on purpose for paired assignments
+  "E731",  # assigning a lambda
+  "E741",  # single-letter names l / O / I: geometry code uses them
+  "B007",  # unused loop variable
+  "B008",  # function call in a default argument
+  "B023",  # closure over a loop variable: every hit here is a lambda called
+           # inside the iteration or an IIFE that binds it (checked 2026-09-08)
+  "B904",  # raise inside except without `from`
+  "B905",  # zip() without strict=
+]

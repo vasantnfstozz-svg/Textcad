@@ -14,7 +14,7 @@
 // told. There is no ghost: a rounded corner is drawn only by the kernel — the
 // value box follows the drag live and the real solid appears on release.
 
-import { tool, g, num, say, setBox } from './tool.js';
+import { tool, g, num, setBox } from './tool.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          beginEdgeGlow, endEdgeGlow } from './viewport.js';
 

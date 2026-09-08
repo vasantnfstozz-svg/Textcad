@@ -63,7 +63,6 @@ def test_health_passes_good_solid():
 
 
 def test_health_fails_sphereless_open_or_empty():
-    import build123d as b3d
     from build123d import BuildPart, Box, Mode
     with BuildPart() as p:
         Box(10, 10, 10)

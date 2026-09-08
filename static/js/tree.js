@@ -8,7 +8,7 @@ import { postJSON, getJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
 import { showFeatureOverlay, clearHighlight, clearPick }
   from './viewport.js';
-import { openFeatDialog, modalGuard } from './dialogs.js';
+import { modalGuard } from './dialogs.js';
 import { openExtrude } from './extrude.js';
 import { openRevolve } from './revolve.js';
 import { activeToolFeature, canEdit, editFeature, humanProblem } from './tool.js';

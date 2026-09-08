@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import build123d as b3d
 from build123d import (Plane, Rectangle, Circle, RegularPolygon, Polygon,
-                       Pos, extrude)
+                       extrude)
 
 import inspector
 import sketch as sk

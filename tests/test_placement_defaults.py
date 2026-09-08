@@ -3,7 +3,6 @@ DEFAULTS in static/js/placement.js — keep them in sync (a bad default like a
 zero-radius cone or inner>=outer tube would fail the moment a user clicks)."""
 import pytest
 
-import inspector
 from document import Document
 
 # mirror of placement.js DEFAULTS

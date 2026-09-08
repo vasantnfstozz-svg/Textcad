@@ -900,7 +900,6 @@ function onDblClick() {
 }
 
 function pathGhost(p) {
-  const cur = pathCursor();
   const segs = [...pathSegs];
   if (pendingVia) segs.push({ type: 'arc', via: [pendingVia.x, pendingVia.y],
                               to: [p.x, p.y] });

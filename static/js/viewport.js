@@ -14,7 +14,6 @@ import { gridStepFor, planeHalfFor, buildGridLines, patchFor,
 
 let scene, camera, renderer, controls;
 let groundGrid = null;           // the XY GridHelper (hidden while sketching)
-let mesh = null;                 // the RESULT body's mesh (bodyObjs entry too)
 const edgeLines = [];            // crisp OCCT topology edges of ALL bodies
 const sketchObjs = [];           // floating 2D sketch profiles (Fusion-style)
 /* Every unconsumed solid, each a REAL pickable body (Fusion's Bodies folder):
@@ -1584,7 +1583,6 @@ export function setView(dir) {
 function disposeModel() {
   for (const b of bodyObjs) { scene.remove(b.mesh); b.mesh.geometry.dispose(); }
   bodyObjs.length = 0;
-  mesh = null;
   for (const l of edgeLines) { scene.remove(l); l.geometry.dispose(); }
   edgeLines.length = 0;
   for (const o of sketchObjs) { scene.remove(o); o.geometry.dispose(); }
@@ -1620,7 +1618,7 @@ function addBodies(bodies) {
                             faceId: b.faceId, faces: b.faces,
                             edges: b.edges || [] } };
     bodyObjs.push(entry);
-    if (b.result) { mesh = m; MODEL = entry.data; }
+    if (b.result) MODEL = entry.data;
     for (const e of b.edges || []) {
       const eg = new THREE.BufferGeometry().setFromPoints(
         e.points.map(p => new THREE.Vector3(p[0], p[1], p[2])));
@@ -1908,7 +1906,7 @@ export function showSelectionOverlay(picks) {
     if (!entry) continue;
     const colour = SEL_COLORS[p.tag] || 0x6ee7ff;
     const group = new THREE.Group();
-    let centre = null;
+    let centre;
     if (p.kind === 'face') {
       const g = faceGeometry(entry.data, p.id);
       if (!g) continue;

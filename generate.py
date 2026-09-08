@@ -12,11 +12,15 @@ MODEL SELECTION (automatic, checked in this order):
 
 from __future__ import annotations
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 import os
 import re
 import engine
 import inspector
 import blocks
+
+if TYPE_CHECKING:
+    import check                  # only for the Spec annotation of text_to_cad
 
 
 SYSTEM_PROMPT = (

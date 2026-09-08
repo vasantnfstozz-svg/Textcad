@@ -30,10 +30,13 @@ python -m pytest tests -q --ignore=tests/e2e    # fast tier (no browser)
 python -m pytest tests/e2e -q                   # browser journeys (ship time only)
 python -m pytest tests/test_history.py -q       # one file — the default while working
 python -m pytest tests -m library -q            # opt-in: health of the user's LIVE designs/
+
+python -m ruff check .                          # Python lint (ruff.toml); zero at ship
+cd .claude/lint; npm install; npm run lint      # JS lint (ESLint over static/js); zero at ship
 ```
 
 `pytest.ini` excludes `library` tests by default; code tests read
-`tests/fixtures/`, never `designs/`. No linter, no build step;
+`tests/fixtures/`, never `designs/`. Lint: Ruff (`ruff.toml`) and ESLint (`.claude/lint/`), both at zero; no build step;
 `pip install -r requirements.txt`.
 
 **Environment facts (each one has cost real time):**
@@ -115,6 +118,7 @@ Four house rules run automatically, so they do not depend on memory:
 
 - **Edit/Write to `designs/*.tcad.json`, `designs/*.history/`, `.studio-session*.json` is DENIED** — the user's work is never edited by hand (stale-tab trap). Use the app's API or a generator script; test data lives in `tests/fixtures/`.
 - **Every edit to `static/js/*.js` runs `node --check`**; a syntax error comes straight back.
+- **Every edit to a `.py` file runs Ruff's crash-class rules** (undefined name, syntax error, `is` with a literal); a hit comes straight back.
 - **`git push --force` (any form) is DENIED** — hand the command to the user.
 - **Stop: uncommitted `static/` changes without a `main.js?v=` bump** block the turn with a reminder to bump.
 

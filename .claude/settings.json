@@ -65,6 +65,12 @@
             "command": "C:/Python314/python.exe \"$CLAUDE_PROJECT_DIR/.claude/hooks/js_syntax_check.py\"",
             "timeout": 30,
             "statusMessage": "node --check"
+          },
+          {
+            "type": "command",
+            "command": "C:/Python314/python.exe \"$CLAUDE_PROJECT_DIR/.claude/hooks/py_lint_check.py\"",
+            "timeout": 30,
+            "statusMessage": "ruff (crash-class rules)"
           }
         ],
         "matcher": "Edit|Write"

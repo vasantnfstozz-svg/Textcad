@@ -24,7 +24,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from functools import reduce
 from typing import Callable
-import build123d as b3d
 from build123d import Pos
 import inspector
 

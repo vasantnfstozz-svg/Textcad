@@ -27,8 +27,7 @@ import struct
 import tempfile
 from pathlib import Path
 from build123d import (
-    Box, Cylinder, Sphere, Cone, Pos, PolarLocations, Locations,
-    BuildSketch, RegularPolygon, BuildLine, Polyline, Spline, make_face,
+    Box, Cylinder, Sphere, Cone, Pos, PolarLocations, BuildSketch, RegularPolygon, BuildLine, Polyline, Spline, make_face,
     trace, extrude, revolve, Axis, Plane, Part, Mesher, Solid, Compound,
     scale as _b3d_scale,
     fillet as _b3d_fillet, chamfer as _b3d_chamfer, offset as _b3d_offset,
