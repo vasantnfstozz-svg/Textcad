@@ -823,7 +823,11 @@ assemblies, the user's personal project.
    five-step checklist, so the user never tests what a robot would catch.
    Docs / plan / memory commits get no review. The review runs on HEAD: a
    docs commit on top of the code hides it, so review first, then stamp the
-   plan.
+   plan. The modules that predate this ritual (sketcher, document core and
+   tree, versions, booleans, primitives, measure, extrude as a whole, import,
+   trace, viewport, framework, server, author) get the same review FROM
+   SCRATCH, one module per Opus chat with the fix pass in the same chat, in
+   the order of `REVIEW-QUEUE.md` (started 2026-09-08).
 
 ---
 

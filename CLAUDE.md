@@ -161,3 +161,7 @@ P2 hurts daily use · P3 polish. Done means ship-checked, with the commit hash.
 a different model with no context: REWRITE it (never append) after every code
 commit — range, base, one line per commit, where the risk is, the ground rules,
 and what must not be re-reported. See the `ship-check` skill, step 6.
+`REVIEW-QUEUE.md` is the from-scratch review backlog of the OLD modules that
+predate the ritual: one section per module with its paste line, scope, finding
+classes and known items, plus the fix-pass steps; a fix pass updates its
+status board and done log. One module per Opus chat, in the file's order.
