@@ -632,13 +632,21 @@ def _toggle_set(part, refs: list, edges: list, by_edge: dict,
     already follows (_toggle_pick) — and the count returned is the number of
     EDGES that went, not of picks, because that is what the browser says out
     loud.
+
+    "Went" means SELECTED, chains included, on both sides. The added count used
+    to be the size of the set's own missing edges, so a wall click on a rounded
+    box said "added 4 edges — that face's edges — 18 picked now": each of the
+    four picks brought its tangent rim in with it (review 2026-09-08).
     """
     have = [(r, {blocks._shape_key(e) for e in _expand(part, [r], chain)}) for r in refs]
     picked_keys = set().union(*[ks for _, ks in have]) if have else set()
     missing = [e for e in edges if blocks._shape_key(e) not in picked_keys]
     if missing:
-        return (refs + [blocks.edge_ref(part, e, by_edge) for e in missing],
-                "added", len(missing))
+        new_refs = [blocks.edge_ref(part, e, by_edge) for e in missing]
+        # expanded the way the NEXT request will expand them, so the number is
+        # the selection's own arithmetic and not a second opinion
+        joined = {blocks._shape_key(e) for e in _expand(part, new_refs, chain)}
+        return refs + new_refs, "added", len(joined - picked_keys)
     drop = {blocks._shape_key(e) for e in edges}
     keep, kept_keys = [], set()
     for r, ks in have:
@@ -661,20 +669,39 @@ def _face_of(part, pick: dict, body: str):
     there is none. `resolve_face` is a nearest-centre match that never fails,
     and the picker hands this tool clicks on its own PREVIEW body too: the band
     a fillet just drew has no twin on the input body, so its centre would
-    silently name the wall beside it and round that wall's edges. A face the
-    body really has holds the clicked centre inside its own bounding box
-    (probes/feature_edges_probe.py §3: a band's centre lies 1.46 mm off the
-    nearest wall; a trimmed survivor's centre exactly on it) — the same guard
-    as Pattern's `_axis_face`; the tolerance covers the payload's 2-decimal
-    rounding of a centre and nothing wider."""
+    silently name the wall beside it and round that wall's edges.
+
+    A face the body really has lies UNDER the clicked centre and faces the same
+    way there. A bounding box was the first guard and cannot answer that: a
+    cylinder wall's box is the whole cube around the body, so on a disc the
+    band's centre was "inside" the wall and the plan quietly took the wall's
+    second rim 20 mm away (review 2026-09-08). Both halves are needed —
+    distance alone weakens as the radius shrinks (a band's centre sits 0.29 * r
+    off the wall, 0.01 mm at r = 0.05) while the normal is scale-free: every
+    band on a square corner reads 0.707 whatever its radius. Measured over 20
+    cases in probes/face_of_revolve_probe.py §3: the pair refuses every band
+    (fillet, chamfer, torus, cone) and accepts every real face — including an
+    annulus and a U-shape, whose own centres are off their material, and the
+    unchanged faces of the preview body, which are the input body's.
+
+    The tolerances are the payload's own: studio.py rounds a centre to 2
+    decimals (0.0087 mm at worst, 0.0063 measured over those cases) and a
+    normal to 3, and nothing wider is allowed in."""
     c = pick.get("center") if isinstance(pick, dict) else None
     if c is None:
         raise ValueError("that face has no centre to name it by — click one of its edges instead")
-    face = blocks.resolve_face(part, c, pick.get("normal"))
-    bb = face.bounding_box()
-    tol = 0.05
-    span = ((bb.min.X, bb.max.X), (bb.min.Y, bb.max.Y), (bb.min.Z, bb.max.Z))
-    if any(float(v) < lo - tol or float(v) > hi + tol for v, (lo, hi) in zip(c, span)):
+    nrm = pick.get("normal")
+    face = blocks.resolve_face(part, c, nrm)
+    x, y, z = (float(v) for v in c)
+    ok = provenance.surface_gap(face.wrapped, x, y, z) <= 0.02
+    if ok and nrm:
+        try:
+            m = face.normal_at(b3d.Vector(x, y, z))
+            ok = (m.X * float(nrm[0]) + m.Y * float(nrm[1])
+                  + m.Z * float(nrm[2])) >= 0.99          # within ~8 degrees
+        except Exception:
+            ok = False
+    if not ok:
         raise ValueError(f"that face is not on {body} — a round or bevel this tool drew has no "
                          f"edges of its own to pick; click a face of {body}, or an edge")
     return face

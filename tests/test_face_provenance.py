@@ -152,6 +152,7 @@ def _check_invariants(doc, label):
         assert again["origin"] == rows[i]["origin"]
 
     order = [f for f in P._solid_features(doc, upto=body) if f in anc]
+    spine = set(P._spine(doc, body))
     for i in range(0, n, max(1, n // 12)):      # earliest
         o = rows[i]["origin"]
         if o not in order:
@@ -161,11 +162,19 @@ def _check_invariants(doc, label):
         pt = P.interior_point(faces[i])
         if pt is None:
             continue
-        for earlier in order[:order.index(o)]:
-            assert not P._hosts(P.feature_index(doc, earlier),
-                                P._surface_type(tf), key, bb, pt,
-                                len(key) > 1), \
-                f"{label}: face {i} blamed on '{o}' but '{earlier}' has it too"
+        hosts = [P._hosts(P.feature_index(doc, f), P._surface_type(tf), key,
+                          bb, pt, len(key) > 1) for f in order]
+        # "Earliest" means earliest AFTER THE BODY LAST DID NOT HAVE THE FACE.
+        # Rule 3 (bbox containment) can be satisfied by accident — a boss fused
+        # flush into a pocket lies on the base plate's own plane and inside its
+        # bbox — and a face the spine lost and has again was REMADE, so the
+        # features before that dip are not candidates at all (review
+        # 2026-09-08; provenance's newest-wins tie-break).
+        dip = max([j for j, f in enumerate(order) if f in spine and not hosts[j]],
+                  default=-1)
+        for j in range(dip + 1, order.index(o)):
+            assert not hosts[j], \
+                f"{label}: face {i} blamed on '{o}' but '{order[j]}' has it too"
     return rows, n
 
 
@@ -175,6 +184,46 @@ def test_invariants_hold_for_every_face_of_a_pocket_chain():
 
 def test_invariants_hold_for_every_face_of_a_flange():
     _check_invariants(flange_doc(), "flange")
+
+
+def flush_boss_doc():
+    """A boss fused FLUSH into a pocket: its own top lies on the base plate's
+    plane and inside the plate's bounding box, so the plate's top face hosts it
+    by accident. The shape that proved the walk needs a newest-wins tie-break
+    (review 2026-09-08, probes/feature_faces_newest_probe.py)."""
+    doc = Document(name="t-prov-flush")
+    doc.add("b", "plate", {"width": 40, "depth": 30, "thickness": 20})
+    doc.add("t", "plate", {"width": 20, "depth": 12, "thickness": 10})
+    doc.add("tm", "move", {"x": 0, "y": 0, "z": 10}, inputs=["t"])
+    doc.add("c", "cut", {}, inputs=["b", "tm"])
+    doc.add("s", "plate", {"width": 6, "depth": 6, "thickness": 5})
+    doc.add("sm", "move", {"x": 5, "y": 0, "z": 7.5}, inputs=["s"])
+    doc.add("u", "fuse", {}, inputs=["c", "sm"])
+    assert doc.rebuild(), doc.tree()
+    return doc
+
+
+def test_a_flush_bosss_own_top_is_not_blamed_on_the_base_plate():
+    """"Find in Timeline" on the boss's flush top named the BASE PLATE — and
+    called it high confidence, because the plate's top face contains the point
+    and bounds the face. The geometry came from the boss, and the fuse is what
+    put it in this body."""
+    doc = flush_boss_doc()
+    faces = P.picked_faces(doc, "u", doc._parts["u"])
+    idx = next(i for i, f in enumerate(faces)
+               if abs(f.center().Z - 10) < 1e-6 and abs(f.area - 36) < 0.01)
+    r = P.attribute_face(doc, body_id="u", face_index=idx, area=36)
+    assert (r["origin"], r["applied_by"], r["feature"]) == ("sm", "u", "u")
+    assert r["confidence"] == "high" and "'b'" not in r["explanation"]
+    # the plate's own top is still the plate's
+    top = next(i for i, f in enumerate(faces)
+               if abs(f.center().Z - 10) < 1e-6 and f.area > 100)
+    assert P.attribute_face(doc, body_id="u", face_index=top,
+                            area=faces[top].area)["origin"] == "b"
+
+
+def test_invariants_hold_for_every_face_of_a_flush_boss():
+    _check_invariants(flush_boss_doc(), "flush boss")
 
 
 @pytest.mark.parametrize("path", [IMPELLER])

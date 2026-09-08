@@ -19,6 +19,7 @@ from build123d import Axis
 
 import blocks
 import inspector
+import provenance
 import toolplan
 from document import Document
 
@@ -400,6 +401,26 @@ def test_a_face_click_adds_its_edges_and_a_second_click_takes_them_out():
     assert (r["click"], r["click_n"]) == ("added", 3) and len(r["edges"]) == 4
 
 
+def test_the_added_count_is_the_edges_that_joined_not_the_sets_own():
+    """The browser says the count out loud beside the total — "added N edges —
+    that face's edges — M picked now" — so N has to be the number that JOINED.
+    A wall of a rounded box has FOUR edges and the click brings EIGHTEEN: each
+    of its four picks arrives with its tangent rim (review 2026-09-08, which
+    measured "added 4 … 18 picked now")."""
+    doc = doc_rounded()
+    part = doc._parts["g1"]
+    wall = next(f for f in part.faces() if blocks._gtype(f) == "PLANE"
+                and abs(f.normal_at(f.center()).Z) < 1e-6)
+    c, n = wall.center(), wall.normal_at(wall.center())
+    pick = {"center": [c.X, c.Y, c.Z], "normal": [n.X, n.Y, n.Z]}
+    assert len(toolplan._corners(wall.edges(), blocks._edge_faces(part))) == 4
+    p = plan(doc, body_id="g1", face_toggle=pick)
+    assert p["ok"] and len(p["picks"]) == 4
+    assert (p["click"], p["click_n"], len(p["edges"])) == ("added", 18, 18)
+    q = plan(doc, body_id="g1", edges=p["picks"], face_toggle=pick)
+    assert (q["click"], q["click_n"]) == ("removed", 18) and q["edges"] == []
+
+
 def test_a_tree_row_adds_the_edges_its_feature_made_and_again_takes_them_out():
     doc = doc_pocket()
     p = plan(doc, body_id="c", feature_toggle="c")
@@ -415,6 +436,59 @@ def test_a_tree_row_adds_the_edges_its_feature_made_and_again_takes_them_out():
     assert len(t["edges"]) == 12
     # ...and the row's edges are what the op is given (stored form, R1)
     assert len(p["edges_param"]) == 12 and all("faces" in r for r in p["edges_param"])
+
+
+def doc_flush_boss():
+    """the pocketed box with a 6 x 6 x 5 boss standing IN the pocket, its top
+    flush with the plate top at z = +10 and offset in x so it is not centred
+    (probes/feature_faces_newest_probe.py §1)"""
+    doc = doc_pocket()
+    doc.add("s", "plate", {"width": 6, "depth": 6, "thickness": 5}, [])
+    doc.add("sm", "move", {"x": 5, "y": 0, "z": 7.5}, ["s"])
+    doc.add("u", "fuse", {}, ["c", "sm"])
+    doc.rebuild()
+    return doc
+
+
+def test_a_flush_boss_belongs_to_the_boss_row_not_the_plates():
+    """NEWEST WINS. A face a LATER feature made, coplanar with and inside the
+    bounding box of an earlier feature's face, passes the host test for BOTH —
+    so the base plate's row lit the flush boss's rim as well as its own, and a
+    radius rounded it (review 2026-09-08: 7 faces / 20 edges instead of 6 / 16)."""
+    doc = doc_flush_boss()
+    boss_top = next(f for f in doc._parts["u"].faces()
+                    if abs(f.center().Z - 10) < 1e-6 and abs(f.area - 36) < 0.01)
+    assert abs(boss_top.center().X - 5) < 1e-6         # the boss's own top, a = 36
+    # the plate's row is its SIX faces as they are now — not the boss's seventh
+    assert len(provenance.feature_faces(doc, "b", "u")) == 6
+    b = plan(doc, body_id="u", feature_toggle="b")
+    assert b["ok"] and len(b["edges"]) == 16 and zs(b["edges"]) == [-10.0, 0.0, 10.0]
+    # ...and the boss's top is on the row that DID make it, as it always was
+    assert blocks._shape_key(boss_top) in provenance.feature_faces(doc, "u", "u")
+    u = plan(doc, body_id="u", feature_toggle="u")
+    assert u["ok"] and len(u["edges"]) == 12
+
+
+def test_the_cut_side_of_newest_wins_too():
+    """The same accident on the CUT side, so nobody fixes only the fuse path: a
+    pocket milled through a boss back down to the base plane leaves a floor
+    coplanar with, and inside, the plate's own top. (Its plan is not asserted:
+    a row click on this shape raises over blocks.resolve_face's nearest-centre
+    tie between two faces that share a centre — a separate finding, red before
+    and after this one.)"""
+    doc = Document(name="cs")
+    doc.add("b", "plate", {"width": 40, "depth": 30, "thickness": 20}, [])
+    doc.add("s", "plate", {"width": 20, "depth": 12, "thickness": 5}, [])
+    doc.add("sm", "move", {"x": 0, "y": 0, "z": 12.5}, ["s"])
+    doc.add("u", "fuse", {}, ["b", "sm"])
+    doc.add("t2", "plate", {"width": 8, "depth": 6, "thickness": 5}, [])
+    doc.add("t2m", "move", {"x": 0, "y": 0, "z": 12.5}, ["t2"])
+    doc.add("c2", "cut", {}, ["u", "t2m"])
+    doc.rebuild()
+    floor = next(f for f in doc._parts["c2"].faces()
+                 if abs(f.center().Z - 10) < 1e-6 and abs(f.area - 48) < 0.01)
+    assert len(provenance.feature_faces(doc, "b", "c2")) == 6
+    assert blocks._shape_key(floor) in provenance.feature_faces(doc, "c2", "c2")
 
 
 def test_a_row_picked_before_the_tool_names_the_body_it_is_on():
@@ -455,6 +529,65 @@ def test_a_face_only_the_preview_has_is_refused_a_survivor_accepted():
     assert p["ok"] and len(p["edges"]) == 4               # b's top has 4 edges (g1's has 8)
     r = plan(doc, body_id="b", face_toggle={})
     assert not r["ok"] and "no centre" in r["error"]
+
+
+def disc_band_pick(radius=3.0):
+    """a disc r10 h20 with its top rim rounded, and the PREVIEW band's centre +
+    normal in the form the payload carries them (studio.py rounds a centre to
+    2 decimals, a normal to 3)"""
+    doc = Document(name="disc")
+    doc.add("d", "disc", {"radius": 10, "thickness": 20}, [])
+    doc.add("f1", "fillet", {"radius": radius, "edges": "top"}, ["d"])
+    doc.rebuild()
+    band = next(f for f in doc._parts["f1"].faces() if blocks._gtype(f) == "TORUS")
+    c = band.center()
+    n = band.normal_at(c)
+    return doc, {"center": [round(c.X, 2), round(c.Y, 2), round(c.Z, 2)],
+                 "normal": [round(n.X, 3), round(n.Y, 3), round(n.Z, 3)]}
+
+
+@pytest.mark.parametrize("radius", [3.0, 0.5, 0.1])
+def test_a_round_this_tool_drew_is_refused_on_a_body_of_revolution(radius):
+    """The case a bounding box could not see: a cylinder wall's box is the whole
+    cube around the body, so the band's centre was "inside" it, resolve_face
+    named the WALL, and the plan quietly added the disc's BOTTOM rim 20 mm away
+    (review 2026-09-08). Smaller radii bring the band's centre closer to the
+    wall, which is why distance alone is not the guard."""
+    doc, pick = disc_band_pick(radius)
+    r = plan(doc, body_id="d", face_toggle=pick)
+    assert not r["ok"] and "not on d" in r["error"]
+    assert "TORUS" not in r["error"] and "bounding" not in r["error"]
+
+
+def test_the_disc_wall_itself_still_picks_both_of_its_rims():
+    """the guard must not cost the legitimate click: the WALL really has both"""
+    doc, _ = disc_band_pick()
+    wall = next(f for f in doc._parts["d"].faces() if blocks._gtype(f) == "CYLINDER")
+    c, n = wall.center(), wall.normal_at(wall.center())
+    p = plan(doc, body_id="d", face_toggle={
+        "center": [round(c.X, 2), round(c.Y, 2), round(c.Z, 2)],
+        "normal": [round(n.X, 3), round(n.Y, 3), round(n.Z, 3)]})
+    assert p["ok"] and len(p["edges"]) == 2
+    assert zs(p["edges"]) == [-10.0, 10.0]
+
+
+def test_a_face_whose_own_centre_is_off_its_material_still_picks():
+    """A washer's top face is an ANNULUS and `Face.center()` is the AREA
+    CENTROID of a plane, so the clicked centre sits in the HOLE — on the face's
+    surface, not on its material. The guard asks the first question only
+    (probes/face_of_revolve_probe.py §2/§3), or a real pick would be refused."""
+    doc = Document(name="wash")
+    doc.add("d", "disc", {"radius": 10, "thickness": 5}, [])
+    doc.add("h", "with_center_hole", {"radius": 4}, ["d"])
+    doc.rebuild()
+    ring = next(f for f in doc._parts["h"].faces()
+                if blocks._gtype(f) == "PLANE" and f.center().Z > 0)
+    c, n = ring.center(), ring.normal_at(ring.center())
+    assert abs(c.X) < 1e-6 and abs(c.Y) < 1e-6          # in the hole
+    p = plan(doc, body_id="h", face_toggle={
+        "center": [round(c.X, 2), round(c.Y, 2), round(c.Z, 2)],
+        "normal": [round(n.X, 3), round(n.Y, 3), round(n.Z, 3)]})
+    assert p["ok"] and len(p["edges"]) == 2 and {e["type"] for e in p["edges"]} == {"CIRCLE"}
 
 
 def test_a_seam_is_not_an_edge_a_face_or_a_row_offers():
@@ -666,3 +799,43 @@ def test_a_moved_copy_does_not_inherit_its_parents_faces():
     assert [round(v, 3) for v in tuple(got.center())] == [0, 0, 15]
     # and the memo does hold for the same, unmoved body
     assert blocks._edge_faces(b) is by_edge
+
+
+def test_the_body_memo_lets_a_dead_body_go():
+    """The memo holds each body's own Faces and Edges, and every one of them
+    points back at the body (Face.topo_parent) — so a weak key could never
+    expire and every superseded body stayed in the process for good: eight
+    throwaway bodies, eight live entries, 1.3 MB of python wrappers each on a
+    200-face body (probes/shape_cache_leak_probe.py §1). It is bounded now."""
+    import gc
+    import weakref
+
+    refs = []
+    for _ in range(blocks._MAX_SHAPE_CACHES + 4):
+        p = blocks.plate(40, 30, 20)
+        blocks._face_rows(p)                       # both slots
+        blocks._edge_faces(p)
+        refs.append(weakref.ref(p))
+        del p
+    gc.collect()
+    alive = [r for r in refs if r() is not None]
+    assert len(alive) <= blocks._MAX_SHAPE_CACHES, f"{len(alive)} dead bodies still held"
+    assert len(blocks._SHAPE_CACHES) <= blocks._MAX_SHAPE_CACHES
+
+
+def test_the_memo_is_fresh_after_an_in_place_move():
+    """The stored TopoDS shape IS the live one after `part.move()` — it mutates
+    in place — so IsEqual compares it with itself and says True. The stored
+    hash is what notices (review 2026-09-08)."""
+    from build123d import Location
+
+    b = box()
+    assert [round(v, 3) for v in tuple(blocks.resolve_face(b, [0, 0, 10], [0, 0, 1]).center())] \
+        == [0, 0, 10]
+    ent = blocks._SHAPE_CACHES[id(b)]
+    stored = ent[1]["faces"]
+    b.move(Location((0, 0, 5)))
+    assert stored[0].IsEqual(b.wrapped), "the same TopoDS object: IsEqual cannot see the move"
+    assert stored[1] != blocks._shape_key(b), "the hash can"
+    got = blocks.resolve_face(b, [0, 0, 15], [0, 0, 1])
+    assert [round(v, 3) for v in tuple(got.center())] == [0, 0, 15]

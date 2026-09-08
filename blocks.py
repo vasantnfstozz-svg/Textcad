@@ -25,7 +25,7 @@ import os
 import re
 import struct
 import tempfile
-import weakref
+from collections import OrderedDict
 from pathlib import Path
 from build123d import (
     Box, Cylinder, Sphere, Cone, Pos, PolarLocations, BuildSketch, RegularPolygon, BuildLine, Polyline, Spline, make_face,
@@ -308,7 +308,9 @@ def _gtype(edge) -> str:
     return str(edge.geom_type).split(".")[-1]
 
 
-_SHAPE_CACHES = weakref.WeakKeyDictionary()     # shape -> {slot: (its TopoDS shape, value)}
+# id(shape) -> [the shape, {slot: (its TopoDS shape, its hash, value)}]
+_SHAPE_CACHES = OrderedDict()
+_MAX_SHAPE_CACHES = 8       # bodies; ~1.3 MB of python wrappers each at 200 faces
 
 
 def _cached(shape, slot: str, build):
@@ -317,22 +319,48 @@ def _cached(shape, slot: str, build):
     `Pos * part` copy first and move second, so a moved body inherited its
     parent's face centres at the OLD position and resolve_face named the wrong
     face (probes/shape_cache_probe.py; the fast tier caught it on a moved
-    plate). Weak-keyed on the Python object, so a copy is a miss and the entry
-    dies with the shape; checked against the TopoDS shape itself (IsEqual: same
-    TShape, same location), so an in-place move is a miss too."""
-    slots = _SHAPE_CACHES.get(shape)
-    if slots is None:
-        slots = {}
-        try:
-            _SHAPE_CACHES[shape] = slots
-        except TypeError:                  # a shape that cannot be a weak key: no memo
-            return build()
-    hit = slots.get(slot)
-    if hit is not None and hit[0].IsEqual(shape.wrapped):
-        return hit[1]
+    plate).
+
+    Keyed on the IDENTITY of the python object, so a copy is a miss, and
+    BOUNDED, oldest out. A weak key could never expire here: the memo holds the
+    shape's own Faces and Edges and every one of them points back at the shape
+    (Face.topo_parent), so the value kept its own key alive and every
+    superseded body stayed in the process for good — 8 throwaway bodies, 8 live
+    entries (probes/shape_cache_leak_probe.py §1).
+
+    Freshness is TWO tests because an in-place `part.move()` mutates the SAME
+    TopoDS shape: IsEqual then compares it with itself and says True, so the
+    stored hash — which the move does change — is what catches it. (The old
+    comment credited IsEqual; what actually saved that answer was hash(Part)
+    changing, which orphaned the entry and inserted a second immortal one.)"""
+    key = id(shape)
+    ent = _SHAPE_CACHES.get(key)
+    if ent is not None and ent[0] is shape:
+        hit = ent[1].get(slot)
+        if hit is not None and hit[1] == _shape_key(shape) \
+                and hit[0].IsEqual(shape.wrapped):
+            _touch(key)
+            return hit[2]
+    else:
+        ent = [shape, {}]                  # holding the shape is what makes id() safe
     value = build()
-    slots[slot] = (shape.wrapped, value)
+    ent[1][slot] = (shape.wrapped, _shape_key(shape), value)
+    _SHAPE_CACHES[key] = ent
+    _touch(key)
+    while len(_SHAPE_CACHES) > _MAX_SHAPE_CACHES:
+        try:
+            _SHAPE_CACHES.popitem(last=False)
+        except KeyError:                   # another request evicted it first
+            break
     return value
+
+
+def _touch(key):
+    """newest end of the memo — the body in hand must not be the one evicted"""
+    try:
+        _SHAPE_CACHES.move_to_end(key)
+    except KeyError:                       # evicted between the read and here
+        pass
 
 
 def _edge_topo(part: Part) -> dict:

@@ -239,6 +239,27 @@ def interior_point(face, extra=None):
     return None
 
 
+def surface_gap(tface, x, y, z, tol: float = TOL) -> float:
+    """How far a point lies from a face's underlying SURFACE, in mm — or `inf`
+    when the kernel will not analyse the face, which refuses (a failed pick
+    beats the wrong selection).
+
+    A different question from OnFace's, and it ignores the trimming wires ON
+    PURPOSE. build123d's `Face.center()` is the AREA CENTROID on a plane and
+    the uv midpoint on a curved face, so a legitimate pick's centre can sit off
+    the material — a washer's centroid is in its hole, a U-shaped face's is in
+    the notch — but never off the surface (probes/face_of_revolve_probe.py §2,
+    which measured 0.00000 for every face type). That makes this the test for
+    "is the clicked point on THIS face's surface at all", which a bounding box
+    cannot answer: a cylinder wall's box is the whole cube around the body."""
+    try:
+        sas = ShapeAnalysis_Surface(BRep_Tool.Surface_s(tface))
+        sas.ValueOfUV(gp_Pnt(float(x), float(y), float(z)), max(tol, 1e-4))
+        return float(sas.Gap())
+    except Exception:
+        return float("inf")
+
+
 class OnFace:
     """Cached point-on-face test: 9 us per query after a ~150 us build, vs
     229 us for Face.is_inside every time. That 25x matters because a design
@@ -374,7 +395,9 @@ def feature_faces(doc, fid, body_id) -> set:
 
     A face of the body is the feature's when it is a trimmed survivor (this
     module's host test) of a face the feature's own output has and its input
-    did not; `document.delta_features` says what output and input mean (the
+    did not, AND no later body on this body's spine had lost it: a face the
+    spine dropped and has again was remade, and belongs to whatever remade it
+    (_later_spine); `document.delta_features` says what output and input mean (the
     tree's folding rule — a pulled tool with a folded cut is that cut's before
     and after; a creator or a placement is a whole body, so every face is its).
     Measured in probes/feature_edges_probe.py: a cut's row is its pocket's
@@ -400,9 +423,23 @@ def feature_faces(doc, fid, body_id) -> set:
             continue                         # the input had it already: not this feature's
         new_rows.append(row)
     keys = set()
+    later = _later_spine(doc, fid, body_id)          # the newest-wins evidence
     for row, pt in zip(feature_index(doc, body_id), _points(doc, body_id)):
-        if pt is not None and _hosts(new_rows, row[1], row[2], row[3], pt, len(row[2]) > 1):
-            keys.add(hash(row[0]))
+        if pt is None:
+            continue
+        analytic = len(row[2]) > 1
+        if not _hosts(new_rows, row[1], row[2], row[3], pt, analytic):
+            continue
+        # NEWEST WINS. A face that a LATER body on this spine did NOT have was
+        # remade after `fid`, so it belongs to whatever remade it. A boss fused
+        # flush into a pocket lies on the base plate's own plane and inside its
+        # bbox, so the plate's row claimed the boss's rim too and a radius
+        # rounded it: 7 faces / 20 edges instead of 6 / 16
+        # (probes/feature_faces_newest_probe.py §1).
+        if any(not _hosts(rows, row[1], row[2], row[3], pt, analytic)
+               for rows in later):
+            continue
+        keys.add(hash(row[0]))
     return keys
 
 
@@ -453,6 +490,25 @@ def _spine(doc, fid):
             break
         cur = f.inputs[0] if f.inputs else None
     return out
+
+
+def _later_spine(doc, fid, body_id) -> list:
+    """The face indexes of the bodies this body's SPINE passes through AFTER
+    `fid`, in build order — the newest-wins tie-break's evidence.
+
+    [] when `fid` is not on that spine: a TOOL body's row (a moved prism, a
+    disc that got fused) answers for its own geometry and must not be
+    out-voted by the boolean that consumed it. Restricting this to the spine
+    is not optional — measured over the whole ancestry it wiped every tool
+    row instead (probes/feature_faces_newest_probe.py: the pocketed box's
+    `tm` went from 12 edges to none)."""
+    spine, anc = set(_spine(doc, body_id)), _ancestors(doc, body_id)
+    walk = [f for f in _solid_features(doc, upto=body_id)
+            if f in spine and f in anc]
+    if fid not in walk:
+        return []
+    return [feature_index(doc, later) for later in walk[walk.index(fid) + 1:]
+            if doc._parts.get(later) is not None]
 
 
 def _hosts(rows, stype, key, qbb, point, analytic: bool):
@@ -590,8 +646,21 @@ def attribute_face(doc, body_id=None, face_index=None, point=None,
     # that hosts it (where it entered this body). Two passes doubled the cost
     # of every click for nothing.
     spine = set(_spine(doc, resolved_body)) if resolved_body else set()
+    # WHERE THIS BODY LAST DID NOT HAVE THE FACE. Rule 3 (bbox containment) is
+    # an "is a trimmed survivor of" test, and coplanar geometry can satisfy it
+    # by accident: the top of a boss fused flush into a pocket lies on the base
+    # plate's own plane and inside its bbox, so the earliest-ancestor walk
+    # credited the PLATE with it — and said so with high confidence. A face the
+    # spine once did not have was remade after that, so nothing built earlier
+    # can be its origin (measured: origin b -> sm, applied_by b -> the fuse;
+    # probes/feature_faces_newest_probe.py §2b).
+    first = 0
+    for i, fid in enumerate(pool):
+        if fid in spine and not _hosts(feature_index(doc, fid), stype, key,
+                                       qbb, pt, analytic):
+            first = i + 1
     origin = applied_by = None
-    for fid in pool:
+    for fid in pool[first:]:
         if not _hosts(feature_index(doc, fid), stype, key, qbb, pt, analytic):
             continue
         if origin is None:

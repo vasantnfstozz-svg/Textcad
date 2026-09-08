@@ -744,13 +744,25 @@ function unhoverEdge() {
    to warn. An edge within reach wins over the face behind it. */
 let hoverFace = null;
 function unhoverFace() {
-  if (hoverFace) { scene.remove(hoverFace); hoverFace.geometry.dispose(); hoverFace = null; }
+  if (!hoverFace) return;
+  scene.remove(hoverFace);
+  hoverFace.geometry.dispose();
+  // the material too: one MeshBasicMaterial is made per hovered face, and
+  // three.js does not free it with the mesh (review 2026-09-08)
+  hoverFace.material.dispose();
+  hoverFace = null;
 }
 function hoverFaceAt(fHit) {
   const entry = fHit && bodyObjs.find(b => b.mesh === fHit.object);
   const fid = entry ? entry.data.faceId[fHit.face.a] : null;
   const key = entry ? `${entry.id}/${fid}` : null;
-  if (hoverFace && hoverFace.userData.key === key) return;
+  // The mesh DATA is part of that identity, not the ids alone. A radius drag
+  // rebuilds the body under the SAME body and face ids, so keying on the ids
+  // hit this early return and kept the patch's pre-rebuild triangles — the
+  // glow overhung into the new round (review 2026-09-08).
+  const data = entry ? entry.data : null;
+  if (hoverFace && hoverFace.userData.key === key
+      && hoverFace.userData.data === data) return;
   unhoverFace();
   const g = entry && faceGeometry(entry.data, fid);
   if (!g) return;
@@ -758,6 +770,7 @@ function hoverFaceAt(fHit) {
     color: HOVER_COLOR, transparent: true, opacity: 0.22, side: THREE.DoubleSide,
     depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }));
   hoverFace.userData.key = key;
+  hoverFace.userData.data = data;
   hoverFace.renderOrder = 998;
   scene.add(hoverFace);
 }
@@ -1613,6 +1626,10 @@ function disposeModel() {
   edgeLines.length = 0;
   for (const o of sketchObjs) { scene.remove(o); o.geometry.dispose(); }
   sketchObjs.length = 0;
+  // the picker's hover glow belongs to the mesh that just went: a face patch
+  // built from the old triangles, an edge line already removed from the scene
+  unhoverEdge();
+  unhoverFace();
   clearPickHighlight();
 }
 
