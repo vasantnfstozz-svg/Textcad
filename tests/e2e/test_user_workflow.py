@@ -232,7 +232,9 @@ def test_sketch_profile_is_pickable_over_the_face_below(dome_with_rect_sketch):
 def test_extrude_never_auto_selects_the_sketch(dome_with_rect_sketch):
     """Pressing Extrude with NOTHING selected must not create anything —
     it asks the user to pick. Clicking the rectangle then extrudes THAT
-    profile, and both bodies remain."""
+    profile — and, sketched ON the dome's face and pulled up, it JOINS the
+    dome (Fusion's default; 2026-09-08: bosses left as 'New body' made a
+    3-solid STEP file nobody asked for)."""
     page = dome_with_rect_sketch
     n0 = page.evaluate(
         "async () => (await (await fetch('/api/doc')).json()).features.length")
@@ -265,8 +267,11 @@ def test_extrude_never_auto_selects_the_sketch(dome_with_rect_sketch):
     doc = page.evaluate("async () => (await (await fetch('/api/doc')).json())")
     ex = [f for f in doc["features"] if f["op"] == "extrude"]
     assert len(ex) == 1 and ex[0]["inputs"] == ["sketch1"], ex
-    assert page.evaluate("window.__vp.bodyCount()") == 2, \
-        "extruding the picked profile lost a body"
+    joins = [f for f in doc["features"] if f["op"] == "fuse"]
+    assert len(joins) == 1 and joins[0]["inputs"] == ["dome", ex[0]["id"]], joins
+    assert joins[0]["status"] == "ok", joins
+    assert page.evaluate("window.__vp.bodyCount()") == 1, \
+        "a boss pulled off the dome's face must be ONE body with it"
     assert page.errors == []
 
 

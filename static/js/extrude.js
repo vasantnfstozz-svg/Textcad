@@ -186,6 +186,24 @@ const gizmos = {
 
 /* ---------------- apply-time rules ---------------- */
 function beforeApply(st) {
+  // FUSION'S DEFAULT OPERATION for a sketch that lives ON a body (a face
+  // sketch): pulled OUT of the body it JOINS, pushed INTO it it CUTS. Only a
+  // free plane sketch (no into_sign) starts a new body. Left at "New body", a
+  // boss drawn on a pocket floor was a separate solid nobody asked for, and
+  // the STEP file honestly carried three bodies (user, 2026-09-08: "our design
+  // contains 3 solid bodies ... because of this I can not edit it"). The
+  // choice is the user's from the moment they touch the Operation box
+  // (st.opUser); an edit never rewires; Through all is a cut already.
+  if (!isFace(st) && !st.editing && !st.opUser && !g('exThrough').checked
+      && g('exDir').value === 'one') {
+    const into = intoSign(st), d = num('exDist');
+    if (into && d !== 0) {
+      // the box value runs along the arrow, which Flip turns around
+      const eff = Math.sign(d) * (g('exFlip').checked ? -1 : 1);
+      const want = eff === into ? 'cut' : 'join';
+      if (g('exOp').value !== want) { g('exOp').value = want; sync(st); }
+    }
+  }
   // Cut goes INTO the material. On a face sketch a distance pointing OUT of
   // the body removes NOTHING, so the FIRST value pointing out is flipped here
   // — and only the first: after that the sign is the user's (an upward cut

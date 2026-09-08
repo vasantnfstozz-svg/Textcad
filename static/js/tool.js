@@ -315,7 +315,7 @@ export function tool(spec) {
     if (spec.sync) spec.sync(st);
   }
   const session = input => ({ input, featureId: null, opId: null, opType: null,
-                              opTarget: null, editing: false, plan: null,
+                              opTarget: null, opUser: false, editing: false, plan: null,
                               lastGood: null, lastGoodPlan: null, firstExtra: null, heldWhy: null });
 
   /* -------- open on the current selection (rules 1, 2, 4) -------- */
@@ -828,8 +828,14 @@ export function tool(spec) {
     if (st.editing) return;             // edit mode never rewires combiners (v1)
     const op = el('Op').value;          // new | join | cut | intersect
     const target = el('Target').value;
+    // 'strict' = that ONE node. The default delete REPAIRS the tree: a cut
+    // takes its tool prism and the prism's SKETCH with it (Document
+    // _orphan_sweep), so switching Cut to Join here deleted the user's sketch
+    // and the very feature this session is editing (2026-09-08, found when
+    // Extrude began to follow the drag direction). The combiner is this
+    // session's own tail; nothing depends on it.
     if (st.opId && (op === 'new' || st.opType !== op || st.opTarget !== target)) {
-      await post('/api/feature/remove', { feature_id: st.opId });
+      await post('/api/feature/remove', { feature_id: st.opId, mode: 'strict' });
       st.opId = st.opType = st.opTarget = null;
     }
     if (op !== 'new' && !st.opId && target) {
@@ -927,8 +933,10 @@ export function tool(spec) {
   /* the preview feature(s) go — Cancel, another profile, or the boxes back at
      zero; the session stays as it is */
   async function unbuild() {
-    if (st.opId) await post('/api/feature/remove', { feature_id: st.opId });
-    await post('/api/feature/remove', { feature_id: st.featureId });
+    // one node each, in order (see applyOp): Cancel on a Cut session must
+    // leave the SKETCH the user drew before the tool was ever opened
+    if (st.opId) await post('/api/feature/remove', { feature_id: st.opId, mode: 'strict' });
+    await post('/api/feature/remove', { feature_id: st.featureId, mode: 'strict' });
     st.opId = st.opType = st.opTarget = st.featureId = null;
   }
 
@@ -1015,7 +1023,9 @@ export function tool(spec) {
 
   function init() {
     el('Profile').onchange = changeProfile;
-    el('Op').onchange = () => { sync(); apply(); };
+    // a touched Operation box is the user's choice: a tool's own default
+    // (Extrude follows the drag direction) stops overriding it
+    el('Op').onchange = () => { if (st) st.opUser = true; sync(); apply(); };
     for (const s of ['Target', ...(spec.fields.change || [])])
       el(s).onchange = () => { sync(); if (spec.refresh) spec.refresh(st); apply(); };
     for (const s of spec.fields.typed || [])
