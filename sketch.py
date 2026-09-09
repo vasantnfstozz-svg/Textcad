@@ -203,26 +203,92 @@ def _entity(e: dict):
     return s
 
 
-def _nesting_depth(shapes: list) -> list[int]:
-    """How many of the OTHER entity shapes each shape sits inside.
+def _box_within(inner, outer, tol: float = 1e-7) -> bool:
+    """Could `inner`'s bounding box sit inside `outer`'s, in the sketch plane?
+
+    NOT `BoundBox.is_inside`, which was measured to be useless here (second
+    code review, 2026-09-09): build123d returns `not (STRICTLY inside)`, and a
+    2D sketch box is flat in Z, so `min.Z > min.Z` is never true and the whole
+    test came back True for every pair. Nothing was ever skipped and every
+    pair ran a full boolean — 4128 ms per rebuild of the user's 23-entity
+    `rocky-balboa/field_sketch`, 1513 ms for `rocky-keychain/words_sketch`.
+
+    X and Y only, on purpose: the shapes are coplanar, so Z carries nothing.
+    """
+    return (inner.min.X >= outer.min.X - tol
+            and inner.max.X <= outer.max.X + tol
+            and inner.min.Y >= outer.min.Y - tol
+            and inner.max.Y <= outer.max.Y + tol)
+
+
+def _containment(shapes: list) -> list[list[bool]]:
+    """`inside[i][j]` — does entity shape i sit inside entity shape j?
 
     Containment is MEASURED, never guessed: A is inside B when A minus B has
     no area left. The bounding box only SKIPS a pair (a box that does not fit
     inside cannot be contained); it never decides one — a circle straddling
     the rim passes the bbox test and fails the real one (probed 2026-09-09).
+
+    Two copies of one shape (a mirror in place) contain EACH OTHER, which is
+    not a nesting order at all; those pairs are dropped so they cannot make a
+    cycle out of the ordering below.
     """
+    n = len(shapes)
     boxes = [s.bounding_box() for s in shapes]
-    depth = [0] * len(shapes)
-    for i, inner in enumerate(shapes):
-        for j, outer in enumerate(shapes):
-            if i == j or not boxes[j].is_inside(boxes[i]):
+    inside = [[False] * n for _ in range(n)]
+    for i in range(n):
+        for j in range(n):
+            if i == j or not _box_within(boxes[i], boxes[j]):
                 continue
             try:
-                if abs((inner - outer).area) < 1e-7 * max(inner.area, 1.0):
-                    depth[i] += 1
+                if abs((shapes[i] - shapes[j]).area) < 1e-7 * max(
+                        shapes[i].area, 1.0):
+                    inside[i][j] = True
             except Exception:               # a boolean that will not run tells
-                continue                    # us nothing; leave the depth alone
-    return depth
+                continue                    # us nothing; leave the pair alone
+    for i in range(n):
+        for j in range(i + 1, n):
+            if inside[i][j] and inside[j][i]:
+                inside[i][j] = inside[j][i] = False
+    return inside
+
+
+def _nesting_depth(shapes: list) -> list[int]:
+    """How many of the OTHER entity shapes each shape sits inside."""
+    return [sum(row) for row in _containment(shapes)]
+
+
+def _compose_order(shapes: list) -> list[int]:
+    """The order to compose in: an OUTER before anything nested inside it,
+    and the user's DRAWING order everywhere else.
+
+    Why not a sort by nesting depth (the first fix pass, 556a611): depth is
+    not an ordering constraint, so sorting by it moved entities that no
+    nesting relates. A top-level subtraction — one that is inside nothing —
+    sorted to the very front, ahead of the adds it was drawn after, and the
+    user's `esp32-remote/logo_1_sketch` went from 4.37 mm2 to a red feature
+    (second code review, 2026-09-09). The only thing the kernel actually
+    needs is what the first review measured: the shape a hole sits in has to
+    exist before the hole cuts it. That is one edge per nested pair and
+    nothing else, so this is a stable topological order — of the entities
+    whose outers are all composed, it always takes the one drawn first.
+    """
+    n = len(shapes)
+    inside = _containment(shapes)
+    waiting = [sum(row) for row in inside]      # outers still to be composed
+    order: list[int] = []
+    done = [False] * n
+    while len(order) < n:
+        nxt = next((i for i in range(n) if not done[i] and not waiting[i]),
+                   None)
+        if nxt is None:                         # a containment cycle we cannot
+            nxt = next(i for i in range(n) if not done[i])   # order: fall back
+        done[nxt] = True                        # to the drawing order
+        order.append(nxt)
+        for i in range(n):
+            if inside[i][nxt] and not done[i]:
+                waiting[i] -= 1
+    return order
 
 
 def _compose(entities: list):
@@ -240,27 +306,42 @@ def _compose(entities: list):
 
     The stored entity list is untouched — it keeps the user's drawing order,
     so the tree's rows and every saved design stay as they are; only the
-    arithmetic is reordered. Ties keep drawing order (the sort is stable), and
-    depth is computed only when something actually subtracts, so the ordinary
-    all-add sketch pays nothing.
+    arithmetic is reordered, and only where a nested pair demands it
+    (`_compose_order`). Containment is measured only when something actually
+    subtracts, so the ordinary all-add sketch pays nothing.
     """
     if not entities:
         raise ValueError("sketch has no entities")
     shapes = [_entity(e) for e in entities]
     order = list(range(len(shapes)))
     if any(e.get("mode", "add") == "subtract" for e in entities):
-        depth = _nesting_depth(shapes)
-        order.sort(key=lambda i: depth[i])
+        order = _compose_order(shapes)
+    # A subtraction that comes FIRST waits for the first add instead of
+    # killing the sketch (second code review, 2026-09-09). It can legitimately
+    # come first: a subtraction that CONTAINS an add owes that add an order,
+    # so it leads, and the old guard then refused the whole feature — the
+    # user's `esp32-remote/logo_1_sketch` had built at 4.37 mm2 and went red,
+    # taking everything downstream with it. Held back to just after the first
+    # add, it cuts exactly what it cut before.
     result = None
+    waiting: list[int] = []
     for i in order:
         mode = entities[i].get("mode", "add")
         if result is None:
             if mode == "subtract":
-                raise ValueError("sketch: first entity cannot be a subtraction")
+                waiting.append(i)
+                continue
             result = shapes[i]
+            for j in waiting:
+                result = result - shapes[j]
+            waiting.clear()
         else:
             result = (result - shapes[i] if mode == "subtract"
                       else result + shapes[i])
+    if result is None:                  # every entity subtracts: nothing to
+        raise ValueError(               # cut FROM, which is a real mistake
+            "sketch: first entity cannot be a subtraction — there is nothing "
+            "for it to cut into")
     return result
 
 
@@ -280,13 +361,33 @@ def _path_face(e: dict):
     with BuildSketch() as sk:
         with BuildLine():
             cur = start
-            for s in segs:
+            for n, s in enumerate(segs, start=1):
                 to = tuple(float(v) for v in s["to"])
-                if s.get("type") == "arc":
-                    via = tuple(float(v) for v in s["via"])
-                    ThreePointArc(cur, via, to)
-                else:
-                    Line(cur, to)
+                # Rule 5 again, one level deeper (second code review,
+                # 2026-09-09): the try below wrapped only make_face(), so a
+                # segment the kernel cannot build spoke for itself —
+                # `StdFail_NotDone: GC_MakeArcOfCircle::Value() - no result`
+                # in the tree and a 500 from /api/sketch/trim/pieces. The
+                # kernel stays the JUDGE of a three-point arc (it accepts a
+                # middle point 1e-6 off a 100 mm chord, so no threshold of
+                # ours could tell a flat arc from a dead one without
+                # rejecting real profiles); we only translate its verdict.
+                try:
+                    if s.get("type") == "arc":
+                        via = tuple(float(v) for v in s["via"])
+                        ThreePointArc(cur, via, to)
+                    else:
+                        Line(cur, to)
+                except Exception as exc:            # noqa: BLE001
+                    what = ("arc {0}: no curve passes through its three "
+                            "points — the middle point lies on the straight "
+                            "line between its ends, or sits on top of one of "
+                            "them; move it off that line"
+                            if s.get("type") == "arc" else
+                            "segment {0} could not be drawn — its two ends "
+                            "are the same point")
+                    raise ValueError(
+                        "path entity, " + what.format(n)) from exc
                 cur = to
             if abs(cur[0] - start[0]) > 1e-6 or abs(cur[1] - start[1]) > 1e-6:
                 Line(cur, start)                        # auto-close

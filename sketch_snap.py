@@ -138,6 +138,7 @@ def snap_geometry(parts: dict, plane: str = "XY", offset: float = 0.0,
         for edge in body_edges:
             try:
                 circle = edge.geom_type == b3d.GeomType.CIRCLE
+                centred = edge.geom_type == b3d.GeomType.ELLIPSE
                 n = 2 if edge.geom_type == b3d.GeomType.LINE else 16
             except Exception:
                 continue
@@ -160,7 +161,14 @@ def snap_geometry(parts: dict, plane: str = "XY", offset: float = 0.0,
                     add(pts[-1], "corner", body)
                     mid = len(pts) // 2
                     add(pts[mid], "midpoint", body)
-                if circle:
+                # An ELLIPSE rim counts too (second code review, 2026-09-09):
+                # an angled cut through a bore leaves a closed elliptical
+                # edge, and suppressing its seam without offering its centre
+                # left that feature with NO snap point at all. `arc_center`
+                # is the true centre for both kinds — probed on an elliptical
+                # bore: (0, 0, 0), where `center()` answers the sampled
+                # centroid (-7.99984, -0.025) and would be a lie.
+                if circle or centred:
                     try:
                         c = edge.arc_center
                         if abs(_signed(pl, c)) <= tol:

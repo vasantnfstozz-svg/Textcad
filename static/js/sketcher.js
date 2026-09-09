@@ -1068,11 +1068,19 @@ function entSamplePts(e) {
     for (const sx of [-1, 1]) for (const sy of [-1, 1])
       push((sx * e.length) / 2, (sy * e.height) / 2);
   } else if (e.kind === 'polygon') {
-    for (const p of e.points) push(p[0], p[1]);
+    for (const p of e.points || []) push(p[0], p[1]);
   } else if (e.kind === 'path') {
-    push(e.start[0], e.start[1]);
-    for (const sg of e.segments) {
-      push(sg.to[0], sg.to[1]);
+    // `|| []` / `|| [0, 0]` like every sibling reader: the BACKEND treats a
+    // missing start as the origin (sketch._path_face), so an entity the AI
+    // author wrote without one builds fine and is a legal row in the tree.
+    // Unguarded, clicking Edit on it threw TypeError here — inside an
+    // unawaited bus handler, before enterMode(), so sketch mode silently
+    // never opened and the editor was already half-overwritten (second code
+    // review, 2026-09-09).
+    const st = e.start || [0, 0];
+    push(st[0], st[1]);
+    for (const sg of e.segments || []) {
+      if (sg.to) push(sg.to[0], sg.to[1]);
       if (sg.via) push(sg.via[0], sg.via[1]);
     }
   }

@@ -50,7 +50,14 @@ export async function askJSON(url, body) {
     const r = await fetch(url, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body || {}) });
-    return await r.json();
+    const data = await r.json();
+    // Silent to the USER, never silent to the CALLER (second code review,
+    // 2026-09-09): a 422 or 500 body has no `error` key of its own, so it
+    // used to read exactly like a successful "there are no arcs" — and the
+    // caller then cached that as the answer.
+    if (!r.ok) return { error: data?.detail || `the server said ${r.status}`,
+                        status: r.status };
+    return data;
   } catch {
     return { error: 'the server did not answer' };
   }

@@ -135,6 +135,7 @@ export function initTreeFind() {
 
 export function renderDoc(doc) {
   S.lastDoc = doc;
+  arcKindsFor(doc.name);
   document.getElementById('docTitle').innerHTML = `<b>${doc.name}</b>`;
   document.getElementById('sDoc').innerHTML = `<b>${doc.name}</b>`;
   document.getElementById('featCount').textContent =
@@ -742,6 +743,18 @@ function circumR(a, b, c) {
    until it lands the row says "curve" and promises nothing. */
 const arcKinds = new Map();          // "<featId>:<entIdx>:<segIdx>" -> kind
 const arcKindsSeen = new Map();      // featId -> the entity list it describes
+let arcKindsDoc = null;              // which design those two describe
+
+/* Feature ids are unique inside ONE document, so `sketch3` in a second open
+   tab read the first tab's answer, and neither map ever shrank (second code
+   review, 2026-09-09). Both are a cache of one design's labels: when the
+   design on screen changes, they are simply not about it any more. */
+function arcKindsFor(name) {
+  if (arcKindsDoc === name) return;
+  arcKindsDoc = name;
+  arcKinds.clear();
+  arcKindsSeen.clear();
+}
 
 function paintArcKind(pr) {
   const kind = arcKinds.get(pr.dataset.arckind);
@@ -753,11 +766,15 @@ function paintArcKind(pr) {
 }
 
 async function loadArcKinds(feat, entities) {
+  // The key is stored only once the answer is IN. Set before the await, a
+  // single failed fetch (a supervisor relaunch mid-render) pinned the row at
+  // its fallback "curve N R" label until the entities themselves changed
+  // (second code review, 2026-09-09).
   const key = stableEntities(entities);
   if (arcKindsSeen.get(feat.id) === key) return;
-  arcKindsSeen.set(feat.id, key);
   const res = await askJSON('/api/sketch/path-arcs', { entities });
   if (res.error || !res.arcs) return;
+  arcKindsSeen.set(feat.id, key);
   for (const [ei, arcs] of Object.entries(res.arcs))
     for (const a of arcs) arcKinds.set(`${feat.id}:${ei}:${a.segment}`, a.kind);
   for (const pr of document.querySelectorAll(
