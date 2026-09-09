@@ -976,7 +976,7 @@ to exactly the same area as before this commit. esp32-remote (81 features),
 rocky-balboa and wing-rib all rebuild `ok`. 1258 fast tests, ruff and eslint
 zero, ui v178.
 
-### Section 1, round five - ONE reviewer, medium (2026-09-09, commit pending)
+### Section 1, round five - ONE reviewer, medium (2026-09-09, commit c489839)
 
 The cheap shape, as the round-four lesson demanded: a single reviewer at
 medium instead of ten lenses and a panel. It **cleared the two-part ordering
