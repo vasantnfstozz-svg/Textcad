@@ -16,92 +16,101 @@
 
 ---
 
+## ONE reviewer, not a fleet
+
+The fourth round was run as ten parallel lenses with a three-judge panel per
+finding: about 46 Opus agents at xhigh before the user stopped it, 40-100x the
+cost of a single review, and against this repo's own token rules ("no agent
+fan-outs", LAUNCH-PLAN section 9). It did find a P0 that three cheaper rounds
+had missed, so the shape is not banned - but it is for a P0 in code that has
+already failed repeatedly, and only with the agent count quoted to the user
+first. **This round is ONE reviewer at medium.** If it finds nothing, the
+sketcher section is done.
+
+---
+
 ## Review this
 
 | | |
 |---|---|
-| **Range** | `bdca16b..HEAD` - ONE code commit, `5f65a7a`: the fix pass for the THIRD review of sketch composition |
-| **Already reviewed** | everything up to `6e2cae9`, three times. `556a611` fixed REVIEW-QUEUE section 1; `6e2cae9` fixed the re-review of that; `5f65a7a` fixes the re-review of THAT. All three reports are in `REVIEW-QUEUE.md`'s done log with their measured numbers |
-| **Effort** | **medium** - the P0 rule says a P0 fix earns another round, and this is the third P0 in the same twenty lines. But the surface is now SMALLER than last time: the deferral is gone rather than replaced, so there is less new logic to get wrong. Read `_compose` and `_area_of` closely; treat the rest as confirmation |
+| **Range** | `5f65a7a..HEAD` - ONE code commit, `13da90c`: the fix pass for the FOURTH review of sketch composition |
+| **Already reviewed** | everything up to `5f65a7a`, four times. Each round fixed the previous round's fix: 556a611, 6e2cae9, 5f65a7a, now 13da90c. All four reports are in `REVIEW-QUEUE.md`'s done log with their measured numbers |
+| **Effort** | **medium.** The rule gained a constraint rather than changing shape, the library composes bit-identically, and composition is now measurably independent of drawing order. Read `_compose_order`, `_overlaps` and `_order_from` closely; treat the rest as confirmation |
 | **Branch** | `master` (no pull request - do not try to comment on GitHub) |
-| **Frontend** | `ui v177`, `css v40` (unchanged) |
+| **Frontend** | `ui v178`, `css v40` (unchanged) |
 
 ---
 
-## What changed, and why the last two attempts failed
+## What changed
 
-Round one sorted a sketch's entities by nesting DEPTH; a depth is not an
-ordering constraint, so it moved entities no nesting related and a live design
-went red. Round two replaced the sort with `_compose_order`, a real
-topological order, and then DEFERRED a leading subtraction to just after the
-first add so the design would keep the area it had. Those two cancel:
-`_compose_order` hoists a subtraction in FRONT of the add nested inside it
-*precisely so that add survives as an island*, and the deferral subtracted it
-from exactly that add. Measured: `[r20 subtract, r10 add]` built area **0.0**
-and reported `ok`; three identical bars inside one subtract blob built 144.0
-instead of 216.0, with the FIRST bar missing.
+Round three made a cut that ends up FIRST in the composition order remove
+nothing. That is right only if a leading cut genuinely meets nothing - and an
+entity waits only for the shapes it is NESTED INSIDE, so a cut could be
+ordered ahead of material it overlaps because that material sat inside a
+DIFFERENT cut and was waiting itself. Measured: a boss with a bar across it
+composed 22.3648 mm2; adding a pocket around them gave 78.5398 - the whole
+boss, as if the bar had never been drawn, status `ok`, no warning.
 
-`5f65a7a`:
+`13da90c` makes the constraint two-part:
 
-- **`_compose`** - a leading subtraction removes NOTHING (nothing is composed
-  yet, so there is nothing to cut) and calls `_note` so it is not silent.
-  `waiting[]` is gone.
-- **`_area_of(shape)`** - `.area`, or 0.0 for anything that cannot answer. A
-  step that empties the profile resets `result` to `None`, so the next add
-  starts it again and the kernel is never handed an empty shape to subtract
-  from. A sketch that ends empty raises one of two sentences: "the cuts
-  removed everything that was drawn", or "every entity is a cut" when there
-  was never an add at all.
-- **`_path_face`** - a missing `start` is refused instead of defaulting to the
-  origin; `via` is read outside the arc translator's `try`.
-- **`tree.js loadArcKinds`** - captures the design before its await and bails
-  if it changed; an in-flight key dedupes the N calls one render makes.
-- **`sketcher.js scaleEntity`** - `|| []` / `|| [0, 0]` guards.
+- an outer before anything nested inside it (unchanged);
+- **material before a cut that overlaps it without containing it** - an edge
+  added only while the order still STARTS with a cut, after which the order
+  is recomputed, up to n passes.
+- `_order_from(needs)` is the old topological walk, now over a general edge
+  matrix; `_overlaps` / `_boxes_meet` measure the overlap with the bounding
+  box only skipping.
+- The emptiness reset fires only after a CUT now (after an add it was failing
+  a single tiny entity that used to build).
+- `_seg_point` names a segment with no `to`, or a `via` of one number.
+- `sketch_corner._chain` refuses a start-less path instead of fabricating the
+  origin - which `set_arc_radius` was writing back into the design.
+- `scaleEntity` leaves a malformed path or an empty polygon alone instead of
+  repairing it.
+- Suppressed and rolled-back features drop their notes.
 
 ### Where to push hardest
 
-1. **Is "a leading subtraction removes nothing" right for a subtraction that
-   OVERLAPS rather than contains?** `_compose_order` only orders nested pairs,
-   so a red shape that merely overlaps a later green one keeps drawing order
-   and its cut is now dropped. Find an arrangement a user can actually draw
-   (or the AI can author) where that loses a cut they wanted. Note the mode
-   rule this rests on: `assignModes()` (sketcher.js:1441) assigns `subtract`
-   ONLY by odd containment depth, so two overlapping shapes are both `add`.
-2. **The `_area_of` reset.** `result = None` mid-loop means a later add starts
-   a fresh profile. Is there an arrangement where an add after an emptying cut
-   should still have been cut by something already applied - or where the
-   reset hides a genuine "this sketch is nonsense" that used to fail?
-3. **`_area_of` swallowing.** It returns 0.0 for any exception. Can a
-   legitimate part-composed profile fail to answer `.area` and be treated as
-   empty, silently dropping everything composed so far?
-4. **Does it change a committed design?** Swept: only
-   `esp32-remote/logo_1_sketch`'s arithmetic moves (4.3671 -> 7.6656), and all
-   six of that design's `logo_*` features are suppressed, so no built geometry
-   changes. Find a second design that moves, or one whose shape changes at
-   equal area.
-5. **The refusal in H6.** A `path` with no `start` now fails the feature. No
-   design in `designs/` has one (swept) and author.py:333 documents `start`,
-   but check the OTHER producers - trace-image, import, trim/pieces, the
-   sketch API endpoints - for a path entity built without one.
-6. **The note.** `_note` from `_compose` lands in `f.notes` via
-   `document.rebuild`'s drain. Check an endpoint that composes WITHOUT
-   draining (`/api/sketch/trim/pieces`, `/api/sketch/path-arcs`) cannot leave
-   a note that later attaches to an unrelated feature.
-7. **`loadArcKinds`.** The in-flight key is `feat.id + " " + JSON`; the doc
-   guard compares `arcKindsDoc`, which is keyed by `doc.name`. Two tabs of the
-   SAME design share that name - can a reply still cross between them?
-8. **Cost.** `_containment` is unchanged and still O(n^2) measured booleans on
-   the pairs the box lets through (735 ms on `rocky-balboa/field_sketch`,
-   23 entities). Known, not a finding.
+1. **Is the two-part constraint sufficient, or is there a third case?** Look
+   for an arrangement where two entities must be ordered relative to each
+   other and NEITHER nesting nor add-cut overlap relates them: two cuts that
+   overlap each other over shared material, an add overlapping an add that a
+   cut then bites, a cut that meets material only through a third shape.
+   Measure the area and compare with what the editor paints (add fills GREEN,
+   cut fills RED, per entity, no even-odd canvas fill).
+2. **Cycles.** The overlap pass adds edges to a matrix that already carries
+   containment, and skips a pair when the reverse edge exists - but a longer
+   cycle (A before B before C before A) can still form. Construct one and
+   check the fallback branch composes sanely rather than silently badly.
+3. **Termination.** The pass loops up to n times, recomputing the order each
+   time. Can it oscillate, or add an edge every pass without ever freeing the
+   lead, and exit quietly with a bad order?
+4. **Cost.** It fires only while the order starts with a cut. Confirm that,
+   and that no design in `designs/` newly pays for it. Measured before:
+   `rocky-balboa/field_sketch` 1207 ms with the pass against 1506 ms without
+   (same order - the pass never fires there).
+5. **`_overlaps` returns False on an exception**, like `_area_of` returning
+   0.0: a pair whose boolean will not run is treated as apart, which drops
+   the edge and so can drop the cut. Find a pair where `&` throws.
+6. **The refusals.** `sketch_corner` and `_path_face` refuse a start-less
+   path, and `_seg_point` refuses a malformed segment. Check every producer
+   again for one that can emit either - trace-image, import, trim/pieces,
+   author.py, MCP, the sketch endpoints - and check the failure reaches the
+   user as a sentence in the tree, never a 500.
+7. **The frontend early-outs.** `scaleEntity` returns the entity untouched for
+   a malformed path or an empty polygon. Does Scale still behave for the GOOD
+   entities in the same drag ("scale all")? Does anything downstream depend
+   on every entity having been scaled?
 
 ## Ground rules
 
 - **Read-only.** Do not start the server (port 8123 is the user's; a second
   listener there is a known trap). Do not run `tests/e2e/`. The fast proof is
-  `C:\Python314\python.exe -m pytest tests/test_sketch_review3.py
-  tests/test_sketch_review2.py tests/test_sketch_review.py
-  tests/test_e2_sketch.py tests/test_sketch_snap.py tests/test_sketch_trim.py
-  tests/test_sketch_corner.py -q`; the whole fast tier is 1239.
+  `C:\Python314\python.exe -m pytest tests/test_sketch_review4.py
+  tests/test_sketch_review3.py tests/test_sketch_review2.py
+  tests/test_sketch_review.py tests/test_e2_sketch.py tests/test_sketch_snap.py
+  tests/test_sketch_trim.py tests/test_sketch_corner.py -q`; the whole fast
+  tier is 1258.
 - **A finding is a concrete input on which the code does the wrong thing**,
   with the exact click or data that triggers it. Order: P0 wrong geometry or
   data loss, P1 blocks the action, P2 daily annoyance, P3 polish.
@@ -127,30 +136,30 @@ high or medium confidence.
 
 ## Already known - do NOT report
 
-- **The eight findings this commit fixes**, listed as H1-H8 in
-  `REVIEW-QUEUE.md`'s done log under "Section 1, round three", with their
-  measured numbers. Report a fix that is WRONG or INCOMPLETE, never the
-  original defect.
-- **Four tests from the previous round were corrected in place** because they
-  asserted the defective contract (the eaten island as the expected area, a
-  start-less path as legal, two message regexes). That is deliberate and
-  recorded; a test whose NEW assertion is wrong is a finding.
-- **The nine findings of the first review** (556a611) and its one rejection,
-  the un-awaited `releaseIsolation()` in `exitMode()`; **the eight of the
-  second** (6e2cae9).
+- **The eight findings this commit fixes**, J1-J8 in `REVIEW-QUEUE.md`'s done
+  log under "Section 1, round four", with their measured numbers. Report a fix
+  that is WRONG or INCOMPLETE, never the original defect.
+- **"The note is never rendered, so a dropped cut is still silent" is REFUTED
+  and measured.** Only `extrude.js` reads `f.notes`, but `Document.warnings`
+  republishes every note (document.py:1211) and `tree.js renderWarnings`
+  shows them in its info box.
+- **The three findings deferred on purpose**, now rows in LAUNCH-PLAN section
+  10: `sketch_trim.py`'s own copy of the composition rule (P1); a
+  self-crossing polygon building an invalid face that reports ok (P2); the
+  arc-label doc guard keyed by design NAME (P3).
+- **The findings of rounds one, two and three** and their two rejections (the
+  un-awaited `releaseIsolation()`; the note-rendering claim above).
 - **The first card in the sketch tree shows a fixed `add` badge.** A leading
-  subtraction is composable now, so the badge is stricter than the backend
-  needs. Relaxing it is a feature.
+  cut is composable now, so the badge is stricter than the backend needs.
 - **A full circle still offers no QUADRANT snaps.** Deliberate.
 - **`blocks.resolve_face` picks by nearest centre**, so two coplanar faces
   sharing a centre resolve to the wrong twin. Queued, P1.
-- **Pattern's `_axis_face` guards with the bounding box that B replaced**;
-  Mirror's `_plane_face` is in the same family. Queued.
+- **Pattern's `_axis_face` guards with the bounding box `_face_of` dropped.**
+  Queued.
 - **`-m library` cannot collect** (duplicate basenames against `tests/e2e`).
-  That is why all three P0s in this code reached a live design uncaught; it is
-  a tracked test-infrastructure item, not a finding about this commit.
-- Face MODE (`extrude_face`) still opens on Join regardless of direction.
-  Known. Edit mode never rewires a combiner. Known.
+  A tracked test-infrastructure item.
+- Face MODE (`extrude_face`) still opens on Join regardless of direction, and
+  Edit mode never rewires a combiner. Known.
 - `feature_faces` answers nothing for a row whose whole body was MOVED after
   it. Pre-existing.
 - The pre-existing red browser tests (`tests/e2e/test_tree_delete.py`, five)
