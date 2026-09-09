@@ -1139,10 +1139,18 @@ function scaleEntity(e, f, inPlace) {
   else if (e.kind === 'polygon')
     e.points = e.points.map(p => [p[0] * f, p[1] * f]);
   else if (e.kind === 'path') {
+    // Same guards as every sibling reader (`outlinePts`, `hitTest`,
+    // `entityHandles`, `collectSnapPoints`, `entSamplePts`): a path entity
+    // with no start or no segments threw TypeError mid-drag here, in an
+    // unawaited handler, so the Scale gizmo simply stopped (third code
+    // review, 2026-09-09). The backend refuses such an entity now, but the
+    // user still has to be able to OPEN the sketch to fix it.
+    const st = e.start || [0, 0];
+    const sgs = e.segments || [];
     let cx = 0, cy = 0;
     if (inPlace) {          // about the path's own local centre
-      const xs = [e.start[0]], ys = [e.start[1]];
-      for (const sg of e.segments) {
+      const xs = [st[0]], ys = [st[1]];
+      for (const sg of sgs) {
         xs.push(sg.to[0]); ys.push(sg.to[1]);
         if (sg.via) { xs.push(sg.via[0]); ys.push(sg.via[1]); }
       }
@@ -1150,9 +1158,10 @@ function scaleEntity(e, f, inPlace) {
       cy = (Math.min(...ys) + Math.max(...ys)) / 2;
     }
     const sc = p => [cx + (p[0] - cx) * f, cy + (p[1] - cy) * f];
-    e.start = sc(e.start);
-    e.segments = e.segments.map(sg => ({
-      ...sg, to: sc(sg.to), ...(sg.via ? { via: sc(sg.via) } : {}),
+    e.start = sc(st);
+    e.segments = sgs.map(sg => ({
+      ...sg, ...(sg.to ? { to: sc(sg.to) } : {}),
+      ...(sg.via ? { via: sc(sg.via) } : {}),
     }));
   }
   return e;

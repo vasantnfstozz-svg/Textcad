@@ -78,8 +78,11 @@ def test_two_separate_profiles_each_keep_their_own_hole():
 
 
 def test_first_entity_subtracting_from_nothing_still_says_so():
-    """A lone subtract has nothing to cut: the sentence must survive."""
-    with pytest.raises(ValueError, match="first entity cannot be a subtraction"):
+    """A lone subtract has nothing to cut: the sentence must survive. Its
+    wording changed with the third review (2026-09-09) — a subtraction CAN now
+    come first (it removes nothing), so the mistake being named is a sketch of
+    nothing but cuts, not the position of the first entity."""
+    with pytest.raises(ValueError, match="every entity is a cut"):
         sk.make_sketch("XY", 0, [circle(10, "subtract")])
 
 

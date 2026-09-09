@@ -743,6 +743,7 @@ function circumR(a, b, c) {
    until it lands the row says "curve" and promises nothing. */
 const arcKinds = new Map();          // "<featId>:<entIdx>:<segIdx>" -> kind
 const arcKindsSeen = new Map();      // featId -> the entity list it describes
+const arcKindsFlight = new Set();    // "<featId> <entities>" asked, not back
 let arcKindsDoc = null;              // which design those two describe
 
 /* Feature ids are unique inside ONE document, so `sketch3` in a second open
@@ -772,7 +773,27 @@ async function loadArcKinds(feat, entities) {
   // (second code review, 2026-09-09).
   const key = stableEntities(entities);
   if (arcKindsSeen.get(feat.id) === key) return;
-  const res = await askJSON('/api/sketch/path-arcs', { entities });
+  // ONE request per render, without going back to keying before the await:
+  // pathArcRows calls this once per path entity, so a sketch with N of them
+  // fired N identical POSTs, each carrying the whole entity list (third code
+  // review, 2026-09-09). The in-flight key is dropped again the moment the
+  // answer — or the failure — lands, so nothing stays pinned.
+  const flight = `${feat.id} ${key}`;
+  if (arcKindsFlight.has(flight)) return;
+  arcKindsFlight.add(flight);
+  // Which design this answer is about. Without it, a reply that lands after
+  // the user switched designs repainted the NEW design's rows: the selector
+  // below matches on feature id alone, and ids like `sketch1` are unique only
+  // within one document, so a free curve got a `corner` label and the
+  // tangency promise the backend will not keep (third code review).
+  const forDoc = arcKindsDoc;
+  let res;
+  try {
+    res = await askJSON('/api/sketch/path-arcs', { entities });
+  } finally {
+    arcKindsFlight.delete(flight);
+  }
+  if (arcKindsDoc !== forDoc) return;
   if (res.error || !res.arcs) return;
   arcKindsSeen.set(feat.id, key);
   for (const [ei, arcs] of Object.entries(res.arcs))

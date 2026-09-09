@@ -221,6 +221,20 @@ def _box_within(inner, outer, tol: float = 1e-7) -> bool:
             and inner.max.Y <= outer.max.Y + tol)
 
 
+def _area_of(shape) -> float:
+    """How much area a part-composed profile still has — 0.0 for none.
+
+    A profile cut away to nothing is an empty Compound, which answers 0.0
+    (measured, third code review 2026-09-09). Anything that cannot answer at
+    all is treated as empty too: the only question asked here is "is there
+    material left to cut into?".
+    """
+    try:
+        return float(shape.area)
+    except Exception:                   # noqa: BLE001
+        return 0.0
+
+
 def _containment(shapes: list) -> list[list[bool]]:
     """`inside[i][j]` — does entity shape i sit inside entity shape j?
 
@@ -316,32 +330,51 @@ def _compose(entities: list):
     order = list(range(len(shapes)))
     if any(e.get("mode", "add") == "subtract" for e in entities):
         order = _compose_order(shapes)
-    # A subtraction that comes FIRST waits for the first add instead of
-    # killing the sketch (second code review, 2026-09-09). It can legitimately
-    # come first: a subtraction that CONTAINS an add owes that add an order,
-    # so it leads, and the old guard then refused the whole feature — the
-    # user's `esp32-remote/logo_1_sketch` had built at 4.37 mm2 and went red,
-    # taking everything downstream with it. Held back to just after the first
-    # add, it cuts exactly what it cut before.
+    # A subtraction that comes FIRST removes NOTHING (third code review,
+    # 2026-09-09). It can legitimately come first: a subtraction that CONTAINS
+    # an add owes that add an order, so it leads — which is exactly why
+    # holding it back to just after the first add, as the last fix pass did,
+    # was self-defeating: it then cut away the very add the order existed to
+    # save. Three identical bars inside one subtract blob built 144.0 mm2
+    # instead of 216.0 with the FIRST bar silently missing; `[r20 subtract,
+    # r10 add]` built a "successful" 0.0; the user's
+    # `esp32-remote/logo_1_sketch` built 4.3671 where the editor paints
+    # 7.6656 (a 3.2985 mm2 green bar inside a red blob). Nothing is composed
+    # yet, so there is nothing to cut — and the note says so rather than
+    # leaving the user to wonder where their cut went.
     result = None
-    waiting: list[int] = []
+    added = False
     for i in order:
         mode = entities[i].get("mode", "add")
         if result is None:
             if mode == "subtract":
-                waiting.append(i)
+                _note(f"entity {i + 1} is a cut with nothing under it — "
+                      f"nothing in this sketch is drawn beneath it, so it "
+                      f"removes nothing")
                 continue
             result = shapes[i]
-            for j in waiting:
-                result = result - shapes[j]
-            waiting.clear()
+            added = True
         else:
             result = (result - shapes[i] if mode == "subtract"
                       else result + shapes[i])
-    if result is None:                  # every entity subtracts: nothing to
-        raise ValueError(               # cut FROM, which is a real mistake
-            "sketch: first entity cannot be a subtraction — there is nothing "
-            "for it to cut into")
+            added = added or mode != "subtract"
+        # A cut that removes everything leaves an empty Compound. Passing
+        # that to the NEXT subtraction raised build123d's "Dimensions of
+        # objects to subtract from are inconsistent", and passing it on to
+        # `_as_sketch` made `pl * <empty>` a plain list, so the tree showed
+        # `AttributeError: 'list' object has no attribute 'faces'` (third
+        # code review — both are rule 5 breaches). Empty is not failed: the
+        # next add starts the profile again.
+        if _area_of(result) <= 1e-9:
+            result = None
+    if result is None:
+        if added:
+            raise ValueError(
+                "sketch is empty — the cuts removed everything that was "
+                "drawn; move or shrink them")
+        raise ValueError(
+            "sketch: every entity is a cut — there is nothing for them to "
+            "cut into")
     return result
 
 
@@ -356,13 +389,34 @@ def _path_face(e: dict):
     segs = e.get("segments") or []
     if not segs:
         raise ValueError("path entity needs at least 1 segment")
-    start = tuple(float(v) for v in (e.get("start") or [0, 0]))
+    # No start point is NOT the origin (third code review, 2026-09-09):
+    # every reader in the editor guards `&& e.start` and draws nothing, so a
+    # path without one is invisible and unclickable there — while this built
+    # it from [0, 0] and saved the result. The editor and the kernel must not
+    # disagree about what a sketch contains.
+    if not e.get("start"):
+        raise ValueError(
+            "path entity has no start point — the editor shows no profile "
+            "for it at all; redraw it")
+    start = tuple(float(v) for v in e["start"])
     _validate_path(start, segs)
     with BuildSketch() as sk:
         with BuildLine():
             cur = start
             for n, s in enumerate(segs, start=1):
                 to = tuple(float(v) for v in s["to"])
+                is_arc = s.get("type") == "arc"
+                # `via` is read OUTSIDE the try below. Inside it, a segment
+                # with no middle point at all raised `KeyError('via')` and
+                # came out as "the middle point lies on the straight line
+                # between its ends" — a sentence about a point that is not
+                # there (third code review, 2026-09-09). `_validate_path`
+                # cannot catch it either: it guards with `s.get("via")`.
+                if is_arc and not s.get("via"):
+                    raise ValueError(
+                        f"path entity, arc {n} has no middle point — an arc "
+                        f"needs a point it passes through")
+                via = tuple(float(v) for v in s["via"]) if is_arc else None
                 # Rule 5 again, one level deeper (second code review,
                 # 2026-09-09): the try below wrapped only make_face(), so a
                 # segment the kernel cannot build spoke for itself —
@@ -373,8 +427,7 @@ def _path_face(e: dict):
                 # ours could tell a flat arc from a dead one without
                 # rejecting real profiles); we only translate its verdict.
                 try:
-                    if s.get("type") == "arc":
-                        via = tuple(float(v) for v in s["via"])
+                    if is_arc:
                         ThreePointArc(cur, via, to)
                     else:
                         Line(cur, to)
@@ -383,7 +436,7 @@ def _path_face(e: dict):
                             "points — the middle point lies on the straight "
                             "line between its ends, or sits on top of one of "
                             "them; move it off that line"
-                            if s.get("type") == "arc" else
+                            if is_arc else
                             "segment {0} could not be drawn — its two ends "
                             "are the same point")
                     raise ValueError(

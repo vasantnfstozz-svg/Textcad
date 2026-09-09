@@ -44,28 +44,35 @@ def circle(r, mode="add", x=0.0, y=0.0):
 # [1, 0, 0, 0], so sorting by depth hoists the subtraction to the front.
 LOGO_1 = [circle(5, "add"), circle(20, "subtract"),
           circle(3, "add", x=100), circle(3, "add", x=110)]
-LOGO_1_AREA = 2 * math.pi * 9      # the two clear adds; the nested one is eaten
+# EVERY add, the nested one included. This line read `2 * math.pi * 9` — the
+# two clear adds only — because the fix pass this file reviews held the
+# leading subtraction back and cut the nested add away with it. That was the
+# P0 the THIRD review found (2026-09-09): the order hoists the subtraction in
+# front of the add precisely so the add survives.
+LOGO_1_AREA = math.pi * (5**2 + 3**2 + 3**2)
 
 
 def test_a_top_level_subtraction_no_longer_kills_the_sketch():
     """F1: measured on the real design this raised ValueError where it had
-    built at 4.37 mm2. A subtraction that sorts first must WAIT for the first
-    add, not refuse the whole sketch."""
+    built at 4.37 mm2. A subtraction that sorts first must not refuse the
+    whole sketch — it has nothing to cut, so it removes nothing."""
     assert sk.make_sketch("XY", 0, LOGO_1).area == pytest.approx(
         LOGO_1_AREA, abs=0.01)
 
 
-def test_the_deferred_subtraction_still_subtracts():
-    """The held-back subtraction is not silently dropped: the add nested
-    inside it is gone from the result."""
+def test_the_leading_subtraction_keeps_the_island_it_contains():
+    """The opposite of what this file first asserted, and the reason the third
+    review called it a P0: the sketcher paints that nested entity GREEN
+    (`add`), so building it away is the same defect as the disc-for-a-washer
+    the reorder exists to prevent."""
     area = sk.make_sketch("XY", 0, LOGO_1).area
-    assert area < math.pi * 5**2, "the nested add survived a subtraction"
+    assert area > math.pi * 5**2, "the nested add was eaten by the cut"
 
 
 def test_a_sketch_of_nothing_but_holes_is_still_refused():
     """The guard has to stay reachable: with no add anywhere there is nothing
     to cut FROM, and that is a real mistake, not an ordering question."""
-    with pytest.raises(ValueError, match="subtraction"):
+    with pytest.raises(ValueError, match="every entity is a cut"):
         sk.make_sketch("XY", 0, [circle(10, "subtract")])
 
 
@@ -178,17 +185,23 @@ def test_nesting_depth_is_not_quadratic_in_full_booleans():
 
 
 # ------------------------------------------------------------------- F5 (P1)
-def test_a_path_entity_without_a_start_is_legal():
-    """The frontend's entSamplePts read e.start[0] unguarded, so clicking Edit
-    on this threw TypeError before sketch mode opened. Locking the backend
-    contract the editor has to tolerate: start defaults to the origin."""
+def test_a_path_entity_without_a_start_is_refused():
+    """This asserted the opposite — "start defaults to the origin" — until the
+    third review (2026-09-09) measured what the editor does with such an
+    entity: `outlinePts`, `hitTest`, `entityHandles` and `collectSnapPoints`
+    all guard `&& e.start` and draw NOTHING, so the user saw no profile at all
+    while the kernel built one from [0, 0] and saved it. Defaulting is
+    inventing geometry nobody drew; the AI author's own schema documents
+    `path {"start":[x,y], "segments":[...]}`. The frontend guards from that
+    round stay — the editor must not throw while the user fixes the sketch."""
     ent = {"kind": "path", "segments": [
         {"type": "line", "to": [10, 0]},
         {"type": "line", "to": [10, 8]},
         {"type": "line", "to": [0, 8]},
     ]}
     assert "start" not in ent
-    assert sk._entity(ent).area == pytest.approx(80.0, abs=0.01)
+    with pytest.raises(ValueError, match="no start point"):
+        sk._entity(ent)
 
 
 # ------------------------------------------------------------------- F8 (P3)
