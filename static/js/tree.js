@@ -4,7 +4,7 @@
 import { bus } from './bus.js';
 import { askConfirm } from './ask.js';
 import { S } from './state.js';
-import { postJSON, getJSON } from './api.js';
+import { postJSON, getJSON, askJSON } from './api.js';
 import { OP_ICONS } from './icons.js';
 import { showFeatureOverlay, clearHighlight, clearPick }
   from './viewport.js';
@@ -728,6 +728,46 @@ function circumR(a, b, c) {
   return l(b, c) * l(a, c) * l(a, b) / d;
 }
 
+/* Corner-vs-arc is the BACKEND's answer (R1), not something the tree works
+   out. It used to: `prev = j > 0 ? segs[j-1].type : 'close'` reads segment 0's
+   predecessor as the auto-close line, but on a CLOSED path the real neighbour
+   is the LAST segment — so two arcs meeting at the start were both called
+   "corner"s and both promised "the round stays tangent to its edges", which
+   `set_arc_radius` then does not do: it takes the free-arc branch and just
+   re-bulges (code review 2026-09-09). /api/sketch/path-arcs runs the very
+   function the edit acts on, so the row and the edit cannot disagree.
+
+   The radius itself stays local — that is plain geometry off three points,
+   with no neighbour to get wrong. Only the LABEL waits for the server, and
+   until it lands the row says "curve" and promises nothing. */
+const arcKinds = new Map();          // "<featId>:<entIdx>:<segIdx>" -> kind
+const arcKindsSeen = new Map();      // featId -> the entity list it describes
+
+function paintArcKind(pr) {
+  const kind = arcKinds.get(pr.dataset.arckind);
+  const j = Number(pr.dataset.arckind.split(':').pop());
+  const corner = kind === 'corner';
+  pr.querySelector('.pname').textContent = `${kind || 'curve'} ${j + 1} R`;
+  pr.querySelector('.pval').title = 'click to edit the radius'
+    + (corner ? ' — the round stays tangent to its edges' : '');
+}
+
+async function loadArcKinds(feat, entities) {
+  const key = stableEntities(entities);
+  if (arcKindsSeen.get(feat.id) === key) return;
+  arcKindsSeen.set(feat.id, key);
+  const res = await askJSON('/api/sketch/path-arcs', { entities });
+  if (res.error || !res.arcs) return;
+  for (const [ei, arcs] of Object.entries(res.arcs))
+    for (const a of arcs) arcKinds.set(`${feat.id}:${ei}:${a.segment}`, a.kind);
+  for (const pr of document.querySelectorAll(
+      `[data-arckind^="${CSS.escape(feat.id)}:"]`)) paintArcKind(pr);
+}
+
+function stableEntities(entities) {
+  try { return JSON.stringify(entities); } catch { return String(Date.now()); }
+}
+
 function pathArcRows(feat, entities, i) {
   const ent = entities[i];
   const segs = ent.segments || [];
@@ -739,21 +779,13 @@ function pathArcRows(feat, entities, i) {
     if (s.type !== 'arc' || !s.via || !s.to) return;
     const r = circumR(from, s.via, s.to);
     if (r == null) return;
-    // same labelling the backend uses to pick its edit: straight edges (or
-    // the auto-close) on both sides = a corner round, anything else = a
-    // free arc. The wrap-around neighbour counts as the closing line.
-    const prev = j > 0 ? segs[j - 1].type : 'close';
-    const next = j < segs.length - 1 ? segs[j + 1].type : 'close';
-    const corner = prev !== 'arc' && next !== 'arc';
     const pr = document.createElement('div');
     pr.className = 'prow';
-    pr.innerHTML =
-      `<span class="pname">${corner ? 'corner' : 'arc'} ${j + 1} R</span>`;
+    pr.dataset.arckind = `${feat.id}:${i}:${j}`;
+    pr.innerHTML = '<span class="pname"></span>';
     const val = document.createElement('span');
     val.className = 'pval';
     val.textContent = round4(r);
-    val.title = 'click to edit the radius'
-      + (corner ? ' — the round stays tangent to its edges' : '');
     val.onclick = e => {
       e.stopPropagation();
       if (modalGuard()) return;
@@ -766,8 +798,10 @@ function pathArcRows(feat, entities, i) {
       });
     };
     pr.appendChild(val);
+    paintArcKind(pr);              // whatever the last answer said, if anything
     rows.push(pr);
   });
+  if (rows.length) loadArcKinds(feat, entities);    // patches in when it lands
   return rows;
 }
 

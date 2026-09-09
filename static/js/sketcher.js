@@ -125,7 +125,9 @@ const snapTolWorld = () => snapTol3d;
 
 function resetEditor() {
   skEnts = []; tool = null; clicks = []; ghost = null; selEnt = -1;
-  faceRef = null;
+  scaleDrag = null;                 // see exitMode: a scale never outlives its
+  faceRef = null;                   // sketch
+
   trimPieces = null; trimHover = -1; trimFor = '';
   modelSnaps = []; modelEdges = [];
   draw();
@@ -171,6 +173,13 @@ function enterMode() {
 
 function exitMode() {
   sketchActive = false;
+  // A scale in progress DIES with the sketch. Finish already commits it; every
+  // other way out (Cancel, picking another tool's mode, an editor reset) used
+  // to leave scaleDrag set, and it owns the keyboard: in the NEXT sketch
+  // Delete and typed dimensions were dead, the first click committed a phantom
+  // "Scaled x1.000 - now <old W> x <old H> mm" into the chat, and Escape wrote
+  // the DISCARDED sketch's entities into the new one (code review 2026-09-09).
+  scaleDrag = null;
   exitSketch3D();
   for (const id of ['sk3dBar', 'sk3dDim', 'sk3dSnap', 'sk3dScale',
                     'sk3dScaleW', 'skDimEdit3d', 'skDimDraw']) {
@@ -287,8 +296,11 @@ export async function editSketch(feature) {
   skPlaneName = feature.params.plane || 'XY';
   skPlaneOffset = Number(feature.params.offset) || 0;
   if (onFace) faceRef = { outer: outline.outer, holes: outline.holes || [] };
-  // frame the existing geometry (fall back to the face outline, then origin)
-  pendingFocus = focusOnPoints(skEnts.map(e => [e.x || 0, e.y || 0]))
+  // frame the existing geometry (fall back to the face outline, then origin).
+  // entSamplePts, not [e.x, e.y]: a hand-drawn polygon or path stores x:0,y:0
+  // with ABSOLUTE points, so a profile drawn around (150, 200) framed the
+  // world origin and opened off-screen (code review 2026-09-09).
+  pendingFocus = focusOnPoints(skEnts.flatMap(entSamplePts))
     || focusOnPoints(faceRef?.outer);
   await isolateAt(feature.id);      // Fusion: the model rolls back to here
   enterMode();
@@ -574,11 +586,11 @@ function collectSnapPoints() {
     }
     if (e.kind === 'polygon' && e.points)
       for (const p of e.points)
-        pts.push({ x: cx + p[0], y: cy + p[1], label: 'vertex' });
+        pts.push({ ...entToSketch(e, p[0], p[1]), label: 'vertex' });
     if (e.kind === 'path' && e.start) {
-      pts.push({ x: cx + e.start[0], y: cy + e.start[1], label: 'vertex' });
+      pts.push({ ...entToSketch(e, e.start[0], e.start[1]), label: 'vertex' });
       for (const s of e.segments || [])
-        pts.push({ x: cx + s.to[0], y: cy + s.to[1], label: 'vertex' });
+        pts.push({ ...entToSketch(e, s.to[0], s.to[1]), label: 'vertex' });
     }
   });
   const sc = sketchCentreOf(pts.slice(entFrom));
@@ -810,14 +822,13 @@ function entityHandles(e) {
             { ...rot(0, -e.height / 2), kind: 'height' });
   } else if (e.kind === 'polygon' && e.points) {
     e.points.forEach((p, i) =>
-      hs.push({ x: x + p[0], y: y + p[1], kind: 'vertex', index: i }));
+      hs.push({ ...rot(p[0], p[1]), kind: 'vertex', index: i }));
   } else if (e.kind === 'path' && e.start) {
-    hs.push({ x: x + e.start[0], y: y + e.start[1], kind: 'pathpt',
-              field: 'start' });
+    hs.push({ ...rot(e.start[0], e.start[1]), kind: 'pathpt', field: 'start' });
     (e.segments || []).forEach((s, i) => {
-      hs.push({ x: x + s.to[0], y: y + s.to[1], kind: 'pathpt',
+      hs.push({ ...rot(s.to[0], s.to[1]), kind: 'pathpt',
                 field: 'to', index: i });
-      if (s.via) hs.push({ x: x + s.via[0], y: y + s.via[1], kind: 'pathpt',
+      if (s.via) hs.push({ ...rot(s.via[0], s.via[1]), kind: 'pathpt',
                            field: 'via', index: i });
     });
   }
@@ -880,11 +891,11 @@ function applyResize(grab, p) {
     e.x = A.x + (d / 2) * Math.cos(ang);
     e.y = A.y + (d / 2) * Math.sin(ang);
   } else if (h.kind === 'vertex') {
-    e.points[h.index] = [p.x - x, p.y - y];
+    e.points[h.index] = [lx, ly];              // local frame: rotation undone
   } else if (h.kind === 'pathpt') {
-    if (h.field === 'start') e.start = [p.x - x, p.y - y];
-    else if (h.field === 'via') e.segments[h.index].via = [p.x - x, p.y - y];
-    else e.segments[h.index].to = [p.x - x, p.y - y];
+    if (h.field === 'start') e.start = [lx, ly];
+    else if (h.field === 'via') e.segments[h.index].via = [lx, ly];
+    else e.segments[h.index].to = [lx, ly];
   }
 }
 
@@ -1185,7 +1196,15 @@ function offsetEntity(e, d) {
   if (e.kind === 'ellipse') {
     e.rx = grow(e.rx, d); e.ry = grow(e.ry, d); return e;
   }
-  if (e.kind === 'slot') { e.height = grow(e.height, 2 * d); return e; }
+  if (e.kind === 'slot') {
+    // BOTH ways. An offset moves the caps too, so a 30 x 8 slot offset by 5
+    // is 40 x 18 — growing only the height gave 30 x 18, and at Offset 12 the
+    // height overtook the length and Finish blamed the slot: "slot length
+    // (30) must be greater than its height (32)" (code review 2026-09-09).
+    e.height = grow(e.height, 2 * d);
+    e.length = Math.max(grow(e.length, 2 * d), e.height + 0.5);
+    return e;
+  }
   bus.emit('msg', 'bot',
     '⚠ Offset works on circles, rectangles, ellipses, slots and N-gons — ' +
     'not on polygons/paths yet.');
@@ -1228,8 +1247,23 @@ function sampleArc(a, m, b, n = 20) {
   return pts;
 }
 
+/* Point-list entities (polygon, path) hold their points in the entity's OWN
+   local frame, exactly like every other kind — so a `rotation` on one turns
+   it, and `_entity` in sketch.py duly rotates about the entity origin before
+   placing it. Until the code review of 2026-09-09 the editor did not: the
+   outline, the handles, the hit test and the snap points all read the raw
+   points, so an authored {"kind":"polygon","rotation":30,…} drew and dragged
+   in one place and BUILT in another. entSamplePts already rotated, so the
+   scale gizmo and the drawn outline disagreed with each other too. One home
+   for the mapping; applyResize already holds its inverse (lx, ly). */
+function entToSketch(e, px, py) {
+  const a = (e.rotation || 0) * Math.PI / 180;
+  const c = Math.cos(a), s = Math.sin(a);
+  return { x: (e.x || 0) + px * c - py * s,
+           y: (e.y || 0) + px * s + py * c };
+}
+
 function pathOutline(e) {
-  const ox = e.x || 0, oy = e.y || 0;
   let cur = { x: e.start[0], y: e.start[1] };
   const pts = [{ ...cur }];
   for (const s of e.segments || []) {
@@ -1239,7 +1273,7 @@ function pathOutline(e) {
     else pts.push(to);
     cur = to;
   }
-  return pts.map(p => ({ x: p.x + ox, y: p.y + oy }));
+  return pts.map(p => entToSketch(e, p.x, p.y));
 }
 
 /* ---------------- click-to-place ---------------- */
@@ -1369,7 +1403,7 @@ function hitTest(p) {
         && Math.abs(rx) <= e.length / 2
         && Math.abs(ry) <= e.height / 2) return i;
     if (e.kind === 'polygon' && e.points
-        && pointInPolygon(lx, ly, e.points)) return i;
+        && pointInPolygon(rx, ry, e.points)) return i;   // rx/ry: un-rotated
     if (e.kind === 'path' && e.start) {
       const pts = pathOutline(e).map(q => [q.x, q.y]);
       if (pointInPolygon(p.x, p.y, pts)) return i;
@@ -1404,9 +1438,14 @@ function assignModes() {
   // CONTAINMENT, not centroid-in: concentric circles share a centre, so the
   // outer's centroid sits "inside" the inner too — sampling the OUTLINE
   // tells them apart (the outer's rim is not inside the inner)
+  // EVERY point, not a walk of eight. Sampling one point in eight let a shape
+  // that only mostly nests — a traced outline with a spike poking over a
+  // rectangle's edge, a star inside a circle — be called contained and turned
+  // into a HOLE the user never drew (code review 2026-09-09). An outline is
+  // 48-96 points and this runs only when the sketch is edited, so the exact
+  // answer is free.
   const containedIn = (a, b) => {
-    const step = Math.max(1, Math.floor(a.length / 8));
-    for (let k = 0; k < a.length; k += step)
+    for (let k = 0; k < a.length; k++)
       if (!pointInPolygon(a[k][0], a[k][1], b)) return false;
     return true;
   };
@@ -1533,7 +1572,10 @@ function outlinePts(e) {
   }
   if (e.kind === 'polygon' && e.points)
     return { closed: !e.ghostOpen,
-             pts: e.points.map(p => [x + p[0], y + p[1]]) };
+             pts: e.points.map(p => {
+               const q = entToSketch(e, p[0], p[1]);
+               return [q.x, q.y];
+             }) };
   if (e.kind === 'path' && e.start)
     return { closed: !e.ghostOpen,
              pts: pathOutline(e).map(q => [q.x, q.y]) };
@@ -1929,7 +1971,13 @@ function commitDrawDims() {
 async function create() {
   const clean = skEnts.filter(e => !e.ghostOpen);
   if (!clean.length) { await finishEmpty(); return; }
-  if (clean[0].mode === 'subtract') clean[0].mode = 'add';
+  // NO mode flip here. Until the code review of 2026-09-09 the first entity
+  // was forced back to 'add' so the kernel's sequential compose would have
+  // something to cut FROM — but drawing order is not nesting order, so a bore
+  // drawn before its rim was turned back into solid material: a disc of
+  // 2827.43 mm2 where the editor had drawn a 2513.27 washer, status "ok".
+  // The kernel now composes outers before the holes inside them (_compose /
+  // _nesting_depth in sketch.py), so the modes go up exactly as drawn.
   const entities = clean.map(e => {
     const o = { kind: e.kind, mode: e.mode };
     for (const k of Object.keys(e))

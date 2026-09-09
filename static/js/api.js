@@ -39,6 +39,23 @@ export async function planRequest(req) {
   }
 }
 
+/* A read-only QUESTION for the backend: like planRequest, no busy overlay and
+   no doc-updated, because nothing changed. This is how a panel gets a fact it
+   must not work out for itself (R1) without flashing "rebuilding…" at the user
+   — the tree asks it which path curves are tangent corner rounds. A failure is
+   silent on purpose: the caller renders without the answer rather than toasting
+   about a label. */
+export async function askJSON(url, body) {
+  try {
+    const r = await fetch(url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}) });
+    return await r.json();
+  } catch {
+    return { error: 'the server did not answer' };
+  }
+}
+
 /* THE SERVER VANISHED MID-REQUEST. The geometry kernel can segfault and take
    the process with it (LAUNCH-PLAN §10 ★P0); studio.py's supervisor relaunches
    it with every tab as of the last completed step. Here we wait for it to

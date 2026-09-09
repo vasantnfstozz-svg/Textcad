@@ -1694,6 +1694,32 @@ def sketch_trim_pieces(req: TrimReq):
         return {"pieces": [], "error": str(e)}
 
 
+@app.post("/api/sketch/path-arcs")
+def sketch_path_arcs(req: TrimReq):
+    """Every arc of every path in the entity list, each labelled `corner` (a
+    round between two straight edges, which a radius edit keeps tangent) or
+    `arc` (a free bulge between fixed endpoints).
+
+    R1: the tree used to work this out in JS and got a CLOSED path wrong —
+    it read segment 0's predecessor as the auto-close line when the real
+    neighbour is the last segment, so two arcs meeting at the start were both
+    promised a tangent round they do not get. `path_arcs` is the same answer
+    `set_arc_radius` acts on, so the row and the edit cannot disagree.
+    -> {"arcs": {"<entity index>": [{"segment", "kind", "r"}, ...]}}
+    """
+    out: dict[str, list] = {}
+    for i, e in enumerate(req.entities or []):
+        if not isinstance(e, dict) or e.get("kind") != "path":
+            continue
+        try:
+            arcs = cornerlib.path_arcs(e)
+        except (KeyError, ValueError, TypeError):
+            continue                      # a half-drawn path has no rows yet
+        if arcs:
+            out[str(i)] = arcs
+    return {"arcs": out}
+
+
 @app.post("/api/sketch/arc-radius")
 def sketch_arc_radius(req: ArcRadiusReq):
     """Rewrite one path arc to a given radius (stateless, like trim): a

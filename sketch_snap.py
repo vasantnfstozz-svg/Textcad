@@ -70,6 +70,16 @@ def _edge_points(edge, n: int):
         return []
 
 
+def _is_closed(edge) -> bool:
+    """Is this edge a full loop (a bore rim) rather than an arc with ends?
+    Probed 2026-09-09: `is_closed` is True on both circles of a drilled box
+    and False on all eight arcs of a filleted one."""
+    try:
+        return bool(edge.is_closed)
+    except Exception:
+        return False
+
+
 def _cross_point(edge, pl, t0: float, t1: float, iters: int = 24):
     """Where the edge crosses the plane, between parameters t0 and t1 (whose
     signed distances have opposite signs). Bisection on the edge parameter, so
@@ -137,10 +147,19 @@ def snap_geometry(parts: dict, plane: str = "XY", offset: float = 0.0,
             dist = [_signed(pl, p) for p in pts]
 
             if all(abs(d) <= tol for d in dist):          # edge IS in the plane
-                add(pts[0], "corner", body)
-                add(pts[-1], "corner", body)
-                mid = len(pts) // 2
-                add(pts[mid], "midpoint", body)
+                # A CLOSED edge (a bore's rim, a full ellipse) has no ends —
+                # what it has is a parameter seam. Before the code review of
+                # 2026-09-09 that seam was offered as a model "corner" and its
+                # antipode as a "midpoint": measured on Box(40,40,10) minus a
+                # 10mm bore, a corner at (5, 0) and a midpoint at (-5, 0),
+                # drawn as dots and outranking the grid in smartSnap. They are
+                # not features of the part. Its centre is, and it is added
+                # below. An ARC keeps its ends — those are real corners.
+                if not _is_closed(edge):
+                    add(pts[0], "corner", body)
+                    add(pts[-1], "corner", body)
+                    mid = len(pts) // 2
+                    add(pts[mid], "midpoint", body)
                 if circle:
                     try:
                         c = edge.arc_center

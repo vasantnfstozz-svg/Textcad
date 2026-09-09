@@ -203,3 +203,47 @@ def test_dim_box_shows_unit(server, page, fresh_doc):
     assert page.locator("#skDimDraw").is_visible()
     assert page.text_content("#skDimDraw .dimunit").strip() == "mm"
     assert not page.errors, page.errors
+
+
+def test_hole_drawn_before_its_outer_is_still_a_hole(server, page, fresh_doc):
+    """Code review 2026-09-09 (P0). Nothing says the rim has to be drawn
+    first, and the editor colours the bore red either way — but create() then
+    forced the FIRST entity back to 'add' so the kernel's sequential compose
+    had something to cut from, and the washer came out a solid disc with a
+    green tick. Measured: 2827.43 mm2 where the editor had drawn 2513.27.
+
+    The modes now go up exactly as drawn; sketch.py composes outers before
+    the holes inside them."""
+    page.evaluate(OPEN_SKETCH % "circle")
+    page.evaluate(CLICK, [0, 0]); page.evaluate(CLICK, [10, 0])   # BORE first
+    page.evaluate(CLICK, [0, 0]); page.evaluate(CLICK, [20, 0])   # rim second
+    ents = page.evaluate(ENTS)
+    assert ents[0]["mode"] == "subtract" and ents[1]["mode"] == "add", \
+        f"the enclosed circle is the hole, whenever it was drawn: {ents}"
+    page.evaluate(FINISH)
+    sk_id = None
+    deadline = time.time() + 20
+    while time.time() < deadline and not sk_id:
+        doc = httpx.get(f"{server}/api/doc", timeout=5).json()
+        sk_id = next((f["id"] for f in doc["features"] if f["op"] == "sketch"),
+                     None)
+        if not sk_id:
+            time.sleep(0.3)
+    assert sk_id, "finished sketch never arrived at the server"
+
+    # the mode the user saw is the mode that was SAVED — no flip on the way
+    doc = httpx.get(f"{server}/api/doc", timeout=5).json()
+    saved = next(f for f in doc["features"] if f["id"] == sk_id)
+    assert [e["mode"] for e in saved["params"]["entities"]] == \
+        ["subtract", "add"]
+
+    r = httpx.post(f"{server}/api/feature/add", json={
+        "id": "ring2", "op": "extrude", "params": {"amount": 5},
+        "inputs": [sk_id]}, timeout=60).json()
+    assert "error" not in r or not r["error"]
+    f = feat(server, "ring2")
+    import math
+    expect = math.pi * (20**2 - 10**2) * 5
+    assert abs(f["volume"] - expect) / expect < 0.01, \
+        f"expected a washer (~{expect:.0f}mm3), got {f['volume']}"
+    assert not page.errors, page.errors

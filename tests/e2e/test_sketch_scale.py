@@ -14,6 +14,8 @@ putting number". Locked in here:
 import httpx
 import pytest
 
+from conftest import ask_ok
+
 pytest.importorskip("playwright.sync_api")
 
 BUILD = """
@@ -256,4 +258,63 @@ def test_scale_all_then_scale_selected(top_face_sketch, server):
     assert rect["y"] == pytest.approx(20, abs=0.01)
     assert rect["w"] == pytest.approx(40, abs=0.01)
     assert rect["h"] == pytest.approx(20, abs=0.01)
+    assert page.errors == []
+
+
+def test_a_cancelled_scale_does_not_haunt_the_next_sketch(page, fresh_doc):
+    """Code review 2026-09-09 (P1). Finish commits a scale in progress, but
+    Cancel Sketch did not clear it — and scaleDrag owns the keyboard and the
+    first click. In the NEXT sketch: Delete and typed dimensions were dead,
+    the first click committed a phantom "Scaled x1.000 - now <old W> x <old
+    H> mm" into the chat, and Escape ran cancelScale(), which wrote the
+    DISCARDED sketch's entities into the new one."""
+    OPEN = """
+    async () => {
+      const sk = await import('/static/js/sketcher.js');
+      await sk.openSketchEditor('XY');
+      await new Promise(r => setTimeout(r, 700));
+    }
+    """
+    # fire and forget: cancelSketch() awaits the confirm dialog, so awaiting
+    # it here would deadlock the test that has to click the button
+    CANCEL = """
+    async () => { (await import('/static/js/sketcher.js')).cancelSketch(); }
+    """
+    ENTS = """
+    async () => (await import('/static/js/sketcher.js')).sketchEntities()
+    """
+
+    page.evaluate(OPEN)
+    page.wait_for_function(IS_ACTIVE, timeout=20000)
+    page.evaluate(SET_TOOL, "rectangle")
+    page.evaluate(CLICK, [0, 0, 1.0])
+    page.evaluate(CLICK, [20, 10, 1.0])
+    page.evaluate(SET_TOOL, None)
+    page.evaluate(SCALE)                       # a scale is now in progress
+    page.wait_for_timeout(200)
+
+    page.evaluate(CANCEL)                      # Cancel Sketch -> Discard
+    ask_ok(page)
+    page.wait_for_function(NOT_ACTIVE, timeout=20000)
+    page.wait_for_timeout(400)
+
+    page.evaluate(OPEN)                        # a brand new sketch
+    page.wait_for_function(IS_ACTIVE, timeout=20000)
+    assert page.evaluate(ENTS) == [], "the new sketch must start empty"
+
+    # Escape used to run cancelScale() and restore the DISCARDED entities
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(200)
+    assert page.evaluate(ENTS) == [], \
+        "Escape resurrected the discarded sketch's shapes"
+
+    # and the keyboard belongs to the new sketch again: Delete works
+    page.evaluate(SET_TOOL, "circle")
+    page.evaluate(CLICK, [0, 0, 1.0])
+    page.evaluate(CLICK, [8, 0, 1.0])
+    page.evaluate(SET_TOOL, None)
+    page.evaluate(CLICK, [0, 0, 2.0])          # select it
+    page.keyboard.press("Delete")
+    page.wait_for_timeout(200)
+    assert page.evaluate(ENTS) == [], "Delete was still eaten by the scale"
     assert page.errors == []

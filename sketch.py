@@ -203,20 +203,64 @@ def _entity(e: dict):
     return s
 
 
+def _nesting_depth(shapes: list) -> list[int]:
+    """How many of the OTHER entity shapes each shape sits inside.
+
+    Containment is MEASURED, never guessed: A is inside B when A minus B has
+    no area left. The bounding box only SKIPS a pair (a box that does not fit
+    inside cannot be contained); it never decides one — a circle straddling
+    the rim passes the bbox test and fails the real one (probed 2026-09-09).
+    """
+    boxes = [s.bounding_box() for s in shapes]
+    depth = [0] * len(shapes)
+    for i, inner in enumerate(shapes):
+        for j, outer in enumerate(shapes):
+            if i == j or not boxes[j].is_inside(boxes[i]):
+                continue
+            try:
+                if abs((inner - outer).area) < 1e-7 * max(inner.area, 1.0):
+                    depth[i] += 1
+            except Exception:               # a boolean that will not run tells
+                continue                    # us nothing; leave the depth alone
+    return depth
+
+
 def _compose(entities: list):
-    """Combine entities (add/subtract) into a 2D sketch in local coords."""
+    """Combine entities (add/subtract) into a 2D sketch in local coords,
+    OUTERS BEFORE THE HOLES INSIDE THEM.
+
+    Why the reorder (code review 2026-09-09, measured): this loop is
+    sequential, but an entity list arrives in the order the user DREW in.
+    Draw a bore and then its rim and the arithmetic was `hole + outer` — a
+    solid disc of 2827.43 mm2 where the editor had shown a 2513.27 washer,
+    reported `ok`, with no warning. Draw r10, r30, r20 and the island was cut
+    away again: 1570.80 mm2 instead of 1884.96. The even-odd regions the
+    sketcher SHOWS only mean what they look like if every outer is composed
+    before the holes inside it.
+
+    The stored entity list is untouched — it keeps the user's drawing order,
+    so the tree's rows and every saved design stay as they are; only the
+    arithmetic is reordered. Ties keep drawing order (the sort is stable), and
+    depth is computed only when something actually subtracts, so the ordinary
+    all-add sketch pays nothing.
+    """
+    if not entities:
+        raise ValueError("sketch has no entities")
+    shapes = [_entity(e) for e in entities]
+    order = list(range(len(shapes)))
+    if any(e.get("mode", "add") == "subtract" for e in entities):
+        depth = _nesting_depth(shapes)
+        order.sort(key=lambda i: depth[i])
     result = None
-    for e in entities:
-        shape = _entity(e)
-        mode = e.get("mode", "add")
+    for i in order:
+        mode = entities[i].get("mode", "add")
         if result is None:
             if mode == "subtract":
                 raise ValueError("sketch: first entity cannot be a subtraction")
-            result = shape
+            result = shapes[i]
         else:
-            result = result - shape if mode == "subtract" else result + shape
-    if result is None:
-        raise ValueError("sketch has no entities")
+            result = (result - shapes[i] if mode == "subtract"
+                      else result + shapes[i])
     return result
 
 
@@ -232,6 +276,7 @@ def _path_face(e: dict):
     if not segs:
         raise ValueError("path entity needs at least 1 segment")
     start = tuple(float(v) for v in (e.get("start") or [0, 0]))
+    _validate_path(start, segs)
     with BuildSketch() as sk:
         with BuildLine():
             cur = start
@@ -245,8 +290,91 @@ def _path_face(e: dict):
                 cur = to
             if abs(cur[0] - start[0]) > 1e-6 or abs(cur[1] - start[1]) > 1e-6:
                 Line(cur, start)                        # auto-close
-        make_face()
+        try:
+            make_face()
+        except Exception as exc:                        # noqa: BLE001
+            # Rule 5: an OpenCASCADE error must never BE the message. The
+            # guards above name the mistakes we can name; anything left is
+            # still a path that will not close, said in a sentence.
+            raise ValueError(
+                "path entity could not be closed into a face — the outline "
+                "doubles back on itself or crosses itself somewhere; redraw "
+                "the profile with points that go once around") from exc
     return sk.sketch
+
+
+def _segments_cross(a0, a1, b0, b1) -> bool:
+    """Do the two open straight segments cross at a point interior to both?
+    Touching at a shared endpoint is not a crossing."""
+    def side(p, q, r):
+        return ((q[0] - p[0]) * (r[1] - p[1])
+                - (q[1] - p[1]) * (r[0] - p[0]))
+    d1, d2 = side(a0, a1, b0), side(a0, a1, b1)
+    d3, d4 = side(b0, b1, a0), side(b0, b1, a1)
+    return (d1 * d2 < 0) and (d3 * d4 < 0)
+
+
+def _validate_path(start, segs: list) -> None:
+    """The mistakes a hand-drawn path actually makes, each said in a sentence.
+
+    Before this (code review 2026-09-09, measured) the kernel spoke for
+    itself and `document.rebuild` put the raw text in `f.problems`, so the
+    tree and the chat showed `Standard_TypeMismatch('TopoDS::Face')` (four
+    points that cross), `StdFail_NotDone('BRep_API: command not done')` (two
+    clicks in one snapped grid cell) or "Face can only be created with closed
+    wires" (start + one point + double-click). The same three inputs also
+    500'd `/api/sketch/trim/pieces`, which builds every entity's face —
+    exactly the tool a user reaches for to clean a crossing up.
+    """
+    pts = [start]
+    for i, s in enumerate(segs):
+        to = tuple(float(v) for v in s["to"])
+        if abs(to[0] - pts[-1][0]) < 1e-6 and abs(to[1] - pts[-1][1]) < 1e-6:
+            raise ValueError(
+                f"path segment {i + 1} starts and ends at the same point — "
+                f"two clicks landed in one snap cell; move one of them")
+        pts.append(to)
+
+    distinct = {(round(p[0], 6), round(p[1], 6)) for p in pts}
+    distinct |= {(round(float(s["via"][0]), 6), round(float(s["via"][1]), 6))
+                 for s in segs if s.get("type") == "arc" and s.get("via")}
+    if len(distinct) < 3:
+        raise ValueError(
+            "path entity needs at least 3 different points to enclose an "
+            "area — this one is a single line")
+
+    # A crossing is only checked between STRAIGHT segments, and only between
+    # ones that do not share an end: an arc's chord is not the arc, and
+    # guessing there would reject good crescent profiles.
+    kinds = [s.get("type", "line") for s in segs]
+    loop = [(pts[i], pts[i + 1], kinds[i]) for i in range(len(segs))]
+    if (abs(pts[-1][0] - pts[0][0]) > 1e-6
+            or abs(pts[-1][1] - pts[0][1]) > 1e-6):
+        loop.append((pts[-1], pts[0], "line"))          # the auto-close
+    n = len(loop)
+    for i in range(n):
+        for j in range(i + 2, n):
+            if i == 0 and j == n - 1:
+                continue                                # adjacent round the loop
+            if loop[i][2] != "line" or loop[j][2] != "line":
+                continue
+            if _segments_cross(loop[i][0], loop[i][1], loop[j][0], loop[j][1]):
+                raise ValueError(
+                    f"path crosses itself (segment {i + 1} cuts through "
+                    f"segment {j + 1}) — a profile has to go once around "
+                    f"without overlapping")
+
+    # The shoelace only speaks for a path made of straight segments: an arc
+    # carries area its chord does not, so a lens (two points and a bulge) is
+    # a perfectly good profile whose control polygon is a line.
+    if "arc" not in kinds:
+        ring = list(pts[:-1]) if len(pts) > 2 and (
+            abs(pts[-1][0] - pts[0][0]) < 1e-6
+            and abs(pts[-1][1] - pts[0][1]) < 1e-6) else list(pts)
+        if abs(_signed_area(ring)) < 1e-9:
+            raise ValueError(
+                "path entity encloses no area — its points are collinear or "
+                "the outline crosses itself")
 
 
 def _as_sketch(shape):
@@ -578,11 +706,20 @@ def sketch_on_face(solid, face_center: list | None = None,
         best-matching normal) so it survives parameter changes instead of
         breaking like a stored face index would.
 
-    `offset` shifts the sketch plane along the face's OUTWARD normal, so the
-    sign means the same thing on every face of the part (probed 2026-08-27):
+    `offset` shifts the sketch plane along the sketch frame's own +z — the
+    PRINCIPAL axis nearest the face's normal, never the outward normal itself
+    (see face_sketch_plane: following the outward normal kept one sign rule
+    but silently MIRRORED in-plane coordinates on -z/-x/-y faces, which is
+    how the esp32 cavity came out non-manifold). So "into the material" is
+    not one sign everywhere, and this docstring said it was until the code
+    review of 2026-09-09:
 
-        offset < 0   INTO the material   (-3 = 3mm below the top face)
-        offset > 0   out into the air    (+2 = 2mm clear of the face)
+        top / +x / +y face    offset < 0   INTO the material
+        bottom / -x / -y face offset > 0   INTO the material
+
+    In both cases the opposite sign lifts the plane clear into the air, which
+    fails loudly by cutting nothing instead of quietly building the wrong
+    part. The author knows which side of the part it is on.
 
     This is the "offset method" (user mandate 2026-08-27): a pocket's plane is
     stated as a depth FROM A FACE, never as an absolute Z. Change the base
