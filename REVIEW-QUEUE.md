@@ -94,7 +94,7 @@ Then two closing sections:
 
 | # | Module | Effort | Status |
 |---|---|---|---|
-| 1 | Sketcher | high | TODO |
+| 1 | Sketcher | high | reviewed 2026-09-09, fixed 556a611, 9/9 + 2 uncertainties promoted, 1 rejected |
 | 2 | Document core and feature tree | high | TODO |
 | 3 | Version tree and session persistence | high | TODO |
 | 4 | Booleans and transforms | high | TODO |
@@ -783,4 +783,54 @@ sweeps, no screenshot loops, browser tests only if a fix changed a journey.
 
 ## Done log
 
-(empty - filled by the fix passes)
+### Section 1 - Sketcher (reviewed and fixed 2026-09-09, commit 556a611)
+
+9 findings, all reproduced by measurement first
+(`probes/sketcher_review_probe.py`). **9 fixed, 1 rejected**, and 2 of the
+review's 5 "could not judge without running the app" items turned out to be
+real and were fixed with them.
+
+| # | P | What it was | Fix |
+|---|---|---|---|
+| F1 | P0 | a hole drawn BEFORE its outer became solid material - `create()` forced entity 0 back to `add`. Measured 2827.43 mm2 where the editor drew a 2513.27 washer | the flip is gone; modes go up exactly as drawn |
+| F2 | P0 | even-odd modes were right but the entities were never reordered; `_compose` is sequential, so an island drawn last was cut away. Measured 1570.80 vs 1884.96 mm2 | `_compose` composes OUTERS BEFORE THE HOLES INSIDE THEM, by measured containment (`_nesting_depth`) |
+| F3 | P1 | an interactive Scale survived Cancel Sketch and owned the next sketch's keyboard; Escape wrote the DISCARDED entities into it | `scaleDrag` cleared in `exitMode()` and `resetEditor()` |
+| F4 | P1 | `_path_face` had no validation: `Standard_TypeMismatch('TopoDS::Face')`, `StdFail_NotDone` and "Face can only be created with closed wires" reached the tree verbatim | `_validate_path` names the four real mistakes; a catch-all around `make_face()` keeps any other OCCT text out |
+| F5 | P2 | Modify -> Offset grew a slot's height only, and at Offset 12 Finish blamed the slot | both dimensions grow, floored at `height + 0.5` |
+| F6 | P3 | `rotation` on a polygon/path was built but never drawn: outline, handles, hit-test and snap read the raw points while `entSamplePts` rotated | one `entToSketch` helper; `applyResize` writes back through the local frame it already computes |
+| F7 | P3 | the tree re-derived corner-vs-arc and got a CLOSED path wrong, promising a tangent round `set_arc_radius` does not give (R1) | new `POST /api/sketch/path-arcs` serves `path_arcs`, the same function the edit acts on; the row says "curve" until it answers |
+| F8 | P3 | a bore's parameter seam was offered as a model "corner" and its antipode as a "midpoint" | closed edges give their centre only; arcs keep their real ends |
+| F9 | P3 | reopening a path/polygon-only sketch framed the world origin | `entSamplePts`, not `[e.x, e.y]` |
+
+**Promoted from "could not judge" to fixed:**
+
+- the 8-sample `containedIn` walk really can call a mostly-nested shape (a
+  traced outline with a spike) contained and turn it into a hole - it now
+  tests every point, which is free at 48-96 points on an edit;
+- an OCCT error really can escape `/api/sketch/trim/pieces` (it builds every
+  entity's face and catches only `KeyError`/`ValueError`) - and it is the
+  LIKELY case, since a crossing path is what a user reaches for Trim to
+  clean up. F4's `ValueError` closes it; locked in by a test.
+
+**Settled by reading, no change needed:**
+
+- `commitScale()`'s stale readout is NOT hidden by `placeFloat`'s pane clamp -
+  it goes to the chat via `bus.emit('msg', 'bot', ...)`, so it was plainly
+  visible. Folded into F3.
+- `sketch_on_face`'s docstring contradicted `face_sketch_plane` on the offset
+  SIGN: it still promised "offset < 0 INTO the material ... on every face",
+  a rule abandoned on 2026-08-27 because it silently mirrored the esp32
+  cavity. Docstring corrected to the rule the code follows.
+
+**REJECTED (1):**
+
+- *the un-awaited `releaseIsolation()` in `exitMode()` leaving the viewport
+  rolled back*. `postJSON` never rejects - it catches a dead server and
+  returns `{error}` (`api.js:124`) - and in the edit path the release is the
+  LAST request in flight, so its response is what sets the viewport. The only
+  overlap needs a click during `cancelSketch`, which is the already-tracked
+  "two requests reaching the kernel at once" item.
+
+**Not done, deliberately:** a full circle still offers no QUADRANT snaps.
+Fusion has them; adding one would need a new snap kind in the frontend's
+rank table and dot rendering, which is a feature, not this review's business.
