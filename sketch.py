@@ -239,8 +239,15 @@ def _overlaps(a, b) -> bool:
         return False
     try:
         return abs((a & b).area) > 1e-9
-    except Exception:                   # a boolean that will not run tells us
-        return False                    # nothing; treat the pair as apart
+    except Exception:                   # noqa: BLE001
+        # TRUE is the safe direction here, unlike everywhere else in this
+        # file. A False answer leaves the cut at the FRONT of the order,
+        # where `_compose` drops it — one boolean that will not run and the
+        # P0 this pass exists for is back (measured: the boss/bar/pocket case
+        # returns to 78.5398 mm2 instead of 22.3648). A True answer only
+        # orders the material first, and subtracting a shape that turns out
+        # not to overlap removes nothing anyway.
+        return True
 
 
 def _area_of(shape) -> float:
@@ -485,7 +492,7 @@ def _path_face(e: dict):
         raise ValueError(
             "path entity has no start point — the editor shows no profile "
             "for it at all; redraw it")
-    start = tuple(float(v) for v in e["start"])
+    start = _xy("the path entity's start point", e["start"])
     _validate_path(start, segs)
     with BuildSketch() as sk:
         with BuildLine():
@@ -499,7 +506,8 @@ def _path_face(e: dict):
                 # between its ends" — a sentence about a point that is not
                 # there (third code review, 2026-09-09). `_validate_path`
                 # cannot catch it either: it guards with `s.get("via")`.
-                via = _seg_point("middle", n, s.get("via")) if is_arc                     else None
+                via = (_seg_point("middle", n, s.get("via"))
+                       if is_arc else None)
                 # Rule 5 again, one level deeper (second code review,
                 # 2026-09-09): the try below wrapped only make_face(), so a
                 # segment the kernel cannot build spoke for itself —
@@ -540,6 +548,22 @@ def _path_face(e: dict):
     return sk.sketch
 
 
+def _xy(label: str, value) -> tuple:
+    """One [x, y] out of sketch data, or a sentence naming what is wrong.
+
+    The fourth review's own fix validated that a point EXISTS but not that it
+    holds two numbers, so `start: [5]` still reached the tree as
+    `IndexError('tuple index out of range')` and `["a", "b"]` as a raw
+    `float()` message (fourth review follow-up, 2026-09-09).
+    """
+    try:
+        x, y = (float(v) for v in value)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"{label} must be two numbers, [x, y]") from None
+    return (x, y)
+
+
 def _seg_point(what: str, n: int, value) -> tuple:
     """One [x, y] out of a path segment, or a sentence naming what is missing.
 
@@ -557,13 +581,7 @@ def _seg_point(what: str, n: int, value) -> tuple:
             f"point it ends at, written as [x, y]" if what == "end" else
             f"path segment {n} has no {what} point — an arc needs a point it "
             f"passes through, written as [x, y]")
-    try:
-        x, y = (float(v) for v in value)
-    except (TypeError, ValueError):
-        raise ValueError(
-            f"path segment {n}: its {what} point must be two numbers "
-            f"[x, y]") from None
-    return (x, y)
+    return _xy(f"path segment {n}'s {what} point", value)
 
 
 def _segments_cross(a0, a1, b0, b1) -> bool:

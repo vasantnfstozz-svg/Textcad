@@ -836,7 +836,12 @@ class Document:
         for f in self.features:
             if past_bar:
                 f.status, f.problems, f.volume = "stale", ["(after rollback bar)"], None
-                f.notes = []            # not built: it has nothing to report
+                # not built: it has nothing to report. `pieces` too — with
+                # the bar parked before a severing cut, `_check_pieces`
+                # (which filters only `suppressed`) went on telling the user
+                # the part was in 2 separate pieces while it was whole
+                # (measured, fourth review follow-up 2026-09-09).
+                f.notes, f.pieces = [], None
                 continue
             if self.rollback is not None and f.id == self.rollback:
                 past_bar = True     # build this one, stop after

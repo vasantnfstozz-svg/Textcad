@@ -261,3 +261,97 @@ def test_a_suppressed_feature_stops_publishing_its_note():
     d.rebuild()
     assert not any("removes nothing" in w for w in d.warnings), d.warnings
     assert f.notes == []
+
+
+# --- the fifth review of the same code: five follow-ups -----------------
+#
+# A single reviewer at medium, as REVIEW-BRIEF.md now asks for. It cleared the
+# two-part ordering rule (no arrangement makes it worse; termination bounded;
+# a 24-entity adversarial sketch orders in 0.11 s) and found five gaps in the
+# fix pass itself, all measured below.
+
+def test_a_start_point_of_one_number_says_so():
+    """`IndexError('tuple index out of range')` before: the fourth review's
+    own fix checked that `start` EXISTS but not that it holds two numbers."""
+    with pytest.raises(ValueError) as exc:
+        area([{"kind": "path", "start": [5], "segments": [
+            {"type": "line", "to": [10, 0]},
+            {"type": "line", "to": [0, 0]}]}])
+    msg = str(exc.value).lower()
+    assert "two numbers" in msg
+    assert "index" not in msg
+
+
+def test_a_start_point_of_words_says_so():
+    """A raw `could not convert string to float: 'a'` before."""
+    with pytest.raises(ValueError) as exc:
+        area([{"kind": "path", "start": ["a", "b"], "segments": [
+            {"type": "line", "to": [10, 0]},
+            {"type": "line", "to": [0, 0]}]}])
+    assert "two numbers" in str(exc.value).lower()
+    assert "convert" not in str(exc.value).lower()
+
+
+def test_the_radius_row_survives_a_malformed_via():
+    """`s["via"]` is read raw in path_arcs and set_arc_radius, and an
+    IndexError from there is not in studio.py's catch list: POST
+    /api/sketch/path-arcs answered 500 and EVERY radius row in the sketch
+    disappeared."""
+    ent = {"kind": "path", "start": [0, 0], "segments": [
+        {"type": "arc", "via": [5], "to": [10, 0]},
+        {"type": "line", "to": [0, 0]}]}
+    with pytest.raises(ValueError) as exc:
+        C.path_arcs(ent)
+    assert "two numbers" in str(exc.value).lower()
+    with pytest.raises(ValueError):
+        C.set_arc_radius([ent], 0, 0, 4.0)
+
+
+def test_an_unmeasurable_overlap_is_treated_as_an_overlap():
+    """`_overlaps` swallows a boolean that will not run. Answering False
+    leaves the cut at the FRONT of the order, where `_compose` drops it - so
+    one failed measurement brings the P0 back. True only orders the material
+    first, and subtracting a shape that turns out not to overlap removes
+    nothing anyway."""
+    boss, bar = S._entity(BOSS), S._entity(BAR)
+    assert S._overlaps(boss, bar) is True          # the ordinary answer
+
+    class NoBoolean(type(boss)):                   # its `&` will not run
+        def __and__(self, other):
+            raise RuntimeError("kernel says no")
+
+    blind = S._entity(BOSS)
+    blind.__class__ = NoBoolean
+    assert S._overlaps(blind, bar) is True,         "an unmeasurable pair must be treated as overlapping, not as apart"
+
+
+def test_the_boss_survives_its_bar_only_when_the_overlap_is_seen():
+    """The consequence of the line above, end to end."""
+    real = S._overlaps
+    S._overlaps = lambda a, b: False          # every measurement fails
+    try:
+        blind = area([BOSS, BAR, POCKET])
+    finally:
+        S._overlaps = real
+    assert round(blind, 3) == 78.540, blind          # the P0, reproduced
+    assert area([BOSS, BAR, POCKET]) == pytest.approx(BOSS_LESS_BAR, abs=1e-3)
+
+
+def test_a_rolled_back_feature_reports_no_piece_count():
+    """With the bar parked before a severing cut the part is WHOLE, but
+    `_check_pieces` filters only `suppressed`, so the panel went on saying
+    "leaves the part in 2 separate pieces"."""
+    import document
+    d = document.Document("probe")
+    d.add("plate_s", "sketch", params={"plane": "XY", "offset": 0,
+                                       "entities": [rect(0, 0, 60, 20)]})
+    d.add("plate", "extrude", inputs=["plate_s"], params={"amount": 5})
+    d.add("knife_s", "sketch", params={"plane": "XY", "offset": 0,
+                                       "entities": [rect(0, 0, 4, 40)]})
+    d.add("knife", "extrude", inputs=["knife_s"], params={"amount": 5})
+    d.add("sever", "cut", inputs=["plate", "knife"])
+    d.rebuild()
+    assert any("2 separate pieces" in w for w in d.warnings), d.warnings
+    d.rollback = "knife"
+    d.rebuild()
+    assert not any("separate pieces" in w for w in d.warnings), d.warnings

@@ -94,7 +94,7 @@ Then two closing sections:
 
 | # | Module | Effort | Status |
 |---|---|---|---|
-| 1 | Sketcher | high | four rounds, each fixing the last: 556a611 (9/9, 1 rejected), 6e2cae9 (8/8, the fix pass had a P0), 5f65a7a (8/8, so did that one), **13da90c** (8/9, 1 rejected - the ordering RULE was incomplete). Composition is now measurably order-independent and the whole library composes unchanged. A fifth round is queued in REVIEW-BRIEF.md at medium, ONE reviewer |
+| 1 | Sketcher | high | four rounds, each fixing the last: 556a611 (9/9, 1 rejected), 6e2cae9 (8/8, the fix pass had a P0), 5f65a7a (8/8, so did that one), **13da90c** (8/9, 1 rejected - the ordering RULE was incomplete), and **round five, ONE reviewer at medium**, which CLEARED the two-part ordering rule (no arrangement makes it worse, termination bounded) and fixed 5 gaps in the fix pass itself. Composition is measurably order-independent, all 324 library sketches build, the whole library composes unchanged. **Section 1 is done unless the sixth read finds something** |
 | 2 | Document core and feature tree | high | TODO |
 | 3 | Version tree and session persistence | high | TODO |
 | 4 | Booleans and transforms | high | TODO |
@@ -975,3 +975,41 @@ rewrite Trim) - see LAUNCH-PLAN section 10:
 to exactly the same area as before this commit. esp32-remote (81 features),
 rocky-balboa and wing-rib all rebuild `ok`. 1258 fast tests, ruff and eslint
 zero, ui v178.
+
+### Section 1, round five - ONE reviewer, medium (2026-09-09, commit pending)
+
+The cheap shape, as the round-four lesson demanded: a single reviewer at
+medium instead of ten lenses and a panel. It **cleared the two-part ordering
+rule** - the part that had failed three rounds running:
+
+- for every (add, cut) pair the order now carries an edge one way or the
+  other (`needs[j][i]` when the add is nested inside the cut, so the island
+  survives; `needs[i][j]` when they merely overlap, so the material goes
+  first), and no arrangement it could construct made a result worse;
+- **termination is bounded** by `range(n)` and by `grew`, and `_order_from`
+  degrades to drawing order rather than looping. A cycle would need an add
+  ordered before a cut while being transitively nested inside it, which the
+  `inside[i][j] or inside[j][i]` skip and `_containment`'s mutual-pair drop
+  rule out;
+- an adversarial 24-entity sketch (8 leading cuts, 8 islands, 8 crossing
+  bars) orders in 0.11 s and composes in 0.27 s.
+
+It then found five gaps in the fix pass itself. All five reproduced.
+
+| # | P | What it was | Fix |
+|---|---|---|---|
+| K1 | P1 | `_overlaps` answered **False** when the boolean would not run - and False leaves the cut LEADING, where `_compose` drops it. One unmeasurable pair and round four's P0 is back: measured 78.5398 mm2 instead of 22.3648, plus a note that is false about the user's sketch | fails **open** now. True only orders the material first, and subtracting a shape that turns out not to overlap removes nothing anyway. This is the opposite of the safe direction elsewhere in the file, and the comment says why |
+| K2 | P2 | the `start` read was never routed through the new `_seg_point`, so `start: [5]` still reached the tree as `IndexError('tuple index out of range')` and `["a","b"]` as a raw `float()` message | one `_xy` validator, used for the start and both segment points |
+| K3 | P2 | `sketch_corner._chain` checked that `start`/`to` EXIST but not that they hold two numbers, and `path_arcs` / `set_arc_radius` read `s["via"]` raw. The IndexError is not in studio.py's catch list: `/api/sketch/path-arcs` 500s and EVERY radius row in the sketch disappears | `_pt` validates the start, every `to` and every arc's `via`, once, in `_chain` - the funnel both readers go through |
+| K4 | P2 | round four's `scaleEntity` early-outs came AFTER the `!inPlace` `e.x`/`e.y` line, so a "scale all" drag still wrote coordinates into a malformed entity and committed it back through `skEnts[idx] = scaleEntity(...)` | a `scalable(e)` guard at the TOP of the function; the in-branch returns are gone |
+| K5 | P3 | the rolled-back branch cleared `notes` and `volume` but left `pieces`, and `_check_pieces` filters only `suppressed`. Measured: park the bar before a severing cut - the part is WHOLE and the panel still says "leaves the part in 2 separate pieces" | `f.notes, f.pieces = [], None` |
+
+**Nothing rejected.** One cosmetic note accepted and fixed: a mangled
+continuation line (`if is_arc                     else None`) left by the
+previous pass's patch script - ruff-clean, but it read like a bad patch.
+
+**The library, measured:** all 324 sketches in `designs/` still build, and
+every subtracting one composes to the same area as before - the tightened
+point validation rejects nothing real (the reviewer swept the live library
+and `tests/fixtures/` for path points that are not exactly two numbers: zero
+hits).

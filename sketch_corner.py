@@ -84,6 +84,15 @@ def circumradius(a, b, c) -> float:
 # the path as a chain
 # ---------------------------------------------------------------------------
 
+def _pt(label: str, value) -> tuple:
+    """One [x, y], or a sentence naming what is wrong with it."""
+    try:
+        x, y = (float(v) for v in value or ())
+    except (TypeError, ValueError):
+        raise ValueError(f"{label} must be two numbers, [x, y]") from None
+    return (x, y)
+
+
 def _chain(ent: dict):
     """-> (points, segs, closed_explicitly). points[i] is where segment i
     STARTS; points[n] is the last segment's end. The path closes back to
@@ -101,13 +110,19 @@ def _chain(ent: dict):
         raise ValueError(
             "path entity has no start point — the editor shows no profile "
             "for it at all; redraw it")
-    pts = [_v(ent["start"])]
+    pts = [_pt("the path entity's start point", ent["start"])]
     for i, s in enumerate(segs, start=1):
         if not s.get("to"):
             raise ValueError(
                 f"path segment {i} has no end point — a segment needs the "
                 f"point it ends at, written as [x, y]")
-        pts.append(_v(s["to"]))
+        pts.append(_pt(f"path segment {i}'s end point", s["to"]))
+        # `via` is read raw further down (path_arcs l.149, set_arc_radius
+        # l.180), and an IndexError from there is not in studio.py's catch
+        # list: `/api/sketch/path-arcs` 500s and EVERY radius row in the
+        # sketch disappears (fourth review follow-up, 2026-09-09).
+        if s.get("type") == "arc":
+            _pt(f"path segment {i}'s middle point", s.get("via"))
     closed = _norm(_sub(pts[-1], pts[0])) < 1e-6
     return pts, segs, closed
 

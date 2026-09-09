@@ -1129,17 +1129,31 @@ function scaleGizmoShapes(bb) {
   return [...V, ...H].map(pts => ({ pts, closed: false, color: SCALE_COL }));
 }
 
+/* Can this entity be scaled at all? A malformed one is left ALONE, and that
+   has to be decided BEFORE the x/y move below: the early returns added inside
+   the path and polygon branches came after it, so a "scale all" drag still
+   wrote coordinates into an entity the backend refuses and committed it back
+   into the sketch (fourth review follow-up, 2026-09-09). Repairing such an
+   entity is not ours to do — the third review's guards did that and saved a
+   vertex the user never drew. */
+function scalable(e) {
+  if (e.kind === 'path')
+    return !!e.start && (e.segments || []).length > 0
+      && e.segments.every(sg => !!sg.to);
+  if (e.kind === 'polygon') return (e.points || []).length > 0;
+  return true;
+}
+
 function scaleEntity(e, f, inPlace) {
+  if (!scalable(e)) return e;
   if (!inPlace) { e.x = (e.x || 0) * f; e.y = (e.y || 0) * f; }
   if (e.kind === 'circle') e.r *= f;
   else if (e.kind === 'ellipse') { e.rx *= f; e.ry *= f; }
   else if (e.kind === 'rectangle') { e.w *= f; e.h *= f; }
   else if (e.kind === 'slot') { e.length *= f; e.height *= f; }
   else if (e.kind === 'regular_polygon') e.radius *= f;
-  else if (e.kind === 'polygon') {
-    if (!(e.points || []).length) return e;      // malformed: leave it alone
+  else if (e.kind === 'polygon')
     e.points = e.points.map(p => [p[0] * f, p[1] * f]);
-  }
   else if (e.kind === 'path') {
     // A malformed path is left ALONE, never repaired. The guards added in
     // the third review defaulted a missing start to [0, 0] and then WROTE it
@@ -1147,8 +1161,7 @@ function scaleEntity(e, f, inPlace) {
     // drew — into the very sketch the backend refuses because the editor
     // cannot show it (fourth code review, 2026-09-09). Every sibling reader
     // skips such an entity; so does this one now.
-    const sgs = e.segments || [];
-    if (!e.start || !sgs.length || sgs.some(sg => !sg.to)) return e;
+    const sgs = e.segments;
     let cx = 0, cy = 0;
     if (inPlace) {          // about the path's own local centre
       const xs = [e.start[0]], ys = [e.start[1]];
