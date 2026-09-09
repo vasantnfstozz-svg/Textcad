@@ -94,7 +94,7 @@ Then two closing sections:
 
 | # | Module | Effort | Status |
 |---|---|---|---|
-| 1 | Sketcher | high | reviewed 2026-09-09, fixed 556a611, 9/9 + 2 uncertainties promoted, 1 rejected |
+| 1 | Sketcher | high | reviewed 2026-09-09, fixed 556a611, 9/9 + 2 uncertainties promoted, 1 rejected; **re-reviewed 6e2cae9** - the fix pass itself had a P0, 8/8 fixed |
 | 2 | Document core and feature tree | high | TODO |
 | 3 | Version tree and session persistence | high | TODO |
 | 4 | Booleans and transforms | high | TODO |
@@ -834,3 +834,22 @@ real and were fixed with them.
 **Not done, deliberately:** a full circle still offers no QUADRANT snaps.
 Fusion has them; adding one would need a new snap kind in the frontend's
 rank table and dot rendering, which is a feature, not this review's business.
+
+### Section 1 again - the FIX PASS re-reviewed (2026-09-09, commit 6e2cae9)
+
+A P0 fix earns a second review; this one found a P0 of its own. 8 findings,
+8 fixed, all measured against `designs/` before and after.
+
+| # | P | What it was | Fix |
+|---|---|---|---|
+| G1 | P0 | F2's reorder iterated in SORTED order but still refused a subtraction as the first entity of THAT order. `esp32-remote/logo_1_sketch` built at 4.37 mm2 before the fix pass and raised `ValueError` after it - red sketch, red everything downstream, and `-m library` cannot collect so nothing caught it | a sort by DEPTH is not an ordering constraint. `_compose_order`: a stable topological order over measured containment - an outer before what is nested inside it, drawing order everywhere else. A leading subtraction (it may CONTAIN an add) waits for the first add |
+| G2 | P1 | F4's catch-all wrapped only `make_face()`, so `StdFail_NotDone: GC_MakeArcOfCircle` came straight out of `ThreePointArc` - kernel text in the tree, 500 from `/api/sketch/trim/pieces`. The very failure F4 existed to close | translated per segment, naming the arc. No threshold of ours: OCCT accepts a via 1e-6 off a 100 mm chord (probed), so the kernel judges and we translate |
+| G3 | P1 | `_nesting_depth`'s bbox skip NEVER fired - `BoundBox.is_inside` is `not(STRICTLY inside)` and a sketch box is flat in Z, so always True. Every pair ran a full boolean: +4128 ms per rebuild of `rocky-balboa/field_sketch` | `_box_within`, X and Y only. 4128 -> 538 ms; `rocky-keychain/words_sketch` 1513 ms -> out of the top six |
+| G4 | P1 | `entSamplePts` read `e.start[0]` / `e.points` unguarded; a path with no `start` is legal on the backend, so Edit on one threw `TypeError` in an unawaited handler before `enterMode()` - sketch mode silently never opened | `|| []` / `|| [0, 0]` like every sibling reader |
+| G5 | P3 | `arcKindsSeen` was keyed before the await, so one failed fetch pinned a row at "curve N R"; both label maps were keyed by bare feature id (unique only within a document) and never shrank | key stored after the answer arrives; both maps dropped when the design on screen changes |
+| G6 | P3 | `askJSON` ignored `r.ok`, so a 422 body read as a successful "no arcs" | `!r.ok` returns an `error`; still silent to the user, never to the caller |
+| G7 | P3 | a closed ELLIPSE edge (an elliptical pocket's floor rim) got no snap point at all - F8 suppressed the seam and the centre was added only under `if circle` | `arc_center` for ellipses too (probed: the true centre, where `center()` answers a sampled centroid and lies). A closed BSPLINE has no defined centre and is still left alone |
+
+**Accepted, not a defect:** `esp32-remote/logo_0_sketch` 277.16 -> 280.46 mm2.
+Entity 8 sits inside the subtract 9, so the island survives - F2's rule
+working as designed, and the only area in the library that changes.

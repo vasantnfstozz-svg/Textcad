@@ -20,118 +20,113 @@
 
 | | |
 |---|---|
-| **Range** | `f898bfe..HEAD` - ONE commit: the fix pass for the nine findings of the Sketcher review (REVIEW-QUEUE section 1) |
-| **Already reviewed** | everything up to `c2390ac`. The Sketcher review itself found these nine; **review the FIXES, not the findings** - the findings are in `REVIEW-QUEUE.md`'s done log with their measured numbers |
-| **Effort** | high - one fix changes the arithmetic of EVERY sketch in the library (which shape is a hole and in what order the kernel composes them), and one adds validation in front of the path tool |
+| **Range** | `1301314..HEAD` - ONE code commit, `6e2cae9`: the fix pass for the SECOND review of the sketcher reorder |
+| **Already reviewed** | everything up to `556a611`, twice. `556a611` was the fix pass for REVIEW-QUEUE section 1; `6e2cae9` fixes the eight findings of the re-review of THAT. Both prior reports are in `REVIEW-QUEUE.md`'s done log with their measured numbers |
+| **Effort** | high - the same arithmetic as last time: which shape is a hole and in what order the kernel composes them, for every sketch in the library. The previous attempt at this exact code shipped a P0 |
 | **Branch** | `master` (no pull request - do not try to comment on GitHub) |
-| **Frontend** | `ui v175`, `css v40` (unchanged) |
+| **Frontend** | `ui v176`, `css v40` (unchanged) |
 
 ---
 
-## The one that matters: sketches now compose OUTERS BEFORE HOLES
+## The one that matters: composition order, attempt two
 
-Two P0s, one root cause. `_compose` is sequential, but an entity list arrives
-in the order the user DREW in. Measured before the fix
-(`probes/sketcher_review_probe.py`):
+`556a611` sorted a sketch's entities by nesting DEPTH. That was wrong in a way
+one review did not catch: depth is a number, not an ordering constraint, so
+the sort moved entities that no nesting relates. A top-level subtraction (one
+that is inside nothing, depth 0) sorted to the very front, ahead of the adds
+it was drawn after, and the guard "first entity cannot be a subtraction" then
+refused the whole feature. `esp32-remote/logo_1_sketch` built at 4.37 mm2
+before that commit and went red after it.
 
-- bore drawn before its rim -> **2827.43 mm2**, a solid disc, where the editor
-  had drawn a **2513.27** washer. Status `ok`, no warning. (`create()` in
-  `sketcher.js` forced entity 0 back to `add` so the kernel would have
-  something to cut FROM.)
-- r10, r30, r20 in drawing order -> **1570.80 mm2**; the island was cut away
-  again. The correct ring+island is **1884.96**.
+`6e2cae9` replaces the sort with `_compose_order` in `sketch.py`:
 
-The fix, in `sketch.py`:
-
-- **`_nesting_depth(shapes)`** - how many other entity shapes each one sits
-  inside. Containment is MEASURED (`abs((inner - outer).area) < 1e-7 *
-  max(inner.area, 1)`); the bounding box only SKIPS a pair, it never decides
-  one, because a circle straddling the rim passes the bbox test and fails the
-  real one.
-- **`_compose`** builds every shape first, then sorts indices by depth
-  (stable, so ties keep drawing order) and composes in that order. It runs
-  the depth pass ONLY when something actually subtracts.
-- **`sketcher.js create()`** no longer flips entity 0's mode; the modes go up
-  exactly as the editor drew them.
-- **`assignModes`'s `containedIn`** tests every outline point instead of one
-  in eight.
-
-**The stored entity list is untouched** - it keeps drawing order, so the
-tree's rows and every saved design read the same as before; only the
-arithmetic is reordered.
+- **`_containment(shapes)`** - the measured matrix `inside[i][j]`, factored
+  out of the old `_nesting_depth` (which is now its row sums). Mutual pairs
+  (two copies of one shape, a mirror in place) are dropped, so duplicates
+  cannot form a cycle.
+- **`_compose_order(shapes)`** - a stable topological order: repeatedly take
+  the lowest-numbered entity all of whose containing shapes are already
+  composed. One edge per nested pair and nothing else, so an outer precedes
+  what is nested inside it and everything else keeps the user's drawing order.
+  If no entity is ever free (a containment cycle), it falls back to drawing
+  order.
+- **`_compose`** - a leading subtraction now WAITS in `waiting[]` for the
+  first add and is applied immediately after it, instead of raising. The
+  ValueError survives only for a sketch where every entity subtracts.
+- **`_box_within`** replaces `BoundBox.is_inside` as the skip filter, X and Y
+  only.
 
 ### Where to push hardest
 
-1. **Is depth a sufficient sort key?** Sorting by "how many shapes contain
-   me" is not a topological sort. Find an arrangement where it composes
-   wrongly - overlapping (not nested) subtracts, two shapes that contain each
-   other (duplicates), a subtract at depth 0 that must run after a later add.
-2. **Ties.** `order.sort(key=...)` is stable in CPython, so equal depths keep
-   drawing order. Is there a case where two shapes at the SAME depth must be
-   ordered relative to each other (a chain of overlapping bites)?
-3. **Does the reorder change an existing design?** That is the whole risk of
-   the commit. `test_reordering_never_changes_a_correctly_ordered_sketch`
-   covers the simple case; is there a library design whose current (wrong but
-   accepted) shape changes?
-4. **Cost.** n^2 booleans, bbox-filtered, on every rebuild of a sketch that
-   subtracts. Is there a real design where that is slow? (One face
-   subtraction measured 0.73 ms.)
-5. **`_nesting_depth`'s bare `except Exception: continue`.** A boolean that
-   will not run leaves depth 0, which puts the shape FIRST. Is silently
-   composing it first worse than failing?
+1. **Is the topological order actually sufficient?** It constrains only nested
+   pairs. Find an arrangement where two entities at the SAME level must be
+   ordered relative to each other and drawing order gets it wrong - a chain of
+   OVERLAPPING (not nested) subtracts, a bite that overlaps two outers, an add
+   that overlaps a hole's rim.
+2. **The deferral.** A subtraction held back to just after the first add is
+   applied to that add *and nothing else yet*. Is there an arrangement where
+   it used to cut more than that - two leading subtractions, or a leading
+   subtraction that should have cut an add composed later?
+3. **The cycle fallback.** `_containment` drops MUTUAL pairs, but a 3-cycle
+   (A in B, B in C, C in A) is not dropped and lands in the `nxt is None`
+   branch. Is that branch reachable with real shapes, and does it then compose
+   sanely?
+4. **Does it change a committed design?** That is the whole risk again. The
+   library was swept: nothing raises, and exactly one area moves
+   (`esp32-remote/logo_0_sketch` 277.16 -> 280.46 mm2, entity 8 an island
+   inside the subtract 9). Find a second one, or a design whose shape changes
+   at equal area.
+5. **`_box_within`'s tolerance** is a flat `1e-7` mm, absolute, on a box test
+   that only SKIPS. Is there a pair it wrongly skips - shapes sharing a
+   boundary exactly, a shape whose box matches its container's to the micron?
+6. **Cost.** Still O(n^2) measured booleans on the pairs the box lets through.
+   `rocky-balboa/field_sketch` went 4128 -> 538 ms per rebuild, but 538 ms is
+   not nothing. Is there a design where it is still felt?
 
-## The path guards (`_validate_path`)
+## The arc translation (`_path_face`)
 
-`_path_face` had none, so the kernel spoke: `Standard_TypeMismatch`,
-`StdFail_NotDone`, and build123d's "Face can only be created with closed
-wires" landed in `f.problems` and were shown in the tree and the chat. The
-same three inputs 500'd `/api/sketch/trim/pieces`, which builds every
-entity's face - the very tool a user reaches for to clean a crossing up.
+Each segment's `ThreePointArc` / `Line` is now individually wrapped and the
+kernel's failure re-raised as a sentence naming the arc number. There is
+deliberately NO collinearity threshold of our own: OCCT accepts a middle
+point 1e-6 off a 100 mm chord (probed), so any threshold we picked would
+reject real profiles.
 
-Four named guards (zero-length segment, fewer than 3 distinct points, a
-crossing between two STRAIGHT non-adjacent segments, zero shoelace area) plus
-a catch-all around `make_face()`.
+7. **Does the per-segment wrapper swallow something it should not?** It
+   catches bare `Exception` around a build123d builder call that mutates the
+   enclosing `BuildLine` context. Is there a failure mode where the raise
+   leaves the context in a state that breaks the NEXT sketch, or where a
+   KeyError from a malformed `s["to"]` now reads as a geometry message?
+8. **The message names `arc N` counting from 1** over `segs`. Does that match
+   what the tree's row for that curve calls it?
 
-6. **False positives are the danger here.** The crossing test skips any pair
-   involving an arc (a chord is not the arc) and skips adjacent pairs. Find a
-   VALID profile it rejects - a path that touches itself at a point, a
-   figure-that-doubles-back-but-closes, an arc-heavy crescent.
-7. **The shoelace runs only when there is no arc in the path.** Is there an
-   all-line path with real area that it calls zero, or an arc path with no
-   area that now slips through to the catch-all?
-8. **The distinct-point count** folds in arc `via` points. Two points plus a
-   via = 3 = allowed. Is a degenerate via (on the chord) caught downstream?
+## The rest (smaller, each changed behaviour)
 
-## The rest (smaller, but each changed behaviour)
-
-9. **`exitMode()` / `resetEditor()` clear `scaleDrag`.** Is there a path where
-   a scale SHOULD survive - does `finishSketch()`'s `commitScale()` still run
-   before `create()` reaches `exitMode()`, and does anything read `scaleDrag`
-   after `exitMode()` in the same tick?
-10. **Point-list rotation (`entToSketch`).** `outlinePts`, `pathOutline`,
-    `entityHandles`, `collectSnapPoints` and `hitTest` now rotate a
-    polygon/path's points; `applyResize` writes a dragged point back through
-    `lx, ly`. Check the round trip is exact and that the UNROTATED case (every
-    sketch the editor itself makes, rotation absent) is byte-identical.
-11. **`POST /api/sketch/path-arcs` + the tree's async label.** The row renders
-    "curve N R" and is patched when the answer lands. Check the cache key
-    (`arcKindsSeen` per feature id), that a stale label cannot survive an edit
-    that changes the arcs, and that `CSS.escape` covers the feature ids this
-    repo makes.
-12. **`askJSON` in `api.js`** - a read-only POST with no busy overlay and no
-    `doc-updated`, failing silently. Is silence right for every future caller,
-    or does it hide a server restart the user should hear about?
-13. **`sketch_snap`: closed edges lose their seam "corner" and "midpoint".**
-    `_is_closed` is `edge.is_closed` in a try/except. Is there a flat face
-    whose real corner sat on a closed edge and is now gone?
+9. **`sketch_snap`: `centred = geom_type == ELLIPSE`** now also yields
+   `arc_center`. A closed BSPLINE (an elliptical pocket's TOP rim, probed) is
+   deliberately still left with no point at all. Is that the right line, and
+   is `arc_center` trustworthy for a PARTIAL ellipse arc as well as a closed
+   one?
+10. **`tree.js`: both arc-label maps are cleared when `doc.name` changes**
+    (`arcKindsFor`, called at the top of `renderDoc`). Check that a rename, a
+    tab switch back and forth, and two tabs of the SAME design behave; and
+    that clearing mid-flight cannot let a resolved `loadArcKinds` write a
+    label belonging to the previous design.
+11. **`api.js askJSON` now returns `{error, status}` on `!r.ok`.** It has one
+    caller today. Does `res.error` shadow a legitimate response field for any
+    plausible future caller?
+12. **`sketcher.js entSamplePts`** got `|| []` / `|| [0, 0]` guards. Are its
+    siblings (`outlinePts`, `entityHandles`, `hitTest`, `collectSnapPoints`)
+    equally safe on the same malformed path entity, or does the crash just
+    move one function along?
 
 ## Ground rules
 
 - **Read-only.** Do not start the server (port 8123 is the user's; a second
   listener there is a known trap). Do not run `tests/e2e/`. The fast proof is
-  `C:\Python314\python.exe -m pytest tests/test_sketch_review.py
-  tests/test_e2_sketch.py tests/test_sketch_snap.py tests/test_sketch_trim.py
-  tests/test_sketch_corner.py -q` (113 tests); the whole fast tier is 1209.
+  `C:\Python314\python.exe -m pytest tests/test_sketch_review2.py
+  tests/test_sketch_review.py tests/test_e2_sketch.py tests/test_sketch_snap.py
+  tests/test_sketch_trim.py tests/test_sketch_corner.py -q`; the whole fast
+  tier is 1225.
 - **A finding is a concrete input on which the code does the wrong thing**,
   with the exact click or data that triggers it. Order: P0 wrong geometry or
   data loss, P1 blocks the action, P2 daily annoyance, P3 polish.
@@ -157,21 +152,27 @@ high or medium confidence.
 
 ## Already known - do NOT report
 
-- **The nine findings this commit fixes.** They are listed with their measured
-  numbers in `REVIEW-QUEUE.md`'s done log. Report a fix that is WRONG or
-  INCOMPLETE, never the original defect.
-- **The one rejected finding:** the un-awaited `releaseIsolation()` in
-  `exitMode()`. `postJSON` never rejects (`api.js:124`) and in the edit path
-  the release is the last request in flight. Rejected with that reason.
-- **A full circle still offers no QUADRANT snaps.** Deliberate: a new snap
-  kind is a feature, not a review fix.
+- **The eight findings this commit fixes**, listed with their measured numbers
+  in `REVIEW-QUEUE.md`'s done log under "Section 1 again". Report a fix that
+  is WRONG or INCOMPLETE, never the original defect.
+- **`esp32-remote/logo_0_sketch` 277.16 -> 280.46 mm2 is accepted**: entity 8
+  sits inside the subtract 9, so the island survives - the reorder rule
+  working as designed. Report a DIFFERENT design that changes.
+- **The nine findings of the first review** (556a611) and its one rejection,
+  the un-awaited `releaseIsolation()` in `exitMode()`.
+- **The first card in the sketch tree shows a fixed `add` badge.** With the
+  deferral, a leading subtraction is now composable, so the badge is stricter
+  than the backend needs. Relaxing it is a feature, not a review fix.
+- **A full circle still offers no QUADRANT snaps.** Deliberate.
 - **`blocks.resolve_face` picks by nearest centre**, so two coplanar faces
   sharing a centre resolve to the wrong twin. Queued, P1.
 - **Pattern's `_axis_face` guards with the bounding box that B replaced**;
   Mirror's `_plane_face` is in the same family. Queued.
+- **`-m library` cannot collect** (duplicate basenames against `tests/e2e`).
+  That is why both P0s in this code reached a live design uncaught; it is a
+  tracked test-infrastructure item, not a finding about this commit.
 - Face MODE (`extrude_face`) still opens on Join regardless of direction.
-  Known.
-- Edit mode never rewires a combiner. Known.
+  Known. Edit mode never rewires a combiner. Known.
 - `feature_faces` answers nothing for a row whose whole body was MOVED after
   it. Pre-existing.
 - The pre-existing red browser tests (`tests/e2e/test_tree_delete.py`, five)
