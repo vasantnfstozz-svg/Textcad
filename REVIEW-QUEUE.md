@@ -94,7 +94,7 @@ Then two closing sections:
 
 | # | Module | Effort | Status |
 |---|---|---|---|
-| 1 | Sketcher | high | reviewed 2026-09-09, fixed 556a611, 9/9 + 2 uncertainties promoted, 1 rejected; **re-reviewed 6e2cae9** - the fix pass itself had a P0, 8/8 fixed |
+| 1 | Sketcher | high | reviewed 2026-09-09, fixed 556a611, 9/9 + 2 uncertainties promoted, 1 rejected; **re-reviewed 6e2cae9** - the fix pass itself had a P0, 8/8 fixed; **third review 5f65a7a** - THAT fix pass had a P0 too (its reorder and its deferral cancelled each other), 8/8 fixed. A fourth review of 5f65a7a is queued in REVIEW-BRIEF.md at medium |
 | 2 | Document core and feature tree | high | TODO |
 | 3 | Version tree and session persistence | high | TODO |
 | 4 | Booleans and transforms | high | TODO |
@@ -853,3 +853,57 @@ A P0 fix earns a second review; this one found a P0 of its own. 8 findings,
 **Accepted, not a defect:** `esp32-remote/logo_0_sketch` 277.16 -> 280.46 mm2.
 Entity 8 sits inside the subtract 9, so the island survives - F2's rule
 working as designed, and the only area in the library that changes.
+
+### Section 1, round three - the DEFERRAL re-reviewed (2026-09-09, commit 5f65a7a)
+
+The second round's P0 fix earned a third review, and it found a P0 of its own -
+in the same few lines, for the third time. 8 findings, 8 fixed, 0 rejected,
+every one reproduced first in `probes/sketcher_review3_probe.py`.
+
+The lesson worth keeping: **the two mechanisms cancelled each other.**
+`_compose_order` hoists a subtraction in FRONT of the add nested inside it
+*precisely so that add survives as an island*. The deferral then held that
+subtraction back to just after the first add and subtracted it from exactly
+the add the order existed to save. Each half was defensible alone; together
+they restored the drawing-order answer the whole reorder was built to replace,
+and the round-two goal that produced them ("it cuts exactly what it cut
+before") was itself the bug - preserving a live design's number was treated as
+the target when the number was wrong.
+
+**Ground truth, settled by reading the renderer** (worth not re-deriving): the
+sketcher paints every entity on its own - `add` fills GREEN, `subtract` fills
+RED (`sketcher.js:1611`). There is NO even-odd canvas fill; `assignModes()`
+only assigns the modes, and only when the user edits. So "what the editor
+shows" means: a green region is material and must be in the built profile.
+
+| # | P | What it was | Fix |
+|---|---|---|---|
+| H1 | P0 | the deferral, above. `[r20 subtract, r10 add]` built area **0.0** and reported `ok` - a successful empty sketch, banned failure 2. Three identical bars inside one subtract blob built 144.0 instead of 216.0, the FIRST bar silently missing and the other two there. `esp32-remote/logo_1_sketch` built 4.3671 where the editor paints 7.6656 | a leading subtraction removes NOTHING - nothing is composed yet, so there is nothing to cut - and a note in the feature says so instead of the cut vanishing silently |
+| H2 | P1 | a profile cut away to nothing reached `_as_sketch` as an empty Compound; `pl * <empty>` is a plain `list`, so the tree showed `AttributeError: 'list' object has no attribute 'faces'`. The right message (`"sketch is empty"`, document.py:868) was unreachable | `_area_of` after every step: empty is not failed, so the next add starts the profile again, and a sketch that ENDS empty says "the cuts removed everything that was drawn" |
+| H3 | P2 | a cut applied to an already-empty result raised build123d's `ValueError: Dimensions of objects to subtract from are inconsistent` verbatim (rule 5) | same fix as H2 - the kernel is never handed an empty shape to subtract from |
+| H4 | P2 | `tree.js loadArcKinds` never re-checked the document after its `await`: a reply that landed after a design switch repainted the NEW design's rows, because the selector matches feature id alone and ids like `sketch1` are unique only within one document. A free curve got a `corner` label and the tangency promise the backend will not keep | the design is captured before the await and compared after |
+| H5 | P2 | `sketcher.js scaleEntity` still read `e.start[0]` and iterated `e.segments` unguarded - round two's `entSamplePts` fix made that path reachable, so Scale on a start-less path threw TypeError mid-drag, in an unawaited handler | the same `\|\| []` / `\|\| [0, 0]` guards as its siblings |
+| H6 | P2 | a `path` entity with no `start` was built from the origin, while `outlinePts`, `hitTest`, `entityHandles` and `collectSnapPoints` all guard `&& e.start` and drew NOTHING - invisible, unclickable, and saved anyway | refused, in a sentence. Defaulting is inventing geometry nobody drew; the AI author's own schema (author.py:333) documents `start` as part of a path |
+| H7 | P3 | `pathArcRows` calls `loadArcKinds` once per path entity, and round two moved the dedupe key after the await, so N path entities fired N identical POSTs per render, each carrying the whole entity list | an in-flight key, dropped again the moment the answer or the failure lands - dedupe restored without pinning a row on a failed fetch |
+| H8 | P3 | an arc segment with no `via` at all reported "the middle point lies on the straight line between its ends" - a sentence about a point that is not there. `_validate_path` cannot catch it either: it guards with `s.get("via")` | `via` is read OUTSIDE the translator's try, and a missing one is named |
+
+**Nothing rejected.** All eight reproduced.
+
+**Four tests from round two asserted the defective contract** and were
+corrected in place, each recording why in its docstring - they are the reason
+the P0 survived a review:
+
+- `LOGO_1_AREA = 2 * math.pi * 9  # the two clear adds; the nested one is eaten`
+  wrote the eaten island down as the expected area;
+- `test_the_deferred_subtraction_still_subtracts` asserted the island was gone
+  (now `test_the_leading_subtraction_keeps_the_island_it_contains`);
+- `test_a_path_entity_without_a_start_is_legal` asserted the opposite of H6;
+- two message regexes ("first entity cannot be a subtraction") named a mistake
+  that is no longer a mistake.
+
+**The library, measured:** exactly one sketch's arithmetic moves -
+`esp32-remote/logo_1_sketch` 4.3671 -> 7.6656 - and all six of that design's
+`logo_*` features are SUPPRESSED, so no built geometry in `designs/` changes
+at all. (Round two's accepted `logo_0_sketch` 277.16 -> 280.46 was suppressed
+too, so that never reached the part either.) All 81 features rebuild `ok`.
+1239 fast tests pass, ruff and eslint at zero, ui v177.
