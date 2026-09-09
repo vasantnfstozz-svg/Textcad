@@ -778,7 +778,7 @@ async function loadArcKinds(feat, entities) {
   // fired N identical POSTs, each carrying the whole entity list (third code
   // review, 2026-09-09). The in-flight key is dropped again the moment the
   // answer — or the failure — lands, so nothing stays pinned.
-  const flight = `${feat.id} ${key}`;
+  const flight = `${feat.id}\u0000${key}`;
   if (arcKindsFlight.has(flight)) return;
   arcKindsFlight.add(flight);
   // Which design this answer is about. Without it, a reply that lands after

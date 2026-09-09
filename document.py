@@ -836,11 +836,18 @@ class Document:
         for f in self.features:
             if past_bar:
                 f.status, f.problems, f.volume = "stale", ["(after rollback bar)"], None
+                f.notes = []            # not built: it has nothing to report
                 continue
             if self.rollback is not None and f.id == self.rollback:
                 past_bar = True     # build this one, stop after
             if f.suppressed:
                 f.status, f.problems, f.volume = "ok", ["(suppressed)"], None
+                # A suppressed feature keeps its notes otherwise, and
+                # `warnings` republishes them (line ~1211), so the tree's info
+                # box stated a fact about geometry that is NOT in the model -
+                # the user switched the sketch off and was still told what one
+                # of its entities does (fourth code review, 2026-09-09).
+                f.notes = []
                 if f.inputs:
                     self._parts[f.id] = self._parts.get(f.inputs[0])
                 continue

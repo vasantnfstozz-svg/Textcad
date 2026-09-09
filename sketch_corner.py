@@ -92,8 +92,21 @@ def _chain(ent: dict):
     segs = ent.get("segments") or []
     if not segs:
         raise ValueError("path has no segments")
-    pts = [_v(ent.get("start") or (0, 0))]
-    for s in segs:
+    # NOT the origin when there is no start (fourth code review, 2026-09-09).
+    # `set_arc_radius` writes this point back into the entity (line 240
+    # below), so a radius edit on a start-less path SAVED a vertex at the
+    # origin that the user never drew — and the sketch, which the backend
+    # refuses precisely because the editor cannot show it, then turned green.
+    if not ent.get("start"):
+        raise ValueError(
+            "path entity has no start point — the editor shows no profile "
+            "for it at all; redraw it")
+    pts = [_v(ent["start"])]
+    for i, s in enumerate(segs, start=1):
+        if not s.get("to"):
+            raise ValueError(
+                f"path segment {i} has no end point — a segment needs the "
+                f"point it ends at, written as [x, y]")
         pts.append(_v(s["to"]))
     closed = _norm(_sub(pts[-1], pts[0])) < 1e-6
     return pts, segs, closed

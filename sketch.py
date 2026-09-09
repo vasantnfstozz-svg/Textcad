@@ -221,6 +221,28 @@ def _box_within(inner, outer, tol: float = 1e-7) -> bool:
             and inner.max.Y <= outer.max.Y + tol)
 
 
+def _boxes_meet(a, b, tol: float = 1e-7) -> bool:
+    """Could the two boxes share any area in the sketch plane?
+
+    X and Y only, for the same reason as `_box_within`: the shapes are
+    coplanar, so Z carries nothing and build123d's own box tests are useless
+    on a box that is flat in Z.
+    """
+    return (a.min.X <= b.max.X + tol and b.min.X <= a.max.X + tol
+            and a.min.Y <= b.max.Y + tol and b.min.Y <= a.max.Y + tol)
+
+
+def _overlaps(a, b) -> bool:
+    """Do the two entity shapes share any area at all? Measured, with the
+    bounding boxes only SKIPPING pairs that cannot possibly meet."""
+    if not _boxes_meet(a.bounding_box(), b.bounding_box()):
+        return False
+    try:
+        return abs((a & b).area) > 1e-9
+    except Exception:                   # a boolean that will not run tells us
+        return False                    # nothing; treat the pair as apart
+
+
 def _area_of(shape) -> float:
     """How much area a part-composed profile still has — 0.0 for none.
 
@@ -272,9 +294,10 @@ def _nesting_depth(shapes: list) -> list[int]:
     return [sum(row) for row in _containment(shapes)]
 
 
-def _compose_order(shapes: list) -> list[int]:
+def _compose_order(shapes: list, modes: list | None = None) -> list[int]:
     """The order to compose in: an OUTER before anything nested inside it,
-    and the user's DRAWING order everywhere else.
+    MATERIAL before a cut that overlaps it, and the user's DRAWING order
+    everywhere else.
 
     Why not a sort by nesting depth (the first fix pass, 556a611): depth is
     not an ordering constraint, so sorting by it moved entities that no
@@ -286,21 +309,71 @@ def _compose_order(shapes: list) -> list[int]:
     exist before the hole cuts it. That is one edge per nested pair and
     nothing else, so this is a stable topological order — of the entities
     whose outers are all composed, it always takes the one drawn first.
+
+    Why containment is not the whole constraint (FOURTH code review,
+    2026-09-09): an entity waits only for the shapes it is NESTED INSIDE, so a
+    cut can be ordered ahead of material it overlaps for a reason that has
+    nothing to do with that material — because the material happens to sit
+    inside a DIFFERENT cut and is therefore waiting itself. `_compose` then
+    drops the leading cut as one that meets nothing, and the cut is lost.
+    Measured: a boss and a bar across it composed 22.3648 mm2; adding a pocket
+    around them — which the boss sits inside — gave 78.5398, the whole boss,
+    as if the bar had never been drawn. So the order has two constraints:
+    an outer before what is nested inside it, AND material before a cut that
+    overlaps it without containing it. Only a cut that still leads after both
+    is one that genuinely meets nothing.
+
+    The overlap pass costs nothing for the ordinary sketch: it runs only while
+    the order actually STARTS with a cut, which needs a cut that contains an
+    add (one sketch in the user's whole library).
     """
     n = len(shapes)
     inside = _containment(shapes)
-    waiting = [sum(row) for row in inside]      # outers still to be composed
+    needs = [row[:] for row in inside]          # needs[i][j]: j before i
+    order = _order_from(needs)
+    if modes is None:
+        return order
+    for _ in range(n):                          # each pass frees one lead cut
+        lead = []
+        for i in order:
+            if modes[i] != "subtract":
+                break
+            lead.append(i)
+        if not lead:
+            break
+        grew = False
+        for i in lead:
+            for j in range(n):
+                if (i == j or modes[j] == "subtract"
+                        or needs[i][j] or needs[j][i]      # already ordered
+                        or inside[i][j] or inside[j][i]):  # nested: an island
+                    continue
+                if _overlaps(shapes[j], shapes[i]):
+                    needs[i][j] = True          # the material goes first
+                    grew = True
+        if not grew:
+            break
+        order = _order_from(needs)
+    return order
+
+
+def _order_from(needs: list[list[bool]]) -> list[int]:
+    """A stable topological order over `needs[i][j] == "j must come before i"`:
+    of the entities whose predecessors are all placed, always the one the user
+    drew first."""
+    n = len(needs)
+    waiting = [sum(row) for row in needs]
     order: list[int] = []
     done = [False] * n
     while len(order) < n:
         nxt = next((i for i in range(n) if not done[i] and not waiting[i]),
                    None)
-        if nxt is None:                         # a containment cycle we cannot
-            nxt = next(i for i in range(n) if not done[i])   # order: fall back
-        done[nxt] = True                        # to the drawing order
+        if nxt is None:                         # a cycle we cannot order:
+            nxt = next(i for i in range(n) if not done[i])   # fall back to
+        done[nxt] = True                        # the drawing order
         order.append(nxt)
         for i in range(n):
-            if inside[i][nxt] and not done[i]:
+            if needs[i][nxt] and not done[i]:
                 waiting[i] -= 1
     return order
 
@@ -327,9 +400,10 @@ def _compose(entities: list):
     if not entities:
         raise ValueError("sketch has no entities")
     shapes = [_entity(e) for e in entities]
+    modes = [e.get("mode", "add") for e in entities]
     order = list(range(len(shapes)))
-    if any(e.get("mode", "add") == "subtract" for e in entities):
-        order = _compose_order(shapes)
+    if any(m == "subtract" for m in modes):
+        order = _compose_order(shapes, modes)
     # A subtraction that comes FIRST removes NOTHING (third code review,
     # 2026-09-09). It can legitimately come first: a subtraction that CONTAINS
     # an add owes that add an order, so it leads — which is exactly why
@@ -345,10 +419,18 @@ def _compose(entities: list):
     result = None
     added = False
     for i in order:
-        mode = entities[i].get("mode", "add")
+        mode = modes[i]
         if result is None:
             if mode == "subtract":
-                _note(f"entity {i + 1} is a cut with nothing under it — "
+                # Say which of the two it is. The note read "nothing in this
+                # sketch is drawn beneath it" either way, which is a false
+                # statement about the user's own sketch when material HAD
+                # been drawn there and an earlier cut removed it (fourth code
+                # review, 2026-09-09).
+                _note(f"entity {i + 1} removes nothing — everything drawn "
+                      f"beneath it had already been cut away"
+                      if added else
+                      f"entity {i + 1} is a cut with nothing under it — "
                       f"nothing in this sketch is drawn beneath it, so it "
                       f"removes nothing")
                 continue
@@ -365,7 +447,12 @@ def _compose(entities: list):
         # `AttributeError: 'list' object has no attribute 'faces'` (third
         # code review — both are rule 5 breaches). Empty is not failed: the
         # next add starts the profile again.
-        if _area_of(result) <= 1e-9:
+        # ONLY after a cut. Applied after an add as well, it took a single
+        # tiny entity — a radius typed as 0.00001 in the tree, area 3.1e-10 —
+        # and raised "the cuts removed everything that was drawn" for a
+        # sketch with no cut in it, where it used to build (fourth code
+        # review, 2026-09-09).
+        if mode == "subtract" and _area_of(result) <= 1e-9:
             result = None
     if result is None:
         if added:
@@ -404,7 +491,7 @@ def _path_face(e: dict):
         with BuildLine():
             cur = start
             for n, s in enumerate(segs, start=1):
-                to = tuple(float(v) for v in s["to"])
+                to = _seg_point("end", n, s.get("to"))
                 is_arc = s.get("type") == "arc"
                 # `via` is read OUTSIDE the try below. Inside it, a segment
                 # with no middle point at all raised `KeyError('via')` and
@@ -412,11 +499,7 @@ def _path_face(e: dict):
                 # between its ends" — a sentence about a point that is not
                 # there (third code review, 2026-09-09). `_validate_path`
                 # cannot catch it either: it guards with `s.get("via")`.
-                if is_arc and not s.get("via"):
-                    raise ValueError(
-                        f"path entity, arc {n} has no middle point — an arc "
-                        f"needs a point it passes through")
-                via = tuple(float(v) for v in s["via"]) if is_arc else None
+                via = _seg_point("middle", n, s.get("via")) if is_arc                     else None
                 # Rule 5 again, one level deeper (second code review,
                 # 2026-09-09): the try below wrapped only make_face(), so a
                 # segment the kernel cannot build spoke for itself —
@@ -457,6 +540,32 @@ def _path_face(e: dict):
     return sk.sketch
 
 
+def _seg_point(what: str, n: int, value) -> tuple:
+    """One [x, y] out of a path segment, or a sentence naming what is missing.
+
+    The third review moved the `via` read out of the arc translator's try so a
+    missing middle point would speak for itself — but the `to` read one line
+    above it was never wrapped at all, so a segment the AI author wrote
+    without a destination reached the tree as `KeyError('to')`, and a `via`
+    holding one number as `IndexError` (fourth code review, 2026-09-09).
+    Neither is the kernel's fault; both are our own data, and this is where
+    they are named.
+    """
+    if not value:
+        raise ValueError(
+            f"path segment {n} has no {what} point — a segment needs the "
+            f"point it ends at, written as [x, y]" if what == "end" else
+            f"path segment {n} has no {what} point — an arc needs a point it "
+            f"passes through, written as [x, y]")
+    try:
+        x, y = (float(v) for v in value)
+    except (TypeError, ValueError):
+        raise ValueError(
+            f"path segment {n}: its {what} point must be two numbers "
+            f"[x, y]") from None
+    return (x, y)
+
+
 def _segments_cross(a0, a1, b0, b1) -> bool:
     """Do the two open straight segments cross at a point interior to both?
     Touching at a shared endpoint is not a crossing."""
@@ -482,7 +591,9 @@ def _validate_path(start, segs: list) -> None:
     """
     pts = [start]
     for i, s in enumerate(segs):
-        to = tuple(float(v) for v in s["to"])
+        to = _seg_point("end", i + 1, s.get("to"))
+        if s.get("type") == "arc":
+            _seg_point("middle", i + 1, s.get("via"))
         if abs(to[0] - pts[-1][0]) < 1e-6 and abs(to[1] - pts[-1][1]) < 1e-6:
             raise ValueError(
                 f"path segment {i + 1} starts and ends at the same point — "

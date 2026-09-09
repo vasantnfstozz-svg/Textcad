@@ -1136,20 +1136,22 @@ function scaleEntity(e, f, inPlace) {
   else if (e.kind === 'rectangle') { e.w *= f; e.h *= f; }
   else if (e.kind === 'slot') { e.length *= f; e.height *= f; }
   else if (e.kind === 'regular_polygon') e.radius *= f;
-  else if (e.kind === 'polygon')
+  else if (e.kind === 'polygon') {
+    if (!(e.points || []).length) return e;      // malformed: leave it alone
     e.points = e.points.map(p => [p[0] * f, p[1] * f]);
+  }
   else if (e.kind === 'path') {
-    // Same guards as every sibling reader (`outlinePts`, `hitTest`,
-    // `entityHandles`, `collectSnapPoints`, `entSamplePts`): a path entity
-    // with no start or no segments threw TypeError mid-drag here, in an
-    // unawaited handler, so the Scale gizmo simply stopped (third code
-    // review, 2026-09-09). The backend refuses such an entity now, but the
-    // user still has to be able to OPEN the sketch to fix it.
-    const st = e.start || [0, 0];
+    // A malformed path is left ALONE, never repaired. The guards added in
+    // the third review defaulted a missing start to [0, 0] and then WROTE it
+    // back into the entity, so one Scale drag saved a vertex the user never
+    // drew — into the very sketch the backend refuses because the editor
+    // cannot show it (fourth code review, 2026-09-09). Every sibling reader
+    // skips such an entity; so does this one now.
     const sgs = e.segments || [];
+    if (!e.start || !sgs.length || sgs.some(sg => !sg.to)) return e;
     let cx = 0, cy = 0;
     if (inPlace) {          // about the path's own local centre
-      const xs = [st[0]], ys = [st[1]];
+      const xs = [e.start[0]], ys = [e.start[1]];
       for (const sg of sgs) {
         xs.push(sg.to[0]); ys.push(sg.to[1]);
         if (sg.via) { xs.push(sg.via[0]); ys.push(sg.via[1]); }
@@ -1158,10 +1160,9 @@ function scaleEntity(e, f, inPlace) {
       cy = (Math.min(...ys) + Math.max(...ys)) / 2;
     }
     const sc = p => [cx + (p[0] - cx) * f, cy + (p[1] - cy) * f];
-    e.start = sc(st);
+    e.start = sc(e.start);
     e.segments = sgs.map(sg => ({
-      ...sg, ...(sg.to ? { to: sc(sg.to) } : {}),
-      ...(sg.via ? { via: sc(sg.via) } : {}),
+      ...sg, to: sc(sg.to), ...(sg.via ? { via: sc(sg.via) } : {}),
     }));
   }
   return e;
