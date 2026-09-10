@@ -131,7 +131,8 @@ Review or disable them with `/hooks`. Add new ones only for cheap, unambiguous c
 - Targeted test files while working; fast tier at ship; browser tier only for
   the tool being shipped. Never the full suite "to see".
 - No agent fan-outs, no exploratory sweeps, no screenshot loops unless asked.
-  The user runs a five-step checklist per tool instead.
+  The review chat is the gate after each tool; there is no per-tool user
+  checklist any more (decided 2026-09-10).
 
 ## Frontend conventions
 
@@ -157,11 +158,38 @@ ranked view) · workstream sheets `FEATURE-TREE-PLAN.md`, `MANUAL-DESIGN.md`,
 Priorities: P0 silent wrong geometry or data loss · P1 blocks basic design ·
 P2 hurts daily use · P3 polish. Done means ship-checked, with the commit hash.
 
-`REVIEW-BRIEF.md` is the handoff to the user's code-review chat, which runs on
-a different model with no context: REWRITE it (never append) after every code
-commit — range, base, one line per commit, where the risk is, the ground rules,
-and what must not be re-reported. See the `ship-check` skill, step 6.
-`REVIEW-QUEUE.md` is the from-scratch review backlog of the OLD modules that
-predate the ritual: one section per module with its paste line, scope, finding
-classes and known items, plus the fix-pass steps; a fix pass updates its
-status board and done log. One module per Opus chat, in the file's order.
+`REVIEW-BRIEF.md` is the handoff for NEW code: REWRITTEN (never appended)
+after every code commit — a `Status:` line, range, base, one line per commit,
+where the risk is, the ground rules, and what must not be re-reported (see
+the `ship-check` skill, step 6). `REVIEW-QUEUE.md` is the from-scratch review
+backlog of the OLD modules: one section per module with scope, finding
+classes and known items, a status board, the fix-pass steps and a done log.
+
+## The review chat (the user types only `code review`)
+
+Two kinds of chat exist on this project. **Building** happens in a fresh chat
+on Fable 5.1, one per tool. **Reviewing** happens in a separate fresh chat on
+Opus 5. The user types `code review` and nothing else; that chat does the rest:
+
+1. **Model check.** Not running on Opus 5? Answer with ONE line — "Type
+   `/model claude-opus-5`, then `code review` again." — and stop.
+2. **Find the work.** `REVIEW-BRIEF.md` opens with a status line.
+   `Status: PENDING` → review the commit range the brief names (new code).
+   `Status: NOTHING PENDING` → open `REVIEW-QUEUE.md` and take the first
+   status-board row marked TODO (old code, one module per chat). The user
+   may name a section or a commit instead.
+3. **One reviewer.** This chat reads the diff or the section's files itself.
+   No `/code-review` command, no subagents, no fan-out: on 2026-09-09 a
+   fan-out ran 46 agents and drained the 5-hour limit, then ONE reviewer at
+   medium found five real gaps. The rules of engagement and the output
+   format are in `REVIEW-QUEUE.md`; the brief's "do not report" list applies.
+4. **Fix in the same chat, without being asked.** Follow `REVIEW-QUEUE.md`
+   → "After the review": reproduce each finding by measurement or a red
+   test, smallest fix, covering test files, commit, push, restart the user's
+   server if the backend changed. Then the paperwork: brief → `Status:
+   NOTHING PENDING` (or the queue row → done, plus the done log), a plan §10
+   row for anything deferred, memory. Never `--fix`.
+5. **Report in plain words**: what was found, what was fixed, whether the
+   user's designs are affected, what the next `code review` will pick up.
+
+Never re-run a review the usage limit killed until the window resets.

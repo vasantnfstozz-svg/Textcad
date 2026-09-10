@@ -7,19 +7,20 @@
 > modules, one section each, with everything a reviewer needs so that no
 > section has to be re-derived in a chat.
 >
-> **One module per chat, on Opus.** The user opens a FRESH chat, types
-> `/model claude-opus-5`, then pastes the section's paste line. The review runs,
-> the report lands in the chat, and the SAME chat then runs the fix pass
-> described under "After the review" at the end of this file. The next module
-> waits for the next chat.
+> **One module per chat, on Opus, and the user types only `code review`.**
+> The user opens a FRESH chat, types `/model claude-opus-5`, then `code
+> review`. CLAUDE.md's section "The review chat" sends that chat here
+> whenever `REVIEW-BRIEF.md` says `Status: NOTHING PENDING`: it takes the
+> first status-board row marked TODO, reads that section's files itself as
+> ONE reviewer (no `/code-review` command, no subagents), puts the report in
+> the chat, and then runs the fix pass under "After the review" without being
+> asked. The next module waits for the next chat.
 >
-> The paste line names the files because old code has no diff to review. If
-> the review command does not accept several paths, the fallback is this plain
-> prompt in the same Opus chat:
-> `Read REVIEW-QUEUE.md: the header, the shared rules, section N and "Output format". Review exactly that scope by reading the files, and put the whole report in your final answer.`
+> Each section still carries its old paste line: it names the files and the
+> effort, which is the scope the reviewer reads. The user does not paste it.
 >
-> `REVIEW-BRIEF.md` keeps its job for per-commit reviews of NEW code (the fixed
-> line in the ship-check skill). This file is for the backlog of old code.
+> `REVIEW-BRIEF.md` keeps its job for per-commit reviews of NEW code; its
+> `Status: PENDING` wins over this queue. This file is for the backlog of old code.
 
 ---
 
@@ -745,10 +746,8 @@ Finding classes:
 
 ## After the review - the fix pass, in the SAME Opus chat
 
-The user pastes this second line once the report is in the chat:
-```
-Now do the fix pass exactly as REVIEW-QUEUE.md says under "After the review", for the section you just reviewed.
-```
+The same chat goes straight on to this once the report is in the chat. The
+user types nothing (decided 2026-09-10).
 
 1. Load the `textcad-dev` skill; `fusion-parity` too if the module is a
    modeling tool. Read CLAUDE.md's environment facts (two Pythons, detached
@@ -773,10 +772,11 @@ Now do the fix pass exactly as REVIEW-QUEUE.md says under "After the review", fo
    reasons. Add a LAUNCH-PLAN.md section 10 row only for a finding that was
    deferred rather than fixed or rejected.
 8. A second review round happens only if a P0 was fixed: rewrite
-   `REVIEW-BRIEF.md` for the fix commit and tell the user to run the ship-check
-   skill's fixed line at `medium`. Otherwise tell the user in one line: next
-   is their five-step checklist for this module, then the next section in a
-   fresh Opus chat.
+   `REVIEW-BRIEF.md` for the fix commit with `Status: PENDING`, so the next
+   `code review` picks the fix commit up first. Otherwise tell the user in
+   one line, in plain words: what was found, what was fixed, whether their
+   designs are affected, and that the next section waits for `code review`
+   in a fresh Opus chat. There is no user checklist (retired 2026-09-10).
 
 Token rules apply (LAUNCH-PLAN section 9): targeted test files, no gauntlet
 sweeps, no screenshot loops, browser tests only if a fix changed a journey.

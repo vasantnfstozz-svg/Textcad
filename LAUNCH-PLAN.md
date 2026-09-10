@@ -169,9 +169,9 @@ notes and eight skills; every session re-reads all of it.
 | R6 | **Frozen fixtures; red means red.** Code tests read `tests/fixtures/`, never `designs/`. Live-design health is a separate, opt-in check. `pytest tests -q` is green at every commit and stays green through a design edit. No test is left red because "another session owns it". | Cause 5 |
 | R7 | **Same standard for AI and UI.** The lint runs on both paths: rejection for AI/MCP trees, a spoken chat warning naming the fix for UI-created features. | Cause 6 |
 | R8 | **Spec before code.** Every tool starts as a one-page description the user approves: what you click, what you see, what can go wrong. No code until approved. | "not the intended function" |
-| R9 | **The user tests, with a checklist.** Each tool ships with a five-step checklist the user runs in the real app. Browser robots are for what machines are good at; the user's eyes catch usability. | tokens, Cause 4 |
+| R9 | **The review is the gate, not a checklist.** Each shipped tool gets one code review in the review chat before its plan row is stamped, and the findings are fixed there. The per-tool five-step user checklist was retired 2026-09-10: the user tries tools when they choose to, and what they find becomes a §10 row. | tokens, Cause 4 |
 | R10 | **Every phase deletes more than it adds**, or it is another layer, not a fix. Record the line delta in the commit. One exception, named here so it is never self-granted: the phase that CREATES the framework (P2) is judged together with the first tool built on it (P3) — their combined delta must be negative against the hand-wired tool they replace. | Cause 2 |
-| R11 | **Token rules.** One Claude session per checkout. Check the `ui v` stamp and single server before debugging any browser report. Targeted tests while building, full suite only at ship. Probe scripts committed under `probes/` so no API is probed twice. No agent fan-outs on this project. Fable thinks, Opus reviews and fixes, effort `high` (§9). | Cause 7 |
+| R11 | **Token rules.** One Claude session per checkout. Check the `ui v` stamp and single server before debugging any browser report. Targeted tests while building, full suite only at ship. Probe scripts committed under `probes/` so no API is probed twice. No agent fan-outs on this project. Fable plans and builds, Opus reviews and fixes in the review chat, effort `high` (§9). | Cause 7 |
 
 Standing design rules stay in force: the offset method (base first, then
 sketch on a named face with an offset), no sharp internal corners in milled
@@ -187,7 +187,7 @@ never a separate screen; base first then sketch on the base; sketch-first
 tree; the navigation mapping). They are not replaced. Today they are applied
 from memory per tool; **R2 exists so that rules 2–7 and 9 are inherited by
 every tool automatically**, and the rest are checked by the plan tests and the
-user checklist. Rule compliance becomes the default instead of an achievement.
+review chat. Rule compliance becomes the default instead of an achievement.
 
 ---
 
@@ -803,8 +803,8 @@ assemblies, the user's personal project.
 ## 8. The per-tool ritual (P3 onward)
 
 1. **Spec** — one page in `specs/<tool>.md`: the three sentences of what you
-   click and see, the handle, the value box, failure messages, the five-step
-   user checklist. User approves.
+   click and see, the handle, the value box, failure messages. User
+   approves.
 2. **Probe** — any kernel behaviour the tool relies on gets a probe script
    under `probes/<tool>_*.py`, committed.
 3. **Plan tests** — table of (input geometry × selection × params → plan).
@@ -816,18 +816,21 @@ assemblies, the user's personal project.
 7. **Ship** — targeted tests during the work; at ship: the fast tiers +
    this tool's journeys, `ui v` bump, restart, commit with capability +
    proof + line delta, push.
-8. **Review, then the checklist** — right after the CODE commit Claude says
-   "recommended now: `/code-review high`" (the user runs it; it is worth its
-   tokens once per shipped tool — the taper review found 4 real bugs the
-   tests had not). Findings are fixed and committed BEFORE the user runs the
-   five-step checklist, so the user never tests what a robot would catch.
-   Docs / plan / memory commits get no review. The review runs on HEAD: a
-   docs commit on top of the code hides it, so review first, then stamp the
-   plan. The modules that predate this ritual (sketcher, document core and
-   tree, versions, booleans, primitives, measure, extrude as a whole, import,
-   trace, viewport, framework, server, author) get the same review FROM
-   SCRATCH, one module per Opus chat with the fix pass in the same chat, in
-   the order of `REVIEW-QUEUE.md` (started 2026-09-08).
+8. **Review, in the review chat** — right after the CODE commit Claude
+   rewrites `REVIEW-BRIEF.md` (`Status: PENDING`, range, base, risk, rules,
+   known list) and says: "Open a new chat, type `/model claude-opus-5`, then
+   type `code review`." That chat (CLAUDE.md, "The review chat") reviews the
+   range as ONE reviewer, fixes every confirmed finding in the same chat
+   without being asked, commits, and sets the brief back to NOTHING PENDING.
+   The plan row is stamped after that. Docs / plan / memory commits get no
+   review. There is no user checklist after the review (retired 2026-09-10;
+   the user tries tools when they choose to). The modules that predate this
+   ritual (sketcher, document core and tree, versions, booleans, primitives,
+   measure, extrude as a whole, import, trace, viewport, framework, server,
+   author) get the same review FROM SCRATCH, one module per review chat, in
+   the order of `REVIEW-QUEUE.md` (started 2026-09-08): when the brief says
+   NOTHING PENDING, `code review` takes the queue's next TODO row. Two
+   workstreams, one chat type.
 
 ---
 
@@ -844,27 +847,31 @@ assemblies, the user's personal project.
   at ship; the browser tier only for the tool being shipped. Never the full
   suite to "see what happens".
 - **No agent fan-outs, no exploratory sweeps, no screenshot loops** unless
-  the user asks. The user's checklist replaces most browser verification.
+  the user asks.
 - **The user's server:** launch detached with `studio.py`, never `dev.py`;
   restart after backend changes and let it open the browser.
-- **Model by task** (decided 2026-09-04, after both 5-hour windows died on
-  2026-09-03 at roughly 7-8M weighted tokens each). **Fable 5.1 thinks:**
-  specs, kernel and geometry decisions, guards, probes, the tool framework,
-  root causes. **Opus 5 reviews and fixes:** the `/code-review` agents
-  (`CLAUDE_CODE_SUBAGENT_MODEL` in the user settings), the pass that applies
-  the findings, e2e wiring, docs, plan and memory updates (`/model
-  claude-opus-5` for that chat; the next tool starts a fresh chat on Fable).
-  Per token Opus is half of Fable, Sonnet 5 a fifth (pure docs turns).
-- **Effort `high` by default** (`/effort`); `xhigh` only for the day's hard
-  kernel question. Output tokens are the most expensive class, and effort
-  decides how many there are.
+- **Model by task** (decided 2026-09-04 after both 5-hour windows died on
+  2026-09-03 at roughly 7-8M weighted tokens each; revised by the user
+  2026-09-10). **Fable 5.1 plans AND builds:** specs, kernel and geometry
+  decisions, guards, probes, the tool framework, root causes, and the tool's
+  code — one fresh Fable chat per tool. **Opus 5 reviews and fixes:** one
+  fresh Opus chat per review (`/model claude-opus-5`, then `code review`),
+  which also does the fix pass, e2e wiring, docs, plan and memory updates
+  for that review. Subagents run on Opus (`CLAUDE_CODE_SUBAGENT_MODEL` in
+  the user settings). Per token Opus is half of Fable, Sonnet 5 a fifth.
+- **Effort `high` by default** (`/effort`); `xhigh` for a hard piece of a
+  tool or the day's hard kernel question, then back to `high`. Output tokens
+  are the most expensive class, and effort decides how many there are.
 - **A fresh chat per tool, and after any pause over an hour.** Resuming
   rewrites the whole context to cache at 1.25x; a fresh chat costs CLAUDE.md
   plus the memory. The 1M window (`[1m]`) is off, so a chat that runs long
-  compacts near 200k instead of growing to 650k per call.
-- **One `/code-review high` per shipped tool**, on the code commit, agents on
-  Opus. Never twice on one commit; never re-launch one the limit killed until
-  the window resets. `/usage` before starting it.
+  compacts near 200k instead of growing to 650k per call (it had drifted
+  back on by 2026-09-10 and was switched off again).
+- **One review per shipped tool, ONE reviewer** — the review chat itself,
+  no `/code-review` command, no subagents (the 2026-09-09 fan-out ran 46
+  agents and drained the window; one reviewer at medium then found five real
+  gaps). Never twice on one commit; never re-launch one the limit killed
+  until the window resets. `/usage` before starting it.
 
 ---
 

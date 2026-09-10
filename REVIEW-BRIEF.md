@@ -6,11 +6,14 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **In a fresh chat on Opus (`/model claude-opus-5`), type exactly this:**
+> **Status: NOTHING PENDING** — the next `code review` takes `REVIEW-QUEUE.md`'s first TODO row.
 >
-> ```
-> /code-review high - read REVIEW-BRIEF.md first: it names the commit range, the base, and what not to re-report
-> ```
+> **How the review starts.** The user opens a fresh chat on Opus
+> (`/model claude-opus-5`) and types only `code review`. CLAUDE.md's section
+> "The review chat" tells that chat to read this status line: PENDING means
+> review the range below; NOTHING PENDING means go to the queue. ONE
+> reviewer, no `/code-review` command, no subagents; the fix pass follows in
+> the same chat without being asked.
 >
 > That line never changes. Everything specific to this review is below.
 
