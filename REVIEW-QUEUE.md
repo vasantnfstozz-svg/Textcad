@@ -97,7 +97,7 @@ Then two closing sections:
 |---|---|---|---|
 | 1 | Sketcher | high | four rounds, each fixing the last: 556a611 (9/9, 1 rejected), 6e2cae9 (8/8, the fix pass had a P0), 5f65a7a (8/8, so did that one), **13da90c** (8/9, 1 rejected - the ordering RULE was incomplete), and **round five, ONE reviewer at medium**, which CLEARED the two-part ordering rule (no arrangement makes it worse, termination bounded) and fixed 5 gaps in the fix pass itself. Composition is measurably order-independent, all 324 library sketches build, the whole library composes unchanged. **Section 1 is done unless the sixth read finds something** |
 | 2 | Document core and feature tree | high | **reviewed and fixed 6ea5546**, ONE reviewer at medium: 5 findings, **4 fixed, 1 rejected** (refusing to open a file with an unknown op IS the settled answer - the fast tier proved it). 7 new tests; the P2s were a struck row keeping its piece count (and silencing the warning below it), a struck row highlighting the whole upstream body, and an intended sever re-probing the healer on every rebuild |
-| 3 | Version tree and session persistence | high | **reviewed and fixed f63ba5a**, ONE reviewer: 3 findings, **all 3 fixed**, 9 new tests. A P0 (a save could overwrite ANOTHER design's file and graft itself onto its version tree), a P1 (after a restart a tab with unsaved edits could read clean, so closing it discarded them silently) and a P2 (the only recovery for a lost index named a Python method - it is a button now) |
+| 3 | Version tree and session persistence | high | **reviewed and fixed f63ba5a** (3 findings, all 3 fixed, 9 tests): a P0 (a save could overwrite ANOTHER design's file and graft itself onto its version tree), a P1 (after a restart a tab with unsaved edits could read clean, so closing it discarded them silently) and a P2 (the only recovery for a lost index named a Python method - it is a button now). A P0 was fixed, so **round two re-reviewed the FIX COMMIT: fafe983**, 4 findings, **all 4 fixed**, 8 new tests - the same P0 was still reachable through TWO other doors (a second tab taking over an open design's file; a slug whose `.history/` outlived its deleted `.tcad.json`), and the new repair button could overwrite a NEWER build's index. **Section 3 is done unless a third read finds something** |
 | 4 | Booleans and transforms | high | TODO |
 | 5 | Primitives and shape editing | high | TODO |
 | 6 | Measure and drive | high | TODO |
@@ -1092,3 +1092,41 @@ dropping it (better than the backend's `depths()`, which omits it).
 library without saving, and the tree gains a version duplicating content it
 already holds - the file was never rewritten by the restore. Deterministic on
 paper, odd enough in practice that it was left alone.
+
+### Section 3, round two - the FIX PASS re-reviewed (2026-09-10, commit fafe983)
+
+A P0 was fixed in `f63ba5a`, so the house rule sent a second chat over the fix
+commit itself. **4 findings, all 4 fixed, 8 new tests**, fast tier 1288 green,
+ruff clean, no frontend change. Every one was reproduced by measurement first:
+`probes/version_review_probe.py` (A-D, each printing PASS/FAIL).
+
+Two of the four were the SAME P0 through another door - a save landing on a
+design's version tree that was not its own. That is why the round earned its
+tokens.
+
+| # | P | What it was | Fix |
+|---|---|---|---|
+| F1 | P1 | `/api/save`'s identical-content escape hatch bound a SECOND tab to a file another tab already owned. From then on either tab's save silently overwrote the other's and hung its version off the other's latest - measured `bore.radius` 11 -> 44, with v3 parented to a v2 it never came out of. Exactly the state F1's own test asserts (`sources.count == 1`), and untested | `_file_owner(slug)` (case-INSENSITIVE, because the filesystem is) refuses the save with "already open in another tab". The escape hatch stays for the case it was written for - a tab writing content into a library file NO tab owns |
+| F2 | P1 | `can_repair()` was `not exists() and any(glob)`, so it said YES for an index written to a schema this build does not understand - the one state `_load` refuses to interpret "rather than risk mangling it". The new panel button then replaced it with a linear "(recovered)" chain under a **brand-new design_id**, guessing away the parents, labels and star the branch exists to protect | `History._foreign` is set on the schema branch; `can_repair()` and `repair()` both refuse it. `/api/versions/repair` no longer answers such a case with "your version list is readable" (the opposite of the truth) - it reports `repair()`'s own refusal |
+| F3 | P2 | The design FILE was the only thing the guard checked. There is no in-app delete, so a design removed in Explorer leaves `<slug>.history/` behind - and an unrelated design of the same name appended itself to that tree as a child of its last version, under its `design_id` and its `name`. Measured: a 1-feature disc became v3 of a 3-feature flange | `_saved_versions_exist(slug)` is the third door: the refusal names `designs/<slug>.history/` and says either rename this design or delete that folder |
+| F4 | P2 | A cloud-sync or merge conflict copy (`v3 (2).json.gz`, `v.json.gz`) matched `repair()`'s glob but not `_VID`, so the sort key ran `int(_VID.match(...).group(1))` over it and took the rebuild down with an `AttributeError` whose text went straight to the user - a banned failure | `History.snapshot_files()` returns only exact `v<N>.json.gz` names, as `(number, path)`, and is the one place both `can_repair()` and `repair()` read. The stray file is left on disk untouched. A snapshot whose `stat()` fails is now "left out" like an unreadable one instead of escaping |
+
+**Line delta:** +493 / -26 across `history.py`, `studio.py`, two test files and
+the new probe (the probe and its tests are most of it: production code is
++118 / -20).
+
+**Checked and found sound:** `_restored_baseline`'s three fallbacks, including
+the `file:` source whose design was deleted (returns None, which `_dirty`
+reads as DIRTY - the safe direction) and the unknown `sample:` key; the
+current-version-before-file ordering, which matches what the dirty dot means;
+`/api/versions` staying 200 for a broken index (`next_id`, `tree_lines` and
+`problems` all tolerate `_data is None`); `postJSON` surfacing a 200-with-
+`error` body in the chat, so the repair button's failures are not silent;
+`content_hash` sorting keys, so the raw-file comparison in the save guard is
+not defeated by key order or indentation.
+
+**Not ranked, still true:** the versions routes answer refusals with HTTP 200
+plus an `error` key rather than through `_refused`, which `_refused`'s own
+docstring argues against. It is the convention across that entire group of
+routes and the frontend handles it; changing one route would be worse than
+leaving all of them. Noted in the brief's do-not-report list.

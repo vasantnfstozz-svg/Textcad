@@ -6,7 +6,9 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING** — a P0 was fixed in `f63ba5a`; the next `code review` takes that commit, not the queue.
+> **Status: NOTHING PENDING** — `fafe983` fixed four findings and none was a
+> P0, so there is no second round to run. The next `code review` goes to the
+> queue.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5`) and types only `code review`. CLAUDE.md's section
@@ -19,34 +21,42 @@
 
 ---
 
-## Just done: section 3, Version tree and session persistence (f63ba5a)
+## Just done: section 3's FIX PASS, re-reviewed (fafe983)
 
-Three findings, **all three fixed**, 9 new tests, fast tier 1280 green. The
-full record is `REVIEW-QUEUE.md`'s done log, section 3.
+The section 3 fixes (`f63ba5a`) closed a P0, so the house rule sent a second
+chat over the fix commit itself. It found **four more doors open, all four
+fixed**, 8 new tests, fast tier 1288 green. Measured first in
+`probes/version_review_probe.py`; the full record is `REVIEW-QUEUE.md`'s done
+log, section 3, round two.
 
-**A P0 was fixed, so the NEXT review looks at this commit first** — see the
-range below. In short: a save could land on another design's file and graft
-itself onto that design's version tree; a restored tab holding unsaved edits
-could read clean and lose them on close; and the only recovery for a lost
-version index named a Python method, which is now a button.
+Two of them were the SAME P0 through another door — a save landing on another
+design's version tree — which is why this round mattered:
 
----
+- the identical-content escape hatch bound a **second tab** to a file another
+  tab already owned, after which either tab's save silently overwrote the
+  other's file and hung its version off the other's latest;
+- a design file deleted in Explorer leaves `<slug>.history/` behind, and a new
+  design of the same name **appended itself to that tree**;
+- `can_repair()` said yes for an index from a **newer build**, and the new
+  panel button then replaced it with a guessed linear chain;
+- a cloud-sync conflict copy (`v3 (2).json.gz`) took `repair()` down with an
+  **AttributeError** whose text reached the user.
+
+No P0 was fixed this round, so no third pass is due.
 
 ## Review this
 
 | | |
 |---|---|
-| **Status** | **PENDING** — review `f63ba5a` (its parent is `4b0ca40`) |
-| **Range** | `4b0ca40..f63ba5a` — `history.py`, `studio.py`, `static/js/versions.js`, and the three test files |
-| **Where the risk is** | (1) the new refusal in `/api/save` (studio.py ~2340): it compares the tab's `source` against the slug case-insensitively and lets a save through when the file's content already equals what is being written — ask what it now BLOCKS that the user legitimately wants, and what it still lets through. (2) `_restored_baseline` (studio.py ~278): three fallbacks, and a None answer deliberately reads DIRTY — check every path a restored tab can take, including a `file:` source whose design was deleted. (3) `POST /api/versions/repair` + `History.can_repair()`: repair REWRITES the index, drops labels, parents and the star, and the only thing standing between it and a healthy tree is `can_repair()` |
-| **Then** | `REVIEW-QUEUE.md` **section 4 — Booleans and transforms**, the first row still marked TODO |
-| **Frontend** | `ui v181`, `css v40` |
+| **Status** | **NOTHING PENDING** |
+| **Next** | `REVIEW-QUEUE.md` **section 4 — Booleans and transforms**, the first status-board row still marked TODO. Read the queue's header, its shared rules, section 4 and the output format |
+| **Frontend** | `ui v181`, `css v40` — unchanged by `fafe983` (backend only) |
 
 ## Ground rules (unchanged, for whichever commit comes next)
 
 - **Read-only.** Do not start the server (port 8123 is the user's; a second
   listener there is a known trap). Do not run `tests/e2e/`. The whole fast
-  tier is 1280 (`python -m pytest tests -q --ignore=tests/e2e`).
+  tier is 1288 (`python -m pytest tests -q --ignore=tests/e2e`).
 - **A finding is a concrete input on which the code does the wrong thing**,
   with the exact click or data that triggers it. Order: P0 wrong geometry or
   data loss, P1 blocks the action, P2 daily annoyance, P3 polish.
@@ -77,13 +87,13 @@ high or medium confidence.
 ## Already known — do NOT report
 
 - **Everything in `REVIEW-QUEUE.md`'s done log** — section 1 (the sketcher,
-  five rounds) and section 2 (document core). Report a fix that is WRONG or
-  INCOMPLETE, never an original defect.
+  five rounds), section 2 (document core) and section 3 (version tree, two
+  rounds). Report a fix that is WRONG or INCOMPLETE, never an original defect.
 - **The sketcher's two-part ordering rule and `_overlaps` failing open.** An
   outer is composed before anything nested in it, AND material before a cut
   that OVERLAPS it without containing it. Never collapse it to one part;
   removing either half reintroduces a measured P0.
-- **Refusing to open a file with an unknown op** — settled, see above.
+- **Refusing to open a file with an unknown op** — settled (section 2).
 - **A struck row's dimension rows stay editable** while its ✎ is withheld.
   Deliberate: ✎ reopens a live tool with a preview.
 - **The tree's folded-boolean rule and `delta_features`' folding rule are two
@@ -91,6 +101,14 @@ high or medium confidence.
 - **The first card in the sketch tree shows a fixed `add` badge**, stricter
   than the backend now needs. Deliberate.
 - **A full circle offers no QUADRANT snaps.** Deliberate.
+- **`/api/save` refuses three things** (fafe983): a file a DIFFERENT tab owns,
+  a different design's file whose content differs, and a slug whose
+  `.history/` still holds versions after the file was deleted by hand. All
+  three are deliberate, all three are tested, and the identical-content
+  escape hatch that remains is guarded by the tab-owner check.
+- **`repair()` refuses a FOREIGN index** (a schema this build does not
+  understand) and only treats exact `v<N>.json.gz` names as snapshots.
+  Deliberate; a conflict copy is left on disk untouched.
 - **`blocks.resolve_face` picks by nearest centre**, so two coplanar faces
   sharing a centre resolve to the wrong twin. Queued, P1.
 - **`sketch_trim.py` keeps its OWN copy of the composition rule** and refuses
@@ -102,6 +120,9 @@ high or medium confidence.
 - **A suppressed final boolean promotes its TOOL to the result**
   (`_result_feature`). Queued, P1 — and `/api/feature/suppress` is not
   reachable from the UI at all, only from a script or the MCP.
+- **The versions routes answer refusals with HTTP 200 and an `error` key**
+  rather than through `_refused`. Local convention across that whole group;
+  `postJSON` surfaces it. Not a finding.
 - **`-m library` cannot collect** (duplicate basenames against `tests/e2e`).
   Tracked test-infrastructure item.
 - Face MODE (`extrude_face`) opens on Join regardless of direction; Edit mode
