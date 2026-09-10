@@ -25,7 +25,9 @@
 > stamp, ui v164; user's checklist passed 2026-09-07 — §7 P4). Next: Shell,
 > in a fresh chat. One tool per session. Every
 > other plan file points here; §7 carries the done-notes, §10 the ranked open
-> items.
+> items. **Added 2026-09-10 (user's decision):** P5b, the machine plays the
+> user — a zero-token random-journey runner, a bug button, the library tier
+> fixed — sits between P5 and P6 (§6 tier 4, §7 P5b).
 >
 > It replaces the reverted TOOL-FRAMEWORK-PLAN.md (2026-09-02, another model's
 > session, deleted at the user's request). Its diagnosis was checked against
@@ -242,7 +244,7 @@ and never a hard-coded fact in the UI.
 
 ---
 
-## 6. Testing — three tiers, each cheap where it can be
+## 6. Testing — four tiers, each cheap where it can be
 
 1. **Kernel gauntlet** (fast, no browser): every op that consumes a face,
    profile or body runs against the body corpus in `tests/gauntlet.py`. When
@@ -260,6 +262,18 @@ and never a hard-coded fact in the UI.
 
 Plus: `pytest -m library` (opt-in) reports the health of the user's live
 designs — parses, rebuilds, piece count vs spec — in its own channel.
+
+4. **Random journeys** (P5b, no browser, no AI, no tokens): a script plays
+   the user against the real server for hours — random face, random value
+   inside the plan's own safe range, edit, strike-out, undo, redo, pattern a
+   random seed — through the same plan + feature endpoints the buttons use.
+   The oracle is the founding rule: every step ends in a healthy verified
+   solid or a clean refusal sentence; anything else (a kernel exception, an
+   invalid or open solid, a crash, a "success" whose volume moved when
+   nothing should have) is a bug, saved with its exact step sequence as the
+   repro. Found bugs join the gauntlet. This tier covers what nobody
+   imagined; the review covers what the code says; the user covers what only
+   a human notices.
 
 ---
 
@@ -790,6 +804,29 @@ server. The review of c6a2377 rides with the next tool's (user's call).
 **P5 — The AI uses the tools (§5 step B).** Incremental authoring through
 the plan endpoint; chat edits point at parameters; the FEATURE-TREE-PLAN
 "step 4" everyone deferred.
+
+**P5b — The machine plays the user (§6 tier 4).** Decided with the user
+2026-09-10: code review finds what the code says, tests find what we
+imagined, and the user must not be the test department — bugs surface while
+they are on a real design task, and that is the wrong moment. Three layers,
+in this order. (1) `tests/journeys.py`: the random-journey runner over
+`tests/fixtures/` and, opt-in, the live `designs/`; reuses P5's drive-the-tools
+path, which is why it comes after P5; runs overnight at zero token cost — a
+plain script against the local server, tokens are spent only when a chat
+reads the bug files it saved, so the cost scales with bugs found, not hours
+run. Each finding = a saved step file under `bugs/` + a §10 row + a gauntlet
+case. (2) A **bug button** in Studio: one click saves the open document, the
+last requests and a screenshot under `bugs/`, and the user keeps designing;
+a later chat reads the folder and has the repro without a description. (3)
+The **library tier fixed and run before every ship**: `pytest -m library`
+cannot collect today (duplicate test basenames against `tests/e2e/`), so the
+only check that protects the user's real parts never runs — fix first, it is
+small. Acceptance: one overnight run over every fixture with zero unhandled
+failures, at least one real bug found and fixed by it (or the run's log
+proving none), the bug button round-trips to a chat, `-m library` green on
+every committed design. What the user does: nothing until it exists; then
+starts the run before leaving and presses the button when something feels
+wrong.
 
 **P6 — Launch preparation.** Vendor three.js locally (offline today = broken),
 LICENSE + third-party notices, units label, a one-click run script, examples
