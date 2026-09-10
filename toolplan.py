@@ -1289,10 +1289,91 @@ def plan_mirror(doc, req: dict) -> dict:
     return out
 
 
+# -------------------------------------------------------------------- shell ---
+
+def _face_words(n: int, body: str) -> str:
+    return (f"{n} face{'' if n == 1 else 's'} open of {body}" if n
+            else "no face open — a closed hollow body")
+
+
+def plan_shell(doc, req: dict) -> dict:
+    """The Shell tool's plan (specs/shell.md). Input: body_id (+ face_center /
+    face_normal: the face clicked before the tool was pressed — the first
+    opening), or the feature_id of an existing shell (edit: its stored faces
+    and direction stand in for whatever the request does NOT carry). `faces`
+    — the openings as the LAST plan stored them — is the selection whenever it
+    is present, an empty list included; face_center only OPENS the tool.
+    `face_toggle` is a click while the panel is open: a face not yet open joins
+    the set, an open one comes out — the server decides, as for Fillet's face
+    clicks, because only the kernel knows whether two picks name one face.
+
+    Returns the set in STORED form (`faces`: names stay names, a pick is the
+    face's own centre + normal), the openings' outlines for the gold glow
+    (`edges`), the arrow (`origin` at the first opening's centre — the largest
+    flat face when none is open — and `axis` INTO the material for Inside,
+    OUT of it for Outside) and the words the panel shows. The browser draws
+    what this says and computes nothing (R1)."""
+    body_id, params = req.get("body_id"), {}
+    faces, direction = req.get("faces"), req.get("direction")
+    fid = req.get("feature_id")
+    if fid:
+        f = _edit_input(doc, fid, ("shell",))
+        body_id = (f.inputs or [None])[0]
+        params = f.params or {}
+        if faces is None:                    # the stored set is the FALLBACK, never the override
+            faces = sk.shell_refs(params.get("faces"), params.get("open_face"))
+        direction = direction or params.get("direction")
+    d = str(direction or "inside").strip().lower()
+    if d not in sk.SHELL_DIRECTIONS:
+        raise ValueError(f'direction must be "inside" or "outside" (got {direction!r})')
+    toggle = req.get("face_toggle")
+    if faces is None:                        # opening the tool: the pick is the first click
+        faces = []
+        if req.get("face_center") is not None and toggle is None:
+            toggle = {"center": req["face_center"], "normal": req.get("face_normal")}
+    part, body_id = _pick_body(doc, body_id, "shell")
+    refs = list(sk.shell_refs(faces, None))
+    click = None
+    if toggle:
+        face = _face_of(part, toggle, body_id)          # on the body, or a sentence
+        sk.assert_flat_opening(face)
+        key = blocks._shape_key(face)
+        keys = [blocks._shape_key(sk.opening_face(part, r)) for r in refs]
+        if key in keys:
+            refs = [r for r, k in zip(refs, keys) if k != key]
+            click = "closed again"
+        else:
+            c = face.center()
+            refs.append({"center": _vec(c), "normal": _vec(face.normal_at(c))})
+            click = "open now"
+    openings = sk.shell_openings(part, refs)          # resolved, de-duplicated, flat
+    if openings:
+        anchor = openings[0]
+    else:
+        flat = [f for f in part.faces() if sk.face_plane(f) is not None]
+        if not flat:
+            raise ValueError(f"{body_id} has no flat face to shell from — pick another body")
+        anchor = max(flat, key=lambda f: f.area)
+    centre = anchor.center()
+    n = anchor.normal_at(centre)
+    axis = n * -1.0 if d == "inside" else n
+    words = _face_words(len(openings), body_id)
+    return {
+        "ok": True, "tool": "shell", "mode": "face", "op": "shell", "input": body_id,
+        "faces": refs, "n_open": len(openings), "direction": d,
+        "edges": [{"points": edge_polyline(e)} for f in openings for e in f.edges()],
+        "origin": _vec(centre), "axis": _vec(axis),
+        "seed_words": words,
+        "click_words": f"Shell: that face is {click} — {words}." if click else None,
+        "target_body": body_id,
+        "will_build": f"shell of {body_id}, {words}, walls {d}",
+    }
+
+
 _PLANNERS = {"extrude": plan_extrude, "revolve": plan_revolve, "sketch": plan_sketch,
              "fillet": plan_fillet, "chamfer": plan_fillet, "hole": plan_hole,
              "polar_pattern": plan_pattern, "linear_pattern": plan_pattern,
-             "mirror": plan_mirror}
+             "mirror": plan_mirror, "shell": plan_shell}
 
 
 def plan(doc, req: dict) -> dict:

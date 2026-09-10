@@ -324,6 +324,27 @@
   </div>
 </div>
 
+<div id="shellDialog" class="toolpanel" style="display:none">
+  <div class="exhead">▢ Shell</div>
+  <label>Faces <select id="shProfile" disabled></select></label>
+  <div class="exrow">
+    <label>Thickness (mm) <input id="shThickness" type="number" step="any" min="0" value="0"></label>
+    <label>Direction
+      <select id="shDirection" title="Inside: the walls grow inward and the outside stays where it is. Outside: the walls are added around the body and the old surface becomes the cavity">
+        <option value="inside">Inside</option>
+        <option value="outside">Outside</option>
+      </select></label>
+  </div>
+  <!-- the openings are picked in the viewport: a click on a flat face of the body
+       opens it, a second click closes it again; no face open = a closed hollow -->
+  <select id="shOp" style="display:none"><option value="new">New body</option></select>
+  <label id="shTargetRow" style="display:none">Combine with <select id="shTarget"></select></label>
+  <div class="exfoot">
+    <button id="shCancel">Cancel</button>
+    <button class="primary" id="shOk">OK</button>
+  </div>
+</div>
+
 <div id="cpDialog" class="toolpanel" style="display:none">
   <div class="exhead">✳ Circular Pattern</div>
   <label>Seed <select id="cpProfile" disabled></select></label>
@@ -446,6 +467,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=183"></script>
+<script type="module" src="/static/js/main.js?v=184"></script>
 </body>
 </html>

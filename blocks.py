@@ -36,7 +36,7 @@ from build123d import (
     Box, Cylinder, Sphere, Cone, Pos, PolarLocations, BuildSketch, RegularPolygon, BuildLine, Polyline, Spline, make_face,
     trace, extrude, revolve, Axis, Plane, Part, Mesher, Solid, Compound,
     scale as _b3d_scale,
-    fillet as _b3d_fillet, chamfer as _b3d_chamfer, offset as _b3d_offset,
+    fillet as _b3d_fillet, chamfer as _b3d_chamfer,
     import_step as b3d_import_step,
 )
 from OCP.BRep import BRep_Tool
@@ -830,18 +830,14 @@ def chamfer_edges(part: Part, length: float, edges="all") -> Part:
                    lambda es, v: _b3d_chamfer(es, length=v))
 
 
-def shell_out(part: Part, thickness: float, open_face: str = "top") -> Part:
-    """Hollow a part into walls of `thickness`. open_face "top"/"bottom" removes
-    that face (an open container, e.g. a cup); "none" keeps it fully closed."""
-    if thickness <= 0:
-        raise ValueError("shell: thickness must be positive")
-    if open_face == "none":
-        return _b3d_offset(part, amount=-thickness)
-    if open_face in ("top", "bottom"):
-        idx = -1 if open_face == "top" else 0
-        face = part.faces().sort_by(Axis.Z)[idx]
-        return _b3d_offset(part, amount=-thickness, openings=face)
-    raise ValueError('shell: open_face must be "top", "bottom" or "none"')
+def shell_out(part: Part, thickness: float = 0.0, faces=None, direction: str = "inside",
+              open_face=None) -> Part:
+    """Fusion's Shell — `sketch.shell`, the tree's op, under the name the script
+    path (generate.py, blocks.EXPORTS) has always used: ONE grammar for both.
+    `faces` are the openings (names or picks), none = a closed hollow; the
+    legacy `open_face` still works. Imported lazily: sketch imports this module."""
+    import sketch                                     # local: avoids an import cycle
+    return sketch.shell(part, thickness, faces, direction, open_face)
 
 
 # ---------------------------------------------------------------------------

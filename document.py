@@ -68,7 +68,7 @@ MODIFIERS = {
     "linear_pattern": pattern.linear_pattern,  # … along one or two directions (P4)
     "fillet": blocks.fillet_edges,
     "chamfer": blocks.chamfer_edges,
-    "shell": blocks.shell_out,
+    "shell": sk.shell,                  # solid + picked faces -> the hollowed body (P4)
     "extrude": sk.extrude_sketch,       # sketch -> solid
     "extrude_face": sk.extrude_face,    # solid's picked face -> prism (boss/pocket)
     "revolve": sk.revolve_sketch,       # sketch -> solid

@@ -342,6 +342,18 @@ export function tool(spec) {
       begin();
       return;
     }
+    // a BODY's row in the tree, for a face tool whose faces are OPTIONAL
+    // (Shell: no face open = a closed hollow) — the tree is a selection surface
+    // (parity rule 2); the plan places the handles on the body itself
+    if (sel && sel.kind === 'feature' && spec.bodyRow && bods.some(b => b.id === sel.id)) {
+      st = session({ kind: 'face', center: null, normal: null, body: sel.id, point: null });
+      fill(id('Profile'), ['(the body)'], '(the body)');
+      el('Profile').disabled = true;
+      fill(id('Target'), bods.map(b => b.id), sel.id);
+      el('Op').value = 'new';
+      begin();
+      return;
+    }
     if (sel && sel.kind === 'curved') {
       say(`⚠ ${spec.name} needs a FLAT face — the selected surface is ` +
         `${sel.type} (curved). Flat faces (including tilted ones) ${lower} ` +

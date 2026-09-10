@@ -884,6 +884,9 @@ class ToolPlanReq(BaseModel):
     face_toggle: dict | None = None     #   a clicked FACE ({center, normal}): every edge of it, added / taken out
     feature_toggle: str | None = None   #   a TREE ROW: the edges of the faces that feature made, added / taken out
     face_point: list | None = None      # tool "hole": where the face was clicked (world) — the hole's centre
+    faces: list | None = None           # tool "shell": the openings as the last plan stored them; a
+                                        #   list (even []) IS the selection, face_center only opens
+    direction: str | None = None        #   "inside" / "outside" — which side the arrow points
     seed_id: str | None = None          # tools "polar_pattern" / "linear_pattern" / "mirror": the tree row to repeat
     own_id: str | None = None           #   the feature THIS session built: a replan is about it (P4 review)
     axis_pick: dict | None = None       #   circular: a face clicked while the panel is open — its axis

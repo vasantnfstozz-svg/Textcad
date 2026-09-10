@@ -70,7 +70,9 @@ OP_NOTES = {
     "fillet": "vertical = the 4 upright corner edges (round a box's corners); "
               "radius must be < half the adjacent wall thickness. `edges` may "
               "also be a list of picked edges (the Studio tool writes these).",
-    "shell": "Hollows to walls of `thickness`; open_face removes that face.",
+    "shell": "Hollows the body to walls of `thickness`; `faces` lists the flat faces "
+             "to remove by name ([\"top\"], or [] for a closed hollow); direction "
+             "inside keeps the outside where it is.",
     "revolve": "Spins the sketch about an axis IN its plane: \"v\" / \"u\" (the plane's "
                "own axes through the sketch origin — they ride the geometry), a world "
                "axis \"X\"/\"Y\"/\"Z\" lying in the plane, or a line in the sketch's own "
@@ -231,7 +233,8 @@ RULES AND CONVENTIONS:
   the mirrored COPY (fuse it yourself).
 - "fillet"/"chamfer" round or bevel edges ("all"/"top"/"bottom") — use small
   values (radius well under half the local thickness or they fail). "shell"
-  hollows a solid into walls (open_face "top" makes cups/containers).
+  hollows a solid into walls ("faces": ["top"] makes cups/containers; [] a
+  closed hollow) — the thickness must be well under half the body's size.
 - "linear_pattern" repeats a body in a straight line (count, dx, dy, dz) — or a
   FEATURE of a body with "seed" plus "direction" [x, y, z], "distance" and
   "distance_type" ("spacing" between copies, or "extent" they all fit in);

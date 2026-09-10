@@ -2048,6 +2048,122 @@ def hole(solid, face_center: list | None = None, face_normal: list | None = None
     return out
 
 
+# --------------------------------------------------------------------- shell ---
+# Fusion's Shell (LAUNCH-PLAN P4, specs/shell.md): the body becomes walls of one
+# thickness around a cavity, with the picked faces removed. probes/shell_probe.py
+# (2026-09-10) found in the kernel:
+#
+#     offset(openings=[faces])            -> exact volumes on every corpus body
+#     Kind.INTERSECTION                   -> sharp cavity corners (ARC rounds the OUTER
+#                                            corners of an outward shell)
+#     t = half the width, a face open     -> "succeeds" and returns the body UNCHANGED
+#     t past the far wall, a face open    -> an OPEN SHELL the kernel calls a success
+#     a closed hollow at t >= half        -> RuntimeError "offset Error"; t just under
+#                                            it a bare ValueError "Null TopoDS_Shape"
+#     a CURVED face as the opening        -> RuntimeError
+SHELL_DIRECTIONS = ("inside", "outside")
+_LEGACY_OPEN = {"top": "top", "bottom": "bottom", "none": None}
+
+
+def shell_refs(faces=None, open_face=None) -> list:
+    """A shell's openings in STORED form, normalised: the `faces` list as given
+    (one ref becomes a list of one), or the legacy `open_face` read as one
+    named face / none. A `faces` list beats `open_face`. Shared by the op and
+    the planner, so both read a stored feature the same way."""
+    if faces is None:
+        if open_face is None:
+            return []
+        key = str(open_face).strip().lower()
+        if key not in _LEGACY_OPEN:
+            raise ValueError(f'shell: open_face must be "top", "bottom" or "none" '
+                             f"(got {open_face!r}) — or give faces")
+        return [_LEGACY_OPEN[key]] if _LEGACY_OPEN[key] else []
+    if isinstance(faces, (str, dict)):
+        return [faces]
+    return list(faces)
+
+
+def opening_face(solid, ref):
+    """ONE stored opening -> the Face it names (a NAME, or a pick's centre +
+    normal resolved by geometry), flatness not yet judged."""
+    if isinstance(ref, str):
+        return named_face(solid, ref)
+    if isinstance(ref, dict) and ref.get("center") is not None:
+        return resolve_face(solid, ref["center"], ref.get("normal"))
+    raise ValueError(f'shell: an opening is a face name ("top", "+x", ...) or a '
+                     f"pick {{center, normal}} — got {ref!r}")
+
+
+def assert_flat_opening(face):
+    """The kernel cannot offset a solid with a CURVED opening (probed: a
+    cylinder's wall raises) — refused with the face's own type in the sentence."""
+    if face_plane(face) is None:
+        raise ValueError(f"shell: an opening must be a FLAT face — that face is "
+                         f"{face.geom_type.name} (curved); pick a flat face")
+    return face
+
+
+def shell_openings(solid, faces=None, open_face=None) -> list:
+    """The opening Faces a shell's stored params mean — resolved, flat,
+    de-duplicated (two picks can name one face)."""
+    from blocks import _shape_key            # local: blocks imports this module's resolver
+    out, seen = [], set()
+    for ref in shell_refs(faces, open_face):
+        f = assert_flat_opening(opening_face(solid, ref))
+        k = _shape_key(f)
+        if k not in seen:
+            seen.add(k)
+            out.append(f)
+    return out
+
+
+def shell(solid, thickness: float = 0.0, faces=None, direction: str = "inside",
+          open_face=None):
+    """Hollow `solid` into walls of `thickness` (Fusion's Shell). `faces` lists
+    the openings — each a face NAME ("top"/"bottom"/"+x"/… — the authoring
+    path) or a pick {center, normal} resolved by geometry at every rebuild;
+    none = a closed hollow body. `direction` "inside" grows the walls inward
+    (the outside stays), "outside" adds them around the body (the old surface
+    becomes the cavity). The legacy `open_face` ("top"/"bottom"/"none") is read
+    as one named face when `faces` is not given. Returns the hollowed body:
+    this op eats its input. Every failure is a sentence, and a result that is
+    unchanged or not watertight is refused — the kernel calls both a success
+    (probes/shell_probe.py §6)."""
+    t = float(thickness or 0.0)
+    if t <= 0:
+        raise ValueError(f"shell: thickness must be positive (got {t:g}) — drag the "
+                         f"arrow or type a wall thickness")
+    d = str(direction or "inside").strip().lower()
+    if d not in SHELL_DIRECTIONS:
+        raise ValueError(f'shell: direction must be "inside" or "outside" (got {direction!r})')
+    openings = shell_openings(solid, faces, open_face)
+    walls = f"walls of {t:g} mm"
+    try:
+        amount = -t if d == "inside" else t
+        if openings:
+            out = b3d.offset(solid, amount=amount, openings=openings, kind=b3d.Kind.INTERSECTION)
+        else:
+            # no opening: offset() returns the offset SOLID (the box, shrunk or
+            # grown — probed: 46464 = the 44 x 44 x 24 inner box, a "success"
+            # the direction check would have passed); the hollow is the difference
+            off = b3d.offset(solid, amount=amount, kind=b3d.Kind.INTERSECTION)
+            out = solid - off if d == "inside" else off - solid
+        v_in, v_out = solid.volume, out.volume
+    except Exception as e:      # OCP errors derive from Exception; build123d raises bare ValueErrors
+        raise ValueError(f"shell: {walls} do not fit this body — the kernel could not "
+                         f"offset its faces; use a thinner wall or open another face") from e
+    import inspector                                 # local: avoids an import cycle
+    # the walls alone are what comes back, so an OUTSIDE shell is smaller than
+    # the body too (28488 vs 75000 on the probe's box); only an inside one must be
+    if abs(v_out - v_in) <= _CUT_FLOOR_MM3 or (d == "inside" and v_out >= v_in):
+        raise ValueError(f"shell: nothing was hollowed — {walls} meet in the middle of "
+                         f"this body; use a thinner wall")
+    if v_out <= 0 or not inspector.closed_shell(out):
+        why = "empty result" if v_out <= 0 else "an open shell, not watertight"
+        raise ValueError(f"shell: {walls} leave a broken solid ({why}) — use a thinner wall")
+    return out
+
+
 def loft_sketches(sketches: list):
     """Blend between two or more sketches (usually on parallel, offset planes)
     to make a smoothly-transitioning solid."""
