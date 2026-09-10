@@ -203,12 +203,23 @@ def _pick_body(doc, body_id, what: str):
     document's result under the newest solid's id (a pick before any body was
     named) — or the sentence. ONE rule for every face-mode plan."""
     part = doc._parts.get(body_id) if body_id else None
-    if part is None and body_id and _feature(doc, body_id) is not None:
+    named = _feature(doc, body_id) if body_id else None
+    if part is None and named is not None:
         # A feature that EXISTS but did not build used to fall back to
         # result()'s GEOMETRY while keeping the requested id, so the face was
         # resolved on one body and recorded against another. An id that names
         # nothing at all still falls through, so an empty document keeps
         # answering "build a body first".
+        #
+        # TWO reasons for a missing part and they are not the same sentence:
+        # behind a parked rollback bar the body is perfectly healthy (measured
+        # - it builds at 1206.37 mm3 the moment the bar is released), so
+        # telling the user to FIX it is a lie. Same distinction
+        # _export_blockers' docstring already draws.
+        if named.status == "stale":
+            raise ValueError(
+                f"'{body_id}' is not built right now because the rollback bar "
+                f"is parked above it — move the bar back down to {what} it")
         raise ValueError(f"'{body_id}' has not built — fix that feature "
                          f"first, then {what} it")
     if part is None:

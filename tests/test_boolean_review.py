@@ -314,3 +314,64 @@ def test_rotate_is_measurably_about_the_world_origin():
 
 def test_n_solids_of_a_missing_part_is_zero():
     assert document.n_solids(None) == 0
+
+
+# --- the follow-up read of c9b2e92 (the fix pass reviewed) --------------------
+
+def test_loft_translates_a_bare_build123d_valueerror(monkeypatch):
+    """The first guard re-raised ValueError as "already a sentence", but
+    build123d raises its OWN bare ones with kernel wording — measured,
+    `loft_sketches([sketch, Part()])` gives ValueError('More than one wire is
+    required'). Nothing but our sentence may leave `_loft`."""
+    def boom(_parts):
+        raise ValueError("More than one wire is required")
+    monkeypatch.setattr(document.sk, "loft_sketches", boom)
+    with pytest.raises(ValueError) as e:
+        document._loft(["a", "b"])
+    assert "wire" not in str(e.value)
+    assert "loft" in str(e.value).lower()
+
+
+def test_loft_survives_a_volume_that_raises(monkeypatch):
+    """`getattr(out, "volume", 0)` does NOT swallow an exception from the
+    property — the default only covers AttributeError (measured). So a
+    degenerate result escaped as raw kernel text."""
+    class Degenerate:
+        @property
+        def volume(self):
+            raise RuntimeError("StdFail_NotDone: BRep_API: command not done")
+
+    monkeypatch.setattr(document.sk, "loft_sketches", lambda _p: Degenerate())
+    with pytest.raises(ValueError) as e:
+        document._loft(["a", "b"])
+    msg = str(e.value)
+    assert not any(w in msg for w in KERNEL_WORDS), msg
+    assert "loft" in msg.lower()
+
+
+def test_a_body_behind_the_rollback_bar_is_not_called_broken():
+    """The new refusal said "fix that feature first" for a body that builds at
+    1206.37 mm3 the moment the bar is released. The editors park the bar, so
+    this sentence is one an ordinary edit could produce."""
+    d = Document(name="rb")
+    d.add("base", "plate", {"width": 40, "depth": 40, "thickness": 10})
+    d.add("boss", "disc", {"radius": 8, "thickness": 6})
+    d.rebuild()
+    assert d.get("boss").volume == pytest.approx(1206.37, abs=0.01)
+    d.rollback = "base"
+    d._mark_stale()
+    d.rebuild()
+    with pytest.raises(ValueError) as e:
+        toolplan._pick_body(d, "boss", "drill")
+    msg = str(e.value)
+    assert "rollback bar" in msg
+    assert "fix that feature" not in msg
+
+
+def test_a_body_that_really_failed_is_still_called_broken():
+    d = Document(name="rb2")
+    d.add("good", "plate", {"width": 20, "depth": 20, "thickness": 10})
+    d.add("bad", "disc", {"radius": -5, "thickness": 5})
+    d.rebuild()
+    with pytest.raises(ValueError, match="fix that feature"):
+        toolplan._pick_body(d, "bad", "drill")

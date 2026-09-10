@@ -17,6 +17,8 @@ run it against the commit before and §3 kills the process.
 §7  pattern piece noise   — 24 rows in 13 library designs called broken
 §8  the stranding heal    — ticked `through` on a SHARED tool, and the other
                             cut silently lost 3600 mm3 more than it asks for
+§9  the FOLLOW-UP read of c9b2e92 — two holes in §3's own guard, and a body
+                            behind the rollback bar called broken
 """
 import os
 import sys
@@ -180,3 +182,43 @@ print(f"  tool shared     : through={d.get('band').params.get('through', 'ABSENT
 print("  -> before the fix: through=True and slice2 was 12600.0, i.e. 3600 mm3")
 print("     more removed than its own parameters ask for (16200.0), unasked")
 print("     and unmentioned. designs/cam-cover-plaque shares a tool this way.")
+
+# ---------------------------------------------------------------------------
+head(9, "the FOLLOW-UP read of c9b2e92: two holes in the loft guard")
+print("  getattr(obj, 'volume', 0) does NOT swallow a raising property —")
+
+
+class _Boom:
+    @property
+    def volume(self):
+        raise RuntimeError("kernel says no")
+
+
+try:
+    getattr(_Boom(), "volume", 0)
+    print("     ...swallowed (so the first guard was fine)")
+except Exception as e:                                           # noqa: BLE001
+    print(f"     ...it PROPAGATES: {type(e).__name__}. inspector._try does not:",
+          inspector._try(lambda: _Boom().volume))
+print("  and build123d raises its OWN bare ValueError with kernel wording:")
+try:
+    sk.loft_sketches([sk.make_sketch(entities=CIRC, plane="XY", offset=0.0),
+                      b3d.Part()])
+except Exception as e:                                           # noqa: BLE001
+    print(f"     {type(e).__name__}: {e}")
+print("  -> `except ValueError: raise` let that out as 'already a sentence'.")
+print("     _loft now translates EVERYTHING and reads the volume through _try.")
+print()
+print("  and a body behind a parked rollback bar was called broken:")
+d = Document(name="rb")
+d.add("base", "plate", {"width": 40, "depth": 40, "thickness": 10})
+d.add("boss", "disc", {"radius": 8, "thickness": 6})
+d.rebuild()
+print(f"     boss builds at {d.get('boss').volume} mm3 with no bar")
+d.rollback = "base"
+d._mark_stale()
+d.rebuild()
+try:
+    toolplan._pick_body(d, "boss", "drill")
+except ValueError as e:
+    print(f"     with the bar parked: {e}")
