@@ -927,6 +927,7 @@ assemblies, the user's personal project.
 | P2 | `blocks.py:369` calls `is_valid()` as a method (property in build123d 0.11) inside a bare except — the as-is Solid fast path is likely dead. | reader 2026-09-02 |
 | P2 | Right-edge tool panels cover the chat column where failures are reported. Dock tool panels in the viewport pane. | BACKLOG |
 | P2 | Compressor sample rebuild ~1–2 min. | BACKLOG |
+| P3 | **Measure cannot measure an imported MESH body at all.** An STL is tagged with one mesh pseudo-face (id -1) because 21552 triangles are not 21552 pickable faces, and mesh mode emits no outlines for it either, so there is nothing to click. Since 3ce97a3 the tool says so honestly instead of "face -1 is not on this body any more — click it again"; what it still cannot do is answer the question someone importing an STL actually has, which is how big the thing is. Smallest useful version: measuring a mesh BODY reports its bounding box, surface area and volume, with two mesh picks refused as before. | section 6 review 2026-09-10 |
 | P3 | `text` sketch entity; Measure P3 pinned dimensions / P4 named parameters; Fusion nav preset; nav legend on the design tab; axes triad; Fit = zoom-to-fit; Extrude v2 (Start offset, To object); vendor three.js; LICENSE; units label; CI. | MANUAL-DESIGN, MEASURE-PLAN, BACKLOG |
 | doc | README documents the 2026-07 prototype and a long-fixed API blocker; `sketch_on_face` docstring still states the pre-v2 sign rule; MEASURE-PLAN header stops at round 1; measure.js header says P1 is future. | readers 2026-09-02 |
 

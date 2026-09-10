@@ -100,7 +100,7 @@ Then two closing sections:
 | 3 | Version tree and session persistence | high | **reviewed and fixed f63ba5a** (3 findings, all 3 fixed, 9 tests): a P0 (a save could overwrite ANOTHER design's file and graft itself onto its version tree), a P1 (after a restart a tab with unsaved edits could read clean, so closing it discarded them silently) and a P2 (the only recovery for a lost index named a Python method - it is a button now). A P0 was fixed, so **round two re-reviewed the FIX COMMIT: fafe983**, 4 findings, **all 4 fixed**, 8 new tests - the same P0 was still reachable through TWO other doors (a second tab taking over an open design's file; a slug whose `.history/` outlived its deleted `.tcad.json`), and the new repair button could overwrite a NEWER build's index. **Section 3 is done unless a third read finds something** |
 | 4 | Booleans and transforms | high | **reviewed and fixed c9b2e92**, ONE reviewer: 9 findings, **all 9 fixed**, 26 new tests, 50/50 library designs rebuild with ZERO volume drift. The one that mattered most: **`loft` of a sketch AND a solid SEGFAULTS OpenCASCADE** (exit 139, no `except` can catch it) and the Add Feature dialog offers every feature as a checkbox — so combiners now get a KIND gate BEFORE the kernel, which also closes the silent twin (an `intersect` of a body and a sketch ate the body and left the design with no bodies, all rows green). Plus: no bodies + a spec reported "meets spec"; the Join/Cut default target followed FACE-REFERENCE ops (a New-body boss became the panel's current state, parity rule 6); the stranding heal ticked `through` on a tool ANOTHER cut shares (that cut lost 3600 mm3 unasked); a cut whose tool misses reported success silently; a pattern's copy form called "a part that fell apart" (24 rows in 13 designs). A P0-class finding was fixed, so **round two re-reviewed the FIX COMMIT: 33b2f49**, 2 findings, **both fixed**, 4 tests — two holes in the guard round one had just built (`getattr` does not swallow a raising property; build123d raises its OWN bare `ValueError` with kernel wording), plus the new refusal calling a body behind the rollback bar broken. The brief's four other named risks CLEARED by measurement, `_live_source` included (52 files, 15 struck features, zero mismatches). **Section 4 is done unless a third read finds something** |
 | 5 | Primitives and shape editing | high | **reviewed and fixed e35450d**, ONE reviewer: 8 findings, **all 8 fixed**, 0 rejected, 55 new tests, all 50 saved designs rebuild with no failed feature. The one that mattered: **`polygon_plate` and `hex_plate` span Z 0..thickness, and the AI's positioning rule listed them with disc and plate as CENTERED** — so every `move` it computed for a hex body was half a thickness out (designs/planetary-assembly: four bolt heads seated 1.4 mm high, 0.5 mm of shank overlap where 1.9 mm was intended). The PROMPT was corrected, not the solid: two saved designs are built on the geometry as it stands. Plus: a degenerate dimension put raw kernel text in the feature row (`Standard_DomainError('')` for a zero thickness — the same empty diagnosis for all three of a plate's dimensions; twelve lines of pybind11 constructor overloads for the string "8mm"); `with_center_hole`/`with_bolt_circle` reported success after drilling NOTHING (radius 0, or a PCD that puts the holes off the part — volume unchanged, row green), and a PCD of 0 silently drilled one hole instead of six; the tree painted a red "spec FAIL" whenever the rollback bar was parked, on **42 of the 50 designs** that carry a spec; the placement popup's one shared debounce timer discarded a dimension typed just before touching x/y/z. A P0-class finding was fixed, so **round two re-reviewed the FIX COMMIT: 2d2e8a9**, 2 findings, **both fixed**, 4 tests — the fix pass's own `cone` guard had taken away a legitimate shape (a funnel standing POINT-DOWN: `cone(0, 10, h)` builds at 2094.40 mm3, exactly the flipped cone's volume), and `spec_checked` defaulted True so a never-rebuilt document claimed a green "spec PASS". The brief's other four named risks CLEARED by measurement: `_drilled`'s 1e-6 floor has six orders of magnitude of headroom (a 0.05 mm hole in a 100-million-mm3 plate measures to 8 significant figures), `numeric_params` misses no numeric parameter (pattern's unannotated `count` already refuses plainly in `pattern.py`), `plain_cause`'s new collapse cannot swallow a ValueError because that branch returns first, and `sides=6.0` is a non-event (no file holds one). **Section 5 is done unless a third read finds something** |
-| 6 | Measure and drive | high | TODO |
+| 6 | Measure and drive | high | **reviewed and fixed 3ce97a3**, ONE reviewer: 8 findings, **all 8 fixed**, 0 rejected, 10 new tests. The P0 was silent wrong geometry through a door nobody had opened: over 400 faces the mesh switches to a cheaper path that handed the viewport one edge id PER ADJACENT FACE in face order, while `measure.resolve` indexes `part.edges()` — so on **12 of the 50 saved designs** every edge click measured a DIFFERENT edge and never said so (esp32-remote: 7176 ids for 3588 edges, 6517 wrong), and on isogrid-panel a straight 210 mm edge read ⌀4.50 mm AND opened an edit box driving another hole's circle. Plus: the verification re-read the face INDEX the pick was made on, so a rebuild that renumbered the faces REVERTED a correct edit (x-frame's ⌀8 pad hole really became 8.5 and the tool said it had not — 7 of 81 editable diameters, and the move path too); an imported STL answered "face -1 is not on this body any more — click it again" for ever; a tilted face's extents came from the WORLD bbox (a 45° chamfer read 6.00 where it is 8.49, and the pick panel said 8.49); every dimension typed to more than 3 decimals was written perfectly and then reverted (5/16" = 7.9375); a bore's "centre" was an arbitrary point along its axis. The revert safety net was ACCIDENTAL (it fired on renumbering) and is now explicit: a dimension that stops a feature building is put back. **A P0 was fixed, so round two re-reads 3ce97a3 before section 7** |
 | 7 | Extrude as a whole module (with loft and sweep) | medium | TODO |
 | 8 | Import STL and STEP | medium | TODO |
 | 9 | Trace image | medium | TODO - may share a chat with 8 |
@@ -1337,3 +1337,52 @@ polygon/hex plates should be re-centred to match the other five, they said the
 hex nut is not even needed - "just delete it or leave it". The geometry stays
 as it is, the LAUNCH-PLAN section 10 row records the decision, and it is not
 scheduled.
+
+### Section 6 - Measure and drive (reviewed and fixed 2026-09-10, commit 3ce97a3)
+
+8 findings, every one reproduced by measurement first
+(`probes/measure_review_probe.py`). **8 fixed, 0 rejected**, 10 new tests,
+fast tier 1387 green, all 48 buildable designs clean.
+
+| # | P | What it was | Fix |
+|---|---|---|---|
+| F1 | P0 | over 400 faces, `_tagged_mesh` handed out one edge id PER ADJACENT FACE in face order while `measure.resolve` indexes `part.edges()`. Twelve of the 50 saved designs are over 400 faces: esp32-remote advertised 7176 ids for 3588 edges, 6517 resolving elsewhere. On isogrid-panel a straight 210 mm edge read ⌀4.50 mm AND opened an edit box driving `corner_hole_sketch`'s circle, so typing there resized a hole the user never clicked | mesh mode filters `part.edges()` down to the rich faces' edges under their TRUE index; the once-per-face duplicates go with it, and meshing got FASTER (esp32-remote 3828 → 2725 ms) |
+| F2 | P1 | the verification re-read the face INDEX the pick was made on, and a rebuild renumbers those, so a CORRECT edit was reverted. x-frame: a ⌀8 pad hole really became 8.5 (volume 116961.184 → 116896.388) and the tool said "the model came out at 8 mm — nothing was changed". 7 of 81 editable diameters across eight designs; the move path too (the wall had moved by exactly the 1.0 mm asked for, at a new index) | `measure.remeasure()` re-finds each pick by geometry — a round face by its AXIS LINE, a flat face by its NORMAL and its position ACROSS it (both a move and a width edit slide a wall along its own normal and nowhere else), unique-or-nothing, radius breaking the bore/counterbore tie. 81 of 81 land; `picks` hands the panel the relocated ids |
+| F3 | P1 | every face click on an imported STL answered "face -1 is not on this body any more — click it again". A mesh body carries ONE pseudo-face, id -1, so clicking again gives -1 again: a loop with no exit, and a false reason | `resolve` names what the body is. Measuring a mesh body's surface is still not possible — LAUNCH-PLAN §10 P3 |
+| F4 | P2 | a tilted face's `extents` came from the WORLD bounding box, whose third dimension is only ~0 when the face is axis aligned. A 6 mm 45° chamfer read 60.00 × 6.00; it is 8.49 across, which is what the PICK panel said for the same face | projected into the face's own frame with `face_plane().to_local_coords()`, as `_tagged_mesh` already did |
+| F5 | P2 | the readout is rounded to 3 dp and the verification compared it against the RAW request, so every dimension with more than three decimals was written perfectly and then reverted: 5/16" = 7.9375, 7/16" = 11.1125, both refused | the request is rounded the same way before comparing |
+| F6 | P3 | a bore's "centre" row was `axis_of_rotation.position`, an arbitrary point ALONG the axis — the mouth of a 5 mm pocket (z=6), not its middle (z=3.5). The pick panel calls the same number `axis_at` | pinned to the face's own middle |
+| F7 | P3 | `sendProbe` checked `probeOn`/`A`/`B` only BEFORE its await, so a reply landing after Esc repainted a dimension line into a closed tool | re-checked after the await |
+| F8 | P3 | `openMeasure` read `S.pickedFace`/`S.pickedCurved` but not `S.pickedEdge`, so clicking a bore's rim and pressing Measure opened an empty panel asking for the click just made (parity rule 2) | an edge pick becomes A too |
+
+**The revert safety net is now EXPLICIT rather than accidental.** It used to
+fire only because a wrecked part also renumbered the faces — which `remeasure`
+sees through — so `measure_set` asks the real question: did a feature that
+built a moment ago stop building? A ⌀8 hole grown to ⌀38 leaves its 2 mm rim
+fillet nowhere to sit, and that reverts with "it would stop fl from building".
+`test_a_move_that_wrecks_the_part_reverts_itself` was REVISED for the same
+reason: its 5.0 mm case lands the asked-for step exactly (the cavity slides to
+y=-45 and the step really is 5.00 mm), so the old revert message was a lie;
+the wreck is now asserted at 120 mm, where the cavity leaves the plate.
+
+**Checked and found sound, so not re-checked:** `_plane_cache`/`_plane_sig`
+(the signature covers every `sketch_on_face` argument that moves a plane, and
+the base-Part identity check makes a rebuild a guaranteed miss); the probe's
+caliper maths (wall↔pillar 24.000 at the facing minimum, 24.804 at t=3 against
+the closed form 24.803847, clamped at 30.0 past the flank); units and frames
+end to end (body meshes are added untransformed); `_to_param` against
+`ENTITY_DIAMETER` (both mapped keys really store radii); `plan_move`'s sign
+rule (26 of 27 driven moves across 7 designs landed, the miss being F2); and
+"never raises" — 1294 single measurements plus 1320 random pairs across 11
+designs, with `plan_set` on every one that offered an edit, zero raises.
+
+**Line delta:** +782 / -37 (code +308 / -37, tests +295, probe +179).
+
+**A P0 was fixed, so `REVIEW-BRIEF.md` is PENDING on `3ce97a3`** and the next
+`code review` re-reads this fix pass before taking section 7.
+
+**Note for future probes:** `/api/open/<design>` PUSHES a version into the
+real `.history/` index. Load a design read-only with `Document.from_data`
+instead. One `opened gear-case` version was created and reverted during this
+review; its orphaned `designs/gear-case.history/v41.json.gz` is unreferenced
+and can be deleted by the user.
