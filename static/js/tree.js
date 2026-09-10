@@ -142,9 +142,12 @@ export function renderDoc(doc) {
     doc.features.length ? doc.features.length + ' features' : '';
   document.getElementById('sFeatures').textContent =
     doc.features.length + ' features';
-  const last = doc.features.filter(f => !f.suppressed).at(-1);
+  // the RESULT body's volume, as the document works it out — not "the last
+  // non-suppressed row", which is a sketch on a design that ends with one
+  // (the readout went blank) and a stray tool body on one that ends with
+  // that (it reported the tool's volume as the part's). R1.
   document.getElementById('sVolume').textContent =
-    last && last.volume != null ? 'volume ' + fmtVol(last.volume) : '';
+    doc.result_volume != null ? 'volume ' + fmtVol(doc.result_volume) : '';
   document.getElementById('sRebuild').textContent =
     doc.rebuild_ms != null ? 'rebuild ' + doc.rebuild_ms + ' ms' : '';
 

@@ -649,6 +649,7 @@ def _refused(e, message: str | None = None,
 def _doc_json() -> dict:
     e = _entry()
     doc = e["doc"]
+    rf = doc._result_feature()
     return {
         "name": doc.name,
         "ok": e["ok"],
@@ -659,8 +660,14 @@ def _doc_json() -> dict:
         "rollback": doc.rollback,
         "geom_version": getattr(doc, "_geom_version", ""),
         # lumps in the displayed result: 2 means the design is not one part
-        "result_pieces": (doc._result_feature().pieces
-                          if doc._result_feature() else None),
+        "result_pieces": rf.pieces if rf else None,
+        # the status bar's volume. The tree used to pick "the last
+        # non-suppressed feature" in JS, which on a design ending in a sketch
+        # (designs/spiderman-logo) has no volume at all, and where the last
+        # row is a separate tool body reported THAT body's volume as the
+        # design's. The document already knows which feature is the result
+        # (R1: never re-derive a backend fact in the frontend).
+        "result_volume": rf.volume if rf else None,
         # separate BODIES on screen (Fusion's Bodies folder), counted properly
         # instead of inferred from how many warnings happen to exist
         "bodies": len(doc.leaf_solid_ids()),
@@ -1606,8 +1613,20 @@ def get_sketch_mesh(feature_id: str):
 @app.get("/api/feature-mesh/{feature_id}.stl")
 def get_feature_mesh(feature_id: str):
     """Mesh of ONE feature's own solid — lets the UI highlight in 3D what a
-    selected tree node actually contributes."""
-    part = _doc()._parts.get(feature_id)
+    selected tree node actually contributes.
+
+    A STRUCK-OUT feature contributes nothing, and its slot in `_parts` holds
+    its first input's solid (rebuild resolves a suppressed node to its
+    pass-through). Serving that made clicking a struck fillet or cut light up
+    the whole upstream body as if it were the feature's own — the 2026-08-26
+    "the whole body is being selected" complaint, back through the struck
+    rows (section 2 review, 2026-09-10). 404 is what viewport.js already
+    expects here for a feature that is not built."""
+    doc = _doc()
+    f = next((x for x in doc.features if x.id == feature_id), None)
+    if f is not None and f.suppressed:
+        return Response(status_code=404)
+    part = doc._parts.get(feature_id)
     if part is None:
         return Response(status_code=404)
     path = ROOT / "_studio_feature.stl"

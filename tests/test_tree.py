@@ -6,7 +6,7 @@ import assembly
 import author
 import blocks
 import inspector
-from document import Document
+from document import Document, op_params
 
 
 def flange_doc():
@@ -262,3 +262,34 @@ def test_assembly_localizes_builder_crash():
     bad = [c for c in rep.components if c.name == "bad"][0]
     assert not bad.ok and "crashed" in bad.problems[0]
     assert [c for c in rep.components if c.name == "good"][0].ok
+
+
+# ---------------------------------------------------------------------------
+# Section 2 code review, 2026-09-10. Proposed as a finding: a design file
+# naming an op this build does not know refuses to OPEN, while `op_params` is
+# written to tolerate exactly that ("a design written by a newer one ...
+# loading such a file must still work").
+#
+# REJECTED, and pinned here so it is not re-opened: refusing IS the settled
+# answer. A version restore of such a file says "cannot open it -- it is
+# still in the history" (test_version_api.py) and a restored session tab
+# holding one is dropped while every other tab survives
+# (test_session_restore.py). `op_params` tolerating an unknown op is about
+# walking the CATALOGUE without raising, not about loading.
+# ---------------------------------------------------------------------------
+
+FUTURE_FILE = {"name": "future", "spec": {}, "features": [
+    {"id": "base", "op": "plate",
+     "params": {"width": 10, "depth": 10, "thickness": 2}, "inputs": [],
+     "suppressed": False},
+    {"id": "newthing", "op": "emboss", "params": {"depth": 1},
+     "inputs": ["base"], "suppressed": False}]}
+
+
+def test_an_unknown_op_is_refused_at_every_door():
+    with pytest.raises(ValueError, match="unknown op"):
+        Document.from_data(FUTURE_FILE)          # loading
+    doc = Document(name="x")
+    with pytest.raises(ValueError, match="unknown op"):
+        doc.add("x1", "emboss", {})              # authoring
+    assert op_params("emboss") == ()             # ...but the catalogue copes

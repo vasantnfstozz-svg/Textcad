@@ -14,7 +14,7 @@ It must simply never be silent.
 from fastapi.testclient import TestClient
 
 import studio
-from document import Document
+from document import Document, n_solids
 
 
 def boss_doc(base=10.0):
@@ -121,3 +121,55 @@ def test_body_count_is_counted_not_guessed():
     j = TestClient(studio.app).get("/api/doc").json()
     assert j["bodies"] == 2                      # two real, separate bodies
     assert j["result_pieces"] == 1               # each of which is one lump
+
+
+# ---------------------------------------------------------------------------
+# Section 2 code review, 2026-09-10: a STRUCK feature kept its last piece
+# count. Two consequences, both measured:
+#   * its row went on saying "pieces 2" about geometry that is gone (the same
+#     class the fourth sketcher review fixed for `notes` and `volume`);
+#   * _check_pieces took that stale count as the BASELINE for the feature
+#     below it, so a part genuinely in two pieces was reported by nothing at
+#     all (measured n_solids(result) == 2 with doc.warnings == []).
+# ---------------------------------------------------------------------------
+
+def _two_severing_cuts():
+    """A bar cut clean through in two places — each cut adds a piece."""
+    d = Document(name="t-two-severs")
+    d.add("base", "plate", {"width": 60, "depth": 10, "thickness": 5})
+    d.add("sk1", "sketch", {"plane": "XY", "offset": -3, "entities": [
+        {"kind": "rectangle", "x": -15, "y": 0, "w": 4, "h": 40}]})
+    d.add("tool1", "extrude", {"amount": 20, "through": False}, inputs=["sk1"])
+    d.add("cut1", "cut", {}, inputs=["base", "tool1"])
+    d.add("sk2", "sketch", {"plane": "XY", "offset": -3, "entities": [
+        {"kind": "rectangle", "x": 15, "y": 0, "w": 4, "h": 40}]})
+    d.add("tool2", "extrude", {"amount": 20, "through": False}, inputs=["sk2"])
+    d.add("cut2", "cut", {}, inputs=["cut1", "tool2"])
+    return d
+
+
+def test_a_struck_feature_reports_no_piece_count():
+    """Its geometry is not in the model, so it has nothing to say about it."""
+    d = _two_severing_cuts()
+    assert d.rebuild()
+    assert d.get("cut1").pieces == 2
+    d.strike("cut1")
+    assert d.rebuild()
+    assert d.get("cut1").pieces is None, \
+        "a struck-out row still claims the part is in 2 lumps"
+    assert d.get("cut1").volume is None and d.get("cut1").notes == []
+
+
+def test_a_struck_cut_does_not_silence_the_piece_warning_below_it():
+    """THE measured bug: strike the first sever and the second one's warning
+    disappeared, because the struck row's stale count was its baseline."""
+    d = _two_severing_cuts()
+    assert d.rebuild()
+    d.strike("cut1")
+    assert d.rebuild()
+    assert n_solids(d.result()) == 2, "the bar should still be cut in two"
+    note = " ".join(d.warnings)
+    assert "cut2" in note and "2 separate pieces" in note, \
+        f"the part is in two pieces and nothing said so: {d.warnings!r}"
+    assert "its input was 1" in note, \
+        "the baseline came from the struck row, not from what cut2 was built on"

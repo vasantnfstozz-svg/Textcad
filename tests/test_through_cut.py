@@ -325,3 +325,59 @@ def test_an_already_through_tool_is_not_re_healed():
     d.rebuild()
     assert d._result_feature().pieces == 1
     assert not any("Extended" in w for w in d.warnings), d.warnings
+
+
+# ---------------------------------------------------------------------------
+# Section 2 code review, 2026-09-10: a cut that legitimately severs the part
+# was re-probed on EVERY rebuild. The probe is a full extrude plus a boolean,
+# its answer is fixed by the geometry, and for an intended sever it can never
+# pass -- yet the only thing that skipped it was a `through` key the tool did
+# not have (204 such cut tools across 26 of the 50 designs in designs/).
+# Measured on a four-feature design where every feature is a cache hit:
+# 13.0 ms per rebuild against 0.1 ms once the key is present.
+# ---------------------------------------------------------------------------
+
+def _intended_sever():
+    d = Document(name="sever-probe")
+    d.add("bar", "plate", {"width": 100, "depth": 20, "thickness": 10})
+    d.add("slot_sk", "sketch", {"plane": "XY", "offset": -10, "entities": [
+        {"kind": "rectangle", "w": 6, "h": 40}]})
+    d.add("slot", "extrude", {"amount": 20}, inputs=["slot_sk"])
+    d.add("out", "cut", {}, inputs=["bar", "slot"])
+    return d
+
+
+def test_a_sever_that_cannot_be_healed_is_probed_only_once():
+    import sketch as sk
+    d = _intended_sever()
+    d.rebuild()                            # the one probe it is allowed
+    assert d._result_feature().pieces == 2
+    assert d.get("slot").params.get("through") is None
+
+    calls = []
+    real = sk.extrude_sketch               # only the healer calls it by name
+    sk.extrude_sketch = lambda *a, **k: (calls.append(1), real(*a, **k))[1]
+    try:
+        d.rebuild()
+        d.rebuild()
+    finally:
+        sk.extrude_sketch = real
+    assert calls == [], \
+        f"the heal probe re-ran {len(calls)} times on an unchanged design"
+    assert d._result_feature().pieces == 2, "the sever must still be reported"
+
+
+def test_changing_the_cut_asks_the_healer_again():
+    """The memo rides the cut's content signature, so a real edit re-probes."""
+    import sketch as sk
+    d = _intended_sever()
+    d.rebuild()
+    d.edit("slot", "amount", 21)
+    calls = []
+    real = sk.extrude_sketch
+    sk.extrude_sketch = lambda *a, **k: (calls.append(1), real(*a, **k))[1]
+    try:
+        d.rebuild()
+    finally:
+        sk.extrude_sketch = real
+    assert calls, "an edited cut must be offered to the healer again"

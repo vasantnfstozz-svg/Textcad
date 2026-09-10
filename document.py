@@ -336,6 +336,9 @@ class Document:
     # describes the isolated build state again, not the file).
     exported_bodies: int = field(default=0, repr=False)
     _valid_cache: dict = field(default_factory=dict, repr=False)   # sig -> is_valid
+    # (cut signature, tool id) pairs whose through-all probe has already been
+    # tried and did not help — see _heal_stranding_cuts
+    _heal_tried: dict = field(default_factory=dict, repr=False)
 
     # -- authoring ----------------------------------------------------------
     def add(self, id: str, op: str, params: dict | None = None,
@@ -852,7 +855,12 @@ class Document:
                 # box stated a fact about geometry that is NOT in the model -
                 # the user switched the sketch off and was still told what one
                 # of its entities does (fourth code review, 2026-09-09).
-                f.notes = []
+                # `pieces` was the same fact by another name and was missed
+                # then: the struck row went on saying "pieces 2", and
+                # `_check_pieces` took that stale count as the BASELINE for
+                # the feature below it, so a part measurably in two pieces was
+                # reported by nothing at all (section 2 review, 2026-09-10).
+                f.notes, f.pieces = [], None
                 if f.inputs:
                     self._parts[f.id] = self._parts.get(f.inputs[0])
                 continue
@@ -1138,6 +1146,17 @@ class Document:
                 if (t is None or t.op != "extrude" or t.suppressed
                         or "through" in t.params):
                     continue
+                # A probe is a full extrude PLUS a boolean, and its answer is
+                # a pure function of the geometry it asks about. A cut that
+                # was MEANT to sever never passes the test below, and nothing
+                # writes `through` for it, so the probe ran again on every
+                # single rebuild — 13.0 ms against 0.1 ms on a four-feature
+                # design where every other feature is a cache hit (section 2
+                # review, 2026-09-10). The memo rides the cut's own content
+                # signature, so any real change upstream asks again.
+                memo = (self._sigs.get(f.id) or "", tid)
+                if memo in self._heal_tried:
+                    continue
                 try:
                     probe = sk.extrude_sketch(
                         **{**self._clean(t.params),
@@ -1148,6 +1167,7 @@ class Document:
                         trial = trial - (probe if other == tid
                                          else self._parts.get(other))
                 except Exception:
+                    self._remember_heal_failed(memo)
                     continue
                 # The piece COUNT alone is not proof. Since the offset
                 # method (2026-08-27) cuts run DOWNWARD from a face, so
@@ -1159,6 +1179,7 @@ class Document:
                 # volume minus everything that is not the main body.
                 cur = self._parts.get(f.id)
                 if cur is None:
+                    self._remember_heal_failed(memo)
                     continue
                 lumps = sorted((sv.volume for sv in cur.solids()), reverse=True)
                 stranded = sum(lumps[1:])
@@ -1166,9 +1187,18 @@ class Document:
                 if n_solids(trial) == base_pieces and                         trial.volume >= want - max(1e-6, 1e-9 * want):
                     t.params["through"] = True     # the design is now correct,
                     fixed.append(tid)              # not merely reported on
+                else:
+                    self._remember_heal_failed(memo)
         if fixed:
             self._mark_stale()
         return fixed
+
+    def _remember_heal_failed(self, memo: tuple) -> None:
+        """This through-all probe has been tried on this exact geometry and
+        did not help, so it never needs running again for it."""
+        self._heal_tried[memo] = True
+        while len(self._heal_tried) > CACHE_MAX:
+            self._heal_tried.pop(next(iter(self._heal_tried)))   # oldest out
 
     def _check_pieces(self) -> list:
         """Name the feature that broke the part into pieces.
@@ -1180,6 +1210,20 @@ class Document:
         never an error, because "two pieces" is sometimes exactly what the user
         wants. It just must not be silent."""
         notes = []
+        by_id = {x.id: x for x in self.features}
+
+        def built_from(dep: str):
+            """The feature whose solid `dep` actually hands downstream: a
+            struck node is a pass-through to its first input, and reading its
+            own (now cleared) count would take the baseline from the wrong
+            body -- or, before `pieces` was cleared, from a stale one."""
+            seen = set()
+            while (dep in by_id and by_id[dep].suppressed
+                   and by_id[dep].inputs and dep not in seen):
+                seen.add(dep)
+                dep = by_id[dep].inputs[0]
+            return by_id.get(dep)
+
         for f in self.features:
             if f.suppressed or f.pieces is None or f.pieces <= 1:
                 continue
@@ -1194,7 +1238,7 @@ class Document:
                 continue
             base = None
             for dep in f.inputs:                # the body it was built from
-                d = next((x for x in self.features if x.id == dep), None)
+                d = built_from(dep)
                 if d is not None and d.pieces:
                     base = d.pieces
                     break
@@ -1419,6 +1463,14 @@ class Document:
     @classmethod
     def from_data(cls, data: dict) -> "Document":
         doc = cls(name=data["name"], spec=data.get("spec", {}))
+        # An op this build does not know is refused here, and that is the
+        # SETTLED answer, not an oversight: a version restore says "cannot
+        # open it -- it is still in the history" and a restored session tab
+        # holding one is dropped while the others live
+        # (test_version_api.py, test_session_restore.py). `op_params`
+        # tolerating an unknown op is about walking the CATALOGUE without
+        # raising, not a promise that the file opens. Proposed as a finding
+        # in the section 2 review, 2026-09-10, and rejected on this evidence.
         for f in data["features"]:
             doc.add(f["id"], f["op"], f.get("params"), f.get("inputs"))
             doc.features[-1].suppressed = f.get("suppressed", False)

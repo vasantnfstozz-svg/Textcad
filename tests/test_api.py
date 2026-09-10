@@ -297,3 +297,23 @@ def test_loading_a_design_never_refuses_an_unknown_param():
         {"id": "d", "op": "disc",
          "params": {"radius": 10, "thickness": 3, "legacy_key": 1}, "inputs": []}]})
     assert doc.get("d").params["legacy_key"] == 1
+
+
+def test_result_volume_comes_from_the_document_not_the_last_row(client):
+    """The status bar used to pick "the last non-suppressed feature" in JS.
+    On designs/spiderman-logo that is a SKETCH, so the volume readout went
+    blank while the part had one; where the last row is a separate tool body
+    it reported that body's volume as the design's (section 2 review,
+    2026-09-10, launch rule R1: never re-derive a backend fact in JS)."""
+    d = client.get("/api/doc").json()
+    assert d["result_volume"] and d["result_volume"] > 0
+    solid_volume = d["result_volume"]
+
+    d = client.post("/api/feature/add", json={
+        "id": "sketch9", "op": "sketch",
+        "params": {"entities": [{"kind": "circle", "r": 3}]},
+        "inputs": []}).json()
+    assert d["features"][-1]["op"] == "sketch"
+    assert d["features"][-1]["volume"] is None, "the last row has no volume"
+    assert d["result_volume"] == solid_volume, \
+        "a trailing sketch emptied the status bar's volume"

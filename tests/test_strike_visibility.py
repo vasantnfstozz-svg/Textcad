@@ -80,3 +80,50 @@ def test_striking_an_extrude_frees_its_sketch():
     assert [s["id"] for s in studio._sketches_json(doc)] == ["s1"], \
         "striking the extrude must put its sketch back in the viewport"
     assert doc.leaf_solid_ids() == ["box"]
+
+
+# ---------------------------------------------------------------------------
+# Section 2 code review, 2026-09-10: clicking a struck-out row lit up the
+# WHOLE upstream body as "what this feature contributes".
+#
+# A suppressed node is a pass-through during rebuild, so its slot in `_parts`
+# holds its first input's solid. /api/feature-mesh served that slot without
+# asking whether the feature is switched off, so selecting a struck fillet /
+# hole / cut highlighted the entire part in orange — the 2026-08-26 complaint
+# ("the whole body is being selected") coming back through the struck rows.
+# viewport.js already treats a 404 here as "feature not built (suppressed /
+# rolled back)", which is exactly what it must get.
+# ---------------------------------------------------------------------------
+
+def _client_with(doc):
+    from fastapi.testclient import TestClient
+    studio.STATE["docs"].clear()
+    studio.STATE["active"] = None
+    studio.STATE["seq"] = 0
+    studio._new_tab(doc)
+    studio._rebuild_and_mesh()
+    return TestClient(studio.app)
+
+
+def _struck_hole_doc():
+    doc = Document(name="struck-overlay")
+    doc.add("box", "plate", {"width": 40, "depth": 30, "thickness": 10})
+    doc.add("bore", "with_center_hole", {"radius": 4}, inputs=["box"])
+    return doc
+
+
+def test_a_struck_feature_serves_no_highlight_mesh():
+    doc = _struck_hole_doc()
+    client = _client_with(doc)
+    assert client.get("/api/feature-mesh/bore.stl").status_code == 200
+
+    client.post("/api/feature/strike", json={"feature_id": "bore"})
+    # the pass-through is still there — that is what rebuild needs...
+    assert studio._doc()._parts.get("bore") is not None
+    # ...but it is the BOX, and the tree must not paint it as the bore's own
+    assert client.get("/api/feature-mesh/bore.stl").status_code == 404, \
+        "a struck row highlighted the whole upstream body"
+
+    client.post("/api/feature/strike",
+                json={"feature_id": "bore", "restore": True})
+    assert client.get("/api/feature-mesh/bore.stl").status_code == 200
