@@ -6,10 +6,10 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING** — section 6 (Measure and drive) closed a P0-class
-> finding, so the house rule sends a second chat over the fix commit. Review
-> `3ce97a3` alone; base `98cd07e`. When it is clean, set this back to
-> `NOTHING PENDING` and the queue takes section 7.
+> **Status: NOTHING PENDING** — `b8a956f` re-read section 6's fix pass and
+> found two findings, both P3 and neither live for the user, so there is no
+> third round to run. The next `code review` goes to the queue and takes
+> section 7, Extrude as a whole module.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -22,70 +22,41 @@
 
 ---
 
-## Just done: section 6, Measure and drive (3ce97a3)
+## Just done: section 6's FIX PASS, re-reviewed (b8a956f)
 
-One commit, `98cd07e..3ce97a3`. 8 findings, all 8 fixed, 0 rejected, 10 new
-tests, fast tier 1387 green, ruff and eslint at zero, ui v183. All 48
-buildable designs rebuild with no failed feature and no wrong edge id.
+`3ce97a3` closed a P0-class finding — over 400 faces the mesh switched to a
+cheaper path that had its OWN edge numbering, so on 12 of the 50 saved
+designs every edge click measured a different edge, and one could open an
+edit box driving a hole the user never clicked — so the house rule sent a
+second chat over the fix commit. It found **two findings, both fixed**, 2 new
+tests, fast tier 1389 green.
 
-The P0: over `MESH_MODE_FACES` (400) faces, `_tagged_mesh` handed the
-viewport one edge id **per adjacent face, in face order**, while
-`measure.resolve` indexes `part.edges()`. Twelve of the 50 saved designs are
-over 400 faces, so on those every edge click measured a different edge —
-silently, because the highlight looks the edge up by id and drew the right
-one. On isogrid-panel a straight 210 mm edge read `⌀4.50 mm` and opened an
-edit box driving `corner_hole_sketch`'s circle.
+Both were in the fix pass's own new code, which is where the queue said the
+risk would be, and **neither was live for the user**:
 
-## Where the risk is, in order
+- **P3: the extents fallback could never run.** `_measure_one`'s world-bbox
+  fallback shared one `try` with the in-frame projection it is a fallback
+  for, so an exception in the projection abandoned both and the row vanished
+  instead of degrading. No real face reaches it; it took a patched
+  `face_plane` to force. It has its own `try` now.
+- **P3: a reverted edit still handed back `picks`.** Those ids describe the
+  post-write body, and `_revert_last()` then restores the previous one — a
+  ⌀8 bore whose ⌀38 edit was reverted came back as `picks.a` id 6, which in
+  the restored body is a 6.28 mm² face. `measure.js` ignores `picks` unless
+  the edit verified, so nothing misbehaved; it was one guard away. `picks`
+  is only sent when the edit stands.
 
-1. **`measure._relocate` / `_sig_distance` / `remeasure` (new, ~90 lines).**
-   This is the fix pass's own new geometry, and it decides whether a write is
-   accepted or reverted — so a wrong match is a FALSE PASS: an edit that did
-   not land reported as verified. The rules to attack: a round pick matches
-   by axis line only (`_axis_offset`, direction to `PARALLEL_TOL`), a flat
-   pick by normal plus the component of the centre offset PERPENDICULAR to
-   that normal, both within `RELOCATE_TOL = 1e-3`; more than one candidate
-   means keep the old index, except that a radius closer than `RELOCATE_TOL`
-   to `want_r` breaks the tie. Is "slides along its own normal and nowhere
-   else" always true of `plan_move`'s shift and of a rectangle width edit?
-   Can a `ring` signature (a circular EDGE, no axis) ever match the wrong
-   rim? Does relocating an EDGE pick among `part.edges()` stay in family?
+**The risk the brief named first was cleared by measurement, not by reading:**
+322 driven edits through `/api/measure/set` across 9 saved designs — 92
+diameters, 58 moves, and 172 deliberately destructive ones (tripling each
+bore, then shrinking it to a sliver) — each checked against an independent
+oracle written inline (axis collinearity for bores, plane offsets along the
+normal for moves). **Zero false passes, zero false fails.** Also cleared:
+`_shape_key` does not collide across located copies (70 identical boxes, 840
+distinct keys); the mesh fix loses no outlines (identical distinct edge sets
+on esp32-remote, isogrid-panel and planetary-assembly); the mixed-body cost
+is +7% on a path already dominated by the mesh; dead-flat BSPLINE walls take
+the new extents path correctly; an edge pick drives end to end; and face
+order is deterministic across identical rebuilds.
 
-2. **`studio.py` `_tagged_mesh`'s mesh-mode edge branch.** It now calls
-   `part.edges()` whenever `rich_faces` is non-empty. For a pure triangle
-   soup `rich_faces` is empty and the call is skipped — but a MIXED body (an
-   STL with a few non-triangle faces) would pay `part.edges()` on a huge
-   shape. Is that reachable, and how slow? Measured cost on the biggest CAD
-   design: 245 ms (cam-cover-plaque, 1552 faces, 4218 edges), and overall
-   meshing got faster because the duplicates went.
-
-3. **The new `broke` guard in `measure_set`.** `was_ok` is captured before
-   `_snapshot()`; a feature that was already failing is deliberately not
-   counted. Does any legitimate edit make a feature fail on purpose? Does
-   `_revert_last()` really restore everything when it fires (it swaps in a
-   fresh `Document` and carries `_cache`/`_spec_cache` over)?
-
-4. **`want = measurelib._r(float(req.value))`.** Rounding the request to 3 dp
-   before comparing fixed the inch sizes, but it also widens the accepted
-   band to half a micron. Can an edit that misses by 4e-4 now pass as exact?
-
-5. **`_measure_one`'s new extents branch.** `face_plane().to_local_coords()`
-   on a Face — probed and correct for a planar chamfer, but what does it do
-   for a face the geometric planarity test accepts while `geom_type` is
-   BSPLINE (a dead-flat taper wall)? The old world-bbox path is still the
-   fallback.
-
-## Do not re-report
-
-- The eight findings themselves; they are in `REVIEW-QUEUE.md`'s done log
-  with their measurements.
-- `test_a_move_that_wrecks_the_part_reverts_itself` no longer reverting at
-  5.0 mm. That was deliberate and is argued in the test's own docstring: the
-  move lands the asked-for step exactly, so the old message was false. The
-  wreck is asserted at 120 mm instead.
-- That Measure still cannot measure an imported mesh body's surface. It now
-  says so honestly; the capability is LAUNCH-PLAN §10 P3.
-- Everything on the queue's shared "Never report" list, and the items the
-  section 6 report already cleared by measurement: `_plane_cache`
-  freshness, the probe caliper maths, `_to_param` against `ENTITY_DIAMETER`,
-  `plan_move`'s sign rule, and "measure never raises".
+Section 6 is closed. See `REVIEW-QUEUE.md`'s done log for the detail.
