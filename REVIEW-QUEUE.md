@@ -98,7 +98,7 @@ Then two closing sections:
 | 1 | Sketcher | high | four rounds, each fixing the last: 556a611 (9/9, 1 rejected), 6e2cae9 (8/8, the fix pass had a P0), 5f65a7a (8/8, so did that one), **13da90c** (8/9, 1 rejected - the ordering RULE was incomplete), and **round five, ONE reviewer at medium**, which CLEARED the two-part ordering rule (no arrangement makes it worse, termination bounded) and fixed 5 gaps in the fix pass itself. Composition is measurably order-independent, all 324 library sketches build, the whole library composes unchanged. **Section 1 is done unless the sixth read finds something** |
 | 2 | Document core and feature tree | high | **reviewed and fixed 6ea5546**, ONE reviewer at medium: 5 findings, **4 fixed, 1 rejected** (refusing to open a file with an unknown op IS the settled answer - the fast tier proved it). 7 new tests; the P2s were a struck row keeping its piece count (and silencing the warning below it), a struck row highlighting the whole upstream body, and an intended sever re-probing the healer on every rebuild |
 | 3 | Version tree and session persistence | high | **reviewed and fixed f63ba5a** (3 findings, all 3 fixed, 9 tests): a P0 (a save could overwrite ANOTHER design's file and graft itself onto its version tree), a P1 (after a restart a tab with unsaved edits could read clean, so closing it discarded them silently) and a P2 (the only recovery for a lost index named a Python method - it is a button now). A P0 was fixed, so **round two re-reviewed the FIX COMMIT: fafe983**, 4 findings, **all 4 fixed**, 8 new tests - the same P0 was still reachable through TWO other doors (a second tab taking over an open design's file; a slug whose `.history/` outlived its deleted `.tcad.json`), and the new repair button could overwrite a NEWER build's index. **Section 3 is done unless a third read finds something** |
-| 4 | Booleans and transforms | high | TODO |
+| 4 | Booleans and transforms | high | **reviewed and fixed c9b2e92**, ONE reviewer: 9 findings, **all 9 fixed**, 26 new tests, 50/50 library designs rebuild with ZERO volume drift. The one that mattered most: **`loft` of a sketch AND a solid SEGFAULTS OpenCASCADE** (exit 139, no `except` can catch it) and the Add Feature dialog offers every feature as a checkbox — so combiners now get a KIND gate BEFORE the kernel, which also closes the silent twin (an `intersect` of a body and a sketch ate the body and left the design with no bodies, all rows green). Plus: no bodies + a spec reported "meets spec"; the Join/Cut default target followed FACE-REFERENCE ops (a New-body boss became the panel's current state, parity rule 6); the stranding heal ticked `through` on a tool ANOTHER cut shares (that cut lost 3600 mm3 unasked); a cut whose tool misses reported success silently; a pattern's copy form called "a part that fell apart" (24 rows in 13 designs). **Section 4 is done unless a second read finds something** |
 | 5 | Primitives and shape editing | high | TODO |
 | 6 | Measure and drive | high | TODO |
 | 7 | Extrude as a whole module (with loft and sweep) | medium | TODO |
@@ -1130,3 +1130,57 @@ plus an `error` key rather than through `_refused`, which `_refused`'s own
 docstring argues against. It is the convention across that entire group of
 routes and the frontend handles it; changing one route would be worse than
 leaving all of them. Noted in the brief's do-not-report list.
+
+### Section 4 - Booleans and transforms (reviewed and fixed 2026-09-10, commit c9b2e92)
+
+Never reviewed before. 9 findings, **all 9 fixed, 0 rejected**, 26 new tests,
+measured first in `probes/boolean_review_probe.py`. The whole 50-design
+library rebuilds afterwards with **zero volume drift** and no newly failing
+row (the saved files record each feature's volume, so that is a real
+before/after, not a claim).
+
+| # | P | What it was | Fix |
+|---|---|---|---|
+| F1 | P1 | **A combiner given a SKETCH.** `intersect(body, sketch)` returned a 2D `Sketch`, CONSUMED the body, and left the design with `leaf_solid_ids() == []`, `result_shape() None`, an empty viewport - and all three rows green with no warning. `_eval` checked only the input COUNT | `_check_combiner_inputs`, a KIND gate that names the offending feature, run BEFORE the kernel |
+| F2 | P1 | **No bodies + a spec reported "meets spec."** `if ok and self.spec and leaves:` read "no leaves" as "nothing to check", so a design with NOTHING in it verified against a spec demanding one 20x20x10 solid. Two doors: F1's combiner, and simply striking the only body out | no bodies is a spec FAILURE, with that sentence |
+| F3 | P1 | **The Join/Cut default target followed FACE-REFERENCE ops.** `extrude_face` only points AT a face (`consumed_ids` already knew), but `_latest_descendant` counted it as a consumer, so a New-body boss became the panel's "current state" and the next face sketch's Cut landed on the PRISM. Fusion parity rule 6. With Join the later `fuse` hid it, because `reversed` found that first | the walk skips `sk.FACE_REFERENCE_OPS` |
+| F4 | P1 | **Loft reached the kernel unchecked** - and `loft(sketch, solid)` **SEGFAULTS** OpenCASCADE (access violation in `BRepOffsetAPI_ThruSections`, exit 139 in its own process). Otherwise `Standard_NoSuchObject('NCollection_DataMap::Find')` and `StdFail_NotDone('BRep_API: command not done')` reached the tree verbatim (rule 5). A coplanar loft built a zero-volume "solid" that only said "empty solid" | F1's gate stops the crash case before the kernel; a translator for the rest; a coplanar loft names the plane |
+| F5 | P1 | **The stranding heal ticked `through` on a tool ANOTHER cut shares.** The proof it relies on is computed for one cut only; measured, the second cut went 16200.0 -> 12600.0 mm3, i.e. 3600 mm3 more removed than its own parameters ask for, unasked and unmentioned. `designs/cam-cover-plaque` already shares a tool prism between two combiners | a tool with more than one live consumer is left alone |
+| F6 | P2 | **A cut whose tool MISSES reported success and changed nothing** (volume 4000.0 against its input's 4000.0, warnings []) - and the tool is consumed either way, so it vanished from the viewport while the body sat untouched | `_check_idle_cuts` names the cut and its tool |
+| F7 | P2 | **A pattern's COPY form was called a part that fell apart.** `linear_pattern`/`polar_pattern` without a seed exist to make `count` separate bodies, but they are MODIFIERS and so were not in the extrude/revolve exclusion: 24 rows across 13 library designs were each told "something in it no longer touches the rest" - the exact buried-signal failure that exclusion exists to prevent | the copy form is excluded; the seeded form keeps the check. The 2 genuine `fuse` multi-body reports survive |
+| F8 | P2 | **The two Transform buttons do not share a pivot** and one docstring said the wrong one: measured, `rotate` turns about the WORLD ORIGIN (a plate at x[90,110] lands at y[90,110]) and `scale` about the SHAPE CENTRE (x[80,120], centre unmoved), while `scale_uniform` claimed "about the origin" | both docstrings state the measured pivot; `scale` gains the `OP_NOTES` entry it never had, so the dialog and the AI both see it |
+| F9 | P3 | **`_pick_body` paired one body's geometry with another body's id**: a named feature that had FAILED fell back to `doc.result()`'s geometry while keeping the requested id, so the face was resolved on one body and recorded against another | refused by name. An id that names nothing at all still falls through, so an empty document keeps answering "build a body first" (that sentence is asserted by `test_revolve_p3b`) |
+
+**Deliberately NOT changed:** the transform PIVOTS themselves (F8). Making
+`rotate` turn in place would move geometry in every saved design that uses it,
+which is a migration decision for the user, not a review fix. Recorded as a
+LAUNCH-PLAN section 10 row.
+
+**Line delta:** +655 / -26 across `document.py`, `toolplan.py`, `blocks.py`,
+`author.py`, the new test file and the new probe. Production code is
++157 / -26, and that includes removing two duplicated copies of the
+struck-node pass-through walk (`Document._live_source` now serves
+`consumed_ids`, `_check_pieces` and `_check_idle_cuts`).
+
+**Checked and found sound:** empty boolean results are NOT reported as success
+(`health` catches "non-positive volume" and "no solid present" - an intersect
+with no overlap and a cut that removes everything both fail); an edge-touching
+fuse is caught as non-manifold, so rule 5 holds for touching-not-overlapping;
+`suppressed` IS part of `_signature`, so striking a feature cannot hand a
+downstream node a stale cached part; `remove_plan` keeps the positional order
+of surviving inputs and cascades a cut whose first input cannot heal, so
+target and tool cannot swap on a delete; `_passthrough` refuses a type change;
+`_export_blockers` refuses on both doors and `to_step` refused the F1 blackout
+outright, so no corrupt STEP file was ever written; `_latest_descendant`
+terminates by construction; the heal's volume guard correctly refuses the
+"drills clean through" case its comment describes.
+
+**Named as the section asked, not counted as a finding:** a suppressed final
+boolean promotes its TOOL to the result - `_result_feature`,
+`document.py:1283`, which walks back past the struck row without filtering
+consumed ids. Already an open P1 in LAUNCH-PLAN section 10, so it was not
+re-reported. Two things worth recording for whoever takes it: the tree's X
+does NOT reach it (`strike` runs the orphan sweep, which suppresses the tool
+prism too), only `/api/feature/suppress`, which no frontend calls; and its
+worse door is `_export_blockers`, which would then treat the cutter as a body
+of the design and write it into the STEP file.

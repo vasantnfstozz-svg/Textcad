@@ -6,9 +6,10 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: NOTHING PENDING** — `fafe983` fixed four findings and none was a
-> P0, so there is no second round to run. The next `code review` goes to the
-> queue.
+> **Status: PENDING** — review commit `c9b2e92` (section 4's fix pass). One
+> of its nine findings was silent wrong geometry that would have been SAVED,
+> and the fixes sit inside `rebuild` itself, so the house rule sends a second
+> chat over the fix commit.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5`) and types only `code review`. CLAUDE.md's section
@@ -21,115 +22,81 @@
 
 ---
 
-## Just done: section 3's FIX PASS, re-reviewed (fafe983)
-
-The section 3 fixes (`f63ba5a`) closed a P0, so the house rule sent a second
-chat over the fix commit itself. It found **four more doors open, all four
-fixed**, 8 new tests, fast tier 1288 green. Measured first in
-`probes/version_review_probe.py`; the full record is `REVIEW-QUEUE.md`'s done
-log, section 3, round two.
-
-Two of them were the SAME P0 through another door — a save landing on another
-design's version tree — which is why this round mattered:
-
-- the identical-content escape hatch bound a **second tab** to a file another
-  tab already owned, after which either tab's save silently overwrote the
-  other's file and hung its version off the other's latest;
-- a design file deleted in Explorer leaves `<slug>.history/` behind, and a new
-  design of the same name **appended itself to that tree**;
-- `can_repair()` said yes for an index from a **newer build**, and the new
-  panel button then replaced it with a guessed linear chain;
-- a cloud-sync conflict copy (`v3 (2).json.gz`) took `repair()` down with an
-  **AttributeError** whose text reached the user.
-
-No P0 was fixed this round, so no third pass is due.
-
-## Review this
-
-| | |
-|---|---|
-| **Status** | **NOTHING PENDING** |
-| **Next** | `REVIEW-QUEUE.md` **section 4 — Booleans and transforms**, the first status-board row still marked TODO. Read the queue's header, its shared rules, section 4 and the output format |
-| **Frontend** | `ui v181`, `css v40` — unchanged by `fafe983` (backend only) |
-
-## Ground rules (unchanged, for whichever commit comes next)
-
-- **Read-only.** Do not start the server (port 8123 is the user's; a second
-  listener there is a known trap). Do not run `tests/e2e/`. The whole fast
-  tier is 1288 (`python -m pytest tests -q --ignore=tests/e2e`).
-- **A finding is a concrete input on which the code does the wrong thing**,
-  with the exact click or data that triggers it. Order: P0 wrong geometry or
-  data loss, P1 blocks the action, P2 daily annoyance, P3 polish.
-- **The frontend must not re-derive backend facts** (rule R1).
-- **Two banned failures:** a kernel exception reaching the user (OCP errors
-  derive from `Exception`), and a "successful" invalid or empty solid.
-- **Comments naming a date record a past bug**; do not report them as noise.
-- **No fixes, no style remarks**; both linters run at zero.
-- **ONE reviewer at medium.** On 2026-09-09 a fan-out ran ~46 Opus agents at
-  xhigh and drained the five-hour limit; one reviewer at medium then found
-  five real gaps. The agent count must be quoted to the user before any
-  fan-out ever runs again.
-
-## Output format
+## The range
 
 ```
-### F1 - P<0-3> - <one line>
-- File: <path>:<line>
-- Trigger: <the exact click or input>
-- Expected / Actual: <one line each>
-- Confidence: high | medium | low - <why>
-- Evidence: <1-3 quoted lines>
+c9b2e92        (one commit, base e335a4f)
 ```
-then `### Checked and found OK` (up to 8) and `### Could not judge without
-running the app` (up to 5). At most 15 findings; say so if fewer than 5 are
-high or medium confidence.
 
-## Already known — do NOT report
+`git show c9b2e92 --stat` — `document.py`, `toolplan.py`, `blocks.py`,
+`author.py`, `tests/test_boolean_review.py` (new, 26 tests),
+`probes/boolean_review_probe.py` (new). Production code +157 / -26.
 
-- **Everything in `REVIEW-QUEUE.md`'s done log** — section 1 (the sketcher,
-  five rounds), section 2 (document core) and section 3 (version tree, two
-  rounds). Report a fix that is WRONG or INCOMPLETE, never an original defect.
-- **The sketcher's two-part ordering rule and `_overlaps` failing open.** An
-  outer is composed before anything nested in it, AND material before a cut
-  that OVERLAPS it without containing it. Never collapse it to one part;
-  removing either half reintroduces a measured P0.
-- **Refusing to open a file with an unknown op** — settled (section 2).
-- **A struck row's dimension rows stay editable** while its ✎ is withheld.
-  Deliberate: ✎ reopens a live tool with a preview.
-- **The tree's folded-boolean rule and `delta_features`' folding rule are two
-  copies of one rule.** No arrangement was found where they disagree.
-- **The first card in the sketch tree shows a fixed `add` badge**, stricter
-  than the backend now needs. Deliberate.
-- **A full circle offers no QUADRANT snaps.** Deliberate.
-- **`/api/save` refuses three things** (fafe983): a file a DIFFERENT tab owns,
-  a different design's file whose content differs, and a slug whose
-  `.history/` still holds versions after the file was deleted by hand. All
-  three are deliberate, all three are tested, and the identical-content
-  escape hatch that remains is guarded by the tab-owner check.
-- **`repair()` refuses a FOREIGN index** (a schema this build does not
-  understand) and only treats exact `v<N>.json.gz` names as snapshots.
-  Deliberate; a conflict copy is left on disk untouched.
-- **`blocks.resolve_face` picks by nearest centre**, so two coplanar faces
-  sharing a centre resolve to the wrong twin. Queued, P1.
-- **`sketch_trim.py` keeps its OWN copy of the composition rule** and refuses
-  entity lists `_compose` now accepts. Queued, P1 — a build job, not a review.
-- **Pattern's `_axis_face` guards with the bounding box `_face_of` dropped.**
-  Queued.
-- **A self-crossing polygon builds an invalid face and reports ok.** Queued, P2.
-- **The arc-label doc guard is keyed by design NAME.** Queued, P3.
+## What it did
+
+Section 4 of `REVIEW-QUEUE.md` (Booleans and transforms, never reviewed):
+9 findings, all 9 fixed, 0 rejected. The full record is that file's done log.
+The five that changed behaviour every design goes through:
+
+- **`_check_combiner_inputs`** (new, `document.py` ~line 103) — a KIND gate on
+  every combiner, run in `_eval` BEFORE the kernel. It exists because
+  `loft(sketch, solid)` **segfaults** OpenCASCADE (exit 139 standalone), which
+  no `except` can catch, and because `intersect(body, sketch)` returned a 2D
+  Sketch that CONSUMED the body and left the design with no bodies at all
+  while every row stayed green.
+- **the spec verdict** (`rebuild`, ~line 1006) — no leaf bodies used to mean
+  "nothing to check", so a design with NOTHING built verified against a spec.
+  It is a failure now.
+- **`_check_idle_cuts`** (new) — names a cut that removed no material.
+- **`_check_pieces`** — a pattern's copy form no longer reports N pieces.
+- **`_heal_stranding_cuts`** — leaves a tool another cut shares alone. This is
+  the P0-class one: measured, the other cut lost 3600 mm3 more than its own
+  parameters ask for, unasked and unmentioned.
+- **`_live_source`** (new) — one copy of the struck-node pass-through walk,
+  replacing the private copies in `consumed_ids` and `_check_pieces`. Behaviour
+  was identical in all three; confirm that.
+
+## Where the risk is
+
+1. **`_live_source` replaced two working walks.** `consumed_ids` is what the
+   viewport and the exporter filter on. If the shared version differs from
+   either original by a hair, bodies appear or vanish.
+2. **The new spec failure is a new way for `rebuild` to return False.**
+   Anything that treats `ok` as "the geometry is fine" now also sees "there is
+   no geometry". Check the callers, especially the export path and the MCP.
+3. **The kind gate refuses input combinations that used to build.** The 50
+   library designs were checked (none uses a boolean on a sketch or a loft on
+   a solid, zero volume drift), but a hand-written or AI-authored tree could.
+   A design that no longer OPENS would be the bad outcome — `from_data` runs
+   through `add`, not `_eval`, so it should still open and show a failed row.
+4. **`_check_idle_cuts` compares 2dp-rounded volumes with a 0.01 tolerance.**
+   A legitimate cut that removes a whisker would be called idle.
+5. **`_pick_body` now raises** where it used to fall back. Three callers
+   (extrude, revolve, hole face modes).
+
+## Ground rules
+
+Read the diff yourself, ONE reviewer, no subagents. Measure before claiming —
+`probes/boolean_review_probe.py` reproduces all nine originals (§3's
+sketch+solid case is behind `--crash` because it kills the process). The fast
+tier is 1314 passing (1288 + the 26 new); run the files the diff touches plus
+`tests/test_launch_rules.py`.
+
+## Do not report (already known, or settled)
+
 - **A suppressed final boolean promotes its TOOL to the result**
-  (`_result_feature`). Queued, P1 — and `/api/feature/suppress` is not
-  reachable from the UI at all, only from a script or the MCP.
-- **The versions routes answer refusals with HTTP 200 and an `error` key**
-  rather than through `_refused`. Local convention across that whole group;
-  `postJSON` surfaces it. Not a finding.
-- **`-m library` cannot collect** (duplicate basenames against `tests/e2e`).
-  Tracked test-infrastructure item.
-- Face MODE (`extrude_face`) opens on Join regardless of direction; Edit mode
-  never rewires a combiner. Known.
-- `feature_faces` answers nothing for a row whose whole body was MOVED after
-  it. Pre-existing.
-- The pre-existing red browser tests (`tests/e2e/test_tree_delete.py`, five)
-  and the order-dependent revolve ring test.
-- Lint-class output (unused names, two statements on a line, single-letter
-  geometry variables).
+  (`_result_feature`, `document.py:1283`). Open P1 in LAUNCH-PLAN section 10.
+  Section 4 located it and recorded two notes for it in the done log; it was
+  deliberately not fixed here.
+- **Rotate and Scale do not share a pivot.** Measured and documented, and the
+  behaviour was deliberately left alone — changing it would move geometry in
+  saved designs. Now a P2 row in LAUNCH-PLAN section 10.
+- **The Add Feature dialog collects combiner inputs in TREE ORDER**, so a Cut
+  cannot target a body that precedes its tool. Its own note says so ("First
+  input MINUS the rest (by tree order). Keep body first."), and the tool panel
+  path orders them correctly. Judged documented, not a defect.
+- The open P1/P2/P3 rows in LAUNCH-PLAN section 10; the pre-existing red
+  browser tests (`tests/e2e/test_tree_delete.py`, five; the order-dependent
+  revolve ring test); `-m library` not collecting; two requests reaching the
+  kernel at once; lint-class output.
+- Comments naming what the user saw on which date are history, not clutter.
