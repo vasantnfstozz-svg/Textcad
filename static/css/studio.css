@@ -221,6 +221,8 @@ main { flex: 1; display: flex; min-height: 0; }
   border-radius: 5px; padding: 2px 8px; margin: 2px 3px 2px 0;
   color: var(--dim); }
 .specrow .sfail { color: var(--fail); padding-top: 4px; }
+/* the spec could not be checked (rollback bar parked) — a note, not a failure */
+.specrow .snote { color: var(--dim); padding-top: 4px; }
 
 /* ============ viewport ============ */
 #viewportPane { flex: 1; position: relative; min-width: 0; }

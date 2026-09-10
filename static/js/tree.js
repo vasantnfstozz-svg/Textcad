@@ -977,12 +977,21 @@ function beginEditWith(el, oldVal, commit) {
 function renderSpecRow(doc, el) {
   if (!doc.spec || !Object.keys(doc.spec).length) return;
   const sr = document.createElement('div'); sr.className = 'specrow';
-  sr.innerHTML = `<b style="color:${doc.spec_problems.length
-      ? 'var(--fail)' : 'var(--ok)'}">spec ${doc.spec_problems.length
-      ? 'FAIL' : 'PASS'}</b><br>` +
+  // THREE states, not two. "not checked" is what the server reports while the
+  // rollback bar is parked, and painting it red said the design had failed its
+  // spec every time an editor opened — on 42 of the 50 saved designs
+  // (section 5 review, 2026-09-10). Whether it ran is the server's answer
+  // (spec_checked), never guessed from the wording of a problem line (R1).
+  const checked = doc.spec_checked !== false;
+  const failed = checked && doc.spec_problems.length > 0;
+  const colour = !checked ? 'var(--dim)' : failed ? 'var(--fail)' : 'var(--ok)';
+  const word = !checked ? 'not checked' : failed ? 'FAIL' : 'PASS';
+  sr.innerHTML = `<b style="color:${colour}">spec ${word}</b><br>` +
     Object.entries(doc.spec).filter(([, v]) => v != null).map(([k, v]) =>
       `<span class="schip">${k}: ${JSON.stringify(v)}</span>`).join('') +
-    doc.spec_problems.map(p => `<div class="sfail">! ${p}</div>`).join('');
+    doc.spec_problems.map(p => checked
+      ? `<div class="sfail">! ${p}</div>`
+      : `<div class="snote">${p}</div>`).join('');
   el.appendChild(sr);
 }
 

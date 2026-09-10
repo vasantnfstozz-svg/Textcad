@@ -16,6 +16,11 @@ Every function here:
 
 Convention: parts are built centered on the origin, extruded along +/-Z, so the
 hole/pattern helpers (which cut tall cutters along Z) work regardless of scale.
+TWO EXCEPTIONS, measured 2026-09-10 and load-bearing for saved designs:
+`polygon_plate` and `hex_plate` STAND ON Z=0 and run up to +thickness (they are
+extruded one way from a BuildSketch on Plane.XY), as `curved_blade` does. The
+AI's positioning rule in author.AUTHOR_PROMPT says so; it used to call them
+centred, which put every hex body it placed half a thickness out.
 """
 
 from __future__ import annotations
@@ -48,20 +53,42 @@ _AXES = {"X": Axis.X, "Y": Axis.Y, "Z": Axis.Z}
 # ---------------------------------------------------------------------------
 # Primitive solids
 # ---------------------------------------------------------------------------
+# Every dimension is checked BEFORE the kernel sees it. Measured 2026-09-10
+# (section 5 review): a zero thickness reached BRepPrimAPI and the feature row
+# read `Standard_DomainError('')` — an empty diagnosis, identical for all three
+# of a plate's dimensions — while a zero radius came back as a real solid of
+# volume 0. Both are banned (CLAUDE.md: a kernel exception reaching the user,
+# and a "successful" empty solid), and neither told the user which number to
+# change. `_positive` is the one place that sentence is written.
+
+def _positive(op: str, **dims) -> None:
+    """Refuse any dimension that is not a positive number, naming it."""
+    for name, v in dims.items():
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            raise ValueError(f"{op}: {name} must be a number in mm (got "
+                             f"{v!r}) — type just the number, no units")
+        if not v > 0:
+            raise ValueError(f"{op}: {name} must be more than 0 (got "
+                             f"{format(v, 'g')}) — there is no such shape, so "
+                             f"type the size you want instead")
+
 
 def plate(width: float, depth: float, thickness: float) -> Part:
     """A rectangular plate centered on the origin (X=width, Y=depth, Z=thickness)."""
+    _positive("plate", width=width, depth=depth, thickness=thickness)
     return Box(width, depth, thickness)
 
 
 def disc(radius: float, thickness: float) -> Part:
     """A solid cylinder (disc) centered on the origin, axis along Z."""
+    _positive("disc", radius=radius, thickness=thickness)
     return Cylinder(radius=radius, height=thickness)
 
 
 def ball(radius: float) -> Part:
     """A solid sphere centered on the origin. Great for domes (cut in half
     with a box), rounded ends, knobs, and stylized organic shapes."""
+    _positive("ball", radius=radius)
     return Sphere(radius=radius)
 
 
@@ -69,12 +96,29 @@ def cone(bottom_radius: float, top_radius: float, height: float) -> Part:
     """A (truncated) cone centered on the origin, axis along Z — spans
     -height/2 to +height/2. top_radius=0 gives a sharp point. Use for tapers,
     funnels, nose shapes, stylized bodies."""
+    _positive("cone", height=height)
+    # top_radius 0 is the documented sharp point, so only the BOTTOM has to be
+    # positive — but two equal radii is a cylinder the kernel refuses outright
+    # ("cone with two identic radii"), and a negative one is nonsense.
+    _positive("cone", bottom_radius=bottom_radius)
+    if isinstance(top_radius, bool) or not isinstance(top_radius, (int, float)):
+        raise ValueError(f"cone: top_radius must be a number in mm (got "
+                         f"{top_radius!r}) — type just the number, no units")
+    if top_radius < 0:
+        raise ValueError(f"cone: top_radius cannot be negative (got "
+                         f"{format(top_radius, 'g')}) — use 0 for a point")
+    if top_radius == bottom_radius:
+        raise ValueError(f"cone: bottom_radius and top_radius are both "
+                         f"{format(top_radius, 'g')} — that is a cylinder, "
+                         f"so use disc instead")
     return Cone(bottom_radius=bottom_radius, top_radius=top_radius,
                 height=height)
 
 
 def tube(outer_radius: float, inner_radius: float, height: float) -> Part:
     """A hollow tube / ring / washer, axis along Z. inner < outer required."""
+    _positive("tube", outer_radius=outer_radius, inner_radius=inner_radius,
+              height=height)
     if inner_radius >= outer_radius:
         raise ValueError("tube: inner_radius must be < outer_radius")
     return Cylinder(radius=outer_radius, height=height) - Cylinder(
@@ -83,14 +127,32 @@ def tube(outer_radius: float, inner_radius: float, height: float) -> Part:
 
 def polygon_plate(sides: int, circumradius: float, thickness: float) -> Part:
     """A regular-polygon prism (hex nut stock, etc.), axis along Z.
-    circumradius = distance from center to a corner."""
+    circumradius = distance from center to a corner.
+
+    STANDS ON Z=0 and runs up to +thickness — it is NOT centred like plate and
+    disc (module docstring; measured 2026-09-10)."""
+    _positive("polygon_plate", circumradius=circumradius, thickness=thickness)
+    if isinstance(sides, bool) or not isinstance(sides, (int, float)):
+        raise ValueError(f"polygon_plate: sides must be a whole number (got "
+                         f"{sides!r})")
+    if sides != int(sides):
+        raise ValueError(f"polygon_plate: sides must be a whole number (got "
+                         f"{format(sides, 'g')}) — a polygon cannot have half "
+                         f"a side")
+    if int(sides) < 3:
+        raise ValueError(f"polygon_plate: sides must be at least 3 (got "
+                         f"{int(sides)}) — fewer than three corners is not a "
+                         f"shape")
     with BuildSketch() as sk:
-        RegularPolygon(radius=circumradius, side_count=sides)
+        RegularPolygon(radius=circumradius, side_count=int(sides))
     return extrude(sk.sketch, amount=thickness)
 
 
 def hex_plate(across_flats: float, thickness: float) -> Part:
-    """A hexagonal plate specified by its across-flats (wrench) size."""
+    """A hexagonal plate specified by its across-flats (wrench) size.
+
+    STANDS ON Z=0 and runs up to +thickness, like polygon_plate."""
+    _positive("hex_plate", across_flats=across_flats, thickness=thickness)
     circumradius = across_flats / math.sqrt(3.0)   # AF = circumradius * sqrt(3)
     return polygon_plate(6, circumradius, thickness)
 
@@ -102,6 +164,18 @@ def revolve_profile(points: list[tuple[float, float]]) -> Part:
     workhorse for turned/turbomachinery-style parts."""
     if len(points) < 3:
         raise ValueError("revolve_profile: need at least 3 points")
+    # the docstring has promised radii >= 0 since this function existed and
+    # never checked: a negative one gave `StdFail_NotDone('BRep_API: command
+    # not done')` in the feature row (measured 2026-09-10)
+    for i, (r, z) in enumerate(points):
+        if not isinstance(r, (int, float)) or isinstance(r, bool):
+            raise ValueError(f"revolve_profile: point {i + 1} has a radius "
+                             f"that is not a number ({r!r})")
+        if r < 0:
+            raise ValueError(
+                f"revolve_profile: point {i + 1} has radius "
+                f"{format(float(r), 'g')} — a profile is revolved about the "
+                f"Z axis, so every radius must be 0 or more")
     pts = [(float(r), float(z)) for r, z in points]
     with BuildSketch(Plane.XZ) as sk:
         with BuildLine():
@@ -162,9 +236,29 @@ def _tall_cutter(radius: float, span: float = 1.0e5) -> Part:
     return Cylinder(radius=radius, height=span)
 
 
+def _drilled(op: str, before: Part, after: Part, what: str) -> Part:
+    """A drill that removes nothing did not succeed — it missed.
+
+    Measured 2026-09-10 (section 5 review): `with_center_hole` with radius 0
+    handed back the UNDRILLED disc, volume 78539.82, and the tree row was
+    green; a bolt circle whose PCD put the holes off the part did the same.
+    The same class section 4 closed for `cut` ("a cut whose tool misses
+    reported success silently"), through two doors it did not cover."""
+    try:
+        gone = float(before.volume) - float(after.volume)
+    except Exception:                       # a volume we cannot read is not
+        return after                        # evidence of anything
+    if gone > 1e-6:
+        return after
+    raise ValueError(f"{op}: nothing was drilled — {what}")
+
+
 def with_center_hole(part: Part, radius: float) -> Part:
     """Drill a through-hole on the Z axis at the origin."""
-    return part - _tall_cutter(radius)
+    _positive("with_center_hole", radius=radius)
+    return _drilled("with_center_hole", part, part - _tall_cutter(radius),
+                    "the hole falls outside this body, so there is no "
+                    "material on the Z axis to drill through")
 
 
 def with_bolt_circle(part: Part, count: int, bolt_radius: float,
@@ -173,11 +267,26 @@ def with_bolt_circle(part: Part, count: int, bolt_radius: float,
     circle diameter (PCD), centered on the origin, axis along Z."""
     if count < 1:
         raise ValueError("with_bolt_circle: count must be >= 1")
+    _positive("with_bolt_circle", bolt_radius=bolt_radius,
+              pitch_circle_dia=pitch_circle_dia)
+    # a PCD of 0 put all `count` locations on the origin, so six holes became
+    # ONE at the centre and the row stayed green (measured 2026-09-10)
+    if pitch_circle_dia / 2.0 <= bolt_radius and count > 1:
+        raise ValueError(
+            f"with_bolt_circle: a pitch circle diameter of "
+            f"{format(pitch_circle_dia, 'g')} mm is too small for "
+            f"{format(bolt_radius, 'g')} mm holes — all {count} of them would "
+            f"land on top of each other at the centre. Use a PCD bigger than "
+            f"{format(2 * bolt_radius, 'g')} mm, or with_center_hole for one "
+            f"hole in the middle")
     cutter = _tall_cutter(bolt_radius)
     result = part
     for loc in PolarLocations(radius=pitch_circle_dia / 2.0, count=count):
         result = result - (loc * cutter)
-    return result
+    return _drilled("with_bolt_circle", part, result,
+                    f"a pitch circle diameter of "
+                    f"{format(pitch_circle_dia, 'g')} mm puts all {count} "
+                    f"holes outside this body")
 
 
 def polar_pattern(feature: Part, count: int, **kw) -> Part:
@@ -631,14 +740,19 @@ _KERNEL_WORDS = ("TopoDS", "NCollection", "Standard_", "BRep", "StdFail",
                  "Geom_", "gp_", "TColStd", "BOPAlgo")
 
 
-def _plain_cause(e: Exception) -> str:
+def plain_cause(e: Exception) -> str:
     """The REAL reason a build failed, in words a user can act on.
 
     build123d's own refusal is already plain; a raw OCP error is jargon, so it
     is named without its internals; anything else (a TypeError — our own bug)
     says what it is instead of being dressed up as a geometry problem. Never
     invent a diagnosis: before 2026-09-04 every failure here was reported as
-    \"a face beside them is too small\", which was a guess for all but one of them."""
+    \"a face beside them is too small\", which was a guess for all but one of them.
+
+    Document.rebuild uses this too, as the last barrier before a feature row is
+    painted: it used to print `repr(e)`, so a zero thickness read
+    `Standard_DomainError('')` and a string in a dimension printed twelve lines
+    of pybind11 constructor overloads (measured 2026-09-10, section 5)."""
     msg = (str(e) or "").strip()
     if re.match(r"Failed creating a (fillet|chamfer)", msg):
         return "the kernel could not build it there"
@@ -646,7 +760,13 @@ def _plain_cause(e: Exception) -> str:
         return "the geometry kernel rejected the shape it would produce"
     if isinstance(e, ValueError):
         return msg
-    return f"{type(e).__name__}: {msg}"
+    # our own bug, or a binding complaining about an argument. Either way the
+    # user gets ONE line: a pybind11 overload dump is not a sentence, and
+    # anything multi-line came from a library, not from us.
+    first = msg.splitlines()[0].strip()
+    if len(msg.splitlines()) > 1 or len(first) > 200:
+        return "the geometry kernel rejected the shape it would produce"
+    return f"{type(e).__name__}: {first}"
 
 
 def _finish(name: str, part: Part, edges, value: float, unit: str, build):
@@ -678,7 +798,7 @@ def _finish(name: str, part: Part, edges, value: float, unit: str, build):
         out = build(picked, value)
     except Exception as e:                      # OCP errors are Exception, not RuntimeError
         raise ValueError(f"{name}: {low} {value:g} mm does not fit on {on} — "
-                         f"{_plain_cause(e)}. Try a smaller {low}, or pick "
+                         f"{plain_cause(e)}. Try a smaller {low}, or pick "
                          f"different edges.") from e
     # measured OUTSIDE that try on purpose: a health check that throws is our
     # own problem, and must never be reported as a value that "does not fit"

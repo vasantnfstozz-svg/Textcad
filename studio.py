@@ -729,6 +729,10 @@ def _doc_json() -> dict:
         "bodies": len(doc.leaf_solid_ids()),
         "spec": doc.spec,
         "spec_problems": doc.spec_problems,
+        # whether the check RAN — a parked rollback bar means it could not,
+        # which is not a failure. The browser must never work this out from
+        # the wording of a problem line (R1).
+        "spec_checked": doc.spec_checked,
         "warnings": doc.warnings,
         "tabs": _tabs_json(),
         "active_tab": STATE["active"],

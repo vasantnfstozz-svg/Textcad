@@ -196,8 +196,10 @@ ALLOWED OPERATIONS (the ONLY ops that exist — anything else is rejected):
 
 RULES AND CONVENTIONS:
 - Units: mm and degrees. Z is the vertical/rotation axis. All ops return solids.
-- POSITIONING (critical): disc, plate, tube, polygon_plate and hex_plate are
+- POSITIONING (critical): disc, plate, tube, ball and cone are
   CENTERED at the origin — they span Z from -thickness/2 to +thickness/2.
+  polygon_plate and hex_plate are NOT: they stand on Z=0 and run up to
+  +thickness, so a hex nut's mid-plane is at +thickness/2, not at 0.
   revolve_profile spans EXACTLY the z values in its points. curved_blade
   stands on Z=0 up to its height. Use "move" to align pieces BEFORE booleans.
 - The spec encodes the USER's requirement. If verification fails, fix the

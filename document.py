@@ -379,6 +379,11 @@ class Document:
     features: list[Feature] = field(default_factory=list)
     spec: dict = field(default_factory=dict)   # inspector.Spec fields, JSON-safe
     spec_problems: list = field(default_factory=list)
+    # False while the spec could not be checked at all (the rollback bar is
+    # parked). NOT the same thing as failing it, and the UI must not paint it
+    # red: 42 of the 50 live designs carry a spec, so "spec FAIL" appeared the
+    # moment any editor opened (section 5 review, 2026-09-10).
+    spec_checked: bool = True
     warnings: list = field(default_factory=list)  # non-fatal honesty flags
     rollback: str | None = None    # SolidWorks-style bar: build only up to this id
     _parts: dict = field(default_factory=dict, repr=False)   # id -> Part cache
@@ -533,6 +538,34 @@ class Document:
         return {name for name, _ in op_params(op)}
 
     @staticmethod
+    def numeric_params(op: str) -> set:
+        """The parameters of `op` that are numbers — read from the type
+        ANNOTATION on the function the rebuild unpacks into, so it is the same
+        one source `op_params` uses and cannot drift.
+
+        Deliberately narrow: only a bare `float` or `int` counts. The shape
+        parameters (`edges`, `plane`, `axis`, `at`, a pattern's `count`) carry
+        no annotation or a compound one, and they legitimately hold words,
+        lists and dicts — type-checking those would refuse `edges="all"`."""
+        fn = CREATORS.get(op) or MODIFIERS.get(op)
+        if op == "move":
+            return {"x", "y", "z"}
+        if fn is None:
+            return set()
+        out = set()
+        for p in inspect.signature(fn).parameters.values():
+            if p.name.startswith("_") or p.kind in (p.VAR_KEYWORD,
+                                                    p.VAR_POSITIONAL):
+                continue
+            ann = p.annotation
+            # `from __future__ import annotations` makes these strings
+            if isinstance(ann, str) and ann.strip() in ("float", "int"):
+                out.add(p.name)
+            elif ann in (float, int):
+                out.add(p.name)
+        return out
+
+    @staticmethod
     def check_params(op: str, params: dict, feature_id: str,
                      stored: dict | None = None) -> None:
         """Refuse a key `op` cannot take, naming EVERY bad one so a save with
@@ -549,6 +582,21 @@ class Document:
                 f"'{feature_id}' ({op}) has no parameter "
                 + ", ".join(repr(k) for k in bad)
                 + f" -- it takes {sorted(allowed)}")
+        # A NUMBER that is not a number. "8mm" is what a CAD user types, and
+        # the tree's text edit passes any non-numeric text through on purpose
+        # (edges="all", open_face="top" need it). It used to reach the kernel:
+        # BRepPrimAPI_MakeBox answered with twelve lines of C++ overloads in
+        # the feature row (measured 2026-09-10, section 5 review).
+        numeric = Document.numeric_params(op)
+        for k, v in (params or {}).items():
+            if k not in numeric:
+                continue
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                # unit-neutral on purpose: this also covers angles (degrees)
+                # and counts, and naming the wrong unit is its own bug
+                raise ValueError(
+                    f"'{feature_id}' ({op}): {k} must be a number (got "
+                    f"{v!r}) — type just the number, without units")
 
     def get(self, feature_id: str) -> Feature:
         for f in self.features:
@@ -961,7 +1009,13 @@ class Document:
                 self._cache_put(sigs[f.id], part, f.problems, f.volume,
                                 f.pieces, f.notes)
             except Exception as e:
-                f.status, f.problems, f.volume = "failed", [repr(e)], None
+                # NEVER repr(e) here: this string is painted straight into the
+                # feature row. A zero thickness read `Standard_DomainError('')`
+                # and a string in a dimension printed twelve lines of pybind11
+                # constructor overloads (measured 2026-09-10, section 5
+                # review). blocks.plain_cause is the one translator.
+                f.status, f.problems, f.volume = (
+                    "failed", [blocks.plain_cause(e)], None)
                 f.pieces = None
                 f.notes = []
                 sk.drain_notes()
@@ -1043,8 +1097,11 @@ class Document:
 
         self._check_dangling()
         self.spec_problems = []
+        self.spec_checked = True
         if self.rollback is not None:
-            self.spec_problems = ["(spec not checked while rolled back)"]
+            self.spec_checked = False
+            self.spec_problems = ["the spec is not checked while the rollback "
+                                  "bar is parked — release it to check"]
             return ok
         # The spec is checked against the WHOLE design — every body — not the
         # tree's tail. Checking result() measured one body of a multi-body
@@ -1552,7 +1609,8 @@ class Document:
                 if p != "(suppressed)":
                     lines.append(f"        ! {p}")
         if self.spec:
-            badge = "[OK]" if not self.spec_problems else "[FAIL]"
+            badge = ("[--]" if not self.spec_checked else
+                     "[OK]" if not self.spec_problems else "[FAIL]")
             lines.append(f"  {badge} spec: " + ", ".join(
                 f"{k}={v}" for k, v in self.spec.items() if v is not None))
             for p in self.spec_problems:

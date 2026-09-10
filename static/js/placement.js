@@ -48,8 +48,15 @@ async function createAt(op, x, y) {
 
 /* ---------------- the modeless placement popup ---------------- */
 
-let timer = null;
-function debounce(fn) { clearTimeout(timer); timer = setTimeout(fn, 250); }
+/* ONE timer per destination, not one for the whole popup. With a single timer,
+   typing a thickness and then touching x within 250 ms cleared the pending
+   applyDims and it never ran: the popup kept showing the new thickness and the
+   document kept the old one (section 5 review, 2026-09-10). */
+const timers = {};
+function debounce(key, fn) {
+  clearTimeout(timers[key]);
+  timers[key] = setTimeout(fn, 250);
+}
 
 function openPlacePopup(st) {
   const el = popup();
@@ -68,11 +75,19 @@ function openPlacePopup(st) {
   head.innerHTML = `<b>${st.op}</b> <span class="pp-id">${st.id}</span>`;
   el.appendChild(head);
 
+  // A half-typed field is not a dimension. `Number(v) || 0` turned a cleared
+  // box (and the lone '-' of a negative number) into 0, which the server then
+  // refused as a zero thickness — so clearing a field to retype it flashed a
+  // failed feature. An unparseable box simply waits for the rest.
+  const num = v => { const n = Number(v); return v !== '' && isFinite(n) ? n : null; };
+
   const dimBox = document.createElement('div'); dimBox.className = 'pp-grid';
   for (const k of Object.keys(st.dims))
     dimBox.appendChild(field(`${k} (mm)`, k, st.dims[k], v => {
-      st.dims[k] = Number(v) || 0;
-      debounce(() => applyDims(st));
+      const n = num(v);
+      if (n === null) return;
+      st.dims[k] = n;
+      debounce('dims', () => applyDims(st));
     }));
   el.appendChild(dimBox);
 
@@ -81,8 +96,10 @@ function openPlacePopup(st) {
   const posBox = document.createElement('div'); posBox.className = 'pp-grid';
   for (const axis of ['x', 'y', 'z'])
     posBox.appendChild(field(axis, axis, st.pos[axis], v => {
-      st.pos[axis] = Number(v) || 0;
-      debounce(() => applyPos(st));
+      const n = num(v);
+      if (n === null) return;
+      st.pos[axis] = n;
+      debounce('pos', () => applyPos(st));
     }));
   el.appendChild(posBox);
 
