@@ -23,11 +23,10 @@
 > face / an origin plane / a mid-plane; five review rounds 9644b6d, c4d5961,
 > 85821be, 072aa95, 21429d8 + the deferred findings in the commit after the
 > stamp, ui v164; user's checklist passed 2026-09-07 — §7 P4). **P4's fifth
-> tool, Shell, BUILT 2026-09-10** (fb0b8c8: the picked flat faces open, walls
-> of one thickness Inside / Outside, every click a server-decided toggle, ui
-> v184; its code review is PENDING in REVIEW-BRIEF.md — the row is stamped
-> after it). Next: Move/Rotate, in a fresh chat, after the review. One tool
-> per session. Every
+> tool, Shell, DONE 2026-09-10** (fb0b8c8: the picked flat faces open, walls
+> of one thickness Inside / Outside, every click a server-decided toggle;
+> reviewed and fixed 667ccc0 — 5 of 5 findings, one of them a P0, ui v185).
+> Next: Move/Rotate, in a fresh chat. One tool per session. Every
 > other plan file points here; §7 carries the done-notes, §10 the ranked open
 > items. **Added 2026-09-10 (user's decision):** P5b, the machine plays the
 > user — a zero-token random-journey runner, a bug button, the library tier
@@ -805,8 +804,8 @@ change, +1 journey; the user re-checked it). Pattern's ghost is deferred by
 the user's decision (§10) — its copies need the seed's delta mesh from the
 server. The review of c6a2377 rides with the next tool's (user's call).
 
-*Shell built 2026-09-10* (spec `specs/shell.md`, tool fb0b8c8; the review
-and its stamp follow). Fusion's Shell as ONE op that eats its body: click the
+*Shell done 2026-09-10* (spec `specs/shell.md`, tool fb0b8c8, review
+667ccc0). Fusion's Shell as ONE op that eats its body: click the
 faces that should be open, drag the arrow for the wall, Inside / Outside; a
 body's tree row opens it with no face open (a closed hollow — the framework's
 new `bodyRow`); every click on the body while the panel is open is a toggle
@@ -818,6 +817,41 @@ two exception classes with kernel wording, translated. 24 + 3 gauntlet + 4
 browser tests, fast tier 1435. Decided: no ghost (a cavity inside an opaque
 body cannot be drawn by growing an outline), flat openings only (the kernel
 refuses a curved one), Fusion's Both direction deferred (§10).
+
+*Reviewed and fixed 667ccc0* — 5 findings, all 5 fixed, 0 rejected, 4 + 2
+browser tests, fast tier 1439, ui v185. The **P0** was silent wrong geometry
+on a body in SEVERAL LUMPS, which the new `bodyRow` makes a one-click target
+(a `linear_pattern` of a boss — a form 13 of the 50 saved designs carry — or
+a cut that severed a plate): `offset(openings=[…])` shells only the lumps a
+listed face belongs to and hands back the RAW OFFSET SOLID for the rest.
+Measured on three 20 × 20 × 10 boxes at t = 2 with one top open,
+[1952, **1536**, **1536**] where a correct closed shell is 2464, and Outside
+[2912, **8064**, **8064**] — blocks GROWN by 2 mm — with one solid per lump,
+watertight, `health []`, `pieces 3` and a green row. So two of three patterned
+bosses silently became smaller blocks. Section 4's lesson again: the gate goes
+BEFORE the kernel (`sketch.assert_every_lump_open`), and it refuses only that
+case — an opening on every lump is exact (1952 each) and no opening at all is
+exact through the difference route in both directions (2464 / 4064 each).
+Two **P1**s in the framework, the second hiding behind the first: the LAST open
+face could not be closed, because `tool.js`'s "keeps at least one edge" guard
+read the plan's `edges` — the picks for an EDGE tool, but the OPEN FACES'
+outlines for Shell, whose empty set is exactly the closed hollow body the spec
+promises (gated on the input KIND now; Fillet and Chamfer unchanged); and a
+REVERT re-pushed the values it had just undone, because `show()` restores the
+BOXES while a param with no box lives in the plan (Shell's face set, Mirror's
+plane) — on the 12 mm plate at 6 mm walls the top-open shell builds and a
+closed hollow cannot, so closing that face looped revert → replan → refuse at a
+MEASURED 50 rebuilds in 6 s and 28 more in the next 3, for ever (the revert now
+restores `st.plan` to the plan the good values came from, which closes the same
+latent hole for Mirror). Two **P3**s: a `faces` value that is not a list put
+`TypeError: 'int' object is not iterable` in the feature row (section 5's
+class), and the tree dumped the picked faces as raw JSON — Mirror's "reads as
+its parts" handler covered a single object, not a list. CLEARED by measurement:
+the whole thickness ladder in both directions (nothing garbage passes the
+volume oracle), the closed hollow as one solid with a void (`pieces 1`), an
+inner cavity face unable to toggle an outer one (the normal test separates them
+even at t = 0.02), and `shell` of a sketch profile failing with a sentence
+rather than segfaulting.
 
 **P5 — The AI uses the tools (§5 step B).** Incremental authoring through
 the plan endpoint; chat edits point at parameters; the FEATURE-TREE-PLAN
