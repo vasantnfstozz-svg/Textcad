@@ -860,11 +860,110 @@ def test_repair_refuses_a_healthy_history(client):
 
 def test_saving_content_the_file_already_holds_is_still_allowed(client):
     """A sample tab writing itself into the library, or a second save of an
-    unchanged design: nothing can be lost, so the guard must not fire."""
+    unchanged design: nothing can be lost, so the guard must not fire.
+
+    No OTHER tab may own the file, though — see the next test."""
     studio._doc().name = TMP
     assert client.post("/api/save").json()["saved"] == TMP
+    owner = studio.STATE["active"]
     client.post("/api/new", json={"name": TMP})           # a fresh, unbound tab
     studio.STATE["docs"][studio.STATE["active"]]["doc"] = studio.Document.load(
         str(_design_path()))
+    client.post("/api/tabs/close", json={"id": owner})    # ...and A is closed
     r = client.post("/api/save").json()
     assert r["saved"] == TMP and not r.get("error")
+
+
+# ---------------------------------------------------------------------------
+# Section 3 FIX-PASS review, 2026-09-10: three doors the F1 guard left open,
+# all measured first in probes/version_review_probe.py.
+# ---------------------------------------------------------------------------
+
+def test_a_second_tab_cannot_take_over_an_open_designs_file(client):
+    """The identical-content escape hatch bound a SECOND tab to the file, and
+    from then on either tab's save silently overwrote the other's and hung its
+    version off the other's latest. Measured: bore.radius 11 -> 44, with v3
+    parented to a v2 it never came out of."""
+    studio._doc().name = TMP
+    assert client.post("/api/save").json()["saved"] == TMP
+    a_tid = studio.STATE["active"]
+
+    # tab B holds EXACTLY what the file holds, so the content check passes
+    client.post("/api/new", json={"name": TMP})
+    studio.STATE["docs"][studio.STATE["active"]]["doc"] = studio.Document.load(
+        str(_design_path()))
+    r = client.post("/api/save").json()
+    assert r.get("error"), "a second tab took over an open design's file"
+    assert "another tab" in r["error"]
+    sources = [e.get("source") for e in studio.STATE["docs"].values()]
+    assert sources.count(f"file:{TMP}") == 1
+
+    # ...and the tab that DOES own it keeps saving over it
+    studio.STATE["active"] = a_tid
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    assert client.post("/api/save").json().get("version") == "v2"
+
+
+def test_the_owner_tab_is_matched_case_insensitively(client):
+    """This filesystem is case-insensitive, so file:Flange-Case and
+    file:flange-case are ONE file and must not be owned by two tabs."""
+    studio._doc().name = TMP
+    client.post("/api/save")
+    studio.STATE["docs"][studio.STATE["active"]]["source"] = f"file:{TMP.upper()}"
+    client.post("/api/new", json={"name": TMP})
+    studio.STATE["docs"][studio.STATE["active"]]["doc"] = studio.Document.load(
+        str(_design_path()))
+    r = client.post("/api/save").json()
+    assert r.get("error") and "another tab" in r["error"]
+
+
+def test_saving_onto_a_deleted_designs_version_tree_is_refused(client):
+    """The design FILE is not the only thing a save lands on. There is no
+    in-app delete, so a design removed in Explorer leaves <slug>.history/
+    behind -- and an unrelated design of the same name appended itself to that
+    tree as a child of its last version, under its design_id and its name
+    (measured: a 1-feature disc became v3 of a 3-feature flange)."""
+    studio._doc().name = TMP
+    client.post("/api/save")
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    client.post("/api/save")
+    h = _hist()
+    assert [v.id for v in h.versions()] == ["v1", "v2"]
+    design_id = h.design_id
+
+    _design_path().unlink()                       # deleted in Explorer...
+    client.post("/api/tabs/close", json={"id": studio.STATE["active"]})
+
+    client.post("/api/new", json={"name": TMP})   # ...and the name reused
+    client.post("/api/feature/add", json={
+        "id": "other", "op": "disc",
+        "params": {"radius": 3, "thickness": 1}, "inputs": []})
+    r = client.post("/api/save").json()
+    assert r.get("error"), "an unrelated design was grafted onto that tree"
+    assert f"{TMP}.history" in r["error"]
+    back = _hist()
+    assert [v.id for v in back.versions()] == ["v1", "v2"]
+    assert back.design_id == design_id
+    assert not _design_path().exists()
+
+
+def test_repair_says_the_real_reason_it_cannot_rebuild(client):
+    """An index from a NEWER build is unusable here and still holds every
+    parent, label and star a rebuild would guess away. Answering that with
+    "your version list is readable" was the opposite of the truth."""
+    studio._doc().name = TMP
+    client.post("/api/save")
+    h = _hist()
+    idx = h.path / "index.json"
+    data = json.loads(idx.read_text(encoding="utf-8"))
+    data["schema"] = 999
+    idx.write_text(json.dumps(data), encoding="utf-8")
+
+    d = client.get("/api/versions").json()
+    assert d.get("can_repair") is False, "the panel offered to overwrite it"
+    r = client.post("/api/versions/repair").json()
+    assert r.get("error") and "schema" in r["error"]
+    # and the index is exactly as it was
+    assert json.loads(idx.read_text(encoding="utf-8")) == data

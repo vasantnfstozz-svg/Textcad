@@ -227,6 +227,9 @@ class History:
         self.path = Path(path)
         self._data: dict | None = None
         self._problems: list[str] = []
+        # an index this build must not interpret (see _load) — unusable AND
+        # unrepairable, which are different things
+        self._foreign = False
         self._load()
 
     @classmethod
@@ -244,6 +247,7 @@ class History:
         `problems()` and behaves as empty for READS; writes refuse separately,
         so a corrupt index is never quietly replaced."""
         self._problems = []
+        self._foreign = False
         idx = self.path / INDEX
         if not idx.exists():
             # "no index" and "the index vanished from under real snapshots" are
@@ -277,6 +281,13 @@ class History:
                 f"{idx} is schema {got!r}, this build understands {SCHEMA}. "
                 f"Refusing to touch it rather than risk mangling it.")
             self._data = None
+            # NOT a candidate for repair: this index is intact and full of
+            # real parents, labels and a star that a newer build wrote. The
+            # fix-pass review measured repair() replacing a schema-2 index
+            # with a linear "(recovered)" chain under a brand-new design_id
+            # (probes/version_review_probe.py) — exactly the information this
+            # branch exists to protect.
+            self._foreign = True
             return
         self._data = data
 
@@ -305,6 +316,22 @@ class History:
     def exists(self) -> bool:
         return self._data is not None
 
+    def snapshot_files(self) -> list[tuple[int, Path]]:
+        """The version snapshots, oldest first, as (number, path).
+
+        Only names that are EXACTLY v<N>.json.gz are ours. A cloud-sync or
+        merge conflict copy ("v3 (2).json.gz") matches the glob but not the
+        pattern, and used to reach `int(_VID.match(...).group(1))` inside
+        repair()'s sort key and take it down with an AttributeError whose
+        text went straight to the user (measured, fix-pass review
+        2026-09-10)."""
+        out = []
+        for p in self.path.glob("v*.json.gz"):
+            m = _VID.match(p.name.split(".")[0])
+            if m:
+                out.append((int(m.group(1)), p))
+        return sorted(out)
+
     def can_repair(self) -> bool:
         """True in the ONE state `repair()` is for: the index is unusable but
         the snapshots are still on disk.
@@ -312,8 +339,11 @@ class History:
         Repair rebuilds a LINEAR chain with "(recovered)" labels and no star,
         so running it on a healthy tree would throw away real information.
         This is the guard that lets a UI offer the button without being able
-        to make that mistake."""
-        return not self.exists() and any(self.path.glob("v*.json.gz"))
+        to make that mistake — which is why a FOREIGN index (readable, but
+        written to a schema this build does not understand) says no: it is
+        unusable here and still holds everything repair would guess away."""
+        return (not self.exists() and not self._foreign
+                and bool(self.snapshot_files()))
 
     def problems(self, deep: bool = False) -> list[str]:
         """Plain-language faults. Empty when the history is healthy. Callers
@@ -782,9 +812,12 @@ class History:
         number and the chain is made linear — the real parent links are gone
         with the index, and inventing branches would be a lie. Returns notes on
         what was assumed."""
-        snaps = sorted(self.path.glob("v*.json.gz"),
-                       key=lambda p: int(_VID.match(p.name.split(".")[0])
-                                         .group(1)))
+        if self._foreign:
+            raise HistoryError(
+                " ".join(self._problems) + " Rebuilding the list would "
+                "replace that index with a guess, so it is refused: this "
+                "design's versions need the build that wrote them.")
+        snaps = [p for _, p in self.snapshot_files()]
         if not snaps:
             raise HistoryError(f"nothing to repair in {self.path} — no "
                                f"v*.json.gz snapshots found")
@@ -795,14 +828,14 @@ class History:
             try:
                 with gzip.open(p, "rt", encoding="utf-8") as fh:
                     snap = json.load(fh)
+                created = datetime.fromtimestamp(
+                    p.stat().st_mtime, timezone.utc).isoformat(
+                        timespec="seconds")
             except Exception as e:
                 notes.append(f"{vid}: snapshot unreadable ({e}) — left out")
                 continue
             versions.append(asdict(Version(
-                id=vid, parent=prev,
-                created=datetime.fromtimestamp(
-                    p.stat().st_mtime, timezone.utc).isoformat(
-                        timespec="seconds"),
+                id=vid, parent=prev, created=created,
                 label="(recovered)", source="repair",
                 hash=content_hash(snap),
                 features=len(snap.get("features", [])))))

@@ -168,6 +168,19 @@ def _find_tab(source: str) -> str | None:
     return None
 
 
+def _file_owner(slug: str) -> str | None:
+    """The tab already bound to designs/<slug>.tcad.json, or None.
+
+    Case-INSENSITIVE, unlike `_find_tab`: this filesystem is, so
+    "file:Cam-Cover-Plaque" and "file:cam-cover-plaque" are one file and must
+    never end up owned by two tabs (fix-pass review, 2026-09-10)."""
+    want = f"file:{slug}".lower()
+    for tid, e in STATE["docs"].items():
+        if (e.get("source") or "").lower() == want:
+            return tid
+    return None
+
+
 def _entry() -> dict:
     # Degrade gracefully: if no tab is open (fresh import / all tabs closed),
     # auto-create an empty "untitled" document instead of raising KeyError:None
@@ -546,6 +559,17 @@ def _history_root() -> Path:
     points this at a throwaway path for every test."""
     override = os.environ.get(HISTORY_ROOT_ENV)
     return Path(override) if override else DESIGNS
+
+
+def _saved_versions_exist(slug: str) -> bool:
+    """True when designs/<slug>.history/ already holds someone's versions.
+
+    The design FILE is not the only thing a save can land on: the version
+    tree outlives it, and grafting one design onto another's tree is the P0
+    the section 3 review measured. Snapshots count even when the index is
+    unreadable — that is data, and a save must not build on top of it."""
+    h = History.for_design(_history_root(), slug)
+    return bool(h.versions()) or bool(h.snapshot_files())
 
 
 def _vhistory() -> History | None:
@@ -2370,22 +2394,53 @@ def save_design():
     # version tree as a child of its latest version, with both tabs left bound
     # to the one design (section 3 review, 2026-09-10, measured). The tab that
     # is ALREADY bound to this file may of course keep saving over it.
-    # Two saves are still fine: the tab ALREADY bound to this file, and a save
-    # whose content is exactly what the file holds (nothing can be lost that
-    # way — that is how a sample tab saves itself into the library).
-    if (_entry().get("source") or "").lower() != f"file:{safe}".lower() \
-            and path.exists():
-        try:
-            same = content_hash(json.loads(
-                path.read_text(encoding="utf-8"))) == content_hash(doc.to_data())
-        except Exception:
-            same = False               # unreadable: assume it is someone's work
-        if not same:
+    #
+    # THREE doors lead there, all measured (probes/version_review_probe.py).
+    owner = _file_owner(safe)
+    if owner is not None and owner != STATE["active"]:
+        # 1. another TAB already owns this file. One tab per design is an
+        # invariant everywhere else — /api/open reuses the tab instead of
+        # cloning it — and this was the one place that broke it: a save of
+        # identical content bound a SECOND tab to the file, after which either
+        # tab's save silently overwrote the other's and hung its version off
+        # the other's latest (measured: bore.radius 11 -> 44, and v3 parented
+        # to a v2 it never came out of).
+        return _refused(None, message=(
+            f"'{safe}' is already open in another tab. Two tabs cannot share "
+            f"one design file and one version tree — switch to that tab and "
+            f"save there, or give this design another name."))
+    if (_entry().get("source") or "").lower() != f"file:{safe}".lower():
+        if path.exists():
+            # 2. a DIFFERENT design already holds the name. A save whose
+            # content is exactly what the file holds is still fine — nothing
+            # can be lost that way, and that is how a sample tab writes itself
+            # into the library.
+            try:
+                same = content_hash(json.loads(
+                    path.read_text(encoding="utf-8"))) == content_hash(
+                        doc.to_data())
+            except Exception:
+                same = False           # unreadable: assume it is someone's work
+            if not same:
+                return _refused(None, message=(
+                    f"There is already a different design called '{safe}', "
+                    f"and saving here would replace it. Give this one another "
+                    f"name first — or, if you meant to work on that design, "
+                    f"open it from the library and make your changes in its "
+                    f"tab."))
+        elif _saved_versions_exist(safe):
+            # 3. the FILE is gone but the version tree is NOT. There is no
+            # in-app delete, so a design removed in Explorer leaves
+            # <slug>.history/ behind — and a new design of the same name then
+            # appended itself to that tree as a child of its last version,
+            # under its design_id and its name (measured: a 1-feature disc
+            # became v3 of a 3-feature flange).
             return _refused(None, message=(
-                f"There is already a different design called '{safe}', and "
-                f"saving here would replace it. Give this one another name "
-                f"first — or, if you meant to work on that design, open it "
-                f"from the library and make your changes in its tab."))
+                f"There is no design file called '{safe}' any more, but its "
+                f"saved versions are still in designs/{safe}.history/ — "
+                f"saving here would add this design to that history as though "
+                f"it grew out of it. Give this one another name, or delete "
+                f"that folder if those versions are no longer wanted."))
     doc.save(str(path))
     # bind this tab to the file it just wrote (it may not have had a source, or
     # may have been saved under a new name) so opening that design later comes
@@ -2611,7 +2666,13 @@ def repair_history():
     h = _vhistory()
     if h is None:
         return {"error": "this design has no history yet — save it once first"}
-    if not h.can_repair():
+    # Two very different noes, and giving the wrong one is worse than giving
+    # none: the tree is FINE, or it is unusable in a way a rebuild cannot
+    # help (an index from a NEWER build; no snapshots left). Only the first is
+    # answered here; the second is `repair()`'s own refusal, which names the
+    # actual fault. Answering both with "your version list is readable" was
+    # the opposite of the truth (fix-pass review, 2026-09-10).
+    if h.exists():
         return {"error": "nothing to repair — this design's version list is "
                          "readable. (Rebuilding can only guess a straight "
                          "line of versions, so it never runs on a working "

@@ -848,3 +848,74 @@ def test_delete_after_a_leaf_is_a_polite_no_op(h):
     _chain(h, 2)
     out = h.delete_after("v2")
     assert out["deleted"] == [] and len(h.versions()) == 2
+
+
+# ---------------------------------------------------------------------------
+# Section 3 FIX-PASS review, 2026-09-10. can_repair() answered YES in two
+# states repair() must never run in, both measured in
+# probes/version_review_probe.py:
+#
+#   * an index written to a schema this build does not understand. _load
+#     refuses to interpret it ("rather than risk mangling it") -- and repair
+#     then replaced it with a linear "(recovered)" chain under a brand-new
+#     design_id, destroying the parents, labels and star it was protecting;
+#   * a v*.json.gz whose name is not v<N> (a cloud-sync or merge conflict
+#     copy, "v3 (2).json.gz"). repair()'s sort key ran int(_VID.match(...)
+#     .group(1)) over it and died with an AttributeError whose text went to
+#     the user.
+# ---------------------------------------------------------------------------
+
+def test_an_index_from_a_newer_build_is_never_offered_for_repair(h, tmp_path):
+    _chain(h, 2)
+    h.relabel("v2", "the one that machines")
+    h.star("v2")
+    idx = h.path / INDEX
+    before = json.loads(idx.read_text(encoding="utf-8"))
+    before["schema"] = history.SCHEMA + 1
+    idx.write_text(json.dumps(before, indent=2), encoding="utf-8")
+
+    foreign = History(tmp_path / "part.history")
+    assert not foreign.exists()
+    assert any("schema" in p for p in foreign.problems())
+    assert foreign.can_repair() is False, \
+        "the panel would offer to overwrite a newer build's index"
+    with pytest.raises(HistoryError, match="schema"):
+        foreign.repair()
+    assert json.loads(idx.read_text(encoding="utf-8")) == before, \
+        "the index the loader refused to touch was rewritten anyway"
+
+
+def test_a_lost_index_is_still_repairable(h, tmp_path):
+    """The guard must not have closed the door it exists to open."""
+    _chain(h, 2)
+    (h.path / INDEX).unlink()
+    broken = History(tmp_path / "part.history")
+    assert broken.can_repair() is True
+    broken.repair()
+    assert [v.id for v in broken.versions()] == ["v1", "v2"]
+
+
+def test_a_conflict_copy_snapshot_is_ignored_not_fatal(h, tmp_path):
+    _chain(h, 2)
+    (h.path / INDEX).unlink()
+    # what OneDrive and git leave behind; neither is a version of ours
+    (h.path / "v2 (2).json.gz").write_bytes(b"not gzip")
+    (h.path / "v.json.gz").write_bytes(b"not gzip either")
+
+    broken = History(tmp_path / "part.history")
+    assert [n for n, _ in broken.snapshot_files()] == [1, 2]
+    assert broken.can_repair() is True
+    notes = broken.repair()                        # used to raise AttributeError
+    assert [v.id for v in broken.versions()] == ["v1", "v2"]
+    assert not any("(2)" in n for n in notes)
+    assert (h.path / "v2 (2).json.gz").exists(), "someone else's file was eaten"
+
+
+def test_only_conflict_copies_means_nothing_to_repair(tmp_path):
+    d = tmp_path / "part.history"
+    d.mkdir()
+    (d / "v1 (2).json.gz").write_bytes(b"not gzip")
+    lone = History(d)
+    assert lone.can_repair() is False
+    with pytest.raises(HistoryError, match="nothing to repair"):
+        lone.repair()
