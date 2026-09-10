@@ -99,7 +99,7 @@ Then two closing sections:
 | 2 | Document core and feature tree | high | **reviewed and fixed 6ea5546**, ONE reviewer at medium: 5 findings, **4 fixed, 1 rejected** (refusing to open a file with an unknown op IS the settled answer - the fast tier proved it). 7 new tests; the P2s were a struck row keeping its piece count (and silencing the warning below it), a struck row highlighting the whole upstream body, and an intended sever re-probing the healer on every rebuild |
 | 3 | Version tree and session persistence | high | **reviewed and fixed f63ba5a** (3 findings, all 3 fixed, 9 tests): a P0 (a save could overwrite ANOTHER design's file and graft itself onto its version tree), a P1 (after a restart a tab with unsaved edits could read clean, so closing it discarded them silently) and a P2 (the only recovery for a lost index named a Python method - it is a button now). A P0 was fixed, so **round two re-reviewed the FIX COMMIT: fafe983**, 4 findings, **all 4 fixed**, 8 new tests - the same P0 was still reachable through TWO other doors (a second tab taking over an open design's file; a slug whose `.history/` outlived its deleted `.tcad.json`), and the new repair button could overwrite a NEWER build's index. **Section 3 is done unless a third read finds something** |
 | 4 | Booleans and transforms | high | **reviewed and fixed c9b2e92**, ONE reviewer: 9 findings, **all 9 fixed**, 26 new tests, 50/50 library designs rebuild with ZERO volume drift. The one that mattered most: **`loft` of a sketch AND a solid SEGFAULTS OpenCASCADE** (exit 139, no `except` can catch it) and the Add Feature dialog offers every feature as a checkbox — so combiners now get a KIND gate BEFORE the kernel, which also closes the silent twin (an `intersect` of a body and a sketch ate the body and left the design with no bodies, all rows green). Plus: no bodies + a spec reported "meets spec"; the Join/Cut default target followed FACE-REFERENCE ops (a New-body boss became the panel's current state, parity rule 6); the stranding heal ticked `through` on a tool ANOTHER cut shares (that cut lost 3600 mm3 unasked); a cut whose tool misses reported success silently; a pattern's copy form called "a part that fell apart" (24 rows in 13 designs). A P0-class finding was fixed, so **round two re-reviewed the FIX COMMIT: 33b2f49**, 2 findings, **both fixed**, 4 tests — two holes in the guard round one had just built (`getattr` does not swallow a raising property; build123d raises its OWN bare `ValueError` with kernel wording), plus the new refusal calling a body behind the rollback bar broken. The brief's four other named risks CLEARED by measurement, `_live_source` included (52 files, 15 struck features, zero mismatches). **Section 4 is done unless a third read finds something** |
-| 5 | Primitives and shape editing | high | TODO |
+| 5 | Primitives and shape editing | high | **reviewed and fixed e35450d**, ONE reviewer: 8 findings, **all 8 fixed**, 0 rejected, 55 new tests, all 50 saved designs rebuild with no failed feature. The one that mattered: **`polygon_plate` and `hex_plate` span Z 0..thickness, and the AI's positioning rule listed them with disc and plate as CENTERED** — so every `move` it computed for a hex body was half a thickness out (designs/planetary-assembly: four bolt heads seated 1.4 mm high, 0.5 mm of shank overlap where 1.9 mm was intended). The PROMPT was corrected, not the solid: two saved designs are built on the geometry as it stands. Plus: a degenerate dimension put raw kernel text in the feature row (`Standard_DomainError('')` for a zero thickness — the same empty diagnosis for all three of a plate's dimensions; twelve lines of pybind11 constructor overloads for the string "8mm"); `with_center_hole`/`with_bolt_circle` reported success after drilling NOTHING (radius 0, or a PCD that puts the holes off the part — volume unchanged, row green), and a PCD of 0 silently drilled one hole instead of six; the tree painted a red "spec FAIL" whenever the rollback bar was parked, on **42 of the 50 designs** that carry a spec; the placement popup's one shared debounce timer discarded a dimension typed just before touching x/y/z. A P0-class finding was fixed, so **round two must re-review the FIX COMMIT** (`REVIEW-BRIEF.md` is PENDING on e35450d) |
 | 6 | Measure and drive | high | TODO |
 | 7 | Extrude as a whole module (with loft and sweep) | medium | TODO |
 | 8 | Import STL and STEP | medium | TODO |
@@ -1237,3 +1237,52 @@ these parts are built at; the pattern exclusion reads a falsy `seed` as the
 copy form, matching what `_eval` itself does.
 
 **Line delta:** +130 / -8. The library still rebuilds with zero volume drift.
+
+### Section 5 - Primitives and shape editing (reviewed and fixed 2026-09-10, commit e35450d)
+
+8 findings, all reproduced by measurement first
+(`probes/primitives_review_probe.py`). **8 fixed, 0 rejected**, 55 new tests
+(`tests/test_primitive_guards.py`), fast tier 1373 green.
+
+| # | P | What it was | Fix |
+|---|---|---|---|
+| F1 | P0 | `polygon_plate` and `hex_plate` span Z 0..thickness; `author.AUTHOR_PROMPT` listed them with disc/plate/tube as "CENTERED at the origin - they span Z from -thickness/2 to +thickness/2". Measured: the other five span -4..+4 at thickness 8, these two 0..8. Every `move` the AI computed for a hex body was half a thickness out | the PROMPT now says which five are centred and that these two stand on Z=0. A test measures all seven spans AND checks the prompt names exactly the centred set |
+| F2 | P1 | a degenerate or mistyped dimension put raw kernel text in the feature row: `Standard_DomainError('')` (empty, and identical for all three of a plate's dimensions), `StdFail_NotDone('BRep_API: command not done')`, and for the string "8mm" twelve lines of pybind11 constructor overloads | `blocks._positive` checks every dimension before the kernel and names the bad one; `check_params` refuses a non-number in a number param, read from the type ANNOTATION; `rebuild` translates through `blocks.plain_cause` instead of `repr(e)` |
+| F3 | P2 | `with_center_hole(radius=0)` and a bolt circle whose PCD puts the holes off the part handed back the UNDRILLED body - volume unchanged at 78539.82, row green | positive-value guards, plus `_drilled()`: a drill that removes no volume raises, naming why |
+| F4 | P2 | `with_bolt_circle(pitch_circle_dia=0)` put all `count` locations on the origin, so six holes became ONE at the centre and the row stayed green (78037.16 = exactly one hole) | refused, with the smallest PCD that would fit named, and `with_center_hole` suggested for one central hole |
+| F5 | P2 | the tree painted a red **"spec FAIL"** whenever the rollback bar was parked - `spec_problems` held `["(spec not checked while rolled back)"]` and `renderSpecRow` colours any non-empty list as a failure. **42 of the 50 saved designs carry a spec**, so it appeared the moment any editor opened | `spec_checked` is a field on the response and the row has three states. The browser does not read it out of a problem line's wording (R1) |
+| F6 | P2 | the placement popup shared ONE debounce timer between its dimension and position grids, so a dimension typed within 250 ms of touching x/y/z was silently discarded while the popup went on showing it | one timer per destination |
+| F7 | P3 | `Number(v) \|\| 0` in the placement popup turned a cleared field (and the lone `-` of a negative number) into 0, which then failed as a zero dimension | an unparseable box waits for the rest of the number |
+| F8 | P3 | `revolve_profile` has promised radii >= 0 in its docstring since it existed and never checked; a negative radius gave `StdFail_NotDone` | the point number and its radius are named |
+
+**Why the prompt and not the geometry (F1).** Both sides were wrong together,
+so either could have moved. `designs/hex-nut-M16` and
+`designs/planetary-assembly` hold five of these features between them, and
+re-centring would have shifted a nut that the user has already looked at and
+may have cut. Moving a shipped part to fix a sentence is the wrong trade; the
+sentence was the thing telling the AI to place bodies wrongly. **Whether the
+two should be re-centred for consistency is a product decision, not a review
+fix** - it is a LAUNCH-PLAN section 10 row (P2), and it carries the related
+question that click-to-place currently drops five primitives half below the
+ground grid and these two on top of it.
+
+**Checked and found sound, so not re-checked:** `isRadius`/`diameterRow` -
+enumerated every op parameter, all 12 diameter rows are true radii and all
+four already-diameter params (`hole.diameter`, `cbore_diameter`,
+`csink_diameter`, `pitch_circle_dia`) are correctly excluded; the Ø row cannot
+drift the stored radius, because `beginEditWith` returns early on an unchanged
+number; `circumR` is the standard `abc/(4·Area)` formula, correctly written;
+the missing-catalogue fallback (`genericFields`/`genericRadius`/
+`genericGeometry`/`staleCatalogNote`) really does keep every numeric field
+editable; the sketch-entity catalogue is already drift-guarded both ways by
+`test_shape_params.py`; `api_summary`/`_signature` are no longer the catalogue
+the AI reads (`author.op_catalog` derives from `document.op_params`, one source
+shared with the edit guard), so that drift risk is already closed.
+
+**Not reported, on purpose:** `placement.js` calling `loadMesh()` itself is the
+known P3 already exempted for `sketcher.js` and `measure.js`, and the fit flag
+it passes is computed correctly.
+
+**Line delta:** +237 / -25 over 8 files, plus 340 lines of tests and the probe.
+Geometry is untouched - every fix either refuses or changes wording - and all
+50 saved designs rebuild with no failed feature.
