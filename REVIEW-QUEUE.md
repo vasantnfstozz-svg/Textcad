@@ -98,7 +98,7 @@ Then two closing sections:
 | 1 | Sketcher | high | four rounds, each fixing the last: 556a611 (9/9, 1 rejected), 6e2cae9 (8/8, the fix pass had a P0), 5f65a7a (8/8, so did that one), **13da90c** (8/9, 1 rejected - the ordering RULE was incomplete), and **round five, ONE reviewer at medium**, which CLEARED the two-part ordering rule (no arrangement makes it worse, termination bounded) and fixed 5 gaps in the fix pass itself. Composition is measurably order-independent, all 324 library sketches build, the whole library composes unchanged. **Section 1 is done unless the sixth read finds something** |
 | 2 | Document core and feature tree | high | **reviewed and fixed 6ea5546**, ONE reviewer at medium: 5 findings, **4 fixed, 1 rejected** (refusing to open a file with an unknown op IS the settled answer - the fast tier proved it). 7 new tests; the P2s were a struck row keeping its piece count (and silencing the warning below it), a struck row highlighting the whole upstream body, and an intended sever re-probing the healer on every rebuild |
 | 3 | Version tree and session persistence | high | **reviewed and fixed f63ba5a** (3 findings, all 3 fixed, 9 tests): a P0 (a save could overwrite ANOTHER design's file and graft itself onto its version tree), a P1 (after a restart a tab with unsaved edits could read clean, so closing it discarded them silently) and a P2 (the only recovery for a lost index named a Python method - it is a button now). A P0 was fixed, so **round two re-reviewed the FIX COMMIT: fafe983**, 4 findings, **all 4 fixed**, 8 new tests - the same P0 was still reachable through TWO other doors (a second tab taking over an open design's file; a slug whose `.history/` outlived its deleted `.tcad.json`), and the new repair button could overwrite a NEWER build's index. **Section 3 is done unless a third read finds something** |
-| 4 | Booleans and transforms | high | **reviewed and fixed c9b2e92**, ONE reviewer: 9 findings, **all 9 fixed**, 26 new tests, 50/50 library designs rebuild with ZERO volume drift. The one that mattered most: **`loft` of a sketch AND a solid SEGFAULTS OpenCASCADE** (exit 139, no `except` can catch it) and the Add Feature dialog offers every feature as a checkbox — so combiners now get a KIND gate BEFORE the kernel, which also closes the silent twin (an `intersect` of a body and a sketch ate the body and left the design with no bodies, all rows green). Plus: no bodies + a spec reported "meets spec"; the Join/Cut default target followed FACE-REFERENCE ops (a New-body boss became the panel's current state, parity rule 6); the stranding heal ticked `through` on a tool ANOTHER cut shares (that cut lost 3600 mm3 unasked); a cut whose tool misses reported success silently; a pattern's copy form called "a part that fell apart" (24 rows in 13 designs). **Section 4 is done unless a second read finds something** |
+| 4 | Booleans and transforms | high | **reviewed and fixed c9b2e92**, ONE reviewer: 9 findings, **all 9 fixed**, 26 new tests, 50/50 library designs rebuild with ZERO volume drift. The one that mattered most: **`loft` of a sketch AND a solid SEGFAULTS OpenCASCADE** (exit 139, no `except` can catch it) and the Add Feature dialog offers every feature as a checkbox — so combiners now get a KIND gate BEFORE the kernel, which also closes the silent twin (an `intersect` of a body and a sketch ate the body and left the design with no bodies, all rows green). Plus: no bodies + a spec reported "meets spec"; the Join/Cut default target followed FACE-REFERENCE ops (a New-body boss became the panel's current state, parity rule 6); the stranding heal ticked `through` on a tool ANOTHER cut shares (that cut lost 3600 mm3 unasked); a cut whose tool misses reported success silently; a pattern's copy form called "a part that fell apart" (24 rows in 13 designs). A P0-class finding was fixed, so **round two re-reviewed the FIX COMMIT: 33b2f49**, 2 findings, **both fixed**, 4 tests — two holes in the guard round one had just built (`getattr` does not swallow a raising property; build123d raises its OWN bare `ValueError` with kernel wording), plus the new refusal calling a body behind the rollback bar broken. The brief's four other named risks CLEARED by measurement, `_live_source` included (52 files, 15 struck features, zero mismatches). **Section 4 is done unless a third read finds something** |
 | 5 | Primitives and shape editing | high | TODO |
 | 6 | Measure and drive | high | TODO |
 | 7 | Extrude as a whole module (with loft and sweep) | medium | TODO |
@@ -1184,3 +1184,56 @@ does NOT reach it (`strike` runs the orphan sweep, which suppresses the tool
 prism too), only `/api/feature/suppress`, which no frontend calls; and its
 worse door is `_export_blockers`, which would then treat the cutter as a body
 of the design and write it into the STEP file.
+
+### Section 4 again - the FIX PASS re-reviewed (2026-09-10, commit 33b2f49)
+
+`c9b2e92` fixed a P0-class finding, so the house rule sent a second read over
+the fix commit itself. **2 findings, both fixed, 0 rejected**, 4 new tests
+(fast tier 1314 -> 1318). Both are the same shape as section 1's G2, where
+F4's catch-all wrapped only `make_face()` and `StdFail_NotDone` came out of
+`ThreePointArc` instead: **a translator built one commit ago, with holes.**
+
+| # | P | What it was | Fix |
+|---|---|---|---|
+| G1 | P2 | **`_loft`'s new guard leaked two ways.** (a) `getattr(out, "volume", 0)` does NOT swallow an exception raised by the property - the default only covers `AttributeError` (measured: a property raising `RuntimeError` propagates straight through `getattr`) - so a degenerate loft escaped as raw kernel text, the exact failure the guard exists to stop. (b) `except ValueError: raise` treated every `ValueError` as one of OUR sentences, but build123d raises its own bare ones with kernel wording (measured: `loft_sketches([sketch, Part()])` -> `ValueError('More than one wire is required')`) | the volume is read through `inspector._try`, the idiom that already existed for this; `_loft` now translates EVERY exception, because the count check is in `_eval` and the kind check in `_check_combiner_inputs` and both run first, so nothing above that line produces a sentence worth keeping |
+| G2 | P3 | **The new `_pick_body` refusal called a HEALTHY body broken.** A feature behind a parked rollback bar has no part, so a face-mode plan answered "'boss' has not built - fix that feature first" about a body that builds at 1206.37 mm3 the moment the bar comes down. The sketch and extrude editors park the bar for isolation, so an ordinary edit could produce that sentence - and it tells a non-engineer to repair something that is not broken | the two reasons are two sentences; the parked-bar one says to move the bar. The distinction `_export_blockers`' docstring already draws ("the build raised, or it is stale behind a rollback bar") |
+
+**Honest reachability:** neither G1 door could be driven through the app. An
+empty sketch raises inside `make_sketch`, so its part is `None` and a loft of
+it never evaluates; an empty combiner result is a `Compound`, which the new
+kind gate refuses first. They are holes in a rule-5 barrier rather than live
+bugs, and they were fixed because the fix is three lines and the barrier's
+whole job is that nothing leaks. G2 reproduces in four lines.
+
+**The brief named five risks; four cleared BY MEASUREMENT, not by reading:**
+
+- **`_live_source` is behaviour-identical to both walks it replaced** - the
+  biggest risk, since `consumed_ids` is what the viewport and the exporter
+  filter on. Re-implemented both originals verbatim and compared over 52
+  design and fixture files with 15 struck features exercised: **zero
+  mismatches**, plus hand-built chains of one and two consecutive struck
+  nodes.
+- **The new spec failure reaches three `rebuild()` callers and none of them
+  refuses a user action:** `studio.py` only reports `ok`, `mcp_server` gates
+  the export on it (correct - there is nothing to export), `author.py` hands
+  `spec_problems` to the model as something to fix (correct - a tree with no
+  bodies should be told so).
+- **A parked rollback bar cannot trigger the false "no bodies" verdict:** the
+  rollback branch returns before the new one.
+- **The kind gate's 2D test holds on every path that makes a 2D part.** This
+  was the one I expected to be wrong, because `rebuild` itself deliberately
+  classifies by OP as well as type ("disjoint entities compose into a Compound
+  that is not a Sketch instance"). Measured: `make_sketch` normalises even
+  DISJOINT entities to a `Sketch`, and `move`, `rotate`, `scale` and
+  `sketch_on_face` all keep `is_sketch` True - so a legitimate loft of a
+  sketch plus a moved copy of it still builds (1570.8 mm3). No false refusal.
+
+**Considered and rejected as findings:** a pattern SEEDED on a healed tool is
+not the shared-tool bug through another door (that bug was a second cut on a
+DIFFERENT body silently changed; a pattern of the same feature following its
+fix is coherent, so the guard rightly ignores `param_refs`);
+`_check_idle_cuts`' 0.01 mm3 absolute tolerance is negligible at the scale
+these parts are built at; the pattern exclusion reads a falsy `seed` as the
+copy form, matching what `_eval` itself does.
+
+**Line delta:** +130 / -8. The library still rebuilds with zero volume drift.

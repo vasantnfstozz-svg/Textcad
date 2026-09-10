@@ -6,10 +6,9 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING** — review commit `c9b2e92` (section 4's fix pass). One
-> of its nine findings was silent wrong geometry that would have been SAVED,
-> and the fixes sit inside `rebuild` itself, so the house rule sends a second
-> chat over the fix commit.
+> **Status: NOTHING PENDING** — `33b2f49` fixed two findings and neither was a
+> P0 (a P2 hardening gap and a P3 wrong sentence), so there is no third round
+> to run. The next `code review` goes to the queue.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5`) and types only `code review`. CLAUDE.md's section
@@ -22,79 +21,58 @@
 
 ---
 
-## The range
+## Just done: section 4's FIX PASS, re-reviewed (33b2f49)
 
-```
-c9b2e92        (one commit, base e335a4f)
-```
+`c9b2e92` closed a P0-class finding — the stranding heal ticked `through` on a
+tool another cut shared, and that cut lost 3600 mm3 unasked — so the house rule
+sent a second chat over the fix commit. It found **two findings, both fixed**,
+4 new tests, fast tier 1318 green. Full record in `REVIEW-QUEUE.md`'s done
+log, section 4, round two.
 
-`git show c9b2e92 --stat` — `document.py`, `toolplan.py`, `blocks.py`,
-`author.py`, `tests/test_boolean_review.py` (new, 26 tests),
-`probes/boolean_review_probe.py` (new). Production code +157 / -26.
+Both were **holes in the guard round one had just built** — the same shape as
+section 1's G2, where F4's catch-all wrapped only `make_face()` and
+`StdFail_NotDone` came out of `ThreePointArc` instead:
 
-## What it did
+- `getattr(out, "volume", 0)` does **not** swallow an exception raised by the
+  property (the default only covers `AttributeError`), so a degenerate loft
+  escaped `_loft` as raw kernel text — the exact failure the guard exists to
+  stop. It reads through `inspector._try` now.
+- `except ValueError: raise` assumed every `ValueError` is one of our
+  sentences, but build123d raises its own bare ones with kernel wording
+  (`ValueError('More than one wire is required')`). `_loft` translates
+  everything now; the count and kind checks both run before it.
+- and the new `_pick_body` refusal called a **healthy** body broken: behind a
+  parked rollback bar a feature has no part, so a face-mode plan said "'boss'
+  has not built — fix that feature first" about a body that builds at
+  1206.37 mm3 the moment the bar comes down.
 
-Section 4 of `REVIEW-QUEUE.md` (Booleans and transforms, never reviewed):
-9 findings, all 9 fixed, 0 rejected. The full record is that file's done log.
-The five that changed behaviour every design goes through:
+Neither loft door could be driven through the app; they were fixed because the
+barrier's whole job is that nothing leaks. That is stated plainly in the done
+log rather than dressed up as a live bug.
 
-- **`_check_combiner_inputs`** (new, `document.py` ~line 103) — a KIND gate on
-  every combiner, run in `_eval` BEFORE the kernel. It exists because
-  `loft(sketch, solid)` **segfaults** OpenCASCADE (exit 139 standalone), which
-  no `except` can catch, and because `intersect(body, sketch)` returned a 2D
-  Sketch that CONSUMED the body and left the design with no bodies at all
-  while every row stayed green.
-- **the spec verdict** (`rebuild`, ~line 1006) — no leaf bodies used to mean
-  "nothing to check", so a design with NOTHING built verified against a spec.
-  It is a failure now.
-- **`_check_idle_cuts`** (new) — names a cut that removed no material.
-- **`_check_pieces`** — a pattern's copy form no longer reports N pieces.
-- **`_heal_stranding_cuts`** — leaves a tool another cut shares alone. This is
-  the P0-class one: measured, the other cut lost 3600 mm3 more than its own
-  parameters ask for, unasked and unmentioned.
-- **`_live_source`** (new) — one copy of the struck-node pass-through walk,
-  replacing the private copies in `consumed_ids` and `_check_pieces`. Behaviour
-  was identical in all three; confirm that.
+**Four of the five risks the previous brief named cleared by measurement**,
+including the biggest: `_live_source` is behaviour-identical to both walks it
+replaced (52 files, 15 struck features, zero mismatches, plus hand-built
+struck chains). The kind gate's 2D test also held on every 2D-producing path,
+which I had expected to be the weak one.
 
-## Where the risk is
+## What the next review takes
 
-1. **`_live_source` replaced two working walks.** `consumed_ids` is what the
-   viewport and the exporter filter on. If the shared version differs from
-   either original by a hair, bodies appear or vanish.
-2. **The new spec failure is a new way for `rebuild` to return False.**
-   Anything that treats `ok` as "the geometry is fine" now also sees "there is
-   no geometry". Check the callers, especially the export path and the MCP.
-3. **The kind gate refuses input combinations that used to build.** The 50
-   library designs were checked (none uses a boolean on a sketch or a loft on
-   a solid, zero volume drift), but a hand-written or AI-authored tree could.
-   A design that no longer OPENS would be the bad outcome — `from_data` runs
-   through `add`, not `_eval`, so it should still open and show a failed row.
-4. **`_check_idle_cuts` compares 2dp-rounded volumes with a 0.01 tolerance.**
-   A legitimate cut that removes a whisker would be called idle.
-5. **`_pick_body` now raises** where it used to fall back. Three callers
-   (extrude, revolve, hole face modes).
-
-## Ground rules
-
-Read the diff yourself, ONE reviewer, no subagents. Measure before claiming —
-`probes/boolean_review_probe.py` reproduces all nine originals (§3's
-sketch+solid case is behind `--crash` because it kills the process). The fast
-tier is 1314 passing (1288 + the 26 new); run the files the diff touches plus
-`tests/test_launch_rules.py`.
+`REVIEW-QUEUE.md`'s status board, first row marked TODO: **section 5,
+Primitives and shape editing**. Sections 1-4 are closed.
 
 ## Do not report (already known, or settled)
 
 - **A suppressed final boolean promotes its TOOL to the result**
   (`_result_feature`, `document.py:1283`). Open P1 in LAUNCH-PLAN section 10.
-  Section 4 located it and recorded two notes for it in the done log; it was
-  deliberately not fixed here.
-- **Rotate and Scale do not share a pivot.** Measured and documented, and the
-  behaviour was deliberately left alone — changing it would move geometry in
-  saved designs. Now a P2 row in LAUNCH-PLAN section 10.
+  Section 4 located it and recorded two notes for it in the done log.
+- **Rotate and Scale do not share a pivot.** Measured, documented in both
+  docstrings and `OP_NOTES`, and deliberately left alone — changing it would
+  move geometry in saved designs. The user was asked on 2026-09-10 and said
+  not now. P2 row in LAUNCH-PLAN section 10.
 - **The Add Feature dialog collects combiner inputs in TREE ORDER**, so a Cut
-  cannot target a body that precedes its tool. Its own note says so ("First
-  input MINUS the rest (by tree order). Keep body first."), and the tool panel
-  path orders them correctly. Judged documented, not a defect.
+  cannot target a body that precedes its tool. Its own note says so, and the
+  tool-panel path orders them correctly. Judged documented, not a defect.
 - The open P1/P2/P3 rows in LAUNCH-PLAN section 10; the pre-existing red
   browser tests (`tests/e2e/test_tree_delete.py`, five; the order-dependent
   revolve ring test); `-m library` not collecting; two requests reaching the
