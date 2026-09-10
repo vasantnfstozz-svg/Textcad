@@ -1533,12 +1533,33 @@ def _tagged_mesh(part, body_id: str | None = None) -> dict:
         faces_meta.append(info)
 
     # In mesh mode, sampling 15k+ triangle edges would choke both server and
-    # viewer (wireframe soup) — only the rich faces' edges are outlines. A
-    # shared edge may appear once per face; drawing it twice is invisible.
+    # viewer (wireframe soup) — only the rich faces' edges are outlines.
+    #
+    # But an edge's id MUST stay its index into part.edges(), because that is
+    # what a pick resolves through (measure.resolve). Concatenating each
+    # face's own edges handed out face-order ids instead, so on any body over
+    # MESH_MODE_FACES every edge click measured a DIFFERENT edge — silently,
+    # because the highlight looks the edge up BY ID and drew the right one.
+    # Measured in the section 6 review (2026-09-10): esp32-remote advertised
+    # 7176 ids for 3588 real edges, 6760 of them resolving elsewhere, and on
+    # isogrid-panel a straight 210 mm edge read "⌀4.50 mm" AND offered an edit
+    # box driving corner_hole_sketch's circle. Twelve of the 50 saved designs
+    # are over 400 faces.
+    #
+    # So filter part.edges() down to the rich faces' edges under their TRUE
+    # index, which also drops the once-per-face duplicates. part.edges() costs
+    # 245 ms on the biggest saved design (cam-cover-plaque, 1552 faces) and is
+    # skipped entirely for a triangle-soup body, which has no rich faces.
     if mesh_mode:
-        edge_list = [e for _, face in rich_faces for e in face.edges()]
+        if rich_faces:
+            keep = {_shape_key(e) for _, face in rich_faces
+                    for e in face.edges()}
+            edge_list = [(i, e) for i, e in enumerate(part.edges())
+                         if _shape_key(e) in keep]
+        else:
+            edge_list = []
     else:
-        edge_list = part.edges()
+        edge_list = list(enumerate(part.edges()))
 
     edges_meta = []
     edge_polys, edge_hosts = _edge_polylines(part) if not mesh_mode else ({}, {})
@@ -1546,7 +1567,7 @@ def _tagged_mesh(part, body_id: str | None = None) -> dict:
     # them: an inside corner's line sits a hair BEHIND the two walls that meet
     # there from every viewing angle, and only its own faces may not hide it
     face_index = {_shape_key(face): fi for fi, face in rich_faces}
-    for ei, edge in enumerate(edge_list):
+    for ei, edge in edge_list:
         gt = str(edge.geom_type).replace("GeomType.", "")
         # the polyline the shared mesh already computed for this edge: it costs
         # nothing and follows the triangles exactly, so outlines sit on the
@@ -2186,6 +2207,8 @@ def measure_set(req: MeasureSetReq):
                                req.value, req.side)
     if "error" in plan:
         return _refused(None, plan["error"], extra=plan)
+    # what BUILDS today, so a dimension that breaks a feature can be put back
+    was_ok = {f.id for f in _doc().features if f.status == "ok"}
     _snapshot()
     try:
         measurelib.write(_doc(), plan)
@@ -2195,20 +2218,42 @@ def measure_set(req: MeasureSetReq):
         return _refused(e, f"could not apply that: {e}")
     _hand_edit()              # AFTER it lands: a refusal is not a hand edit
     _rebuild_and_mesh()
-    # VERIFY: re-measure the same pick and say what the model actually became
-    after = measurelib.measure(_doc(), req.a.model_dump(),
-                               req.b.model_dump() if req.b else None)
+    # VERIFY: re-measure the same PICK and say what the model actually became.
+    #
+    # "The same pick" cannot mean "the same index": those are array positions
+    # and a rebuild reorders them, so this used to compare the requested value
+    # against whatever face had inherited the number and revert a CORRECT
+    # edit (section 6 review, 2026-09-10 — 7 of the 81 editable diameters
+    # across eight saved designs, and the move path too). measurelib.remeasure
+    # re-finds each pick by its own geometry first; `picks` names where they
+    # went, so the panel can go on talking about the same two faces.
+    after = measurelib.remeasure(_doc(), plan, req.a.model_dump(),
+                                 req.b.model_dump() if req.b else None)
     achieved = after.get("value")
-    # The re-measure reuses the SAME face indices, and those are array
-    # positions that a rebuild can reorder. So agreeing on a number is not
-    # enough: if the pick now measures a different KIND of thing, the indices
-    # went stale and this verification is about some other geometry entirely.
+    # A pick that cannot be re-found keeps its old index, so the kind check
+    # still earns its keep: measuring a different KIND of thing means this
+    # verification is about some other geometry entirely.
     same_kind = after.get("kind") == plan.get("kind")
+    # Compare on the grid the readout uses. `achieved` comes back rounded for
+    # display (3 dp), so a raw request of 7.9375 — 5/16", and every other inch
+    # size — was written PERFECTLY and then reverted for missing itself by
+    # 5e-4. Round the request the same way and the comparison is honest again.
+    want = measurelib._r(float(req.value))
     ok = (achieved is not None and same_kind
-          and abs(float(achieved) - float(req.value)) <= 1e-4)
+          and abs(float(achieved) - want) <= 1e-4)
+    # A dimension is not "achieved" at the price of the design. Translating a
+    # profile far enough can push it off the body it cuts, and then a feature
+    # that built a moment ago stops building. That is the wreck the revert
+    # below was written for; it used to be caught only by accident, because a
+    # wrecked part also renumbered the faces (see remeasure). Name it.
+    broke = [f.id for f in _doc().features
+             if f.id in was_ok and f.status == "failed"]
+    if broke:
+        ok = False
     out = {k: plan[k] for k in
            ("driver", "move", "requested", "param", "was") if k in plan}
-    out.update({"achieved": achieved, "verified": ok})
+    out.update({"achieved": achieved, "verified": ok,
+                "picks": after.get("picks")})
     if not ok:
         # REVERT. The requested dimension is not what the model came out as, so
         # the edit did something other than what was asked — most often because
@@ -2216,7 +2261,8 @@ def measure_set(req: MeasureSetReq):
         # the topology. Leaving that behind with only a warning means handing
         # the user a wrecked part and hoping they read the note, which is the
         # opposite of this project's whole point. Put it back and say so.
-        why = ("the same pick now reads as "
+        why = (f"it would stop {broke[0]} from building" if broke else
+               "the same pick now reads as "
                f"{after.get('kind') or 'nothing measurable'} instead of "
                f"{plan.get('kind')}"
                if not same_kind else

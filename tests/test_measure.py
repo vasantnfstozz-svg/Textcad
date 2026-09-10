@@ -668,3 +668,70 @@ def test_caliper_clamps_at_the_smaller_flank():
     assert r["from"][1] == pytest.approx(4.0, abs=1e-6), r
     assert r["to"][1] == pytest.approx(4.0, abs=1e-6), r
     assert r["value"] == pytest.approx(60 - 84 ** 0.5, abs=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# Section 6 review (2026-09-10): three readouts that were quietly wrong.
+
+def test_a_tilted_face_reports_its_own_size_not_its_world_box():
+    """F4 (P2). `extents` came from the WORLD bounding box, whose third
+    dimension is only ~0 when the face is axis aligned. On a 6 mm 45° chamfer
+    that read 60.00 × 6.00; the face is 6√2 = 8.49 across, which is what the
+    pick panel (studio._tagged_mesh) already reported for the SAME face."""
+    doc = Document(name="t-chamfer")
+    doc.add("b", "plate", {"width": 100, "depth": 60, "thickness": 20})
+    doc.add("ch", "chamfer", {"length": 6, "edges": "top"}, inputs=["b"])
+    assert doc.rebuild(), doc.tree()
+    rid = doc._result_feature().id
+
+    slanted = [i for i, f in enumerate(doc.result().faces())
+               if 0.01 < abs(f.normal_at(f.center()).Z) < 0.99]
+    assert slanted, "the chamfer made a slanted face"
+    got = measure.measure(doc, {"body": rid, "kind": "face", "id": slanted[0]})
+    ext = next(v for k, v in got["rows"] if k == "extents")
+    width = float(ext.split("×")[1].split()[0])
+    assert width == pytest.approx(6 * math.sqrt(2), abs=0.02), ext
+    # and an axis-aligned face is unchanged by the new frame
+    top = next(i for i, f in enumerate(doc.result().faces())
+               if abs(f.normal_at(f.center()).Z - 1) < 1e-9)
+    ext = next(v for k, v in
+               measure.measure(doc, {"body": rid, "kind": "face",
+                                     "id": top})["rows"] if k == "extents")
+    assert "88.00" in ext and "48.00" in ext, ext   # all four top edges
+
+
+def test_a_bore_reports_its_middle_as_its_centre():
+    """F6 (P3). `axis_of_rotation.position` is an arbitrary point ALONG the
+    axis: for a 5 mm pocket in a 12 mm plate OCCT returns the MOUTH (z=6),
+    and the row calling that the bore's "centre" is a guess presented as a
+    fact — the very trap the module docstring opens with."""
+    doc = pocket_doc()
+    rid = doc._result_feature().id
+    fi = next(i for i, f in enumerate(doc.result().faces())
+              if "CYLINDER" in str(f.geom_type) and abs(f.radius - 9) < 1e-9)
+    wall = doc.result().faces()[fi]
+    bb = wall.bounding_box()
+    mid_z = (bb.min.Z + bb.max.Z) / 2
+
+    got = measure.measure(doc, {"body": rid, "kind": "face", "id": fi})
+    x, y, z = [float(v) for v in
+               next(v for k, v in got["rows"] if k == "centre").split(",")]
+    assert (x, y) == pytest.approx((15.0, 0.0), abs=0.01)
+    assert z == pytest.approx(mid_z, abs=0.01), \
+        f"the bore spans z {bb.min.Z}..{bb.max.Z}, so its centre is {mid_z}"
+    assert got["centre"][2] == pytest.approx(mid_z, abs=0.01)
+
+
+def test_an_imported_mesh_body_says_what_it_is():
+    """F3 (P1). A triangle-soup body carries ONE mesh pseudo-face, id -1, so
+    every click answered "face -1 is not on this body any more — click it
+    again". That is untrue and it is a loop: clicking again gives -1 again.
+    Measured on imports/liquid-piston-2-v1.stl (21552 faces, ids == [-1])."""
+    doc = pocket_doc()
+    rid = doc._result_feature().id
+    got = measure.measure(doc, {"body": rid, "kind": "face", "id": -1})
+    assert "click it again" not in got["error"], got["error"]
+    assert "mesh" in got["error"], got["error"]
+    # a genuinely stale index still says so
+    stale = measure.measure(doc, {"body": rid, "kind": "face", "id": 9999})
+    assert "click it again" in stale["error"], stale["error"]

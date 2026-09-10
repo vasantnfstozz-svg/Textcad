@@ -566,3 +566,175 @@ def test_api_box_width_edit_verifies(client):
     doc = c.get("/api/doc").json()
     sk = next(f for f in doc["features"] if f["id"] == "sk")
     assert sk["params"]["entities"][0]["w"] == pytest.approx(8.0)
+
+
+# ---------------------------------------------------------------------------
+# Section 6 review (2026-09-10), F2: a rebuild RENUMBERS faces, so verifying
+# by the index the pick was made on threw away correct edits.
+
+def shuffling_doc():
+    """Four ⌀8 bores in a plate that also has a rectangular pocket.
+
+    Changing one bore's diameter reorders `part.faces()` here, so the index the
+    pick carried lands on a different face after the rebuild. That is not
+    exotic: it happens on 7 of the 81 editable diameters across eight saved
+    designs (x-frame, hole-box, bit-tray, pump-housing, gear-case)."""
+    doc = Document(name="t-shuffle")
+    doc.add("b", "plate", {"width": 120, "depth": 80, "thickness": 10})
+    doc.add("sk", "sketch_on_face",
+            {"face": "top", "offset": 0,
+             "entities": [{"kind": "circle", "mode": "add", "x": x, "y": y, "r": 4}
+                          for x, y in ((-40, -25), (-40, 25), (40, -25), (40, 25))]},
+            inputs=["b"])
+    doc.add("tool", "extrude", {"amount": -12}, inputs=["sk"])
+    doc.add("cut", "cut", {}, inputs=["b", "tool"])
+    doc.add("psk", "sketch_on_face",
+            {"face": "top", "offset": 0,
+             "entities": [{"kind": "rectangle", "mode": "add",
+                           "x": 0, "y": 0, "w": 50, "h": 40}]},
+            inputs=["cut"])
+    doc.add("ptool", "extrude", {"amount": -4}, inputs=["psk"])
+    doc.add("pk", "cut", {}, inputs=["cut", "ptool"])
+    assert doc.rebuild(), doc.tree()
+    return doc
+
+
+def _shuffling_bore(doc):
+    """The bore whose face index does NOT survive its own edit."""
+    rid = doc._result_feature().id
+    for i, f in enumerate(doc.result().faces()):
+        if "CYLINDER" not in str(f.geom_type) or abs(f.radius - 4) > 1e-9:
+            continue
+        a = {"body": rid, "kind": "face", "id": i}
+        if not measure.measure(doc, a).get("driver"):
+            continue
+        probe = shuffling_doc()
+        plan = measure.plan_set(probe, a, None, 8.5)
+        if "error" in plan:
+            continue
+        measure.write(probe, plan)
+        probe._mark_stale()
+        probe.rebuild()
+        if abs(float(measure.measure(probe, a).get("value") or 0) - 8.5) > 1e-4:
+            return a
+    raise AssertionError("no bore in this fixture reorders on its own edit")
+
+
+def test_relocate_finds_the_same_bore_after_the_indices_move():
+    """The mechanism: the pick's geometry is still there, at another index."""
+    doc = shuffling_doc()
+    a = _shuffling_bore(doc)
+    shape, body = measure.resolve(doc, a)
+    sig = measure._signature(shape)
+    assert sig and sig["kind"] == "axis"
+
+    plan = measure.plan_set(doc, a, None, 8.5)
+    measure.write(doc, plan)
+    doc._mark_stale()
+    doc.rebuild()
+
+    moved = measure._relocate(doc, a, sig)
+    assert moved["id"] != a["id"], "this fixture is supposed to renumber"
+    got = measure.measure(doc, moved)
+    assert got["kind"] == "diameter"
+    assert got["value"] == pytest.approx(8.5, abs=1e-6)
+
+
+def test_a_correct_diameter_edit_is_not_reverted_when_the_indices_move(client):
+    """F2 end to end. Measured on the user's own x-frame: asking a Ø8 pad hole
+    for 8.5 really made it 8.5 (volume 116961.18 -> 116896.39) and the tool
+    then reverted it with 'the model came out at 8 mm — nothing was changed'.
+    Seven of eight designs' editable diameters lost a correct edit this way."""
+    doc = shuffling_doc()
+    a = _shuffling_bore(doc)
+    studio.STATE = {"docs": {}, "active": None, "seq": 0}
+    studio._entry()["doc"] = doc
+    studio._rebuild_and_mesh()
+
+    r = client.post("/api/measure/set", json={"a": a, "value": 8.5}).json()
+    assert r.get("error") is None, r.get("error")
+    assert r["verified"] is True, r.get("warning")
+    assert r.get("reverted") in (None, False)
+    assert r["achieved"] == pytest.approx(8.5, abs=1e-6)
+    ents = studio._doc().get("sk").params["entities"]
+    assert sorted(e["r"] for e in ents) == pytest.approx([4, 4, 4, 4.25])
+
+
+def test_the_panel_is_told_where_its_picks_went(client):
+    """The frontend re-reads the SAME selection after a Set, so the response
+    must hand back the relocated ids — otherwise the readout goes on showing
+    the neighbouring bore's ⌀8 right after the user set 8.5."""
+    doc = shuffling_doc()
+    a = _shuffling_bore(doc)
+    studio.STATE = {"docs": {}, "active": None, "seq": 0}
+    studio._entry()["doc"] = doc
+    studio._rebuild_and_mesh()
+
+    r = client.post("/api/measure/set", json={"a": a, "value": 8.5}).json()
+    assert "picks" in r, "the relocated picks come back with the answer"
+    assert r["picks"]["a"]["id"] != a["id"]
+    again = client.post("/api/measure", json={"a": r["picks"]["a"]}).json()
+    assert again["value"] == pytest.approx(8.5, abs=1e-6)
+
+
+def test_an_inch_size_typed_in_full_is_not_reverted(client):
+    """F3 of the section 6 review (P2). The readout is rounded to 3 dp for
+    display, and the verification compared that rounded number against the RAW
+    request, so every dimension with more than three decimals was written
+    perfectly and then thrown away: 5/16" = 7.9375, 7/16" = 11.1125.
+    Measured: 18.0 kept; 7.9375, 11.1125 and 12.3456 all reverted with
+    "asked for 7.9375 mm but the model came out at 7.938 mm"."""
+    doc = pocket_doc()
+    studio.STATE = {"docs": {}, "active": None, "seq": 0}
+    studio._entry()["doc"] = doc
+    studio._rebuild_and_mesh()
+    a = sel(doc, "face", cyl_of(doc, 9))
+
+    for want, param in ((7.9375, 3.96875), (11.1125, 5.55625)):
+        r = client.post("/api/measure/set", json={"a": a, "value": want}).json()
+        assert r.get("error") is None, r["error"]
+        assert r["verified"] is True, r.get("warning")
+        assert r.get("reverted") in (None, False)
+        assert r["param"] == pytest.approx(param, abs=1e-9)
+        # and the geometry really is that size, not just the param
+        got = studio._doc().result()
+        assert any(abs(float(f.radius) - param) < 1e-9
+                   for f in got.faces() if "CYLINDER" in str(f.geom_type)), \
+            f"no bore of r={param} in the rebuilt body"
+        a = r["picks"]["a"]
+
+
+def test_a_diameter_that_breaks_a_later_feature_is_put_back(client):
+    """The safety net the section 6 review had to make EXPLICIT.
+
+    Reverting a wrecked edit used to happen only because a wreck also
+    renumbered the faces, and remeasure now sees through that renumbering. So
+    the real question is asked directly: did a feature that built a moment ago
+    stop building? Measured: a ⌀8 hole in a 60×40 plate grown to ⌀38 leaves the
+    2 mm rim fillet nowhere to sit ("radius 2 mm does not fit on 15 edges")."""
+    doc = Document(name="t-break")
+    doc.add("b", "plate", {"width": 60, "depth": 40, "thickness": 10})
+    doc.add("sk", "sketch_on_face",
+            {"face": "top", "offset": 0,
+             "entities": [{"kind": "circle", "mode": "add", "x": 0, "y": 0,
+                           "r": 4}]}, inputs=["b"])
+    doc.add("tool", "extrude", {"amount": -12}, inputs=["sk"])
+    doc.add("cut", "cut", {}, inputs=["b", "tool"])
+    doc.add("fl", "fillet", {"radius": 2, "edges": "all"}, inputs=["cut"])
+    assert doc.rebuild(), doc.tree()
+    studio.STATE = {"docs": {}, "active": None, "seq": 0}
+    studio._entry()["doc"] = doc
+    studio._rebuild_and_mesh()
+
+    a = sel(doc, "face", cyl_of(doc, 4))
+    before = client.get("/api/doc").json()["features"]
+    r = client.post("/api/measure/set", json={"a": a, "value": 38.0}).json()
+
+    assert r["verified"] is False, r
+    assert r["reverted"] is True, r
+    assert "stop fl from building" in r["warning"], r["warning"]
+    assert client.get("/api/doc").json()["features"] == before, \
+        "a dimension that breaks a feature left the design changed"
+    # _revert_last swaps in a fresh Document, so ask the SERVER, not the
+    # local reference this test happens to still hold
+    assert studio._doc().get("sk").params["entities"][0]["r"] == 4

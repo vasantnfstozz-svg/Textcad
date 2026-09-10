@@ -115,6 +115,17 @@ def resolve(doc, sel: dict):
 
     if kind == "face":
         faces = provenance.picked_faces(doc, body, part)
+        if idx < 0:
+            # An imported STL is tagged with ONE mesh pseudo-face (id -1),
+            # because 21552 triangles are not 21552 pickable faces. Every
+            # click on such a body used to answer "face -1 is not on this body
+            # any more — click it again", which is untrue and is a loop with
+            # no way out: clicking again gives -1 again (section 6 review,
+            # 2026-09-10, measured on imports/liquid-piston-2-v1.stl).
+            raise ValueError(
+                "this is an imported mesh body — its surface is one triangle "
+                "mesh rather than separate faces, so there is nothing here to "
+                "measure")
         if not 0 <= idx < len(faces):
             raise ValueError(
                 f"face {idx} is not on this body any more — click it again")
@@ -232,13 +243,28 @@ def _measure_one(shape) -> dict:
     if circ:
         centre, radius, axis = circ
         dia = radius * 2
+        shown = centre
+        if axis:
+            # axis_of_rotation.position is an ARBITRARY point along the axis:
+            # for a 5 mm pocket in a 12 mm plate it came back at the mouth
+            # (z=6) while the bore's middle is z=3.5, so x and y were right
+            # and z was a guess presented as a fact (section 6 review,
+            # 2026-09-10 — the pick panel calls the same number "axis_at").
+            # Pin it to the face's own middle; the module docstring makes
+            # exactly this point about center().
+            try:
+                bb = shape.bounding_box()
+                mid = _scale(_add(_xyz(bb.min), _xyz(bb.max)), 0.5)
+                shown = _closest_on_axis(centre, axis, mid)
+            except Exception:
+                shown = centre
         rows = [["radius", _fmt(radius)], ["centre", ", ".join(
-            f"{c:.2f}" for c in _r3(centre, 2))]]
+            f"{c:.2f}" for c in _r3(shown, 2))]]
         if axis:
             rows.append(["axis", ", ".join(f"{c:.3f}" for c in _r3(axis, 3))])
         return {"kind": "diameter", "value": _r(dia), "unit": MM,
                 "label": f"⌀{dia:.2f} {MM}", "rows": rows,
-                "centre": _r3(centre)}
+                "centre": _r3(shown)}
 
     if shape.__class__.__name__ == "Edge":
         length = float(shape.length)
@@ -274,12 +300,24 @@ def _measure_one(shape) -> dict:
         pass
     pl = _plane(shape)
     try:
-        bb = shape.bounding_box()
-        size = _xyz(bb.size)
-        # the two in-plane extents are what "how big is this face" means; the
-        # third is ~0 for a planar face and noise is not worth showing
-        dims = sorted((_r(size[0], 2), _r(size[1], 2), _r(size[2], 2)),
-                      reverse=True)
+        dims = None
+        if pl is not None:
+            # IN THE FACE'S OWN FRAME. The world bounding box of a TILTED face
+            # lies — the third extent is only ~0 when the face is axis
+            # aligned, and dropping it then throws away real width. Measured
+            # (section 6 review, 2026-09-10): a 6 mm 45° chamfer read
+            # "60.00 × 6.00" where its true width is 6√2 = 8.49, which is
+            # what the PICK panel shows for the same face. _tagged_mesh
+            # already projected into the plane frame; this did not.
+            import sketch as sketchlib
+            frame = sketchlib.face_plane(shape)
+            if frame is not None:
+                s = frame.to_local_coords(shape).bounding_box().size
+                dims = sorted((_r(s.X, 2), _r(s.Y, 2)), reverse=True)
+        if dims is None:
+            size = _xyz(shape.bounding_box().size)
+            dims = sorted((_r(size[0], 2), _r(size[1], 2), _r(size[2], 2)),
+                          reverse=True)
         rows.append(["extents", f"{dims[0]:.2f} × {dims[1]:.2f} {MM}"])
     except Exception:
         pass
@@ -1003,6 +1041,146 @@ def plan_move(doc, mv: dict, current: float, target: float) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# after a write: finding the SAME pick again
+#
+# Face and edge ids are array positions, and a rebuild renumbers them. The
+# verification below a write used to re-read the pick's old index, so whenever
+# OCCT reordered the faces it compared the requested value against some other
+# piece of geometry and reverted a CORRECT edit. Measured in the section 6
+# review (2026-09-10) on the user's own x-frame: asking a ⌀8 pad hole for 8.5
+# really made it 8.5 (volume 116961.184 -> 116896.394) and the tool answered
+# "asked for 8.5 mm but the model came out at 8 mm — nothing was changed".
+# Seven of the 81 editable diameters across eight saved designs lost a correct
+# edit that way, and the derived MOVE path lost them too (the picked wall had
+# moved by exactly the 1.0 mm asked for, at a new index).
+#
+# So a pick is re-found by its GEOMETRY, the way sketch.resolve_face already
+# survives a rebuild. What stays constant is:
+#
+#   a round face/edge   its AXIS LINE   (changing a diameter leaves it alone)
+#   a flat face         its NORMAL, and its position ACROSS that normal
+#
+# Both a move and a width edit slide a wall along its own normal and nowhere
+# else (plan_move's shift is `normal * s` by construction), so ignoring the
+# along-normal component is exactly right. A match must be UNIQUE: two
+# candidates within tolerance mean we cannot claim to have found the same
+# pick, and the stored index is kept rather than guessed at.
+
+# how close a candidate must sit to the pick's own line/plane to BE that pick
+RELOCATE_TOL = 1e-3
+
+
+def _signature(shape):
+    """Index-free identity of a pick, captured BEFORE the write."""
+    circ = _circle(shape)
+    if circ:
+        centre, radius, axis = circ
+        if axis:
+            return {"kind": "axis", "at": centre, "dir": axis, "r": radius}
+        return {"kind": "ring", "at": centre, "r": radius}
+    pl = _plane(shape)
+    if pl:
+        centre, normal = pl
+        return {"kind": "plane", "at": centre, "dir": normal}
+    return None
+
+
+def _sig_distance(sig, shape):
+    """How far this shape is from BEING the pick `sig` described, or None when
+    it is not the same kind of thing at all."""
+    kind = sig["kind"]
+    if kind in ("axis", "ring"):
+        circ = _circle(shape)
+        if not circ:
+            return None
+        centre, _radius, axis = circ
+        if kind == "ring":
+            return None if axis else _norm(_sub(centre, sig["at"]))
+        if not axis or abs(abs(_dot(axis, sig["dir"])) - 1.0) > PARALLEL_TOL:
+            return None
+        # perpendicular distance between the two axis LINES: where the pick
+        # sits along its own axis is arbitrary, and a radius change moves it
+        return _axis_offset(sig["at"], centre, axis)
+    pl = _plane(shape)
+    if not pl:
+        return None
+    centre, normal = pl
+    if _dot(normal, sig["dir"]) < 1.0 - PARALLEL_TOL:
+        return None                       # a wall keeps facing the same way
+    d = _sub(centre, sig["at"])
+    return _norm(_sub(d, _scale(sig["dir"], _dot(d, sig["dir"]))))
+
+
+def _relocate(doc, sel, sig, want_r=None):
+    """`sel` with its id updated to where that geometry sits NOW.
+
+    Unchanged when there is no signature, no unique match, or nothing built —
+    in which case the caller simply verifies the way it always did.
+
+    `want_r` is the radius the pick is EXPECTED to have afterwards, and it is
+    what separates a bore from the counterbore it sits inside: those two are
+    coaxial, so the axis test alone calls them both a match (x-frame's pad
+    holes are ⌀8 bores inside ⌀36 recesses). Without it two of the design's
+    seventeen editable diameters stayed unfindable."""
+    if not sig or not isinstance(sel, dict):
+        return sel
+    body = sel.get("body")
+    part = doc._parts.get(body) if body else None
+    if part is None:
+        part = doc.result()
+    if part is None:
+        return sel
+    try:
+        shapes = (part.edges() if str(sel.get("kind")) == "edge"
+                  else provenance.picked_faces(doc, body, part))
+    except Exception:
+        return sel
+    hits = []
+    for i, shape in enumerate(shapes):
+        d = _sig_distance(sig, shape)
+        if d is not None and d <= RELOCATE_TOL:
+            hits.append(i)
+    if not hits:
+        return sel
+    if len(hits) == 1:
+        return {**sel, "id": hits[0]}
+    target = want_r if want_r is not None else sig.get("r")
+    if target is None:
+        return sel                        # ambiguous: never guess (see above)
+    ranked = []
+    for i in hits:
+        circ = _circle(shapes[i])
+        if circ:
+            ranked.append((abs(circ[1] - target), i))
+    ranked.sort()
+    if not ranked:
+        return sel
+    if len(ranked) > 1 and ranked[1][0] - ranked[0][0] <= RELOCATE_TOL:
+        return sel                        # a genuine tie: still never guess
+    return {**sel, "id": ranked[0][1]}
+
+
+def remeasure(doc, plan: dict, a: dict, b: dict | None = None) -> dict:
+    """Measure the same PICKS again after a write — wherever they moved to.
+
+    Returns the measurement with a "picks" key naming the ids the selections
+    now carry, so the caller (and the panel) can go on talking about the same
+    two faces instead of two array positions."""
+    sigs = (plan or {}).get("signatures") or {}
+    want_r = None
+    if plan.get("kind") == "diameter":
+        try:
+            want_r = float(plan["requested"]) / 2.0
+        except (KeyError, TypeError, ValueError):
+            want_r = None
+    a2 = _relocate(doc, a, sigs.get("a"), want_r)
+    b2 = _relocate(doc, b, sigs.get("b"), want_r) if b else None
+    out = measure(doc, a2, b2)
+    out["picks"] = {"a": a2, "b": b2}
+    return out
+
+
 def _to_param(transform: str, value: float, current: float) -> float:
     """The stored param that produces `value` on screen."""
     if transform == "half":
@@ -1032,6 +1210,9 @@ def plan_set(doc, a: dict, b: dict | None, value: float,
         shape_a, body_a = resolve(doc, a)
     except ValueError as e:
         return {"error": str(e)}
+    # the index-free identity of each pick, so the write can be VERIFIED
+    # against the same geometry even after a rebuild renumbers the faces
+    sigs = {"a": _signature(shape_a)}
     driver = resolve_driver(doc, shape_a, base, a, body_a)
     if driver:
         new_param = _to_param(driver["transform"], value, driver["current"])
@@ -1042,7 +1223,7 @@ def plan_set(doc, a: dict, b: dict | None, value: float,
                              f"{new_param:g} mm — dimensions must be positive"}
         return {"driver": driver, "requested": _r(value),
                 "param": _r(new_param, 6), "was": _r(driver["current"], 6),
-                "kind": base.get("kind"),
+                "kind": base.get("kind"), "signatures": sigs,
                 "writes": [(driver["path"], _r(new_param, 6))]}
 
     # Not driven by one param. If it is a distance between two parallel faces,
@@ -1056,6 +1237,7 @@ def plan_set(doc, a: dict, b: dict | None, value: float,
         shape_b, body_b = resolve(doc, b)
     except ValueError as e:
         return {"error": str(e)}
+    sigs["b"] = _signature(shape_b)
     # opposite walls of ONE entity: an exact dimension edit, never a move
     pd = resolve_pair_driver(doc, shape_a, shape_b, a, b, body_a, body_b,
                              base.get("value"))
@@ -1068,7 +1250,7 @@ def plan_set(doc, a: dict, b: dict | None, value: float,
                              "positive"}
         return {"driver": driver, "requested": _r(value),
                 "param": _r(new_param, 6), "was": _r(driver["current"], 6),
-                "kind": base.get("kind"),
+                "kind": base.get("kind"), "signatures": sigs,
                 "writes": [(driver["path"], _r(new_param, 6))]}
     if pd and "blocked" in pd:
         return {"error": pd["blocked"]}
@@ -1082,7 +1264,7 @@ def plan_set(doc, a: dict, b: dict | None, value: float,
                      "label": plan["moved"], "by": plan["by"],
                      "movable": mv["movable"]},
             "requested": _r(value), "was": _r(base.get("value") or 0, 6),
-            "kind": base.get("kind"),
+            "kind": base.get("kind"), "signatures": sigs,
             "writes": plan["writes"]}
 
 

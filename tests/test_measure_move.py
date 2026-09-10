@@ -310,11 +310,19 @@ def test_a_move_that_wrecks_the_part_reverts_itself():
     Found by clicking every wall pair a user can reach from one iso view. From
     a single view the two facing walls of a gap are never both visible, so the
     natural pick is two walls pointing the SAME way — a step. Asking for a
-    small step there translates the whole profile far enough to leave the part,
-    which changes the topology: the old code wrote it, failed its own
-    verification, and left the wrecked part behind with only a warning.
+    step there translates the whole profile, and far enough it leaves the part.
 
-    A dimension the user asked for and did not get must put the design back."""
+    A dimension the user asked for and did not get must put the design back.
+
+    REVISED by the section 6 review (2026-09-10). This case used to assert a
+    revert at value 5.0, but that revert was an ACCIDENT of indexing: the move
+    lands the asked-for step exactly (the cavity slides to y=-45 and the step
+    from the plate's -Y wall really is 5.00 mm), and the old verification only
+    called it a failure because the rebuild had renumbered the faces. Saying
+    "the model came out at 50 mm — nothing was changed" about a model that
+    came out at 5 mm is the lie rule 7 forbids, so 5.0 now LANDS. The wreck
+    this test is named for is asserted where it is real: a step of 120 mm
+    carries the cavity clean off the plate, and that still reverts."""
     from fastapi.testclient import TestClient
     import studio
     studio.STATE = {"docs": {}, "active": None, "seq": 0}
@@ -349,12 +357,23 @@ def test_a_move_that_wrecks_the_part_reverts_itself():
           if f.get("normal") and abs(f["normal"][1] + 1) < 1e-6}
     assert -30.0 in ys and 20.0 in ys, sorted(ys)
 
+    a = {"body": body["id"], "kind": "face", "id": ys[-30.0]}
+    b = {"body": body["id"], "kind": "face", "id": ys[20.0]}
     before = c.get("/api/doc").json()["features"]
-    r = c.post("/api/measure/set", json={
-        "a": {"body": body["id"], "kind": "face", "id": ys[-30.0]},
-        "b": {"body": body["id"], "kind": "face", "id": ys[20.0]},
-        "value": 5.0}).json()
 
+    # a step the move CAN land, even though it renumbers the faces doing it
+    r = c.post("/api/measure/set",
+               json={"a": a, "b": b, "value": 5.0}).json()
+    assert r.get("verified") is True, r.get("warning")
+    assert r["achieved"] == pytest.approx(5.0, abs=1e-6)
+    assert c.get("/api/doc").json()["features"] != before, \
+        "the move landed, so the design must have changed"
+
+    # and one it cannot: 120 mm carries the cavity clean off the plate
+    c.post("/api/undo")
+    before = c.get("/api/doc").json()["features"]
+    r = c.post("/api/measure/set",
+               json={"a": a, "b": b, "value": 120.0}).json()
     assert r.get("verified") is False, r
     assert r.get("reverted") is True, r
     assert "nothing was changed" in r.get("warning", ""), r

@@ -58,6 +58,12 @@ export function openMeasure() {
   } else if (S.pickedCurved && S.pickedCurved.id != null) {
     A = { kind: 'face', id: S.pickedCurved.id, body: S.pickedCurved.body,
           info: S.pickedCurved };
+  } else if (S.pickedEdge && S.pickedEdge.id != null) {
+    // an EDGE counts too. Clicking a bore's rim and pressing Measure used to
+    // open an empty panel asking for the click you had just made, which is
+    // the friction rule 2 exists to remove (section 6 review, 2026-09-10).
+    A = { kind: 'edge', id: S.pickedEdge.id, body: S.pickedEdge.body,
+          info: S.pickedEdge.info };
   }
   panel().style.display = 'block';
   S.modalTool = 'Measure';
@@ -306,6 +312,11 @@ async function sendProbe(pt) {
                              point: pt, on: probeOn }),
     });
     const r = await res.json();
+    // The guard at the top of this function ran BEFORE the await. Releasing
+    // the drag and pressing Esc inside one round trip used to let the reply
+    // repaint a dimension line into a tool that had already closed, and
+    // nothing cleared it again (section 6 review, 2026-09-10).
+    if (!probeOn || !A || !B) return;
     if (!r.error && r.from && r.to) {
       // Two modes, named honestly: ACROSS runs along the source face's normal
       // and stretches to meet the other surface. Past the curve's extreme the
@@ -403,7 +414,20 @@ async function applyEdit() {
     mine = true;                       // this doc-updated is ours; keep A/B
     const r = await postJSON('/api/measure/set', body);
     if (r.error) failed = r.error;
-    else if (r.warning) warn = r.warning;
+    else {
+      if (r.warning) warn = r.warning;
+      // FOLLOW THE PICKS. Face and edge ids are array positions and a rebuild
+      // renumbers them, so after a successful edit the ids A and B carry can
+      // point at other geometry — the run() below would then re-read a
+      // neighbouring bore and show its OLD diameter right after the user set
+      // a new one. The backend re-found both picks while verifying and says
+      // where they went (section 6 review, 2026-09-10). Only on a verified
+      // edit: a reverted one puts the pre-write geometry back, ids and all.
+      if (r.verified && r.picks) {
+        if (A && r.picks.a && r.picks.a.id != null) A = { ...A, id: r.picks.a.id };
+        if (B && r.picks.b && r.picks.b.id != null) B = { ...B, id: r.picks.b.id };
+      }
+    }
   } catch (e) {
     failed = 'could not apply that change';
   } finally {

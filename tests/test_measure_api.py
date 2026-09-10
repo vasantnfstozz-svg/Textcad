@@ -224,3 +224,59 @@ def test_mesh_payload_carries_per_type_dimensions(client):
                if f["type"] == "CYLINDER")
     assert cyl["radius"] == pytest.approx(9.0)
     assert cyl["height"] == pytest.approx(14.0, abs=0.05)
+
+
+# ---------------------------------------------------------------------------
+# Section 6 review (2026-09-10): the edge id a pick hands back MUST be the
+# index measure.resolve() looks up.
+
+def test_edge_ids_stay_part_edges_indices_on_a_big_body(client):
+    """F1 (P0). Over 400 faces `_tagged_mesh` switches to mesh mode, and the
+    old code handed the viewport `[every rich face's edges]` — each edge once
+    per adjacent face, in face order. measure.resolve() indexes part.edges(),
+    so on 12 of the 50 saved designs (esp32-remote: 7176 ids for 3588 edges)
+    clicking an edge measured a DIFFERENT one, and a circular mismatch even
+    opened an edit box driving a hole the user never clicked.
+
+    Built without booleans so the test stays fast: 70 disjoint boxes of
+    different sizes = 420 planar faces, every edge length distinctive."""
+    import studio as st
+    from build123d import Box, Compound, Pos
+
+    part = Compound(children=[Pos(i * 40, 0, 0) * Box(2 + i, 3 + i * 0.5,
+                                                      4 + i * 0.25)
+                              for i in range(70)])
+    assert len(part.faces()) > st.MESH_MODE_FACES, "this body must be mesh mode"
+    tm = st._tagged_mesh(part, body_id="b")
+    real = part.edges()
+
+    assert tm["edges"], "a CAD body in mesh mode still gets its outlines"
+    for e in tm["edges"]:
+        i = e["id"]
+        assert 0 <= i < len(real), f"edge id {i} is not an index into part.edges()"
+        assert float(real[i].length) == pytest.approx(e["length"], abs=1e-6), (
+            f"edge id {i} is drawn {e['length']} long but resolves to "
+            f"{float(real[i].length)}")
+    ids = [e["id"] for e in tm["edges"]]
+    assert len(ids) == len(set(ids)), "one edge, one id"
+
+
+def test_measuring_a_clicked_edge_agrees_with_what_was_drawn(client):
+    """The same guarantee end to end: whatever the payload says an edge is,
+    /api/measure must say the same. On a mesh-mode body the old code answered
+    with another edge entirely and never said so."""
+    import studio as st
+    from build123d import Box, Compound, Pos
+
+    part = Compound(children=[Pos(i * 40, 0, 0) * Box(2 + i, 3 + i * 0.5,
+                                                      4 + i * 0.25)
+                              for i in range(70)])
+    tm = st._tagged_mesh(part, body_id="b")
+    import measure
+    from document import Document
+
+    doc = Document(name="t")
+    doc._parts = {"b": part}
+    for e in tm["edges"][:40]:
+        got = measure.resolve(doc, {"body": "b", "kind": "edge", "id": e["id"]})
+        assert float(got[0].length) == pytest.approx(e["length"], abs=1e-6)
