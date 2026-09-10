@@ -96,7 +96,7 @@ Then two closing sections:
 | # | Module | Effort | Status |
 |---|---|---|---|
 | 1 | Sketcher | high | four rounds, each fixing the last: 556a611 (9/9, 1 rejected), 6e2cae9 (8/8, the fix pass had a P0), 5f65a7a (8/8, so did that one), **13da90c** (8/9, 1 rejected - the ordering RULE was incomplete), and **round five, ONE reviewer at medium**, which CLEARED the two-part ordering rule (no arrangement makes it worse, termination bounded) and fixed 5 gaps in the fix pass itself. Composition is measurably order-independent, all 324 library sketches build, the whole library composes unchanged. **Section 1 is done unless the sixth read finds something** |
-| 2 | Document core and feature tree | high | TODO |
+| 2 | Document core and feature tree | high | **reviewed and fixed 6ea5546**, ONE reviewer at medium: 5 findings, **4 fixed, 1 rejected** (refusing to open a file with an unknown op IS the settled answer - the fast tier proved it). 7 new tests; the P2s were a struck row keeping its piece count (and silencing the warning below it), a struck row highlighting the whole upstream body, and an intended sever re-probing the healer on every rebuild |
 | 3 | Version tree and session persistence | high | TODO |
 | 4 | Booleans and transforms | high | TODO |
 | 5 | Primitives and shape editing | high | TODO |
@@ -1013,3 +1013,47 @@ every subtracting one composes to the same area as before - the tightened
 point validation rejects nothing real (the reviewer swept the live library
 and `tests/fixtures/` for path points that are not exactly two numbers: zero
 hits).
+
+---
+
+### Section 2 - Document core and feature tree (reviewed and fixed 2026-09-10, commit 6ea5546)
+
+ONE reviewer at medium, read-only, no server started. `document.py` (1481) +
+`static/js/tree.js` (1006) + the studio endpoints the section lists. **5
+findings, 4 fixed, 1 rejected**, each reproduced by measurement before it was
+touched. 7 new tests; fast tier 1264 -> 1271, all green.
+
+| # | P | What it was | Fix |
+|---|---|---|---|
+| F1 | P2 | a STRUCK feature kept its last `pieces`. Its row went on saying "pieces 2" about geometry that is gone, and `_check_pieces` took that stale count as the BASELINE for the feature below it: strike one severing cut and the SECOND one's warning vanished while the bar was measurably still in two pieces (`n_solids(result) == 2`, `doc.warnings == []`). Same class the fourth sketcher review fixed for `notes` and `volume`; `pieces` was missed, and the past-bar branch two lines up does clear it | the suppressed branch clears `pieces` too, and `_check_pieces` resolves a struck input through its pass-through to the body it really carries |
+| F2 | P2 | clicking a struck-out row lit up the WHOLE upstream body. A suppressed node's slot in `_parts` holds its first input's solid (rebuild needs that), and `/api/feature-mesh` served it - the 2026-08-26 "the whole body is being selected" complaint back through the struck rows | the endpoint 404s for a suppressed feature; `viewport.js` already treats 404 here as "not built (suppressed / rolled back)" |
+| F3 | P2 | a cut that legitimately severs re-probed the healer on EVERY rebuild. The probe is a full extrude plus a boolean, it can never pass for an intended sever, and only a `through` key already on the tool skipped it - 204 such cut tools across 26 of the 50 designs. Measured 13.0 ms against 0.1 ms on a four-feature design where every feature is a cache hit | a failed probe is memoised on the cut's own content signature (`_heal_tried`, capped like the other caches), so an edit still asks. `tests/test_through_cut.py` 104 s -> 81 s |
+| F4 | P3 | the status bar's volume was JS's own rule, "the last non-suppressed feature" (R1). On `designs/spiderman-logo` that is a sketch, so the readout was blank; where the last row is a separate tool body it reported that body's volume as the design's | `_doc_json` sends `result_volume` from `Document._result_feature()`; the tree renders it |
+
+**Rejected:** F5, "a design file naming an op this build does not know should
+still open". It should not. A version restore of such a file answers "cannot
+open it - it is still in the history" and a restored session tab holding one
+is dropped while every other tab lives; both are deliberate and both are
+tested (`test_version_api.py`, `test_session_restore.py`), and the fast tier
+failed the attempt. `op_params` tolerating an unknown op is about walking the
+CATALOGUE without raising, not about loading. Pinned by
+`test_an_unknown_op_is_refused_at_every_door` so the sixth reader does not
+re-open it.
+
+**Checked and found sound** (do not re-derive): the content signature is
+complete for every op - a seeded pattern's `_before`/`_after` are always
+ancestors of its own input body, enforced by `_seed_parts`; `strike` /
+`unstrike` agree with `remove` in every arrangement traced, including the
+input dedup and the type-refusal branch; `_orphan_sweep`'s face-reference
+skip holds (deleting a face-sketch pocket takes three nodes and leaves the
+body); `rename` walks inputs, `REF_PARAMS`, the bar, `_parts`, `_sigs` and
+re-stamps - and no param anywhere in the 50-design library holds a feature id
+outside `seed`; the spec round-trip is safe (`to_data` stringifies hole-radius
+keys, `spec_from_dict` casts them back). The tree's folded-boolean rule and
+`delta_features`' folding rule are two copies of one rule and no arrangement
+was found where they disagree - worth collapsing one day, not a defect today.
+
+**Left alone deliberately:** a struck row's dimension rows stay editable while
+its ✎ is withheld. ✎ reopens a live tool with a preview, which cannot work
+with the geometry gone; a typed number is harmless and applies when the row
+comes back.

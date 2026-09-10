@@ -19,34 +19,20 @@
 
 ---
 
-## The sketcher is CLOSED. Read this before reviewing it again.
+## Just done: section 2, Document core and feature tree (6ea5546)
 
-Five rounds ran on `sketch.py`'s composition, 2026-09-09: 556a611, 6e2cae9,
-5f65a7a, 13da90c, c489839. Rounds one to four each found a P0 **in the
-previous round's fix**. Round five - one reviewer at medium - **cleared the
-ordering rule itself** and found only gaps in the fix pass around it.
+Five findings, **4 fixed, 1 rejected**, 7 new tests, fast tier 1271 green.
+No P0, so no second round is owed. The full record — what was found, what
+was fixed, what was checked and found sound, and the one rejection with its
+evidence — is `REVIEW-QUEUE.md`'s done log, section 2.
 
-**The rule, in two parts. A sixth reader must not collapse it back to one:**
-
-1. an outer is composed before anything nested inside it (a hole needs its
-   material; an island survives its hole);
-2. **material is composed before a cut that OVERLAPS it without containing
-   it.**
-
-A cut that still leads after both genuinely meets nothing, and only that one
-is dropped - with a note saying so. Removing either half reintroduces a
-measured P0 (2827.43 vs 2513.27; 1570.80 vs 1884.96; 4.3671 vs 7.6656;
-78.5398 vs 22.3648 - all four are in `REVIEW-QUEUE.md`'s done log).
-
-**What decides correctness, settled by reading the renderer:** the sketch
-editor paints every entity ON ITS OWN - `add` fills GREEN, `subtract` fills
-RED (`sketcher.js` draw3D). There is NO even-odd canvas fill; `assignModes()`
-only assigns the modes, and only when the user edits. A green region the
-kernel builds away is a P0.
-
-**`_overlaps` fails OPEN (returns True when the boolean will not run).** That
-is deliberate and the opposite of the safe direction elsewhere in the file: a
-False answer leaves the cut leading, where it is dropped. Do not "fix" it.
+**The rejection matters more than the fixes and must not be re-opened:** a
+design file naming an op this build does not know is refused ON PURPOSE.
+A version restore of one answers "cannot open it — it is still in the
+history", and a restored session tab holding one is dropped while every
+other tab lives. `op_params` returning `()` for an unknown op is about
+walking the CATALOGUE without raising, not a promise that the file opens.
+`test_an_unknown_op_is_refused_at_every_door` pins it.
 
 ---
 
@@ -54,27 +40,16 @@ False answer leaves the cut leading, where it is dropped. Do not "fix" it.
 
 | | |
 |---|---|
-| **Range** | nothing pending. `c489839` is the last code commit and was itself the fix pass for round five |
-| **Next real work** | **`sketch_trim.py`** - LAUNCH-PLAN section 10, P1. It keeps its OWN copy of the composition rule (`_compose_faces` l.223-229 composes in DRAWING order) and its own leading-cut refusal (l.372, l.424), so Trim computes a different profile from the builder and refuses entity lists `_compose` now accepts. Measured 2026-09-09: a Trim click deletes a green add the builder keeps, and Trim tells the user to delete their hole. The fix is for Trim to ASK `sketch.py` for the order instead of keeping its own - after which this file gets rewritten for that commit |
-| **Then** | `REVIEW-QUEUE.md` **section 2 - Document core and feature tree** (`document.py` + `static/js/tree.js`), in a fresh Opus chat with the section's own paste line |
-| **Frontend** | `ui v179`, `css v40` |
-
-## The cost rule, learned the hard way on 2026-09-09
-
-Round four was run as ten parallel lenses with a three-judge panel per
-finding: about 46 Opus agents at xhigh before the user stopped it, 40-100x a
-single review, against this repo's own token rules ("no agent fan-outs",
-LAUNCH-PLAN section 9). It did find a P0 three cheaper rounds had missed, so
-the shape is not banned - but it is only for a P0 in code that has already
-failed repeatedly, **and the agent count must be quoted to the user before it
-runs.** Round five found five real gaps with ONE reviewer at medium. Start
-there every time.
+| **Range** | nothing pending. `6ea5546` is the last code commit and was itself the fix pass for section 2 |
+| **Next** | `REVIEW-QUEUE.md` **section 3 — Version tree and session persistence** (`history.py`, `backfill.py`, `static/js/versions.js`, plus the tab/session and versions endpoints in `studio.py`), the first row still marked TODO. Data loss is the P0 class there and it has never been reviewed. A fresh Opus chat, `code review`, nothing else |
+| **Then** | section 4, Booleans and transforms |
+| **Frontend** | `ui v180`, `css v40` |
 
 ## Ground rules (unchanged, for whichever commit comes next)
 
 - **Read-only.** Do not start the server (port 8123 is the user's; a second
   listener there is a known trap). Do not run `tests/e2e/`. The whole fast
-  tier is 1264 (`python -m pytest tests -q --ignore=tests/e2e`).
+  tier is 1271 (`python -m pytest tests -q --ignore=tests/e2e`).
 - **A finding is a concrete input on which the code does the wrong thing**,
   with the exact click or data that triggers it. Order: P0 wrong geometry or
   data loss, P1 blocks the action, P2 daily annoyance, P3 polish.
@@ -83,6 +58,10 @@ there every time.
   derive from `Exception`), and a "successful" invalid or empty solid.
 - **Comments naming a date record a past bug**; do not report them as noise.
 - **No fixes, no style remarks**; both linters run at zero.
+- **ONE reviewer at medium.** On 2026-09-09 a fan-out ran ~46 Opus agents at
+  xhigh and drained the five-hour limit; one reviewer at medium then found
+  five real gaps. The agent count must be quoted to the user before any
+  fan-out ever runs again.
 
 ## Output format
 
@@ -98,33 +77,38 @@ then `### Checked and found OK` (up to 8) and `### Could not judge without
 running the app` (up to 5). At most 15 findings; say so if fewer than 5 are
 high or medium confidence.
 
-## Already known - do NOT report
+## Already known — do NOT report
 
-- **Everything in `REVIEW-QUEUE.md`'s done log, Section 1, rounds one to
-  five** - 38 findings fixed, 3 rejected, with their measured numbers. Report
-  a fix that is WRONG or INCOMPLETE, never an original defect.
-- **The two-part ordering rule and `_overlaps` failing open**, both explained
-  above.
-- **"The note is never rendered, so a dropped cut is silent" is REFUTED and
-  measured.** Only `extrude.js` reads `f.notes`, but `Document.warnings`
-  republishes every note (document.py:1211) and `tree.js renderWarnings`
-  shows them in its info box.
-- **The three findings deferred on purpose**, now rows in LAUNCH-PLAN section
-  10: `sketch_trim.py`'s own copy of the composition rule (P1, the next job);
-  a self-crossing polygon building an invalid face that reports ok (P2); the
-  arc-label doc guard keyed by design NAME (P3).
-- **The first card in the sketch tree shows a fixed `add` badge.** A leading
-  cut is composable now, so the badge is stricter than the backend needs.
-- **A full circle still offers no QUADRANT snaps.** Deliberate.
+- **Everything in `REVIEW-QUEUE.md`'s done log** — section 1 (the sketcher,
+  five rounds) and section 2 (document core). Report a fix that is WRONG or
+  INCOMPLETE, never an original defect.
+- **The sketcher's two-part ordering rule and `_overlaps` failing open.** An
+  outer is composed before anything nested in it, AND material before a cut
+  that OVERLAPS it without containing it. Never collapse it to one part;
+  removing either half reintroduces a measured P0.
+- **Refusing to open a file with an unknown op** — settled, see above.
+- **A struck row's dimension rows stay editable** while its ✎ is withheld.
+  Deliberate: ✎ reopens a live tool with a preview.
+- **The tree's folded-boolean rule and `delta_features`' folding rule are two
+  copies of one rule.** No arrangement was found where they disagree.
+- **The first card in the sketch tree shows a fixed `add` badge**, stricter
+  than the backend now needs. Deliberate.
+- **A full circle offers no QUADRANT snaps.** Deliberate.
 - **`blocks.resolve_face` picks by nearest centre**, so two coplanar faces
   sharing a centre resolve to the wrong twin. Queued, P1.
+- **`sketch_trim.py` keeps its OWN copy of the composition rule** and refuses
+  entity lists `_compose` now accepts. Queued, P1 — a build job, not a review.
 - **Pattern's `_axis_face` guards with the bounding box `_face_of` dropped.**
   Queued.
+- **A self-crossing polygon builds an invalid face and reports ok.** Queued, P2.
+- **The arc-label doc guard is keyed by design NAME.** Queued, P3.
+- **A suppressed final boolean promotes its TOOL to the result**
+  (`_result_feature`). Queued, P1 — and `/api/feature/suppress` is not
+  reachable from the UI at all, only from a script or the MCP.
 - **`-m library` cannot collect** (duplicate basenames against `tests/e2e`).
-  A tracked test-infrastructure item, and the reason three of these P0s
-  reached a live design uncaught.
-- Face MODE (`extrude_face`) still opens on Join regardless of direction, and
-  Edit mode never rewires a combiner. Known.
+  Tracked test-infrastructure item.
+- Face MODE (`extrude_face`) opens on Join regardless of direction; Edit mode
+  never rewires a combiner. Known.
 - `feature_faces` answers nothing for a row whose whole body was MOVED after
   it. Pre-existing.
 - The pre-existing red browser tests (`tests/e2e/test_tree_delete.py`, five)
