@@ -20,6 +20,7 @@ import pytest
 
 import author
 import blocks
+import inspector
 from document import Document
 
 
@@ -277,3 +278,47 @@ def test_a_bolt_circle_that_does_drill_still_works():
     assert doc.rebuild(), [f.problems for f in doc.features]
     holes = 6 * 3.14159265 * 16 * 10
     assert doc.get("b").volume == pytest.approx(78539.82 - holes, rel=1e-3)
+
+
+# ------------------------------- round two: guards that were too strict ----
+
+def test_a_cone_can_have_its_point_at_the_BOTTOM():
+    """The fix pass required a positive bottom_radius, which refused a funnel
+    standing point-down. OCCT builds it: measured 2094.40 mm3, the same volume
+    as the flipped cone (round two of the section 5 review, 2026-09-10)."""
+    down = blocks.cone(bottom_radius=0, top_radius=10, height=20)
+    up = blocks.cone(bottom_radius=10, top_radius=0, height=20)
+    assert down.volume == pytest.approx(up.volume, rel=1e-9)
+    assert down.volume == pytest.approx(2094.40, abs=0.01)
+    assert not inspector.health(down)
+
+
+def test_a_cone_with_both_radii_zero_is_still_refused():
+    status, text = _row_text("cone", {"bottom_radius": 0, "top_radius": 0,
+                                      "height": 20})
+    assert status == "failed"
+    assert "radi" in text.lower()
+    for j in JARGON:
+        assert j not in text
+
+
+def test_a_cone_with_a_negative_radius_is_still_refused():
+    for params in ({"bottom_radius": -20, "top_radius": 10, "height": 20},
+                   {"bottom_radius": 20, "top_radius": -10, "height": 20}):
+        status, text = _row_text("cone", params)
+        assert status == "failed"
+        assert "negative" in text.lower() or "radi" in text.lower()
+        for j in JARGON:
+            assert j not in text
+
+
+def test_an_unbuilt_document_does_not_claim_its_spec_was_checked():
+    """spec_checked means THE CHECK RAN. A fresh document reported True with
+    no problems, which the tree paints as a green "spec PASS" for geometry
+    nothing has verified."""
+    doc = Document(name="never-built")
+    doc.spec = {"n_solids": 1}
+    doc.add("b", "disc", {"radius": 10, "thickness": 5})
+    assert doc.spec_checked is False
+    doc.rebuild()
+    assert doc.spec_checked is True

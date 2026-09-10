@@ -379,11 +379,14 @@ class Document:
     features: list[Feature] = field(default_factory=list)
     spec: dict = field(default_factory=dict)   # inspector.Spec fields, JSON-safe
     spec_problems: list = field(default_factory=list)
-    # False while the spec could not be checked at all (the rollback bar is
-    # parked). NOT the same thing as failing it, and the UI must not paint it
-    # red: 42 of the 50 live designs carry a spec, so "spec FAIL" appeared the
-    # moment any editor opened (section 5 review, 2026-09-10).
-    spec_checked: bool = True
+    # Whether the spec check RAN. False while it could not (the rollback bar
+    # is parked) — NOT the same thing as failing it, and the UI must not paint
+    # that red: 42 of the 50 live designs carry a spec, so "spec FAIL"
+    # appeared the moment any editor opened (section 5 review, 2026-09-10).
+    # Defaults FALSE, so a document that has never been rebuilt cannot report
+    # a green "spec PASS" for geometry nothing has verified; `rebuild` sets it
+    # (round two, same review).
+    spec_checked: bool = False
     warnings: list = field(default_factory=list)  # non-fatal honesty flags
     rollback: str | None = None    # SolidWorks-style bar: build only up to this id
     _parts: dict = field(default_factory=dict, repr=False)   # id -> Part cache

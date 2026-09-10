@@ -97,16 +97,20 @@ def cone(bottom_radius: float, top_radius: float, height: float) -> Part:
     -height/2 to +height/2. top_radius=0 gives a sharp point. Use for tapers,
     funnels, nose shapes, stylized bodies."""
     _positive("cone", height=height)
-    # top_radius 0 is the documented sharp point, so only the BOTTOM has to be
-    # positive — but two equal radii is a cylinder the kernel refuses outright
-    # ("cone with two identic radii"), and a negative one is nonsense.
-    _positive("cone", bottom_radius=bottom_radius)
-    if isinstance(top_radius, bool) or not isinstance(top_radius, (int, float)):
-        raise ValueError(f"cone: top_radius must be a number in mm (got "
-                         f"{top_radius!r}) — type just the number, no units")
-    if top_radius < 0:
-        raise ValueError(f"cone: top_radius cannot be negative (got "
-                         f"{format(top_radius, 'g')}) — use 0 for a point")
+    # EITHER end may be the point: cone(0, 10, h) is a funnel standing
+    # point-down and OCCT builds it at exactly the volume of the flipped one
+    # (2094.40 mm3 measured both ways, round two of the section 5 review) —
+    # the fix pass briefly required a positive bottom_radius and took that
+    # shape away. So both radii only have to be >= 0; two EQUAL radii is a
+    # cylinder the kernel refuses outright ("cone with two identic radii"),
+    # which also catches the both-zero case.
+    for _n, _v in (("bottom_radius", bottom_radius), ("top_radius", top_radius)):
+        if isinstance(_v, bool) or not isinstance(_v, (int, float)):
+            raise ValueError(f"cone: {_n} must be a number in mm (got "
+                             f"{_v!r}) — type just the number, no units")
+        if _v < 0:
+            raise ValueError(f"cone: {_n} cannot be negative (got "
+                             f"{format(_v, 'g')}) — use 0 for a sharp point")
     if top_radius == bottom_radius:
         raise ValueError(f"cone: bottom_radius and top_radius are both "
                          f"{format(top_radius, 'g')} — that is a cylinder, "
