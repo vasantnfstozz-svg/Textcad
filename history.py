@@ -254,8 +254,8 @@ class History:
             if orphans:
                 self._problems.append(
                     f"{idx} is missing but {len(orphans)} version snapshot(s) "
-                    f"are still in {self.path.name} — History.repair() rebuilds "
-                    f"an index from them.")
+                    f"are still in {self.path.name} — the version panel can "
+                    f"rebuild the list from them.")
             self._data = None
             return
         try:
@@ -263,7 +263,7 @@ class History:
         except Exception as e:
             self._problems.append(
                 f"{idx} is unreadable ({e}). The version snapshots are still "
-                f"on disk — History.repair() rebuilds the index from them.")
+                f"on disk — the version panel can rebuild the list from them.")
             self._data = None
             return
         if not isinstance(data, dict) or "versions" not in data:
@@ -304,6 +304,16 @@ class History:
 
     def exists(self) -> bool:
         return self._data is not None
+
+    def can_repair(self) -> bool:
+        """True in the ONE state `repair()` is for: the index is unusable but
+        the snapshots are still on disk.
+
+        Repair rebuilds a LINEAR chain with "(recovered)" labels and no star,
+        so running it on a healthy tree would throw away real information.
+        This is the guard that lets a UI offer the button without being able
+        to make that mistake."""
+        return not self.exists() and any(self.path.glob("v*.json.gz"))
 
     def problems(self, deep: bool = False) -> list[str]:
         """Plain-language faults. Empty when the history is healthy. Callers

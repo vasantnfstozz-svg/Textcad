@@ -275,6 +275,43 @@ def _persist_session() -> None:
         pass
 
 
+def _restored_baseline(src: str) -> str | None:
+    """The content hash a restored tab's unsaved edits are measured against.
+
+    Three sources, in order of authority, because the first two can both be
+    absent: the design's CURRENT VERSION, else the design FILE on disk (a
+    design that was never versioned still has a baseline), else — for a
+    built-in sample, which has no file at all — the pristine sample.
+
+    None means "nothing to compare against", which `_dirty` reads as DIRTY.
+    That is deliberate: the cost of a needless ● is a question the user
+    answers in one click, and the cost of a wrong "clean" is their work.
+    Both fallbacks were missing (section 3 review, 2026-09-10) — a design
+    with no .history/ and every sample tab kept the ALREADY-EDITED restored
+    content as their own baseline, so they read clean after a restart and
+    closing the tab discarded the edits without asking."""
+    if src.startswith("file:"):
+        slug = src[5:]
+        try:
+            h = History.for_design(_history_root(), slug)
+            cur = h.current()
+            if cur:
+                return h.get(cur).hash
+        except Exception:
+            pass                                   # broken index: try the file
+        try:                                       # normalised through Document
+            return content_hash(
+                Document.load(str(DESIGNS / f"{slug}.tcad.json")).to_data())
+        except Exception:
+            return None
+    if src.startswith("sample:"):
+        try:
+            return content_hash(SAMPLES[src[7:]]().to_data())
+        except Exception:
+            return None
+    return None
+
+
 def _restore_session(rebuild: bool = True) -> int:
     """Reopen the previous run's tabs from SESSION_PATH. Only the ACTIVE tab
     is rebuilt here — rebuilding a whole heavy session up front kept the port
@@ -300,20 +337,15 @@ def _restore_session(rebuild: bool = True) -> int:
             src = t.get("source")
             tid = _new_tab(doc, source=src, activate=False)
             # A restored tab may hold UNSAVED edits (that is the point of the
-            # session file), so its dirty baseline is the design's current
-            # VERSION, not whatever intent just came back — otherwise a dirty
-            # tab would read clean after every restart and the close prompt
-            # would let those edits vanish silently.
-            if src and src.startswith("file:"):
-                try:
-                    h = History.for_design(_history_root(), src[5:])
-                    cur = h.current()
-                    if cur:
-                        e = STATE["docs"][tid]
-                        e["clean_hash"] = h.get(cur).hash
-                        e["dirty"] = None
-                except Exception:
-                    pass               # no/broken history -> creation baseline
+            # session file), so its dirty baseline is what the design WAS, not
+            # whatever intent just came back — otherwise a dirty tab would
+            # read clean after every restart and the close prompt would let
+            # those edits vanish silently. A None baseline reads DIRTY, which
+            # is the safe direction when nothing can be compared against.
+            if src and src.startswith(("file:", "sample:")):
+                e = STATE["docs"][tid]
+                e["clean_hash"] = _restored_baseline(src)
+                e["dirty"] = None
             if t.get("active"):
                 active_tid = tid
             restored += 1
@@ -2330,6 +2362,30 @@ def save_design():
     doc = _doc()
     safe = re.sub(r"[^\w\-]+", "-", doc.name).strip("-") or "untitled"
     path = DESIGNS / f"{safe}.tcad.json"
+    # A save must never land on SOMEONE ELSE'S design. File > New accepts any
+    # name, and the slug rule collapses a natural one onto an existing file
+    # without any exact typing ("cam cover plaque" -> cam-cover-plaque; this
+    # filesystem is case-insensitive, so "Cam Cover Plaque" hits it too). That
+    # overwrote the other design's .tcad.json AND appended this content to its
+    # version tree as a child of its latest version, with both tabs left bound
+    # to the one design (section 3 review, 2026-09-10, measured). The tab that
+    # is ALREADY bound to this file may of course keep saving over it.
+    # Two saves are still fine: the tab ALREADY bound to this file, and a save
+    # whose content is exactly what the file holds (nothing can be lost that
+    # way — that is how a sample tab saves itself into the library).
+    if (_entry().get("source") or "").lower() != f"file:{safe}".lower() \
+            and path.exists():
+        try:
+            same = content_hash(json.loads(
+                path.read_text(encoding="utf-8"))) == content_hash(doc.to_data())
+        except Exception:
+            same = False               # unreadable: assume it is someone's work
+        if not same:
+            return _refused(None, message=(
+                f"There is already a different design called '{safe}', and "
+                f"saving here would replace it. Give this one another name "
+                f"first — or, if you meant to work on that design, open it "
+                f"from the library and make your changes in its tab."))
     doc.save(str(path))
     # bind this tab to the file it just wrote (it may not have had a source, or
     # may have been saved under a new name) so opening that design later comes
@@ -2356,7 +2412,11 @@ def get_versions():
             "name": h.name, "tree": h.tree_lines(), "unsaved": False,
             "dirty": _dirty(_entry()),
             # so the push button can say "push v16" BEFORE the user commits
-            "next_id": h.next_id()}
+            "next_id": h.next_id(),
+            # the index is unusable but the versions themselves survive: the
+            # panel offers the rebuild. The SERVER decides this (R1) — the
+            # browser must not go parsing the problem sentences for it.
+            "can_repair": h.can_repair()}
 
 
 @app.get("/api/versions/diff")
@@ -2533,6 +2593,34 @@ def delete_version(req: VersionReq):
         return h.delete(req.id)
     except HistoryError as e:
         return {"error": str(e)}
+
+
+@app.post("/api/versions/repair")
+def repair_history():
+    """Rebuild a lost or unreadable version index from the snapshots.
+
+    The recovery existed but nothing could reach it: when index.json goes,
+    the panel said "History.repair() rebuilds an index from them" — a Python
+    method, to a user who does not write Python, for data that really is
+    recoverable (section 3 review, 2026-09-10). Now it is a button.
+
+    Refused on a healthy history, because repair GUESSES: the real parent
+    links died with the index, so it rebuilds one straight line with
+    "(recovered)" labels and no star. Running it on a working tree would
+    throw away information nothing can get back."""
+    h = _vhistory()
+    if h is None:
+        return {"error": "this design has no history yet — save it once first"}
+    if not h.can_repair():
+        return {"error": "nothing to repair — this design's version list is "
+                         "readable. (Rebuilding can only guess a straight "
+                         "line of versions, so it never runs on a working "
+                         "history.)"}
+    try:
+        notes = h.repair()
+    except HistoryError as e:
+        return {"error": str(e)}
+    return {"repaired": True, "recovered": len(h.versions()), "notes": notes}
 
 
 @app.post("/api/versions/label")

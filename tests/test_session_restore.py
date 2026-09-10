@@ -101,3 +101,79 @@ def test_tests_never_touch_the_real_session(tmp_path, monkeypatch):
     c = TestClient(studio.app)
     c.post("/api/new", json={"name": "x"})
     assert not (tmp_path / "session.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# Section 3 code review, 2026-09-10 (F2, P1). A restored tab's dirty baseline
+# is taken from the design's CURRENT VERSION -- "otherwise a dirty tab would
+# read clean after every restart and the close prompt would let those edits
+# vanish silently". Two doors were left open in the fallbacks: a design with
+# no (or a broken) .history/ never entered the `if cur:` branch, and a
+# `sample:` tab never entered the block at all. In both the baseline stayed
+# the ALREADY-EDITED restored content, so the tab read clean, showed no dot,
+# and closing it threw the edits away without asking. Measured with three
+# restored tabs all holding radius 99: True / False / False.
+# ---------------------------------------------------------------------------
+
+def _session_with(client, tabs):
+    studio.SESSION_PATH.write_text(json.dumps({"tabs": tabs}), encoding="utf-8")
+    studio.STATE = {"docs": {}, "active": None, "seq": 0}
+    return studio._restore_session()
+
+
+def _disc(name, radius):
+    d = Document(name=name)
+    d.add("body", "disc", {"radius": radius, "thickness": 5})
+    return d
+
+
+def _dirty_by_name(name):
+    for e in studio.STATE["docs"].values():
+        if e["doc"].name == name:
+            return studio._dirty(e)
+    raise AssertionError(f"no restored tab called {name}")
+
+
+def test_a_restored_tab_with_no_history_still_reads_dirty(client, tmp_path):
+    """A design that has never been versioned: the file on disk is the only
+    baseline there is, and the restored tab has moved away from it."""
+    (studio.DESIGNS / "_test-nohist.tcad.json").write_text(
+        json.dumps(_disc("_test-nohist", 10).to_data()), encoding="utf-8")
+    try:
+        assert _session_with(client, [
+            {"doc": _disc("_test-nohist", 99).to_data(),
+             "source": "file:_test-nohist", "active": True}]) == 1
+        assert _dirty_by_name("_test-nohist") is True, \
+            "unsaved edits read as clean, so closing the tab discards them"
+    finally:
+        (studio.DESIGNS / "_test-nohist.tcad.json").unlink(missing_ok=True)
+
+
+def test_a_restored_tab_matching_its_file_reads_clean(client):
+    """...and the guard must not cry wolf on an untouched one."""
+    (studio.DESIGNS / "_test-nohist.tcad.json").write_text(
+        json.dumps(_disc("_test-nohist", 10).to_data()), encoding="utf-8")
+    try:
+        _session_with(client, [
+            {"doc": _disc("_test-nohist", 10).to_data(),
+             "source": "file:_test-nohist", "active": True}])
+        assert _dirty_by_name("_test-nohist") is False
+    finally:
+        (studio.DESIGNS / "_test-nohist.tcad.json").unlink(missing_ok=True)
+
+
+def test_a_restored_sample_tab_keeps_its_unsaved_edits_visible(client):
+    pristine = studio.SAMPLES["flange"]()
+    edited = studio.SAMPLES["flange"]()
+    edited.edit(edited.features[1].id, "radius", 99)
+    assert _session_with(client, [
+        {"doc": edited.to_data(), "source": "sample:flange", "active": True}]) == 1
+    assert _dirty_by_name(pristine.name) is True, \
+        "an edited sample read as clean after a restart"
+
+
+def test_an_untouched_restored_sample_reads_clean(client):
+    pristine = studio.SAMPLES["flange"]()
+    _session_with(client, [
+        {"doc": pristine.to_data(), "source": "sample:flange", "active": True}])
+    assert _dirty_by_name(pristine.name) is False

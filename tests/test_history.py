@@ -236,7 +236,10 @@ def test_a_corrupt_index_is_reported_and_never_overwritten(h, tmp_path):
     broken = History(tmp_path / "part.history")
     assert not broken.exists()
     assert any("unreadable" in p for p in broken.problems())
-    assert any("repair()" in p for p in broken.problems())
+    # the message points at the PANEL's button, not at a Python method the
+    # user cannot run (section 3 review, 2026-09-10)
+    assert any("rebuild the list" in p for p in broken.problems())
+    assert broken.can_repair(), "the snapshots survive, so the rebuild applies"
 
     with pytest.raises(HistoryError, match="unreadable"):
         broken.append(design(w=9))

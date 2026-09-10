@@ -82,6 +82,28 @@ function paint(d) {
     w.textContent = '⚠ ' + p;
     el.appendChild(w);
   }
+  // The index is gone or unreadable but the versions themselves are still
+  // stored. That recovery used to be named at the user as a Python method
+  // they had no way to run; it is a button now. The SERVER says when it
+  // applies (can_repair) — never this file reading the sentences above.
+  if (d.can_repair) {
+    const fix = document.createElement('button');
+    fix.className = 'vpush';
+    fix.textContent = 'Rebuild the version list';
+    fix.title = 'your saved versions are still here — rebuild the list from '
+              + 'them. Which version branched from which was lost with the '
+              + 'index, so they come back as one straight line.';
+    fix.onclick = async () => {
+      const r = await postJSON('/api/versions/repair', {}, 'rebuilding…');
+      if (!r.error) bus.emit('msg', 'bot',
+        `Rebuilt the version list — ${r.recovered} version` +
+        `${r.recovered === 1 ? '' : 's'} recovered. They are listed as one ` +
+        `straight line: which version came from which was lost along with ` +
+        `the index, and the names show as "(recovered)".`);
+      refresh();
+    };
+    el.appendChild(fix);
+  }
   // Changes since the current version live HERE until the user decides —
   // nothing mints a version on its own any more (2026-09-01), and finishing
   // a round of edits is a CHOICE (same user, later that day): fold them into

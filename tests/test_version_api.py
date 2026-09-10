@@ -771,3 +771,100 @@ def test_restoring_an_identical_TWIN_version_only_moves_the_marker(
     r = client.post("/api/versions/restore", json={"id": "v1"}).json()
     assert r.get("already") is True
     assert _versions(client)["current"] == "v1"
+
+
+# ---------------------------------------------------------------------------
+# Section 3 code review, 2026-09-10.
+#
+# F1 (P0): File > New, type a name that already exists, Save -- and that
+# design's .tcad.json was OVERWRITTEN while the new content was appended to
+# its version tree as a child of its latest version. Measured: tab A saved 1
+# feature as v1, a second tab of the same name saved 0 features as v2 and the
+# file on disk went to 0 features. Both tabs then carried the same `source`,
+# so two tabs wrote one file and one history. The slug rule does it without
+# any exact typing: "cam cover plaque" -> cam-cover-plaque.
+#
+# F3 (P2): when index.json is lost the panel says "History.repair() rebuilds
+# an index from them" -- a Python method with no button, endpoint or CLI.
+# ---------------------------------------------------------------------------
+
+def test_saving_over_another_designs_name_is_refused(client):
+    studio._doc().name = TMP
+    r = client.post("/api/save").json()
+    assert r["saved"] == TMP and r.get("version") == "v1"
+    original = json.loads(_design_path().read_text(encoding="utf-8"))
+    assert original["features"], "the first design must have content"
+
+    # a SECOND tab, named the same -- /api/new does not object
+    client.post("/api/new", json={"name": TMP})
+    client.post("/api/feature/add", json={
+        "id": "other", "op": "disc",
+        "params": {"radius": 3, "thickness": 1}, "inputs": []})
+    r = client.post("/api/save").json()
+    assert r.get("error"), "saving over another design was allowed"
+    assert TMP in r["error"]
+
+    # nothing moved: not the file, not the tree, not the tab binding
+    assert json.loads(_design_path().read_text(encoding="utf-8")) == original
+    h = History.for_design(studio._history_root(), TMP)
+    assert [v.id for v in h.versions()] == ["v1"]
+    assert h.current() == "v1"
+    sources = [e.get("source") for e in studio.STATE["docs"].values()]
+    assert sources.count(f"file:{TMP}") == 1, \
+        "two tabs ended up bound to one design"
+
+
+def test_a_design_can_still_be_saved_over_its_own_file(client):
+    """The guard must not block the everyday case: saving the design you
+    opened, over and over."""
+    studio._doc().name = TMP
+    assert client.post("/api/save").json()["saved"] == TMP
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 11})
+    r = client.post("/api/save").json()
+    assert r["saved"] == TMP and not r.get("error")
+    assert r.get("version") == "v2"
+
+
+def test_a_lost_index_can_be_rebuilt_from_the_panel(client):
+    studio._doc().name = TMP
+    client.post("/api/save")
+    client.post("/api/edit", json={"feature_id": "bore",
+                                   "param": "radius", "value": 12})
+    client.post("/api/save")
+    h = History.for_design(studio._history_root(), TMP)
+    assert len(h.versions()) == 2
+    (h.path / "index.json").unlink()                # the index is gone
+
+    d = client.get("/api/versions").json()
+    assert d["problems"] and "rebuild the list" in " ".join(d["problems"])
+    assert d.get("can_repair") is True, \
+        "the panel is told to run repair() with no way to run it"
+
+    r = client.post("/api/versions/repair").json()
+    assert not r.get("error"), r
+    assert r["recovered"] == 2
+    back = History.for_design(studio._history_root(), TMP)
+    assert [v.id for v in back.versions()] == ["v1", "v2"]
+    assert not back.problems()
+
+
+def test_repair_refuses_a_healthy_history(client):
+    """It rebuilds a LINEAR chain with '(recovered)' labels and no star, so
+    running it on a working tree would throw away real information."""
+    studio._doc().name = TMP
+    client.post("/api/save")
+    r = client.post("/api/versions/repair").json()
+    assert r.get("error") and "nothing to repair" in r["error"].lower()
+
+
+def test_saving_content_the_file_already_holds_is_still_allowed(client):
+    """A sample tab writing itself into the library, or a second save of an
+    unchanged design: nothing can be lost, so the guard must not fire."""
+    studio._doc().name = TMP
+    assert client.post("/api/save").json()["saved"] == TMP
+    client.post("/api/new", json={"name": TMP})           # a fresh, unbound tab
+    studio.STATE["docs"][studio.STATE["active"]]["doc"] = studio.Document.load(
+        str(_design_path()))
+    r = client.post("/api/save").json()
+    assert r["saved"] == TMP and not r.get("error")
