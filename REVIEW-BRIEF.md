@@ -6,7 +6,7 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: NOTHING PENDING** — the next `code review` takes `REVIEW-QUEUE.md`'s first TODO row.
+> **Status: PENDING** — a P0 was fixed in `f63ba5a`; the next `code review` takes that commit, not the queue.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5`) and types only `code review`. CLAUDE.md's section
@@ -19,20 +19,16 @@
 
 ---
 
-## Just done: section 2, Document core and feature tree (6ea5546)
+## Just done: section 3, Version tree and session persistence (f63ba5a)
 
-Five findings, **4 fixed, 1 rejected**, 7 new tests, fast tier 1271 green.
-No P0, so no second round is owed. The full record — what was found, what
-was fixed, what was checked and found sound, and the one rejection with its
-evidence — is `REVIEW-QUEUE.md`'s done log, section 2.
+Three findings, **all three fixed**, 9 new tests, fast tier 1280 green. The
+full record is `REVIEW-QUEUE.md`'s done log, section 3.
 
-**The rejection matters more than the fixes and must not be re-opened:** a
-design file naming an op this build does not know is refused ON PURPOSE.
-A version restore of one answers "cannot open it — it is still in the
-history", and a restored session tab holding one is dropped while every
-other tab lives. `op_params` returning `()` for an unknown op is about
-walking the CATALOGUE without raising, not a promise that the file opens.
-`test_an_unknown_op_is_refused_at_every_door` pins it.
+**A P0 was fixed, so the NEXT review looks at this commit first** — see the
+range below. In short: a save could land on another design's file and graft
+itself onto that design's version tree; a restored tab holding unsaved edits
+could read clean and lose them on close; and the only recovery for a lost
+version index named a Python method, which is now a button.
 
 ---
 
@@ -40,16 +36,17 @@ walking the CATALOGUE without raising, not a promise that the file opens.
 
 | | |
 |---|---|
-| **Range** | nothing pending. `6ea5546` is the last code commit and was itself the fix pass for section 2 |
-| **Next** | `REVIEW-QUEUE.md` **section 3 — Version tree and session persistence** (`history.py`, `backfill.py`, `static/js/versions.js`, plus the tab/session and versions endpoints in `studio.py`), the first row still marked TODO. Data loss is the P0 class there and it has never been reviewed. A fresh Opus chat, `code review`, nothing else |
-| **Then** | section 4, Booleans and transforms |
-| **Frontend** | `ui v180`, `css v40` |
+| **Status** | **PENDING** — review `f63ba5a` (its parent is `4b0ca40`) |
+| **Range** | `4b0ca40..f63ba5a` — `history.py`, `studio.py`, `static/js/versions.js`, and the three test files |
+| **Where the risk is** | (1) the new refusal in `/api/save` (studio.py ~2340): it compares the tab's `source` against the slug case-insensitively and lets a save through when the file's content already equals what is being written — ask what it now BLOCKS that the user legitimately wants, and what it still lets through. (2) `_restored_baseline` (studio.py ~278): three fallbacks, and a None answer deliberately reads DIRTY — check every path a restored tab can take, including a `file:` source whose design was deleted. (3) `POST /api/versions/repair` + `History.can_repair()`: repair REWRITES the index, drops labels, parents and the star, and the only thing standing between it and a healthy tree is `can_repair()` |
+| **Then** | `REVIEW-QUEUE.md` **section 4 — Booleans and transforms**, the first row still marked TODO |
+| **Frontend** | `ui v181`, `css v40` |
 
 ## Ground rules (unchanged, for whichever commit comes next)
 
 - **Read-only.** Do not start the server (port 8123 is the user's; a second
   listener there is a known trap). Do not run `tests/e2e/`. The whole fast
-  tier is 1271 (`python -m pytest tests -q --ignore=tests/e2e`).
+  tier is 1280 (`python -m pytest tests -q --ignore=tests/e2e`).
 - **A finding is a concrete input on which the code does the wrong thing**,
   with the exact click or data that triggers it. Order: P0 wrong geometry or
   data loss, P1 blocks the action, P2 daily annoyance, P3 polish.

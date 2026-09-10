@@ -97,7 +97,7 @@ Then two closing sections:
 |---|---|---|---|
 | 1 | Sketcher | high | four rounds, each fixing the last: 556a611 (9/9, 1 rejected), 6e2cae9 (8/8, the fix pass had a P0), 5f65a7a (8/8, so did that one), **13da90c** (8/9, 1 rejected - the ordering RULE was incomplete), and **round five, ONE reviewer at medium**, which CLEARED the two-part ordering rule (no arrangement makes it worse, termination bounded) and fixed 5 gaps in the fix pass itself. Composition is measurably order-independent, all 324 library sketches build, the whole library composes unchanged. **Section 1 is done unless the sixth read finds something** |
 | 2 | Document core and feature tree | high | **reviewed and fixed 6ea5546**, ONE reviewer at medium: 5 findings, **4 fixed, 1 rejected** (refusing to open a file with an unknown op IS the settled answer - the fast tier proved it). 7 new tests; the P2s were a struck row keeping its piece count (and silencing the warning below it), a struck row highlighting the whole upstream body, and an intended sever re-probing the healer on every rebuild |
-| 3 | Version tree and session persistence | high | TODO |
+| 3 | Version tree and session persistence | high | **reviewed and fixed f63ba5a**, ONE reviewer: 3 findings, **all 3 fixed**, 9 new tests. A P0 (a save could overwrite ANOTHER design's file and graft itself onto its version tree), a P1 (after a restart a tab with unsaved edits could read clean, so closing it discarded them silently) and a P2 (the only recovery for a lost index named a Python method - it is a button now) |
 | 4 | Booleans and transforms | high | TODO |
 | 5 | Primitives and shape editing | high | TODO |
 | 6 | Measure and drive | high | TODO |
@@ -1057,3 +1057,38 @@ was found where they disagree - worth collapsing one day, not a defect today.
 its ✎ is withheld. ✎ reopens a live tool with a preview, which cannot work
 with the geometry gone; a typed number is harmless and applies when the row
 comes back.
+
+---
+
+### Section 3 - Version tree and session persistence (reviewed and fixed 2026-09-10, commit f63ba5a)
+
+ONE reviewer, read-only, no server started. `history.py` (807) + `backfill.py`
+(254) + `static/js/versions.js` (414) + the tab/session and versions endpoints
+in `studio.py`. Data loss is the P0 class here and the module had never been
+reviewed. **3 findings, all 3 fixed**, each reproduced by measurement first.
+9 new tests; fast tier 1271 -> 1280, all green.
+
+| # | P | What it was | Fix |
+|---|---|---|---|
+| F1 | **P0** | a save could land on SOMEONE ELSE'S design. File > New accepts any name and the slug rule collapses a natural one onto an existing file with no exact typing (`cam cover plaque` -> `cam-cover-plaque`; this filesystem is case-insensitive, so `Cam Cover Plaque` hits it too - probed). Measured on a temp library: tab A saved 1 feature as v1; a second tab of the same name saved 0 features as v2, `designs/<slug>.tcad.json` went to 0 features, the new content was appended to the OTHER design's tree as a child of its latest version, `current` moved to it, and BOTH tabs ended up with `source: file:<slug>` so two tabs wrote one file and one history. 48 of the 50 designs would survive it as their previous version; `esp32-remote-live-t2` and `-t3` have no `.history/` at all | `/api/save` refuses and names the way out. Two saves stay allowed: the tab already bound to that file, and a save whose content is exactly what the file already holds (that is how a sample tab writes itself into the library, and nothing can be lost) |
+| F2 | P1 | after a restart a tab holding unsaved edits could read CLEAN, so closing it threw them away with no prompt. The baseline block takes the design's current VERSION on purpose - "otherwise a dirty tab would read clean after every restart and the close prompt would let those edits vanish silently" - but both fallbacks were open: a design with no (or a broken) `.history/` never entered the `if cur:` branch, and a `sample:` source never entered the block at all, so the baseline stayed the ALREADY-EDITED restored content. Measured with three restored tabs all holding radius 99: True / False / False | `_restored_baseline()` falls back to the design FILE on disk, then to the pristine sample; an unknown baseline reads DIRTY (a needless dot costs one click, a wrong "clean" costs the work) |
+| F3 | P2 | the only recovery for a lost version index named a Python method the user cannot run. With `index.json` gone the panel said "History.repair() rebuilds an index from them"; `repair()` had callers only in `tests/` | `History.can_repair()` is true in the one state repair is for (index unusable, snapshots present), `/api/versions` carries it, `POST /api/versions/repair` runs it and refuses a healthy history (repair guesses a linear chain and drops labels and the star), and the panel offers "Rebuild the version list". Both problem sentences now point at the panel |
+
+**Checked and found sound** (do not re-derive): `delete_after` handing back an
+id a single `delete()` retired is DELIBERATE and pinned by
+`test_delete_after_resets_the_numbering` - the trim is the explicit "this tail
+never happened" gesture; the crash-checkpoint machinery (a locked in-flight
+set that names the OLDEST request, and no checkpoint taken while any POST is
+still running, so a half-applied edit can never reach the session file);
+`append`'s no-op rule, the snapshot-before-index ordering and `_write_atomic`;
+all four branches of `restore_version` (hash fast path, missing/corrupt
+snapshot, older-build refusal, undo push); `backfill.py`'s no-`--follow`
+decision, sha dedup and skip-live rule; `postJSON`'s `if (doc.features)` guard,
+which is why the version endpoints that answer without a document cannot blank
+the tree; `versions.js` showing a parentless version as a root rather than
+dropping it (better than the backend's `depths()`, which omits it).
+
+**Not ranked, still true:** restore v3 and then re-open the design from the
+library without saving, and the tree gains a version duplicating content it
+already holds - the file was never rewritten by the restore. Deterministic on
+paper, odd enough in practice that it was left alone.
