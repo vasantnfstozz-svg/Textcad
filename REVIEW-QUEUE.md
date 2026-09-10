@@ -99,7 +99,7 @@ Then two closing sections:
 | 2 | Document core and feature tree | high | **reviewed and fixed 6ea5546**, ONE reviewer at medium: 5 findings, **4 fixed, 1 rejected** (refusing to open a file with an unknown op IS the settled answer - the fast tier proved it). 7 new tests; the P2s were a struck row keeping its piece count (and silencing the warning below it), a struck row highlighting the whole upstream body, and an intended sever re-probing the healer on every rebuild |
 | 3 | Version tree and session persistence | high | **reviewed and fixed f63ba5a** (3 findings, all 3 fixed, 9 tests): a P0 (a save could overwrite ANOTHER design's file and graft itself onto its version tree), a P1 (after a restart a tab with unsaved edits could read clean, so closing it discarded them silently) and a P2 (the only recovery for a lost index named a Python method - it is a button now). A P0 was fixed, so **round two re-reviewed the FIX COMMIT: fafe983**, 4 findings, **all 4 fixed**, 8 new tests - the same P0 was still reachable through TWO other doors (a second tab taking over an open design's file; a slug whose `.history/` outlived its deleted `.tcad.json`), and the new repair button could overwrite a NEWER build's index. **Section 3 is done unless a third read finds something** |
 | 4 | Booleans and transforms | high | **reviewed and fixed c9b2e92**, ONE reviewer: 9 findings, **all 9 fixed**, 26 new tests, 50/50 library designs rebuild with ZERO volume drift. The one that mattered most: **`loft` of a sketch AND a solid SEGFAULTS OpenCASCADE** (exit 139, no `except` can catch it) and the Add Feature dialog offers every feature as a checkbox — so combiners now get a KIND gate BEFORE the kernel, which also closes the silent twin (an `intersect` of a body and a sketch ate the body and left the design with no bodies, all rows green). Plus: no bodies + a spec reported "meets spec"; the Join/Cut default target followed FACE-REFERENCE ops (a New-body boss became the panel's current state, parity rule 6); the stranding heal ticked `through` on a tool ANOTHER cut shares (that cut lost 3600 mm3 unasked); a cut whose tool misses reported success silently; a pattern's copy form called "a part that fell apart" (24 rows in 13 designs). A P0-class finding was fixed, so **round two re-reviewed the FIX COMMIT: 33b2f49**, 2 findings, **both fixed**, 4 tests — two holes in the guard round one had just built (`getattr` does not swallow a raising property; build123d raises its OWN bare `ValueError` with kernel wording), plus the new refusal calling a body behind the rollback bar broken. The brief's four other named risks CLEARED by measurement, `_live_source` included (52 files, 15 struck features, zero mismatches). **Section 4 is done unless a third read finds something** |
-| 5 | Primitives and shape editing | high | **reviewed and fixed e35450d**, ONE reviewer: 8 findings, **all 8 fixed**, 0 rejected, 55 new tests, all 50 saved designs rebuild with no failed feature. The one that mattered: **`polygon_plate` and `hex_plate` span Z 0..thickness, and the AI's positioning rule listed them with disc and plate as CENTERED** — so every `move` it computed for a hex body was half a thickness out (designs/planetary-assembly: four bolt heads seated 1.4 mm high, 0.5 mm of shank overlap where 1.9 mm was intended). The PROMPT was corrected, not the solid: two saved designs are built on the geometry as it stands. Plus: a degenerate dimension put raw kernel text in the feature row (`Standard_DomainError('')` for a zero thickness — the same empty diagnosis for all three of a plate's dimensions; twelve lines of pybind11 constructor overloads for the string "8mm"); `with_center_hole`/`with_bolt_circle` reported success after drilling NOTHING (radius 0, or a PCD that puts the holes off the part — volume unchanged, row green), and a PCD of 0 silently drilled one hole instead of six; the tree painted a red "spec FAIL" whenever the rollback bar was parked, on **42 of the 50 designs** that carry a spec; the placement popup's one shared debounce timer discarded a dimension typed just before touching x/y/z. A P0-class finding was fixed, so **round two must re-review the FIX COMMIT** (`REVIEW-BRIEF.md` is PENDING on e35450d) |
+| 5 | Primitives and shape editing | high | **reviewed and fixed e35450d**, ONE reviewer: 8 findings, **all 8 fixed**, 0 rejected, 55 new tests, all 50 saved designs rebuild with no failed feature. The one that mattered: **`polygon_plate` and `hex_plate` span Z 0..thickness, and the AI's positioning rule listed them with disc and plate as CENTERED** — so every `move` it computed for a hex body was half a thickness out (designs/planetary-assembly: four bolt heads seated 1.4 mm high, 0.5 mm of shank overlap where 1.9 mm was intended). The PROMPT was corrected, not the solid: two saved designs are built on the geometry as it stands. Plus: a degenerate dimension put raw kernel text in the feature row (`Standard_DomainError('')` for a zero thickness — the same empty diagnosis for all three of a plate's dimensions; twelve lines of pybind11 constructor overloads for the string "8mm"); `with_center_hole`/`with_bolt_circle` reported success after drilling NOTHING (radius 0, or a PCD that puts the holes off the part — volume unchanged, row green), and a PCD of 0 silently drilled one hole instead of six; the tree painted a red "spec FAIL" whenever the rollback bar was parked, on **42 of the 50 designs** that carry a spec; the placement popup's one shared debounce timer discarded a dimension typed just before touching x/y/z. A P0-class finding was fixed, so **round two re-reviewed the FIX COMMIT: 2d2e8a9**, 2 findings, **both fixed**, 4 tests — the fix pass's own `cone` guard had taken away a legitimate shape (a funnel standing POINT-DOWN: `cone(0, 10, h)` builds at 2094.40 mm3, exactly the flipped cone's volume), and `spec_checked` defaulted True so a never-rebuilt document claimed a green "spec PASS". The brief's other four named risks CLEARED by measurement: `_drilled`'s 1e-6 floor has six orders of magnitude of headroom (a 0.05 mm hole in a 100-million-mm3 plate measures to 8 significant figures), `numeric_params` misses no numeric parameter (pattern's unannotated `count` already refuses plainly in `pattern.py`), `plain_cause`'s new collapse cannot swallow a ValueError because that branch returns first, and `sides=6.0` is a non-event (no file holds one). **Section 5 is done unless a third read finds something** |
 | 6 | Measure and drive | high | TODO |
 | 7 | Extrude as a whole module (with loft and sweep) | medium | TODO |
 | 8 | Import STL and STEP | medium | TODO |
@@ -1286,3 +1286,54 @@ it passes is computed correctly.
 **Line delta:** +237 / -25 over 8 files, plus 340 lines of tests and the probe.
 Geometry is untouched - every fix either refuses or changes wording - and all
 50 saved designs rebuild with no failed feature.
+
+### Section 5, ROUND TWO - the fix pass re-read (2026-09-10, commit 2d2e8a9)
+
+`e35450d` closed a P0-class finding (the AI was told polygon/hex plates were
+centred when they are not), so the house rule sent a second read over the fix
+itself. **2 findings, both fixed**, 4 new tests, fast tier 1377 green.
+
+| # | P | What it was | Fix |
+|---|---|---|---|
+| R1 | P1 | the fix pass's own `cone` guard required a POSITIVE `bottom_radius`, which refused a funnel standing point-down. Measured: OCCT builds `cone(0, 10, 20)` at 2094.40 mm3 - **exactly the volume of `cone(10, 0, 20)`**, which was still allowed. A capability the fix pass took away | both radii only have to be >= 0; the both-zero case is still caught by the equal-radii check ("that is a cylinder, use disc") |
+| R2 | P3 | `spec_checked` defaulted to `True`, so a document that had never been rebuilt reported `spec_checked=True, spec_problems=[]` - which the tree paints as a green **spec PASS** for geometry nothing has verified | defaults False; `rebuild` sets it. Not reachable through today's endpoints (`/api/tabs/switch` rebuilds a never-built tab first, and the active tab is rebuilt at restore), which is why it is a P3 and not worse |
+
+**The brief named five risks; four CLEARED by measurement, not by reading:**
+
+- **`_drilled`'s 1e-6 volume floor has six orders of magnitude of headroom.**
+  A 0.05 mm-radius hole through a 1000x1000x100 plate (100 million mm3) gives
+  `gone=0.785398170` against a true 0.785398163 - eight significant figures.
+  The floor cannot falsely refuse a real hole at any scale this system builds.
+- **`numeric_params` misses no numeric parameter.** Enumerated every
+  parameter of every op: the only numeric-looking one outside the gate is
+  `revolve_profile.points`, a list, which is checked point-by-point inside the
+  function. `polar_pattern`/`linear_pattern`'s unannotated `count` already has
+  its own plain refusal in `pattern.py` ("count must be a whole number >= 1"),
+  measured rather than assumed.
+- **`plain_cause`'s new collapse cannot swallow a useful refusal.** The
+  `isinstance(e, ValueError)` branch returns the message verbatim BEFORE the
+  multi-line / 200-character test, so every op's own plain sentence passes
+  through intact; only an untranslated non-ValueError can be collapsed.
+- **`polygon_plate` accepting `sides=6.0` is a non-event.** No design or
+  fixture file holds a whole-float `sides`/`count` or a numeric string, so the
+  widening changes nothing that exists.
+
+Also checked: the stranding-heal early return at `document.py:1059` does not
+skip the new flag (it returns the value the recursive inner `rebuild()` set),
+and `renderSpecRow`'s `!== false` fallback keeps the row's old behaviour
+against a server that does not send the field.
+
+**Considered and NOT reported:** `numeric_params` doing an uncached
+`inspect.signature` walk on every edit (~100 us against a 20 ms rebuild -
+`op_params` is cached, but this is not a bug and padding the list is against
+the rules); `tube(20, 0, 6)` newly refusing where it used to build a plain
+disc silently (that is the same "removed nothing" class as F3 and the refusal
+is the honest answer, not a regression).
+
+**Line delta:** +21 / -8. All 50 saved designs rebuild with no failed feature.
+
+**The deferred half of F1 is now SETTLED, by the user:** asked whether
+polygon/hex plates should be re-centred to match the other five, they said the
+hex nut is not even needed - "just delete it or leave it". The geometry stays
+as it is, the LAUNCH-PLAN section 10 row records the decision, and it is not
+scheduled.
