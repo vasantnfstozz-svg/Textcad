@@ -1,7 +1,7 @@
 # Shell — tool spec (P4, LAUNCH-PLAN.md §8 step 1)
 
-> **Status: spec written 2026-09-10, built the same day (the fifth tool on the
-> framework, `tool.js`).** Fusion's Shell: pick the faces to remove, give a
+> **Status: built 2026-09-10 (fb0b8c8, ui v184) — the fifth tool on the
+> framework (`tool.js`); code review pending (REVIEW-BRIEF.md).** Fusion's Shell: pick the faces to remove, give a
 > wall thickness, the body becomes walls of that thickness around a cavity.
 > The op EATS its body like Hole (the result is the hollowed body — no Join /
 > Cut row) and its input is a SET of faces on one body, toggled by clicking —

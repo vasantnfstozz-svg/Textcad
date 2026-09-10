@@ -22,8 +22,12 @@
 > done 2026-09-07** (023ca5d: a FEATURE's delta or a BODY mirrored across a
 > face / an origin plane / a mid-plane; five review rounds 9644b6d, c4d5961,
 > 85821be, 072aa95, 21429d8 + the deferred findings in the commit after the
-> stamp, ui v164; user's checklist passed 2026-09-07 — §7 P4). Next: Shell,
-> in a fresh chat. One tool per session. Every
+> stamp, ui v164; user's checklist passed 2026-09-07 — §7 P4). **P4's fifth
+> tool, Shell, BUILT 2026-09-10** (fb0b8c8: the picked flat faces open, walls
+> of one thickness Inside / Outside, every click a server-decided toggle, ui
+> v184; its code review is PENDING in REVIEW-BRIEF.md — the row is stamped
+> after it). Next: Move/Rotate, in a fresh chat, after the review. One tool
+> per session. Every
 > other plan file points here; §7 carries the done-notes, §10 the ranked open
 > items. **Added 2026-09-10 (user's decision):** P5b, the machine plays the
 > user — a zero-token random-journey runner, a bug button, the library tier
@@ -801,6 +805,20 @@ change, +1 journey; the user re-checked it). Pattern's ghost is deferred by
 the user's decision (§10) — its copies need the seed's delta mesh from the
 server. The review of c6a2377 rides with the next tool's (user's call).
 
+*Shell built 2026-09-10* (spec `specs/shell.md`, tool fb0b8c8; the review
+and its stamp follow). Fusion's Shell as ONE op that eats its body: click the
+faces that should be open, drag the arrow for the wall, Inside / Outside; a
+body's tree row opens it with no face open (a closed hollow — the framework's
+new `bodyRow`); every click on the body while the panel is open is a toggle
+the SERVER decides (`face_toggle`, Fillet's face rule). `probes/shell_probe.py`
+found three kernel lies the op now refuses with a sentence: `offset()` with no
+opening returns the offset SOLID (a shrunk box), walls that meet in the middle
+return the body UNCHANGED, walls past the far side return an OPEN SHELL — and
+two exception classes with kernel wording, translated. 24 + 3 gauntlet + 4
+browser tests, fast tier 1435. Decided: no ghost (a cavity inside an opaque
+body cannot be drawn by growing an outline), flat openings only (the kernel
+refuses a curved one), Fusion's Both direction deferred (§10).
+
 **P5 — The AI uses the tools (§5 step B).** Incremental authoring through
 the plan endpoint; chat edits point at parameters; the FEATURE-TREE-PLAN
 "step 4" everyone deferred.
@@ -916,6 +934,7 @@ assemblies, the user's personal project.
 
 | Pri | Item | Source |
 |-----|------|--------|
+| P3 | **Shell's second half of Fusion's dialog**: Direction **Both** with an outside thickness (two offsets, one result), a CURVED face as an opening (the kernel refuses `offset(openings=wall)` today — probes/shell_probe.py §8; a cut-then-shell route may exist), a measured maximum thickness in the plan's `limits` so the arrow can say where the walls would meet (today the op's sentence does, after the fact). | Shell 2026-09-10 |
 | done | **Two panel fixes the user hit on 2026-09-07 — in the framework and the shared ring, so every tool inherits them.** (1) A DRAGGED angle lands on round numbers ("revolve goes to 90.5 — it should recognise 0, 45, 90, 180"): the ring — Extrude taper, Revolve, Circular Pattern — snaps to whole degrees and, within 3° of a multiple of 45°, to that multiple, where the handle sticks until the pointer leaves the band; the raw turn accumulates underneath so the handle never lags; typed values stay exact (`viewport.js snapAngle`). (2) A value CLEARED back to 0 with a preview up ("I change 12 to 0 and it reloads 12") was PUSHED: the kernel refused the zero-thickness solid (`Standard_ConstructionError` for extrude, the op's own sentence for revolve — probed) and the framework's revert wrote the OLD value into the box the user had just emptied. Honest zero now (parity rule 4): in create mode the preview goes and the box keeps its 0 (`tool.js unbuild`, the same code Cancel uses); an edit keeps its feature and says so once (the `hold` path). Fillet's radius, Hole's ⌀ and Pattern's count inherit both. Tests: 2 browser journeys in `test_edit_extrude.py` (create: 12 → 0 → preview gone, box 0, 8 → built, OK; edit: 0 keeps 12 with the sentence, Cancel) and the revolve ring drag now asserts 37.3 → 37 and 92 → 90. | user 2026-09-07 |
 | P1 | **`sketch_trim.py` keeps its own copy of the sketch composition rule** and so disagrees with the builder: `_compose_faces` (l.223-229) composes in DRAWING order, where `sketch.py _compose` orders outers before nested shapes and material before an overlapping cut; and l.372 / l.424 still refuse an entity list whose first shape is a cut, which `_compose` accepts. Measured 2026-09-09 (fourth sketch review, 13da90c): a Trim click deletes a green add the builder keeps, and Trim tells the user to delete their hole. Fix: Trim asks `sketch.py` for the order instead of keeping its own. | 4th sketch review 2026-09-09 |
 | P2 | **A polygon whose outline crosses itself builds a sketch that reports `ok` with an INVALID face**; the extrude two nodes later takes the blame ('OpenCASCADE reports the solid is invalid'). The shoelace guard in `_entity` catches a ring of zero area, not one that crosses. Pre-existing, confirmed by measurement 2026-09-09. Fix: a self-intersection test on polygon points, said as a sentence where the mistake is - the same shape as `_validate_path`'s crossing check, which paths already have. | 4th sketch review 2026-09-09 |
