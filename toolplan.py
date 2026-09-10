@@ -148,11 +148,20 @@ def _solids(doc) -> list:
 
 def _latest_descendant(doc, fid: str) -> str:
     """The body a solid feature has BECOME: follow solid-producing consumers down
-    the tree (a cut / fillet / pattern of X is the current state of X)."""
+    the tree (a cut / fillet / pattern of X is the current state of X).
+
+    A FACE-REFERENCE op is not a consumer, so it is not what the body became:
+    `extrude_face` / `revolve_face` only point AT a face and hand back a
+    separate prism (the rule `consumed_ids` already lives by). Counting them
+    made a New-body boss "the current state" of the panel it was pulled from,
+    so the next face sketch on that panel defaulted its Join/Cut to the BOSS
+    -- Fusion parity rule 6, measured 2026-09-10. With Join the fuse comes
+    later and `reversed` hid it; with New body the cut landed on the prism."""
     cur = fid
     while True:
         nxt = next((f for f in reversed(doc.features)
                     if f.volume is not None and not f.suppressed
+                    and f.op not in sk.FACE_REFERENCE_OPS
                     and cur in (f.inputs or [])), None)
         if nxt is None:
             return cur
@@ -194,9 +203,18 @@ def _pick_body(doc, body_id, what: str):
     document's result under the newest solid's id (a pick before any body was
     named) — or the sentence. ONE rule for every face-mode plan."""
     part = doc._parts.get(body_id) if body_id else None
+    if part is None and body_id and _feature(doc, body_id) is not None:
+        # A feature that EXISTS but did not build used to fall back to
+        # result()'s GEOMETRY while keeping the requested id, so the face was
+        # resolved on one body and recorded against another. An id that names
+        # nothing at all still falls through, so an empty document keeps
+        # answering "build a body first".
+        raise ValueError(f"'{body_id}' has not built — fix that feature "
+                         f"first, then {what} it")
     if part is None:
         part = doc.result()
-        body_id = body_id or (_solids(doc)[-1].id if _solids(doc) else None)
+        bods = _solids(doc)
+        body_id = bods[-1].id if bods else None
     if part is None:
         raise ValueError(f"no solid to {what} — build a body first")
     return part, body_id

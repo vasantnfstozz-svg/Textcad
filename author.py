@@ -57,7 +57,11 @@ OP_NOTES = {
     "hex_plate": "Centered on the origin; spans ±thickness/2 in Z.",
     "polygon_plate": "Centered on the origin.",
     "move": "RELATIVE offset in mm from the part's current (origin-centered) position.",
-    "rotate": "Spins the part about the chosen axis THROUGH THE ORIGIN.",
+    "rotate": "Spins the part about the chosen axis THROUGH THE ORIGIN — a body "
+              "that does not sit on the origin MOVES as it turns.",
+    "scale": "Scales about the body's OWN CENTRE, so it stays where it is "
+             "(2 = double size). Note this is NOT rotate's pivot: rotate turns "
+             "about the world origin.",
     "mirror": "plane \"XY\"/\"XZ\"/\"YZ\" (through the origin), a face {\"face\": \"top\"}, "
               "the body's mid-plane {\"mid\": \"X\"} or {\"origin\", \"normal\"}. With "
               "\"join\": true the body is fused with its reflection (one symmetric part); "

@@ -213,7 +213,14 @@ def mirror_copy(part: Part, plane="YZ", join: bool = False) -> Part:
 
 
 def scale_uniform(part: Part, factor: float) -> Part:
-    """Uniformly scale a part about the origin (2 = double size)."""
+    """Uniformly scale a part about its own SHAPE CENTRE, so the body stays
+    where it is (2 = double size).
+
+    Measured 2026-09-10: build123d's scale() is centre-based, not
+    origin-based, and this said "about the origin" for as long as it existed.
+    `rotate` below is the one that turns about the WORLD origin, so the two
+    Transform buttons do NOT share a pivot -- stated here and in
+    author.OP_NOTES because a wrong pivot is not visible in a signature."""
     if factor <= 0:
         raise ValueError("scale: factor must be positive")
     return _b3d_scale(part, by=factor)

@@ -98,10 +98,59 @@ def _intersect(parts):
     return out
 
 def _loft(parts):      # blend 2+ sketches into a solid
-    return sk.loft_sketches(parts)
+    try:
+        out = sk.loft_sketches(parts)
+    except ValueError:
+        raise                          # already a sentence
+    except Exception:                  # OCP errors derive from Exception
+        # Measured 2026-09-10: StdFail_NotDone('BRep_API: command not done')
+        # and Standard_NoSuchObject('NCollection_DataMap::Find') reached the
+        # tree verbatim. Rule 5 — the kernel judges, we translate.
+        raise ValueError(
+            "loft could not blend these profiles — they must be on DIFFERENT "
+            "planes, each one a single closed area") from None
+    if not (getattr(out, "volume", 0) or 0) > 0:
+        # coplanar profiles build a zero-volume "solid" (measured): health
+        # catches it, but "empty solid" does not say what to change.
+        raise ValueError(
+            "loft produced no solid — the profiles are on the same plane; a "
+            "loft needs them on DIFFERENT planes")
+    return out
 
 COMBINERS = {"fuse": _fuse, "cut": _cut, "intersect": _intersect,
              "loft": _loft}
+
+
+def _check_combiner_inputs(op: str, ids: list, parts: list) -> None:
+    """Refuse a combiner whose inputs are the wrong KIND — BEFORE the kernel.
+
+    A pre-check, not a try/except, because one of these cannot be caught at
+    all: `loft` of a sketch and a solid SEGFAULTS OpenCASCADE (measured
+    2026-09-10, access violation inside BRepOffsetAPI_ThruSections), which
+    takes the server child down with it. The other door is silent rather than
+    loud: `intersect` of a body and a sketch returned a 2D Sketch, CONSUMED
+    the body, and left the design with no bodies at all while every tree row
+    stayed green (leaves [], result_shape() None, no warning).
+
+    The Add Feature dialog offers a checkbox for every feature, sketches
+    included, so both are one mis-click away."""
+    flat = [i for i, p in zip(ids, parts) if sk.is_sketch(p)]
+    if op == "loft":
+        solids = [i for i, p in zip(ids, parts) if not sk.is_sketch(p)]
+        if solids:
+            raise ValueError(
+                f"loft blends SKETCH profiles, and {_name_list(solids)} "
+                + ("is a solid body" if len(solids) == 1 else "are solid bodies")
+                + " — loft the sketches, then fuse the result to the body")
+        if len(set(ids)) < len(ids):
+            raise ValueError("loft needs 2 DIFFERENT profiles — the same "
+                             "sketch is named twice")
+        return
+    if flat:
+        raise ValueError(
+            f"{op} works on solid bodies, and {_name_list(flat)} "
+            + ("is a sketch" if len(flat) == 1 else "are sketches")
+            + f" — extrude or revolve it first, then {op} the body")
 
 KNOWN_OPS = set(CREATORS) | set(MODIFIERS) | set(COMBINERS) | {"move"}
 
@@ -1004,6 +1053,16 @@ class Document:
         # the export readback use it too), it only runs when a spec is set,
         # and the result is cached on the signature of every leaf below.
         leaves = self.leaf_solid_ids()
+        if ok and self.spec and not leaves:
+            # "no leaves" used to mean "nothing to check", so a design with
+            # NOTHING in it reported that it met a spec demanding one
+            # 20x20x10 solid (measured, section 4 review 2026-09-10 — both
+            # doors: a combiner that ate the only body, and striking it out).
+            # A guarantee about geometry that is not there is the one thing
+            # this project may never say.
+            self.spec_problems = ["the design has no bodies to check against "
+                                  "the spec — nothing is built"]
+            return False
         if ok and self.spec and leaves:
             spec_sig = hashlib.sha1(json.dumps(
                 [[sigs.get(fid) for fid in leaves], self.spec],
@@ -1047,6 +1106,7 @@ class Document:
         if f.op in COMBINERS:
             if len(ins) < 2:
                 raise ValueError(f"'{f.op}' needs 2+ inputs")
+            _check_combiner_inputs(f.op, f.inputs, ins)
             return COMBINERS[f.op](ins)
         raise ValueError(f"unknown op '{f.op}'")
 
@@ -1083,18 +1143,25 @@ class Document:
         feature consuming a struck id really consumes whatever that id
         resolves to, and the resolution must follow the chain."""
         by_id = {f.id: f for f in self.features}
-
-        def resolve(dep: str) -> str:
-            seen = set()
-            while (dep in by_id and by_id[dep].suppressed
-                   and by_id[dep].inputs and dep not in seen):
-                seen.add(dep)
-                dep = by_id[dep].inputs[0]
-            return dep
-
-        return {resolve(dep) for f in self.features
+        return {self._live_source(dep, by_id) for f in self.features
                 if not f.suppressed and f.op not in sk.FACE_REFERENCE_OPS
                 for dep in f.inputs}
+
+    def _live_source(self, dep: str, by_id: dict | None = None) -> str:
+        """The id whose solid `dep` actually hands downstream.
+
+        A struck node is a pass-through to its first input during rebuild, so
+        its OWN (cleared) volume and piece count are the wrong thing to read
+        about it -- follow the chain to the feature that really built the
+        body. ONE copy of the walk: consumed_ids, _check_pieces and
+        _check_idle_cuts each had their own."""
+        by_id = by_id if by_id is not None else {f.id: f for f in self.features}
+        seen = set()
+        while (dep in by_id and by_id[dep].suppressed
+               and by_id[dep].inputs and dep not in seen):
+            seen.add(dep)
+            dep = by_id[dep].inputs[0]
+        return dep
 
     def leaf_solid_ids(self) -> list[str]:
         """Ids of every built SOLID body that no downstream feature consumes —
@@ -1145,6 +1212,16 @@ class Document:
                 # re-ticking it here would make that advice a lie.
                 if (t is None or t.op != "extrude" or t.suppressed
                         or "through" in t.params):
+                    continue
+                # The proof below is computed for THIS cut only, so a tool
+                # some other feature ALSO uses must be left alone: ticking
+                # `through` on a shared prism deepened the other cut by
+                # 3600 mm3 without testing it and without saying so
+                # (measured, section 4 review 2026-09-10 — and
+                # designs/cam-cover-plaque already shares a tool prism
+                # between two combiners).
+                if sum(1 for x in self.features
+                       if not x.suppressed and tid in (x.inputs or [])) > 1:
                     continue
                 # A probe is a full extrude PLUS a boolean, and its answer is
                 # a pure function of the geometry it asks about. A cut that
@@ -1213,16 +1290,7 @@ class Document:
         by_id = {x.id: x for x in self.features}
 
         def built_from(dep: str):
-            """The feature whose solid `dep` actually hands downstream: a
-            struck node is a pass-through to its first input, and reading its
-            own (now cleared) count would take the baseline from the wrong
-            body -- or, before `pieces` was cleared, from a stale one."""
-            seen = set()
-            while (dep in by_id and by_id[dep].suppressed
-                   and by_id[dep].inputs and dep not in seen):
-                seen.add(dep)
-                dep = by_id[dep].inputs[0]
-            return by_id.get(dep)
+            return by_id.get(self._live_source(dep, by_id))
 
         for f in self.features:
             if f.suppressed or f.pieces is None or f.pieces <= 1:
@@ -1235,6 +1303,15 @@ class Document:
                 continue
             if f.op in sk.SKETCH_PRODUCERS or f.op in ("extrude", "revolve",
                                                        "loft", "sweep"):
+                continue
+            # A pattern's COPY form (no `seed`) exists to produce `count`
+            # SEPARATE bodies, so N pieces is the number the user typed, not
+            # a part that fell apart. 16 designs in the library were each
+            # being told "something in it no longer touches the rest" — the
+            # exact false signal the exclusion above exists to prevent. With
+            # a seed the op edits ONE body, so it keeps the check.
+            if (f.op in ("linear_pattern", "polar_pattern")
+                    and not f.params.get("seed")):
                 continue
             base = None
             for dep in f.inputs:                # the body it was built from
@@ -1252,6 +1329,31 @@ class Document:
                 "usually is not.")
         return notes
 
+    def _check_idle_cuts(self) -> list:
+        """Name a cut that removed NOTHING.
+
+        The tool body is consumed by the cut whether it reached the target or
+        not, so a tool that misses simply DISAPPEARS from the viewport while
+        the body is untouched and every row stays green (measured: the cut's
+        volume 4000.0 against its input's 4000.0, and not one warning).
+        Fusion refuses the operation outright; the tree is allowed to keep it,
+        but it may not keep it quietly."""
+        notes = []
+        by_id = {x.id: x for x in self.features}
+        for f in self.features:
+            if f.suppressed or f.op != "cut" or f.volume is None or not f.inputs:
+                continue
+            base = by_id.get(self._live_source(f.inputs[0], by_id))
+            if base is None or not base.volume or base.volume <= 0:
+                continue
+            if abs(f.volume - base.volume) <= 0.01:     # both are 2dp-rounded
+                notes.append(
+                    f"'{f.id}' (cut) removed no material — its tool "
+                    f"{_name_list(f.inputs[1:])} does not reach "
+                    f"'{f.inputs[0]}'. Move or lengthen the tool, or remove "
+                    f"the cut.")
+        return notes
+
     def _check_dangling(self):
         """A leaf body that is NOT the displayed result can be a silent trap —
         chaining a modifier to the wrong upstream feature quietly drops the real
@@ -1259,7 +1361,7 @@ class Document:
         (Two leaves mid-build, e.g. base + wall before a fuse, are legitimate
         and now BOTH render — but until they are combined the earlier ones are
         still 'not the result', so we flag them so the state is never silent.)"""
-        self.warnings = self._check_pieces()
+        self.warnings = self._check_pieces() + self._check_idle_cuts()
         # what the ops wanted the user to hear (a taper that ended at its tip):
         # here, so the AI, MCP and API paths see it — not only the browser panel
         for f in self.features:
