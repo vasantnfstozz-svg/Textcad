@@ -299,28 +299,35 @@ def _measure_one(shape) -> dict:
     except Exception:
         pass
     pl = _plane(shape)
-    try:
-        dims = None
-        if pl is not None:
-            # IN THE FACE'S OWN FRAME. The world bounding box of a TILTED face
-            # lies — the third extent is only ~0 when the face is axis
-            # aligned, and dropping it then throws away real width. Measured
-            # (section 6 review, 2026-09-10): a 6 mm 45° chamfer read
-            # "60.00 × 6.00" where its true width is 6√2 = 8.49, which is
-            # what the PICK panel shows for the same face. _tagged_mesh
-            # already projected into the plane frame; this did not.
+    # IN THE FACE'S OWN FRAME. The world bounding box of a TILTED face lies
+    # — the third extent is only ~0 when the face is axis aligned, and
+    # dropping it then throws away real width. Measured (section 6 review,
+    # 2026-09-10): a 6 mm 45° chamfer read "60.00 × 6.00" where its true
+    # width is 6√2 = 8.49, which is what the PICK panel shows for the same
+    # face. _tagged_mesh already projected into the plane frame; this did not.
+    dims = None
+    if pl is not None:
+        try:
             import sketch as sketchlib
             frame = sketchlib.face_plane(shape)
             if frame is not None:
                 s = frame.to_local_coords(shape).bounding_box().size
                 dims = sorted((_r(s.X, 2), _r(s.Y, 2)), reverse=True)
-        if dims is None:
+        except Exception:
+            dims = None
+    if dims is None:
+        # its OWN try: sharing one with the projection above made this
+        # unreachable on the single path that needs it, so a face whose frame
+        # projection threw lost its extents row altogether (round two of the
+        # section 6 review, 2026-09-10)
+        try:
             size = _xyz(shape.bounding_box().size)
             dims = sorted((_r(size[0], 2), _r(size[1], 2), _r(size[2], 2)),
                           reverse=True)
+        except Exception:
+            dims = None
+    if dims is not None:
         rows.append(["extents", f"{dims[0]:.2f} × {dims[1]:.2f} {MM}"])
-    except Exception:
-        pass
     if pl:
         c, n = pl
         rows.append(["centre", ", ".join(f"{v:.2f}" for v in _r3(c, 2))])

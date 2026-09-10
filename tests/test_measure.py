@@ -735,3 +735,33 @@ def test_an_imported_mesh_body_says_what_it_is():
     # a genuinely stale index still says so
     stale = measure.measure(doc, {"body": rid, "kind": "face", "id": 9999})
     assert "click it again" in stale["error"], stale["error"]
+
+
+def test_the_extents_fallback_still_runs_when_the_frame_projection_fails():
+    """Round two of the section 6 review, F1. The in-frame projection and its
+    world-bbox fallback shared one `try`, so an exception in the projection
+    abandoned BOTH and the row vanished — the fallback could never run on the
+    one path that needs it. Forced here, because no real face triggers it."""
+    import sketch as sketchlib
+
+    class Exploding:
+        def to_local_coords(self, *a, **k):
+            raise RuntimeError("pretend OCCT said no")
+
+    doc = Document(name="t-fallback")
+    doc.add("b", "plate", {"width": 50, "depth": 40, "thickness": 10})
+    assert doc.rebuild(), doc.tree()
+    rid = doc._result_feature().id
+    fi = next(i for i, f in enumerate(doc.result().faces())
+              if abs(f.normal_at(f.center()).Z - 1) < 1e-9)
+
+    real = sketchlib.face_plane
+    sketchlib.face_plane = lambda f: Exploding()
+    try:
+        rows = dict(measure.measure(
+            doc, {"body": rid, "kind": "face", "id": fi})["rows"])
+    finally:
+        sketchlib.face_plane = real
+    assert "extents" in rows, f"the row vanished; only {list(rows)}"
+    assert "50.00" in rows["extents"] and "40.00" in rows["extents"], \
+        rows["extents"]

@@ -2252,8 +2252,13 @@ def measure_set(req: MeasureSetReq):
         ok = False
     out = {k: plan[k] for k in
            ("driver", "move", "requested", "param", "was") if k in plan}
-    out.update({"achieved": achieved, "verified": ok,
-                "picks": after.get("picks")})
+    # `picks` is where the two selections ended up in the REBUILT body, for
+    # the panel to keep talking about the same faces. It is only true while
+    # that body stands: the revert below puts the previous one back, ids and
+    # all, so the picks must go with it (round two of the section 6 review).
+    out.update({"achieved": achieved, "verified": ok})
+    if ok:
+        out["picks"] = after.get("picks")
     if not ok:
         # REVERT. The requested dimension is not what the model came out as, so
         # the edit did something other than what was asked — most often because

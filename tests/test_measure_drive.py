@@ -738,3 +738,35 @@ def test_a_diameter_that_breaks_a_later_feature_is_put_back(client):
     # _revert_last swaps in a fresh Document, so ask the SERVER, not the
     # local reference this test happens to still hold
     assert studio._doc().get("sk").params["entities"][0]["r"] == 4
+
+
+def test_a_reverted_edit_does_not_hand_back_the_undone_picks(client):
+    """Round two of the section 6 review, F2. `picks` is computed against the
+    POST-WRITE body; when the edit is then reverted those ids belong to
+    geometry that no longer exists. Measured: a ⌀8 bore whose ⌀38 edit was
+    reverted came back as picks.a id 6, which in the restored body is a
+    6.28 mm² face, while the user's own id 27 is still the bore."""
+    doc = Document(name="t-revert-picks")
+    doc.add("b", "plate", {"width": 60, "depth": 40, "thickness": 10})
+    doc.add("sk", "sketch_on_face",
+            {"face": "top", "offset": 0,
+             "entities": [{"kind": "circle", "mode": "add", "x": 0, "y": 0,
+                           "r": 4}]}, inputs=["b"])
+    doc.add("tool", "extrude", {"amount": -12}, inputs=["sk"])
+    doc.add("cut", "cut", {}, inputs=["b", "tool"])
+    doc.add("fl", "fillet", {"radius": 2, "edges": "all"}, inputs=["cut"])
+    assert doc.rebuild(), doc.tree()
+    studio.STATE = {"docs": {}, "active": None, "seq": 0}
+    studio._entry()["doc"] = doc
+    studio._rebuild_and_mesh()
+
+    a = sel(doc, "face", cyl_of(doc, 4))
+    r = client.post("/api/measure/set", json={"a": a, "value": 38.0}).json()
+    assert r["reverted"] is True, r
+    # either no picks at all, or the picks the document actually has now
+    picks = r.get("picks")
+    if picks and picks.get("a") is not None:
+        assert picks["a"]["id"] == a["id"], \
+            "a reverted edit described the geometry it undid"
+    again = client.post("/api/measure", json={"a": a}).json()
+    assert again["value"] == pytest.approx(8.0, abs=1e-6)
