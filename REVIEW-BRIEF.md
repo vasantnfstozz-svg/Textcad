@@ -11,7 +11,7 @@
 > to run. The next `code review` goes to the queue.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
-> (`/model claude-opus-5`) and types only `code review`. CLAUDE.md's section
+> (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
 > "The review chat" tells that chat to read this status line: PENDING means
 > review the range below; NOTHING PENDING means go to the queue. ONE
 > reviewer, no `/code-review` command, no subagents; the fix pass follows in

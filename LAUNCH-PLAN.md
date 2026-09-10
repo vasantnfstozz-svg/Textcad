@@ -818,7 +818,7 @@ assemblies, the user's personal project.
    proof + line delta, push.
 8. **Review, in the review chat** — right after the CODE commit Claude
    rewrites `REVIEW-BRIEF.md` (`Status: PENDING`, range, base, risk, rules,
-   known list) and says: "Open a new chat, type `/model claude-opus-5`, then
+   known list) and says: "Open a new chat, type `/model claude-opus-5[1m]`, then
    type `code review`." That chat (CLAUDE.md, "The review chat") reviews the
    range as ONE reviewer, fixes every confirmed finding in the same chat
    without being asked, commits, and sets the brief back to NOTHING PENDING.
@@ -855,7 +855,7 @@ assemblies, the user's personal project.
   2026-09-10). **Fable 5.1 plans AND builds:** specs, kernel and geometry
   decisions, guards, probes, the tool framework, root causes, and the tool's
   code — one fresh Fable chat per tool. **Opus 5 reviews and fixes:** one
-  fresh Opus chat per review (`/model claude-opus-5`, then `code review`),
+  fresh Opus chat per review (`/model claude-opus-5[1m]`, then `code review`),
   which also does the fix pass, e2e wiring, docs, plan and memory updates
   for that review. Subagents run on Opus (`CLAUDE_CODE_SUBAGENT_MODEL` in
   the user settings). Per token Opus is half of Fable, Sonnet 5 a fifth.

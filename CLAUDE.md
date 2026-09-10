@@ -172,7 +172,12 @@ on Fable 5.1, one per tool. **Reviewing** happens in a separate fresh chat on
 Opus 5. The user types `code review` and nothing else; that chat does the rest:
 
 1. **Model check.** Not running on Opus 5? Answer with ONE line — "Type
-   `/model claude-opus-5`, then `code review` again." — and stop.
+   `/model claude-opus-5[1m]`, then `code review` again." — and stop.
+   (The `[1m]` is the review seat's, decided 2026-09-10: a review reads a
+   diff, probes, fixes and writes the paperwork in one chat, and the user
+   would rather it never compact mid-pass. Effort is pinned to xhigh for
+   both Opus forms in `~/.claude/settings.json` `modelSettings`, so there is
+   no `/effort` to type. Building stays on Fable, with no `[1m]`.)
 2. **Find the work.** `REVIEW-BRIEF.md` opens with a status line.
    `Status: PENDING` → review the commit range the brief names (new code).
    `Status: NOTHING PENDING` → open `REVIEW-QUEUE.md` and take the first

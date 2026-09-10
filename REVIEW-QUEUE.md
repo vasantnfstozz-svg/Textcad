@@ -8,7 +8,7 @@
 > section has to be re-derived in a chat.
 >
 > **One module per chat, on Opus, and the user types only `code review`.**
-> The user opens a FRESH chat, types `/model claude-opus-5`, then `code
+> The user opens a FRESH chat, types `/model claude-opus-5[1m]`, then `code
 > review`. CLAUDE.md's section "The review chat" sends that chat here
 > whenever `REVIEW-BRIEF.md` says `Status: NOTHING PENDING`: it takes the
 > first status-board row marked TODO, reads that section's files itself as
