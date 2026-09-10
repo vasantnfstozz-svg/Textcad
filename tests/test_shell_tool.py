@@ -94,6 +94,8 @@ def test_the_legacy_open_face_grammar_still_builds():
     (dict(thickness=3, faces=["top"], direction="both"), 'direction must be "inside" or "outside"'),
     (dict(thickness=3, open_face="left"), "open_face must be"),
     (dict(thickness=3, faces=[7]), "an opening is a face name"),
+    (dict(thickness=3, faces=7), "faces must be a list of openings"),   # not iterable at all
+    (dict(thickness=3, faces=True), "faces must be a list of openings"),
     (dict(thickness=3, faces=["north"]), "not a direction"),
     (dict(thickness=25, faces=["top"]), "nothing was hollowed"),        # the UNCHANGED body
     (dict(thickness=40, faces=["top"]), "leave a broken solid"),         # the open shell
@@ -105,6 +107,42 @@ def test_every_refusal_is_a_sentence_in_the_shells_own_words(kwargs, words):
         sk.shell(box(), **kwargs)
     for leak in ("TopoDS", "Standard_", "BRep", "offset Error"):
         assert leak not in str(e.value)
+
+
+def lumps3():
+    """three separate 20 x 20 x 10 boxes as ONE body — what a linear_pattern of
+    a boss hands the tree, and what a cut that severs a plate leaves behind"""
+    import pattern
+    return pattern.linear_pattern(b3d.Box(20.0, 20.0, 10.0), count=3, dx=40.0)
+
+
+def test_a_lump_with_no_opening_is_refused_not_left_a_solid_block():
+    """Measured in the review of fb0b8c8: `offset(openings=[…])` shells only the
+    lumps a listed face belongs to and returns the raw offset SOLID for the
+    rest — [1952, 1536, 1536] inside (2464 is a closed shell) and
+    [2912, 8064, 8064] outside (blocks GROWN by 2 mm), every one of them
+    watertight, healthy and green. A failed feature beats a corrupt body."""
+    body = lumps3()
+    assert len(body.solids()) == 3
+    for direction in ("inside", "outside"):
+        with pytest.raises(ValueError, match="3 separate lumps and 2 of them have no face open"):
+            sk.shell(body, 2, ["top"], direction)
+
+
+def test_every_lump_open_and_no_lump_open_both_still_build_exactly():
+    body = lumps3()
+    tops = [f for f in body.faces()
+            if abs(f.center().Z - 5) < 1e-6 and sk.face_plane(f) is not None]
+    assert len(tops) == 3
+    refs = [{"center": list(f.center()), "normal": [0, 0, 1]} for f in tops]
+    # an opening on EVERY lump: the kernel is exact — 20*20*10 - 16*16*8 each
+    out = healthy(sk.shell(body, 2, refs))
+    assert [round(s.volume, 2) for s in out.solids()] == [pytest.approx(1952, rel=1e-6)] * 3
+    # no opening at all: the difference route is exact per lump, both directions
+    assert [round(s.volume, 2) for s in sk.shell(body, 2).solids()] \
+        == [pytest.approx(4000 - 16 * 16 * 6, rel=1e-6)] * 3
+    assert [round(s.volume, 2) for s in sk.shell(body, 2, direction="outside").solids()] \
+        == [pytest.approx(24 * 24 * 14 - 4000, rel=1e-6)] * 3
 
 
 def test_a_curved_opening_is_refused_with_its_type():

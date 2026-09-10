@@ -499,6 +499,12 @@ function addAct(parent, label, title, fn) {
   parent.appendChild(b);
 }
 
+/* a stored form the user can read: {center: [0,0,6], normal: [0,0,1]} ->
+   "center 0, 0, 6 · normal 0, 0, 1" */
+const isNamedParts = v => !!v && typeof v === 'object' && !Array.isArray(v);
+const namedParts = v => Object.entries(v).map(([pk, pv]) =>
+  `${pk} ${Array.isArray(pv) ? pv.join(', ') : pv}`).join(' · ');
+
 function buildBody(f) {
   const body = document.createElement('div'); body.className = 'nbody';
   for (const [k, v] of Object.entries(f.params)) {
@@ -545,11 +551,12 @@ function buildBody(f) {
       val.className = 'pro';
       // a stored form with named parts (Mirror's plane {mid: "X"} or a face
       // {face_center, face_normal}, a Pattern axis {origin, dir}) reads as its
-      // parts, never as "[object Object]" (P4 review)
-      val.textContent = Array.isArray(v) ? JSON.stringify(v)
-        : v && typeof v === 'object' ? Object.entries(v).map(([pk, pv]) =>
-            `${pk} ${Array.isArray(pv) ? pv.join(', ') : pv}`).join(' · ')
-        : v;
+      // parts, never as "[object Object]" (P4 review) — and a LIST of them
+      // (Shell's open faces) reads as one line each, not as raw JSON
+      val.textContent = Array.isArray(v)
+        ? (v.length && v.every(isNamedParts) ? v.map(namedParts).join(' ; ')
+          : JSON.stringify(v))
+        : isNamedParts(v) ? namedParts(v) : v;
       pr.appendChild(val); body.appendChild(pr);
     }
   }

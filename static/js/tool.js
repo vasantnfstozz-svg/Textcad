@@ -589,7 +589,13 @@ export function tool(spec) {
     if (st !== mine) return;
     if (!plan) return;                // refused (it said why): the handles, and the
                                       // session's own face pick, stay as they were
-    if (st.featureId && plan.edges && !plan.edges.length) {
+    // An EDGE tool (Fillet, Chamfer) must keep at least one pick: an empty set
+    // is nothing to round. `plan.edges` means something else for a tool whose
+    // input is a FACE — Shell draws the OPEN faces' outlines with it, and no
+    // face open is a legitimate answer (a closed hollow body), so gating this
+    // on the input kind, not on the key's name (review of fb0b8c8: the last
+    // face could not be closed and the reason talked about edges).
+    if (st.featureId && st.input.kind === 'edges' && plan.edges && !plan.edges.length) {
       say(`⚠ ${spec.name} keeps at least one edge while a value is set — Cancel closes the tool.`);
       return;
     }
@@ -826,6 +832,13 @@ export function tool(spec) {
     if (st.lastGood) {
       const back = await push(st.lastGood);
       spec.show(st, st.lastGood);
+      // A param with no box of its own lives in the PLAN (Shell's set of open
+      // faces, Mirror's plane), so show() cannot put it back — and the very
+      // next apply() read it from the stale plan and pushed the values the
+      // revert had just undone, which for Shell was an endless revert loop
+      // (review of fb0b8c8). The revert restores the whole state the good
+      // values came from, gizmos included.
+      if (st.lastGoodPlan) st.plan = st.lastGoodPlan;
       sync();                           // rows and gizmos follow the restored boxes
       if (spec.refresh) spec.refresh(st);
       say(`Reverted to ${spec.describe(st.lastGood, st)} — the new values broke the solid.`);

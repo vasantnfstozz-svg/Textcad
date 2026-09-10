@@ -2080,7 +2080,13 @@ def shell_refs(faces=None, open_face=None) -> list:
         return [_LEGACY_OPEN[key]] if _LEGACY_OPEN[key] else []
     if isinstance(faces, (str, dict)):
         return [faces]
-    return list(faces)
+    try:
+        return list(faces)
+    except TypeError:                    # a file / AI value that is not a list:
+        raise ValueError(                # `TypeError: 'int' object is not iterable`
+            f"shell: faces must be a list of openings — a face name "
+            f'("top", "+x", ...) or a pick {{center, normal}} each '
+            f"(got {faces!r})") from None
 
 
 def opening_face(solid, ref):
@@ -2117,6 +2123,37 @@ def shell_openings(solid, faces=None, open_face=None) -> list:
     return out
 
 
+def assert_every_lump_open(solid, openings: list) -> None:
+    """A body in SEVERAL separate lumps (a pattern's copies, a cut that severed
+    a plate) may only be shelled WITH openings if every lump has one.
+
+    Measured 2026-09-10 (review of fb0b8c8): `offset(openings=[…])` shells only
+    the lumps a listed face belongs to and hands back the raw offset SOLID for
+    the rest — three 20 x 20 x 10 boxes at t = 2, one top open, came back
+    [1952, 1536, 1536] where a closed shell is 2464, and Outside came back
+    [2912, 8064, 8064]: blocks GROWN by 2 mm. Every check passed it (one solid
+    per lump, watertight, health [], the volume neither unchanged nor zero), so
+    two of the three bosses silently became smaller blocks with a green row.
+    With an opening on every lump the kernel is exact (1952 each), and with NO
+    opening the difference route is exact too (2464 / 4064 each) — so only this
+    one case is refused."""
+    if not openings:
+        return                           # the difference route: correct per lump
+    lumps = solid.solids()
+    if len(lumps) < 2:
+        return
+    from blocks import _shape_key        # local: blocks imports this module's resolver
+    keys = {_shape_key(f) for f in openings}
+    bare = sum(1 for lump in lumps
+               if not any(_shape_key(f) in keys for f in lump.faces()))
+    if bare:
+        raise ValueError(
+            f"shell: this body is in {len(lumps)} separate lumps and {bare} of "
+            f"them {'has' if bare == 1 else 'have'} no face open — the kernel "
+            f"would leave {'it' if bare == 1 else 'them'} a solid block instead "
+            f"of walls. Open a face on every lump, or none at all (a closed hollow)")
+
+
 def shell(solid, thickness: float = 0.0, faces=None, direction: str = "inside",
           open_face=None):
     """Hollow `solid` into walls of `thickness` (Fusion's Shell). `faces` lists
@@ -2137,6 +2174,7 @@ def shell(solid, thickness: float = 0.0, faces=None, direction: str = "inside",
     if d not in SHELL_DIRECTIONS:
         raise ValueError(f'shell: direction must be "inside" or "outside" (got {direction!r})')
     openings = shell_openings(solid, faces, open_face)
+    assert_every_lump_open(solid, openings)
     walls = f"walls of {t:g} mm"
     try:
         amount = -t if d == "inside" else t

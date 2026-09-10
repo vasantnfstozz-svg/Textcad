@@ -49,12 +49,17 @@ async () => {
 """
 MODAL = "async () => (await import('/static/js/state.js')).S.modalTool"
 PT = [10.0, 5.0, 6.0]          # a point on the top face
+TOP_RIM = [28.5, 0.0, 6.0]     # a point on the top face, on the 3 mm wall band (|x| 27..30)
+                               # so the click still lands on material once that face is open
 SIDE = [30.0, 18.5, 0.0]       # a point on the +x face, ON the wall band (y 17..20) so the
                                # click lands on material even once that face is open
 BOX = 60 * 40 * 12                                 # 28800
 TOP_OPEN = BOX - 54 * 34 * 9                       # 12276: 3 mm walls, top open
 TOP_AND_SIDE = BOX - 57 * 34 * 9                   # 11358: top and +x open
 OUTSIDE_TOP = 66 * 46 * 15 - BOX                   # 16740: walls added around, top open
+CLOSED_HOLLOW = BOX - 54 * 34 * 6                  # 17784: 3 mm walls all round
+TOP_OPEN_6 = BOX - 48 * 28 * 6                     # 20736: 6 mm walls, top open —
+                                                   #   at 6 mm a CLOSED hollow cannot be built
 
 
 def features(server):
@@ -250,4 +255,52 @@ def test_edit_reopens_on_the_stored_faces_outside_flips_and_cancel_restores(page
     f = wait_volume(server, "shell1", TOP_OPEN)
     assert f["params"]["faces"] == ["top"], "the stored name survives an edit that was cancelled"
     assert page.evaluate(MODAL) is None
+    assert page.errors == []
+
+
+def test_closing_the_last_open_face_makes_a_closed_hollow(page, fresh_doc, server):
+    """Review of fb0b8c8: the framework's "keeps at least one edge" guard read
+    the plan's `edges` — which for Shell are the OPEN FACES' outlines — so the
+    LAST open face could never be closed. The user clicked the gold face again,
+    was told Shell "keeps at least one edge", and the closed hollow the spec
+    promises was unreachable once a thickness was set."""
+    setup(page)
+    open_shell_on_top(page)
+    page.fill("#shThickness", "3")
+    wait_volume(server, "shell1", TOP_OPEN)
+    click_world(page, TOP_RIM)                 # the same face, on its 3 mm rim
+    wait_faces(page, "no face open — a closed hollow body")
+    f = wait_volume(server, "shell1", CLOSED_HOLLOW)
+    assert f["params"]["faces"] == [], f["params"]
+    assert f["pieces"] in (None, 1), "one solid with a void, not two pieces"
+    assert not any("at least one edge" in e for e in page.errors)
+    page.click("#shOk")
+    page.wait_for_selector("#shellDialog", state="hidden")
+    assert row(page, "shell1").count() == 1
+    assert page.errors == []
+
+
+def test_a_refused_face_set_reverts_ONCE_and_does_not_loop(page, fresh_doc, server):
+    """Review of fb0b8c8: after a revert the panel's boxes were put back but the
+    face set — which lives only in the plan, it has no box — was not, so the very
+    next apply pushed the set that had just failed. On the 12 mm plate at 6 mm
+    walls the top-open shell builds and the closed hollow cannot (the walls meet
+    in the middle), so closing the face looped revert -> replan -> refuse for
+    ever. It must fail once, say so, and settle."""
+    setup(page)
+    open_shell_on_top(page)
+    page.fill("#shThickness", "6")
+    wait_volume(server, "shell1", TOP_OPEN_6)
+    pushes = []
+    page.on("request", lambda r: pushes.append(r.url)
+            if r.url.endswith("/api/feature/params") else None)
+    click_world(page, TOP_RIM)                 # a closed hollow at 6 mm: refused
+    page.wait_for_timeout(6000)                # a loop would still be running
+    n = len(pushes)
+    f = feature(server, "shell1")
+    assert f["status"] == "ok" and f["volume"] == pytest.approx(TOP_OPEN_6, rel=1e-4), f
+    assert f["params"]["faces"] != [], "the revert put the open face back"
+    page.wait_for_timeout(3000)
+    assert len(pushes) == n, f"still rebuilding after the revert: {len(pushes) - n} more pushes"
+    assert n <= 8, f"{n} rebuilds for one refused click"
     assert page.errors == []
