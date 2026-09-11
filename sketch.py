@@ -367,6 +367,35 @@ def _compose_order(shapes: list, modes: list | None = None,
     return _order_from(needs, problems)
 
 
+def _knot_members(needs: list[list[bool]], done: list, seed: int) -> list[int]:
+    """The shapes actually caught in the knot around `seed` — the ones it can
+    reach and that can reach it back, over the shapes not yet placed.
+
+    Round three of the `3b230b7` review, 2026-09-11: naming every unplaced
+    shape instead was an OVERCLAIM. Put a small hole inside one of the knot's
+    adds and the note said "entities 1, 2, 3, 4 and 5 ... each has to come
+    both before and after another shape it overlaps" — false about entity 5,
+    which is in no cycle at all and is merely waiting on one. A warning that
+    points at the wrong shape costs the user the time it was written to save.
+    """
+    live = [i for i in range(len(needs)) if not done[i]]
+
+    def walk(start, forward: bool) -> set:
+        seen, todo = {start}, [start]
+        while todo:
+            k = todo.pop()
+            for i in live:
+                if i in seen:
+                    continue
+                # needs[i][j] == "j must come before i", so j -> i is an edge
+                if (needs[i][k] if forward else needs[k][i]):
+                    seen.add(i)
+                    todo.append(i)
+        return seen
+
+    return sorted(walk(seed, True) & walk(seed, False))
+
+
 def _order_from(needs: list[list[bool]],
                 problems: list | None = None) -> list[int]:
     """A stable topological order over `needs[i][j] == "j must come before i"`:
@@ -394,8 +423,7 @@ def _order_from(needs: list[list[bool]],
         if nxt is None:                         # a cycle we cannot order:
             nxt = next(i for i in range(n) if not done[i])   # fall back to
             if problems is not None:            # the drawing order, and SAY SO
-                problems.extend(i for i in range(n)          # — about EVERY
-                                if not done[i] and waiting[i])  # shape stuck
+                problems.extend(_knot_members(needs, done, nxt))
         done[nxt] = True
         order.append(nxt)
         for i in range(n):

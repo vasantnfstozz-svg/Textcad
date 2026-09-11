@@ -407,3 +407,35 @@ def test_deleting_the_last_entity_leaves_an_empty_sketch_without_a_fight():
     refuses it."""
     out = T.trim_apply([dict(BOSS)], T.trim_pieces([dict(BOSS)])[0]["id"])
     assert out["entities"] == []
+
+
+# --- round three: the warning must name the knot, not its neighbours ------
+
+def test_the_knot_note_leaves_out_a_shape_that_only_waits_on_the_knot():
+    """A small hole inside one of the knot's adds is in no cycle at all — it
+    merely waits on one. Round two named every unplaced shape and so said
+    "entities 1, 2, 3, 4 and 5 ... each has to come both before and after
+    another shape it overlaps", which is false about entity 5 and sends the
+    user to the wrong place."""
+    ents = KNOT + [circ(-15, 0, 2, "subtract"), circ(60, 0, 5)]
+    S.drain_notes()
+    area(ents)
+    note = next(n for n in S.drain_notes() if "build order" in n)
+    assert "entities 1, 2, 3 and 4" in note, note
+    assert "5" not in note.split("cannot")[0], note
+
+
+def test_the_shapes_around_a_knot_still_build():
+    ents = KNOT + [circ(-15, 0, 2, "subtract"), circ(60, 0, 5)]
+    assert area(ents) == pytest.approx(210.0 - math.pi * 4 + math.pi * 25,
+                                       abs=1e-3)
+
+
+def test_knot_members_is_the_cycle_and_nothing_else():
+    #  0 -> 1 -> 0  is a knot;  2 waits on 1;  3 is free
+    needs = [[False, True, False, False],      # 0 needs 1
+             [True, False, False, False],      # 1 needs 0
+             [False, True, False, False],      # 2 needs 1
+             [False, False, False, False]]
+    assert S._knot_members(needs, [False] * 4, 0) == [0, 1]
+    assert S._knot_members(needs, [False] * 4, 2) == [2]
