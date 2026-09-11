@@ -196,6 +196,44 @@ def test_a_thickness_that_fits_every_lump_still_builds_exactly():
         pytest.approx(24 * 24 * 12 - 20 * 20 * 10), pytest.approx(7 * 24 * 12 - 3 * 20 * 10)]
 
 
+def test_concentric_lumps_a_post_inside_a_ring_still_shell():
+    """Round THREE: round two's guard paired result lumps to input lumps by
+    nearest bounding box CENTRE, and two CONCENTRIC lumps share a centre
+    exactly — a post inside a ring, a spigot in a bore. The tie sent both
+    results to one seat, left the other empty and refused a shell the kernel
+    had built perfectly: measured ring 3628.54 and post 458.28, each to its
+    own oracle's decimal, watertight and healthy. Identity by the whole BOX
+    tells them apart where a centre cannot (40 x 40 x 10 against 10 x 10 x 10)."""
+    ring = b3d.Cylinder(20, 10) - b3d.Cylinder(15, 10)
+    body = b3d.Part() + ring + b3d.Cylinder(5, 10)
+    assert len(body.solids()) == 2
+    centres = {tuple(round(c, 6) for c in tuple(s.bounding_box().center()))
+               for s in body.solids()}
+    assert len(centres) == 1, "the two lumps must share a centre, or this proves nothing"
+    out = healthy(sk.shell(body, 1.5, tops_of(body)))
+    import math
+    ring_walls = math.pi * (400 - 225) * 10 - math.pi * (18.5 ** 2 - 16.5 ** 2) * 8.5
+    post_walls = math.pi * 25 * 10 - math.pi * 3.5 ** 2 * 8.5
+    assert sorted(round(s.volume, 2) for s in out.solids()) == [
+        pytest.approx(post_walls, rel=1e-6), pytest.approx(ring_walls, rel=1e-6)]
+
+
+def test_the_block_is_caught_by_IDENTITY_not_by_a_volume_drop():
+    """The signal is exact and must stay exact: an untouched lump matches its
+    input at d(volume) 0.0 and d(box) 0.0, while a lump that really hollowed
+    came no closer than 0.992 of its input over 99 measured lumps
+    (probes/shell_round3_sweep_probe.py). So a THIN but honest cavity must
+    build — 8 mm walls in a 20 mm box leave 4 x 4 x 2 — and only the exact
+    block is refused."""
+    body = mixed_lumps(b3d.Box(20.0, 20.0, 10.0))       # the twin: both hollow
+    out = healthy(sk.shell(body, 8, tops_of(body)))     # 0.992 of the input each
+    assert [round(s.volume, 6) for s in out.solids()] == [
+        pytest.approx(4000 - 4 * 4 * 2)] * 2
+    thin = mixed_lumps(b3d.Box(3.0, 20.0, 10.0))        # the block: exactly 1.000
+    with pytest.raises(ValueError, match="do not fit 1 of the 2 separate lumps"):
+        sk.shell(thin, 2, tops_of(thin))
+
+
 def test_a_curved_opening_is_refused_with_its_type():
     cyl = b3d.Cylinder(25, 40)
     wall = next(f for f in cyl.faces() if f.geom_type.name == "CYLINDER")

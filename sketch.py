@@ -1860,6 +1860,10 @@ HOLE_AT = (0.0, 0.0)
 # measured exactly 0.0), while a genuine ⌀0.5 x 0.5 hole removes 0.098 mm³. A
 # floor relative to the BODY refused real holes in big parts.
 _CUT_FLOOR_MM3 = 1e-6
+# a result lump identical to one that went in, in mm: the kernel rebuilds even
+# the lump it did not touch, and that rebuild measured 0.0 off its input's box
+# over 99 lumps (probes/shell_round3_sweep_probe.py)
+_SHELL_BOX_TOL_MM = 1e-6
 
 
 def hole_frame(face, at=None, point=None):
@@ -2154,48 +2158,57 @@ def assert_every_lump_open(solid, openings: list) -> None:
             f"of walls. Open a face on every lump, or none at all (a closed hollow)")
 
 
+def _box6(shape) -> tuple:
+    """A shape's bounding box as six numbers — its place AND its size, where a
+    centre alone is only its place (see `assert_every_lump_hollowed`)."""
+    b = shape.bounding_box()
+    return (b.min.X, b.min.Y, b.min.Z, b.max.X, b.max.Y, b.max.Z)
+
+
 def assert_every_lump_hollowed(solid, out, direction: str, walls: str) -> None:
     """The sibling of `assert_every_lump_open`, and the SAME P0 through another
-    door: that one asks that every lump have an opening, this one that every
-    lump actually became WALLS. It has to run AFTER the kernel because only the
-    kernel knows whether a wall fits a particular lump.
+    door: that one asks that every lump have an opening, this one that no lump
+    came back UNTOUCHED. It has to run AFTER the kernel because only the kernel
+    knows whether a wall fits a particular lump.
 
     Measured 2026-09-11 (round two of the review of fb0b8c8,
     probes/shell_round2_confirm_probe.py): with a top open on EVERY lump — so
     the opening guard is satisfied — a lump the thickness does not fit comes
-    back UNTOUCHED. 20 x 20 x 10 beside 3 x 20 x 10 at t = 2 gave [1952, 600],
-    where 600 is the raw block; beside 20 x 20 x 4 at t = 5 it gave
-    [3500, 1600] the same way; three patterned bosses with the middle one
+    back exactly as it went in. 20 x 20 x 10 beside 3 x 20 x 10 at t = 2 gave
+    [1952, 600], where 600 is the raw block; beside 20 x 20 x 4 at t = 5 it
+    gave [3500, 1600] the same way; three patterned bosses with the middle one
     narrow left that one solid. Every check passed: watertight, health [], the
     total volume down, the row green. ALONE each of those small lumps is
     correctly refused ("nothing was hollowed") — it is the WHOLE-BODY volume
     check that a second, bigger lump defeats, because the big lump's hollow
     pays for the small one's block.
 
-    The rule is the whole-body one applied per lump, so it cannot refuse a
-    result the whole-body check would accept on its own."""
+    A result lump is that block when it is IDENTICAL to a lump that went in —
+    same bounding box, same volume. Nothing is paired up and nothing is
+    measured by distance, because both invite an error the geometry cannot
+    justify: round two paired result lumps to input lumps by nearest bounding
+    box CENTRE, and two CONCENTRIC lumps (a post inside a ring, a spigot in a
+    bore) share a centre exactly, so the tie sent both results to one seat,
+    left the other empty and REFUSED a shell the kernel had built perfectly
+    (measured round three: ring 3628.54 and post 458.28, both to the oracle's
+    own decimal, watertight, health []). The whole BOX tells those two apart
+    where the centre cannot — 40 x 40 x 10 against 10 x 10 x 10.
+
+    Identity is exact, not a judgement call: over 99 result lumps across five
+    second-lumps and ten thicknesses in both directions
+    (probes/shell_round3_sweep_probe.py) an untouched lump matched its input at
+    d(volume) 0.0 and d(box) 0.0 — 1.1e-13 at worst — while the closest a
+    lump that really did hollow ever came was 0.992 of its input (an honest
+    4 x 4 x 2 cavity at t = 8). So this can only ever fire on the block."""
     lumps = solid.solids()
     if len(lumps) < 2:
         return                           # the whole-body check above IS this one
-
-    def _centre(shape):
-        c = shape.bounding_box().center()
-        return (c.X, c.Y, c.Z)
-
-    # each result lump belongs to the input lump it came from — nearest bounding
-    # box centre, and separate lumps stand apart by far more than one wall, so
-    # it never ties (an inside shell keeps the box exactly; an outside one grows
-    # it by the wall). A lump that SPLIT adds its pieces up under its parent.
-    seats = [_centre(s) for s in lumps]
-    got = [0.0] * len(lumps)
-    for piece in out.solids():
-        c = _centre(piece)
-        near = min(range(len(seats)),
-                   key=lambda i: sum((a - b) ** 2 for a, b in zip(seats[i], c)))
-        got[near] += piece.volume
-    bare = sum(1 for i, v in enumerate(got)
-               if v <= _CUT_FLOOR_MM3 or abs(v - lumps[i].volume) <= _CUT_FLOOR_MM3
-               or (direction == "inside" and v >= lumps[i].volume))
+    was = [(_box6(lump), lump.volume) for lump in lumps]
+    bare = sum(1 for piece in out.solids()
+               if any(abs(piece.volume - v) <= _CUT_FLOOR_MM3
+                      and all(abs(a - b) <= _SHELL_BOX_TOL_MM
+                              for a, b in zip(_box6(piece), box))
+                      for box, v in was))
     if bare:
         raise ValueError(
             f"shell: {walls} do not fit {bare} of the {len(lumps)} separate lumps "

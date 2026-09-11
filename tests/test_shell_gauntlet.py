@@ -79,6 +79,14 @@ LUMP_PAIRS = {                              # a 20 x 20 x 10 boss beside...
 }
 
 
+def concentric():
+    """A post inside a ring: TWO lumps that share a bounding-box centre exactly
+    — the shape that made round two's nearest-centre pairing refuse a shell the
+    kernel had built perfectly (round three)."""
+    import build123d
+    return build123d.Part() + (build123d.Cylinder(20, 10) - build123d.Cylinder(15, 10))         + build123d.Cylinder(5, 10)
+
+
 def two_lumps(size):
     import build123d
     return build123d.Part() + build123d.Box(20.0, 20.0, 10.0) \
@@ -86,8 +94,13 @@ def two_lumps(size):
 
 
 def tops_of(body):
-    return [ref(max(l.faces(), key=lambda f: (round(f.center().Z, 6), f.area)).center(),
+    return [ref(max((f for f in l.faces() if sk.face_plane(f) is not None),
+                    key=lambda f: (round(f.center().Z, 6), f.area)).center(),
                 [0, 0, 1]) for l in body.solids()]
+
+
+def same_box(shape, box):
+    return all(abs(a - b) <= 1e-6 for a, b in zip(sk._box6(shape), box))
 
 
 @pytest.mark.parametrize("pair", sorted(LUMP_PAIRS))
@@ -97,7 +110,7 @@ def test_no_lump_ever_comes_back_a_solid_block(pair, direction):
     sentence. A lump whose volume is unchanged is the P0's signature: the
     kernel handed it back raw and every whole-body check passed it green."""
     body = two_lumps(LUMP_PAIRS[pair])
-    was = [l.volume for l in body.solids()]
+    was = [(sk._box6(l), l.volume) for l in body.solids()]
     built = 0
     for t in (0.5, 1, 2, 3, 5, 6):
         out = assert_op(f"{pair} {direction} t={t}", lambda t=t: sk.shell(body, t, tops_of(body),
@@ -105,9 +118,12 @@ def test_no_lump_ever_comes_back_a_solid_block(pair, direction):
         if out is None:
             continue                        # refused with a sentence: allowed
         built += 1
+        # IDENTITY, not a volume drop: a lump that really hollows can come as
+        # close as 0.992 of its input (an honest 4 x 4 x 2 cavity at t = 8),
+        # while an untouched one matches at d(volume) 0.0 AND d(box) 0.0
         for lump in out.solids():
-            for v in was:
-                assert abs(lump.volume - v) > 1e-6, \
+            for box, v in was:
+                assert not (abs(lump.volume - v) <= 1e-6 and same_box(lump, box)), \
                     f"{pair} {direction} t={t}: a lump came back unchanged at {v:g} mm3"
         assert len(out.solids()) >= len(was), f"{pair} {direction} t={t}: a lump vanished"
     assert built > 0, f"{pair} {direction}: nothing built at any thickness"
@@ -122,3 +138,26 @@ def test_the_openings_guard_and_the_hollowed_guard_are_both_live():
     thin = two_lumps(LUMP_PAIRS["narrow"])
     with pytest.raises(ValueError, match="do not fit 1 of the 2 separate lumps"):
         sk.shell(thin, 2, tops_of(thin))
+
+
+@pytest.mark.parametrize("direction", ("inside", "outside"))
+def test_concentric_lumps_are_never_refused_for_sharing_a_centre(direction):
+    """A post inside a ring, over the thickness ladder: a refusal is allowed
+    only when the kernel really could not do it, never because two lumps sit at
+    the same place. Every built result must hollow BOTH lumps."""
+    body = concentric()
+    assert len({tuple(round(c, 6) for c in tuple(s.bounding_box().center()))
+                for s in body.solids()}) == 1, "the lumps must share a centre"
+    was = [(sk._box6(l), l.volume) for l in body.solids()]
+    built = 0
+    for t in (0.25, 0.5, 1, 1.5, 2):
+        out = assert_op(f"concentric {direction} t={t}",
+                        lambda t=t: sk.shell(body, t, tops_of(body), direction))
+        if out is None:
+            continue
+        built += 1
+        assert len(out.solids()) == 2, f"t={t}: {len(out.solids())} lumps out of 2"
+        for lump in out.solids():
+            for box, v in was:
+                assert not (abs(lump.volume - v) <= 1e-6 and same_box(lump, box)),                     f"concentric {direction} t={t}: a lump came back unchanged"
+    assert built >= 4, f"concentric {direction}: only {built} of 5 thicknesses built"
