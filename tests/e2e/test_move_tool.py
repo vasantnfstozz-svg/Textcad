@@ -308,3 +308,74 @@ def test_cancelling_an_untouched_edit_writes_nothing_at_all(page, fresh_doc, ser
     page.wait_for_timeout(800)
     assert feature(server, "m")["params"] == {"x": 12},         "an untouched Cancel must not rewrite the feature"
     assert page.errors == []
+
+
+# --------------------------------------------- round two of the same review --
+
+BUILD_BARE_ROTATE = """
+async () => {
+  const { postJSON } = await import('/static/js/api.js');
+  const { loadMesh, setView } = await import('/static/js/viewport.js');
+  const add = (id, op, params, inputs) =>
+    postJSON('/api/feature/add', { id, op, params, inputs }, 'add');
+  await add('b', 'plate', { width: 60, depth: 20, thickness: 10 }, []);
+  await add('r1', 'rotate', {}, ['b']);     // the op's own defaults: Z, 90 deg, world origin
+  await loadMesh(true);
+  setView('iso');
+}
+"""
+FOOTPRINT = """() => { const b = window.__vp.bodyObjsRaw()[0];
+  b.mesh.geometry.computeBoundingBox(); const bb = b.mesh.geometry.boundingBox;
+  return [bb.max.x - bb.min.x, bb.max.y - bb.min.y]; }"""
+
+
+def test_editing_a_rotate_that_spells_nothing_out_opens_at_the_angle_it_turns(
+        page, fresh_doc, server):
+    """A rotate stored as {} turns 90 deg about Z (blocks.rotate's defaults).
+    The panel read the feature's params raw, so it opened at 0 deg on a body
+    standing turned (measured on 4ee5670): the ring and the drag ghost started
+    90 deg behind the body, and only the honest-zero gate kept OK from writing
+    that 0. The plan already carries the op's own defaults; the boxes read
+    them now, and OK on a panel nobody typed in still changes nothing."""
+    page.evaluate(BUILD_BARE_ROTATE)
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    page.wait_for_timeout(800)
+    assert page.evaluate(FOOTPRINT) == pytest.approx([20, 60], abs=1e-3), \
+        "60 x 20 turned 90 about Z"
+
+    row(page, "r1").dblclick()
+    page.wait_for_selector("#rtDialog", state="visible", timeout=15000)
+    page.wait_for_function("() => window.__vp.gizmos().ring", timeout=15000)
+    assert page.input_value("#rtAngle") == "90", "the box must read what the body IS"
+    assert page.input_value("#rtAxis") == "Z"
+
+    page.click("#rtOk")
+    page.wait_for_selector("#rtDialog", state="hidden")
+    page.wait_for_timeout(1000)
+    assert page.evaluate(FOOTPRINT) == pytest.approx([20, 60], abs=1e-3), \
+        "OK on a panel nobody typed in must not UNTURN the body"
+    assert page.errors == []
+
+
+def test_changing_the_axis_of_a_new_rotate_is_not_refused_as_a_second_body(
+        page, fresh_doc, server):
+    """The tool applies as the user drags, so from the second plan on the body
+    has a consumer - this session's own feature. Without `own_id` the replan
+    was refused and the panel said the body is not a body."""
+    setup(page)
+    row(page, "b").locator(".nname").click()
+    page.locator("button.tab", has_text="Modify").click()
+    page.click("#ribbon .rbtn[title='rotate']")
+    page.wait_for_selector("#rtDialog", state="visible", timeout=15000)
+    page.wait_for_function("() => window.__vp.gizmos().ring", timeout=15000)
+    page.fill("#rtAngle", "30")
+    wait_feature(server, "rotate1")
+    page.select_option("#rtAxis", "X")          # the ring is re-planned about X
+    page.wait_for_timeout(1500)
+    assert "cannot start" not in page.text_content("#chatLog"), \
+        "the session's own feature is not another body"
+    f = wait_feature(server, "rotate1")
+    assert f["params"]["axis"] == "X" and f["status"] == "ok"
+    page.click("#rtCancel")
+    page.wait_for_selector("#rtDialog", state="hidden")
+    assert page.errors == []

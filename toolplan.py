@@ -1401,10 +1401,29 @@ def _place_input(doc, req: dict, tool: str):
     # design silently grew a SECOND COPY of it, and the displayed result flipped
     # to the copy (measured 2026-09-11, review of 9e04ff6: a 216 mm³ rib in a
     # 9816 mm³ assembly). The tool cannot insert itself mid-tree, so it says so
-    # instead of doing something else. The feature being EDITED is the one
-    # consumer that does not count - every move's input is used by that move.
+    # instead of doing something else.
+    #
+    # "BUILT FROM" is Document.consumed_ids' question, so it is asked in
+    # consumed_ids' words (round two, 2026-09-11 — the first version asked it
+    # in its own and was wrong both ways):
+    #   * a FACE-REFERENCE op only points AT a face and consumes nothing, so a
+    #     body with a sketch drawn on it is still a body — 3 of the 50 saved
+    #     designs had their ONLY visible body refused, esp32-remote among them;
+    #   * a STRUCK row is a pass-through, so an active feature reading through
+    #     one really consumes what it resolves to — striking the move in the
+    #     round-one repro let the very same second copy back in (9600 mm³ →
+    #     216 mm³, every row green).
+    # Two ids do not count: the feature being EDITED (every move's input is
+    # used by that move) and the one THIS SESSION built — after the first OK a
+    # replan is about that feature, not a second move of the body, which is
+    # what `own_id` already says for Mirror and the Patterns.
+    own = {fid, req.get("own_id")} - {None, ""}
+    by_id = {x.id: x for x in doc.features}
     other = next((x for x in doc.features
-                  if x.id != fid and not x.suppressed and body_id in (x.inputs or [])), None)
+                  if x.id not in own and not x.suppressed
+                  and x.op not in sk.FACE_REFERENCE_OPS
+                  and any(doc._live_source(dep, by_id) == body_id
+                          for dep in (x.inputs or []))), None)
     if other is not None:
         raise ValueError(f"'{body_id}' is not a body on its own — '{other.id}' is built "
                          f"from it. Click a face of the body you can see, or its own "

@@ -60,6 +60,10 @@ const mv = tool({
   bodyRow: true,                // a body's tree row opens the tool on it
   anyFace: true,                // a curved face names its body just as well
   fields: { typed: ['X', 'Y', 'Z'] },
+  /* a replan after the first OK is about the feature THIS session built, not a
+     second move of the same body (the plan refuses that) — as Mirror and the
+     Patterns already say */
+  planExtra: st => (st.featureId ? { own_id: st.featureId } : {}),
   show(st, p) { for (const k of XYZ) g(mvBox(k)).value = p[k] || 0; },
   params: mvParams,
   snapshot(f) {
@@ -94,6 +98,7 @@ const mv = tool({
 const stored = st => (st && st.plan) || (st && st.original) || null;
 const rtParams = st => ({ axis: g('rtAxis').value, angle_deg: num('rtAngle'),
                           pivot: stored(st) ? (stored(st).pivot ?? null) : 'center' });
+const rtShow = (st, p) => { g('rtAxis').value = p.axis || 'Z'; g('rtAngle').value = p.angle_deg || 0; };
 
 function ghostTurn(st, plan) {
   beginMoveGhost(ghostOf(st));
@@ -107,8 +112,9 @@ const rt = tool({
   ops: { face: 'rotate' },
   eats: true, bodyRow: true, anyFace: true,
   fields: { change: ['Axis'], typed: ['Angle'] },
-  planExtra: () => ({ axis: g('rtAxis').value }),   // the ring is planned about the box's axis
-  show(st, p) { g('rtAxis').value = p.axis || 'Z'; g('rtAngle').value = p.angle_deg || 0; },
+  planExtra: st => ({ axis: g('rtAxis').value,      // the ring is planned about the box's axis
+                      ...(st && st.featureId ? { own_id: st.featureId } : {}) }),
+  show: rtShow,
   params: rtParams,
   snapshot(f) {
     // VERBATIM: Cancel pushes this back, so a legacy rotate that has no `pivot`
@@ -124,7 +130,24 @@ const rt = tool({
   isEmpty: (pr, st) => !st.plan || !pr.angle_deg,   // honest zero: 0° turns nothing
   gizmos: {
     begin(st, plan) {
-      if (!st.shown) st.shown = rtParams(st);      // the angle the visible body already has
+      if (!st.shown) {                             // the FIRST plan of this session
+        // What a feature that spells NOTHING out actually does is the server's
+        // to say (R1): plan.params carries the op's own defaults — blocks.rotate
+        // turns 90° about Z through the world origin. The panel read the
+        // feature's params raw, so a rotate stored as {} opened at 0° on a body
+        // standing turned (measured): the ring and the drag ghost both started
+        // 90° behind the body, and the only thing that saved the solid was the
+        // honest-zero gate refusing to write a 0. Round one put the defaults in
+        // plan_rotate's `params` — but nothing in this file read that field.
+        // The boxes and what Cancel puts back read the one answer now.
+        if (st.editing && plan.params && plan.params.angle_deg != null) {
+          const eff = { ...plan.params };
+          if (!(st.original && 'pivot' in st.original)) delete eff.pivot;   // no pivot GAINED
+          rtShow(st, eff);
+          st.original = eff; st.lastGood = eff;
+        }
+        st.shown = rtParams(st);                   // the angle the visible body already has
+      }
       beginAxisLine(plan.origin, plan.axis_dir, plan.axis_half);
       beginTaperRing(plan.origin, plan.frame, plan.radius, num('rtAngle'),
         v => { setBox('rtAngle', v); ghostTurn(st, plan); },

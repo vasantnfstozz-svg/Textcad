@@ -144,11 +144,11 @@ def test_an_edit_still_plans_on_its_own_input(tool):
         assert p["ok"] is True and p["input"] == "rib"
 
 
-def test_a_struck_consumer_frees_its_body():
-    d = assembly()
-    d.strike("rib_placed")
-    d.rebuild()
-    assert toolplan.plan(d, {"tool": "move", "body_id": "rib"})["ok"] is True
+# (round one's `test_a_struck_consumer_frees_its_body` stood here and asserted
+#  that striking `rib_placed` frees `rib`. It does not: a struck row is a
+#  PASS-THROUGH, so `fused` goes on consuming `rib` and the appended move gave
+#  the design a second copy of it — the round-one P1 itself. The two halves of
+#  the real rule are in round two below.)
 
 
 # ---------------------------- F3: an edit is named by feature_id, not params --
@@ -181,3 +181,102 @@ def test_a_new_rotate_is_still_planned_about_the_bodys_own_centre():
     d.rebuild()
     p = toolplan.plan(d, {"tool": "rotate", "body_id": "m"})
     assert p["pivot"] == "center" and p["origin"] == pytest.approx([40, 0, 0])
+
+
+# ======================================================= ROUND TWO (4ee5670) ==
+# The guard round one built for F2 ("a body another feature is built from")
+# asked its question in its OWN words instead of Document.consumed_ids', and
+# was wrong both ways. Measurements: probes/move_review2_probe.py.
+
+def plate_with_a_face_sketch():
+    d = Document(name="fs")
+    d.add("b", "plate", {"width": 60, "depth": 40, "thickness": 10}, [])
+    d.rebuild()
+    top = max(d._parts["b"].faces(), key=lambda f: f.center().Z)
+    c, n = top.center(), top.normal_at(top.center())
+    d.add("s", "sketch_on_face",
+          {"face_center": [c.X, c.Y, c.Z], "face_normal": [n.X, n.Y, n.Z],
+           "entities": [{"kind": "circle", "r": 6, "x": 0, "y": 0}]}, ["b"])
+    d.rebuild()
+    return d
+
+
+@pytest.mark.parametrize("tool", ["move", "rotate"])
+def test_a_sketch_drawn_on_a_body_does_not_stop_the_body_being_placed(tool):
+    """A FACE-REFERENCE op points AT a face and consumes nothing — the rule
+    Document.consumed_ids and _latest_descendant already live by. The guard
+    counted it, so the user's own method (base body first, then sketch on a
+    named face) made the ONLY body on screen unmovable: 3 of the 50 saved
+    designs, esp32-remote among them."""
+    d = plate_with_a_face_sketch()
+    assert d.leaf_solid_ids() == ["b"] and "b" not in d.consumed_ids()
+    assert toolplan.plan(d, {"tool": tool, "body_id": "b"})["ok"] is True
+
+
+@pytest.mark.parametrize("tool", ["move", "rotate"])
+def test_a_new_body_boss_pulled_off_a_face_leaves_its_parent_placeable(tool):
+    d = plate_with_a_face_sketch()
+    d.add("boss", "extrude_face", {"amount": 5}, ["b", "s"])
+    d.rebuild()
+    assert "b" in d.leaf_solid_ids()
+    assert toolplan.plan(d, {"tool": tool, "body_id": "b"})["ok"] is True
+
+
+def test_a_consumer_reading_through_a_struck_row_still_refuses():
+    """A struck node is a PASS-THROUGH to its first input, so `fused` really
+    consumes `rib`. The guard looked at `inputs` raw and let the round-one P1
+    straight back in: the appended move gave the design a second copy of the
+    rib and the displayed result flipped from 9600 mm3 to 216 mm3, green."""
+    d = assembly()
+    d.strike("rib_placed")
+    d.rebuild()
+    assert "rib" in d.consumed_ids()
+    p = toolplan.plan(d, {"tool": "move", "body_id": "rib"})
+    assert p["ok"] is False and "'fused' is built" in p["error"]
+
+
+def test_striking_the_only_consumer_does_free_its_body():
+    """the other half of the same rule: with nothing active reading through it,
+    a struck consumer really does hand the body back"""
+    d = Document(name="s")
+    d.add("cap", "plate", {"width": 40, "depth": 40, "thickness": 6}, [])
+    d.add("rib", "plate", {"width": 6, "depth": 6, "thickness": 6}, [])
+    d.add("rib_placed", "move", {"x": 12, "y": 0, "z": 6}, ["rib"])
+    d.strike("rib_placed")
+    d.rebuild()
+    assert "rib" not in d.consumed_ids()
+    assert toolplan.plan(d, {"tool": "move", "body_id": "rib"})["ok"] is True
+
+
+@pytest.mark.parametrize("tool", ["move", "rotate"])
+def test_a_replan_is_about_the_feature_this_session_built(tool):
+    """The tool applies as the user drags, so from the second plan on the body
+    HAS a consumer — the session's own feature. Without `own_id` (the field
+    Mirror and the Patterns already send for exactly this) changing Rotate's
+    Axis box answered '⚠ Rotate cannot start: b is not a body on its own' and
+    left the ring on the old axis."""
+    d = Document(name="c")
+    d.add("b", "plate", {"width": 60, "depth": 40, "thickness": 12}, [])
+    d.rebuild()
+    assert toolplan.plan(d, {"tool": tool, "body_id": "b"})["ok"] is True
+    d.add("own1", tool, {"axis": "Z", "angle_deg": 30, "pivot": "center"}
+          if tool == "rotate" else {"x": 5, "y": 0, "z": 0}, ["b"])
+    d.rebuild()
+    assert toolplan.plan(d, {"tool": tool, "body_id": "b"})["ok"] is False
+    p = toolplan.plan(d, {"tool": tool, "body_id": "b", "own_id": "own1"})
+    assert p["ok"] is True and p["input"] == "b"
+
+
+def test_own_id_is_a_field_of_the_plan_request():
+    """`own_id` has to survive the HTTP model or the browser's fix is a no-op
+    (the lesson test_mirror_tool.py already records)"""
+    import studio
+    req = studio.ToolPlanReq(tool="move", body_id="b", own_id="move1").model_dump()
+    assert req["own_id"] == "move1"
+
+
+def test_own_id_does_not_excuse_another_features_claim():
+    """it names ONE feature, not an amnesty: the round-one repro still refuses"""
+    d = assembly()
+    p = toolplan.plan(d, {"tool": "move", "body_id": "rib", "own_id": "move9"})
+    assert p["ok"] is False and "'rib_placed' is built" in p["error"]
