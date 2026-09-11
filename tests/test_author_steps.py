@@ -707,6 +707,16 @@ def test_a_create_that_built_nothing_leaves_no_empty_tab(client, monkeypatch):
     assert "designing" not in json.dumps(d["tabs"])
 
 
+def test_the_clock_belongs_to_the_chat_job_not_to_the_loop(monkeypatch):
+    """Round six: round five put MAX_SECONDS on author_steps' own default, so
+    it also capped the MCP design_part door - which has no tab to protect and
+    where a 40-step design legitimately outlasts five minutes."""
+    monkeypatch.setattr(author, "MAX_SECONDS", 0)
+    doc, transcript = author.author_design("a washer", Scripted(DISC, BORE, DONE))
+    assert doc is not None and len(doc.features) == 2
+    assert "seconds without" not in " ".join(transcript)
+
+
 def test_a_long_job_gives_the_tab_back_instead_of_holding_it(client, monkeypatch):
     """Round five: an "add" job makes its tab READ-ONLY while it runs, so a
     model that is merely slow locks the user out of their own design with no

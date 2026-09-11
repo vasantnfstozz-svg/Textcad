@@ -108,10 +108,12 @@ class OpenRouterModel:
         # Model can be set from the terminal via OPENROUTER_MODEL (no file edit).
         model = model or os.environ.get(
             "OPENROUTER_MODEL", "deepseek/deepseek-chat-v3-0324")
-        # A REQUEST clock as well as the job's. Without one the SDK waits its
-        # own 10-minute default (times its retries) on a stalled connection,
-        # and a chat job's tab is read-only for every second of that.
-        self.client = OpenAI(api_key=api_key, timeout=120.0, max_retries=2,
+        # A REQUEST clock as well as the job's: without one the SDK waits its
+        # own 600 s read timeout on a stalled connection, and a chat job's tab
+        # is read-only for every second of that. 300 s, not less — max_tokens
+        # is 8000, and the whole-tree MCP door really does emit that many, so
+        # a tighter clock would cut off answers that were on their way.
+        self.client = OpenAI(api_key=api_key, timeout=300.0,
                              base_url="https://openrouter.ai/api/v1")
         self.model = model
         print(f"[OpenRouter model: {model}]")

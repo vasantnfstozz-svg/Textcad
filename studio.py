@@ -3108,7 +3108,8 @@ def _job_steps(job: dict) -> str:
     try:
         finished, transcript = author.author_steps(
             doc, job["description"], job["model"], on_step=on_step,
-            guard=lambda: _step_guard(job))
+            guard=lambda: _step_guard(job),
+            max_seconds=author.MAX_SECONDS)   # the tab is read-only meanwhile
     except Exception as ex:      # the model's transport; kernel trouble is a sentence
         finished, transcript = False, [f"the model failed: {ex}"]
         job["log"].append(transcript[-1])
