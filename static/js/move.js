@@ -111,8 +111,15 @@ const rt = tool({
   show(st, p) { g('rtAxis').value = p.axis || 'Z'; g('rtAngle').value = p.angle_deg || 0; },
   params: rtParams,
   snapshot(f) {
+    // VERBATIM: Cancel pushes this back, so a legacy rotate that has no `pivot`
+    // must not GAIN one (`pivot: null` builds the same body, but the design
+    // went dirty from merely opening and cancelling the panel — the user's one
+    // saved rotate, planetary-assembly). rtParams reads the pivot from the
+    // plan first, so nothing needs it spelled out here.
     const p = f.params || {};
-    return { axis: p.axis || 'Z', angle_deg: Number(p.angle_deg) || 0, pivot: p.pivot ?? null };
+    const s = { axis: p.axis || 'Z', angle_deg: Number(p.angle_deg) || 0 };
+    if (p.pivot !== undefined) s.pivot = p.pivot;
+    return s;
   },
   isEmpty: (pr, st) => !st.plan || !pr.angle_deg,   // honest zero: 0° turns nothing
   gizmos: {

@@ -221,3 +221,90 @@ def test_a_body_row_press_rotate_drag_the_ring_to_ninety_and_ok(page, fresh_doc,
     assert page.evaluate(MODAL) is None
     assert not page.evaluate("() => window.__vp.gizmos().ring")
     assert page.errors == []
+
+
+# ------------------------------------------- the round-one review's journey --
+
+BUILD_ASSEMBLY = """
+async () => {
+  const { postJSON } = await import('/static/js/api.js');
+  const { loadMesh, setView } = await import('/static/js/viewport.js');
+  const add = (id, op, params, inputs) =>
+    postJSON('/api/feature/add', { id, op, params, inputs }, 'add');
+  await add('cap', 'plate', { width: 40, depth: 40, thickness: 6 }, []);
+  await add('rib', 'plate', { width: 6, depth: 6, thickness: 6 }, []);
+  await add('rib_placed', 'move', { x: 12, y: 0, z: 6 }, ['rib']);
+  await add('fused', 'fuse', {}, ['cap', 'rib_placed']);
+  await loadMesh(true);
+  setView('iso');
+}
+"""
+
+
+def test_editing_a_move_that_feeds_a_boolean_still_ghosts_and_cancel_writes_nothing(
+        page, fresh_doc, server):
+    """A move whose result is fused is 45 of the 59 move / rotate rows in the
+    saved library. Editing one parks the rollback bar on the BOOLEAN, so
+    /api/model lists only the boolean's body and the feature's own mesh is
+    nowhere in the scene: the drag showed no ghost at all (review of 9e04ff6).
+    And Cancel must write NOTHING - the normalized snapshot used to go back on
+    a feature nobody had touched, which dirtied the design."""
+    page.evaluate(BUILD_ASSEMBLY)
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    page.wait_for_timeout(800)
+    before = feature(server, "rib_placed")["params"]
+    assert before == {"x": 12, "y": 0, "z": 6}
+
+    row(page, "rib_placed").dblclick()          # the ROW edits; the NAME renames
+    page.wait_for_selector("#mvDialog", state="visible", timeout=15000)
+    page.wait_for_function("() => window.__vp.gizmos().arrows === 3", timeout=15000)
+    assert [page.input_value(f"#mv{k}") for k in "XYZ"] == ["12", "0", "6"]
+    # the op has no combiner of its own: the Combine-with row stays away even
+    # though a fuse is built FROM this feature
+    assert not page.is_visible("#mvTargetRow")
+
+    ax = page.evaluate("async () => (await import('/static/js/viewport.js')).arrowAxisScreen(0)")
+    assert ax, "no X arrow to drag"
+    assert drag_screen(page, ax, 50), "the body's ghost never showed during the drag"
+    assert float(page.input_value("#mvX")) > 12
+    wait_feature(server, "rib_placed")
+
+    page.click("#mvCancel")
+    page.wait_for_selector("#mvDialog", state="hidden")
+    page.wait_for_timeout(800)
+    assert feature(server, "rib_placed")["params"] == before, "Cancel put it back verbatim"
+    assert page.errors == []
+
+
+BUILD_SPARSE_MOVE = """
+async () => {
+  const { postJSON } = await import('/static/js/api.js');
+  const { loadMesh, setView } = await import('/static/js/viewport.js');
+  const add = (id, op, params, inputs) =>
+    postJSON('/api/feature/add', { id, op, params, inputs }, 'add');
+  await add('b', 'plate', { width: 60, depth: 40, thickness: 12 }, []);
+  await add('m', 'move', { x: 12 }, ['b']);         // as a hand-written design stores it
+  await loadMesh(true);
+  setView('iso');
+}
+"""
+
+
+def test_cancelling_an_untouched_edit_writes_nothing_at_all(page, fresh_doc, server):
+    """a move stored the way a design file holds one - {x: 12}, no y, no z.
+    Cancel used to push the tool's NORMALIZED snapshot back, so the feature
+    came away {x: 12, y: 0, z: 0} and the design read unsaved from a panel
+    nobody had typed in (review of 9e04ff6)."""
+    page.evaluate(BUILD_SPARSE_MOVE)
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    page.wait_for_timeout(800)
+    assert feature(server, "m")["params"] == {"x": 12}
+    row(page, "m").dblclick()
+    page.wait_for_selector("#mvDialog", state="visible", timeout=15000)
+    page.wait_for_function("() => window.__vp.gizmos().arrows === 3", timeout=15000)
+    assert [page.input_value(f"#mv{k}") for k in "XYZ"] == ["12", "0", "0"]
+    page.click("#mvCancel")
+    page.wait_for_selector("#mvDialog", state="hidden")
+    page.wait_for_timeout(800)
+    assert feature(server, "m")["params"] == {"x": 12},         "an untouched Cancel must not rewrite the feature"
+    assert page.errors == []

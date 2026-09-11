@@ -6,9 +6,10 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING** — review commit **`9e04ff6`** (base `9af39d9`): the
-> Move and Rotate tools, LAUNCH-PLAN.md P4's sixth and seventh, built
-> 2026-09-11 from `specs/move-rotate.md`. Round one.
+> **Status: PENDING** — review the **fix commit of the Move / Rotate round-one
+> review** (base `9e04ff6`). A **P0 was found and fixed**, so the fix pass gets
+> its own read, the way Shell, Primitives, Booleans and Measure each did.
+> Round two.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -23,54 +24,67 @@
 
 ## The range, one line per commit
 
-- `9e04ff6` — Move and Rotate: `blocks.rotate` grew `pivot` (+
-  `body_centre`, `_rotate_pivot`); `document._move_offsets` (sentences for a
-  bad offset) and `move` joins `PLACEMENT`; `toolplan.plan_move` /
-  `plan_rotate`; `author.OP_NOTES["rotate"]`; `static/js/move.js` (new, both
-  tools); `viewport.js` `beginArrows` / `endArrows` / `arrowAxisScreen` /
-  `arrowsDragging` (N arrows, a colour each) and the body ghost
-  (`beginMoveGhost` / `setMoveGhost` / `endMoveGhost` / `moveGhostInfo`);
-  `tool.js` open() takes a CURVED pick as its body for `anyFace` + `bodyRow`
-  tools and awaitPick offers every face to them; two panels in `index.html`
-  (ui v187); ribbon + main wiring. Tests: `tests/test_move_tool.py` (36),
-  `tests/test_move_gauntlet.py` (16 over the corpus), `tests/e2e/test_move_tool.py`
-  (3 journeys). Probe: `probes/move_rotate_probe.py`.
+- the fix commit — **5 findings, all 5 fixed, 0 rejected; 15 backend + 2
+  browser tests; fast tier 1513; ui v188.** Touched:
+  `blocks.py` (`resolve_face` — the picked normal is a GATE, not a nudge;
+  `_measure_face_rows` rows gained a `planar` flag),
+  `toolplan.py` (`_place_input` refuses a body another feature is built from;
+  `plan_move` / `plan_rotate` key an EDIT on `feature_id`, never on the
+  truthiness of the stored params; a stored rotate with no `angle_deg` reads
+  the op's own default 90),
+  `static/js/tool.js` (`openEdit` no longer assigns the Op select a value it
+  has no option for; `cancelSession` writes nothing when the session never
+  wrote — `push` sets `st.touched`),
+  `static/js/move.js` (`rotate`'s snapshot keeps `pivot` verbatim),
+  `static/js/viewport.js` (`beginMoveGhost` falls back to the feature's own
+  `/api/feature-mesh` when its body is not drawn),
+  `tests/test_move_review.py` (new, 15), `tests/e2e/test_move_tool.py` (+2),
+  `probes/move_review_probe.py` (new), LAUNCH-PLAN §10 (2 rows).
 
 ## Where the risk is
 
-1. **The pivot's three spellings and the legacy default.** `rotate(pivot=None)`
-   and `"origin"` must be byte-identical to the old op (planetary-assembly
-   carries a rotate); `plan_rotate` for an EDIT must hand back the STORED pivot
-   (absent → `None`, and the JS `?? null` must not turn it into `"center"` on
-   the first push — that would move a saved body). Check the JS `stored()` /
-   `rtParams` path with `st.plan` absent AND present.
-2. **The triad's placement is JS arithmetic** (`move.js along()`): centre +
-   Σ box·axis from the plan's `origin` / `axes`. Spec allows exactly this and
-   nothing more — check nothing else geometric crept in.
-3. **The ghost's delta is `box − st.shown`.** `st.shown` is seeded in
-   gizmos.begin from the boxes (an edit's stored values, a new session's zeros)
-   and set again in afterApply; a revert restores the boxes first, so shown =
-   lastGood. Look for a path where shown is stale: the Axis box changed and a
-   drag starts before the rebuild lands (shown's angle is about the OLD axis);
-   a typed value inside the debounce window followed by a drag.
-4. **`bodyObjs.find` in `beginMoveGhost`** takes the first of
-   `[featureId, inputBody]` present; with several bodies visible, the body
-   found must be THIS one.
-5. **`tool.js` open()'s new curved branch** sits before the curved refusal:
-   any tool with `anyFace` + `bodyRow` gets it — today only Move / Rotate set
-   both (Pattern: anyFace only; Shell: bodyRow only). Confirm nothing else.
-6. **Rotate about a pivot of a body in several lumps** — `body_centre` is the
-   whole compound's box; fine for a turn, but the Shell lesson says probe it.
+1. **`blocks.resolve_face` is shared by five callers** — `sketch_on_face`,
+   `extrude_face`, `hole`/the planner, the face-outline projection and the
+   EDGE pick (two faces name an edge). The gate only drops a candidate that is
+   PLANAR **and** points away from a stored normal; curved faces are untouched
+   on purpose (a sphere has one face and `normal_at(center)` means nothing
+   there — that is what broke the first attempt, two fast-tier tests). Proven
+   inert on the library: 50 designs rebuilt twice in one process, old scoring
+   vs new, **0 features moved**. Look for a caller that passes a normal it did
+   NOT get from a pick.
+2. **The new refusal raises where nothing raised before.** `resolve_face` used
+   to always answer. Check every caller survives a `ValueError` as a sentence
+   (`plan()` catches, `_eval` records it as a problem) — and that the branch is
+   only reachable for a single-face shape, since a closed solid always has a
+   face pointing any way you like.
+3. **`_place_input`'s "already used by" refusal.** It excludes the feature
+   being EDITED and suppressed consumers. Check a struck-out consumer, a
+   feature whose `inputs` hold the body twice, and the command-then-select path
+   where `_pick_body` FELL BACK to the newest solid (the body_id it returns is
+   the one the check reads).
+4. **`st.touched` now gates Cancel's restore.** `push` is the only writer in
+   edit mode today — confirm no other path can write params during a session
+   (`applyOp` returns early while editing; `unbuild` is create-mode only).
+5. **The ghost's async fallback** (`ghostWait` / `ghostDelta`): a fetch that
+   lands after the drag ended, two drags in a row, a Cancel mid-fetch, and the
+   feature that 404s (a struck row) must all leave no stray ghost.
+6. **The `planar` flag widened `_face_rows`' cached tuple from 3 to 4.** Every
+   reader now indexes rather than unpacks; the probes take `r[1]`. Check
+   nothing else unpacks a row.
 
 ## Do not re-report
 
-- `rotate`'s DEFAULT still turns about the world origin: decided (§10 P2 row,
-  user said not now on 2026-09-10; the tool sends `"center"` explicitly).
+- `rotate`'s DEFAULT still turns about the world origin: decided (§10 P2 row).
 - World axes only, no Copy, no Point-to-Point: decided in the spec, §10.
-- `move` is special-cased in `document._eval` rather than a MODIFIER: it
-  predates this work and passes a SKETCH through too (`_kinds`).
+- Multi-lump Move/Rotate: MEASURED clean in round one (two separated lumps and
+  a concentric ring-and-post, all three axes, health + volume + the way back).
+  The corpus GAP itself is the standing §10 P2 row.
+- A stored pick landing on the wrong SAME-facing face of a stepped body after a
+  rigid move: the new §10 P1 row — the residual round one deliberately left.
+- `solids()` offering intermediate rows to Shell and the Target dropdown: the
+  new §10 P3 row.
 - A turned L-bracket's bounding-box centre moves although the pivot does not:
-  measured, the gauntlet proves the pivot via the way back.
+  measured; the gauntlet proves the pivot via the way back.
 
 ## Ground rules (unchanged)
 
@@ -78,11 +92,3 @@
   `probes/`. The gauntlet is the corpus.
 - Fix in the same chat, smallest change, covering tests, commit, push, restart
   the user's server if the backend changed. Then the paperwork.
-- Never `--fix`. One reviewer.
-
-## Also open, and NOT the next review's job
-
-`tests/e2e/test_tree_delete.py` is 5 red and was measured red at `667ccc0` in a
-clean worktree, so it predates all of this (LAUNCH-PLAN §10's browser-tier P1
-row carries it). REVIEW-QUEUE section 7 (Extrude) waits until this brief reads
-NOTHING PENDING.

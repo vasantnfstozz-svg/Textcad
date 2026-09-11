@@ -742,7 +742,13 @@ export function tool(spec) {
     // Operation row: show what the tree ACTUALLY does with this feature (the
     // downstream combiner, if any) — honest but locked in edit mode
     const comb = boolOf(f.id);
-    el('Op').value = comb ? COMBINER_LABEL[comb.op] : 'new';
+    // An `eats` tool's Op select carries ONLY "new" (its op returns the body
+    // changed — Hole, Shell, Move, Rotate), and assigning a value a <select>
+    // has no option for leaves `.value` EMPTY, which sync() reads as "not new"
+    // and so opens the hidden Combine-with row. Live on every one of the 45
+    // saved move / rotate rows that feed a boolean (review of 9e04ff6).
+    const opLabel = comb ? COMBINER_LABEL[comb.op] : 'new';
+    el('Op').value = [...el('Op').options].some(o => o.value === opLabel) ? opLabel : 'new';
     el('Op').disabled = true;
     el('Op').title = `changing the operation of an existing ${lower} comes later`;
     if (comb) {
@@ -817,6 +823,7 @@ export function tool(spec) {
                : i.kind === 'feature' ? (st.plan && st.plan.input) || i.body : i.body] });
   }
   async function push(pr) {             // one param set → the feature's health
+    st.touched = true;                  // the ONLY writer in edit mode (see cancelSession)
     const doc = await post('/api/feature/params',
       { feature_id: st.featureId, params: pr });
     warnIfSplit(doc);
@@ -1011,10 +1018,17 @@ export function tool(spec) {
     clearTimeout(timer); timer = null;  // a typed value on its way is dropped
     await settled();                    // a rebuild in flight finishes first
     if (st && st.editing) {             // the feature stays — put its
-      const { featureId, original } = st;   // ORIGINAL params back verbatim
+      const { featureId, original, touched } = st;   // ORIGINAL params back verbatim
       hide();
       await holdViewport(async () => {
-        await postJSON('/api/feature/params', { feature_id: featureId, params: original });
+        // ...but only if the session ever wrote. `push` is the only writer in
+        // edit mode, so with nothing written the restore is a no-op — except
+        // that `original` is a NORMALIZED snapshot, so writing it added keys
+        // the feature never had (a legacy move `{z: 5}` came back `{x: 0,
+        // y: 0, z: 5}`) and the design went dirty from opening a panel and
+        // pressing Cancel. Review of 9e04ff6.
+        if (touched)
+          await postJSON('/api/feature/params', { feature_id: featureId, params: original });
         await releaseIso();
       });
     } else {

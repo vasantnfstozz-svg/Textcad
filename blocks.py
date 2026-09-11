@@ -414,28 +414,67 @@ _EDGE_RULES = ("all", "top", "bottom", "vertical", "horizontal")
 
 
 def resolve_face(solid, face_center: list, face_normal: list | None = None):
-    """Find the face of `solid` a user picked, by GEOMETRY (nearest center,
-    same-facing normal) — so a stored pick survives parameter changes instead
-    of breaking like a face index would. Shared by sketch_on_face, extrude_face,
-    the face-outline projection and the edge pick (two faces name an edge)."""
+    """Find the face of `solid` a user picked, by GEOMETRY (nearest center among
+    the faces that still point the picked way) — so a stored pick survives
+    parameter changes instead of breaking like a face index would. Shared by
+    sketch_on_face, extrude_face, the face-outline projection and the edge pick
+    (two faces name an edge).
+
+    THE DIRECTION IS A GATE, NOT A NUDGE (review of 9e04ff6, 2026-09-11). It
+    used to be a nudge: `d += (1 - align) * 25`, a penalty of 50 mm² for a face
+    pointing the OTHER way, competing against SQUARED millimetres. So the
+    moment a body was translated further than about its own thickness, the
+    nearest face was the opposite one and it won. Measured on the Move tool's
+    own documented journey — move a plate, sketch a Ø12 boss on the top face it
+    now shows, extrude, fuse, then re-open Move and drag: past +7 mm on a 10 mm
+    plate the boss jumped to the BOTTOM face, was built UP INTO the material and
+    swallowed whole. 565 mm³ of the user's part gone, every tree row `ok`, not
+    a word said. A pick that carried a direction never means a face facing away
+    from it, so those faces are not candidates at all; when NONE is left the
+    answer is a sentence, because a failed feature beats a body built on a face
+    nobody chose. Measured inert on the saved library: 47 resolutions, none of
+    them more than 60° off (probes/move_review_probe.py §8)."""
     rows = _face_rows(solid)
     if not rows:
         raise ValueError("solid has no faces")
     cx, cy, cz = (float(v) for v in face_center)
+    nrm = None
+    if face_normal:
+        nx, ny, nz = (float(v) for v in face_normal)
+        if math.sqrt(nx * nx + ny * ny + nz * nz) > 1e-6:
+            nrm = (nx, ny, nz)
+
+    def facing(row):
+        n, planar = row[2], row[3]
+        # ONLY A PLANE has one normal everywhere, so only a plane can be ruled
+        # out by direction. A curved face's `normal_at(center)` is the normal at
+        # ONE point (a sphere's is not even defined there) while the stored
+        # normal came from a raycast at the point CLICKED, so comparing the two
+        # says nothing — those faces keep their chance and the caller's own
+        # "that surface is curved" refusal speaks, as it always did.
+        if not planar or n is None:
+            return True
+        return (n[0] * nrm[0] + n[1] * nrm[1] + n[2] * nrm[2]) > 0.0
+
+    cands = [r for r in rows if facing(r)] if nrm else rows
+    if not cands:
+        raise ValueError(
+            "the face this was put on does not point that way on the body any "
+            "more — it has been turned over. Pick the face again, or undo the turn.")
 
     def score(row):
-        _f, (x, y, z), n = row
+        _f, (x, y, z), n = row[0], row[1], row[2]
         d = (x - cx) ** 2 + (y - cy) ** 2 + (z - cz) ** 2
-        if face_normal and n is not None:
-            align = n[0] * face_normal[0] + n[1] * face_normal[1] + n[2] * face_normal[2]
-            d += (1.0 - align) * 25.0          # nudge toward same-facing
+        if nrm and n is not None:
+            align = n[0] * nrm[0] + n[1] * nrm[1] + n[2] * nrm[2]
+            d += (1.0 - align) * 25.0          # among same-facing faces: the flattest match
         return d
 
-    return min(rows, key=score)[0]
+    return min(cands, key=score)[0]
 
 
 def _face_rows(solid) -> list:
-    """(face, centre, normal) for every face of a shape, measured ONCE per shape
+    """(face, centre, normal, planar) for every face of a shape, measured ONCE per shape
     object and kept beside it (_cached). resolve_face is asked for BOTH stored
     faces of every picked edge on every plan, and a face centre is a BRepGProp
     integration (0.14 ms): 254 faces x 96 calls was 15 s of a 33 s click on
@@ -457,7 +496,14 @@ def _measure_face_rows(solid) -> list:
             n = (float(n.X), float(n.Y), float(n.Z))
         except Exception:
             n = None
-        rows.append((f, (float(c.X), float(c.Y), float(c.Z)), n))
+        # by SURFACE TYPE on purpose, not geometrically: this flag only ever
+        # TIGHTENS resolve_face's direction gate, so a dead-flat wall the kernel
+        # types BSPLINE is left on the loose old path rather than risked
+        try:
+            planar = str(f.geom_type).split(".")[-1] == "PLANE"
+        except Exception:
+            planar = False
+        rows.append((f, (float(c.X), float(c.Y), float(c.Z)), n, planar))
     return rows
 
 

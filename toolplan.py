@@ -1394,6 +1394,21 @@ def _place_input(doc, req: dict, tool: str):
         body_id = (f.inputs or [None])[0]
         params = f.params or {}
     part, body_id = _pick_body(doc, body_id, tool)
+    # A body ANOTHER feature is built from is not a body to place. The tree is
+    # a selection surface (parity rule 2) and `solids()` offers every solid ROW,
+    # so pressing Move on a step half way up a branch used to append a move of
+    # that step at the END of the tree: the step now fed two features, the
+    # design silently grew a SECOND COPY of it, and the displayed result flipped
+    # to the copy (measured 2026-09-11, review of 9e04ff6: a 216 mm³ rib in a
+    # 9816 mm³ assembly). The tool cannot insert itself mid-tree, so it says so
+    # instead of doing something else. The feature being EDITED is the one
+    # consumer that does not count - every move's input is used by that move.
+    other = next((x for x in doc.features
+                  if x.id != fid and not x.suppressed and body_id in (x.inputs or [])), None)
+    if other is not None:
+        raise ValueError(f"'{body_id}' is not a body on its own — '{other.id}' is built "
+                         f"from it. Click a face of the body you can see, or its own "
+                         f"row in the tree, then {tool} that.")
     bb = part.bounding_box()
     size = [float(bb.size.X), float(bb.size.Y), float(bb.size.Z)]
     return part, body_id, params, size, blocks.body_centre(part)
@@ -1409,7 +1424,8 @@ def plan_move(doc, req: dict) -> dict:
     along. The browser adds the boxes' own offsets to place them and computes
     nothing else (R1)."""
     _part, body_id, params, size, centre = _place_input(doc, req, "move")
-    stored = {k: float(params.get(k) or 0) for k in ("x", "y", "z")} if params else {}
+    editing = bool(req.get("feature_id"))
+    stored = {k: float(params.get(k) or 0) for k in ("x", "y", "z")} if editing else {}
     return {
         "ok": True, "tool": "move", "mode": "face", "op": "move", "input": body_id,
         "origin": centre, "axes": WORLD_AXES, "size": size, "params": stored,
@@ -1426,21 +1442,32 @@ def plan_rotate(doc, req: dict) -> dict:
     ring's right-handed frame about the chosen axis, its radius from the body's
     extent, and the gold axis line's half-length."""
     part, body_id, params, size, _centre = _place_input(doc, req, "rotate")
+    editing = bool(req.get("feature_id"))
     axis = req.get("axis") or params.get("axis") or "Z"
     if not isinstance(axis, str) or axis.upper() not in _RING_FRAMES:
         raise ValueError(f'axis must be "X", "Y" or "Z" (got {axis!r})')
     axis = axis.upper()
     # an edit keeps the STORED pivot — absent on a legacy rotate, which turns
-    # about the world origin and must go on doing so (the ring sits there)
-    pivot = params.get("pivot") if params else "center"
+    # about the world origin and must go on doing so (the ring sits there).
+    # What makes it an EDIT is the feature_id, never the truthiness of the
+    # stored params: a rotate carrying NO params at all (the op's own defaults —
+    # Z, 90°, the world origin) was planned as a new tool session, so the ring
+    # sat on the body's centre and the first OK wrote pivot "center" and moved
+    # a body that had always turned about the origin (review of 9e04ff6). Same
+    # reason plan_mirror keys on `bool(s.fid)`.
+    pivot = params.get("pivot") if editing else "center"
     origin = list(blocks._rotate_pivot(part, pivot))
     x_dir, y_dir, z_dir = _RING_FRAMES[axis]
     k = "XYZ".index(axis)
     across = [s for i, s in enumerate(size) if i != k]            # the extents in the ring's plane
     radius = max(max(across) / 2 * 1.15, 8.0)
     half = max(size) * 0.8
-    stored = ({"axis": params.get("axis") or "Z", "angle_deg": float(params.get("angle_deg") or 0),
-               "pivot": pivot} if params else {})
+    # the op's OWN defaults when a stored param is absent, so the boxes read
+    # what the feature actually does (blocks.rotate: axis "Z", angle_deg 90)
+    stored = ({"axis": params.get("axis") or "Z",
+               "angle_deg": float(90.0 if params.get("angle_deg") is None
+                                  else params.get("angle_deg") or 0),
+               "pivot": pivot} if editing else {})
     return {
         "ok": True, "tool": "rotate", "mode": "face", "op": "rotate", "input": body_id,
         "axis": axis, "pivot": pivot, "origin": origin,

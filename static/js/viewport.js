@@ -1337,17 +1337,42 @@ function taperRelease() {
    tool's afterApply runs BEFORE the viewport follows the document), and gone
    with the release. */
 let moveGhost = null;
+let ghostWait = null;            // an id whose mesh is being fetched (one at a time)
+let ghostDelta = null;           // the last placement asked for, for a ghost still loading
 
 export function beginMoveGhost(bodyIds) {
   if (moveGhost && bodyIds.includes(moveGhost.bodyId)) return;   // this drag's ghost is up
   endMoveGhost();
   const b = bodyObjs.find(o => bodyIds.includes(o.id));
-  if (!b) return;
-  moveGhost = { ...ghostPart(b.mesh.geometry.clone()), bodyId: b.id };
-  setPartsVisible([moveGhost], false);
+  if (b) {
+    moveGhost = { ...ghostPart(b.mesh.geometry.clone()), bodyId: b.id };
+    setPartsVisible([moveGhost], false);
+    return;
+  }
+  // NOT DRAWN. Editing a move / rotate that feeds a boolean parks the rollback
+  // bar on that BOOLEAN (so the user sees the assembly, not a floating body),
+  // and /api/model then lists only the boolean's id — so the feature's own mesh
+  // is nowhere in the scene and the drag showed no ghost at all. That is 45 of
+  // the 59 move / rotate rows in the saved library (measured 2026-09-11, review
+  // of 9e04ff6). Its solid IS built (it sits below the bar), so fetch it once;
+  // the ghost joins the drag a moment later instead of never.
+  const fid = bodyIds[0];
+  if (!fid || ghostWait === fid) return;
+  ghostWait = fid;
+  new STLLoader().loadAsync('/api/feature-mesh/' + fid + '.stl')
+    .then(geo => {
+      if (ghostWait !== fid || moveGhost) { geo.dispose(); return; }   // drag over
+      geo.computeVertexNormals();
+      moveGhost = { ...ghostPart(geo), bodyId: fid };
+      setPartsVisible([moveGhost], false);
+      if (ghostDelta) setMoveGhost(ghostDelta);    // the drag moved on while it loaded
+    })
+    .catch(() => {})                  // not built / 404: the drag goes on without a ghost
+    .finally(() => { if (ghostWait === fid) ghostWait = null; });
 }
 /* {dx, dy, dz}: the offset; or {origin, dir, deg}: the turn about that axis */
 export function setMoveGhost(delta) {
+  ghostDelta = delta;               // so a ghost that arrives mid-drag lands placed
   if (!moveGhost) return;
   const m = new THREE.Matrix4();
   if (delta.deg != null) {
@@ -1362,6 +1387,7 @@ export function setMoveGhost(delta) {
   for (const o of [moveGhost.mesh, moveGhost.edges]) { o.matrix.copy(m); o.visible = true; }
 }
 export function endMoveGhost() {
+  ghostWait = null; ghostDelta = null;   // a fetch still in flight belongs to nobody now
   if (!moveGhost) return;
   disposeParts([moveGhost]); moveGhost = null;
 }
