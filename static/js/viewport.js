@@ -38,6 +38,7 @@ const originPlanes = [];         // the 3 clickable origin planes during plane-p
 let exArrow = null;              // the draggable Extrude manipulator arrow
 let exArrow2 = null;             // a SECOND arrow (Rectangular Pattern's direction 2), same mechanics
 let dragArrow = null;            // whichever arrow the pointer is dragging
+let moreArrows = [];             // N arrows at once (Move's triad), same mechanics, a colour each
 const raycaster = new THREE.Raycaster();
 const GROUND = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);   // Z=0 workplane
 
@@ -264,6 +265,7 @@ export function initViewport() {
     /* which extrude gizmos are live — a face-sketch extrude must have ALL
        three (the ghost/ring were silently missing there once) */
     gizmos: () => ({ arrow: !!exArrow, arrow2: !!exArrow2, ghost: !!exGhost, ring: !!taperRing,
+                     arrows: moreArrows.length, moveGhost: !!(moveGhost && moveGhost.mesh.visible),
                      axis: !!axisLine, lathe: !!rvGhost, glow: edgeGlow.length,
                      edgePick: !!edgePickCb, hole: !!holeMarker, plane: !!planeQuad,
                      facePick: !!profilePickCb }),
@@ -453,7 +455,7 @@ export function initViewport() {
   renderer.domElement.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;            // a right/middle drag must still
                                            // navigate, even starting ON a gizmo
-    for (const a of [exArrow, exArrow2])
+    for (const a of [exArrow, exArrow2, ...moreArrows])
       if (a && !a.dragging && arrowGrab(e, a)) { e.stopPropagation(); return; }
     if (taperRing && !taperRing.dragging && taperGrab(e)) e.stopPropagation();
   }, true);
@@ -1007,10 +1009,30 @@ export function endSecondArrow() {
 export function setSecondArrowAmount(a) {
   if (exArrow2 && !exArrow2.dragging) { exArrow2.amount = a; updateArrow(exArrow2); }
 }
-function makeArrow(originArr, normalArr, amount, onChange, onCommit, clampFn) {
+/* N arrows at once with the same mechanics — Move's triad (specs/move-rotate.md):
+   each {origin, axis, amount, color, onChange, onCommit, clampFn} */
+export function beginArrows(list) {
+  endArrows();
+  moreArrows = list.map(a => makeArrow(a.origin, a.axis, a.amount, a.onChange, a.onCommit,
+                                       a.clampFn, a.color));
+}
+export function endArrows() {
+  for (const a of moreArrows) disposeArrow(a);
+  moreArrows = [];
+}
+export function arrowsDragging() { return moreArrows.some(a => a.dragging); }
+/* screen coords of the i-th arrow's base and tip — the true on-screen drag axis (tests) */
+export function arrowAxisScreen(i) {
+  const a = moreArrows[i];
+  if (!a) return null;
+  const base = arrowBase(a);
+  const tip = base.clone().add(arrowDir(a).multiplyScalar(a.len));
+  return { base: toScreen(base), tip: toScreen(tip) };
+}
+function makeArrow(originArr, normalArr, amount, onChange, onCommit, clampFn, color = 0xffb85c) {
   const O = new THREE.Vector3(...originArr);
   const N = new THREE.Vector3(...normalArr).normalize();
-  const arrow = new THREE.ArrowHelper(N, O, 1, 0xffb85c);
+  const arrow = new THREE.ArrowHelper(N, O, 1, color);
   for (const m of [arrow.line.material, arrow.cone.material]) {
     m.depthTest = false; m.transparent = true;      // always visible, on top of the solid
   }
@@ -1306,6 +1328,48 @@ function taperRelease() {
   taperRing.dragging = false;
   controls.enabled = true;
   taperRing.onCommit(taperRing.taper);
+}
+
+/* ---------------- a BODY's ghost (Move / Rotate: the body itself, placed) ----
+   The body's own mesh, translucent white, offset or turned by the change since
+   the last build while a handle is dragged; the real body follows on release.
+   Cloned from the scene when the drag starts (the scene is current then — a
+   tool's afterApply runs BEFORE the viewport follows the document), and gone
+   with the release. */
+let moveGhost = null;
+
+export function beginMoveGhost(bodyIds) {
+  if (moveGhost && bodyIds.includes(moveGhost.bodyId)) return;   // this drag's ghost is up
+  endMoveGhost();
+  const b = bodyObjs.find(o => bodyIds.includes(o.id));
+  if (!b) return;
+  moveGhost = { ...ghostPart(b.mesh.geometry.clone()), bodyId: b.id };
+  setPartsVisible([moveGhost], false);
+}
+/* {dx, dy, dz}: the offset; or {origin, dir, deg}: the turn about that axis */
+export function setMoveGhost(delta) {
+  if (!moveGhost) return;
+  const m = new THREE.Matrix4();
+  if (delta.deg != null) {
+    const o = new THREE.Vector3(...delta.origin);
+    const d = new THREE.Vector3(...delta.dir).normalize();
+    m.makeTranslation(o.x, o.y, o.z)
+      .multiply(new THREE.Matrix4().makeRotationAxis(d, delta.deg * Math.PI / 180))
+      .multiply(new THREE.Matrix4().makeTranslation(-o.x, -o.y, -o.z));
+  } else {
+    m.makeTranslation(delta.dx || 0, delta.dy || 0, delta.dz || 0);
+  }
+  for (const o of [moveGhost.mesh, moveGhost.edges]) { o.matrix.copy(m); o.visible = true; }
+}
+export function endMoveGhost() {
+  if (!moveGhost) return;
+  disposeParts([moveGhost]); moveGhost = null;
+}
+/* the ghost as drawn: which body and where the world origin went under its transform (tests) */
+export function moveGhostInfo() {
+  if (!moveGhost || !moveGhost.mesh.visible) return null;
+  return { body: moveGhost.bodyId,
+           origin: new THREE.Vector3().setFromMatrixPosition(moveGhost.mesh.matrix).toArray() };
 }
 
 /* ---------------- a tool's AXIS line (Revolve: the spin axis, gold) ---------- */

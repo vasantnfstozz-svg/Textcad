@@ -25,8 +25,14 @@
 > stamp, ui v164; user's checklist passed 2026-09-07 — §7 P4). **P4's fifth
 > tool, Shell, DONE 2026-09-10** (fb0b8c8: the picked flat faces open, walls
 > of one thickness Inside / Outside, every click a server-decided toggle;
-> reviewed and fixed 667ccc0 — 5 of 5 findings, one of them a P0, ui v185).
-> Next: Move/Rotate, in a fresh chat. One tool per session. Every
+> reviewed and fixed 667ccc0 — 5 of 5 findings, one of them a P0, ui v185;
+> CLOSED after three review rounds, b5c6e70). **P4's sixth and seventh tools,
+> Move and Rotate, BUILT 2026-09-11** (one file, `static/js/move.js`: three
+> coloured arrows meeting at the body's centre, a ring about X / Y / Z through
+> the body's centre — `rotate` grew a `pivot` and the legacy default stays the
+> world origin, so no saved design moves; the ghost is the body itself; ui
+> v187; code review pending, REVIEW-BRIEF.md). Next: Push/Pull naming, the
+> last P4 tool, in a fresh chat. One tool per session. Every
 > other plan file points here; §7 carries the done-notes, §10 the ranked open
 > items. **Added 2026-09-10 (user's decision):** P5b, the machine plays the
 > user — a zero-token random-journey runner, a bug button, the library tier
@@ -214,7 +220,7 @@ model, live verified preview, the value box as the second option, Esc cancels.
 | Mirror | pick a plane or flat face | body | `mirror` exists (returns a copy) | |
 | Shell | arrow (wall thickness) on the open face | body + face | `shell` exists (group selector) | |
 | Push/Pull face | arrow | flat face of a body | `extrude_face` exists | Extrude in face mode already does this; expose the name |
-| Move / Rotate body | arrows / ring | body | `move`, `rotate` exist | |
+| Move / Rotate body | three arrows / ring | body | done | built 2026-09-11 (`specs/move-rotate.md`); `rotate` has a pivot now, "center" from the tool |
 | Combine (Join / Cut) | in the tool's dropdown | two bodies | exist | Intersect stays locked until a real use appears |
 
 **Tier 2 — after launch:** Sweep, Loft (ops exist, need tools), Text in a
@@ -916,6 +922,31 @@ over six extreme thicknesses; an outside shell never merged two lumps even at a
 result's `.solids()` / `.volume` / `.bounding_box()` never raise and cost 5 ms
 against the kernel's own 239 ms; `startPreview` has exactly two callers and is
 a closure local.
+
+*Move and Rotate built 2026-09-11* (spec `specs/move-rotate.md`, tool in the
+commit the review brief names; review pending). Fusion's Move/Copy split along
+the ribbon's two buttons and declared from ONE file (`static/js/move.js`, 139
+lines for both, Fillet/Chamfer's shape): **Move** — three arrows in Fusion's
+colours (red X, green Y, blue Z) meeting at the body's centre plus the current
+offset, so the triad rides the body; **Rotate** — one ring about X / Y / Z
+through the body's own centre, the gold axis line, 45° snapping inherited.
+Both ops EAT their body (no Join / Cut row); any face of the body names it — a
+CURVED one too (the framework's `anyFace` + `bodyRow` now means "the body is
+the input"), or its tree row. `rotate` grew a **`pivot`**: `"center"` (the
+tool's choice — the ring's centre and the op's pivot come from ONE function,
+`blocks.body_centre`), `[x, y, z]`, or absent / `"origin"` = the world origin,
+the legacy default kept on purpose so planetary-assembly (the one saved design
+with a rotate) does not move — §10's "rotate needs a migration" row is met
+without one. The **ghost is the body itself**: its mesh, cloned when a drag
+STARTS (afterApply runs before the viewport follows the document, so the scene
+is stale there), offset or turned by the change since the last build, gone on
+release. `probes/move_rotate_probe.py` records the right-hand rule on all
+three axes (the ring frames are (X,Y) / (Y,Z) / (Z,X)), the pivoted turn's
+health and the Python wording `move` now translates. 44 backend + 3 browser
+tests. Decided without the user: world axes only (Fusion's edge / face-normal
+axes and Point-to-Point later, §10), no Copy box (Pattern's job), relative
+offsets. Gotcha for the next gauntlet: a turned L-bracket's bounding-box
+centre MOVES even though the pivot does not — the invariant is the way back.
 
 **P5 — The AI uses the tools (§5 step B).** Incremental authoring through
 the plan endpoint; chat edits point at parameters; the FEATURE-TREE-PLAN

@@ -31,6 +31,7 @@ from functools import lru_cache
 import inspect
 import hashlib
 import json
+import math
 import os
 import re
 
@@ -203,6 +204,23 @@ def _min_inputs(op: str) -> int:
 # reconnect one to the other.
 def _kind_of(op: str) -> str:
     return "sketch" if op in sk.SKETCH_PRODUCERS else "solid"
+
+
+def _move_offsets(params: dict) -> tuple[float, float, float]:
+    """`move`'s x / y / z as numbers, or a sentence naming the one that is not
+    (float() alone says "could not convert string to float: 'abc'" — Python
+    wording, banned from the user's chat; specs/move-rotate.md)."""
+    out = []
+    for k in ("x", "y", "z"):
+        v = (params or {}).get(k, 0)
+        try:
+            n = float(0 if v is None else v)
+            if not math.isfinite(n):
+                raise ValueError
+        except (TypeError, ValueError):
+            raise ValueError(f"move: {k} must be a number in mm (got {v!r})") from None
+        out.append(n)
+    return out[0], out[1], out[2]
 
 
 DELETE_MODES = ("auto", "cascade", "strict")
@@ -436,7 +454,7 @@ class Document:
     # it, so they have no delta at all (`mirror` only in its legacy copy-only
     # form — with a seed it repeats a feature's delta, with `join` it ADDS its
     # reflection, and both of those are real deltas)
-    PLACEMENT = ("rotate", "scale", "mirror")
+    PLACEMENT = ("move", "rotate", "scale", "mirror")
 
     def ancestors(self, fid: str) -> set:
         """every feature upstream of `fid`: its inputs, theirs, and so on"""
@@ -1168,9 +1186,7 @@ class Document:
         if f.op == "move":
             if len(ins) != 1:
                 raise ValueError("'move' needs exactly 1 input")
-            p = f.params
-            return Pos(float(p.get("x", 0)), float(p.get("y", 0)),
-                       float(p.get("z", 0))) * ins[0]
+            return Pos(*_move_offsets(f.params)) * ins[0]
         if f.op in COMBINERS:
             if len(ins) < 2:
                 raise ValueError(f"'{f.op}' needs 2+ inputs")

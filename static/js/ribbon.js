@@ -19,6 +19,7 @@ import { openHole } from './hole.js';
 import { openShell } from './shell.js';
 import { openCircularPattern, openRectangularPattern } from './pattern.js';
 import { openMirror } from './mirror.js';
+import { openMove, openRotate } from './move.js';
 import { cancelTool } from './tool.js';
 import { openMeasure, cancelMeasure } from './measure.js';
 
@@ -51,7 +52,7 @@ function startSketch() {
 const TOOLS = { extrude: openExtrude, revolve: openRevolve,
                 fillet: openFillet, chamfer: openChamfer, hole: openHole, shell: openShell,
                 polar_pattern: openCircularPattern, linear_pattern: openRectangularPattern,
-                mirror: openMirror };
+                mirror: openMirror, move: openMove, rotate: openRotate };
 
 // named (non-op) actions that live in the ribbon
 const ACTIONS = {

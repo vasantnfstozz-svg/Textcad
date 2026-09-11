@@ -57,8 +57,11 @@ OP_NOTES = {
     "hex_plate": "Centered on the origin; spans ±thickness/2 in Z.",
     "polygon_plate": "Centered on the origin.",
     "move": "RELATIVE offset in mm from the part's current (origin-centered) position.",
-    "rotate": "Spins the part about the chosen axis THROUGH THE ORIGIN — a body "
-              "that does not sit on the origin MOVES as it turns.",
+    "rotate": "Spins the part about the chosen axis. `pivot` says where the axis "
+              "passes: \"center\" turns the body IN PLACE about its own centre (what "
+              "you almost always want; the Rotate tool's choice), an explicit "
+              "[x, y, z] is a point of your own, and ABSENT or \"origin\" is the WORLD "
+              "ORIGIN — a body that does not sit on the origin MOVES as it turns.",
     "scale": "Scales about the body's OWN CENTRE, so it stays where it is "
              "(2 = double size). Note this is NOT rotate's pivot: rotate turns "
              "about the world origin.",

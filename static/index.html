@@ -345,6 +345,43 @@
   </div>
 </div>
 
+<div id="mvDialog" class="toolpanel" style="display:none">
+  <div class="exhead">↗ Move</div>
+  <label>Body <select id="mvProfile" disabled></select></label>
+  <div class="exrow">
+    <label>X (mm) <input id="mvX" type="number" step="any" value="0"></label>
+    <label>Y (mm) <input id="mvY" type="number" step="any" value="0"></label>
+    <label>Z (mm) <input id="mvZ" type="number" step="any" value="0"></label>
+  </div>
+  <!-- the op returns the body in its new place: no Join / Cut, no target -->
+  <select id="mvOp" style="display:none"><option value="new">New body</option></select>
+  <label id="mvTargetRow" style="display:none">Combine with <select id="mvTarget"></select></label>
+  <div class="exfoot">
+    <button id="mvCancel">Cancel</button>
+    <button class="primary" id="mvOk">OK</button>
+  </div>
+</div>
+
+<div id="rtDialog" class="toolpanel" style="display:none">
+  <div class="exhead">⟳ Rotate</div>
+  <label>Body <select id="rtProfile" disabled></select></label>
+  <div class="exrow">
+    <label>Axis
+      <select id="rtAxis" title="the world axis the body turns about, through its own centre">
+        <option value="X">X</option>
+        <option value="Y">Y</option>
+        <option value="Z" selected>Z</option>
+      </select></label>
+    <label>Angle (°) <input id="rtAngle" type="number" step="any" value="0"></label>
+  </div>
+  <select id="rtOp" style="display:none"><option value="new">New body</option></select>
+  <label id="rtTargetRow" style="display:none">Combine with <select id="rtTarget"></select></label>
+  <div class="exfoot">
+    <button id="rtCancel">Cancel</button>
+    <button class="primary" id="rtOk">OK</button>
+  </div>
+</div>
+
 <div id="cpDialog" class="toolpanel" style="display:none">
   <div class="exhead">✳ Circular Pattern</div>
   <label>Seed <select id="cpProfile" disabled></select></label>
@@ -467,6 +504,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=186"></script>
+<script type="module" src="/static/js/main.js?v=187"></script>
 </body>
 </html>

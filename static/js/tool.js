@@ -354,6 +354,17 @@ export function tool(spec) {
       begin();
       return;
     }
+    // a CURVED face names its body just as well for a tool whose input IS the
+    // body (Move / Rotate: `anyFace` + `bodyRow`) — the face itself plays no part
+    if (sel && sel.kind === 'curved' && spec.anyFace && spec.bodyRow && sel.body) {
+      st = session({ kind: 'face', center: sel.center, normal: null, body: sel.body, point: null });
+      fill(id('Profile'), ['(the body)'], '(the body)');
+      el('Profile').disabled = true;
+      fill(id('Target'), bods.map(b => b.id), sel.body);
+      el('Op').value = 'new';
+      begin();
+      return;
+    }
     if (sel && sel.kind === 'curved') {
       say(`⚠ ${spec.name} needs a FLAT face — the selected surface is ` +
         `${sel.type} (curved). Flat faces (including tilted ones) ${lower} ` +
@@ -399,7 +410,9 @@ export function tool(spec) {
   /* NOTHING selected: Fusion's command-then-select — the USER picks what to
      work on (a sketch profile and / or a flat face); never auto-grab a sketch */
   function awaitPick(profiles) {
-    const opts = { name: spec.name, faces: !!spec.ops.face, profiles };
+    // a body tool (`anyFace` + `bodyRow`) is offered every face: any one names the body
+    const opts = { name: spec.name, faces: !!spec.ops.face, profiles,
+                   anyFace: !!(spec.anyFace && spec.bodyRow) };
     beginProfilePick((kind, data) => {
       if (kind === 'profile') { open(data); return; }
       // ONE selection set. This is the only writer that bypasses the

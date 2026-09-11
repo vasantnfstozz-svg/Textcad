@@ -306,12 +306,58 @@ def polar_pattern(feature: Part, count: int, **kw) -> Part:
 # Transform / finishing operations (E1) — take a part, return a new part
 # ---------------------------------------------------------------------------
 
-def rotate(part: Part, axis: str = "Z", angle_deg: float = 90.0) -> Part:
-    """Rotate a part about the X, Y or Z axis (through the origin). The way to
-    lay a cylinder on its side: rotate(wheel, "X", 90)."""
+def body_centre(part: Part) -> list[float]:
+    """The centre of a body's bounding box — the pivot Fusion's Move/Rotate
+    uses by default, and the ONE place the Rotate tool's ring and the `rotate`
+    op both take it from (specs/move-rotate.md): the handle can never sit where
+    the body does not turn. Exact on a box, a cylinder and a sphere
+    (probes/move_rotate_probe.py §3)."""
+    c = part.bounding_box().center()
+    return [float(c.X), float(c.Y), float(c.Z)]
+
+
+def _rotate_pivot(part: Part, pivot):
+    """`pivot` in its three spellings, or the sentence: None / "origin" is the
+    WORLD origin (the legacy behaviour every saved design was built with),
+    "center" the body's own centre, [x, y, z] an explicit point."""
+    if pivot is None or pivot == "origin":
+        return (0.0, 0.0, 0.0)
+    if pivot == "center":
+        return tuple(body_centre(part))
+    try:
+        x, y, z = (float(v) for v in pivot)
+        if not all(math.isfinite(v) for v in (x, y, z)):
+            raise ValueError
+        return (x, y, z)
+    except (TypeError, ValueError):
+        raise ValueError(f'rotate: pivot must be "center", "origin" or [x, y, z] '
+                         f"(got {pivot!r})") from None
+
+
+def rotate(part: Part, axis: str = "Z", angle_deg: float = 90.0, pivot=None) -> Part:
+    """Rotate a part about the X, Y or Z direction through `pivot`. The way to
+    lay a cylinder on its side: rotate(wheel, "X", 90).
+
+    `pivot` (specs/move-rotate.md): absent / "origin" turns about the WORLD
+    ORIGIN — a body that does not sit on the origin MOVES as it turns, the
+    behaviour every design saved before 2026-09-11 relies on, so it stays the
+    default; "center" turns the body IN PLACE about its own bounding-box centre
+    (what the Rotate tool sends, Fusion's default pivot); [x, y, z] is an
+    explicit point. The sign is the right-hand rule about the axis (probed:
+    +90 about Z takes +X to +Y)."""
     if axis not in _AXES:
-        raise ValueError('rotate: axis must be "X", "Y" or "Z"')
-    return part.rotate(_AXES[axis], angle_deg)
+        raise ValueError(f'rotate: axis must be "X", "Y" or "Z" (got {axis!r})')
+    try:
+        deg = float(angle_deg)
+        if not math.isfinite(deg):
+            raise ValueError
+    except (TypeError, ValueError):
+        raise ValueError(f"rotate: angle_deg must be a number in degrees "
+                         f"(got {angle_deg!r})") from None
+    p = _rotate_pivot(part, pivot)
+    if p == (0.0, 0.0, 0.0):
+        return part.rotate(_AXES[axis], deg)
+    return part.rotate(Axis(p, _AXES[axis].direction), deg)
 
 
 def mirror_copy(part: Part, plane="YZ", join: bool = False) -> Part:
@@ -331,9 +377,10 @@ def scale_uniform(part: Part, factor: float) -> Part:
 
     Measured 2026-09-10: build123d's scale() is centre-based, not
     origin-based, and this said "about the origin" for as long as it existed.
-    `rotate` below is the one that turns about the WORLD origin, so the two
-    Transform buttons do NOT share a pivot -- stated here and in
-    author.OP_NOTES because a wrong pivot is not visible in a signature."""
+    `rotate` above turns about the WORLD origin unless given a `pivot` (the
+    Rotate tool sends "center"), so a script's two Transform calls do NOT share
+    a pivot by default -- stated here and in author.OP_NOTES because a wrong
+    pivot is not visible in a signature."""
     if factor <= 0:
         raise ValueError("scale: factor must be positive")
     return _b3d_scale(part, by=factor)

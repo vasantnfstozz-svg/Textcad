@@ -1370,10 +1370,92 @@ def plan_shell(doc, req: dict) -> dict:
     }
 
 
+# ------------------------------------------------------- move / rotate ---
+
+# the ring's frame for each world axis, RIGHT-HANDED about it so the ring's
+# positive turn is the kernel's (probes/move_rotate_probe.py §2: +90 about Z
+# takes +X to +Y, about X takes +Y to +Z, about Y takes +Z to +X)
+_RING_FRAMES = {"Z": ([1, 0, 0], [0, 1, 0], [0, 0, 1]),
+                "X": ([0, 1, 0], [0, 0, 1], [1, 0, 0]),
+                "Y": ([0, 0, 1], [1, 0, 0], [0, 1, 0])}
+WORLD_AXES = {"x": [1.0, 0.0, 0.0], "y": [0.0, 1.0, 0.0], "z": [0.0, 0.0, 1.0]}
+
+
+def _place_input(doc, req: dict, tool: str):
+    """The body a Move / Rotate works on and its stored params: body_id (any
+    face of it named the body — the face itself plays no part), or the
+    feature_id of an existing move / rotate (edit: its INPUT body, so the
+    handles are planned on the body as it was before this feature and ride
+    the stored values). Returns (part, body_id, params, size, centre)."""
+    body_id, params = req.get("body_id"), {}
+    fid = req.get("feature_id")
+    if fid:
+        f = _edit_input(doc, fid, (tool,))
+        body_id = (f.inputs or [None])[0]
+        params = f.params or {}
+    part, body_id = _pick_body(doc, body_id, tool)
+    bb = part.bounding_box()
+    size = [float(bb.size.X), float(bb.size.Y), float(bb.size.Z)]
+    return part, body_id, params, size, blocks.body_centre(part)
+
+
+def _size_words(body_id: str, size: list) -> str:
+    return f"{body_id} ({size[0]:.4g} × {size[1]:.4g} × {size[2]:.4g} mm)"
+
+
+def plan_move(doc, req: dict) -> dict:
+    """The Move tool's plan (specs/move-rotate.md): the body's centre, where the
+    three arrows meet before any offset, and the three world axes they point
+    along. The browser adds the boxes' own offsets to place them and computes
+    nothing else (R1)."""
+    _part, body_id, params, size, centre = _place_input(doc, req, "move")
+    stored = {k: float(params.get(k) or 0) for k in ("x", "y", "z")} if params else {}
+    return {
+        "ok": True, "tool": "move", "mode": "face", "op": "move", "input": body_id,
+        "origin": centre, "axes": WORLD_AXES, "size": size, "params": stored,
+        "seed_words": _size_words(body_id, size),
+        "target_body": body_id, "will_build": f"move of {body_id}",
+    }
+
+
+def plan_rotate(doc, req: dict) -> dict:
+    """The Rotate tool's plan (specs/move-rotate.md): the pivot the op will turn
+    about — "center" for a new rotate, the STORED pivot for an edit (a legacy
+    rotate turns about the world origin, and the ring sits there, honestly) —
+    resolved by the very function the op uses (`blocks._rotate_pivot`), the
+    ring's right-handed frame about the chosen axis, its radius from the body's
+    extent, and the gold axis line's half-length."""
+    part, body_id, params, size, _centre = _place_input(doc, req, "rotate")
+    axis = req.get("axis") or params.get("axis") or "Z"
+    if not isinstance(axis, str) or axis.upper() not in _RING_FRAMES:
+        raise ValueError(f'axis must be "X", "Y" or "Z" (got {axis!r})')
+    axis = axis.upper()
+    # an edit keeps the STORED pivot — absent on a legacy rotate, which turns
+    # about the world origin and must go on doing so (the ring sits there)
+    pivot = params.get("pivot") if params else "center"
+    origin = list(blocks._rotate_pivot(part, pivot))
+    x_dir, y_dir, z_dir = _RING_FRAMES[axis]
+    k = "XYZ".index(axis)
+    across = [s for i, s in enumerate(size) if i != k]            # the extents in the ring's plane
+    radius = max(max(across) / 2 * 1.15, 8.0)
+    half = max(size) * 0.8
+    stored = ({"axis": params.get("axis") or "Z", "angle_deg": float(params.get("angle_deg") or 0),
+               "pivot": pivot} if params else {})
+    return {
+        "ok": True, "tool": "rotate", "mode": "face", "op": "rotate", "input": body_id,
+        "axis": axis, "pivot": pivot, "origin": origin,
+        "frame": {"origin": origin, "x_dir": x_dir, "y_dir": y_dir, "z_dir": z_dir},
+        "radius": radius, "axis_dir": z_dir, "axis_half": half, "size": size,
+        "params": stored, "seed_words": _size_words(body_id, size),
+        "target_body": body_id, "will_build": f"rotate of {body_id} about {axis}",
+    }
+
+
 _PLANNERS = {"extrude": plan_extrude, "revolve": plan_revolve, "sketch": plan_sketch,
              "fillet": plan_fillet, "chamfer": plan_fillet, "hole": plan_hole,
              "polar_pattern": plan_pattern, "linear_pattern": plan_pattern,
-             "mirror": plan_mirror, "shell": plan_shell}
+             "mirror": plan_mirror, "shell": plan_shell,
+             "move": plan_move, "rotate": plan_rotate}
 
 
 def plan(doc, req: dict) -> dict:
