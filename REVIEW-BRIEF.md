@@ -6,11 +6,12 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: NOTHING PENDING.** Press Pull (`af46160`) was reviewed and closed
-> in one round at `9584b39`. The next `code review` therefore goes to
+> **Status: NOTHING PENDING.** Section 7 (Extrude as a whole module, with loft
+> and sweep) was reviewed and fixed at `dfcb73f` — 6 findings, all 6 fixed, no
+> P0, so there is no second round. The next `code review` therefore goes to
 > `REVIEW-QUEUE.md` and takes the first TODO row of the status board:
-> **section 7, Extrude as a whole module (with loft and sweep)** - which is
-> the natural next read anyway, since Press Pull lives in `extrude.js`.
+> **section 8, Import STL and STEP** (which may share its chat with section 9,
+> Trace image, as the queue note says).
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -23,63 +24,56 @@
 
 ---
 
-## What the last review did (round one of `af46160`, closed at `9584b39`)
+## What the last review did (section 7, Extrude, fixed at `dfcb73f`)
 
-**1 finding, 1 fixed, 0 rejected, 0 deferred. P2. No live design affected.**
+**6 findings, 6 fixed, 0 rejected, 0 deferred. Two P1s in ops nobody had ever
+reviewed. No live design was affected; all 50 rebuild unchanged.**
 
-The router's **curved-face branch was the only command press in the app that
-returns without ending what was pending**, so the previous button's pick
-stayed armed behind the sentence and swallowed the next click.
+- **A loft blends ONE profile per sketch** and never said so. build123d chains
+  every section's faces into a single loft, so two sketches of two circles each
+  came back as ONE snaking solid of 1570.8 mm3 (the honest tubes are 3141.6),
+  reaching outside BOTH sketch planes, green and silent. Refused now, in the
+  same place section 4's kind gate lives.
+- **`sweep` fed a solid BODY sweeps it face by face.** A 24 000 mm3 plate
+  became a 178 000 mm3 six-lump blob — status ok, no problems, no warnings —
+  and the plate was consumed. The Add Feature dialog pre-ticks the newest
+  feature, so it was one click from the Create ribbon. The sketch-consuming
+  MODIFIERS (extrude, revolve, sweep) are gated now, on SOLIDS rather than on
+  `is_sketch` so a sketch of disjoint islands still builds.
+- **A picked face pushed INTO the body did nothing, quietly** (plate 24 000,
+  prism 9 600, join 24 000 — three green rows and no word): the drag-direction
+  Join/Cut rule was written for face SKETCHES only. It runs in face mode now,
+  and a join that adds nothing is named the way a cut that removes nothing has
+  been since section 4.
+- Three smaller ones: Through all threw the taper away while the box and the
+  ring still showed the angle; a typed negative "Distance 2" was dropped; and
+  Through all's into-the-body seeding was missing from Two sides, so the 2 m
+  side ran into the air.
 
-Repro, red before the fix: click a cylinder's side, press **Create Sketch**
-(it arms a plane pick and opens no panel, so there is no modal lock and the
-ribbon lets the next button through), then press **Press Pull**. The chat says
-"a curved face would offset it ... Click a FLAT face to pull it" - and the
-plane pick is still armed underneath, hint bar and glass origin planes and
-all, so the very click that sentence asks for drops the user into the SKETCH
-EDITOR. The same hole stranded an Extrude / Revolve / Hole profile pick and
-the row waiter `ca5725a` had closed for every other tool.
+## Where the risk is now
 
-Fixed where it cannot drift: `tool.js` `open()`'s own two-line preamble became
-`endPending()` (`cancelPlanePick` + `cancelTool`, idempotent), and
-`openPressPull()` calls it once - after reading the selection, before routing.
-The branches that route reach it through `open()`; the branch that only speaks
-reaches it directly; a fourth branch added later cannot reopen the hole.
-+1 browser journey (5 in `tests/e2e/test_press_pull.py`), verified red with
-the fix reverted. ui v191.
+The two new guards are REFUSALS, so the risk is a false one — a shape that
+used to build and now does not:
 
-**Cleared without a change** - all four risks the round-one brief named:
-the two selection reads cannot disagree (nothing in `open()`'s preamble clears
-a pick or the tree row, and `releaseIso` is async and only live under a lock
-the ribbon blocks); no import cycle (nothing below `extrude.js` imports it);
-`OP_ICONS` / `TOOL_NAMES` are read by key in exactly three places and
-enumerated nowhere, and `press_pull` is not a backend op; the e2e curved-face
-pick was stable over three runs.
+- `_check_modifier_input` tests `n_solids(part) > 0`, deliberately NOT
+  `is_sketch`: a sketch of disjoint islands composes into a Compound that is
+  not a Sketch instance. Covered by a test, and all 50 designs rebuild.
+- the loft gate counts `len(p.faces())` per section; a section with ONE face and
+  inner wires (a ring) is still fine, which is what build123d supports.
+- `_check_idle_booleans` now warns about `fuse` as well as `cut`. Zero of the
+  50 saved designs trip it, but a legitimate "sink a boss fully into the body"
+  join would now be named. It is a warning, never an error.
+- `sync()` zeroing the taper box under Through all writes a box the user typed
+  in. It only fires while Through all is ticked, where the server built straight
+  walls anyway.
 
-## For whoever picks up REVIEW-QUEUE section 7 (Extrude)
+## Do not re-report
 
-- `endPending()` is new in `tool.js` and shared by every tool. It is the whole
-  teardown a command press owes: a pending plane pick, a prior session's
-  gizmos, its profile pick and its row waiter. Any OTHER code path that starts
-  or refuses a command without going through `open()` owes the same call -
-  worth a grep while section 7 is open.
-- Do not re-report: the name "Press Pull" over the plan's "Push/Pull"; the
-  profile and edge routes beyond "flat face of a body"; an edge clicked AT
-  Extrude's command-then-select prompt not routing to Fillet; no Offset Face
-  for curved faces. All four are settled in `specs/press-pull.md`.
-- Also settled, and NOT a Press Pull finding: `currentSelection` ranks a
-  SKETCH tree row above a curved-face pick, so a row selected earlier hides a
-  curved face clicked later. That order is deliberate and documented
-  (`ca5725a` moved only the non-sketch `feature` row below the picks); Extrude
-  behaves identically from its own button.
-- Everything in LAUNCH-PLAN section 10 stands unchanged (world-coordinate face
-  picks on a stepped body, `solids()` offering intermediate rows, the one-lump
-  gauntlet corpus, Rotate's legacy pivot).
-
-## Ground rules (unchanged)
-
-- Reproduce by measurement or a red test before fixing; kernel probes go under
-  `probes/`. The gauntlet is the corpus.
-- Fix in the same chat, smallest change, covering tests, commit, push, restart
-  the user's server if the backend changed. Then the paperwork: this file ->
-  NOTHING PENDING (or the queue row -> done), the plan stamp, memory.
+- The symmetric branch (`both=True`) skipping `_taper_offset_problem`. It was
+  read, it is real, and NO profile could be constructed that reaches it
+  (`_apex_cap` caps every case tried). Recorded in the queue's done log as an
+  asymmetry, not a bug.
+- The taper direction chain: measured clean this pass (`_straighten_face` does
+  not flip the rebuilt normal anywhere in the gauntlet corpus).
+- Everything on LAUNCH-PLAN.md section 10's open list, and the pre-existing red
+  `tests/e2e/test_tree_delete.py` (five, measured at 667ccc0).

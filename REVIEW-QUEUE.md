@@ -101,7 +101,7 @@ Then two closing sections:
 | 4 | Booleans and transforms | high | **reviewed and fixed c9b2e92**, ONE reviewer: 9 findings, **all 9 fixed**, 26 new tests, 50/50 library designs rebuild with ZERO volume drift. The one that mattered most: **`loft` of a sketch AND a solid SEGFAULTS OpenCASCADE** (exit 139, no `except` can catch it) and the Add Feature dialog offers every feature as a checkbox — so combiners now get a KIND gate BEFORE the kernel, which also closes the silent twin (an `intersect` of a body and a sketch ate the body and left the design with no bodies, all rows green). Plus: no bodies + a spec reported "meets spec"; the Join/Cut default target followed FACE-REFERENCE ops (a New-body boss became the panel's current state, parity rule 6); the stranding heal ticked `through` on a tool ANOTHER cut shares (that cut lost 3600 mm3 unasked); a cut whose tool misses reported success silently; a pattern's copy form called "a part that fell apart" (24 rows in 13 designs). A P0-class finding was fixed, so **round two re-reviewed the FIX COMMIT: 33b2f49**, 2 findings, **both fixed**, 4 tests — two holes in the guard round one had just built (`getattr` does not swallow a raising property; build123d raises its OWN bare `ValueError` with kernel wording), plus the new refusal calling a body behind the rollback bar broken. The brief's four other named risks CLEARED by measurement, `_live_source` included (52 files, 15 struck features, zero mismatches). **Section 4 is done unless a third read finds something** |
 | 5 | Primitives and shape editing | high | **reviewed and fixed e35450d**, ONE reviewer: 8 findings, **all 8 fixed**, 0 rejected, 55 new tests, all 50 saved designs rebuild with no failed feature. The one that mattered: **`polygon_plate` and `hex_plate` span Z 0..thickness, and the AI's positioning rule listed them with disc and plate as CENTERED** — so every `move` it computed for a hex body was half a thickness out (designs/planetary-assembly: four bolt heads seated 1.4 mm high, 0.5 mm of shank overlap where 1.9 mm was intended). The PROMPT was corrected, not the solid: two saved designs are built on the geometry as it stands. Plus: a degenerate dimension put raw kernel text in the feature row (`Standard_DomainError('')` for a zero thickness — the same empty diagnosis for all three of a plate's dimensions; twelve lines of pybind11 constructor overloads for the string "8mm"); `with_center_hole`/`with_bolt_circle` reported success after drilling NOTHING (radius 0, or a PCD that puts the holes off the part — volume unchanged, row green), and a PCD of 0 silently drilled one hole instead of six; the tree painted a red "spec FAIL" whenever the rollback bar was parked, on **42 of the 50 designs** that carry a spec; the placement popup's one shared debounce timer discarded a dimension typed just before touching x/y/z. A P0-class finding was fixed, so **round two re-reviewed the FIX COMMIT: 2d2e8a9**, 2 findings, **both fixed**, 4 tests — the fix pass's own `cone` guard had taken away a legitimate shape (a funnel standing POINT-DOWN: `cone(0, 10, h)` builds at 2094.40 mm3, exactly the flipped cone's volume), and `spec_checked` defaulted True so a never-rebuilt document claimed a green "spec PASS". The brief's other four named risks CLEARED by measurement: `_drilled`'s 1e-6 floor has six orders of magnitude of headroom (a 0.05 mm hole in a 100-million-mm3 plate measures to 8 significant figures), `numeric_params` misses no numeric parameter (pattern's unannotated `count` already refuses plainly in `pattern.py`), `plain_cause`'s new collapse cannot swallow a ValueError because that branch returns first, and `sides=6.0` is a non-event (no file holds one). **Section 5 is done unless a third read finds something** |
 | 6 | Measure and drive | high | **reviewed and fixed 3ce97a3**, ONE reviewer: 8 findings, **all 8 fixed**, 0 rejected, 10 new tests. The P0 was silent wrong geometry through a door nobody had opened: over 400 faces the mesh switches to a cheaper path that handed the viewport one edge id PER ADJACENT FACE in face order, while `measure.resolve` indexes `part.edges()` — so on **12 of the 50 saved designs** every edge click measured a DIFFERENT edge and never said so (esp32-remote: 7176 ids for 3588 edges, 6517 wrong), and on isogrid-panel a straight 210 mm edge read ⌀4.50 mm AND opened an edit box driving another hole's circle. Plus: the verification re-read the face INDEX the pick was made on, so a rebuild that renumbered the faces REVERTED a correct edit (x-frame's ⌀8 pad hole really became 8.5 and the tool said it had not — 7 of 81 editable diameters, and the move path too); an imported STL answered "face -1 is not on this body any more — click it again" for ever; a tilted face's extents came from the WORLD bbox (a 45° chamfer read 6.00 where it is 8.49, and the pick panel said 8.49); every dimension typed to more than 3 decimals was written perfectly and then reverted (5/16" = 7.9375); a bore's "centre" was an arbitrary point along its axis. The revert safety net was ACCIDENTAL (it fired on renumbering) and is now explicit: a dimension that stops a feature building is put back. **A P0 was fixed, so round two re-read the FIX COMMIT: b8a956f**, 2 findings, **both fixed**, 2 tests — both in the fix pass's own new code and NEITHER live for the user (a fallback that shared a `try` with the thing it falls back from, so it could never run; and `picks` still describing the post-write body after a revert put the previous one back). The brief's first-named risk CLEARED by measurement: **322 driven edits across 9 designs — 92 diameters, 58 moves, 172 deliberately destructive — against an independent inline oracle, zero false passes and zero false fails**; plus no outlines lost by the mesh fix (identical distinct edge sets), `_shape_key` collision-free across located copies, and BSPLINE flat walls handled. **Section 6 is CLOSED** |
-| 7 | Extrude as a whole module (with loft and sweep) | medium | TODO |
+| 7 | Extrude as a whole module (with loft and sweep) | medium | **reviewed and fixed `dfcb73f`**, ONE reviewer: 6 findings, **all 6 fixed**, 0 rejected, 11 unit tests + 2 browser journeys, all 50 saved designs rebuild unchanged. The two that mattered were in the ops nobody had ever reviewed: a **loft blends ONE profile per sketch** — build123d chains every section's faces into a single loft, so two sketches of two circles each came back as ONE snaking solid of 1570.8 mm3 (the honest tubes are 3141.6) reaching outside BOTH sketch planes, status ok, no warning — and **`sweep` fed a solid BODY sweeps it face by face**: a 24 000 mm3 plate became a 178 000 mm3 six-lump blob, green and silent, with the plate consumed, one click from the Create ribbon (the Add Feature dialog pre-ticks the newest feature). Plus: a picked face pulled INTO the body kept the default Join and fused a prism already inside it (plate 24 000, prism 9 600, join 24 000 — three green rows, nothing said; the drag-direction rule was written `!isFace(st)`); Through all threw the taper away while the box and the ring still showed the angle (a -10° through cut built 20 x 30 x 2000 mm, dead straight); a typed negative "Distance 2" was dropped; and Through all's into-the-body seeding was missing from Two sides, so the 2 m side ran into the air. No P0, so no second round |
 | 8 | Import STL and STEP | medium | TODO |
 | 9 | Trace image | medium | TODO - may share a chat with 8 |
 | 10 | Viewport, picking and face provenance | high | TODO |
@@ -1425,3 +1425,98 @@ re-derive it):
 **Line delta:** +64 / -22. **SECTION 6 IS CLOSED**; the brief goes back to
 `NOTHING PENDING` and the next `code review` takes section 7 (Extrude as a
 whole module, with loft and sweep).
+
+### Section 7 - Extrude as a whole module, with loft and sweep (reviewed and fixed 2026-09-11, commit `dfcb73f`)
+
+ONE reviewer on Opus, `medium` effort as the queue says. **6 findings, all 6
+fixed, 0 rejected, 0 deferred**; 11 new unit tests (`tests/test_extrude_review.py`)
+and 2 new browser journeys (`tests/e2e/test_extrude_face_pocket.py`). The fast
+tier is 1533 green, Ruff and ESLint zero, and all 50 saved designs rebuild with
+no failed feature and no new warning. No P0, so there is no second round.
+
+**F1 (P1) - a loft blends ONE profile per sketch, and did not say so.**
+build123d flattens every section's faces into a single chain
+(`for face in s.faces(): loft_sections.append(face.outer_wire())`), so two
+sketches holding two circles each blended A1 -> A2 -> B1 -> B2: ONE snaking
+solid of **1570.8 mm3** where the two honest tubes are 3141.6, spanning
+z -3.92..23.92 — outside BOTH sketch planes — with status ok and not one
+warning. Which profile pairs with which was kernel face order. `loft` now
+refuses a multi-profile section in `_check_combiner_inputs`, where the kind
+gate from section 4 already lives. The user's six live lofts (autonomiq-panel,
+autonomiq-sat-panel) are all single-profile and untouched.
+
+**F2 (P1) - a profile op fed a solid BODY.** `sweep` was the silent one:
+build123d takes `sections.faces()`, so a BODY is swept FACE BY FACE. A
+24 000 mm3 plate came back as a **178 000 mm3 six-lump blob** — status ok,
+`problems []`, `warnings []` — and the plate itself was consumed, because a
+modifier's input is. The "falls into pieces" check exempts extrude/revolve/
+loft/sweep by name (a sketch of 8 pilot circles is 8 prisms by design), so
+nothing spoke at all. `extrude` and `revolve` do fail there, but on health, in
+wording that names nothing to change. All three are one click from the Create
+ribbon: the Add Feature dialog pre-ticks the NEWEST feature. `_eval` now gates
+the sketch-consuming MODIFIERS the way section 4 gated the combiners. The test
+is SOLIDS, never `is_sketch`: a sketch of disjoint islands composes into a
+Compound that is not a Sketch instance, and a test on the type would have taken
+those designs away (covered by its own test).
+
+**F3 (P1) - pushing a picked face INTO the body did nothing, quietly.** Face
+mode defaults to Join, and the Join/Cut rule that reads the drag direction was
+written `!isFace(st)` — for face SKETCHES only — so an inward pull fused a
+prism that was already inside the body: **plate 24 000, prism 9 600, join
+24 000 mm3**, three green rows, an unchanged body, nothing said. Fusion's
+parity rule 6 is "dragging INTO the body + Cut = pocket" and the plan already
+ships `into_sign` for a face pick, so the rule now runs in face mode too
+(browser journey: red as `- cut / + join` before the fix). The silence had a
+second door — an explicit Join, the AI, the MCP path — so `_check_idle_cuts`
+became `_check_idle_booleans` and names a join that added nothing, exactly as
+it has named a cut that removed nothing since section 4. Zero of the 50 saved
+designs trip it.
+
+**F4 (P2) - Through all threw the taper away while the panel still showed it.**
+A 2 m tapered prism collapses, so `extrude_sketch` zeroes the taper — but a
+-10° through cut built **20 x 30 x 2000 mm, dead straight**, while the taper box
+and the dashed ring went on reading -10°. The handle and the solid may not
+disagree: the op now leaves a note (so the AI, MCP and API hear it, R7) and
+`sync()` disables and zeroes the box and parks the ring while Through all is
+ticked. The same `sync()` pass hides the Through row in FACE mode, where
+`extrude_face` has no `through` param at all and ticking it was obeyed by
+nobody.
+
+**F5 (P3) - a typed negative "Distance 2" was dropped without a word.**
+`amount 8 + amount2 -5` built 4800 mm3, the first side alone (`if amt2 > 0`).
+`amount2` IS "the other way", so its sign carries nothing: it is taken as a
+magnitude now, and the two-sided solid spans -5..8 whichever sign is typed.
+
+**F6 (P3) - Through all's into-the-body seeding was missing from Two sides.**
+Parity rule 4's corollary ("THROUGH ALL with an untouched 0 seeds direction
+INTO the body") lived inside the `dir === 'one'` branch of `params()`, so in
+Two sides the 2 m side ran +Z into the AIR on a top face and only the blind
+second side cut anything. The seeding belongs to the through cut, not to one
+Direction entry.
+
+**Cleared by measurement (so the next read need not re-derive it):**
+
+- The taper direction chain is sound. `_straighten_face` does NOT flip the
+  rebuilt face's normal anywhere in the gauntlet corpus (dot = +1.000 on all
+  four faces it rebuilds), so `_apex_cap` and `_taper_loft` read the same frame
+  as the captured `outward`; on the fused tapered body of `test_taper_gauntlet`
+  a -5 / 0 / +5 deg taper measures 11 405 / 13 290 / 15 359 mm3 — the lean
+  follows the sign.
+- `collapse_offset` is exact on thin, L-shaped, holed and multi-island
+  profiles (an L with 20 mm arms returns exactly 10.0).
+- Symmetric extrude fuses its two halves and both of them narrow
+  (4644 = 2 x 2322); `_shapefix` accepts a repair only at equal volume and only
+  if it then passes health.
+- Degenerate amounts speak plainly: 0 mm, with or without a taper, is refused
+  as "the geometry kernel rejected the shape it would produce", never kernel
+  text.
+- **Known and not a finding:** the symmetric branch (`both=True`) skips
+  `_taper_offset_problem`, the pre-check that exists because a degenerate 2D
+  offset can access-violate OCCT rather than raise. No profile could be
+  constructed that reaches it — `_apex_cap` caps every case tried — so it is
+  an asymmetry, not a bug. Worth knowing if a taper ever takes the server down.
+
+**Line delta:** +116 / -29 across `document.py`, `sketch.py`, `extrude.js` and
+the cache-buster — the two guards, the join check and their comments — plus 264
+lines of new tests (`test_extrude_review.py`, `test_extrude_face_pocket.py`). **SECTION 7 IS CLOSED**; the brief goes back to `NOTHING PENDING`
+and the next `code review` takes section 8 (Import STL and STEP).
