@@ -57,14 +57,14 @@ def main():
     raw_sum = raw_polygon(CCW["points"]) + raw_polygon(CW["points"])
     print("   faces after add:", len(raw_sum.faces()),
           "areas:", sorted(round(f.area, 1) for f in raw_sum.faces()))
-    fixed = sk._compose([CCW, CW])
+    fixed = sk.compose([CCW, CW])
     print("   with the fix   :", len(fixed.faces()),
           "areas:", [round(f.area, 1) for f in fixed.faces()], "(expect one, 700)")
 
     print("3. a path is already oriented by make_face() -- no fix needed")
     print("   CW path normal:", normal_of(sk._entity(CW_PATH)))
     print("   CCW polygon + CW path faces:",
-          len(sk._compose([CCW, CW_PATH]).faces()), "(expect 1)")
+          len(sk.compose([CCW, CW_PATH]).faces()), "(expect 1)")
 
     print("4. a ring enclosing nothing has signed area 0 -- a sign test misses it")
     pts = [tuple(p) for p in BOWTIE["points"]]

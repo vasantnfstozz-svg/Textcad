@@ -330,38 +330,40 @@ def _compose_order(shapes: list, modes: list | None = None) -> list[int]:
     overlaps it without containing it. Only a cut that still leads after both
     is one that genuinely meets nothing.
 
-    The overlap pass costs nothing for the ordinary sketch: it runs only while
-    the order actually STARTS with a cut, which needs a cut that contains an
-    add (one sketch in the user's whole library).
+    Why the overlap pass runs for EVERY cut and not just a leading one (FIFTH
+    review of this rule, 2026-09-11, measured while fixing the Trim item):
+    the pass used to run only while the order actually STARTED with a cut, so
+    one unrelated shape drawn first switched it off and the same P0 came
+    straight back through the next door. `[boss, bar, pocket]` composed the
+    correct 22.3648 mm2; adding a far-away circle at the FRONT — a shape that
+    touches none of them — gave 157.0796 instead of 100.9046, the boss built
+    SOLID with the bar's 56.17 mm2 of red paint lost, green and silent. A cut
+    hoisted ahead of the material it bites is lost whether it leads or not:
+    leading it is dropped, second it subtracts from something it does not
+    touch. Same damage, so the same rule has to cover both, and the result
+    stops depending on where in the list a shape was drawn.
+
+    The pass still costs the ordinary sketch nothing: it is reached only when
+    something subtracts, it pairs a cut with MATERIAL only, and a hole sitting
+    in its plate is a nested pair it skips without measuring. Measured on the
+    user's library at ship time — see `tests/test_trim_composition.py`.
     """
     n = len(shapes)
     inside = _containment(shapes)
     needs = [row[:] for row in inside]          # needs[i][j]: j before i
-    order = _order_from(needs)
     if modes is None:
-        return order
-    for _ in range(n):                          # each pass frees one lead cut
-        lead = []
-        for i in order:
-            if modes[i] != "subtract":
-                break
-            lead.append(i)
-        if not lead:
-            break
-        grew = False
-        for i in lead:
-            for j in range(n):
-                if (i == j or modes[j] == "subtract"
-                        or needs[i][j] or needs[j][i]      # already ordered
-                        or inside[i][j] or inside[j][i]):  # nested: an island
-                    continue
-                if _overlaps(shapes[j], shapes[i]):
-                    needs[i][j] = True          # the material goes first
-                    grew = True
-        if not grew:
-            break
-        order = _order_from(needs)
-    return order
+        return _order_from(needs)
+    for i in range(n):
+        if modes[i] != "subtract":
+            continue
+        for j in range(n):
+            if (i == j or modes[j] == "subtract"
+                    or needs[i][j] or needs[j][i]      # already ordered
+                    or inside[i][j] or inside[j][i]):  # nested: an island
+                continue
+            if _overlaps(shapes[j], shapes[i]):
+                needs[i][j] = True              # the material goes first
+    return _order_from(needs)
 
 
 def _order_from(needs: list[list[bool]]) -> list[int]:
@@ -385,9 +387,41 @@ def _order_from(needs: list[list[bool]]) -> list[int]:
     return order
 
 
-def _compose(entities: list):
+def _order_of(shapes: list, modes: list) -> list[int]:
+    """The composition order for these shapes — the all-add shortcut in one
+    place, so `compose` and `compose_order` cannot drift apart."""
+    if not any(m == "subtract" for m in modes):
+        return list(range(len(shapes)))     # nothing to order: no measurement
+    return _compose_order(shapes, modes)
+
+
+def compose_order(entities: list) -> list[int]:
+    """The positions of `entities` in the order the BUILDER composes them.
+
+    Public for the same reason as `compose`: a caller that has to replay the
+    sketch's arithmetic — `sketch_trim` classifying which side of a segment
+    holds material — must replay it in THIS order, not the drawing order. On
+    `[boss, bar, pocket]` the drawing order said "no material" at a point the
+    builder fills, so a Trim click offered to dissolve a seam that was really
+    the profile's own edge (measured 2026-09-11).
+    """
+    shapes = [_entity(e) for e in entities]
+    return _order_of(shapes, [e.get("mode", "add") for e in entities])
+
+
+def compose(entities: list, note: bool = True):
     """Combine entities (add/subtract) into a 2D sketch in local coords,
     OUTERS BEFORE THE HOLES INSIDE THEM.
+
+    PUBLIC, and the only copy of this rule in the codebase. `sketch_trim`
+    kept a second one and the two disagreed: on `[boss, bar, pocket]` the
+    builder composed 22.3648 mm2 and Trim composed 0.0, so every Trim click
+    on that cluster answered "the result would have no area left" (measured
+    2026-09-11, LAUNCH-PLAN section 10 P1). Anything that needs to know what
+    a sketch's entity list MEANS calls this, or `compose_order` for just the
+    order. `note=False` composes silently — for a caller answering a question
+    about the sketch rather than building the user's feature, whose notes
+    would otherwise be drained into the next feature's warnings.
 
     Why the reorder (code review 2026-09-09, measured): this loop is
     sequential, but an entity list arrives in the order the user DREW in.
@@ -408,9 +442,7 @@ def _compose(entities: list):
         raise ValueError("sketch has no entities")
     shapes = [_entity(e) for e in entities]
     modes = [e.get("mode", "add") for e in entities]
-    order = list(range(len(shapes)))
-    if any(m == "subtract" for m in modes):
-        order = _compose_order(shapes, modes)
+    order = _order_of(shapes, modes)
     # A subtraction that comes FIRST removes NOTHING (third code review,
     # 2026-09-09). It can legitimately come first: a subtraction that CONTAINS
     # an add owes that add an order, so it leads — which is exactly why
@@ -434,12 +466,13 @@ def _compose(entities: list):
                 # statement about the user's own sketch when material HAD
                 # been drawn there and an earlier cut removed it (fourth code
                 # review, 2026-09-09).
-                _note(f"entity {i + 1} removes nothing — everything drawn "
-                      f"beneath it had already been cut away"
-                      if added else
-                      f"entity {i + 1} is a cut with nothing under it — "
-                      f"nothing in this sketch is drawn beneath it, so it "
-                      f"removes nothing")
+                if note:
+                    _note(f"entity {i + 1} removes nothing — everything drawn "
+                          f"beneath it had already been cut away"
+                          if added else
+                          f"entity {i + 1} is a cut with nothing under it — "
+                          f"nothing in this sketch is drawn beneath it, so it "
+                          f"removes nothing")
                 continue
             result = shapes[i]
             added = True
@@ -677,7 +710,7 @@ def make_sketch(plane: str = "XY", offset: float = 0.0,
     entities: list of {"kind":..., ...params, "mode":"add"|"subtract"}.
     The first entity must be additive."""
     pl = sketch_plane(plane, offset)
-    return _on_plane(_as_sketch(pl * _compose(entities or [])), pl)
+    return _on_plane(_as_sketch(pl * compose(entities or [])), pl)
 
 
 def _on_plane(sketch, pl: Plane):
@@ -1020,7 +1053,7 @@ def sketch_on_face(solid, face_center: list | None = None,
     off = float(offset or 0.0)
     if off:
         pl = pl.offset(off)
-    return _on_plane(_as_sketch(pl * _compose(entities or [])), pl)
+    return _on_plane(_as_sketch(pl * compose(entities or [])), pl)
 
 
 # ---------------------------------------------------------------------------

@@ -74,7 +74,14 @@ def _inside(outline: dict, x: float, y: float) -> bool:
 
 
 def _material_at(entities: list, outlines: list, idxs: list, x, y) -> bool:
-    """Replay the sketch's sequential add/subtract composition at one point."""
+    """Replay the sketch's add/subtract composition at one point.
+
+    `idxs` must already be in the BUILDER's composition order (`_cluster`
+    returns it that way) — the last entity that covers the point decides, so
+    the order IS the answer. Replaying the drawing order instead was half of
+    the P1 this module was carrying: on `[boss, bar, pocket]` it reported no
+    material at (0, ±4), where the builder leaves 22.3648 mm2 of boss.
+    """
     m = False
     for i in idxs:
         if _inside(outlines[i], x, y):
@@ -204,6 +211,15 @@ def trim_pieces(entities: list) -> list:
 # ---------------------------------------------------------------------------
 
 def _cluster(entities, outlines, crossing, seed: int) -> list:
+    """The connected group of entities the seed is tangled with, IN THE
+    BUILDER'S COMPOSITION ORDER.
+
+    The order is asked of `sketch.py` (R1: never re-derive a backend fact).
+    Asking the cluster alone is the same answer as asking the whole sketch and
+    striking out the rest: the cluster is closed under "overlaps or contains",
+    so no ordering edge can cross its border, and `_order_from` breaks ties by
+    the drawing order either way.
+    """
     def overlaps(i, j):
         if (i, j) in crossing or (j, i) in crossing:
             return True
@@ -217,23 +233,29 @@ def _cluster(entities, outlines, crossing, seed: int) -> list:
             if j not in seen and overlaps(i, j):
                 seen.add(j)
                 todo.append(j)
-    return sorted(seen)
+    members = sorted(seen)
+    try:
+        order = sk.compose_order([entities[i] for i in members])
+    except Exception as ex:                       # noqa: BLE001
+        raise ValueError(f"trim: these shapes cannot be ordered: {ex}") from ex
+    return [members[k] for k in order]
 
 
 def _compose_faces(entities, idxs):
-    """Sequential add/subtract composition of just these entities. Leading
-    subtracts cut nothing and are skipped (pointwise-equivalent)."""
-    result = None
-    for i in idxs:
-        f = _entity_face(entities[i], i)
-        if entities[i].get("mode", "add") == "subtract":
-            if result is not None:
-                result = result - f
-        else:
-            result = f if result is None else result + f
-    if result is None:
-        raise ValueError("trim: nothing but cut shapes here — nothing to trim")
-    return result
+    """The composed profile of just these entities — the BUILDER's answer.
+
+    This used to be twenty lines of its own composition rule, in drawing
+    order, and it disagreed with `sketch.py` (LAUNCH-PLAN section 10 P1,
+    measured 2026-09-11): on `[boss, bar, pocket]` the builder composes
+    22.3648 mm2 and this composed 0.0, so EVERY Trim click on that cluster
+    died with "the result would have no area left". There is one rule now and
+    it lives in `sketch.py`; `note=False` keeps a hover's arithmetic out of
+    the next rebuild's warnings.
+    """
+    try:
+        return sk.compose([entities[i] for i in idxs], note=False)
+    except Exception as ex:                       # noqa: BLE001
+        raise ValueError(f"trim: these shapes do not compose: {ex}") from ex
 
 
 def _union_faces(entities, idxs):
@@ -356,6 +378,31 @@ def _shape_to_entities(shape) -> list:
 # the trim itself
 # ---------------------------------------------------------------------------
 
+def _refuse_if_the_trim_broke_it(before: list, after: list) -> None:
+    """Let the trim through unless it is what stopped the sketch building.
+
+    The two guards this replaces asked a question of their own — "does the
+    list now START with a cut?" — which the builder has not cared about since
+    it learned to order by geometry. They refused work it accepts: deleting
+    one bar from `[pocket cut, bar, bar, bar]` builds 144.0 mm2, and Trim
+    answered "delete the cut shapes first" (measured 2026-09-11, LAUNCH-PLAN
+    section 10 P1). The honest question is whether the builder can still
+    compose the result, and a sketch that was already broken before the click
+    must not be blamed on the click — that would trap the user in it.
+    """
+    try:
+        sk.compose(after, note=False)
+        return
+    except Exception as ex:                       # noqa: BLE001
+        complaint = str(ex)
+    try:
+        sk.compose(before, note=False)
+    except Exception:                             # noqa: BLE001
+        return                                    # broken before the click too
+    raise ValueError(f"trim: that would leave a sketch the builder cannot "
+                     f"make — {complaint}")
+
+
 def trim_apply(entities: list, piece_id: str) -> dict:
     """Delete one piece. Returns {"entities": [...], "message": str}."""
     entities = [dict(e) for e in entities]
@@ -369,9 +416,8 @@ def trim_apply(entities: list, piece_id: str) -> dict:
     if piece["whole"]:                            # crossing-free entity: delete
         kind = entities[i].get("kind", "shape")
         new = entities[:i] + entities[i + 1:]
-        if new and new[0].get("mode") == "subtract":
-            raise ValueError("trim: removing this shape would leave the sketch "
-                             "starting with a cut — delete the cut shapes first")
+        if new:
+            _refuse_if_the_trim_broke_it(entities, new)
         return {"entities": new,
                 "message": f"Trim: removed the {kind} (it crossed nothing)."}
 
@@ -416,14 +462,16 @@ def trim_apply(entities: list, piece_id: str) -> dict:
 
     rebuilt = _shape_to_entities(result)
     cl_set = set(cl)
-    keep_before = [e for k, e in enumerate(entities) if k < cl[0]
+    # `cl` is in COMPOSITION order now, not index order, so the split point is
+    # its SMALLEST member: the rebuilt block lands where the user drew the
+    # first shape of the cluster, exactly as it did before.
+    first = min(cl)
+    keep_before = [e for k, e in enumerate(entities) if k < first
                    and k not in cl_set]
-    keep_after = [e for k, e in enumerate(entities) if k > cl[0]
+    keep_after = [e for k, e in enumerate(entities) if k > first
                   and k not in cl_set]
     new = keep_before + rebuilt + keep_after
-    if new[0].get("mode") == "subtract":
-        raise ValueError("trim: the result would start with a cut shape — "
-                         "reorder the sketch first")
+    _refuse_if_the_trim_broke_it(entities, new)
     return {"entities": new,
             "message": f"Trim: {note}; {len(cl)} shape(s) rebuilt as "
                        f"{len(rebuilt)} profile(s)."}

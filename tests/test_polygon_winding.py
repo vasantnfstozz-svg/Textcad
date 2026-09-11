@@ -27,12 +27,12 @@ def test_a_clockwise_polygon_faces_up():
 
 
 def test_a_clockwise_polygon_fuses_with_a_counter_clockwise_one():
-    faces = sk._compose([CCW, CW]).faces()
+    faces = sk.compose([CCW, CW]).faces()
     assert len(faces) == 1 and faces[0].area == pytest.approx(700)
 
 
 def test_a_clockwise_polygon_subtracts_too():
-    faces = sk._compose([CCW, dict(CW, mode="subtract")]).faces()
+    faces = sk.compose([CCW, dict(CW, mode="subtract")]).faces()
     assert len(faces) == 1 and faces[0].area == pytest.approx(300)
 
 
