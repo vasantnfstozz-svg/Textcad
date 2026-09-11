@@ -35,9 +35,9 @@
 > last tool, Press Pull, BUILT 2026-09-11** (the plan's "Push/Pull naming":
 > Fusion's router button in the Modify tab — a flat face or a sketch profile
 > opens Extrude, an edge opens Fillet, a curved face gets a sentence; no new
-> op, no backend change, ui v190; code review pending, REVIEW-BRIEF.md).
-> **P4 is complete once that review closes.** Next: P5, the AI uses the tools,
-> in a fresh chat. Every other plan file points here; §7 carries the
+> op, no backend change; review CLOSED in one round, 9584b39, ui v191).
+> **P4 IS COMPLETE — all seven Tier-1 tools built and reviewed.** Next: P5,
+> the AI uses the tools, in a fresh chat. Every other plan file points here; §7 carries the
 > done-notes, §10 the ranked open items. **Added 2026-09-10 (user's decision):** P5b, the machine plays the
 > user — a zero-token random-journey runner, a bug button, the library tier
 > fixed — sits between P5 and P6 (§6 tier 4, §7 P5b).
@@ -966,9 +966,23 @@ Extrude's or Fillet's, as Fusion's timeline shows an Extrude and never a
 first in Modify → Features where Fusion keeps it. 4 browser journeys with real
 clicks (a typed 5 mm pull grows the plate by exactly 60 × 40 × 5 mm³ as a
 Join, one body left; a sketch row; an edge; a curved face). Line delta:
-+41 / −5 in `static/js`, the smallest of P4's seven. Decided without the user:
++40 / −4 in `static/js`, the smallest of P4's seven. Decided without the user:
 Fusion's name "Press Pull" over the plan's "Push/Pull"; the profile and edge
 routes beyond the row's "flat face of a body".
+
+*Press Pull review CLOSED 2026-09-11 in ONE round* (`9584b39`, ui v191): 1
+finding, 1 fixed, none live. The curved-face branch was **the only command
+press in the app that returns without ending what was pending** — press Create
+Sketch (a plane pick, no panel, so no modal lock and the ribbon lets the next
+button through), then Press Pull on a cylinder's side: the sentence says "click
+a FLAT face to pull it" while the plane pick is still armed underneath, so that
+very click lands in the SKETCH EDITOR. It stranded an Extrude / Revolve / Hole
+profile pick the same way, and the row waiter `ca5725a` had closed for every
+other tool. The generalizable rule, now enforced in one place: **a command
+press ends what was pending even when it opens no panel** — `open()`'s own
+preamble became `tool.js endPending()` and the router calls it after reading
+the selection, before routing, so no later branch can reopen the hole. With
+that, P4's seven tools are all built AND reviewed.
 
 **P5 — The AI uses the tools (§5 step B).** Incremental authoring through
 the plan endpoint; chat edits point at parameters; the FEATURE-TREE-PLAN

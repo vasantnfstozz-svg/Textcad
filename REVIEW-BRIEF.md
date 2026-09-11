@@ -6,11 +6,11 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING** — review commit `af46160` (Press Pull, P4's last tool)
-> on base `274041e`. Round one. When it closes, the brief goes back to
-> NOTHING PENDING and the next `code review` takes `REVIEW-QUEUE.md`
-> section 7, Extrude — which is the natural next read anyway, since this
-> commit lives in `extrude.js`.
+> **Status: NOTHING PENDING.** Press Pull (`af46160`) was reviewed and closed
+> in one round at `9584b39`. The next `code review` therefore goes to
+> `REVIEW-QUEUE.md` and takes the first TODO row of the status board:
+> **section 7, Extrude as a whole module (with loft and sweep)** - which is
+> the natural next read anyway, since Press Pull lives in `extrude.js`.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -23,66 +23,63 @@
 
 ---
 
-## The range: `274041e..af46160` (one commit, 2026-09-11)
+## What the last review did (round one of `af46160`, closed at `9584b39`)
 
-`af46160` — Press Pull, the plan's "Push/Pull naming" row and the seventh
-and last tool of LAUNCH-PLAN P4. Spec `specs/press-pull.md`. **No new op, no
-backend change, no kernel call** — the diff is +41 / −5 lines in `static/js`,
-plus the spec and `tests/e2e/test_press_pull.py` (4 browser journeys, all
-green; fast tier 1522 untouched; ESLint and Ruff at zero; ui v190).
+**1 finding, 1 fixed, 0 rejected, 0 deferred. P2. No live design affected.**
 
-What it does: Fusion's Press Pull is a ROUTER, not a tool with a dialog, and
-so is ours. `extrude.js openPressPull()` reads the selection's kind once
-(`tool.js selectionKind`, a new one-line export over `currentSelection`) and
-starts the command that fits — a flat face or a sketch profile is Extrude
-(`ex.open()`, face mode pulls the face), an edge is Fillet (`openFillet()`),
-a curved face gets one chat sentence (Fusion's Offset Face does not exist
-here) and no panel. Nothing selected falls through to Extrude's own
-command-then-select prompt. `press_pull` is a ribbon key in `icons.js`
-(marked "not an op") and first in Modify → Features (`ribbon.js`).
+The router's **curved-face branch was the only command press in the app that
+returns without ending what was pending**, so the previous button's pick
+stayed armed behind the sentence and swallowed the next click.
 
-## Where the risk is
+Repro, red before the fix: click a cylinder's side, press **Create Sketch**
+(it arms a plane pick and opens no panel, so there is no modal lock and the
+ribbon lets the next button through), then press **Press Pull**. The chat says
+"a curved face would offset it ... Click a FLAT face to pull it" - and the
+plane pick is still armed underneath, hint bar and glass origin planes and
+all, so the very click that sentence asks for drops the user into the SKETCH
+EDITOR. The same hole stranded an Extrude / Revolve / Hole profile pick and
+the row waiter `ca5725a` had closed for every other tool.
 
-- **The route reads the selection once and `open()` reads it again.** Both
-  go through `currentSelection(null)` with no explicit argument, so they
-  should agree; check there is no path where the kind changes between the
-  two reads (a `doc-updated` in flight, a pick cancelled by `cancelTool()`
-  inside `open()` before `currentSelection` runs — note `open()` calls
-  `cancelPlanePick()` and `cancelTool()` FIRST, and `cancelTool` may clear
-  picks).
-- **Circular import.** `extrude.js` now imports `fillet.js`; `fillet.js`
-  imports `tool.js` and `viewport.js` only. Confirm nothing imports
-  `extrude.js` from below it.
-- **A ribbon key that is not an op.** `icons.js` OP_ICONS / TOOL_NAMES now
-  hold `press_pull`. Check nothing enumerates those tables as the op list
-  (grep found no `Object.keys(OP_ICONS|TOOL_NAMES)` in `static/js`; the
-  tree, the author and the MCP were not touched).
-- **One-command-at-a-time.** The ribbon wraps every button in `modalGuard`,
-  so Press Pull refuses while a panel is open; the router itself calls no
-  guard because it never opens a panel of its own — but it does `say()` a
-  sentence in the edge and curved branches before / instead of a tool
-  opening. Check the curved branch leaves no state behind (no lock, no
-  pending pick).
-- **The e2e curved-face pick** clicks the cylinder side at world (0, −20, 0)
-  from the `front` view; if it is flaky on another machine, the test is at
-  fault, not the tool.
+Fixed where it cannot drift: `tool.js` `open()`'s own two-line preamble became
+`endPending()` (`cancelPlanePick` + `cancelTool`, idempotent), and
+`openPressPull()` calls it once - after reading the selection, before routing.
+The branches that route reach it through `open()`; the branch that only speaks
+reaches it directly; a fourth branch added later cannot reopen the hole.
++1 browser journey (5 in `tests/e2e/test_press_pull.py`), verified red with
+the fix reverted. ui v191.
 
-## Do not re-report (known, in LAUNCH-PLAN §10 or decided)
+**Cleared without a change** - all four risks the round-one brief named:
+the two selection reads cannot disagree (nothing in `open()`'s preamble clears
+a pick or the tree row, and `releaseIso` is async and only live under a lock
+the ribbon blocks); no import cycle (nothing below `extrude.js` imports it);
+`OP_ICONS` / `TOOL_NAMES` are read by key in exactly three places and
+enumerated nowhere, and `press_pull` is not a backend op; the e2e curved-face
+pick was stable over three runs.
 
-- The name "Press Pull" over the plan's "Push/Pull" and the profile / edge
-  routes beyond "flat face of a body" — decided in the spec, flagged to the
-  user.
-- An edge clicked AT Extrude's command-then-select prompt is not routed to
-  Fillet (the prompt is Extrude's) — spec, "Nothing selected".
-- No Offset Face for curved faces — said in the chat sentence; a later tool.
-- Everything in §10 from the Move/Rotate reviews (world-coordinate face picks
-  on a STEPPED body; `solids()` offering intermediate rows; the one-lump
-  gauntlet corpus; Rotate's legacy pivot).
+## For whoever picks up REVIEW-QUEUE section 7 (Extrude)
+
+- `endPending()` is new in `tool.js` and shared by every tool. It is the whole
+  teardown a command press owes: a pending plane pick, a prior session's
+  gizmos, its profile pick and its row waiter. Any OTHER code path that starts
+  or refuses a command without going through `open()` owes the same call -
+  worth a grep while section 7 is open.
+- Do not re-report: the name "Press Pull" over the plan's "Push/Pull"; the
+  profile and edge routes beyond "flat face of a body"; an edge clicked AT
+  Extrude's command-then-select prompt not routing to Fillet; no Offset Face
+  for curved faces. All four are settled in `specs/press-pull.md`.
+- Also settled, and NOT a Press Pull finding: `currentSelection` ranks a
+  SKETCH tree row above a curved-face pick, so a row selected earlier hides a
+  curved face clicked later. That order is deliberate and documented
+  (`ca5725a` moved only the non-sketch `feature` row below the picks); Extrude
+  behaves identically from its own button.
+- Everything in LAUNCH-PLAN section 10 stands unchanged (world-coordinate face
+  picks on a stepped body, `solids()` offering intermediate rows, the one-lump
+  gauntlet corpus, Rotate's legacy pivot).
 
 ## Ground rules (unchanged)
 
 - Reproduce by measurement or a red test before fixing; kernel probes go under
   `probes/`. The gauntlet is the corpus.
 - Fix in the same chat, smallest change, covering tests, commit, push, restart
-  the user's server if the backend changed. Then the paperwork: this file →
-  NOTHING PENDING, the plan's P4 stamp, memory.
+  the user's server if the backend changed. Then the paperwork: this file ->
+  NOTHING PENDING (or the queue row -> done), the plan stamp, memory.
