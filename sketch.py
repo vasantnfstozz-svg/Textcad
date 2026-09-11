@@ -301,7 +301,8 @@ def _nesting_depth(shapes: list) -> list[int]:
     return [sum(row) for row in _containment(shapes)]
 
 
-def _compose_order(shapes: list, modes: list | None = None) -> list[int]:
+def _compose_order(shapes: list, modes: list | None = None,
+                   problems: list | None = None) -> list[int]:
     """The order to compose in: an OUTER before anything nested inside it,
     MATERIAL before a cut that overlaps it, and the user's DRAWING order
     everywhere else.
@@ -352,7 +353,7 @@ def _compose_order(shapes: list, modes: list | None = None) -> list[int]:
     inside = _containment(shapes)
     needs = [row[:] for row in inside]          # needs[i][j]: j before i
     if modes is None:
-        return _order_from(needs)
+        return _order_from(needs, problems)
     for i in range(n):
         if modes[i] != "subtract":
             continue
@@ -363,13 +364,26 @@ def _compose_order(shapes: list, modes: list | None = None) -> list[int]:
                 continue
             if _overlaps(shapes[j], shapes[i]):
                 needs[i][j] = True              # the material goes first
-    return _order_from(needs)
+    return _order_from(needs, problems)
 
 
-def _order_from(needs: list[list[bool]]) -> list[int]:
+def _order_from(needs: list[list[bool]],
+                problems: list | None = None) -> list[int]:
     """A stable topological order over `needs[i][j] == "j must come before i"`:
     of the entities whose predecessors are all placed, always the one the user
-    drew first."""
+    drew first.
+
+    Some sketches ask for an order that does not exist. Two cuts that overlap
+    each other, each containing an add that pokes into the other, demand
+    `cut1 -> add1 -> cut2 -> add2 -> cut1`; no sequence of adds and subtracts
+    can honour it, because add1 has to survive cut1 and be bitten by cut2
+    while add2 needs the mirror image. The loop below still produces an
+    order — it falls back to the one the user drew — but the answer is then a
+    rule the builder KNOWS it broke, and it used to say nothing: the case
+    above builds 210.0 mm2 where the paint says 180.0, green and silent
+    (measured 2026-09-11, the review of 3b230b7). `problems` collects the
+    entities caught in such a knot so `compose` can tell the user.
+    """
     n = len(needs)
     waiting = [sum(row) for row in needs]
     order: list[int] = []
@@ -379,7 +393,9 @@ def _order_from(needs: list[list[bool]]) -> list[int]:
                    None)
         if nxt is None:                         # a cycle we cannot order:
             nxt = next(i for i in range(n) if not done[i])   # fall back to
-        done[nxt] = True                        # the drawing order
+            if problems is not None:            # the drawing order, and SAY SO
+                problems.append(nxt)
+        done[nxt] = True
         order.append(nxt)
         for i in range(n):
             if needs[i][nxt] and not done[i]:
@@ -387,12 +403,30 @@ def _order_from(needs: list[list[bool]]) -> list[int]:
     return order
 
 
-def _order_of(shapes: list, modes: list) -> list[int]:
+def _knot_note(knotted: list) -> str:
+    """The sentence for an order that cannot exist. Entity NUMBERS are the
+    stored positions, the ones the tree shows — same as every other note."""
+    rows = ", ".join(str(i + 1) for i in sorted(knotted))
+    return (f"entity {rows} cannot be put in any build order — it has to come "
+            f"both before and after another shape it overlaps, so this part "
+            f"of the sketch is built in the order you drew it and a cut here "
+            f"may not remove what you expect. Move one of the overlapping "
+            f"shapes so it sits either fully inside the other or fully clear "
+            f"of it.") if len(knotted) == 1 else (
+        f"entities {rows} cannot be put in any build order — each has to come "
+        f"both before and after another shape it overlaps, so this part of "
+        f"the sketch is built in the order you drew it and a cut here may not "
+        f"remove what you expect. Move one of the overlapping shapes so it "
+        f"sits either fully inside the other or fully clear of it.")
+
+
+def _order_of(shapes: list, modes: list,
+              problems: list | None = None) -> list[int]:
     """The composition order for these shapes — the all-add shortcut in one
     place, so `compose` and `compose_order` cannot drift apart."""
     if not any(m == "subtract" for m in modes):
         return list(range(len(shapes)))     # nothing to order: no measurement
-    return _compose_order(shapes, modes)
+    return _compose_order(shapes, modes, problems)
 
 
 def compose_order(entities: list) -> list[int]:
@@ -442,7 +476,10 @@ def compose(entities: list, note: bool = True):
         raise ValueError("sketch has no entities")
     shapes = [_entity(e) for e in entities]
     modes = [e.get("mode", "add") for e in entities]
-    order = _order_of(shapes, modes)
+    knotted: list = []
+    order = _order_of(shapes, modes, knotted)
+    if knotted and note:
+        _note(_knot_note(knotted))
     # A subtraction that comes FIRST removes NOTHING (third code review,
     # 2026-09-09). It can legitimately come first: a subtraction that CONTAINS
     # an add owes that add an order, so it leads — which is exactly why

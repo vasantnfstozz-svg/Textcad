@@ -389,6 +389,18 @@ def _refuse_if_the_trim_broke_it(before: list, after: list) -> None:
     section 10 P1). The honest question is whether the builder can still
     compose the result, and a sketch that was already broken before the click
     must not be blamed on the click — that would trap the user in it.
+
+    ONLY the delete branch calls this, and that is a cost decision measured in
+    the review of 3b230b7: composing the whole list is the expensive thing in
+    the module. On `rocky-balboa/field_sketch` (23 entities) a Trim click took
+    43.9 s with this on the REBUILD branch and 15.6 s without — 28 seconds of
+    hourglass, because the rebuilt list is path entities with dozens of arc
+    segments each. And on that branch it can tell us nothing new: the cluster
+    has already been composed by `_compose_faces`, `_shape_to_entities` has
+    already refused a result with no area, and every entity OUTSIDE the
+    cluster neither overlaps nor contains one inside it — that is what makes
+    it a cluster. Deleting a whole entity composes nothing first, so there the
+    question is real and the list is still the user's own parametric shapes.
     """
     try:
         sk.compose(after, note=False)
@@ -471,7 +483,6 @@ def trim_apply(entities: list, piece_id: str) -> dict:
     keep_after = [e for k, e in enumerate(entities) if k > first
                   and k not in cl_set]
     new = keep_before + rebuilt + keep_after
-    _refuse_if_the_trim_broke_it(entities, new)
     return {"entities": new,
             "message": f"Trim: {note}; {len(cl)} shape(s) rebuilt as "
                        f"{len(rebuilt)} profile(s)."}

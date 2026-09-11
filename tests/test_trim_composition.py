@@ -281,3 +281,106 @@ def test_an_all_add_sketch_is_not_measured_at_all():
     finally:
         S._containment = real
     assert calls == []
+
+
+# =========================================================================
+# The review of 3b230b7 (same day, same chat). Two findings, both measured.
+# =========================================================================
+
+# --- an order that cannot exist must not be built in silence -------------
+
+# Two cuts that overlap each other, each CONTAINING an add that pokes into
+# the other: C1 -> A1 (contains), A1 -> C2 (overlaps), C2 -> A2 (contains),
+# A2 -> C1 (overlaps). No sequence of adds and subtracts can honour that -
+# A1 has to survive C1 and be bitten by C2, A2 needs the mirror image - so
+# `_order_from` falls back to the drawing order. It used to do that in
+# silence: 210.0 mm2 where the paint says 180.0.
+KNOT = [rect(-10, 0, 40, 20, "subtract"),      # C1  x -30..10
+        rect(-15, 0, 20, 6),                   # A1  x -25..-5, inside C1
+        rect(10, 0, 40, 20, "subtract"),       # C2  x -10..30
+        rect(15, 0, 20, 6)]                    # A2  x   5..25, inside C2
+
+
+def test_the_knot_really_is_one():
+    """If this ever stops being a cycle the test below is testing nothing."""
+    shapes = [S._entity(e) for e in KNOT]
+    modes = [e.get("mode", "add") for e in KNOT]
+    caught = []
+    S._compose_order(shapes, modes, caught)
+    assert caught, "the four shapes no longer make an unsatisfiable order"
+
+
+def test_an_impossible_order_tells_the_user_instead_of_going_quiet():
+    S.drain_notes()
+    area(KNOT)
+    notes = " ".join(S.drain_notes())
+    assert "cannot be put in any build order" in notes
+    assert "may not remove what you expect" in notes
+    assert "fully inside" in notes           # and says what to do about it
+
+
+def test_the_knot_note_names_stored_positions():
+    S.drain_notes()
+    area(KNOT)
+    assert "entity 1 " in " ".join(S.drain_notes())
+
+
+def test_an_ordinary_sketch_says_nothing_about_knots():
+    for ents in ([BOSS, BAR, POCKET], [FAR, BOSS, BAR, POCKET],
+                 [circ(0, 0, 30), circ(0, 0, 20, "subtract"), circ(0, 0, 10)],
+                 [rect(0, 0, 40, 20, "subtract"), rect(-12, 0, 6, 12),
+                  rect(0, 0, 6, 12), rect(12, 0, 6, 12)]):
+        S.drain_notes()
+        area(ents)
+        assert "build order" not in " ".join(S.drain_notes())
+
+
+def test_asking_only_for_the_order_never_notes():
+    S.drain_notes()
+    S.compose_order(KNOT)
+    S.compose(KNOT, note=False)
+    assert S.drain_notes() == []
+
+
+# --- the delete guard costs one compose, and only where it can matter ----
+
+def counted_composes(fn):
+    calls = []
+    real = S.compose
+    S.compose = lambda es, note=True: (calls.append(len(es)),
+                                       real(es, note=note))[1]
+    try:
+        fn()
+    finally:
+        S.compose = real
+    return calls
+
+
+def test_a_rebuild_trim_does_not_compose_the_whole_sketch_again():
+    """43.9 s per click on rocky-balboa/field_sketch (23 entities) against
+    15.6 s without it, because the rebuilt list is path entities with dozens
+    of arc segments each. It could not tell us anything either: the cluster
+    has already composed, `_shape_to_entities` has already refused an empty
+    result, and nothing outside a cluster overlaps anything inside it.
+    Measured over 68 real rebuild trims in the user's library: not one left a
+    list the builder refuses."""
+    ents = [BOSS, BAR, POCKET]
+    piece = next(p for p in T.trim_pieces(ents) if not p["whole"])
+    calls = counted_composes(lambda: T.trim_apply(ents, piece["id"]))
+    assert calls == [3], f"composed {calls}, expected one cluster compose"
+
+
+def test_a_whole_delete_still_asks_the_builder_once():
+    bars = [rect(0, 0, 40, 20, "subtract"), rect(-12, 0, 6, 12),
+            rect(0, 0, 6, 12), rect(12, 0, 6, 12)]
+    whole = next(p for p in T.trim_pieces(bars) if p["ent"] == 1)
+    calls = counted_composes(lambda: T.trim_apply(bars, whole["id"]))
+    assert calls == [3], f"composed {calls}, expected one check of the result"
+
+
+def test_deleting_the_last_entity_leaves_an_empty_sketch_without_a_fight():
+    """137 of the library's whole-entity deletes end here. The Delete key in
+    the sketcher does exactly this, so Trim must not be the one tool that
+    refuses it."""
+    out = T.trim_apply([dict(BOSS)], T.trim_pieces([dict(BOSS)])[0]["id"])
+    assert out["entities"] == []
