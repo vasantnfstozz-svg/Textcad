@@ -173,6 +173,16 @@ export function cancelTool() {
   if (active) active.abandon();
 }
 
+/* EVERYTHING a command press ends before it does anything else: a plane pick
+   still waiting for a click (Create Sketch), a prior session's gizmos and the
+   profile pick / row waiter that belong to it. open() has always done this
+   first; it lives here so a command that decides NOT to open a panel does the
+   same. A router that only speaks (Press Pull on a curved face) used to return
+   with the previous button's pick still armed, and the very click its sentence
+   asked for fell into THAT pick instead. Idempotent: each part no-ops when
+   there is nothing to end. */
+export function endPending() { cancelPlanePick(); cancelTool(); }
+
 /* The server died under an open session (a kernel crash) and came back as of
    the last completed step. The panel lets go WITHOUT the usual teardown: the
    fatal step never landed, rollback state is not persisted, and the feature's
@@ -324,8 +334,7 @@ export function tool(spec) {
 
   /* -------- open on the current selection (rules 1, 2, 4) -------- */
   function open(explicit) {
-    cancelPlanePick();                // a pending plane-pick must not linger
-    cancelTool();                     // nor a prior session's gizmos
+    endPending();                     // a pending plane-pick, a prior session's gizmos
     unlock();
     const bods = solids();
     const sel = currentSelection(explicit);

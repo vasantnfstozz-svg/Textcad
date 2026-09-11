@@ -201,3 +201,32 @@ def test_a_curved_face_press_pull_says_why_and_opens_nothing(page, fresh_doc, se
     assert page.evaluate(MODAL) is None
     assert [f["op"] for f in features(server)] == ["disc"]
     assert page.errors == []
+
+
+def test_a_curved_face_press_pull_drops_the_pending_pick(page, fresh_doc, server):
+    """Press Pull's curved branch RETURNS — so it must leave the state every
+    other branch clears. A pick armed by an earlier button (Create Sketch's
+    plane pick: no panel, so no modal lock, so the ribbon lets Press Pull
+    through) is still waiting after the sentence, and the next click — the very
+    click the sentence asks for — falls into THAT pick instead."""
+    page.evaluate(BUILD_DISC)
+    wait_bodies(page, 1)
+    click_world(page, [0.0, -20.0, 0.0])          # the curved side
+    page.wait_for_function(CURVED_PICKED, timeout=15000)
+    page.locator("button.tab", has_text="Create").click()
+    page.click("#ribbon .rbtn[title='Create Sketch']")   # arms a plane pick
+    assert page.is_visible("#placeHint"), "the plane pick is armed"
+    press(page)
+    page.wait_for_timeout(600)
+    assert "curved face would offset it" in chat(page)
+    assert page.evaluate(MODAL) is None
+    assert not page.is_visible("#placeHint"), \
+        "the pending plane pick survived Press Pull's curved branch"
+    # and the consequence: a click in the viewport must not land in the sketch
+    # editor on an origin plane nobody asked for
+    click_world(page, [35.0, 0.0, 0.0])           # empty space, on the XZ plane
+    page.wait_for_timeout(800)
+    assert not page.evaluate(
+        "() => document.getElementById('ribbon').classList.contains('sketchctx')"), \
+        "the next click opened the SKETCH EDITOR on a leftover plane pick"
+    assert page.errors == []

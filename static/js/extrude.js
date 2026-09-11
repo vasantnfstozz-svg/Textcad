@@ -11,7 +11,7 @@
 // limits, the default target and which sign goes INTO the body all arrive in
 // ONE plan (toolplan.py). This file draws what it is told and computes nothing.
 
-import { tool, g, num, say, setBox, selectionKind } from './tool.js';
+import { tool, g, num, say, setBox, selectionKind, endPending } from './tool.js';
 import { openFillet } from './fillet.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          extrudeArrowDragging,
@@ -294,7 +294,12 @@ export const initExtrude = () => ex.init();
    from its own button. The feature in the tree is Extrude's or Fillet's,
    exactly as Fusion's timeline shows an Extrude, never a "Press Pull". */
 export function openPressPull() {
-  const kind = selectionKind();
+  const kind = selectionKind();      // FIRST: the teardown below must not outrank the pick
+  // ...then, like every other command press, end what was pending — the branches
+  // that route reach it through open(), the branch that only SPEAKS would not
+  // (review of af46160: Create Sketch's plane pick stayed armed behind the
+  // curved-face sentence and swallowed the next click into the sketch editor)
+  endPending();
   if (kind === 'edges') {
     say('Press Pull on an edge is Fillet — drag the ball for the radius.');
     openFillet();
