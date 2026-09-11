@@ -3095,7 +3095,10 @@ def _run_job(job: dict) -> None:
 
 
 def _job_steps(job: dict) -> str:
-    e = STATE["docs"][job["tab"]]
+    e = STATE["docs"].get(job["tab"])
+    if e is None:                # closed in the blink before the thread ran
+        return ("That design's tab was closed before I could start — nothing "
+                "was built.")
     doc = e["doc"]
 
     def on_step(ev):

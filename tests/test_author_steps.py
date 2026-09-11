@@ -707,6 +707,41 @@ def test_a_create_that_built_nothing_leaves_no_empty_tab(client, monkeypatch):
     assert "designing" not in json.dumps(d["tabs"])
 
 
+def test_a_long_job_gives_the_tab_back_instead_of_holding_it(client, monkeypatch):
+    """Round five: an "add" job makes its tab READ-ONLY while it runs, so a
+    model that is merely slow locks the user out of their own design with no
+    Cancel to press. Steps alone do not bound that - a clock does."""
+    monkeypatch.setattr(author, "MAX_SECONDS", 0)
+    _intent(monkeypatch, "add", "a pin")
+    _model(monkeypatch, {"add": {"id": "pin", "op": "disc",
+                                 "params": {"radius": 3, "thickness": 3}}})
+    before = client.get("/api/doc").json()
+    d = client.post("/api/chat", json={"message": "add a pin"}).json()
+    assert "0 seconds without" in json.dumps(d["reply"]) or \
+           d["reply"].startswith("I did NOT change")
+    assert [f["id"] for f in d["features"]] == [f["id"] for f in before["features"]]
+    # ...and the tab is the user's again
+    assert client.post("/api/feature/params",
+                       json={"feature_id": "body",
+                             "params": {"radius": 51}}).status_code == 200
+
+
+def test_a_tab_closed_before_the_job_started_is_a_sentence_not_a_keyerror(
+        client, monkeypatch):
+    _intent(monkeypatch, "create", "a washer")
+    _model(monkeypatch, DISC, DONE)
+    real = studio._start_job
+
+    def start(kind, description, tid, model, before=None):
+        del studio.STATE["docs"][tid]          # closed in the blink before it ran
+        return real(kind, description, tid, model, before)
+
+    monkeypatch.setattr(studio, "_start_job", start)
+    d = client.post("/api/chat", json={"message": "design a washer"}).json()
+    j = client.get(f"/api/chat/job/{d['job']}").json()
+    assert j["done"] and "tab was closed before I could start" in j["reply"]
+
+
 def test_the_tab_a_watched_create_left_empty_is_not_claimed_to_be_closed(
         client, monkeypatch):
     """Round four: the tab stays if the user has SWITCHED to it - closing the

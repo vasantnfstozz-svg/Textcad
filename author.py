@@ -21,6 +21,7 @@ MCP build_design door, where another AI authors the tree itself.
 from __future__ import annotations
 import json
 import re
+import time
 
 from document import Document, CREATORS, MODIFIERS, op_params
 
@@ -505,6 +506,11 @@ def _to_document(data: dict) -> Document:
 
 MAX_STEPS = 40          # bounds the cost of a model that never says done
 MAX_FAILS = 3           # refusals in a row before the loop gives up
+# ...and a clock, because steps are not the only way a job runs long. An "add"
+# job makes its tab READ-ONLY while it runs (studio._one_writer_per_tab), so a
+# model that is merely slow locks the user out of their own design with no
+# Cancel to press. Checked BETWEEN steps, so a step in flight always finishes.
+MAX_SECONDS = 300
 
 
 def _restore(doc: Document, data: dict) -> bool:
@@ -698,8 +704,8 @@ def _apply_step(doc: Document, step: dict, protected=frozenset(),
 
 
 def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
-                 max_steps: int = MAX_STEPS, max_fails: int = MAX_FAILS
-                 ) -> tuple[bool, list[str]]:
+                 max_steps: int = MAX_STEPS, max_fails: int = MAX_FAILS,
+                 max_seconds: float | None = None) -> tuple[bool, list[str]]:
     """Let the model build `request` INTO `doc`, one verified step at a time.
 
     `doc` may be empty (a new design) or the user's current design (the
@@ -754,7 +760,13 @@ def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
                        f"checked — release the bar and ask again")
         return False, transcript
 
+    max_seconds = MAX_SECONDS if max_seconds is None else max_seconds
+    deadline = time.monotonic() + max_seconds
     for _ in range(max_steps):
+        if time.monotonic() >= deadline:
+            say("gave_up", f'GAVE UP: {max_seconds:g} seconds without "done"; '
+                           f'{len(doc.features)} verified feature(s) stand.')
+            return False, transcript
         raw = model.generate(messages)
         messages.append({"role": "assistant", "content": raw})
         step = None

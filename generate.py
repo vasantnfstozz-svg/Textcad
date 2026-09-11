@@ -108,7 +108,10 @@ class OpenRouterModel:
         # Model can be set from the terminal via OPENROUTER_MODEL (no file edit).
         model = model or os.environ.get(
             "OPENROUTER_MODEL", "deepseek/deepseek-chat-v3-0324")
-        self.client = OpenAI(api_key=api_key,
+        # A REQUEST clock as well as the job's. Without one the SDK waits its
+        # own 10-minute default (times its retries) on a stalled connection,
+        # and a chat job's tab is read-only for every second of that.
+        self.client = OpenAI(api_key=api_key, timeout=120.0, max_retries=2,
                              base_url="https://openrouter.ai/api/v1")
         self.model = model
         print(f"[OpenRouter model: {model}]")
