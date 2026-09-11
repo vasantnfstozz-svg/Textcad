@@ -423,7 +423,16 @@ def _order_from(needs: list[list[bool]],
         if nxt is None:                         # a cycle we cannot order:
             nxt = next(i for i in range(n) if not done[i])   # fall back to
             if problems is not None:            # the drawing order, and SAY SO
-                problems.extend(_knot_members(needs, done, nxt))
+                # ONLY when this shape is really on a cycle. The fallback
+                # takes the lowest unplaced shape, which is often one that
+                # merely WAITS on the knot, and it fires once per stuck
+                # shape — so recording every seed put a blameless entity back
+                # into the sentence round three had just taken it out of
+                # (round four, 2026-09-11). Its own knot is named by the
+                # later fallback that lands inside the cycle.
+                members = _knot_members(needs, done, nxt)
+                if len(members) > 1:
+                    problems.extend(members)
         done[nxt] = True
         order.append(nxt)
         for i in range(n):

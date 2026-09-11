@@ -439,3 +439,26 @@ def test_knot_members_is_the_cycle_and_nothing_else():
              [False, False, False, False]]
     assert S._knot_members(needs, [False] * 4, 0) == [0, 1]
     assert S._knot_members(needs, [False] * 4, 2) == [2]
+
+
+# --- round four: the fallback fires once per stuck shape ------------------
+
+def test_a_shape_that_only_waits_on_a_knot_is_never_named():
+    """`_knot_members` was right per seed, but `_order_from` falls back once
+    per stuck shape and takes the LOWEST unplaced one — which is often a shape
+    merely waiting on the knot. Recording every seed put entity 1 back into a
+    sentence about a cycle it is not in. Here 0 waits on 1, and 1 <-> 2 is the
+    real knot."""
+    needs = [[False, True, False],
+             [False, False, True],
+             [False, True, False]]
+    caught = []
+    S._order_from(needs, caught)
+    assert sorted(set(caught)) == [1, 2], caught
+
+
+def test_a_sketch_with_no_knot_records_nothing():
+    needs = [[False, False], [True, False]]      # needs[1][0]: 0 before 1
+    caught = []
+    assert S._order_from(needs, caught) == [0, 1]
+    assert caught == []
