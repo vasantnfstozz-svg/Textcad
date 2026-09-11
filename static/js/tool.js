@@ -27,6 +27,8 @@ import { holdViewport, cancelPlanePick, beginProfilePick, cancelProfilePick,
 
 const OPMAP = { join: 'fuse', cut: 'cut', intersect: 'intersect' };   // panel op -> tree op
 const COMBINER_LABEL = Object.fromEntries(Object.entries(OPMAP).map(([k, v]) => [v, k]));
+// how a SENTENCE names a combiner (the panel's own words, capitalised)
+const OP_WORD = { fuse: 'Join', cut: 'Cut', intersect: 'Intersect' };
 
 const feats = () => (S.lastDoc && S.lastDoc.features) || [];
 const isSketch = f => f.op === 'sketch' || f.op === 'sketch_on_face';
@@ -1054,7 +1056,7 @@ export function tool(spec) {
     const editing = st.editing;
     const typed = !!timer;              // a value typed inside the debounce window
     clearTimeout(timer); timer = null;
-    let created = false, gone = false, held = null, failed = null;
+    let created = false, gone = false, held = null, failed = null, comboBad = null;
     // OK COMMITS the panel's values even if the user never dragged or touched
     // an input, typed inside the debounce window, or pressed OK while a
     // rebuild was still running — in edit mode too. The commit and the one
@@ -1069,6 +1071,15 @@ export function tool(spec) {
       // body): OK must say so, not "created" (P4 review)
       const f = created && feats().find(x => x.id === st.featureId);
       failed = f && f.status === 'failed' ? f : null;
+      // ...and the COMBINER this session added. A cut deep enough to eat the
+      // whole body leaves the tool's own feature perfectly green, so OK said
+      // "created" over an EMPTY viewport (measured 2026-09-11: push a 20 mm
+      // plate's top face in by 30 — extrude_face ok at 72 000 mm3, the cut
+      // failed, 0 bodies on screen, "Extrude created"). The tree's own toast
+      // already names the red row; OK may not contradict it. Reachable in one
+      // gesture since an inward face pull became a Cut by itself.
+      const c = created && st.opId && feats().find(x => x.id === st.opId);
+      comboBad = c && c.status === 'failed' ? c : null;
       hide();
       await releaseIso();
     });
@@ -1077,6 +1088,11 @@ export function tool(spec) {
     const outcome = failed
       ? `${spec.name} was NOT built — ${humanProblem((failed.problems || [])[0] || 'the kernel refused it')}. ` +
         'Its row is red in the feature tree: double-click it to change the values, or ✕ to remove it.'
+      : comboBad
+        ? `${spec.name} was built, but the ${OP_WORD[comboBad.op] || comboBad.op} after it was NOT — ` +
+          `${humanProblem((comboBad.problems || [])[0] || 'the kernel refused it')}. ` +
+          `The red row '${comboBad.id}' is in the feature tree: double-click it to change the ` +
+          'values, or ✕ to remove it.'
       : editing ? `${spec.name} updated — the change is in the feature tree.`
       : created ? `${spec.name} created — editable in the feature tree.`
       : held || spec.nothing;

@@ -165,12 +165,12 @@ def _check_combiner_inputs(op: str, ids: list, parts: list) -> None:
         many = [(i, len(p.faces())) for i, p in zip(ids, parts)
                 if len(p.faces()) > 1]
         if many:
+            # each section names its OWN count: quoting the first one for all of
+            # them said "a and b hold 2" where b held 3 (round two of this fix)
+            held = _name_list([f"{i} ({n} profiles)" for i, n in many])
             raise ValueError(
-                f"loft blends ONE closed profile per sketch, and "
-                f"{_name_list([i for i, _ in many])} "
-                + ("holds" if len(many) == 1 else "hold")
-                + f" {many[0][1]} — draw each profile in its own sketch and "
-                f"loft them in pairs")
+                f"loft blends ONE closed profile per sketch, and {held} — draw "
+                f"each profile in its own sketch and loft them in pairs")
         return
     if flat:
         raise ValueError(

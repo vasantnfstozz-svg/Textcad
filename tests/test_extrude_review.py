@@ -98,9 +98,11 @@ def test_a_join_that_adds_nothing_is_named():
     d.add("ex1_join", "fuse", {}, ["plate1", "ex1"])
     d.rebuild()
     assert d.get("ex1_join").status == "ok"
+    # the whole sentence, not a substring that 'ex1_join' satisfies by itself:
+    # it must name the JOIN, the tool that added nothing and the body it is in
     note = " ".join(d.warnings)
-    assert "ex1_join" in note and "ex1" in note, d.warnings
-    assert "no material" in note or "nothing" in note, d.warnings
+    assert "'ex1_join' (join) added no material" in note, d.warnings
+    assert "ex1 is already inside 'plate1'" in note, d.warnings
 
 
 def test_a_join_that_adds_material_is_not_named():
