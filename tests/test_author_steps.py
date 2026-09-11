@@ -707,6 +707,28 @@ def test_a_create_that_built_nothing_leaves_no_empty_tab(client, monkeypatch):
     assert "designing" not in json.dumps(d["tabs"])
 
 
+def test_the_tab_a_watched_create_left_empty_is_not_claimed_to_be_closed(
+        client, monkeypatch):
+    """Round four: the tab stays if the user has SWITCHED to it - closing the
+    tab somebody is looking at is not ours to do - but the sentence said "I
+    have closed the empty tab" either way, with the tab still on the strip."""
+    _intent(monkeypatch, "create", "a ring")
+    bad = {"add": {"id": "x", "op": "torus", "params": {}}}
+    _model(monkeypatch, bad, bad, bad)
+    real = studio._new_tab
+
+    def watched(doc, source=None, activate=True):
+        tid = real(doc, source, activate)
+        studio.STATE["active"] = tid          # the user clicks it to watch
+        return tid
+
+    monkeypatch.setattr(studio, "_new_tab", watched)
+    d = client.post("/api/chat", json={"message": "design a ring"}).json()
+    assert d["new_tab"] in studio.STATE["docs"], "a watched tab is not closed"
+    assert "closed the empty tab" not in d["reply"]
+    assert "close it when you like" in d["reply"]
+
+
 def test_the_ai_cannot_open_more_tabs_than_the_new_button_can(client, monkeypatch):
     _intent(monkeypatch, "create", "a ring")
     while len(studio.STATE["docs"]) < studio.MAX_TABS:

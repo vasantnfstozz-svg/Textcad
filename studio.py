@@ -3033,7 +3033,7 @@ def _start_job(kind: str, description: str, tid: str, model,
                before: dict | None = None) -> dict:
     job = {"id": f"j{next(_JOB_SEQ)}", "kind": kind, "description": description,
            "tab": tid, "model": model, "before": before, "step": 0,
-           "log": [], "changed": 0, "done": False, "reply": None}
+           "log": [], "done": False, "reply": None}
     JOBS[job["id"]] = job
     del_ids = list(JOBS)[:-20]          # a handful of finished jobs is enough
     for k in del_ids:
@@ -3101,7 +3101,6 @@ def _job_steps(job: dict) -> str:
     def on_step(ev):
         job["log"].append(ev["text"])
         e["ok"] = ev["ok"]
-        job["changed"] += 1
 
     try:
         finished, transcript = author.author_steps(
@@ -3125,12 +3124,20 @@ def _job_steps(job: dict) -> str:
         else:
             # Nothing was built, so there is nothing to keep: the tab is the
             # job's own, was never activated, and an empty "designing…" left
-            # on the strip is litter the user has to tidy (measured).
-            if (job["tab"] in STATE["docs"] and job["tab"] != STATE["active"]
-                    and len(STATE["docs"]) > 1):
+            # on the strip is litter the user has to tidy (measured). It stays
+            # if the user has SWITCHED to it — closing the tab somebody is
+            # looking at is not ours to do — and the sentence then has to say
+            # so: round three said "I have closed the empty tab" either way,
+            # with the tab still on the strip (measured 2026-09-11).
+            closed = (job["tab"] in STATE["docs"] and job["tab"] != STATE["active"]
+                      and len(STATE["docs"]) > 1)
+            if closed:
                 del STATE["docs"][job["tab"]]
-            return (f'I could not design it: {why} Nothing was built, so I have '
-                    f'closed the empty tab. Your current design is untouched.')
+            return (f'I could not design it: {why} Nothing was built, so '
+                    + ("I have closed the empty tab."
+                       if closed else "its tab is empty — close it when you "
+                                      "like.")
+                    + " Your current design is untouched.")
         _pending(f"AI designed {doc.name}", "ai", e)
     elif finished and doc.to_data() == job["before"]:
         _unsnapshot(e)                    # nothing changed: no undo step either
@@ -3193,7 +3200,7 @@ def chat_job(jid: str):
         doc_json = _doc_json()
     return {"job": jid, "kind": job["kind"], "tab": job["tab"],
             "done": job["done"], "log": list(job["log"]), "reply": job["reply"],
-            "changed": job["changed"], **doc_json}
+            **doc_json}
 
 
 @app.post("/api/chat")
