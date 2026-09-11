@@ -536,7 +536,15 @@ async def _one_writer_per_tab(request, call_next):
     read under the kernel lock, by GET /api/chat/job."""
     if request.method != "POST" or request.url.path in _JOB_OPEN_POSTS:
         return await call_next(request)
-    if _job_on(STATE["active"]) is None:
+    try:
+        busy = _job_on(STATE["active"]) is not None
+    except Exception:        # noqa: BLE001 — a broken guard FAILS OPEN
+        # This middleware is registered after _never_die, so Starlette puts it
+        # OUTSIDE that barrier and anything it raises is a bare 500 — plain
+        # text the browser reads as "the server restarted" (measured). The
+        # request it was guarding is worth more than the guard: let it through.
+        busy = False
+    if not busy:
         return await call_next(request)
     return JSONResponse(status_code=400, content={
         "error": "the AI is still building in this design — wait for it to "
@@ -3035,10 +3043,15 @@ def _start_job(kind: str, description: str, tid: str, model,
 
 
 def _job_on(tid: str | None) -> dict | None:
-    """The unfinished chat job building in this tab, if any."""
+    """The unfinished chat job building in this tab, if any.
+
+    Over a SNAPSHOT of the registry: this is called from the event loop
+    (the one-writer middleware) while _start_job prunes JOBS in a request
+    thread, and "dictionary changed size during iteration" there is a bare
+    500 the browser cannot read (measured 2026-09-11)."""
     if tid is None:
         return None
-    return next((j for j in JOBS.values()
+    return next((j for j in list(JOBS.values())
                  if not j["done"] and j["tab"] == tid), None)
 
 

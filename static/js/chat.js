@@ -68,6 +68,7 @@ export function initChat() {
     input.value = ''; addMsg('user', text);
     const before = S.lastDoc ? S.lastDoc.active_tab : null;
     const doc = await postJSON('/api/chat', { message: text }, 'thinking…');
+    if (doc.error) return;      // postJSON said it; no empty bubble after it
     addMsg('bot', doc.reply || '…');
     if (doc.job && !doc.job_done) {
       await followJob(doc.job, doc.new_tab ? 'create' : 'add');

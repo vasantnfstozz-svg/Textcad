@@ -670,6 +670,9 @@ def _apply_step(doc: Document, step: dict, protected=frozenset(),
             bad = _first_problem(doc)
             if bad:
                 return False, f"REFUSED done: {bad}", None
+            if not doc.spec:
+                return True, "DONE: every feature ok; the design records no "\
+                             "spec, and adding to it does not write one.", None
             miss = "; ".join(doc.spec_problems)
             return True, ("DONE: every feature ok. The design keeps the spec "
                           "it already recorded" + (f", and no longer meets it: "
@@ -706,7 +709,12 @@ def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
     caller may wrap each kernel step in (the server takes its kernel lock
     and in-flight marker there). -> (finished, transcript)."""
     protected = frozenset(f.id for f in doc.features)   # the user's own work
-    keep_spec = bool(doc.spec)
+    # Adding to a design that ALREADY EXISTS never writes a spec. Keying this
+    # on "does it have a spec" left the 8 live designs that carry none open to
+    # the model writing one over them (measured 2026-09-11, review round two):
+    # a requirement the user never set, that their status bar then reports
+    # against. A spec is the model's to author only on a design it is creating.
+    keep_spec = bool(doc.features)
     tree = [{"id": f.id, "op": f.op, "params": f.params, "inputs": f.inputs}
             for f in doc.features]
     opening = f"REQUEST: {request}\n\n"
@@ -715,10 +723,11 @@ def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
                     f"these features are the user's — you may edit a number "
                     f"in one, never remove one):\n{json.dumps(tree)}\n"
                     f"BODIES: {_bodies(doc)}\n")
-        if keep_spec:
-            opening += (f"THE DESIGN ALREADY RECORDS THE USER'S SPEC and keeps "
-                        f"it — do not send one: "
-                        f"{json.dumps(doc.spec, default=str)}\n")
+        opening += (f"THE DESIGN'S SPEC IS THE USER'S and is kept as it is — "
+                    f"do not send one: {json.dumps(doc.spec, default=str)}\n"
+                    if doc.spec else
+                    "THE DESIGN RECORDS NO SPEC, and adding to it does not "
+                    "write one — do not send a spec with done.\n")
         opening += "\nFirst step?"
     else:
         opening += "The tree is empty. First step?"

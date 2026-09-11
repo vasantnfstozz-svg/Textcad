@@ -260,7 +260,7 @@ def test_the_design_keeps_its_own_spec_when_the_ai_adds_to_it():
     ok, transcript = author.author_steps(doc, "add a boss", m)
     assert ok and doc.spec == mine
     assert "keeps the spec it already recorded" in transcript[-1]
-    assert "RECORDS THE USER'S SPEC" in m.heard[0]
+    assert "SPEC IS THE USER'S and is kept as it is" in m.heard[0]
 
 
 def test_a_refused_done_never_leaves_the_models_spec_behind():
@@ -280,6 +280,32 @@ def test_a_spec_the_change_broke_is_reported_not_hidden():
     assert ok and doc.spec["size"] == [40, 30, 5]
     assert doc.spec_problems, "the taller part no longer meets the size spec"
     assert "no longer meets it" in transcript[-1]
+
+
+def test_adding_to_a_design_that_records_no_spec_does_not_write_one():
+    """Round two: the guard keyed on "does it HAVE a spec", so the 8 live
+    designs that carry none were still open to the model writing one over
+    them - a requirement the user never set, that their status bar then
+    reports against. A spec is the model's to author only on a design it is
+    creating."""
+    doc = Document(name="no-spec-design")
+    doc.add("base", "plate", {"width": 40, "depth": 30, "thickness": 5})
+    doc.rebuild()
+    m = Scripted(BOSS, {"add": {"id": "join", "op": "fuse",
+                                "inputs": ["base", "boss"]}},
+                 {"done": True, "spec": {"n_solids": 1, "size": [40, 30, 13]}})
+    ok, transcript = author.author_steps(doc, "add a boss", m)
+    assert ok and doc.spec == {}
+    assert "RECORDS NO SPEC" in m.heard[0]
+    assert "records no spec" in transcript[-1]
+
+
+def test_a_brand_new_design_still_gets_the_models_spec():
+    doc = Document(name="untitled")
+    m = Scripted(DISC, {"done": True, "spec": {"n_solids": 1,
+                                               "holes": {"10": 0}}})
+    ok, _ = author.author_steps(doc, "a disc", m)
+    assert ok and doc.spec["n_solids"] == 1
 
 
 def test_a_design_with_a_spec_of_its_own_is_told_not_to_send_one():
@@ -630,6 +656,23 @@ def test_a_job_that_gives_up_keeps_the_tab_document_and_its_rollback_bar(
     assert e["doc"] is was, "the tab must keep its document object"
     assert d["rollback"] == "body"
     assert "rollback bar is parked" in d["reply"]
+
+
+def test_the_one_writer_guard_fails_open_instead_of_with_a_bare_500(
+        client, monkeypatch):
+    """Round two: the guard is registered after _never_die, so Starlette puts
+    it OUTSIDE that barrier — anything it raised was a bare 500 in plain
+    text, which the browser reads as "the server restarted during this step".
+    _job_on walks a LIVE dict that _start_job prunes from a request thread."""
+    class Exploding(dict):
+        def values(self):
+            raise RuntimeError("dictionary changed size during iteration")
+
+    monkeypatch.setattr(studio, "JOBS", Exploding())
+    r = client.post("/api/feature/params",
+                    json={"feature_id": "body", "params": {"radius": 51}})
+    assert r.status_code == 200, "a broken guard must not break the request"
+    assert r.json()["features"], "and the answer is still a readable document"
 
 
 def test_a_threaded_job_is_followed_through_its_status_route(client, monkeypatch):
