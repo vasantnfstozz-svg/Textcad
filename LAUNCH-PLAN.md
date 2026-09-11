@@ -887,6 +887,36 @@ another sketch, a refusal reverted to the FIRST sketch's values and now also
 restored its PLAN, putting the arrow, the safe range and the through-all sign
 on the other sketch. Both are cleared now; edit mode never passes there.
 
+*Round three b5c6e70 — Shell is CLOSED* — 2 findings, 1 fixed, 1 REJECTED, 4
+tests, fast tier 1454. Round two's own guard **refused correct geometry**: it
+paired each result lump to the input lump with the nearest bounding-box
+CENTRE, on its own written assumption that "separate lumps stand apart by far
+more than one wall, so it never ties". Two CONCENTRIC lumps break that outright
+— a post inside a ring, a spigot in a bore, whose centres are the SAME point —
+so the tie sent both results to one seat, left the other empty, read that as
+"vanished" and refused. Measured: the kernel had shelled both lumps perfectly,
+ring 3628.54 and post 458.28, each to its own oracle's decimal, watertight and
+`health []`. Section 5's rejected-fix shape, built by the round guarding
+against it. The pairing was never needed: a result lump is the block when it is
+IDENTICAL to one that went in — same bounding box, same volume — which needs no
+pairing, no distances and no ties, and the whole BOX tells the ring and the
+post apart where the centre cannot (40 × 40 × 10 against 10 × 10 × 10).
+Identity is exact rather than a judgement call: over 99 result lumps across
+five second-lumps and ten thicknesses in both directions, an untouched lump
+matched at d(volume) 0.0 and d(box) 0.0 (1.1e-13 at worst) while the closest a
+lump that really hollowed ever came was 0.992 of its input — an honest 4 × 4 ×
+2 cavity at t = 8. The rule is direction-agnostic now, which round two's was
+not. **REJECTED, measured:** `tree.js`'s new `readable` recursion overflows the
+stack at depth ~5000, but `JSON.stringify` — the branch it replaced — throws
+`RangeError` at exactly the same depth and threw on a cycle where `readable`
+throws; nothing was added, and the longest real row got SHORTER (567 chars
+against 607). CLEARED so no round four re-derives them: no lump ever vanished
+over six extreme thicknesses; an outside shell never merged two lumps even at a
+2 mm gap and t = 6; `inspector.closed_shell` is effectively per-lump; the
+result's `.solids()` / `.volume` / `.bounding_box()` never raise and cost 5 ms
+against the kernel's own 239 ms; `startPreview` has exactly two callers and is
+a closure local.
+
 **P5 — The AI uses the tools (§5 step B).** Incremental authoring through
 the plan endpoint; chat edits point at parameters; the FEATURE-TREE-PLAN
 "step 4" everyone deferred.
@@ -1002,6 +1032,7 @@ assemblies, the user's personal project.
 
 | Pri | Item | Source |
 |-----|------|--------|
+| P2 | **The shared gauntlet corpus is all ONE-LUMP bodies** (`tests/gauntlet.py BODIES`), and that is how one P0 survived two review rounds of Shell: a lump that did not hollow is invisible to a WHOLE-BODY volume check the moment a second, bigger lump pays for it. Shell's own gauntlet now carries the corner (four mixed pairs plus a concentric ring-and-post, both directions, the whole ladder). Every other op that eats a whole body reaches multi-lump bodies the same way - a `linear_pattern` of a boss, a cut that severed a plate - and none of them has that corner: fillet, chamfer, hole, mirror, pattern, extrude_face, revolve_face. Adding a multi-lump body to the SHARED corpus would touch every op's gauntlet at once, so the cheap version is one corner per op, in its own gauntlet file. | Shell review rounds two and three 2026-09-11 |
 | P3 | **Shell's second half of Fusion's dialog**: Direction **Both** with an outside thickness (two offsets, one result), a CURVED face as an opening (the kernel refuses `offset(openings=wall)` today — probes/shell_probe.py §8; a cut-then-shell route may exist), a measured maximum thickness in the plan's `limits` so the arrow can say where the walls would meet (today the op's sentence does, after the fact). | Shell 2026-09-10 |
 | done | **Two panel fixes the user hit on 2026-09-07 — in the framework and the shared ring, so every tool inherits them.** (1) A DRAGGED angle lands on round numbers ("revolve goes to 90.5 — it should recognise 0, 45, 90, 180"): the ring — Extrude taper, Revolve, Circular Pattern — snaps to whole degrees and, within 3° of a multiple of 45°, to that multiple, where the handle sticks until the pointer leaves the band; the raw turn accumulates underneath so the handle never lags; typed values stay exact (`viewport.js snapAngle`). (2) A value CLEARED back to 0 with a preview up ("I change 12 to 0 and it reloads 12") was PUSHED: the kernel refused the zero-thickness solid (`Standard_ConstructionError` for extrude, the op's own sentence for revolve — probed) and the framework's revert wrote the OLD value into the box the user had just emptied. Honest zero now (parity rule 4): in create mode the preview goes and the box keeps its 0 (`tool.js unbuild`, the same code Cancel uses); an edit keeps its feature and says so once (the `hold` path). Fillet's radius, Hole's ⌀ and Pattern's count inherit both. Tests: 2 browser journeys in `test_edit_extrude.py` (create: 12 → 0 → preview gone, box 0, 8 → built, OK; edit: 0 keeps 12 with the sentence, Cancel) and the revolve ring drag now asserts 37.3 → 37 and 92 → 90. | user 2026-09-07 |
 | P1 | **`sketch_trim.py` keeps its own copy of the sketch composition rule** and so disagrees with the builder: `_compose_faces` (l.223-229) composes in DRAWING order, where `sketch.py _compose` orders outers before nested shapes and material before an overlapping cut; and l.372 / l.424 still refuse an entity list whose first shape is a cut, which `_compose` accepts. Measured 2026-09-09 (fourth sketch review, 13da90c): a Trim click deletes a green add the builder keeps, and Trim tells the user to delete their hole. Fix: Trim asks `sketch.py` for the order instead of keeping its own. | 4th sketch review 2026-09-09 |

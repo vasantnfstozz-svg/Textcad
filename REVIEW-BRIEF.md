@@ -6,129 +6,96 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING** — review `b99a24d` (one commit, base `667ccc0`): the fix
-> pass of Shell review ROUND TWO. A **P0 was fixed again**, so this is ROUND
-> THREE. Sections 3, 4, 5 and 6 each went to a round two, and rounds two of 3
-> and 4 both found the SAME P0 through a further door — which is exactly what
-> round two found here.
+> **Status: NOTHING PENDING** — Shell is CLOSED after three rounds
+> (`fb0b8c8` built, `667ccc0` round one, `b99a24d` round two, `b5c6e70` round
+> three). No P0 fell in round three, so the chain ends here.
+>
+> **The next `code review` goes to `REVIEW-QUEUE.md`** and takes the first
+> status-board row marked TODO, which is **section 7 — Extrude as a whole
+> module (with loft and sweep)**, priority medium.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
 > "The review chat" tells that chat to read this status line: PENDING means
-> review the range below; NOTHING PENDING means go to the queue. ONE
+> review the range named here; NOTHING PENDING means go to the queue. ONE
 > reviewer, no `/code-review` command, no subagents; the fix pass follows in
 > the same chat without being asked.
 >
-> That line never changes. Everything specific to this review is below.
+> That line never changes.
 
 ---
 
-## The range: `b99a24d` — round two's own fixes
+## What closed, so the queue's section 11 does not re-derive it
 
-Round two of the Shell review (`667ccc0`) found 3, fixed 3, rejected 0. Read
-`LAUNCH-PLAN.md` §7 "Shell done 2026-09-10", the *Round two b99a24d*
-paragraph, first — the measured numbers are there, so none of it has to be
-re-derived. The diff is +184 −6 over 6 files, and TWO of the three fixes are
-again in files EVERY tool inherits.
+Section 11 of `REVIEW-QUEUE.md` is **Tool framework core**, and the Shell chain
+spent three rounds inside `tool.js`. When that row comes up, these are settled
+and measured — do not re-report them, and do not re-measure them:
 
-Files, in the order to read them:
+- **`replanNow`'s "keeps at least one edge" guard is gated on
+  `st.input.kind === 'edges'`**, not on the key's name. That changes behaviour
+  for Shell ALONE: only Fillet and Chamfer have kind `edges`, and only
+  `plan_fillet` and `plan_shell` return an `edges` key at all.
+- **`settle` restores `st.plan = st.lastGoodPlan`** so a param with no box of
+  its own (Shell's face set, Mirror's plane) is not re-pushed from a stale
+  plan. Without it, a refused face set looped revert → replan → refuse at a
+  measured 50 rebuilds in 6 s.
+- **`startPreview` clears `lastGood` and `lastGoodPlan`.** It has exactly two
+  callers — `begin()` (both already null) and `changeProfile()` — and is a
+  closure local, never exposed on `ctl`, so no spec hook can reach it. Edit
+  mode goes straight to `setupTool` and is untouched.
+- **`tree.js`'s `readable` / `namedParts` recursion has no depth cap and
+  overflows the stack at depth ~5000.** REJECTED as a finding, measured:
+  `JSON.stringify`, the branch it replaced, throws `RangeError` at EXACTLY the
+  same depth, and threw a `TypeError` on a cycle where `readable` throws
+  `RangeError`. Same failure through the same door; nothing was added. The
+  longest row in the real library got SHORTER (my-part-8 `fillet1`: 567 chars
+  against the old JSON's 607).
 
-- `sketch.py` — `assert_every_lump_hollowed` (new, +51, before `shell`) and
-  the one call at the END of `shell`, after the `closed_shell` check.
-- `static/js/tree.js` — `readable` (new, mutually recursive with `namedParts`)
-  and the list branch of `buildBody`'s final `else`.
-- `static/js/tool.js` — two lines in `startPreview`.
-- `static/index.html` — `main.js?v=186`.
-- Tests: `tests/test_shell_tool.py` (+2), `tests/test_shell_gauntlet.py` (+9,
-  the new multi-lump corner of the corpus).
-- Probes: `probes/shell_round2_*.py` (6).
+## What closed on the Shell op, for whoever touches `sketch.shell` next
 
-## Where the risk is
+Two guards now stand either side of the kernel, and they are siblings:
 
-1. **The pairing in `assert_every_lump_hollowed` is nearest bounding-box
-   CENTRE.** Measured sound for boxes standing apart, and an inside shell keeps
-   the box exactly. Is there a body where it pairs WRONG — two lumps that are
-   concentric or nested (a ring around a post, a lid over a base), a lump whose
-   centroid moves a long way, an OUTSIDE shell thick enough to merge two lumps
-   into one (then two input lumps map to the same output lump and its volume is
-   counted twice)? A wrong pairing either false-refuses a good shell (section
-   5's rejected-fix shape) or, worse, lets a block through.
-2. **It runs AFTER the kernel, unlike its sibling.** `assert_every_lump_open`
-   is a gate BEFORE the kernel because of section 4's lesson. This one cannot
-   be — only the kernel knows whether a wall fits. But it calls `.solids()`,
-   `.volume` and `.bounding_box()` on the RESULT, outside the op's `try`: can
-   any of those RAISE on a result the kernel called a success (section 4: a
-   raising property is not swallowed by `getattr`)? And what does it cost on a
-   real 400-face multi-lump body, where `.volume` is a GProps pass per lump?
-3. **The `outside` direction is guarded only by "unchanged" and "vanished".**
-   The `v >= v_in` clause is inside-only, because an outside shell's walls are
-   legitimately smaller than the body. Round one's P0 WAS an outside case.
-   Probe outside on bodies the round-two probes did not: nested lumps, a lump
-   that is already hollow, an imported STEP, a pattern of a shelled boss.
-4. **`readable` in `tree.js` is mutually recursive with `namedParts` and has no
-   depth or size limit.** Params come from a FILE. A deeply nested or
-   self-similar stored form would recurse; a big one writes a very long string
-   into a tree row. A sketch's `entities` is caught by an earlier branch today —
-   is there any other param that is large, and does a cycle reach here at all
-   (JSON cannot carry one, but `/api/feature/params` is not the only door)?
-   Check the rendered length on the largest live design's fillet row.
-5. **Clearing `lastGood` / `lastGoodPlan` in `startPreview`.** It is reached by
-   `begin()` (both already null) and `changeProfile()`. Confirm no THIRD caller
-   appears through a spec hook, and that a tool with `spec.settle` (Extrude's
-   milder values, Fillet's radius ladder) still behaves when there is nothing
-   to revert to on a just-switched profile — it must leave the red row that
-   says why, never a silent nothing.
-6. **The new gauntlet corner asserts `abs(lump.volume - v) > 1e-6` against
-   EVERY input lump's volume.** On a pattern all lumps are identical, so that
-   is one number; on a mixed pair it is two. Could a correctly shelled lump
-   land within 1e-6 of some OTHER lump's input volume and fail the test for the
-   wrong reason? And does the sweep still go red with the fix removed (it did:
-   5 of them)?
+- `assert_every_lump_open` — BEFORE: on a body in several lumps, an opening on
+  every lump or none at all. `offset(openings=[…])` shells only the lumps a
+  listed face belongs to and hands back the raw offset solid for the rest.
+- `assert_every_lump_hollowed` — AFTER, because only the kernel knows whether a
+  wall fits: no result lump may be IDENTICAL to a lump that went in (same
+  bounding box, same volume). Round two paired result lumps to input lumps by
+  nearest bounding-box CENTRE and two CONCENTRIC lumps share a centre exactly,
+  so it refused a shell the kernel had built perfectly. There is no pairing any
+  more, and there should not be one.
 
-## Ground rules
+Measured across the three rounds, so none of it needs re-deriving: an untouched
+lump matches its input at d(volume) 0.0 and d(box) 0.0 (1.1e-13 at worst) while
+a lump that really hollowed came no closer than 0.992 of its input, over 99
+result lumps; no lump ever vanished over six extreme thicknesses; an OUTSIDE
+shell never merged two lumps even at a 2 mm gap and t = 6;
+`inspector.closed_shell` is effectively per-lump (an open-shell lump is caught
+beside a healthy one exactly as it is alone); `.solids()`, `.volume` and
+`.bounding_box()` never raise on a result and cost 5 ms for 24 calls against
+the kernel's own 239 ms offset on a 12-lump body; the opening guard's
+`_shape_key` match is exact through `linear_pattern`, `polar_pattern`,
+`mirror`, a severed plate and an imported STEP.
 
-- Reproduce by measurement or a red test before fixing; kernel probes go
-  under `probes/`. The gauntlet (`tests/gauntlet.py`) is the corpus.
-- Fix in the same chat, smallest change, covering tests, commit, push,
-  restart the user's server (backend). Then set this file to NOTHING PENDING
-  (or PENDING again if another P0 falls) and add the round-three line to the
-  LAUNCH-PLAN §7 Shell note.
+The shared gauntlet corpus (`tests/gauntlet.py BODIES`) is **all one-lump
+bodies** — that is how the same P0 got through two rounds. Shell's own gauntlet
+now carries the multi-lump corner (four mixed pairs plus the concentric pair,
+swept in both directions). **Any other op that eats a whole body deserves the
+same corner**; there is a LAUNCH-PLAN §10 row for it.
+
+## Ground rules (unchanged)
+
+- Reproduce by measurement or a red test before fixing; kernel probes go under
+  `probes/`. The gauntlet is the corpus.
+- Fix in the same chat, smallest change, covering tests, commit, push, restart
+  the user's server if the backend changed. Then the paperwork.
 - Never `--fix`. One reviewer.
 
-## Do not report (settled in rounds one and two, or by the spec)
+## Also open, and NOT the next review's job
 
-- Everything on `specs/shell.md`'s own decided list: no ghost, no **Both**
-  direction (§10), flat openings only, sharp cavity corners, `_pick_body`'s
-  fall-through to the newest solid.
-- Round one's five findings and round two's three, unless the FIX is wrong.
-- **Cleared by measurement in round one, do not re-derive:** the volume oracle
-  over the whole thickness ladder in both directions; the closed hollow as one
-  solid with a void; an inner cavity face unable to toggle an outer one;
-  `shell` of a sketch profile failing with a sentence and NOT segfaulting;
-  names and picks de-duplicating by `_shape_key`; `open_face: null` surviving
-  `_clean` and `check_params`; `bodyRow` unable to fire on a sketch row.
-- **Cleared by measurement in ROUND TWO, do not re-derive:**
-  `assert_every_lump_open` keying openings against the input body's own faces
-  is exact through `linear_pattern`, `polar_pattern`, `mirror`, a severed plate
-  AND an imported STEP — zero lump-face keys missing, zero cross-lump key
-  collisions, zero false refusals (`probes/shell_round2_probe.py`).
-  `solid.solids()` never raises and answers 1 / 1 / 3 / 0 / 0 for a Solid, a
-  Part, a Compound of 3, an empty Compound and a 2D Face. The NO-OPENINGS
-  difference route on mixed lumps is refused by the kernel already, and
-  `closed_shell` needed no per-lump version (a lump cannot come back an open
-  shell while the others are fine — probed at t = 6 and t = 9). The framework's
-  `st.input.kind === 'edges'` gate changes behaviour for Shell ALONE: only
-  Fillet and Chamfer have kind `edges`, and only `plan_fillet` and `plan_shell`
-  return an `edges` key at all.
-- **`TOP_RIM` and the e2e click point.** Settled: a pick is stored and resolved
-  by the FACE'S OWN CENTRE, and `_face_of`'s docstring records the measurement
-  over 20 cases in `probes/face_of_revolve_probe.py` §3 — including an annulus
-  and a U-shape, whose centres are off their material. The journey passes for
-  the right reason.
-- **`n <= 8` in the revert journey.** The honest cost is 3–5 and the loop it
-  guards was 50 in 6 s; the margin is deliberate.
-- **`tests/e2e/test_tree_delete.py` is 5 red.** Measured red at `667ccc0`
-  itself in a clean worktree, so it is not this range. It is the delete /
-  strike-out workstream; LAUNCH-PLAN §10's browser-tier P1 row carries it, now
-  with the root cause narrowed.
-- CRLF warnings on the touched files: the checkout normalises on commit.
+`tests/e2e/test_tree_delete.py` is 5 red and was measured red at `667ccc0` in a
+clean worktree, so it predates all of this. `tree.js deleteFeature` opens the
+confirm only when `plan.deleted.length > 1` and the dialog never appears, so
+the remove PLAN now takes ONE feature where it used to take the group. That is
+the delete / strike-out workstream; LAUNCH-PLAN §10's browser-tier P1 row
+carries it with the root cause narrowed.
