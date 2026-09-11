@@ -40,7 +40,14 @@
 > AI uses the tools, BUILT 2026-09-11** (5dc7817: one verified feature per
 > model reply through the same strict add + lint + rebuild as the toolbar;
 > create builds in its own tab, add builds on the design on screen behind one
-> Undo; review pending). Next: P5's review, then P5b. Every other plan file points here; §7 carries the
+> Undo). **P5 IS DONE — reviewed and CLOSED 2026-09-11 after seven rounds**
+> (`4041703`, `5975aad`, `bb0c4ab`, `231bf16`, `7d03e9c`, `5d2d431`; round
+> seven found nothing): 20 findings, all fixed, 29 new tests (fast tier 1623),
+> ui v196. The heaviest were on the "add to the design on screen" road — the
+> model's spec written over the USER's, a correct step undone and blamed for
+> another feature's redness, the AI able to delete a feature the user built,
+> `add` + `done` in one reply finishing a design unchecked, and a user edit
+> landing mid-job breaking "one Undo takes it all back" (§10). Next: P5b. Every other plan file points here; §7 carries the
 > done-notes, §10 the ranked open items. **Added 2026-09-10 (user's decision):** P5b, the machine plays the
 > user — a zero-token random-journey runner, a bug button, the library tier
 > fixed — sits between P5 and P6 (§6 tier 4, §7 P5b).
@@ -1011,6 +1018,20 @@ user renewed the expired OpenRouter key, the real model built an 8-feature
 mounting plate through the protocol with no refused step (§10 done row). What the user does:
 nothing — the key was renewed the same evening and the real model built an
 8-feature mounting plate through the protocol first time (§10 done row).
+**REVIEWED AND CLOSED 2026-09-11, seven rounds** (`4041703`, `5975aad`,
+`bb0c4ab`, `231bf16`, `7d03e9c`, `5d2d431`; round seven found nothing): 20
+findings, all fixed, 29 more tests (fast tier 1623), ui v196. What the review
+changed about the DESIGN, not just the code: the spec is the user's, so an
+`add` job keeps the design's own and reports a spec its new geometry breaks
+instead of rewriting it; a step is judged on what it TOUCHED, while `done`
+still judges the whole tree; the model may edit a feature the user built but
+never remove one; one action per reply, so `done` can never ride in on an
+`add` and skip the final lint; and a running job is the ONLY writer on its
+tab (`_one_writer_per_tab`), which is what makes "one Undo takes it all back"
+true — with a 300 s clock so a slow model cannot hold that tab (§10). The
+give-up road restores the document IN PLACE, keeping the object, the rollback
+bar and the build cache. A parked rollback bar refuses the job up front:
+nothing below the bar is built, so nothing could be verified.
 
 **P5b — The machine plays the user (§6 tier 4).** Decided with the user
 2026-09-10: code review finds what the code says, tests find what we
@@ -1123,6 +1144,9 @@ assemblies, the user's personal project.
 
 | Pri | Item | Source |
 |-----|------|--------|
+| done | **Code review of P5, the AI step loop (`b78dc1f..92bdeef`, seven rounds 2026-09-11, `4041703` -> `5d2d431`; round seven found nothing).** 20 findings, all fixed, 29 new tests (fast tier 1594 -> 1623), ui v196. Every one reproduced by measurement first (`probes/p5_*.py`) and locked by a test proven RED on the commit it fixes, in a throwaway worktree. The five that mattered, all on the AI's "add to the design on screen" road: `done` WROTE THE MODEL'S SPEC OVER THE USER'S OWN (31 of the 50 live designs pin a size, 22 pin holes — and a refused `done` left its spec behind too); a CORRECT step was undone and blamed whenever some OTHER feature was red, which locked the AI out of the design entirely after three tries; the AI could DELETE a feature the user built while the reply said "Added one or more parameters"; `{"add": ..., "done": true}` in one reply FINISHED the design with no final lint and no spec check (two loose bodies reported as verified); and a user edit landing mid-job broke "one Undo takes it all back" — the busy overlay covers the viewport only, so the ribbon, tree and tab strip stayed live. Also: a dead job thread left the browser polling for ever behind the overlay; a parked rollback bar made every step "UNDONE (after rollback bar)" and the give-up restore then dropped the bar; the create door walked past MAX_TABS and left empty "designing..." tabs behind; `/api/tool/plan` ran inside the kernel between two AI steps. Rounds two to six were all findings in the previous round's OWN new guards. | 2026-09-11 |
+| P3 | **A chat job has no Stop button.** An "add" job makes its tab read-only while it runs (`_one_writer_per_tab`), and the only way out is the 300 s clock (`author.MAX_SECONDS`, checked between steps) or switching to another tab. Fusion lets you cancel. Fix when the AI panel gets its own UI: `POST /api/chat/job/<id>/stop` setting a flag the step loop reads, and a Stop button beside the step log. | P5 review 2026-09-11 |
+| P3 | **`/api/tabs/switch` reads the document without the kernel lock.** It is the one POST left open while a chat job builds — deliberately, because switching away is the user's escape hatch from a busy tab — so switching TO a tab mid-step can flash one stale row for under a second before the next step's `doc-updated` corrects it. Measured and left: taking the lock there would block the switch for the length of a kernel step, which is the opposite of what the escape hatch is for. Closes properly with the `/api/model` row above (one lock over every kernel-touching request). | P5 review 2026-09-11 |
 | done | **P5's step protocol met the real model 2026-09-11** (after the user renewed the expired OpenRouter key): "a 60x40x5 plate, a 16 mm boss on top, four 5 mm corner holes" came out as 8 steps — base sketch, extrude, sketch_on_face, extrude, fuse, one 4-circle sketch, through extrude, cut — every step ok first time, volumes add up (12000 + 4021.2 − 4 × 98.2 = 15628.5), spec met. The only flaw was ours: the 4-cylinder cutting tool was told to "fix" being in 4 pieces (softened in the commit after 5dc7817). | P5 ship check |
 | P2 | **Trim is slow on a big sketch, before any of this pass's work.** Hovering `rocky-balboa/field_sketch` (23 entities) costs 6.1 s in `trim_pieces` and a click 15.4 s; `esp32-remote/sketch28` (45 entities) costs 3.0 s to hover. The cost is `_pieces_raw` — every outline sampled to up to 384 points and every PAIR of outlines intersected — plus one full compose of the cluster per click. Measured 2026-09-11 in the review of `3b230b7` and NOT caused by it (the fix's own guard was taken off the rebuild branch, which gave 28 s back). Fix: cache the outlines between hover and click, and skip the pair loop with the bounding boxes it already computes. | review of 3b230b7 2026-09-11 |
 | P1 | **A stored face pick is remembered in WORLD coordinates, so a body that MOVES can still take the pick to a different face of the same kind.** Round one of the Move review fixed the half that was silent and destructive — `resolve_face` scored the picked normal as a 25 mm² NUDGE, so past about one plate thickness of travel the nearest face was the one pointing the OTHER way, and a Ø12 boss jumped from the top face to the bottom, was built up INTO the material and swallowed whole (565 mm³ gone, every row green). The direction is a GATE now, and on a body with ONE face per direction the pick follows the move exactly as the spec promises. What is left: on a STEPPED body, two faces point the same way, and a rigid move of more than half the step can still hand the pick the wrong one — quietly, because both answers are legal. The real fix is to store the pick in the BODY's own frame (the offsets from its bounding box, say) instead of the world's, which touches `sketch_on_face`, `extrude_face`, `hole` and every saved design that holds a `face_center`. Measured: 50 designs rebuild with zero drift under today's fix, so nothing is broken while this waits. | Move review round one 2026-09-11 |
