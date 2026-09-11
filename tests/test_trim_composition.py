@@ -462,3 +462,30 @@ def test_a_sketch_with_no_knot_records_nothing():
     caught = []
     assert S._order_from(needs, caught) == [0, 1]
     assert caught == []
+
+
+# --- round five: the warning is only worth what the user sees -------------
+
+def test_the_knot_warning_reaches_the_users_tree():
+    """A note that never leaves `sketch._NOTES` is the silence it was written
+    to end. `Document.warnings` republishes every note as "'<feature>': <note>"
+    and tree.js renders those in its info box — so this is the test that makes
+    round two's fix mean anything."""
+    import document
+    d = document.Document("probe")
+    d.add("s1", "sketch", params={"plane": "XY", "offset": 0,
+                                  "entities": KNOT})
+    d.add("e1", "extrude", inputs=["s1"], params={"amount": 3})
+    d.rebuild()
+    hit = [w for w in d.warnings if "build order" in w]
+    assert hit, d.warnings
+    assert hit[0].startswith("'s1':"), hit[0]
+    assert "entities 1, 2, 3 and 4" in hit[0]
+
+
+def test_the_knot_sentence_is_right_for_a_single_shape_too():
+    """`_order_from` only ever records a knot of two or more, so this branch
+    is not reached today — but an untested sentence is one nobody has read."""
+    one = S._knot_note([2])
+    assert one.startswith("entity 3 cannot be put in a build order")
+    assert "entities" not in one.split("—")[0]
