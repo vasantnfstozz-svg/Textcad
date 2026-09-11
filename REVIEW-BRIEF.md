@@ -6,14 +6,11 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: NOTHING PENDING.** Section 7 (Extrude, with loft and sweep) is
-> CLOSED: round one fixed 6 findings at `dfcb73f`, and round two re-read that
-> fix commit and fixed 2 more at `a8e96d9` (the loft refusal quoted one profile
-> count for several sections; OK said "Extrude created" over an empty viewport
-> when the new auto-cut ate the whole body). The next `code review` therefore
-> goes to `REVIEW-QUEUE.md` and takes the first TODO row of the status board:
-> **section 8, Import STL and STEP** (which may share its chat with section 9,
-> Trace image, as the queue note says).
+> **Status: PENDING.** Review commit **`3b230b7`** (base `9992748`), the fix
+> for LAUNCH-PLAN section 10's P1 "sketch_trim keeps its own copy of the
+> sketch composition rule" - plus a P0 it uncovered in `sketch.py` itself.
+> Range: `git diff 9992748..3b230b7`. Files: `sketch.py`, `sketch_trim.py`,
+> `tests/test_trim_composition.py`.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -26,68 +23,78 @@
 
 ---
 
-## What the last review did (section 7, Extrude: `dfcb73f` + round two `a8e96d9`)
+## What this commit did
 
-**6 findings, 6 fixed, 0 rejected, 0 deferred. Two P1s in ops nobody had ever
-reviewed. No live design was affected; all 50 rebuild unchanged.**
+**Two rules became one, and the one that survived was wrong in a fourth case.**
 
-- **A loft blends ONE profile per sketch** and never said so. build123d chains
-  every section's faces into a single loft, so two sketches of two circles each
-  came back as ONE snaking solid of 1570.8 mm3 (the honest tubes are 3141.6),
-  reaching outside BOTH sketch planes, green and silent. Refused now, in the
-  same place section 4's kind gate lives.
-- **`sweep` fed a solid BODY sweeps it face by face.** A 24 000 mm3 plate
-  became a 178 000 mm3 six-lump blob — status ok, no problems, no warnings —
-  and the plate was consumed. The Add Feature dialog pre-ticks the newest
-  feature, so it was one click from the Create ribbon. The sketch-consuming
-  MODIFIERS (extrude, revolve, sweep) are gated now, on SOLIDS rather than on
-  `is_sketch` so a sketch of disjoint islands still builds.
-- **A picked face pushed INTO the body did nothing, quietly** (the default
-  behaviour of the most-used tool changed here) (plate 24 000,
-  prism 9 600, join 24 000 — three green rows and no word): the drag-direction
-  Join/Cut rule was written for face SKETCHES only. It runs in face mode now,
-  and a join that adds nothing is named the way a cut that removes nothing has
-  been since section 4.
-- Three smaller ones: Through all threw the taper away while the box and the
-  ring still showed the angle; a typed negative "Distance 2" was dropped; and
-  Through all's into-the-body seeding was missing from Two sides, so the 2 m
-  side ran into the air.
+- **`sketch_trim.py` kept its own composition rule** - a sequential
+  add/subtract loop in DRAWING order - while `sketch.py` orders outers before
+  what nests inside them and material before a cut that overlaps it. On
+  `[boss r5 add, bar 80x6 cut, pocket 40x20 cut]` the builder composes
+  **22.3648 mm2** and trim composed **0.0**, so every Trim click on that
+  cluster answered "the result would have no area left". Its pointwise
+  material test called `(0, +-4)` empty where the builder leaves boss, so a
+  click offered to dissolve what is really the profile's own edge.
+- **Two guards refused work the builder accepts.** `sketch_trim` l.372/l.424
+  rejected any entity list whose FIRST shape is a cut. Deleting one bar from
+  `[pocket cut, bar, bar, bar]` builds 144.0 mm2; Trim said "delete the cut
+  shapes first".
+- **The P0 in `sketch.py`.** The fourth review's "material before a cut that
+  overlaps it" pass ran only *while the order STARTED with a cut*. One
+  unrelated shape drawn first switched it off:
+  `[boss, bar, pocket]` = 22.3648 (correct), `[far circle, boss, bar, pocket]`
+  = **157.0796** - the boss built SOLID, the bar's 56.17 mm2 of red paint lost,
+  green and silent. The honest answer is 100.9046.
 
-## What round two changed (already reviewed - do not re-report)
-
-- The loft refusal names each section's own profile count.
-- `okSession` now looks at the COMBINER the session added as well as the tool's
-  own feature, so OK can no longer claim success over an empty viewport. The
-  sentence for the tool's own failure is untouched (`Mirror was NOT built`).
-- 3 more browser journeys: the auto-cut's target on a two-body design, the
-  taper box under Through all, and OK's honesty after a too-deep pull.
+**The shape of the fix:** `sketch.compose(entities, note=False)` and
+`sketch.compose_order(entities)` are public; `sketch_trim` asks them (R1).
+`_cluster` returns its members in the builder's order, so `_material_at` and
+`_compose_faces` inherit it. The two guards are replaced by
+`_refuse_if_the_trim_broke_it`, which asks whether the BUILDER can still
+compose the result and never blames the click for a sketch that was already
+broken. `_compose_order`'s overlap pass runs for every cut, not just a leading
+one, so where a shape was drawn cannot change the solid.
 
 ## Where the risk is - read these four first
 
-The two new guards are REFUSALS, so the risk is a false one: a shape that used
-to build and now does not. The first two lines below are the widest blast
-radius in the commit.
+1. **`_compose_order` now adds an ordering edge for EVERY (cut, material)
+   overlapping pair**, not only for cuts that lead. This is the widest blast
+   radius in the commit: it runs for every sketch in every design that has a
+   subtract. Two questions worth attacking - does it change a sketch whose
+   old answer was the one the user wanted, and can the extra edges make a
+   CYCLE that `_order_from` then breaks by falling back to drawing order?
+2. **`_cluster` returns composition order, not sorted order.** Every caller
+   that indexed `cl[0]` had to become `min(cl)`; the splice in `trim_apply`
+   was the one found. Look for another positional assumption about `cl`.
+3. **`_refuse_if_the_trim_broke_it` composes the WHOLE entity list**, twice on
+   the refusal path. Cost on a 24-entity sketch, and whether a legitimate trim
+   can now be refused because of an unrelated broken entity (it composes the
+   BEFORE list too, precisely to avoid that - is that escape hatch tight?).
+4. **`note=False`.** `compose` publishes "entity N removes nothing" into
+   `sketch._NOTES`, which `Document.warnings` drains. A hover or a click must
+   not leave a sentence about entity N of a CLUSTER in the next feature's
+   warnings. One test covers it; look for an uncovered path.
 
-- `_check_modifier_input` is called from `document._eval`, so it runs for EVERY
-  modifier feature on EVERY rebuild. It tests `n_solids(part) > 0`, deliberately NOT
-  `is_sketch`: a sketch of disjoint islands composes into a Compound that is
-  not a Sketch instance. Covered by a test, and all 50 designs rebuild.
-- the loft gate counts `len(p.faces())` per section; a section with ONE face and
-  inner wires (a ring) is still fine, which is what build123d supports.
-- `_check_idle_booleans` now warns about `fuse` as well as `cut`. Zero of the
-  50 saved designs trip it, but a legitimate "sink a boss fully into the body"
-  join would now be named. It is a warning, never an error.
-- `sync()` zeroing the taper box under Through all writes a box the user typed
-  in. It only fires while Through all is ticked, where the server built straight
-  walls anyway.
+## What was measured (do not re-measure unless you doubt the method)
+
+- **50 live designs rebuilt under both the old and the new rule: ZERO volume
+  drift**, zero warning changes, none newly broken. Total rebuild time
+  133.2s -> 127.3s (the old code re-ran the topological sort in a loop).
+  Probe: `probes/library_drift_compose.py old|new`.
+- **18,500 grid points across 8 sketches**: `_material_at`, fed the cluster in
+  the new order, agrees with the BUILT profile at every point, for every
+  cluster seed. Probe: `probes/trim_material_grid.py`.
+- All 24 drawing orders of `[far, boss, bar, pocket]` give one area.
+- Fast tier **1554 passed**, ruff clean, live `/api/sketch/trim/apply` smoke
+  test green on the restarted server. No frontend change, so no cache bump.
 
 ## Do not re-report
 
-- The symmetric branch (`both=True`) skipping `_taper_offset_problem`. It was
-  read, it is real, and NO profile could be constructed that reaches it
-  (`_apex_cap` caps every case tried). Recorded in the queue's done log as an
-  asymmetry, not a bug.
-- The taper direction chain: measured clean this pass (`_straighten_face` does
-  not flip the rebuilt normal anywhere in the gauntlet corpus).
-- Everything on LAUNCH-PLAN.md section 10's open list, and the pre-existing red
-  `tests/e2e/test_tree_delete.py` (five, measured at 667ccc0).
+- `_entity_face` taking `faces()[0]`. It was probed: every entity kind builds
+  exactly one face today, and the multi-face shapes that could exist (a
+  self-crossing polygon) are refused by `_entity` before they get here. The
+  self-crossing-polygon item is already queued on LAUNCH-PLAN section 10.
+- The `note` parameter defaulting to True. Every existing caller is the
+  builder, which wants the notes.
+- Everything on LAUNCH-PLAN.md section 10's open list, and the pre-existing
+  red `tests/e2e/test_tree_delete.py` (five, measured at 667ccc0).
