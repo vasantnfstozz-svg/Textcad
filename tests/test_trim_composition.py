@@ -263,13 +263,33 @@ def test_the_refusal_names_the_builders_own_complaint():
 
 # --- the public rule is the only rule ------------------------------------
 
-def test_compose_order_is_the_order_compose_uses():
-    ents = [FAR, BOSS, BAR, POCKET]
-    order = S.compose_order(ents)
+@pytest.mark.parametrize("ents", [
+    [FAR, BOSS, BAR, POCKET],
+    [BOSS, BAR, POCKET],
+    [rect(0, 0, 40, 20, "subtract"), rect(-12, 0, 6, 12),
+     rect(0, 0, 6, 12), rect(12, 0, 6, 12)],
+    [circ(0, 0, 30), circ(0, 0, 20, "subtract"), circ(0, 0, 10)],
+])
+def test_compose_order_is_the_very_order_compose_walks(ents):
+    """Not "it gives the same area" - the same LIST. Two public functions that
+    answer the same question have to answer it identically, or the module that
+    replays the arithmetic pointwise is back to guessing."""
+    used = []
+    real = S._order_of
+    S._order_of = lambda sh, mo, pr=None: (lambda o: (used.append(o), o)[1])(
+        real(sh, mo, pr))
+    try:
+        S.compose(ents, note=False)
+    finally:
+        S._order_of = real
+    assert len(used) == 1
+    assert S.compose_order(ents) == used[0]
+
+
+def test_compose_order_puts_the_boss_before_the_bar():
+    order = S.compose_order([FAR, BOSS, BAR, POCKET])
     assert sorted(order) == [0, 1, 2, 3]
     assert order.index(1) < order.index(2), "boss must precede the bar"
-    replay = S.compose([ents[i] for i in order], note=False)
-    assert float(replay.area) == pytest.approx(area(ents), abs=1e-6)
 
 
 def test_an_all_add_sketch_is_not_measured_at_all():
@@ -314,15 +334,18 @@ def test_an_impossible_order_tells_the_user_instead_of_going_quiet():
     S.drain_notes()
     area(KNOT)
     notes = " ".join(S.drain_notes())
-    assert "cannot be put in any build order" in notes
+    assert "put in a build order" in notes
     assert "may not remove what you expect" in notes
     assert "fully inside" in notes           # and says what to do about it
 
 
-def test_the_knot_note_names_stored_positions():
+def test_the_knot_note_names_every_shape_in_the_knot():
+    """Round two: it named only the one the fallback happened to pick first,
+    and one number out of four does not point at the pair to move."""
     S.drain_notes()
     area(KNOT)
-    assert "entity 1 " in " ".join(S.drain_notes())
+    note = next(n for n in S.drain_notes() if "build order" in n)
+    assert "entities 1, 2, 3 and 4" in note, note
 
 
 def test_an_ordinary_sketch_says_nothing_about_knots():
@@ -362,8 +385,8 @@ def test_a_rebuild_trim_does_not_compose_the_whole_sketch_again():
     of arc segments each. It could not tell us anything either: the cluster
     has already composed, `_shape_to_entities` has already refused an empty
     result, and nothing outside a cluster overlaps anything inside it.
-    Measured over 68 real rebuild trims in the user's library: not one left a
-    list the builder refuses."""
+    Measured over 176 real rebuild trims in the user's library (round two
+    widened the sweep from 68): not one left a list the builder refuses."""
     ents = [BOSS, BAR, POCKET]
     piece = next(p for p in T.trim_pieces(ents) if not p["whole"])
     calls = counted_composes(lambda: T.trim_apply(ents, piece["id"]))

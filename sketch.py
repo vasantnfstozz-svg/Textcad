@@ -394,7 +394,8 @@ def _order_from(needs: list[list[bool]],
         if nxt is None:                         # a cycle we cannot order:
             nxt = next(i for i in range(n) if not done[i])   # fall back to
             if problems is not None:            # the drawing order, and SAY SO
-                problems.append(nxt)
+                problems.extend(i for i in range(n)          # — about EVERY
+                                if not done[i] and waiting[i])  # shape stuck
         done[nxt] = True
         order.append(nxt)
         for i in range(n):
@@ -404,20 +405,27 @@ def _order_from(needs: list[list[bool]],
 
 
 def _knot_note(knotted: list) -> str:
-    """The sentence for an order that cannot exist. Entity NUMBERS are the
-    stored positions, the ones the tree shows — same as every other note."""
-    rows = ", ".join(str(i + 1) for i in sorted(knotted))
-    return (f"entity {rows} cannot be put in any build order — it has to come "
-            f"both before and after another shape it overlaps, so this part "
-            f"of the sketch is built in the order you drew it and a cut here "
-            f"may not remove what you expect. Move one of the overlapping "
-            f"shapes so it sits either fully inside the other or fully clear "
-            f"of it.") if len(knotted) == 1 else (
-        f"entities {rows} cannot be put in any build order — each has to come "
-        f"both before and after another shape it overlaps, so this part of "
-        f"the sketch is built in the order you drew it and a cut here may not "
-        f"remove what you expect. Move one of the overlapping shapes so it "
-        f"sits either fully inside the other or fully clear of it.")
+    """The sentence for an order that cannot exist.
+
+    It names EVERY entity caught in the knot, not just the one the fallback
+    happened to pick first: the user has to find the pair that overlaps and
+    contains at the same time, and one number out of four does not point at
+    it (review round two of `3b230b7`, 2026-09-11). Entity numbers are the
+    stored positions — the ones the tree shows — like every other note here.
+    """
+    rows = sorted(set(knotted))
+    if len(rows) > 1:
+        names = (", ".join(str(i + 1) for i in rows[:-1])
+                 + f" and {rows[-1] + 1}")
+        head = f"entities {names} cannot all be put in a build order"
+    else:                                   # a knot needs two shapes, so this
+        head = f"entity {rows[0] + 1} cannot be put in a build order"
+    return (f"{head} — each has "
+            f"to come both before and after another shape it overlaps, so "
+            f"this part of the sketch is built in the order you drew it and a "
+            f"cut here may not remove what you expect. Move one of them so it "
+            f"sits either fully inside the shape it overlaps or fully clear "
+            f"of it.")
 
 
 def _order_of(shapes: list, modes: list,
