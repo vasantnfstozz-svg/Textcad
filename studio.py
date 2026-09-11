@@ -516,6 +516,33 @@ if os.environ.get("TEXTCAD_CRASH_TEST") == "1":
         return {"armed": req.path}
 
 
+# POSTs that stay open while a chat job is building in the ACTIVE tab: a plan
+# is read-only, and switching tabs is how the user gets AWAY from the job to
+# keep working.
+_JOB_OPEN_POSTS = {"/api/tool/plan", "/api/tabs/switch"}
+
+
+@app.middleware("http")
+async def _one_writer_per_tab(request, call_next):
+    """While the AI is building in a tab, it is that tab's only writer.
+
+    The busy overlay lives INSIDE the viewport (static/index.html), so the
+    ribbon, the feature tree and the tab strip stay clickable while an "add"
+    job runs. Measured 2026-09-11: a parameter edit landing between two AI
+    steps pushed a second undo entry, and the promised "one Undo takes it all
+    back" then left the AI's first feature in the tree and silently reverted
+    the user's own edit. The answer carries no document on purpose — the tree
+    is mid-change by the job, and the browser is already being handed it,
+    read under the kernel lock, by GET /api/chat/job."""
+    if request.method != "POST" or request.url.path in _JOB_OPEN_POSTS:
+        return await call_next(request)
+    if _job_on(STATE["active"]) is None:
+        return await call_next(request)
+    return JSONResponse(status_code=400, content={
+        "error": "the AI is still building in this design — wait for it to "
+                 "finish, or switch to another tab to keep working"})
+
+
 @app.middleware("http")
 async def _session_autosave(request, call_next):
     if not (SESSION_ENABLED and request.method == "POST"):
@@ -1102,6 +1129,12 @@ def switch_tab(req: TabReq):
 def close_tab(req: TabReq):
     if req.id not in STATE["docs"]:
         return {"error": f"no tab '{req.id}'", **_doc_json()}
+    # A "create" job builds in a tab that is NOT the active one, so the
+    # one-writer rule above never sees it: closing that tab would leave the
+    # job building into a document with nowhere to be shown.
+    if _job_on(req.id) is not None:
+        return _refused(None, "the AI is still building in that tab — wait "
+                              "for it to finish before closing it")
     del STATE["docs"][req.id]
     if not STATE["docs"]:                       # never zero tabs
         _new_tab(Document(name="untitled"))
@@ -2988,8 +3021,7 @@ def _start_job(kind: str, description: str, tid: str, model,
                before: dict | None = None) -> dict:
     job = {"id": f"j{next(_JOB_SEQ)}", "kind": kind, "description": description,
            "tab": tid, "model": model, "before": before, "step": 0,
-           "log": [], "changed": 0, "done": False, "reply": None,
-           "n_before": len(STATE["docs"][tid]["doc"].features)}
+           "log": [], "changed": 0, "done": False, "reply": None}
     JOBS[job["id"]] = job
     del_ids = list(JOBS)[:-20]          # a handful of finished jobs is enough
     for k in del_ids:
@@ -3002,7 +3034,50 @@ def _start_job(kind: str, description: str, tid: str, model,
     return job
 
 
+def _job_on(tid: str | None) -> dict | None:
+    """The unfinished chat job building in this tab, if any."""
+    if tid is None:
+        return None
+    return next((j for j in JOBS.values()
+                 if not j["done"] and j["tab"] == tid), None)
+
+
+def _changed_params(before: dict, doc: Document) -> list[str]:
+    """'base.width' for every parameter the job rewrote on a feature that was
+    already there — so the reply can name what it actually did."""
+    old = {f["id"]: (f.get("params") or {}) for f in before["features"]}
+    out = []
+    for f in doc.features:
+        was = old.get(f.id)
+        if was is not None and was != f.params:
+            out += [f"{f.id}.{k}" for k in f.params if was.get(k) != f.params.get(k)]
+    return out
+
+
 def _run_job(job: dict) -> None:
+    """Run one chat job and ALWAYS finish it.
+
+    A thread that died without setting `done` left GET /api/chat/job
+    answering done=False for ever, and the browser's follow loop has no way
+    of knowing: an "add" job holds the busy overlay while it polls, so one
+    unhandled exception locked the viewport until a reload (measured
+    2026-09-11). Everything the job does now sits inside this barrier."""
+    try:
+        job["reply"] = _job_steps(job)
+    except Exception as ex:               # noqa: BLE001 — deliberate barrier
+        import traceback
+        traceback.print_exc()
+        job["log"].append(f"the AI step loop stopped: {ex}")
+        job["reply"] = (f"The AI step loop stopped: {type(ex).__name__}: {ex}. "
+                        f"Nothing further was changed — Undo (Ctrl+Z) if the "
+                        f"design looks wrong.")
+    finally:
+        job["done"] = True
+        if SESSION_ENABLED and not _INFLIGHT:
+            _persist_session()
+
+
+def _job_steps(job: dict) -> str:
     e = STATE["docs"][job["tab"]]
     doc = e["doc"]
 
@@ -3036,26 +3111,48 @@ def _run_job(job: dict) -> None:
         reply = (f'I finished without changing "{doc.name}" — the last thing the '
                  f'steps said: {why}')
     elif finished:
-        added = [f.id for f in doc.features[job["n_before"]:]]
-        what = (f'{len(added)} feature(s), each verified as it landed: '
-                f'{", ".join(added)}' if added else "one or more parameters")
-        reply = (f'Added {what} to "{doc.name}". One Undo (Ctrl+Z) takes '
-                 f'it all back.')
+        # What it ACTUALLY did, by comparing the trees. Counting from the tail
+        # ("everything after feature N") called a deleted feature "one or more
+        # parameters" (measured 2026-09-11) — the report has to be a diff.
+        was = [f["id"] for f in job["before"]["features"]]
+        now = [f.id for f in doc.features]
+        added = [i for i in now if i not in was]
+        gone = [i for i in was if i not in now]
+        edits = _changed_params(job["before"], doc)
+        bits = []
+        if added:
+            bits.append(f'{len(added)} feature(s), each verified as it landed: '
+                        f'{", ".join(added)}')
+        if edits:
+            bits.append("changed " + ", ".join(edits[:6]))
+        if gone:
+            bits.append("removed " + ", ".join(gone))
+        reply = (f'Added {"; ".join(bits) or "nothing I can name"} to '
+                 f'"{doc.name}". One Undo (Ctrl+Z) takes it all back.')
+        if doc.spec_problems:
+            # Their own recorded requirement, and the change they asked for may
+            # honestly have broken it. Never silent, never the AI's to rewrite.
+            reply += (" Note: the design no longer meets the spec it records — "
+                      + "; ".join(doc.spec_problems) + ".")
         _pending(f"AI added {', '.join(added) or 'edits'}", "ai", e)
     else:
-        # the user's design is not left half-changed: back to the snapshot
+        # The user's design is not left half-changed: back to the snapshot,
+        # IN PLACE. Replacing e["doc"] wholesale dropped a parked rollback bar
+        # (to_data does not carry it) and handed the tab a different object
+        # (measured 2026-09-11).
         with _KERNEL_LOCK:
-            fresh = Document.from_data(job["before"])
-            fresh._cache = doc._cache
-            e["doc"] = fresh
-            e["ok"] = fresh.rebuild()
+            e["ok"] = author._restore(doc, job["before"])
         _unsnapshot(e)
         reply = (f'I did NOT change "{doc.name}": {why} Try naming the face, '
                  f'the position and the size more precisely.')
-    job["reply"] = reply
-    job["done"] = True
-    if SESSION_ENABLED and not _INFLIGHT:
-        _persist_session()
+    # The tab has been built and checked; say so, or its dot stays the grey
+    # "not loaded yet" for ever and switching to it rebuilds the whole tree.
+    t0 = time.perf_counter()
+    with _KERNEL_LOCK:
+        e["ok"] = e["doc"].rebuild()
+    e["rebuild_ms"] = round((time.perf_counter() - t0) * 1000)
+    e["mesh_stale"] = True
+    return reply
 
 
 @app.get("/api/chat/job/{jid}")

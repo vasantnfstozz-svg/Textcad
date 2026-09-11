@@ -6,6 +6,7 @@ Feature uses and is judged on its own. These tests script the model and
 check what reaches the tree, what the model is told, and what the chat route
 does with a job — no API key, no browser."""
 import json
+import threading
 import time
 
 import pytest
@@ -235,6 +236,182 @@ def test_author_design_is_the_step_loop_on_a_fresh_document():
     assert doc is None and "GAVE UP" in transcript[-1]
 
 
+# ------------------------------------------- the review's findings, 2026-09-11
+
+def _plate_with_a_spec():
+    d = Document(name="my-plate")
+    d.add("base", "plate", {"width": 40, "depth": 30, "thickness": 5})
+    d.spec = {"size": [40, 30, 5], "n_solids": 1, "tol": 0.5}
+    d.rebuild()
+    return d
+
+
+BOSS = {"add": {"id": "boss", "op": "disc",
+                "params": {"radius": 6, "thickness": 8}}}
+
+
+def test_the_design_keeps_its_own_spec_when_the_ai_adds_to_it():
+    """The spec is the USER's requirement. `done` used to overwrite it:
+    {"size": [40,30,5], ...} became {"n_solids": 1} and the chat reported
+    success (31 of the 50 live designs pin a size, 22 pin holes)."""
+    doc = _plate_with_a_spec()
+    mine = dict(doc.spec)
+    m = Scripted(BOSS, {"done": True, "spec": {"n_solids": 1}})
+    ok, transcript = author.author_steps(doc, "add a boss", m)
+    assert ok and doc.spec == mine
+    assert "keeps the spec it already recorded" in transcript[-1]
+    assert "RECORDS THE USER'S SPEC" in m.heard[0]
+
+
+def test_a_refused_done_never_leaves_the_models_spec_behind():
+    doc = _plate_with_a_spec()
+    mine = dict(doc.spec)
+    m = Scripted({"done": True, "spec": {"n_solids": 1, "volume": 999999}})
+    author.author_steps(doc, "finish it", m, max_fails=1)
+    assert doc.spec == mine
+
+
+def test_a_spec_the_change_broke_is_reported_not_hidden():
+    doc = _plate_with_a_spec()
+    m = Scripted(BOSS, {"add": {"id": "join", "op": "fuse",
+                                "inputs": ["base", "boss"]}},
+                 {"done": True, "spec": {"n_solids": 1}})
+    ok, transcript = author.author_steps(doc, "add a boss", m)
+    assert ok and doc.spec["size"] == [40, 30, 5]
+    assert doc.spec_problems, "the taller part no longer meets the size spec"
+    assert "no longer meets it" in transcript[-1]
+
+
+def test_a_design_with_a_spec_of_its_own_is_told_not_to_send_one():
+    doc = _plate_with_a_spec()
+    m = Scripted(BOSS, {"done": True})
+    ok, _ = author.author_steps(doc, "add a boss", m)
+    assert ok, "done without a spec must be accepted when the design has one"
+
+
+def test_a_step_is_judged_on_what_it_touched_not_on_the_whole_tree():
+    """A design with a feature that is ALREADY red: a correct step used to
+    come back "UNDONE - it built broken geometry" naming somebody else's
+    feature, three in a row, and the AI could not touch the design at all."""
+    doc = Document(name="half-broken")
+    doc.add("base", "plate", {"width": 40, "depth": 30, "thickness": 5})
+    doc.add("bad", "with_center_hole", {"radius": 500}, inputs=["base"])
+    doc.rebuild()
+    assert doc.get("bad").status != "ok", "the fixture must start red"
+    m = Scripted(BOSS, {"done": True, "spec": {"n_solids": 1}})
+    ok, transcript = author.author_steps(doc, "add a boss", m, max_fails=1)
+    assert [f.id for f in doc.features] == ["base", "bad", "boss"]
+    assert transcript[0].startswith("OK: 'boss'")
+    # ...and `done` still judges the WHOLE tree, naming the RIGHT feature
+    assert not ok and transcript[1].startswith("REFUSED done: 'bad'")
+
+
+def test_ignoring_a_feature_that_was_already_red_still_catches_a_new_break():
+    """The other half of the same rule: a step may ignore a row that was
+    ALREADY red, but it may never walk away from one it broke itself."""
+    doc = Document(name="half-broken")
+    doc.add("plate", "plate", {"width": 20, "depth": 20, "thickness": 4})
+    doc.add("round", "fillet", {"radius": 1, "edges": "all"}, inputs=["plate"])
+    doc.add("bad", "with_center_hole", {"radius": 500}, inputs=["round"])
+    doc.rebuild()
+    assert doc.get("bad").status != "ok" and doc.get("round").status == "ok"
+    m = Scripted({"edit": {"feature_id": "round", "param": "radius", "value": 50}})
+    ok, transcript = author.author_steps(doc, "fatter fillet", m, max_fails=1)
+    assert not ok and doc.get("round").params["radius"] == 1
+    assert transcript[0].startswith("UNDONE edit 'round.radius' = 50")
+    assert "'round'" in transcript[0] and "it was fine before this step" in transcript[0]
+
+
+def test_a_parked_rollback_bar_stops_the_job_with_a_sentence():
+    """Nothing below the bar is built, so no step could be verified - and
+    every step used to be undone as "broken geometry" instead."""
+    doc = _plate_with_a_spec()
+    doc.add("boss", "disc", {"radius": 6, "thickness": 8})
+    doc.rollback = "base"
+    doc.rebuild()
+    m = Scripted(BOSS)
+    ok, transcript = author.author_steps(doc, "add a pin", m)
+    assert not ok and doc.rollback == "base"
+    assert [f.id for f in doc.features] == ["base", "boss"]
+    assert "rollback bar is parked at 'base'" in transcript[0]
+    assert "release the bar" in transcript[0]
+
+
+def test_the_ai_may_not_remove_a_feature_the_user_built():
+    doc = _plate_with_a_spec()
+    doc.add("boss", "disc", {"radius": 6, "thickness": 8})
+    doc.rebuild()
+    m = Scripted({"remove": "boss"}, {"done": True})
+    ok, transcript = author.author_steps(doc, "add a hole", m)
+    assert [f.id for f in doc.features] == ["base", "boss"]
+    assert "it was in the design before you started" in transcript[0]
+
+
+def test_the_ai_may_still_take_back_its_own_step():
+    doc = _plate_with_a_spec()
+    m = Scripted(BOSS, {"remove": "boss"}, {"done": True})
+    ok, transcript = author.author_steps(doc, "never mind", m)
+    assert ok and [f.id for f in doc.features] == ["base"]
+    assert "removed 'boss'" in transcript[1]
+
+
+def test_one_step_per_reply_or_the_verification_means_nothing():
+    """{"add": ..., "done": true} took the add road, came back ok, and the
+    loop then read "done" and FINISHED - no final lint, no spec check. Two
+    loose bodies were reported as a verified design."""
+    doc = Document(name="untitled")
+    m = Scripted({"add": {"id": "a", "op": "plate",
+                          "params": {"width": 20, "depth": 20, "thickness": 4}}},
+                 {"add": {"id": "b", "op": "disc",
+                          "params": {"radius": 5, "thickness": 10}},
+                  "done": True})
+    ok, transcript = author.author_steps(doc, "two bodies", m, max_fails=1)
+    assert not ok and [f.id for f in doc.features] == ["a"]
+    assert "one step per reply" in transcript[1]
+    assert '"add" and "done"' in transcript[1]
+
+
+def test_done_false_beside_a_step_is_just_the_step():
+    doc = Document(name="untitled")
+    m = Scripted({"add": {"id": "a", "op": "plate",
+                          "params": {"width": 20, "depth": 20, "thickness": 4}},
+                  "done": False}, DONE)
+    ok, _ = author.author_steps(doc, "a plate", m)
+    assert ok and [f.id for f in doc.features] == ["a"]
+
+
+def test_a_refused_first_step_does_not_rename_the_design():
+    doc = Document(name="untitled")
+    m = Scripted({"name": "sports-car",
+                  "add": {"id": "a", "op": "torus", "params": {}}})
+    author.author_steps(doc, "a car", m, max_fails=1)
+    assert doc.name == "untitled"
+
+
+def test_the_name_survives_a_refused_first_step_and_lands_with_the_next():
+    doc = Document(name="untitled")
+    m = Scripted({"name": "sports-car",
+                  "add": {"id": "a", "op": "torus", "params": {}}},
+                 {"add": {"id": "a", "op": "plate",
+                          "params": {"width": 20, "depth": 20, "thickness": 4}}},
+                 DONE)
+    ok, _ = author.author_steps(doc, "a car", m)
+    assert ok and doc.name == "sports-car"
+
+
+def test_a_warning_belongs_to_the_feature_it_names():
+    """A bare `f.id in str(w)` is a substring test on the whole sentence, so
+    'boss' owned every line about 'boss_cut' — and a one-letter id owned the
+    lot. Warnings quote the feature they are about; match that."""
+    doc = Document(name="probe")
+    doc.add("boss", "plate", {"width": 40, "depth": 30, "thickness": 5})
+    doc.rebuild()
+    doc.warnings = ["'boss_cut' removed nothing"]         # names someone else
+    assert "Note:" not in author._built(doc, doc.get("boss"))
+    doc.warnings = ["'boss' and 'pin' are separate bodies"]
+    assert "Note:" in author._built(doc, doc.get("boss"))
+
+
 # ------------------------------------------------------- the chat route -----
 
 @pytest.fixture()
@@ -298,8 +475,14 @@ def test_add_extends_the_design_on_screen_as_one_undo_step(client, monkeypatch):
     d = client.post("/api/chat", json={"message": "drill a 6mm hole"}).json()
     assert d["new_tab"] is None and d["active_tab"] == before["active_tab"]
     assert "Added 1 feature" in d["reply"] and "centre_hole" in d["reply"]
-    assert [f["id"] for f in d["features"]][-1] == "centre_hole" and d["ok"]
+    assert [f["id"] for f in d["features"]][-1] == "centre_hole"
     assert len(d["features"]) == len(before["features"]) + 1
+    # The flange records a 6-fold-symmetry spec, and a single centre hole
+    # breaks it. Adding that hole BY HAND reports exactly this (measured), so
+    # the AI path says the same thing instead of deleting the spec to look
+    # green — the reply carries the news in words.
+    assert d["spec"] == before["spec"] and not d["ok"]
+    assert "no longer meets the spec it records" in d["reply"]
     u = client.post("/api/undo").json()
     assert len(u["features"]) == len(before["features"]), "one Undo, all back"
 
@@ -325,6 +508,128 @@ def test_without_an_api_key_the_chat_says_so(client, monkeypatch):
     monkeypatch.setattr(studio, "_make_model", lambda *a, **k: None)
     d = client.post("/api/chat", json={"message": "design a washer"}).json()
     assert "API key" in d["reply"] and "job" not in d
+
+
+def test_a_running_job_is_the_only_writer_on_its_tab(client, monkeypatch):
+    """The busy overlay covers the VIEWPORT only, so the ribbon, the tree and
+    the tab strip stay clickable. A parameter edit landing between two AI
+    steps pushed a SECOND undo entry, and "one Undo takes it all back" then
+    left the AI's first feature standing and silently reverted the user's own
+    edit (measured 2026-09-11)."""
+    _intent(monkeypatch, "add", "two pins")
+    landed = []
+
+    class Meddling:
+        """Its second reply is preceded by the user editing the same tab."""
+        n = 0
+
+        def generate(self, messages):
+            self.n += 1
+            if self.n == 1:
+                return json.dumps({"add": {"id": "p1", "op": "disc",
+                                           "params": {"radius": 3, "thickness": 3}}})
+            if self.n == 2:
+                r = client.post("/api/feature/params",
+                                json={"feature_id": "body",
+                                      "params": {"radius": 99}})
+                landed.append(r)
+                return json.dumps({"add": {"id": "p2", "op": "disc",
+                                           "params": {"radius": 4, "thickness": 3}}})
+            return json.dumps({"done": True})
+
+    monkeypatch.setattr(studio, "_make_model", lambda *a, **k: Meddling())
+    before = client.get("/api/doc").json()
+    d = client.post("/api/chat", json={"message": "two pins"}).json()
+    assert landed[0].status_code == 400
+    assert "still building" in landed[0].json()["error"]
+    assert "p1" in d["reply"] and "p2" in d["reply"]
+    u = client.post("/api/undo").json()
+    assert [f["id"] for f in u["features"]] == [f["id"] for f in before["features"]]
+    assert u["can_undo"] == before["can_undo"], "one job, one undo step"
+    # ...and the tab is writable again the moment the job is done
+    assert client.post("/api/feature/params",
+                       json={"feature_id": "body",
+                             "params": {"radius": 51}}).status_code == 200
+
+
+def test_the_tab_a_job_builds_in_cannot_be_closed_under_it(client, monkeypatch):
+    """A "create" job builds in a tab that is NOT the active one, so the
+    one-writer rule never sees it."""
+    _intent(monkeypatch, "create", "a washer")
+    monkeypatch.setattr(studio, "JOB_THREADS", True)
+    started = threading.Event()
+    release = threading.Event()
+
+    class Slow:
+        n = 0
+
+        def generate(self, messages):
+            self.n += 1
+            if self.n == 1:
+                started.set()
+                release.wait(5)
+                return json.dumps(DISC)
+            return json.dumps(DONE)
+
+    monkeypatch.setattr(studio, "_make_model", lambda *a, **k: Slow())
+    d = client.post("/api/chat", json={"message": "design a washer"}).json()
+    assert started.wait(5)
+    shut = client.post("/api/tabs/close", json={"id": d["new_tab"]})
+    release.set()
+    assert shut.status_code == 400 and "still building" in shut.json()["error"]
+    assert d["new_tab"] in studio.STATE["docs"]
+    for _ in range(200):
+        if client.get(f"/api/chat/job/{d['job']}").json()["done"]:
+            break
+        time.sleep(0.05)
+    assert client.post("/api/tabs/close", json={"id": d["new_tab"]}).status_code == 200
+
+
+def test_a_job_whose_thread_dies_still_says_done(client, monkeypatch):
+    """GET /api/chat/job answered done=False for ever, and the browser's
+    follow loop holds the busy overlay while it polls: one unhandled
+    exception locked the viewport until a reload."""
+    _intent(monkeypatch, "add", "a pin")
+    _model(monkeypatch, {"add": {"id": "pin", "op": "disc",
+                                 "params": {"radius": 3, "thickness": 3}}},
+           {"done": True})
+
+    def boom(*a, **k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(studio, "_pending", boom)
+    d = client.post("/api/chat", json={"message": "add a pin"}).json()
+    j = client.get(f"/api/chat/job/{d['job']}").json()
+    assert j["done"] and "stopped" in j["reply"] and "boom" in j["reply"]
+
+
+def test_a_finished_job_leaves_its_tab_built_not_grey(client, monkeypatch):
+    """`ok` reads None (a grey "not loaded yet" dot) while rebuild_ms is
+    None, and switching to the tab then rebuilds the whole tree again."""
+    _intent(monkeypatch, "create", "a washer")
+    _model(monkeypatch, DISC, BORE, DONE)
+    d = client.post("/api/chat", json={"message": "design a washer"}).json()
+    tab = next(t for t in d["tabs"] if t["id"] == d["new_tab"])
+    assert tab["ok"] is True, "the AI's own tab reports what it verified"
+    assert studio.STATE["docs"][d["new_tab"]]["rebuild_ms"] is not None
+
+
+def test_a_job_that_gives_up_keeps_the_tab_document_and_its_rollback_bar(
+        client, monkeypatch):
+    """The give-up path replaced e["doc"] wholesale; to_data does not carry
+    the rollback bar, so the user's parked bar vanished (measured)."""
+    e = studio.STATE["docs"][studio.STATE["active"]]
+    was = e["doc"]
+    was.rollback = "body"
+    studio._rebuild_and_mesh()
+    _intent(monkeypatch, "add", "a boss")
+    bad = {"add": {"id": "x", "op": "torus", "params": {}}}
+    _model(monkeypatch, bad, bad, bad)
+    d = client.post("/api/chat", json={"message": "add a boss"}).json()
+    assert d["reply"].startswith("I did NOT change")
+    assert e["doc"] is was, "the tab must keep its document object"
+    assert d["rollback"] == "body"
+    assert "rollback bar is parked" in d["reply"]
 
 
 def test_a_threaded_job_is_followed_through_its_status_route(client, monkeypatch):

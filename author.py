@@ -198,16 +198,19 @@ object, no prose, no markdown — one of these four:
     changes ONE parameter of a feature already in the tree — never rebuild
     from scratch what one number can fix;
 {{"remove": "an_id_in_the_tree"}}
-    takes back a step of yours that nothing else builds on (your last step);
+    takes back a step OF YOUR OWN that nothing else builds on (your last
+    step) — a feature that was in the tree before you started is the user's
+    and is refused;
 {{"done": true, "spec": {{"n_solids": 1, ...optional: "symmetry": N, "tip_radius": mm, "size": [x,y,z or null], "holes": {{"5": 2}}, "tol": 0.5}}}}
     the part is complete (spec "holes" maps NUMERIC hole radius in mm ->
     count; {{"5": 2}} means two 5mm-radius holes).
 
-After every reply you are told what the step built (status, volume, size,
-the bodies now in the tree) or the sentence it was REFUSED with. A refused
-step is NOT in the tree: send a corrected step, not the next one. A step
-that builds broken geometry is undone the same way. Think the whole part
-through before the first step, then record it step by step.
+ONE of those four per reply — never two in one. After every reply you are
+told what the step built (status, volume, size, the bodies now in the tree)
+or the sentence it was REFUSED with. A refused step is NOT in the tree: send
+a corrected step, not the next one. A step that builds broken geometry is
+undone the same way. Think the whole part through before the first step,
+then record it step by step.
 
 ALLOWED OPERATIONS (the ONLY ops that exist — anything else is rejected):
 {_catalog_text()}
@@ -258,7 +261,9 @@ RULES AND CONVENTIONS:
   "count2" / "direction2" / "distance2" make it a grid.
 - The LAST feature you add is the part. It must be ONE watertight solid,
   so end with a fuse if you built separate pieces.
-- "done" always carries a spec with at least {{"n_solids": 1}}. Match spec strictness
+- "done" carries a spec with at least {{"n_solids": 1}} when you are building
+  a NEW design. When you are adding to a design that already records one, it
+  KEEPS that spec and you send none. Match spec strictness
   to the request: for ENGINEERING parts with explicit dimensions, encode them
   (size/holes/symmetry, tight tol). For STYLIZED/creative models (cars,
   animals, buildings), keep the spec MINIMAL — {{"n_solids": 1}} plus at most
@@ -502,14 +507,15 @@ MAX_STEPS = 40          # bounds the cost of a model that never says done
 MAX_FAILS = 3           # refusals in a row before the loop gives up
 
 
-def _restore(doc: Document, data: dict) -> None:
+def _restore(doc: Document, data: dict) -> bool:
     """Put the tree back exactly as `data` (a to_data() snapshot) had it —
     the same road undo takes — keeping the document OBJECT, which a tab
-    entry holds by identity."""
+    entry holds by identity, and with it the rollback bar and the build
+    cache. Returns the rebuild's verdict, so a caller can record it."""
     fresh = Document.from_data(data)
-    doc.features, doc.spec = fresh.features, fresh.spec
+    doc.name, doc.features, doc.spec = fresh.name, fresh.features, fresh.spec
     doc._mark_stale()
-    doc.rebuild()
+    return doc.rebuild()
 
 
 def _bodies(doc: Document) -> str:
@@ -534,27 +540,59 @@ def _built(doc: Document, f) -> str:
     if f.pieces and f.pieces > 1:
         line += (f" — in {f.pieces} separate pieces (fine for a cutting tool "
                  f"made of several shapes; the FINISHED part must be one piece)")
-    notes = [str(w).rstrip(".") for w in doc.warnings if f.id in str(w)]
+    # Warnings quote the feature they are about ('base_plate' and 'a' are
+    # separate bodies...). A bare substring test made every warning belong to
+    # a one-letter id, and 'boss' owned every line about 'boss_cut'.
+    notes = [str(w).rstrip(".") for w in doc.warnings if f"'{f.id}'" in str(w)]
     if notes:
         line += ". Note: " + "; ".join(notes[:2])
     return line + f". Bodies: {_bodies(doc)}."
 
 
-def _first_problem(doc: Document, was_ok: set) -> str | None:
-    """The first feature that is red now, as a sentence."""
+def _first_problem(doc: Document, was_ok=frozenset(),
+                   only=None) -> str | None:
+    """The first RED feature this step is answerable for, as a sentence.
+
+    `only` (an add/edit step) limits the question to the feature the step
+    wrote plus the ones that were HEALTHY before it. A row that was already
+    red is not the step's doing, and undoing a correct step for it locked
+    the AI out of the design completely: measured 2026-09-11, three correct
+    steps on a design with one red feature each came back "UNDONE — it built
+    broken geometry" naming somebody else's feature, then "I did NOT change
+    your design". `done` passes no `only` and judges the WHOLE tree, which
+    is the whole point of done."""
     for f in doc.features:
-        if f.status != "ok" and not f.suppressed:
-            tag = " (it was fine before this step)" if f.id in was_ok else ""
-            return f"'{f.id}' ({f.op}){tag}: " + "; ".join(f.problems)
+        if f.status == "ok" or f.suppressed:
+            continue
+        if only is not None and f.id not in only:
+            continue
+        tag = " (it was fine before this step)" if f.id in was_ok else ""
+        return f"'{f.id}' ({f.op}){tag}: " + "; ".join(f.problems)
     return None
 
 
-def _apply_step(doc: Document, step: dict) -> tuple[bool, str, str | None]:
+def _apply_step(doc: Document, step: dict, protected=frozenset(),
+                keep_spec: bool = False) -> tuple[bool, str, str | None]:
     """Apply ONE reply to the document. -> (ok, sentence, feature id).
     Never raises for the model's mistakes; the sentence is what it hears.
-    On a refusal the document is exactly as it was."""
+    On a refusal the document is exactly as it was.
+
+    `protected`: ids that were in the tree BEFORE this job — the model may
+    edit them but never remove them. `keep_spec`: the design already records
+    the user's own requirement, so "done" may not write a spec over it."""
     before = doc.to_data()
     was_ok = {f.id for f in doc.features if f.status == "ok"}
+    # ONE step per reply, or none of the verification means anything: a reply
+    # carrying {"add": ...} AND "done": true took the add road, came back ok,
+    # and the loop then read "done" and FINISHED — no final lint, no spec, no
+    # spec check. Measured 2026-09-11: two loose bodies and an empty spec
+    # reported as "Designed ... each verified as it was added".
+    acts = [k for k in ("add", "edit", "remove") if k in step]
+    acts += ["done"] if step.get("done") else []
+    if len(acts) > 1:
+        return False, ("REFUSED: one step per reply — this one carried "
+                       + " and ".join(f'"{a}"' for a in acts)
+                       + '. Send them one at a time, "done" last'), None
     if "add" in step:
         a = step["add"]
         if not isinstance(a, dict) or not a.get("id") or not a.get("op"):
@@ -572,7 +610,7 @@ def _apply_step(doc: Document, step: dict) -> tuple[bool, str, str | None]:
             return False, f"REFUSED '{fid}' (history lint): " + "; ".join(lint), fid
         doc.rebuild()
         f = doc.get(fid)
-        bad = _first_problem(doc, was_ok)
+        bad = _first_problem(doc, was_ok, only=was_ok | {fid})
         if bad:
             _restore(doc, before)
             return False, f"UNDONE '{fid}' — it built broken geometry: {bad}", fid
@@ -588,7 +626,7 @@ def _apply_step(doc: Document, step: dict) -> tuple[bool, str, str | None]:
             _restore(doc, before)
             return False, f"REFUSED edit of '{fid}': {err}", fid
         doc.rebuild()
-        bad = _first_problem(doc, was_ok)
+        bad = _first_problem(doc, was_ok, only=was_ok | {fid})
         if bad:
             _restore(doc, before)
             return False, (f"UNDONE edit '{fid}.{e['param']}' = {e.get('value')!r} "
@@ -597,6 +635,13 @@ def _apply_step(doc: Document, step: dict) -> tuple[bool, str, str | None]:
                       + _built(doc, doc.get(fid))), fid
     if "remove" in step:
         fid = str(step["remove"])
+        # Only a step of the model's OWN. "remove" is meant to take back its
+        # last move; unguarded it deleted a feature the user had built and the
+        # chat still said "Added one or more parameters" (measured 2026-09-11).
+        if fid in protected:
+            return False, (f"REFUSED remove of '{fid}': it was in the design "
+                           f"before you started, so it is the user's, not "
+                           f"yours to take back. Use edit to change it"), fid
         try:                     # strict: only a step nothing else builds on
             doc.remove(fid, mode="strict")
         except (KeyError, ValueError) as err:
@@ -611,6 +656,25 @@ def _apply_step(doc: Document, step: dict) -> tuple[bool, str, str | None]:
         lint = lint_tree(doc.features)
         if lint:
             return False, "REFUSED done (history lint): " + "; ".join(lint), None
+        if keep_spec:
+            # The design already records the USER's requirement, and it is
+            # theirs. "done" used to overwrite it: an "add a hole" job turned
+            # {"size":[40,30,5],"n_solids":1,"tol":0.5} into {"n_solids":1}
+            # and reported success (measured 2026-09-11 — 31 of the user's 50
+            # designs pin a size, 22 pin holes). So the model's spec is
+            # dropped, theirs is kept, and done is judged on the tree's
+            # HEALTH: whether the change they ASKED for still meets a
+            # requirement written earlier is news for THEM, in the reply —
+            # not a wall for the model to batter for three steps.
+            doc.rebuild()
+            bad = _first_problem(doc)
+            if bad:
+                return False, f"REFUSED done: {bad}", None
+            miss = "; ".join(doc.spec_problems)
+            return True, ("DONE: every feature ok. The design keeps the spec "
+                          "it already recorded" + (f", and no longer meets it: "
+                                                   f"{miss}" if miss else "")
+                          + "."), None
         try:
             doc.spec = _spec_of(step.get("spec"))
         except ValueError as err:
@@ -618,7 +682,7 @@ def _apply_step(doc: Document, step: dict) -> tuple[bool, str, str | None]:
         doc.spec.setdefault("n_solids", 1)
         if doc.rebuild():
             return True, "DONE: every feature ok and the spec is met.", None
-        bad = _first_problem(doc, was_ok)
+        bad = _first_problem(doc)
         if bad:                        # cannot happen after a clean step; belt
             _restore(doc, before)
             return False, f"REFUSED done: {bad}", None
@@ -641,16 +705,28 @@ def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
     "id", "ok": the tree's health now}. `guard()` is a context manager the
     caller may wrap each kernel step in (the server takes its kernel lock
     and in-flight marker there). -> (finished, transcript)."""
+    protected = frozenset(f.id for f in doc.features)   # the user's own work
+    keep_spec = bool(doc.spec)
     tree = [{"id": f.id, "op": f.op, "params": f.params, "inputs": f.inputs}
             for f in doc.features]
     opening = f"REQUEST: {request}\n\n"
-    opening += (f"CURRENT TREE (add to it; do not rebuild what exists):\n"
-                f"{json.dumps(tree)}\nBODIES: {_bodies(doc)}\n\nFirst step?"
-                if tree else "The tree is empty. First step?")
+    if tree:
+        opening += (f"CURRENT TREE (add to it; do not rebuild what exists; "
+                    f"these features are the user's — you may edit a number "
+                    f"in one, never remove one):\n{json.dumps(tree)}\n"
+                    f"BODIES: {_bodies(doc)}\n")
+        if keep_spec:
+            opening += (f"THE DESIGN ALREADY RECORDS THE USER'S SPEC and keeps "
+                        f"it — do not send one: "
+                        f"{json.dumps(doc.spec, default=str)}\n")
+        opening += "\nFirst step?"
+    else:
+        opening += "The tree is empty. First step?"
     messages = [{"role": "system", "content": AUTHOR_PROMPT},
                 {"role": "user", "content": opening}]
     transcript: list[str] = []
     fails = 0
+    pending_name = None       # the model's name, held until a step LANDS
 
     def say(kind, text, fid=None):
         transcript.append(text)
@@ -658,6 +734,16 @@ def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
             on_step({"kind": kind, "text": text, "id": fid,
                      "ok": all(f.status == "ok" or f.suppressed
                                for f in doc.features) and not doc.spec_problems})
+
+    # A parked rollback bar means the kernel does not build past it: every
+    # step lands "stale (after rollback bar)" and is undone as broken geometry
+    # (measured 2026-09-11), and nothing the model added could be verified
+    # anyway — which is the one thing this loop exists to do.
+    if doc.rollback is not None:
+        say("gave_up", f"the rollback bar is parked at '{doc.rollback}', so "
+                       f"the tree below it is not built and no step could be "
+                       f"checked — release the bar and ask again")
+        return False, transcript
 
     for _ in range(max_steps):
         raw = model.generate(messages)
@@ -670,13 +756,21 @@ def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
         except (ValueError, json.JSONDecodeError) as e:
             ok, text, fid = False, f"REFUSED: that was not one JSON object ({e})", None
         else:
-            if "name" in step and not doc.features and isinstance(step["name"], str):
-                doc.name = step["name"].strip()[:60] or doc.name
+            # "name" is read while the tree is still empty — but only APPLIED
+            # once a step lands, or a refused step renamed the tab on its way
+            # out ("sports-car" stuck to a design whose only step was an
+            # unknown op). It is held instead of dropped, so a model that
+            # names itself once and is then refused still names its design.
+            naming = not doc.features
+            if naming and isinstance(step.get("name"), str):
+                pending_name = step["name"].strip()[:60] or pending_name
             if guard is not None:
                 with guard():
-                    ok, text, fid = _apply_step(doc, step)
+                    ok, text, fid = _apply_step(doc, step, protected, keep_spec)
             else:
-                ok, text, fid = _apply_step(doc, step)
+                ok, text, fid = _apply_step(doc, step, protected, keep_spec)
+            if ok and naming and pending_name:
+                doc.name = pending_name
         if ok and step.get("done"):
             say("done", text)
             return True, transcript

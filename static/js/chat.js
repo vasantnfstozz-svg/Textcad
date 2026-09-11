@@ -25,14 +25,23 @@ const pause = ms => new Promise(r => { setTimeout(r, ms); });
    undo stack and the kernel are one line. A "create" job builds in its own
    tab, and the user keeps working. */
 async function followJob(id, kind) {
-  let seen = 0, last = sig(S.lastDoc);
+  let seen = 0, last = sig(S.lastDoc), misses = 0;
   const busy = kind === 'add';
   if (busy) setBusy('the AI is adding to this design…');
   try {
     for (;;) {
       await pause(700);
       let j;
-      try { j = await getJSON(`/api/chat/job/${id}`); } catch { continue; }
+      /* A crashed-and-relaunched server answers again within seconds, so a
+         failed poll is worth retrying — but not for ever: an unbounded retry
+         held the busy overlay up with nothing to say. ~40 s, then say so. */
+      try { j = await getJSON(`/api/chat/job/${id}`); misses = 0; }
+      catch {
+        if (++misses < 60) continue;
+        addMsg('bot', '⚠ lost contact with the AI while it was building — '
+          + 'reload the page and check the design before carrying on');
+        return;
+      }
       if (j.error) { addMsg('bot', '⚠ ' + j.error); return; }
       const grew = seen < j.log.length;
       for (; seen < j.log.length; seen++) addMsg('step', j.log[seen]);
