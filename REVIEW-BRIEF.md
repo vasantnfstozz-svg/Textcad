@@ -6,12 +6,22 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: NOTHING PENDING.** Section 7 (Extrude as a whole module, with loft
-> and sweep) was reviewed and fixed at `dfcb73f` — 6 findings, all 6 fixed, no
-> P0, so there is no second round. The next `code review` therefore goes to
-> `REVIEW-QUEUE.md` and takes the first TODO row of the status board:
-> **section 8, Import STL and STEP** (which may share its chat with section 9,
-> Trace image, as the queue note says).
+> **Status: PENDING — `dfcb73f`.** That is the FIX COMMIT of the section 7
+> review (Extrude, with loft and sweep): 6 findings fixed. No P0 was among
+> them, so the queue's step 8 would send the next chat straight to section 8 —
+> this round is a deliberate exception, because the pass added two REFUSALS
+> and changed what Extrude does by default, and on this project a fix pass's
+> own new guard has been wrong more often than not (section 3 found the same
+> P0 through two more doors, section 4 two holes in the guard round one built,
+> section 5 a guard that refused a legitimate shape, Move/Rotate four findings
+> all four inside round one's own guard).
+>
+> **Scope: the diff of `dfcb73f` only** — `git show dfcb73f` is 380 insertions
+> across `document.py`, `sketch.py`, `static/js/extrude.js` and two new test
+> files. Do NOT re-read the module; section 7 is closed and its done log in
+> `REVIEW-QUEUE.md` says what was already measured. When this round is done,
+> the brief goes back to `NOTHING PENDING` and the queue takes **section 8,
+> Import STL and STEP**.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -40,7 +50,8 @@ reviewed. No live design was affected; all 50 rebuild unchanged.**
   feature, so it was one click from the Create ribbon. The sketch-consuming
   MODIFIERS (extrude, revolve, sweep) are gated now, on SOLIDS rather than on
   `is_sketch` so a sketch of disjoint islands still builds.
-- **A picked face pushed INTO the body did nothing, quietly** (plate 24 000,
+- **A picked face pushed INTO the body did nothing, quietly** (the default
+  behaviour of the most-used tool changed here) (plate 24 000,
   prism 9 600, join 24 000 — three green rows and no word): the drag-direction
   Join/Cut rule was written for face SKETCHES only. It runs in face mode now,
   and a join that adds nothing is named the way a cut that removes nothing has
@@ -50,12 +61,14 @@ reviewed. No live design was affected; all 50 rebuild unchanged.**
   Through all's into-the-body seeding was missing from Two sides, so the 2 m
   side ran into the air.
 
-## Where the risk is now
+## Where the risk is - read these four first
 
-The two new guards are REFUSALS, so the risk is a false one — a shape that
-used to build and now does not:
+The two new guards are REFUSALS, so the risk is a false one: a shape that used
+to build and now does not. The first two lines below are the widest blast
+radius in the commit.
 
-- `_check_modifier_input` tests `n_solids(part) > 0`, deliberately NOT
+- `_check_modifier_input` is called from `document._eval`, so it runs for EVERY
+  modifier feature on EVERY rebuild. It tests `n_solids(part) > 0`, deliberately NOT
   `is_sketch`: a sketch of disjoint islands composes into a Compound that is
   not a Sketch instance. Covered by a test, and all 50 designs rebuild.
 - the loft gate counts `len(p.faces())` per section; a section with ONE face and
