@@ -516,10 +516,14 @@ if os.environ.get("TEXTCAD_CRASH_TEST") == "1":
         return {"armed": req.path}
 
 
-# POSTs that stay open while a chat job is building in the ACTIVE tab: a plan
-# is read-only, and switching tabs is how the user gets AWAY from the job to
-# keep working.
-_JOB_OPEN_POSTS = {"/api/tool/plan", "/api/tabs/switch"}
+# The ONE POST that stays open while a chat job is building in the ACTIVE
+# tab: switching tabs is how the user gets AWAY from the job to keep working.
+# /api/tool/plan was here too, as "read-only" — but toolplan.plan reads
+# doc._parts, and rebuild() CLEARS that at the start of every step, so a plan
+# landing between two steps answered a confident sentence about geometry that
+# was simply absent ("'base' is a plate, not fillet / chamfer" — measured
+# 2026-09-11) while touching OCCT beside the job's own kernel call.
+_JOB_OPEN_POSTS = {"/api/tabs/switch"}
 
 
 @app.middleware("http")
@@ -3114,10 +3118,19 @@ def _job_steps(job: dict) -> str:
                      f'was added. It is waiting in its own tab; your current '
                      f'design is untouched. Click the "{doc.name}" tab when you '
                      f'want it.')
-        else:
+        elif n:
             reply = (f'I could not finish "{doc.name}": {why} The {n} verified '
                      f'feature(s) so far are in its own tab — finish it by hand '
                      f'or ask again. Your current design is untouched.')
+        else:
+            # Nothing was built, so there is nothing to keep: the tab is the
+            # job's own, was never activated, and an empty "designing…" left
+            # on the strip is litter the user has to tidy (measured).
+            if (job["tab"] in STATE["docs"] and job["tab"] != STATE["active"]
+                    and len(STATE["docs"]) > 1):
+                del STATE["docs"][job["tab"]]
+            return (f'I could not design it: {why} Nothing was built, so I have '
+                    f'closed the empty tab. Your current design is untouched.')
         _pending(f"AI designed {doc.name}", "ai", e)
     elif finished and doc.to_data() == job["before"]:
         _unsnapshot(e)                    # nothing changed: no undo step either
@@ -3193,6 +3206,12 @@ def chat(req: ChatReq):
             return {"reply": "Designing needs an API key (OPENROUTER_API_KEY).",
                     **_doc_json()}
         desc = intent.get("description") or req.message
+        if intent["action"] == "create" and len(STATE["docs"]) >= MAX_TABS:
+            # /api/new has always refused here; the AI door did not, so asking
+            # for designs opened tab 13, 14, 15... (measured 2026-09-11).
+            return {"reply": f"There are already {MAX_TABS} tabs open — close "
+                             f"one and ask again, and I will design it in a "
+                             f"tab of its own.", **_doc_json()}
         if intent["action"] == "create":
             # A NEW design goes in a NEW tab and must NOT steal the one the
             # user is working in (user, 2026-08-26: "even my current tab is

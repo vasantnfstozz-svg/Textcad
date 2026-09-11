@@ -457,6 +457,10 @@ def _intent(monkeypatch, action, description="x"):
                                          "description": description})
 
 
+def _tabs(client):
+    return sorted(t["id"] for t in client.get("/api/doc").json()["tabs"])
+
+
 def _model(monkeypatch, *replies):
     m = Scripted(*replies)
     monkeypatch.setattr(studio, "_make_model", lambda *a, **k: m)
@@ -673,6 +677,45 @@ def test_the_one_writer_guard_fails_open_instead_of_with_a_bare_500(
                     json={"feature_id": "body", "params": {"radius": 51}})
     assert r.status_code == 200, "a broken guard must not break the request"
     assert r.json()["features"], "and the answer is still a readable document"
+
+
+def test_a_tool_plan_is_refused_while_the_ai_is_in_the_kernel(client, monkeypatch):
+    """Round three: /api/tool/plan was on the open list as "read-only", but
+    toolplan.plan reads doc._parts and rebuild() CLEARS that at the start of
+    every step - so a plan landing between two steps answered a confident
+    sentence about geometry that was not there, from inside OCCT, beside the
+    job's own kernel call."""
+    monkeypatch.setitem(studio.JOBS, "jX",
+                        {"id": "jX", "done": False, "tab": studio.STATE["active"]})
+    r = client.post("/api/tool/plan", json={"tool": "fillet",
+                                            "feature_id": "body"})
+    assert r.status_code == 400 and "still building" in r.json()["error"]
+    assert not r.json().get("ok"), "the tool must read this as a plan failure"
+    # switching away is still how the user gets back to work
+    assert client.post("/api/tabs/switch",
+                       json={"id": studio.STATE["active"]}).status_code == 200
+
+
+def test_a_create_that_built_nothing_leaves_no_empty_tab(client, monkeypatch):
+    _intent(monkeypatch, "create", "a ring")
+    bad = {"add": {"id": "x", "op": "torus", "params": {}}}
+    _model(monkeypatch, bad, bad, bad)
+    before = _tabs(client)
+    d = client.post("/api/chat", json={"message": "design a ring"}).json()
+    assert "closed the empty tab" in d["reply"] and "untouched" in d["reply"]
+    assert _tabs(client) == before
+    assert "designing" not in json.dumps(d["tabs"])
+
+
+def test_the_ai_cannot_open_more_tabs_than_the_new_button_can(client, monkeypatch):
+    _intent(monkeypatch, "create", "a ring")
+    while len(studio.STATE["docs"]) < studio.MAX_TABS:
+        studio._new_tab(Document(name=f"t{len(studio.STATE['docs'])}"))
+    _model(monkeypatch, DISC, DONE)
+    d = client.post("/api/chat", json={"message": "design a ring"}).json()
+    assert f"already {studio.MAX_TABS} tabs open" in d["reply"]
+    assert d.get("job") is None
+    assert len(studio.STATE["docs"]) == studio.MAX_TABS
 
 
 def test_a_threaded_job_is_followed_through_its_status_route(client, monkeypatch):
