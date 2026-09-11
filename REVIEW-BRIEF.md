@@ -6,9 +6,9 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING.** Review the range **`b78dc1f..5dc7817`** (one code
-> commit, `5dc7817`): **LAUNCH-PLAN P5 — the AI uses the tools.** Base for
-> probes: `5dc7817`. Files: `author.py`, `studio.py`, `static/js/chat.js`,
+> **Status: PENDING.** Review the range **`b78dc1f..HEAD`** (code commits
+> `5dc7817` and the wording fix after `e9ebd0d`): **LAUNCH-PLAN P5 — the AI
+> uses the tools.** Base for probes: `HEAD`. Files: `author.py`, `studio.py`, `static/js/chat.js`,
 > `static/css/studio.css`, `static/index.html` (ui v194),
 > `tests/test_author_steps.py` (new), `tests/test_tree.py`,
 > `tests/test_tab_reuse.py`.
@@ -74,9 +74,9 @@ document's signature changed, and holds the busy overlay for `add` jobs.
 - **`_spec_of` accepts a spec at `done` and `doc.spec.setdefault("n_solids",
   1)`**; a design with `bodies > 1` and a model that never says done.
 - **Cost bound.** 40 steps × a growing message list; no per-job token or
-  wall-clock cap; `Scripted`-style fakes never hit OpenRouter, so the real
-  model's compliance with the one-JSON-per-reply protocol is UNTESTED (the
-  user's key returned 401 "API key expired" during the ship check).
+  wall-clock cap. The real model (OpenRouter, claude-sonnet-4.5) ran the
+  protocol ONCE live: an 8-step mounting plate, no refused step — so the
+  refusal/undo/give-up roads are proven only by the 19 scripted tests.
 - `JOBS` pruning (`del_ids = list(JOBS)[:-20]`, only finished ones) and a
   job id that is never found by the browser after a server restart.
 
@@ -92,8 +92,9 @@ document's signature changed, and holds the busy overlay for `add` jobs.
 
 - R10 line delta: +899 / −151. Known — P5 is new capability, not a
   refactor; the plan note records it.
-- The real model has not run the protocol yet (expired key) — recorded in
-  LAUNCH-PLAN §7 P5 and §10; not a code finding.
+- The intent model reading "design a washer" as an EDIT while the active
+  tab already holds a washer (it set a radius to the value it had). That is
+  the intent prompt's judgement, pre-existing, and no code path of P5.
 - `lint_tree(final=False)` skipping the blob rule per step is deliberate
   (tested: `test_the_blob_rule_judges_the_finished_design_not_the_second_step`).
 - The pre-existing red `tests/e2e/test_tree_delete.py` (five, measured at

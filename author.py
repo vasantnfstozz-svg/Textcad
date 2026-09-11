@@ -532,11 +532,11 @@ def _built(doc: Document, f) -> str:
         if size:
             line += " — size " + "×".join(f"{v:g}" for v in size) + " mm"
     if f.pieces and f.pieces > 1:
-        line += (f" — in {f.pieces} SEPARATE PIECES (a tool that only touches "
-                 f"the body, or a cut that severs it): fix this before going on")
-    notes = [w for w in doc.warnings if f.id in str(w)]
+        line += (f" — in {f.pieces} separate pieces (fine for a cutting tool "
+                 f"made of several shapes; the FINISHED part must be one piece)")
+    notes = [str(w).rstrip(".") for w in doc.warnings if f.id in str(w)]
     if notes:
-        line += ". Note: " + "; ".join(str(w) for w in notes[:2])
+        line += ". Note: " + "; ".join(notes[:2])
     return line + f". Bodies: {_bodies(doc)}."
 
 
