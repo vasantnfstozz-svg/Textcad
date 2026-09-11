@@ -6,22 +6,14 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING — `dfcb73f`.** That is the FIX COMMIT of the section 7
-> review (Extrude, with loft and sweep): 6 findings fixed. No P0 was among
-> them, so the queue's step 8 would send the next chat straight to section 8 —
-> this round is a deliberate exception, because the pass added two REFUSALS
-> and changed what Extrude does by default, and on this project a fix pass's
-> own new guard has been wrong more often than not (section 3 found the same
-> P0 through two more doors, section 4 two holes in the guard round one built,
-> section 5 a guard that refused a legitimate shape, Move/Rotate four findings
-> all four inside round one's own guard).
->
-> **Scope: the diff of `dfcb73f` only** — `git show dfcb73f` is 380 insertions
-> across `document.py`, `sketch.py`, `static/js/extrude.js` and two new test
-> files. Do NOT re-read the module; section 7 is closed and its done log in
-> `REVIEW-QUEUE.md` says what was already measured. When this round is done,
-> the brief goes back to `NOTHING PENDING` and the queue takes **section 8,
-> Import STL and STEP**.
+> **Status: NOTHING PENDING.** Section 7 (Extrude, with loft and sweep) is
+> CLOSED: round one fixed 6 findings at `dfcb73f`, and round two re-read that
+> fix commit and fixed 2 more at `a8e96d9` (the loft refusal quoted one profile
+> count for several sections; OK said "Extrude created" over an empty viewport
+> when the new auto-cut ate the whole body). The next `code review` therefore
+> goes to `REVIEW-QUEUE.md` and takes the first TODO row of the status board:
+> **section 8, Import STL and STEP** (which may share its chat with section 9,
+> Trace image, as the queue note says).
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -34,7 +26,7 @@
 
 ---
 
-## What the last review did (section 7, Extrude, fixed at `dfcb73f`)
+## What the last review did (section 7, Extrude: `dfcb73f` + round two `a8e96d9`)
 
 **6 findings, 6 fixed, 0 rejected, 0 deferred. Two P1s in ops nobody had ever
 reviewed. No live design was affected; all 50 rebuild unchanged.**
@@ -60,6 +52,15 @@ reviewed. No live design was affected; all 50 rebuild unchanged.**
   ring still showed the angle; a typed negative "Distance 2" was dropped; and
   Through all's into-the-body seeding was missing from Two sides, so the 2 m
   side ran into the air.
+
+## What round two changed (already reviewed - do not re-report)
+
+- The loft refusal names each section's own profile count.
+- `okSession` now looks at the COMBINER the session added as well as the tool's
+  own feature, so OK can no longer claim success over an empty viewport. The
+  sentence for the tool's own failure is untouched (`Mirror was NOT built`).
+- 3 more browser journeys: the auto-cut's target on a two-body design, the
+  taper box under Through all, and OK's honesty after a too-deep pull.
 
 ## Where the risk is - read these four first
 
