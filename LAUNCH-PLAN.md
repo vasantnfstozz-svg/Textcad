@@ -36,8 +36,11 @@
 > Fusion's router button in the Modify tab — a flat face or a sketch profile
 > opens Extrude, an edge opens Fillet, a curved face gets a sentence; no new
 > op, no backend change; review CLOSED in one round, 9584b39, ui v191).
-> **P4 IS COMPLETE — all seven Tier-1 tools built and reviewed.** Next: P5,
-> the AI uses the tools, in a fresh chat. Every other plan file points here; §7 carries the
+> **P4 IS COMPLETE — all seven Tier-1 tools built and reviewed.** **P5, the
+> AI uses the tools, BUILT 2026-09-11** (5dc7817: one verified feature per
+> model reply through the same strict add + lint + rebuild as the toolbar;
+> create builds in its own tab, add builds on the design on screen behind one
+> Undo; review pending). Next: P5's review, then P5b. Every other plan file points here; §7 carries the
 > done-notes, §10 the ranked open items. **Added 2026-09-10 (user's decision):** P5b, the machine plays the
 > user — a zero-token random-journey runner, a bug button, the library tier
 > fixed — sits between P5 and P6 (§6 tier 4, §7 P5b).
@@ -987,6 +990,28 @@ that, P4's seven tools are all built AND reviewed.
 **P5 — The AI uses the tools (§5 step B).** Incremental authoring through
 the plan endpoint; chat edits point at parameters; the FEATURE-TREE-PLAN
 "step 4" everyone deferred.
+**BUILT 2026-09-11, 5dc7817 (review pending).** The model replies ONE step
+at a time — `add` a feature, `edit` one parameter, `remove` its own last
+step, `done` with a spec — and `author.author_steps` pushes each through
+exactly what the toolbar's Add Feature goes through (`Document.add` strict,
+`lint_tree`, rebuild). A refused or broken step is undone before the model
+hears its sentence; a good step answers with measured facts (volume, size,
+pieces, the bodies now in the tree). The whole-design blob lint judges the
+finished design at `done`; offset-method and entity-count lints run per
+step. In Studio, `create` and `add` are jobs: a thread under a new kernel
+lock (which every rebuild takes), an in-flight marker per step, `GET
+/api/chat/job/<id>` for the browser, which prints each step as it lands (ui
+v194). `create` builds in its own tab without stealing the user's; `add`
+builds on the design on screen behind ONE snapshot (one Undo takes it all
+back) and a job that gives up restores the design and says so. The intent
+prompt gained `add`. 19 new tests, fast tier 1594. **Line delta +899/−151:**
+P5 is new capability, not a refactor, and the old whole-tree repair loop
+(~40 lines) is the only deletion. **Not yet proven:** the REAL model's
+compliance with the one-JSON-per-reply protocol — the user's OpenRouter key
+returned 401 "API key expired" at ship time, so the browser check ran a
+threaded job against a scripted model instead (§10 row). What the user does:
+renew the key (`setx OPENROUTER_API_KEY <new key>`, then restart the
+server), type a part into the chat, watch the steps arrive.
 
 **P5b — The machine plays the user (§6 tier 4).** Decided with the user
 2026-09-10: code review finds what the code says, tests find what we
@@ -1099,6 +1124,7 @@ assemblies, the user's personal project.
 
 | Pri | Item | Source |
 |-----|------|--------|
+| P1 | **P5's step protocol has not met the real model yet.** The user's OpenRouter key was expired (401) at ship time 2026-09-11, so `author_steps` is proven only against scripted models (19 tests + a threaded job watched in the browser). First live run: renew the key, restart, ask for a washer; if the model wraps JSON in prose or sends several steps at once, `_parse` should take the FIRST object rather than refuse. | P5 ship check |
 | P2 | **Trim is slow on a big sketch, before any of this pass's work.** Hovering `rocky-balboa/field_sketch` (23 entities) costs 6.1 s in `trim_pieces` and a click 15.4 s; `esp32-remote/sketch28` (45 entities) costs 3.0 s to hover. The cost is `_pieces_raw` — every outline sampled to up to 384 points and every PAIR of outlines intersected — plus one full compose of the cluster per click. Measured 2026-09-11 in the review of `3b230b7` and NOT caused by it (the fix's own guard was taken off the rebuild branch, which gave 28 s back). Fix: cache the outlines between hover and click, and skip the pair loop with the bounding boxes it already computes. | review of 3b230b7 2026-09-11 |
 | P1 | **A stored face pick is remembered in WORLD coordinates, so a body that MOVES can still take the pick to a different face of the same kind.** Round one of the Move review fixed the half that was silent and destructive — `resolve_face` scored the picked normal as a 25 mm² NUDGE, so past about one plate thickness of travel the nearest face was the one pointing the OTHER way, and a Ø12 boss jumped from the top face to the bottom, was built up INTO the material and swallowed whole (565 mm³ gone, every row green). The direction is a GATE now, and on a body with ONE face per direction the pick follows the move exactly as the spec promises. What is left: on a STEPPED body, two faces point the same way, and a rigid move of more than half the step can still hand the pick the wrong one — quietly, because both answers are legal. The real fix is to store the pick in the BODY's own frame (the offsets from its bounding box, say) instead of the world's, which touches `sketch_on_face`, `extrude_face`, `hole` and every saved design that holds a `face_center`. Measured: 50 designs rebuild with zero drift under today's fix, so nothing is broken while this waits. | Move review round one 2026-09-11 |
 | P3 | **`solids()` in `tool.js` offers EVERY solid row, not the bodies you can see.** A `bodyRow` tool opened on a step half way up a branch appends its feature at the END of the tree, so the step feeds two features and the design grows a second copy of it. Move and Rotate refuse that in the PLAN now (a sentence naming the feature already built from it), but Shell — the other `bodyRow` tool — still accepts it, and the Target dropdown still lists intermediate solids as combine targets. The clean version is for the document to say which rows are bodies and for the tree to offer only those. | Move review round one 2026-09-11 |

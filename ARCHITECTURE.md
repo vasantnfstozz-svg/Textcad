@@ -204,13 +204,21 @@ listener. Tests: `tests/test_supervisor.py` (10 — the policy in process, plus
 real processes and a real access violation), `tests/e2e/test_recovery.py`
 (2 — what the user sees, including a crash inside a tool's own step).
 
-**AI.** `author.py` turns a request into a feature-tree JSON through
-validation gates (op catalog, `lint_tree`: no absolute-offset sketch once a
-body exists, no >10-entity sketch blobs, meaningful ids) and a repair loop;
-`/api/chat` routes create/edit/delete intents. Model access is OpenRouter via
-`generate.OpenRouterModel`, key from the user registry. LAUNCH-PLAN.md P5
-moves authoring to incremental tool calls through the same endpoints the
-buttons use.
+**AI.** `author.py` builds a design ONE STEP PER MODEL REPLY
+(`author_steps`, LAUNCH-PLAN.md P5): each reply is `add` one feature,
+`edit` one parameter, `remove` its own last step, or `done` with a spec.
+A step goes through exactly what the toolbar's Add Feature goes through —
+`Document.add(strict=True)`, `lint_tree` (no absolute-offset sketch once a
+body exists, no >10-entity sketch; the whole-design blob rule at `done`), a
+rebuild — and a refused or broken step is undone before the model hears its
+sentence, so the tree never holds a feature the kernel did not accept.
+`/api/chat` routes `create` (a job in a NEW tab) and `add` (a job on the
+design on screen, one snapshot = one Undo) to `_run_job`, which runs the loop
+in a thread under `_KERNEL_LOCK` with an in-flight marker per step; the
+browser follows `GET /api/chat/job/<id>` and prints every step as it lands.
+`edit`/`delete` intents stay single requests. `_to_document` still validates
+a whole tree for the MCP `build_design` door. Model access is OpenRouter via
+`generate.OpenRouterModel`, key from the user registry.
 
 **MCP** (`mcp_server.py`): six tools for external Claude sessions
 (`build_design`, `design_part`, `design_compressor`, `verify_step`,

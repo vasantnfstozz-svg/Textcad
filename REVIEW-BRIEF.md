@@ -6,13 +6,12 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: NOTHING PENDING.** LAUNCH-PLAN section 10's P1 "sketch_trim keeps
-> its own copy of the sketch composition rule" is CLOSED at `3b230b7`, and the
-> review of it ran FIVE rounds (`1d6c2d8`, `0ef49e5`, `c54b4d8`, `cfd0485`,
-> `df21052`) — 6 findings fixed, 0 rejected. The next `code review` therefore
-> goes to `REVIEW-QUEUE.md` and takes the first TODO row of the status board:
-> **section 8, Import STL and STEP** (which may share its chat with section 9,
-> Trace image, as the queue note says).
+> **Status: PENDING.** Review the range **`b78dc1f..5dc7817`** (one code
+> commit, `5dc7817`): **LAUNCH-PLAN P5 — the AI uses the tools.** Base for
+> probes: `5dc7817`. Files: `author.py`, `studio.py`, `static/js/chat.js`,
+> `static/css/studio.css`, `static/index.html` (ui v194),
+> `tests/test_author_steps.py` (new), `tests/test_tree.py`,
+> `tests/test_tab_reuse.py`.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -25,47 +24,77 @@
 
 ---
 
-## What the last review did (the Trim composition P1, five rounds)
+## What the commit does
 
-**6 findings, 6 fixed, 0 rejected. One P0 and one P1 among them. No live
-design moved: all 50 rebuild to identical volumes with identical warnings, at
-every round.**
+The chat's design path no longer authors a whole tree in one JSON answer.
+`author.author_steps(doc, request, model, on_step, guard)` lets the model
+reply ONE step at a time — `{"add": {...}}`, `{"edit": {...}}`,
+`{"remove": "id"}`, `{"done": true, "spec": {...}}` — and `_apply_step`
+pushes each through `Document.add(strict=True)` + `lint_tree(final=False)` +
+`rebuild`, then judges it: a refusal or a red feature (new OR previously ok)
+restores the `to_data()` snapshot taken before the step (`_restore`) and the
+model hears the sentence. `done` runs the final lint (the blob rule), sets the
+spec through `_spec_of`, and is refused while `rebuild()` is not ok. The loop
+gives up after 3 refusals in a row or 40 steps. `author_design` is now this
+loop on a fresh document (MCP `design_part`); `_to_document` stays for MCP
+`build_design`.
 
-- **`sketch_trim.py` kept its own composition rule** and disagreed with the
-  builder. On `[boss r5 add, bar 80x6 cut, pocket 40x20 cut]` the builder
-  composes 22.3648 mm2 and trim composed 0.0, so every Trim click on that
-  cluster answered "the result would have no area left"; its pointwise
-  material test called `(0, +-4)` empty where the builder leaves boss; and two
-  guards refused work the builder accepts (deleting one bar from
-  `[pocket cut, bar, bar, bar]`, which builds 144.0 mm2). `sketch.compose` and
-  `sketch.compose_order` are public now and trim asks them (R1).
-- **P0 in `sketch.py` itself**, found because the Trim fix inherits the
-  builder's order. The "material before a cut that overlaps it" pass ran only
-  while the order STARTED with a cut, so one unrelated shape drawn first
-  switched it off: `[far circle, boss, bar, pocket]` built **157.0796** — the
-  boss SOLID, the bar's 56.17 mm2 of red paint lost, green and silent — where
-  the honest answer is 100.9046. The pass runs for every cut now.
-- **P1, in the fix's own new code:** the new builder check made one Trim click
-  cost 43.9 s on `rocky-balboa/field_sketch` (23 entities) against 15.6 s
-  without it. It is off the rebuild branch now — where it could tell us
-  nothing anyway — and measured over 176 real rebuild trims in the library,
-  not one leaves a list the builder refuses.
-- **P2:** a sketch can ask for an order that does not exist (two cuts
-  overlapping, each containing an add that pokes into the other). The builder
-  has always broken such a knot by falling back to the drawing order and said
-  nothing — 210.0 mm2 where the paint says 180.0. It says so now, names every
-  shape in the knot and nothing else, and the note reaches `Document.warnings`.
-- Two P3 rounds spent getting that sentence to name the right shapes.
+`studio.py`: intents `create` and `add` start a JOB (`_start_job` →
+`_run_job` in a daemon thread; `JOB_THREADS=False` runs it inline for tests).
+`create` opens a new tab WITHOUT activating it and builds there; `add` takes
+ONE `_snapshot()` on the active tab and, when the job gives up, restores
+`job["before"]` and `_unsnapshot(e)`s. Each kernel step runs inside
+`_step_guard`: the new re-entrant `_KERNEL_LOCK` (also taken by
+`_rebuild_and_mesh`) plus an `_INFLIGHT` marker, so a segfault in a step is
+attributed and `_persist_session` never checkpoints a half-applied step.
+`GET /api/chat/job/{id}` returns log/done/reply + `_doc_json()` read under the
+lock. `chat.js` polls it every 0.7 s, prints each step (`.msg.step`), emits
+`doc-updated` on every new step (tab strip), `loadMesh()` when the ACTIVE
+document's signature changed, and holds the busy overlay for `add` jobs.
+
+## Where the risk is (look here first)
+
+- **Concurrency.** The job thread mutates a tab's `Document` while POSTs from
+  the browser run in FastAPI's threadpool. The lock covers rebuilds and the
+  job's steps, not every read (`_doc_json` in other routes, `/api/model`
+  tessellation, `/api/tabs/*`). An `add` job holds the busy overlay, but
+  nothing server-side stops a second POST on that tab (a second chat, an MCP
+  edit, the 3-second poll's GET). Undo-stack interleaving on the `add` path if
+  the user does edit meanwhile.
+- **The restore road.** `_restore` swaps `doc.features`/`doc.spec` from
+  `Document.from_data` but keeps `rollback`, `_geom_version`, caches on the
+  old object; `_run_job`'s give-up path replaces `e["doc"]` wholesale instead.
+  Are `hand_edits`, `dirty`, `clean_hash`, `pending` right after each?
+- **What the model is told.** `_built` reads `doc._parts[f.id]` and
+  `doc.warnings` filtered by `f.id in str(w)` (substring match on ids like
+  `b`). `_first_problem` reports the first red feature, which after a
+  suppressed/struck feature may not be the one the step broke.
+- **The step that changes the doc name** (`name` honoured while
+  `doc.features` is empty — including on an `add` job on an empty tab).
+- **`_spec_of` accepts a spec at `done` and `doc.spec.setdefault("n_solids",
+  1)`**; a design with `bodies > 1` and a model that never says done.
+- **Cost bound.** 40 steps × a growing message list; no per-job token or
+  wall-clock cap; `Scripted`-style fakes never hit OpenRouter, so the real
+  model's compliance with the one-JSON-per-reply protocol is UNTESTED (the
+  user's key returned 401 "API key expired" during the ship check).
+- `JOBS` pruning (`del_ids = list(JOBS)[:-20]`, only finished ones) and a
+  job id that is never found by the browser after a server restart.
+
+## Ground rules
+
+- Probe with `Document.from_data`, never `/api/open` (it pushes a version).
+- `tests/fixtures/` only; the user's `designs/` are `-m library`.
+- Reproduce before fixing; smallest fix; a test per finding; the fast tier
+  green; restart the user's server if `studio.py` changes (it is running
+  `5dc7817` now); bump `main.js?v=` if `static/` changes (currently 194).
 
 ## Do not re-report
 
-- `_entity_face` taking `faces()[0]`: probed, every entity kind builds exactly
-  one face today and the multi-face cases are refused by `_entity` first.
-- `_knot_note`'s singular branch being unreachable: known, correct, tested.
-- `_compose_order`'s `modes=None` branch: no production caller, kept so the
-  older `probes/sketcher_review3_probe.py` still runs.
-- Trim's speed on a big sketch (6.1 s to HOVER a 23-entity sketch). Measured,
-  PRE-EXISTING, and now a P2 row on LAUNCH-PLAN section 10 with the cause
-  (`_pieces_raw` sampling and pair-intersecting every outline).
-- Everything else on LAUNCH-PLAN.md section 10's open list, and the
-  pre-existing red `tests/e2e/test_tree_delete.py` (five, measured at 667ccc0).
+- R10 line delta: +899 / −151. Known — P5 is new capability, not a
+  refactor; the plan note records it.
+- The real model has not run the protocol yet (expired key) — recorded in
+  LAUNCH-PLAN §7 P5 and §10; not a code finding.
+- `lint_tree(final=False)` skipping the blob rule per step is deliberate
+  (tested: `test_the_blob_rule_judges_the_finished_design_not_the_second_step`).
+- The pre-existing red `tests/e2e/test_tree_delete.py` (five, measured at
+  667ccc0), and everything on LAUNCH-PLAN §10's open list.
