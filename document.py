@@ -154,12 +154,55 @@ def _check_combiner_inputs(op: str, ids: list, parts: list) -> None:
         if len(set(ids)) < len(ids):
             raise ValueError("loft needs 2 DIFFERENT profiles — the same "
                              "sketch is named twice")
+        # ONE profile per section. build123d flattens every section's faces
+        # into a SINGLE chain (`for face in s.faces(): loft_sections.append(
+        # face.outer_wire())`), so two sketches of two circles each blended
+        # A1 -> A2 -> B1 -> B2: one snaking solid of 1570.8 mm3 where the two
+        # honest tubes are 3141.6, reaching z -3.92..23.92 outside BOTH sketch
+        # planes, status ok and not one warning (measured 2026-09-11). Which
+        # profile pairs with which is kernel face order, so there is nothing
+        # to guess at either.
+        many = [(i, len(p.faces())) for i, p in zip(ids, parts)
+                if len(p.faces()) > 1]
+        if many:
+            raise ValueError(
+                f"loft blends ONE closed profile per sketch, and "
+                f"{_name_list([i for i, _ in many])} "
+                + ("holds" if len(many) == 1 else "hold")
+                + f" {many[0][1]} — draw each profile in its own sketch and "
+                f"loft them in pairs")
         return
     if flat:
         raise ValueError(
             f"{op} works on solid bodies, and {_name_list(flat)} "
             + ("is a sketch" if len(flat) == 1 else "are sketches")
             + f" — extrude or revolve it first, then {op} the body")
+
+# modifiers that pull a 2D PROFILE into a solid — the ops whose input must be
+# a sketch and never a body (`loft` is a combiner and gated above)
+SKETCH_CONSUMING_MODIFIERS = {"extrude", "revolve", "sweep"}
+
+
+def _check_modifier_input(op: str, fid: str, part) -> None:
+    """Refuse a profile op fed a solid BODY — BEFORE the kernel.
+
+    `sweep` is the silent one: build123d takes `sections.faces()`, so a BODY is
+    swept FACE BY FACE. A 24 000 mm3 plate came back as a 178 000 mm3 six-lump
+    blob with status ok, no problems and no warning — and the plate itself was
+    consumed, because a modifier's input is (measured 2026-09-11). `extrude`
+    and `revolve` do fail there, but on health, in kernel wording that names
+    nothing the user can act on. The Add Feature dialog pre-ticks the NEWEST
+    feature, so on a design with a body all three are one click away.
+
+    The test is SOLIDS, not `is_sketch`: a sketch of disjoint islands composes
+    into a Compound that is not a Sketch instance (rebuild() classifies 2D
+    results by op as well as by type), and refusing those would take away
+    designs that work today."""
+    if op in SKETCH_CONSUMING_MODIFIERS and (n_solids(part) or 0) > 0:
+        raise ValueError(
+            f"{op} pulls a SKETCH profile, and '{fid}' is a solid body — "
+            f"sketch on one of its faces, then {op} that sketch")
+
 
 KNOWN_OPS = set(CREATORS) | set(MODIFIERS) | set(COMBINERS) | {"move"}
 
@@ -1179,6 +1222,7 @@ class Document:
         if f.op in MODIFIERS:
             if len(ins) != 1:
                 raise ValueError(f"'{f.op}' needs exactly 1 input")
+            _check_modifier_input(f.op, f.inputs[0], ins[0])
             kw = self._clean(f.params)
             if f.op in pattern.SEEDED_OPS and kw.get("seed"):
                 kw.update(self._seed_parts(f, kw["seed"]))   # the seed's before / after bodies
@@ -1238,7 +1282,7 @@ class Document:
         its OWN (cleared) volume and piece count are the wrong thing to read
         about it -- follow the chain to the feature that really built the
         body. ONE copy of the walk: consumed_ids, _check_pieces and
-        _check_idle_cuts each had their own."""
+        _check_idle_booleans each had their own."""
         by_id = by_id if by_id is not None else {f.id: f for f in self.features}
         seen = set()
         while (dep in by_id and by_id[dep].suppressed
@@ -1413,29 +1457,45 @@ class Document:
                 "usually is not.")
         return notes
 
-    def _check_idle_cuts(self) -> list:
-        """Name a cut that removed NOTHING.
+    def _check_idle_booleans(self) -> list:
+        """Name a cut that removed NOTHING — or a join that added nothing.
 
-        The tool body is consumed by the cut whether it reached the target or
-        not, so a tool that misses simply DISAPPEARS from the viewport while
+        The tool body is consumed by the boolean whether it reached the target
+        or not, so a tool that misses simply DISAPPEARS from the viewport while
         the body is untouched and every row stays green (measured: the cut's
         volume 4000.0 against its input's 4000.0, and not one warning).
         Fusion refuses the operation outright; the tree is allowed to keep it,
-        but it may not keep it quietly."""
+        but it may not keep it quietly.
+
+        The JOIN half is the same silence through the Extrude tool's own door:
+        a picked face pulled 4 mm INTO the body and left at the default Join
+        fuses a prism that is already inside it — plate 24 000, prism 9 600,
+        join 24 000 mm3, three green rows, nothing said (measured 2026-09-11,
+        section 7 review). extrude.js now switches such a pull to Cut, but an
+        explicit Join, the AI and the MCP path all still reach here."""
         notes = []
         by_id = {x.id: x for x in self.features}
         for f in self.features:
-            if f.suppressed or f.op != "cut" or f.volume is None or not f.inputs:
+            if f.suppressed or f.op not in ("cut", "fuse") or f.volume is None \
+                    or not f.inputs:
                 continue
             base = by_id.get(self._live_source(f.inputs[0], by_id))
             if base is None or not base.volume or base.volume <= 0:
                 continue
-            if abs(f.volume - base.volume) <= 0.01:     # both are 2dp-rounded
+            if abs(f.volume - base.volume) > 0.01:      # both are 2dp-rounded
+                continue
+            if f.op == "cut":
                 notes.append(
                     f"'{f.id}' (cut) removed no material — its tool "
                     f"{_name_list(f.inputs[1:])} does not reach "
                     f"'{f.inputs[0]}'. Move or lengthen the tool, or remove "
                     f"the cut.")
+            else:
+                notes.append(
+                    f"'{f.id}' (join) added no material — "
+                    f"{_name_list(f.inputs[1:])} is already inside "
+                    f"'{f.inputs[0]}'. To take that shape OUT of the body make "
+                    f"it a Cut; to add material, pull it the other way.")
         return notes
 
     def _check_dangling(self):
@@ -1445,7 +1505,7 @@ class Document:
         (Two leaves mid-build, e.g. base + wall before a fuse, are legitimate
         and now BOTH render — but until they are combined the earlier ones are
         still 'not the result', so we flag them so the state is never silent.)"""
-        self.warnings = self._check_pieces() + self._check_idle_cuts()
+        self.warnings = self._check_pieces() + self._check_idle_booleans()
         # what the ops wanted the user to hear (a taper that ended at its tip):
         # here, so the AI, MCP and API paths see it — not only the browser panel
         for f in self.features:

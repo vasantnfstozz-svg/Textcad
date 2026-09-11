@@ -36,15 +36,15 @@ function params(st) {
     return { face_center: st.input.center, face_normal: st.input.normal,
              amount: d, taper, flip };
   const dir = g('exDir').value;
+  // THROUGH ALL with the untouched 0 distance: only the SIGN matters (the cut
+  // runs 2 m that way) — default INTO the body for a face sketch. Dragging the
+  // arrow first still wins: any nonzero value keeps its sign. The rule belongs
+  // to the through cut, not to one Direction entry: in Two sides it was missing,
+  // so the 2 m side ran +Z into the AIR on a top face and only the blind second
+  // side cut anything (review of section 7).
+  const amt = (through && d === 0 && intoSign(st)) ? intoSign(st) : d;
   if (dir === 'sym') return { amount: d, both: true, amount2: 0, taper, flip: false, through };
-  if (dir === 'two') return { amount: d, both: false, amount2: num('exDist2'), taper, flip, through };
-  let amt = d;
-  if (through && amt === 0 && intoSign(st)) {
-    // THROUGH ALL with the untouched 0 distance: only the SIGN matters (the
-    // cut runs 2 m that way) — default INTO the body for a face sketch.
-    // Dragging the arrow first still wins: any nonzero value keeps its sign.
-    amt = intoSign(st);
-  }
+  if (dir === 'two') return { amount: amt, both: false, amount2: num('exDist2'), taper, flip, through };
   return { amount: amt, both: false, amount2: 0, taper, flip, through };
 }
 /* write params into the boxes; {} = the honest defaults: the distance starts
@@ -70,14 +70,24 @@ function snapshot(f) {
 }
 function sync(st) {
   g('exDist2Row').style.display = g('exDir').value === 'two' ? '' : 'none';
-  // THROUGH ALL is a cut idea: a boss running 2 m past the part is useless,
-  // but a cut that stops inside the material slices the part
-  const isCut = g('exOp').value === 'cut';
+  // THROUGH ALL is a cut idea, and a SKETCH one: a boss running 2 m past the
+  // part is useless, a cut that stops inside the material slices the part —
+  // and extrude_face has no `through` param at all, so in face mode the tick
+  // box would have been obeyed by nobody (review of section 7)
+  const isCut = g('exOp').value === 'cut' && !(st && isFace(st));
   g('exThroughRow').style.display = isCut ? '' : 'none';
   if (!isCut) g('exThrough').checked = false;
   const thru = g('exThrough').checked;
   g('exDist').disabled = thru;
   g('exDist').title = thru ? 'not used — the cut runs all the way through' : '';
+  // A 2 m tapered prism collapses, so the server builds every through cut with
+  // straight walls (sketch.extrude_sketch). The box and the ring may not go on
+  // showing an angle the solid does not have — measured: a -10° through cut
+  // built 20 x 30 x 2000 mm, dead straight, and nothing said so.
+  g('exTaper').disabled = thru;
+  g('exTaper').title = thru
+    ? 'not used — a through cut runs 2 m, so its walls are straight' : '';
+  if (thru && num('exTaper')) { g('exTaper').value = 0; setTaperRingAngle(0); }
   if (st && !isCut) st.cutFlipped = false;   // leaving Cut re-arms the one-shot flip
 }
 
@@ -187,16 +197,20 @@ const gizmos = {
 
 /* ---------------- apply-time rules ---------------- */
 function beforeApply(st) {
-  // FUSION'S DEFAULT OPERATION for a sketch that lives ON a body (a face
-  // sketch): pulled OUT of the body it JOINS, pushed INTO it it CUTS. Only a
+  // FUSION'S DEFAULT OPERATION for anything that lives ON a body — a face
+  // sketch, or a PICKED FACE: pulled OUT of the body it JOINS, pushed INTO it
+  // it CUTS (parity rule 6, "dragging INTO the body + Cut = pocket"). Only a
   // free plane sketch (no into_sign) starts a new body. Left at "New body", a
   // boss drawn on a pocket floor was a separate solid nobody asked for, and
   // the STEP file honestly carried three bodies (user, 2026-09-08: "our design
-  // contains 3 solid bodies ... because of this I can not edit it"). The
-  // choice is the user's from the moment they touch the Operation box
-  // (st.opUser); an edit never rewires; Through all is a cut already.
-  if (!isFace(st) && !st.editing && !st.opUser && !g('exThrough').checked
-      && g('exDir').value === 'one') {
+  // contains 3 solid bodies ... because of this I can not edit it"); left at
+  // "Join", a face pushed 4 mm INTO the body fused a prism that was already
+  // inside it — plate 24 000, prism 9 600, join 24 000 mm3, three green rows
+  // and nothing said (measured 2026-09-11, section 7 review). The choice is
+  // the user's from the moment they touch the Operation box (st.opUser); an
+  // edit never rewires; Through all is a cut already.
+  if (!st.editing && !st.opUser && !g('exThrough').checked
+      && (isFace(st) || g('exDir').value === 'one')) {
     const into = intoSign(st), d = num('exDist');
     if (into && d !== 0) {
       // the box value runs along the arrow, which Flip turns around

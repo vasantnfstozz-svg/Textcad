@@ -1498,6 +1498,16 @@ def extrude_sketch(sketch, amount: float, both: bool = False,
     t = _fusion_taper(taper)
     if _to_bool(through, "through"):
         a = THROUGH_MM if a >= 0 else -THROUGH_MM
+        if t:
+            # The taper IS dropped (a 2 m tapered prism collapses), but it may
+            # not be dropped in silence: the panel's taper box and dashed ring
+            # went on showing an angle the solid did not have — measured
+            # 2026-09-11, a -10 deg through cut built 20 x 30 x 2000 mm, dead
+            # straight. extrude.js zeroes the box; this is the same fact for
+            # the AI, the MCP and the API.
+            _note(f"Through all ignores the {-t:g} deg taper - a cut that runs "
+                  f"{THROUGH_MM:g} mm cannot taper; untick Through all and give "
+                  f"a distance for tapered walls")
         t = 0.0
     if _to_bool(both, "both"):
         try:
@@ -1513,7 +1523,10 @@ def extrude_sketch(sketch, amount: float, both: bool = False,
                     f"smaller taper, a shorter distance, or the other way.") from e
             raise
     solid = _tapered_extrude(sketch, a, t)
-    amt2 = float(amount2 or 0.0)
+    # abs: `amount2` IS "the other way", so its sign carries nothing. Typed
+    # negative it used to be dropped without a word — amount 8 + amount2 -5
+    # built 4800 mm3, the first side alone (measured 2026-09-11).
+    amt2 = abs(float(amount2 or 0.0))
     if amt2 > 0:                      # two-sided: opposite direction by amt2
         s2 = -1.0 if a >= 0 else 1.0
         solid = solid + _tapered_extrude(sketch, s2 * amt2, t)
