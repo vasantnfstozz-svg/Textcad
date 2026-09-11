@@ -6,13 +6,9 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: NOTHING PENDING** — Shell is CLOSED after three rounds
-> (`fb0b8c8` built, `667ccc0` round one, `b99a24d` round two, `b5c6e70` round
-> three). No P0 fell in round three, so the chain ends here.
->
-> **The next `code review` goes to `REVIEW-QUEUE.md`** and takes the first
-> status-board row marked TODO, which is **section 7 — Extrude as a whole
-> module (with loft and sweep)**, priority medium.
+> **Status: PENDING** — review commit **`9e04ff6`** (base `9af39d9`): the
+> Move and Rotate tools, LAUNCH-PLAN.md P4's sixth and seventh, built
+> 2026-09-11 from `specs/move-rotate.md`. Round one.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -25,63 +21,56 @@
 
 ---
 
-## What closed, so the queue's section 11 does not re-derive it
+## The range, one line per commit
 
-Section 11 of `REVIEW-QUEUE.md` is **Tool framework core**, and the Shell chain
-spent three rounds inside `tool.js`. When that row comes up, these are settled
-and measured — do not re-report them, and do not re-measure them:
+- `9e04ff6` — Move and Rotate: `blocks.rotate` grew `pivot` (+
+  `body_centre`, `_rotate_pivot`); `document._move_offsets` (sentences for a
+  bad offset) and `move` joins `PLACEMENT`; `toolplan.plan_move` /
+  `plan_rotate`; `author.OP_NOTES["rotate"]`; `static/js/move.js` (new, both
+  tools); `viewport.js` `beginArrows` / `endArrows` / `arrowAxisScreen` /
+  `arrowsDragging` (N arrows, a colour each) and the body ghost
+  (`beginMoveGhost` / `setMoveGhost` / `endMoveGhost` / `moveGhostInfo`);
+  `tool.js` open() takes a CURVED pick as its body for `anyFace` + `bodyRow`
+  tools and awaitPick offers every face to them; two panels in `index.html`
+  (ui v187); ribbon + main wiring. Tests: `tests/test_move_tool.py` (36),
+  `tests/test_move_gauntlet.py` (16 over the corpus), `tests/e2e/test_move_tool.py`
+  (3 journeys). Probe: `probes/move_rotate_probe.py`.
 
-- **`replanNow`'s "keeps at least one edge" guard is gated on
-  `st.input.kind === 'edges'`**, not on the key's name. That changes behaviour
-  for Shell ALONE: only Fillet and Chamfer have kind `edges`, and only
-  `plan_fillet` and `plan_shell` return an `edges` key at all.
-- **`settle` restores `st.plan = st.lastGoodPlan`** so a param with no box of
-  its own (Shell's face set, Mirror's plane) is not re-pushed from a stale
-  plan. Without it, a refused face set looped revert → replan → refuse at a
-  measured 50 rebuilds in 6 s.
-- **`startPreview` clears `lastGood` and `lastGoodPlan`.** It has exactly two
-  callers — `begin()` (both already null) and `changeProfile()` — and is a
-  closure local, never exposed on `ctl`, so no spec hook can reach it. Edit
-  mode goes straight to `setupTool` and is untouched.
-- **`tree.js`'s `readable` / `namedParts` recursion has no depth cap and
-  overflows the stack at depth ~5000.** REJECTED as a finding, measured:
-  `JSON.stringify`, the branch it replaced, throws `RangeError` at EXACTLY the
-  same depth, and threw a `TypeError` on a cycle where `readable` throws
-  `RangeError`. Same failure through the same door; nothing was added. The
-  longest row in the real library got SHORTER (my-part-8 `fillet1`: 567 chars
-  against the old JSON's 607).
+## Where the risk is
 
-## What closed on the Shell op, for whoever touches `sketch.shell` next
+1. **The pivot's three spellings and the legacy default.** `rotate(pivot=None)`
+   and `"origin"` must be byte-identical to the old op (planetary-assembly
+   carries a rotate); `plan_rotate` for an EDIT must hand back the STORED pivot
+   (absent → `None`, and the JS `?? null` must not turn it into `"center"` on
+   the first push — that would move a saved body). Check the JS `stored()` /
+   `rtParams` path with `st.plan` absent AND present.
+2. **The triad's placement is JS arithmetic** (`move.js along()`): centre +
+   Σ box·axis from the plan's `origin` / `axes`. Spec allows exactly this and
+   nothing more — check nothing else geometric crept in.
+3. **The ghost's delta is `box − st.shown`.** `st.shown` is seeded in
+   gizmos.begin from the boxes (an edit's stored values, a new session's zeros)
+   and set again in afterApply; a revert restores the boxes first, so shown =
+   lastGood. Look for a path where shown is stale: the Axis box changed and a
+   drag starts before the rebuild lands (shown's angle is about the OLD axis);
+   a typed value inside the debounce window followed by a drag.
+4. **`bodyObjs.find` in `beginMoveGhost`** takes the first of
+   `[featureId, inputBody]` present; with several bodies visible, the body
+   found must be THIS one.
+5. **`tool.js` open()'s new curved branch** sits before the curved refusal:
+   any tool with `anyFace` + `bodyRow` gets it — today only Move / Rotate set
+   both (Pattern: anyFace only; Shell: bodyRow only). Confirm nothing else.
+6. **Rotate about a pivot of a body in several lumps** — `body_centre` is the
+   whole compound's box; fine for a turn, but the Shell lesson says probe it.
 
-Two guards now stand either side of the kernel, and they are siblings:
+## Do not re-report
 
-- `assert_every_lump_open` — BEFORE: on a body in several lumps, an opening on
-  every lump or none at all. `offset(openings=[…])` shells only the lumps a
-  listed face belongs to and hands back the raw offset solid for the rest.
-- `assert_every_lump_hollowed` — AFTER, because only the kernel knows whether a
-  wall fits: no result lump may be IDENTICAL to a lump that went in (same
-  bounding box, same volume). Round two paired result lumps to input lumps by
-  nearest bounding-box CENTRE and two CONCENTRIC lumps share a centre exactly,
-  so it refused a shell the kernel had built perfectly. There is no pairing any
-  more, and there should not be one.
-
-Measured across the three rounds, so none of it needs re-deriving: an untouched
-lump matches its input at d(volume) 0.0 and d(box) 0.0 (1.1e-13 at worst) while
-a lump that really hollowed came no closer than 0.992 of its input, over 99
-result lumps; no lump ever vanished over six extreme thicknesses; an OUTSIDE
-shell never merged two lumps even at a 2 mm gap and t = 6;
-`inspector.closed_shell` is effectively per-lump (an open-shell lump is caught
-beside a healthy one exactly as it is alone); `.solids()`, `.volume` and
-`.bounding_box()` never raise on a result and cost 5 ms for 24 calls against
-the kernel's own 239 ms offset on a 12-lump body; the opening guard's
-`_shape_key` match is exact through `linear_pattern`, `polar_pattern`,
-`mirror`, a severed plate and an imported STEP.
-
-The shared gauntlet corpus (`tests/gauntlet.py BODIES`) is **all one-lump
-bodies** — that is how the same P0 got through two rounds. Shell's own gauntlet
-now carries the multi-lump corner (four mixed pairs plus the concentric pair,
-swept in both directions). **Any other op that eats a whole body deserves the
-same corner**; there is a LAUNCH-PLAN §10 row for it.
+- `rotate`'s DEFAULT still turns about the world origin: decided (§10 P2 row,
+  user said not now on 2026-09-10; the tool sends `"center"` explicitly).
+- World axes only, no Copy, no Point-to-Point: decided in the spec, §10.
+- `move` is special-cased in `document._eval` rather than a MODIFIER: it
+  predates this work and passes a SKETCH through too (`_kinds`).
+- A turned L-bracket's bounding-box centre moves although the pivot does not:
+  measured, the gauntlet proves the pivot via the way back.
 
 ## Ground rules (unchanged)
 
@@ -94,8 +83,6 @@ same corner**; there is a LAUNCH-PLAN §10 row for it.
 ## Also open, and NOT the next review's job
 
 `tests/e2e/test_tree_delete.py` is 5 red and was measured red at `667ccc0` in a
-clean worktree, so it predates all of this. `tree.js deleteFeature` opens the
-confirm only when `plan.deleted.length > 1` and the dialog never appears, so
-the remove PLAN now takes ONE feature where it used to take the group. That is
-the delete / strike-out workstream; LAUNCH-PLAN §10's browser-tier P1 row
-carries it with the root cause narrowed.
+clean worktree, so it predates all of this (LAUNCH-PLAN §10's browser-tier P1
+row carries it). REVIEW-QUEUE section 7 (Extrude) waits until this brief reads
+NOTHING PENDING.
