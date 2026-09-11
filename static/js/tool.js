@@ -116,6 +116,10 @@ function currentSelection(explicit) {
   if (sel && !sel.suppressed) return { kind: 'feature', id: sel.id };
   return null;
 }
+/* WHAT is selected, for a router that picks the tool from the pick (Fusion's
+   Press Pull: a face or profile is Extrude, an edge is Fillet). The same
+   answer open() will read a moment later — one selection set, read once. */
+export const selectionKind = () => { const s = currentSelection(null); return s ? s.kind : null; };
 
 /* ---------------- the registry: one tool open at a time ---------------- */
 let active = null;          // the tool whose session / panel is open

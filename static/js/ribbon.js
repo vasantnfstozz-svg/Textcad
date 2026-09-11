@@ -12,7 +12,7 @@ import { openSettings } from './settings.js';
 import { startPlacement, PLACEABLE } from './placement.js';
 import { beginPlanePick } from './viewport.js';
 import { lookAtSketch } from './sketch3d.js';
-import { openExtrude } from './extrude.js';
+import { openExtrude, openPressPull } from './extrude.js';
 import { openRevolve } from './revolve.js';
 import { openFillet, openChamfer } from './fillet.js';
 import { openHole } from './hole.js';
@@ -49,7 +49,7 @@ function startSketch() {
 }
 
 // the drag-handle tools (born on tool.js): pressed with the current selection
-const TOOLS = { extrude: openExtrude, revolve: openRevolve,
+const TOOLS = { extrude: openExtrude, revolve: openRevolve, press_pull: openPressPull,
                 fillet: openFillet, chamfer: openChamfer, hole: openHole, shell: openShell,
                 polar_pattern: openCircularPattern, linear_pattern: openRectangularPattern,
                 mirror: openMirror, move: openMove, rotate: openRotate };
@@ -107,7 +107,9 @@ const TABS = {
     ['Advanced', ['revolve_profile', 'curved_blade']],
   ],
   Modify: [
-    ['Features', ['with_center_hole', 'with_bolt_circle', 'fillet', 'chamfer',
+    // Press Pull first, as in Fusion: a router, not an op — the pick decides
+    // whether it is Extrude (face / profile) or Fillet (edge), extrude.js
+    ['Features', ['press_pull', 'with_center_hole', 'with_bolt_circle', 'fillet', 'chamfer',
                   'shell']],
     ['Transform', ['move', 'rotate', 'scale', 'mirror']],
     ['Pattern', ['polar_pattern', 'linear_pattern']],

@@ -11,7 +11,8 @@
 // limits, the default target and which sign goes INTO the body all arrive in
 // ONE plan (toolplan.py). This file draws what it is told and computes nothing.
 
-import { tool, g, num, say, setBox } from './tool.js';
+import { tool, g, num, say, setBox, selectionKind } from './tool.js';
+import { openFillet } from './fillet.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          extrudeArrowDragging,
          beginExtrudeGhost, setExtrudeGhost, hideExtrudeGhost, endExtrudeGhost,
@@ -282,3 +283,28 @@ const ex = tool({
 
 export const openExtrude = profileId => ex.open(profileId);
 export const initExtrude = () => ex.init();
+
+/* PRESS PULL (Fusion's Modify → Press Pull, the last Tier-1 tool of
+   LAUNCH-PLAN §4): not a tool of its own but the ROUTER Fusion has — the
+   selection picks the command. A flat face or a sketch profile is Extrude
+   (face mode pulls the face; a face sketch joins or cuts its own body), an
+   edge is Fillet. A curved face would be Fusion's Offset Face, which does not
+   exist here, so it says so instead of handing the pick to Extrude's flat-face
+   refusal. Nothing selected: Extrude asks for a face or a profile, as it does
+   from its own button. The feature in the tree is Extrude's or Fillet's,
+   exactly as Fusion's timeline shows an Extrude, never a "Press Pull". */
+export function openPressPull() {
+  const kind = selectionKind();
+  if (kind === 'edges') {
+    say('Press Pull on an edge is Fillet — drag the ball for the radius.');
+    openFillet();
+    return;
+  }
+  if (kind === 'curved') {
+    say('⚠ Press Pull on a curved face would offset it (Fusion\'s Offset Face), ' +
+      'which TextCAD does not have yet. Click a FLAT face to pull it, a sketch ' +
+      'to extrude it, or an edge to fillet it.');
+    return;
+  }
+  ex.open();
+}

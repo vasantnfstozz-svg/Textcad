@@ -31,10 +31,14 @@
 > coloured arrows meeting at the body's centre, a ring about X / Y / Z through
 > the body's centre — `rotate` grew a `pivot` and the legacy default stays the
 > world origin, so no saved design moves; the ghost is the body itself; ui
-> v187; code review pending, REVIEW-BRIEF.md). Next: Push/Pull naming, the
-> last P4 tool, in a fresh chat. One tool per session. Every
-> other plan file points here; §7 carries the done-notes, §10 the ranked open
-> items. **Added 2026-09-10 (user's decision):** P5b, the machine plays the
+> v187; review CLOSED after two rounds, 4ee5670 + 2f1d776, ui v189). **P4's
+> last tool, Press Pull, BUILT 2026-09-11** (the plan's "Push/Pull naming":
+> Fusion's router button in the Modify tab — a flat face or a sketch profile
+> opens Extrude, an edge opens Fillet, a curved face gets a sentence; no new
+> op, no backend change, ui v190; code review pending, REVIEW-BRIEF.md).
+> **P4 is complete once that review closes.** Next: P5, the AI uses the tools,
+> in a fresh chat. Every other plan file points here; §7 carries the
+> done-notes, §10 the ranked open items. **Added 2026-09-10 (user's decision):** P5b, the machine plays the
 > user — a zero-token random-journey runner, a bug button, the library tier
 > fixed — sits between P5 and P6 (§6 tier 4, §7 P5b).
 >
@@ -219,7 +223,7 @@ model, live verified preview, the value box as the second option, Esc cancels.
 | Pattern (circular, linear) | drag count / spacing | a feature or body | `polar_pattern`, `linear_pattern` exist | bolt circles, gear teeth |
 | Mirror | pick a plane or flat face | body | `mirror` exists (returns a copy) | |
 | Shell | arrow (wall thickness) on the open face | body + face | `shell` exists (group selector) | |
-| Push/Pull face | arrow | flat face of a body | `extrude_face` exists | Extrude in face mode already does this; expose the name |
+| Press Pull (the plan's "Push/Pull") | Extrude's arrow / Fillet's ball | flat face, sketch profile or edge | `extrude_face` exists | built 2026-09-11 (`specs/press-pull.md`): Fusion's router — face or profile → Extrude, edge → Fillet; no op of its own |
 | Move / Rotate body | three arrows / ring | body | done | built 2026-09-11 (`specs/move-rotate.md`); `rotate` has a pivot now, "center" from the tool |
 | Combine (Join / Cut) | in the tool's dropdown | two bodies | exist | Intersect stays locked until a real use appears |
 
@@ -947,6 +951,24 @@ tests. Decided without the user: world axes only (Fusion's edge / face-normal
 axes and Point-to-Point later, §10), no Copy box (Pattern's job), relative
 offsets. Gotcha for the next gauntlet: a turned L-bracket's bounding-box
 centre MOVES even though the pivot does not — the invariant is the way back.
+
+*Press Pull built 2026-09-11* (spec `specs/press-pull.md`, tool in the commit
+the review brief names; review pending). The plan's "Push/Pull naming" row and
+the last of P4's seven: no new op, no panel, no backend change, no kernel
+call, so no probe. Fusion's Press Pull is a ROUTER and so is ours —
+`extrude.js openPressPull()` reads the selection's kind once (`tool.js
+selectionKind`, the same answer `open()` reads a moment later) and starts the
+command that fits: a flat face or a sketch profile is Extrude (face mode pulls
+the face), an edge is Fillet, a curved face gets one sentence (Fusion's Offset
+Face does not exist here) and no panel. The panel header and the tree row are
+Extrude's or Fillet's, as Fusion's timeline shows an Extrude and never a
+"Press Pull"; `press_pull` is a ribbon key in `icons.js` marked as not an op,
+first in Modify → Features where Fusion keeps it. 4 browser journeys with real
+clicks (a typed 5 mm pull grows the plate by exactly 60 × 40 × 5 mm³ as a
+Join, one body left; a sketch row; an edge; a curved face). Line delta:
++41 / −5 in `static/js`, the smallest of P4's seven. Decided without the user:
+Fusion's name "Press Pull" over the plan's "Push/Pull"; the profile and edge
+routes beyond the row's "flat face of a body".
 
 **P5 — The AI uses the tools (§5 step B).** Incremental authoring through
 the plan endpoint; chat edits point at parameters; the FEATURE-TREE-PLAN
