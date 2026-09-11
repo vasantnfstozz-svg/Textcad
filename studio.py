@@ -32,6 +32,7 @@ if __name__ == "__main__" and os.environ.get("TEXTCAD_SERVER_CHILD") != "1":
     raise SystemExit(_supervise())
 
 import base64
+import contextlib
 import itertools
 import json
 import math
@@ -210,14 +211,15 @@ def _snapshot() -> None:
     e["dirty"] = None                # unknown until someone asks (see _dirty)
 
 
-def _unsnapshot() -> None:
+def _unsnapshot(e: dict | None = None) -> None:
     """Undo the _snapshot() a step took before it was refused.
 
     Popping the history entry is not enough: _snapshot also ENDS THE REDO LINE,
     and a request that changed nothing must not cost the user their redo. Typo
     a parameter name after two undos and Ctrl+Y was dead — with the multi-param
-    route now refusing unknown keys, that door is much wider than it was."""
-    e = _entry()
+    route now refusing unknown keys, that door is much wider than it was.
+    `e`: the tab to undo it on when it may no longer be the active one."""
+    e = e or _entry()
     if e["history"]:
         e["history"].pop()
     prev = e.pop("redo_before", None)
@@ -236,7 +238,8 @@ def _rebuild_and_mesh() -> None:
     import time
     e = _entry()
     t0 = time.perf_counter()
-    e["ok"] = e["doc"].rebuild()
+    with _KERNEL_LOCK:
+        e["ok"] = e["doc"].rebuild()
     e["rebuild_ms"] = round((time.perf_counter() - t0) * 1000)
     e["mesh_stale"] = True
 
@@ -396,6 +399,14 @@ RECOVERY: dict | None = None      # set at startup when the previous process cra
 _INFLIGHT: dict[int, dict] = {}
 _INFLIGHT_SEQ = itertools.count()
 _INFLIGHT_LOCK = threading.Lock()
+
+# OCCT is not thread-safe and FastAPI runs the sync routes in a threadpool.
+# Every REBUILD takes this lock — the user's edits through _rebuild_and_mesh
+# and the AI's steps in a chat job (P5), which run in their own thread for
+# minutes while the user keeps working. Re-entrant: a rebuild may be asked
+# for from inside a step. Tessellation (GET /api/model) is still outside it
+# (LAUNCH-PLAN §10, the "two requests in the kernel" row).
+_KERNEL_LOCK = threading.RLock()
 
 # TEST ONLY (TEXTCAD_CRASH_TEST): {"path": "/api/feature/params"} makes the
 # next request to that path die WITH its marker written, so a test can put the
@@ -600,15 +611,16 @@ def _hand_edit() -> None:
     _entry()["hand_edits"] = _entry().get("hand_edits", 0) + 1
 
 
-def _pending(label: str, kind: str) -> None:
+def _pending(label: str, kind: str, e: dict | None = None) -> None:
     """Note a change that will ride into the NEXT saved version.
 
     User (2026-09-01): "do not push it as a version until i want to do" — a
     tool commit / import / AI edit no longer mints a version of its own. The
     note is kept so the eventual save can say what it holds ("hole added; AI
     set bore.radius = 9") instead of a bare "saved". `kind` is "tool" or "ai",
-    for attributing the version to whoever actually did the work."""
-    e = _entry()
+    for attributing the version to whoever actually did the work. `e` names
+    a tab other than the active one (a chat job building in its own tab)."""
+    e = e or _entry()
     p = e.setdefault("pending", [])
     p.append({"label": label, "kind": kind})
     del p[:-30]                       # a label needs the gist, not a full log
@@ -767,6 +779,8 @@ JSON and a user message. Respond with ONLY a JSON object, no prose:
 
 To edit one parameter: {"action":"edit","feature_id":"...","param":"...","value":<number-or-list>}
 To delete a feature:   {"action":"delete","feature_id":"..."}
+To ADD features to the CURRENT design (a hole, a boss, a pocket, a fillet, a
+pattern... on the part already in the tree): {"action":"add","description":"<the user's requirement, restated precisely, with every number>"}
 To design a NEW object from scratch (user describes something to create, not a
 change to the current one): {"action":"create","description":"<the user's full requirement, restated precisely>"}
 To answer a question:  {"action":"answer","text":"..."}
@@ -786,8 +800,10 @@ Rules:
   user MEANS: a pocket the user names is usually the cut/extrude feature, not
   its sketch. Dependent features are repaired automatically, so never refuse a
   delete because something downstream uses it.
-- If the request is not a single-parameter edit or a delete, explain briefly
-  via "answer"."""
+- "add" is for anything that puts NEW geometry on the design in the tree
+  (when the tree is empty, "create"). "edit" is for changing a number that
+  already exists. If the request is none of these, explain briefly via
+  "answer"."""
 
 
 def _make_model():
@@ -2937,35 +2953,160 @@ def export_step():
 # Chat
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Chat jobs — the AI uses the tools, one verified step at a time (P5)
+# ---------------------------------------------------------------------------
+# A "create" or "add" request is a JOB: the step loop (author.author_steps)
+# runs in its own thread for as long as the model needs, the browser follows
+# it through GET /api/chat/job/<id>, and every step lands in the tree as it
+# is verified. Each kernel step takes the kernel lock and an in-flight
+# marker, so a crash inside it is attributed and no session checkpoint holds
+# a half-applied feature (the rule the POST middleware follows).
+
+JOBS: dict[str, dict] = {}
+_JOB_SEQ = itertools.count(1)
+JOB_THREADS = True          # tests set False: the job runs before the reply
+
+
+@contextlib.contextmanager
+def _step_guard(job: dict):
+    job["step"] += 1
+    rid = next(_INFLIGHT_SEQ)
+    with _INFLIGHT_LOCK:
+        _INFLIGHT[rid] = {"method": "AI", "path": f"/api/chat step {job['step']}",
+                          "at": time.time()}
+        _write_inflight()
+    try:
+        with _KERNEL_LOCK:
+            yield
+    finally:
+        if _clear_inflight(rid) and SESSION_ENABLED:
+            _persist_session()
+
+
+def _start_job(kind: str, description: str, tid: str, model,
+               before: dict | None = None) -> dict:
+    job = {"id": f"j{next(_JOB_SEQ)}", "kind": kind, "description": description,
+           "tab": tid, "model": model, "before": before, "step": 0,
+           "log": [], "changed": 0, "done": False, "reply": None,
+           "n_before": len(STATE["docs"][tid]["doc"].features)}
+    JOBS[job["id"]] = job
+    del_ids = list(JOBS)[:-20]          # a handful of finished jobs is enough
+    for k in del_ids:
+        if JOBS[k]["done"]:
+            del JOBS[k]
+    if JOB_THREADS:
+        threading.Thread(target=_run_job, args=(job,), daemon=True).start()
+    else:
+        _run_job(job)
+    return job
+
+
+def _run_job(job: dict) -> None:
+    e = STATE["docs"][job["tab"]]
+    doc = e["doc"]
+
+    def on_step(ev):
+        job["log"].append(ev["text"])
+        e["ok"] = ev["ok"]
+        job["changed"] += 1
+
+    try:
+        finished, transcript = author.author_steps(
+            doc, job["description"], job["model"], on_step=on_step,
+            guard=lambda: _step_guard(job))
+    except Exception as ex:      # the model's transport; kernel trouble is a sentence
+        finished, transcript = False, [f"the model failed: {ex}"]
+        job["log"].append(transcript[-1])
+    n = len(doc.features)
+    why = transcript[-1] if transcript else "no reply from the model"
+    if job["kind"] == "create":
+        if finished:
+            reply = (f'Designed "{doc.name}" — {n} features, each verified as it '
+                     f'was added. It is waiting in its own tab; your current '
+                     f'design is untouched. Click the "{doc.name}" tab when you '
+                     f'want it.')
+        else:
+            reply = (f'I could not finish "{doc.name}": {why} The {n} verified '
+                     f'feature(s) so far are in its own tab — finish it by hand '
+                     f'or ask again. Your current design is untouched.')
+        _pending(f"AI designed {doc.name}", "ai", e)
+    elif finished and doc.to_data() == job["before"]:
+        _unsnapshot(e)                    # nothing changed: no undo step either
+        reply = (f'I finished without changing "{doc.name}" — the last thing the '
+                 f'steps said: {why}')
+    elif finished:
+        added = [f.id for f in doc.features[job["n_before"]:]]
+        what = (f'{len(added)} feature(s), each verified as it landed: '
+                f'{", ".join(added)}' if added else "one or more parameters")
+        reply = (f'Added {what} to "{doc.name}". One Undo (Ctrl+Z) takes '
+                 f'it all back.')
+        _pending(f"AI added {', '.join(added) or 'edits'}", "ai", e)
+    else:
+        # the user's design is not left half-changed: back to the snapshot
+        with _KERNEL_LOCK:
+            fresh = Document.from_data(job["before"])
+            fresh._cache = doc._cache
+            e["doc"] = fresh
+            e["ok"] = fresh.rebuild()
+        _unsnapshot(e)
+        reply = (f'I did NOT change "{doc.name}": {why} Try naming the face, '
+                 f'the position and the size more precisely.')
+    job["reply"] = reply
+    job["done"] = True
+    if SESSION_ENABLED and not _INFLIGHT:
+        _persist_session()
+
+
+@app.get("/api/chat/job/{jid}")
+def chat_job(jid: str):
+    """Where a step-by-step chat job stands: its log so far, whether it is
+    done, its closing sentence — and the active document, read between
+    steps so the browser never sees a half-rebuilt tree."""
+    job = JOBS.get(jid)
+    if job is None:
+        return JSONResponse(status_code=404, content={"error": "no such job"})
+    with _KERNEL_LOCK:
+        doc_json = _doc_json()
+    return {"job": jid, "kind": job["kind"], "tab": job["tab"],
+            "done": job["done"], "log": list(job["log"]), "reply": job["reply"],
+            "changed": job["changed"], **doc_json}
+
+
 @app.post("/api/chat")
 def chat(req: ChatReq):
     intent = chat_intent(req.message)
 
-    if intent.get("action") == "create":
+    if intent.get("action") in ("create", "add"):
         model = _make_model()
         if model is None:
-            return {"reply": "Designing from scratch needs an API key "
-                             "(OPENROUTER_API_KEY).", **_doc_json()}
-        doc, transcript = author.author_design(
-            intent.get("description") or req.message, model)
-        if doc is None:
-            return {"reply": "I couldn't produce a verified design:\n"
-                             + "\n".join(transcript), **_doc_json()}
-        # A NEW design goes in a NEW tab and must NOT steal the one the user is
-        # working in (user, 2026-08-26: "even my current tab is being taken for
-        # that design ... that should not disturb other tabs"). Authoring takes
-        # a while, and yanking the viewport away mid-edit loses their place.
-        was = STATE["active"]
-        tid = _new_tab(doc, activate=True)
-        _rebuild_and_mesh()                       # build it while it is active
-        n = len(doc.features)
-        if was in STATE["docs"] and was != tid:
-            STATE["active"] = was                 # ...then hand the tab back
-        return {"reply": f"Designed \"{doc.name}\" — {n} features, all "
-                         f"verified ({transcript[-1]}). It is waiting in its "
-                         f"own tab; your current design is untouched. Click "
-                         f"the \"{doc.name}\" tab when you want it.",
-                "new_tab": tid, **_doc_json()}
+            return {"reply": "Designing needs an API key (OPENROUTER_API_KEY).",
+                    **_doc_json()}
+        desc = intent.get("description") or req.message
+        if intent["action"] == "create":
+            # A NEW design goes in a NEW tab and must NOT steal the one the
+            # user is working in (user, 2026-08-26: "even my current tab is
+            # being taken for that design ... that should not disturb other
+            # tabs"). The tab is opened first, so the tree grows in it while
+            # the job runs; the user switches to it when they choose.
+            tid = _new_tab(Document(name="designing…"), activate=False)
+            job = _start_job("create", desc, tid, model)
+            reply = ("Designing it step by step in its own tab — every feature "
+                     "shows here as it is verified; your current design is "
+                     "untouched. Click the new tab to watch it grow.")
+        else:
+            # ADD to the design on screen: one snapshot, so a single Undo
+            # takes the whole AI change back; a job that gives up restores it.
+            _snapshot()
+            e = _entry()
+            tid = STATE["active"]
+            job = _start_job("add", desc, tid, model, before=e["history"][-1])
+            reply = ("Adding to this design step by step — every feature is "
+                     "verified as it lands. One Undo takes it all back.")
+        return {"reply": job["reply"] or reply, "job": job["id"],
+                "job_done": job["done"],
+                "new_tab": tid if intent["action"] == "create" else None,
+                **_doc_json()}
 
     if intent.get("action") == "delete":
         fid = intent.get("feature_id")

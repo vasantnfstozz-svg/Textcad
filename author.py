@@ -11,8 +11,11 @@ verified registry (document.KNOWN_OPS). That means:
   * the result is immediately an editable document (feature tree), so the
     user can refine it manually afterwards — no orphan code blobs.
 
-The loop mirrors generate.py: author -> validate -> rebuild -> verify -> feed
-every failure back -> retry. Failures are per-node and diagnostic.
+Since P5 (LAUNCH-PLAN.md §5 step B) the model works ONE STEP PER REPLY,
+through the same Document.add(strict=True) + lint + rebuild the toolbar's
+Add Feature uses (`author_steps`); a refused or broken step is undone before
+the model hears about it. `_to_document` still validates a WHOLE tree for the
+MCP build_design door, where another AI authors the tree itself.
 """
 
 from __future__ import annotations
@@ -183,18 +186,28 @@ complex than the available operations, build the best RECOGNIZABLE STYLIZED
 approximation from the primitives you have (a car = body slab + cabin +
 cylinder wheels + fused details) — a toy-like model is a success, a refusal
 is a failure. Do not reject anything for "machinability"; that is not a
-requirement here. Respond with ONLY a JSON object, no prose, no markdown:
+requirement here.
 
-{{"name": "short-part-name",
- "features": [
-   {{"id": "unique_name", "op": "<op>", "params": {{...}}, "inputs": ["upstream_id", ...]}},
-   ...
- ],
- "spec": {{"n_solids": 1, ...optional: "symmetry": N, "tip_radius": mm, "size": [x,y,z or null], "holes": {{"5": 2}}, "tol": 0.5}}
-}}
+YOU WORK ONE STEP PER REPLY, exactly like a person using the CAD tools: add
+ONE feature, see what it built, add the next. Respond with ONLY a JSON
+object, no prose, no markdown — one of these four:
 
-(spec "holes" maps NUMERIC hole radius in mm -> count; e.g. {{"5": 2}} means
-two 5mm-radius holes.)
+{{"name": "short-part-name", "add": {{"id": "unique_name", "op": "<op>", "params": {{...}}, "inputs": ["upstream_id", ...]}}}}
+    adds one feature to the tree ("name" is read on your first reply only);
+{{"edit": {{"feature_id": "an_id_in_the_tree", "param": "radius", "value": 12}}}}
+    changes ONE parameter of a feature already in the tree — never rebuild
+    from scratch what one number can fix;
+{{"remove": "an_id_in_the_tree"}}
+    takes back a step of yours that nothing else builds on (your last step);
+{{"done": true, "spec": {{"n_solids": 1, ...optional: "symmetry": N, "tip_radius": mm, "size": [x,y,z or null], "holes": {{"5": 2}}, "tol": 0.5}}}}
+    the part is complete (spec "holes" maps NUMERIC hole radius in mm ->
+    count; {{"5": 2}} means two 5mm-radius holes).
+
+After every reply you are told what the step built (status, volume, size,
+the bodies now in the tree) or the sentence it was REFUSED with. A refused
+step is NOT in the tree: send a corrected step, not the next one. A step
+that builds broken geometry is undone the same way. Think the whole part
+through before the first step, then record it step by step.
 
 ALLOWED OPERATIONS (the ONLY ops that exist — anything else is rejected):
 {_catalog_text()}
@@ -210,7 +223,8 @@ RULES AND CONVENTIONS:
 - The spec encodes the USER's requirement. If verification fails, fix the
   GEOMETRY to meet the spec — NEVER weaken or change the spec to match wrong
   geometry.
-- Features evaluate in list order; "inputs" must reference EARLIER ids.
+- Features evaluate in the order they were added; "inputs" must reference
+  ids ALREADY in the tree.
 - creators take no inputs; modifiers exactly 1; fuse/cut/intersect 2 or more
   (cut = first input minus the rest).
 - revolve_profile points are [radius, z] pairs (radius >= 0), auto-closed —
@@ -242,9 +256,9 @@ RULES AND CONVENTIONS:
   FEATURE of a body with "seed" plus "direction" [x, y, z], "distance" and
   "distance_type" ("spacing" between copies, or "extent" they all fit in);
   "count2" / "direction2" / "distance2" make it a grid.
-- The final feature in the list is the part. It must be ONE watertight solid,
+- The LAST feature you add is the part. It must be ONE watertight solid,
   so end with a fuse if you built separate pieces.
-- Always include a spec with at least {{"n_solids": 1}}. Match spec strictness
+- "done" always carries a spec with at least {{"n_solids": 1}}. Match spec strictness
   to the request: for ENGINEERING parts with explicit dimensions, encode them
   (size/holes/symmetry, tight tol). For STYLIZED/creative models (cars,
   animals, buildings), keep the spec MINIMAL — {{"n_solids": 1}} plus at most
@@ -376,9 +390,12 @@ def _parse(raw: str) -> dict:
 _GENERIC_ID = re.compile(r"^(feature|node|item|part|f)_?\d*$", re.I)
 
 
-def lint_tree(features) -> list[str]:
+def lint_tree(features, final: bool = True) -> list[str]:
     """History-quality rules for AUTHORED trees (AI/MCP paths only — the
-    manual UI records history naturally, one action per feature)."""
+    manual UI records history naturally, one action per feature).
+    `final=False` while a design is still being built step by step: the
+    "whole design is one blob" rule judges the FINISHED design and must not
+    refuse the second step of a ten-step part."""
     problems = []
     sketches = [f for f in features if f.op == "sketch"]
     for f in sketches:
@@ -388,7 +405,7 @@ def lint_tree(features) -> list[str]:
                 f"sketch '{f.id}' crams {n} entities into one feature — "
                 f"split the artwork into logical sketches (one per design "
                 f"element, each with its own extrude, fused/cut together)")
-    if len(features) == 2 and len(sketches) == 1:
+    if final and len(features) == 2 and len(sketches) == 1:
         n = len(sketches[0].params.get("entities") or [])
         if n > 4:
             problems.append(
@@ -425,8 +442,36 @@ def lint_tree(features) -> list[str]:
     return problems
 
 
+def _spec_of(spec) -> dict:
+    """The spec the model sent, reduced to the keys inspector.Spec knows, with
+    the two fields the AI used to fill with words checked. Raises ValueError
+    with the sentence to feed back."""
+    spec = spec or {}
+    if not isinstance(spec, dict):
+        raise ValueError('"spec" must be an object like {"n_solids": 1}')
+    known = {"size", "volume", "holes", "n_solids", "symmetry", "tip_radius",
+             "com", "require_manifold", "tol", "vol_tol"}
+    out = {k: v for k, v in spec.items() if k in known}
+    if out.get("holes"):
+        try:
+            out["holes"] = {float(k): int(v) for k, v in out["holes"].items()}
+        except (TypeError, ValueError, AttributeError):
+            raise ValueError(
+                'spec "holes" keys must be NUMERIC radii in mm, e.g. '
+                '{"5": 1} for one 5mm-radius hole — not placeholder words')
+    if "symmetry" in out:
+        sy = out["symmetry"]
+        if not isinstance(sy, int) or isinstance(sy, bool) or not 2 <= sy <= 64:
+            raise ValueError(
+                'spec "symmetry" must be an INTEGER 2..64 counting discrete '
+                'features around Z (blade count, bolt count). OMIT it entirely '
+                'for axisymmetric/revolved parts — never "infinite"')
+    return out
+
+
 def _to_document(data: dict) -> Document:
-    """Validate + construct. Raises ValueError with a diagnostic message."""
+    """Validate + construct a WHOLE tree (the MCP `build_design` door, where
+    another AI authors the tree itself). Raises ValueError with a diagnostic."""
     if not isinstance(data.get("features"), list) or not data["features"]:
         raise ValueError("JSON must contain a non-empty 'features' list")
     doc = Document(name=str(data.get("name", "untitled"))[:60])
@@ -436,65 +481,229 @@ def _to_document(data: dict) -> Document:
     lint = lint_tree(doc.features)
     if lint:
         raise ValueError("history lint: " + "; ".join(lint))
-    spec = data.get("spec") or {}
-    known = {"size", "volume", "holes", "n_solids", "symmetry", "tip_radius",
-             "com", "require_manifold", "tol", "vol_tol"}
-    doc.spec = {k: v for k, v in spec.items() if k in known}
-    if doc.spec.get("holes"):
-        try:
-            doc.spec["holes"] = {float(k): int(v)
-                                 for k, v in doc.spec["holes"].items()}
-        except (TypeError, ValueError):
-            raise ValueError(
-                'spec "holes" keys must be NUMERIC radii in mm, e.g. '
-                '{"5": 1} for one 5mm-radius hole — not placeholder words')
-    if "symmetry" in doc.spec:
-        s = doc.spec["symmetry"]
-        if not isinstance(s, int) or isinstance(s, bool) or not 2 <= s <= 64:
-            raise ValueError(
-                'spec "symmetry" must be an INTEGER 2..64 counting discrete '
-                'features around Z (blade count, bolt count). OMIT it entirely '
-                'for axisymmetric/revolved parts — never "infinite"')
+    doc.spec = _spec_of(data.get("spec"))
     return doc
 
 
-def author_design(prompt: str, model, max_attempts: int = 4):
-    """Returns (Document | None, transcript: list[str])."""
-    messages = [{"role": "system", "content": AUTHOR_PROMPT},
-                {"role": "user", "content": prompt}]
-    transcript: list[str] = []
+# ---------------------------------------------------------------------------
+# The step loop — the AI uses the same tools (LAUNCH-PLAN.md §5 step B, P5)
+# ---------------------------------------------------------------------------
+# The model adds ONE feature per reply. Each step goes through exactly what
+# the toolbar's Add Feature goes through — Document.add(strict=True), the
+# history lint, a rebuild — and is judged on its own: a refused or broken
+# step is undone before the model hears about it, so the tree on screen never
+# holds a feature the kernel did not accept. An "edit" points at one
+# parameter of an earlier feature (never a regenerated tree); "done" carries
+# the spec and is refused while the spec is not met. The loop gives up after
+# MAX_FAILS refusals in a row and says so — a partial tree of verified
+# features beats a whole tree of guesses.
 
-    for attempt in range(1, max_attempts + 1):
+MAX_STEPS = 40          # bounds the cost of a model that never says done
+MAX_FAILS = 3           # refusals in a row before the loop gives up
+
+
+def _restore(doc: Document, data: dict) -> None:
+    """Put the tree back exactly as `data` (a to_data() snapshot) had it —
+    the same road undo takes — keeping the document OBJECT, which a tab
+    entry holds by identity."""
+    fresh = Document.from_data(data)
+    doc.features, doc.spec = fresh.features, fresh.spec
+    doc._mark_stale()
+    doc.rebuild()
+
+
+def _bodies(doc: Document) -> str:
+    ids = doc.leaf_solid_ids()
+    return ", ".join(ids) if ids else "none yet"
+
+
+def _built(doc: Document, f) -> str:
+    """One line of measured facts about a feature that just built ok."""
+    if f.volume is None:
+        n = len(f.params.get("entities") or [])
+        where = f.params.get("face") or f.params.get("plane") or ""
+        return (f"OK: '{f.id}' ({f.op}) is a sketch of {n} entit"
+                f"{'y' if n == 1 else 'ies'} on {where}. Bodies: {_bodies(doc)}.")
+    line = f"OK: '{f.id}' ({f.op}) built — volume {f.volume:g} mm³"
+    part = doc._parts.get(f.id)
+    if part is not None:
+        import inspector
+        size = inspector.measure(part).get("size")
+        if size:
+            line += " — size " + "×".join(f"{v:g}" for v in size) + " mm"
+    if f.pieces and f.pieces > 1:
+        line += (f" — in {f.pieces} SEPARATE PIECES (a tool that only touches "
+                 f"the body, or a cut that severs it): fix this before going on")
+    notes = [w for w in doc.warnings if f.id in str(w)]
+    if notes:
+        line += ". Note: " + "; ".join(str(w) for w in notes[:2])
+    return line + f". Bodies: {_bodies(doc)}."
+
+
+def _first_problem(doc: Document, was_ok: set) -> str | None:
+    """The first feature that is red now, as a sentence."""
+    for f in doc.features:
+        if f.status != "ok" and not f.suppressed:
+            tag = " (it was fine before this step)" if f.id in was_ok else ""
+            return f"'{f.id}' ({f.op}){tag}: " + "; ".join(f.problems)
+    return None
+
+
+def _apply_step(doc: Document, step: dict) -> tuple[bool, str, str | None]:
+    """Apply ONE reply to the document. -> (ok, sentence, feature id).
+    Never raises for the model's mistakes; the sentence is what it hears.
+    On a refusal the document is exactly as it was."""
+    before = doc.to_data()
+    was_ok = {f.id for f in doc.features if f.status == "ok"}
+    if "add" in step:
+        a = step["add"]
+        if not isinstance(a, dict) or not a.get("id") or not a.get("op"):
+            return False, 'REFUSED: "add" needs {"id", "op", "params", "inputs"}', None
+        fid = str(a["id"])
+        try:
+            doc.add(fid, str(a["op"]), a.get("params") or {},
+                    a.get("inputs") or [], strict=True)
+            lint = lint_tree(doc.features, final=False)
+        except (ValueError, KeyError, TypeError) as e:
+            _restore(doc, before)
+            return False, f"REFUSED '{fid}': {e}", fid
+        if lint:
+            _restore(doc, before)
+            return False, f"REFUSED '{fid}' (history lint): " + "; ".join(lint), fid
+        doc.rebuild()
+        f = doc.get(fid)
+        bad = _first_problem(doc, was_ok)
+        if bad:
+            _restore(doc, before)
+            return False, f"UNDONE '{fid}' — it built broken geometry: {bad}", fid
+        return True, _built(doc, f), fid
+    if "edit" in step:
+        e = step["edit"]
+        if not isinstance(e, dict) or not e.get("feature_id") or not e.get("param"):
+            return False, 'REFUSED: "edit" needs {"feature_id", "param", "value"}', None
+        fid = str(e["feature_id"])
+        try:
+            doc.edit(fid, str(e["param"]), e.get("value"))
+        except (KeyError, ValueError, TypeError) as err:
+            _restore(doc, before)
+            return False, f"REFUSED edit of '{fid}': {err}", fid
+        doc.rebuild()
+        bad = _first_problem(doc, was_ok)
+        if bad:
+            _restore(doc, before)
+            return False, (f"UNDONE edit '{fid}.{e['param']}' = {e.get('value')!r} "
+                           f"— with it the tree breaks at {bad}"), fid
+        return True, (f"OK: '{fid}.{e['param']}' = {e.get('value')!r}. "
+                      + _built(doc, doc.get(fid))), fid
+    if "remove" in step:
+        fid = str(step["remove"])
+        try:                     # strict: only a step nothing else builds on
+            doc.remove(fid, mode="strict")
+        except (KeyError, ValueError) as err:
+            _restore(doc, before)
+            return False, f"REFUSED remove of '{fid}': {err}", fid
+        doc.rebuild()
+        return True, f"OK: removed '{fid}'. Bodies: {_bodies(doc)}.", fid
+    if step.get("done"):
+        if not doc.leaf_solid_ids():
+            return False, ("REFUSED done: the design has no solid body yet "
+                           "(a sketch alone has no volume) — add features"), None
+        lint = lint_tree(doc.features)
+        if lint:
+            return False, "REFUSED done (history lint): " + "; ".join(lint), None
+        try:
+            doc.spec = _spec_of(step.get("spec"))
+        except ValueError as err:
+            return False, f"REFUSED done: {err}", None
+        doc.spec.setdefault("n_solids", 1)
+        if doc.rebuild():
+            return True, "DONE: every feature ok and the spec is met.", None
+        bad = _first_problem(doc, was_ok)
+        if bad:                        # cannot happen after a clean step; belt
+            _restore(doc, before)
+            return False, f"REFUSED done: {bad}", None
+        problems = "; ".join(doc.spec_problems)
+        return False, (f"REFUSED done: the part does not meet the spec — "
+                       f"{problems}. Fix the GEOMETRY with edit/add steps "
+                       f"(never weaken the spec) and say done again"), None
+    return False, ('REFUSED: reply with exactly one of {"add": {...}}, '
+                   '{"edit": {...}}, {"remove": "id"} or {"done": true, "spec": {...}}'), None
+
+
+def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
+                 max_steps: int = MAX_STEPS, max_fails: int = MAX_FAILS
+                 ) -> tuple[bool, list[str]]:
+    """Let the model build `request` INTO `doc`, one verified step at a time.
+
+    `doc` may be empty (a new design) or the user's current design (the
+    model then adds to it — its tree is shown first). `on_step(event)` hears
+    every step as it lands: {"kind": add|edit|done|refused|gave_up, "text",
+    "id", "ok": the tree's health now}. `guard()` is a context manager the
+    caller may wrap each kernel step in (the server takes its kernel lock
+    and in-flight marker there). -> (finished, transcript)."""
+    tree = [{"id": f.id, "op": f.op, "params": f.params, "inputs": f.inputs}
+            for f in doc.features]
+    opening = f"REQUEST: {request}\n\n"
+    opening += (f"CURRENT TREE (add to it; do not rebuild what exists):\n"
+                f"{json.dumps(tree)}\nBODIES: {_bodies(doc)}\n\nFirst step?"
+                if tree else "The tree is empty. First step?")
+    messages = [{"role": "system", "content": AUTHOR_PROMPT},
+                {"role": "user", "content": opening}]
+    transcript: list[str] = []
+    fails = 0
+
+    def say(kind, text, fid=None):
+        transcript.append(text)
+        if on_step:
+            on_step({"kind": kind, "text": text, "id": fid,
+                     "ok": all(f.status == "ok" or f.suppressed
+                               for f in doc.features) and not doc.spec_problems})
+
+    for _ in range(max_steps):
         raw = model.generate(messages)
         messages.append({"role": "assistant", "content": raw})
-
-        # gate 1: is it valid JSON referencing only legal ops?
+        step = None
         try:
-            doc = _to_document(_parse(raw))
-        except (ValueError, KeyError, json.JSONDecodeError) as e:
-            transcript.append(f"attempt {attempt}: invalid tree — {e}")
-            messages.append({"role": "user", "content":
-                f"That was rejected before building: {e}\n"
-                "Return corrected JSON only."})
-            continue
-
-        # gate 2 + 3: geometry health per node, spec verification
-        ok = doc.rebuild()
+            step = _parse(raw)
+            if not isinstance(step, dict):
+                raise ValueError("not an object")
+        except (ValueError, json.JSONDecodeError) as e:
+            ok, text, fid = False, f"REFUSED: that was not one JSON object ({e})", None
+        else:
+            if "name" in step and not doc.features and isinstance(step["name"], str):
+                doc.name = step["name"].strip()[:60] or doc.name
+            if guard is not None:
+                with guard():
+                    ok, text, fid = _apply_step(doc, step)
+            else:
+                ok, text, fid = _apply_step(doc, step)
+        if ok and step.get("done"):
+            say("done", text)
+            return True, transcript
         if ok:
-            transcript.append(f"attempt {attempt}: PASS")
-            return doc, transcript
-
-        problems = []
-        for f in doc.features:
-            problems += [f"[{f.id}] {p}" for p in f.problems]
-        problems += [f"[spec] {p}" for p in doc.spec_problems]
-        transcript.append(f"attempt {attempt}: " + "; ".join(problems))
+            fails = 0
+            say(next(k for k in ("add", "edit", "remove") if k in step), text, fid)
+            messages.append({"role": "user", "content": text + " Next step?"})
+            continue
+        fails += 1
+        say("refused", text, fid)
+        if fails >= max_fails:
+            say("gave_up", f"GAVE UP after {fails} refused steps in a row; "
+                           f"{len(doc.features)} verified feature(s) stand.")
+            return False, transcript
         messages.append({"role": "user", "content":
-            "The tree built with these problems:\n"
-            + "\n".join(f"- {p}" for p in problems)
-            + "\nFix the tree. Return corrected JSON only."})
+                         text + " Send the corrected step (JSON only)."})
+    say("gave_up", f'GAVE UP: {max_steps} steps without "done".')
+    return False, transcript
 
-    return None, transcript
+
+def author_design(prompt: str, model, max_attempts: int = 4):
+    """A whole design from a sentence, on a fresh document, through the step
+    loop. Returns (Document | None, transcript) — the MCP `design_part` door."""
+    doc = Document(name="untitled")
+    finished, transcript = author_steps(doc, prompt, model,
+                                        max_fails=max(1, max_attempts - 1))
+    return (doc if finished else None), transcript
 
 
 # ---------------------------------------------------------------------------
@@ -503,24 +712,20 @@ def author_design(prompt: str, model, max_attempts: int = 4):
 
 if __name__ == "__main__":
     class FakeAuthor:
-        """Emits a bad tree (unknown op) first, then a correct washer."""
+        """Emits a bad step (unknown op) first, then a correct washer, one
+        feature per reply."""
         def __init__(self):
-            self.calls = 0
+            self.replies = [
+                {"name": "washer", "add": {"id": "body", "op": "torus",
+                                           "params": {"r": 20}}},
+                {"name": "washer-40", "add": {"id": "body", "op": "disc",
+                                              "params": {"radius": 20, "thickness": 4}}},
+                {"add": {"id": "hole", "op": "with_center_hole",
+                         "params": {"radius": 10}, "inputs": ["body"]}},
+                {"done": True, "spec": {"n_solids": 1, "holes": {"10": 1}, "tol": 0.5}},
+            ]
         def generate(self, messages):
-            self.calls += 1
-            if self.calls == 1:
-                return json.dumps({"name": "washer", "features": [
-                    {"id": "body", "op": "torus", "params": {"r": 20}}]})
-            return json.dumps({
-                "name": "washer-40",
-                "features": [
-                    {"id": "body", "op": "disc",
-                     "params": {"radius": 20, "thickness": 4}},
-                    {"id": "hole", "op": "with_center_hole",
-                     "params": {"radius": 10}, "inputs": ["body"]},
-                ],
-                "spec": {"n_solids": 1, "holes": {"10": 1}, "tol": 0.5},
-            })
+            return json.dumps(self.replies.pop(0))
 
     doc, transcript = author_design("a washer, 40mm outer, 20mm hole, 4mm thick",
                                     FakeAuthor())

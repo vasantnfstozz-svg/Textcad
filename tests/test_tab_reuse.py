@@ -49,6 +49,25 @@ def saved(client):
 
 # ----------------------------------------------------------------- the fix ---
 
+def _ai_designs_a_flange(monkeypatch, name):
+    """Stand in for the P5 step loop: the job fills the new tab's document
+    with the flange, verified, without a model or a thread."""
+    def steps(doc, request, model, on_step=None, guard=None, **kw):
+        for f in studio.sample_flange().features:
+            doc.add(f.id, f.op, f.params, f.inputs)
+        doc.name = name
+        ok = doc.rebuild()
+        if on_step:
+            on_step({"kind": "done", "text": "verified", "id": None, "ok": ok})
+        return True, ["verified"]
+    monkeypatch.setattr(studio, "JOB_THREADS", False)
+    monkeypatch.setattr(studio, "chat_intent",
+                        lambda *a, **k: {"action": "create",
+                                         "description": "a flange"})
+    monkeypatch.setattr(studio, "_make_model", lambda *a, **k: object())
+    monkeypatch.setattr(studio.author, "author_steps", steps)
+
+
 def test_opening_the_same_design_twice_reuses_one_tab(client, saved):
     before = _tab_count(client)
     a = client.post(f"/api/open/{saved}").json()
@@ -187,14 +206,7 @@ def test_an_ai_design_opens_in_its_own_tab_without_stealing_the_current_one(
     Authoring takes a while, so yanking the viewport away mid-edit loses the
     user's place. The design still gets its own tab — it just does not become
     the active one."""
-    doc = studio.sample_flange()
-    doc.name = "ai-part"
-    monkeypatch.setattr(studio, "chat_intent",
-                        lambda *a, **k: {"action": "create",
-                                         "description": "a flange"})
-    monkeypatch.setattr(studio, "_make_model", lambda *a, **k: object())
-    monkeypatch.setattr(studio.author, "author_design",
-                        lambda *a, **k: (doc, ["verified"]))
+    _ai_designs_a_flange(monkeypatch, "ai-part")
 
     mine = client.get("/api/doc").json()["active_tab"]
     before = _tab_count(client)
@@ -212,13 +224,7 @@ def test_the_ai_tab_is_built_and_ready_when_you_switch_to_it(
         client, monkeypatch):
     """Handing the tab back must not leave the new design unbuilt — switching
     to it should show geometry, not an empty viewport."""
-    doc = studio.sample_flange()
-    doc.name = "ai-built"
-    monkeypatch.setattr(studio, "chat_intent",
-                        lambda *a, **k: {"action": "create", "description": "x"})
-    monkeypatch.setattr(studio, "_make_model", lambda *a, **k: object())
-    monkeypatch.setattr(studio.author, "author_design",
-                        lambda *a, **k: (doc, ["verified"]))
+    _ai_designs_a_flange(monkeypatch, "ai-built")
     d = client.post("/api/chat", json={"message": "design a flange"}).json()
     tid = d["new_tab"]
     switched = client.post("/api/tabs/switch", json={"id": tid}).json()

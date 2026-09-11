@@ -259,6 +259,9 @@ main { flex: 1; display: flex; min-height: 0; }
   border-bottom-right-radius: 4px; }
 .msg.bot { background: var(--panel2); align-self: flex-start;
   border-bottom-left-radius: 4px; }
+/* one verified step of an AI job (P5): quiet, so the log reads as a list */
+.msg.step { background: none; color: var(--dim); align-self: flex-start;
+  padding: 2px 12px; font-size: 12px; }
 #chatForm { display: flex; gap: 8px; padding: 10px;
   border-top: 1px solid var(--line); }
 #chatInput { flex: 1; background: var(--panel2); border: 1px solid var(--line);

@@ -137,13 +137,14 @@ class ScriptedModel:
 
 
 def test_author_rejects_unknown_op_then_repairs():
-    bad = json.dumps({"name": "w", "features": [
-        {"id": "a", "op": "torus", "params": {}}]})
-    good = json.dumps({"name": "w", "features": [
-        {"id": "a", "op": "disc", "params": {"radius": 20, "thickness": 4}}],
-        "spec": {"n_solids": 1}})
-    doc, transcript = author.author_design("a washer", ScriptedModel(bad, good))
-    assert doc is not None
+    """P5: one step per reply — the refused step never enters the tree."""
+    bad = json.dumps({"name": "w", "add": {"id": "a", "op": "torus", "params": {}}})
+    good = json.dumps({"add": {"id": "a", "op": "disc",
+                               "params": {"radius": 20, "thickness": 4}}})
+    done = json.dumps({"done": True, "spec": {"n_solids": 1}})
+    doc, transcript = author.author_design("a washer",
+                                           ScriptedModel(bad, good, done))
+    assert doc is not None and [f.op for f in doc.features] == ["disc"]
     assert "unknown op" in transcript[0]
 
 
@@ -216,17 +217,24 @@ def test_lint_accepts_recorded_history():
 
 
 def test_author_repairs_blob_into_history():
-    blob = json.dumps(_sketch_tree(6))
-    good = json.dumps({"name": "plate", "features": [
-        {"id": "base_sketch", "op": "sketch",
-         "params": {"plane": "XY", "offset": 0, "entities": [
-             {"kind": "rectangle", "w": 20, "h": 10, "x": 0, "y": 0,
-              "mode": "add"}]}},
-        {"id": "base_extrude", "op": "extrude", "params": {"amount": 3},
-         "inputs": ["base_sketch"]}], "spec": {"n_solids": 1}})
-    doc, transcript = author.author_design("a plate", ScriptedModel(blob, good))
+    """The blob rule (ONE sketch + ONE extrude, 6 entities) is judged when
+    the model says DONE; it takes its steps back and records history."""
+    blob = _sketch_tree(6)["features"]
+    steps = [{"add": blob[0]}, {"add": blob[1]},
+             {"done": True, "spec": {"n_solids": 1}},          # refused: blob
+             {"remove": blob[1]["id"]}, {"remove": blob[0]["id"]},
+             {"add": {"id": "base_sketch", "op": "sketch",
+                      "params": {"plane": "XY", "offset": 0, "entities": [
+                          {"kind": "rectangle", "w": 20, "h": 10, "x": 0, "y": 0,
+                           "mode": "add"}]}}},
+             {"add": {"id": "base_extrude", "op": "extrude",
+                      "params": {"amount": 3}, "inputs": ["base_sketch"]}},
+             {"done": True, "spec": {"n_solids": 1}}]
+    doc, transcript = author.author_design(
+        "a plate", ScriptedModel(*[json.dumps(x) for x in steps]))
     assert doc is not None
-    assert "history lint" in transcript[0]   # rejection fed back to the model
+    assert "history lint" in transcript[2]   # rejection fed back to the model
+    assert [f.id for f in doc.features] == ["base_sketch", "base_extrude"]
 
 
 def test_op_catalog_matches_document_registry():
