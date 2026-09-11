@@ -64,3 +64,61 @@ def test_every_curved_face_is_refused_with_its_type():
             assert "curved" in str(e.value), f"{body}: {e.value}"
             seen += 1
     assert seen > 0
+
+
+# THE MULTI-LUMP CORNER of the gauntlet. The shared corpus is all ONE-lump
+# bodies, which is how the same P0 got through twice: a lump that did not
+# hollow is invisible to a WHOLE-BODY volume check as soon as a second, bigger
+# lump pays for it. Shell reaches multi-lump bodies by one click (`bodyRow`),
+# so every pair below is swept at every thickness, in both directions.
+LUMP_PAIRS = {                              # a 20 x 20 x 10 boss beside...
+    "equal":  (20.0, 20.0, 10.0),           # ...its twin (a linear_pattern)
+    "narrow": (3.0, 20.0, 10.0),            # ...a rib the wall cannot fit across
+    "flat":   (20.0, 20.0, 4.0),            # ...a pad the wall cannot fit down
+    "wide":   (12.0, 20.0, 10.0),           # ...a smaller boss that fits fine
+}
+
+
+def two_lumps(size):
+    import build123d
+    return build123d.Part() + build123d.Box(20.0, 20.0, 10.0) \
+        + build123d.Pos(40, 0, 0) * build123d.Box(*size)
+
+
+def tops_of(body):
+    return [ref(max(l.faces(), key=lambda f: (round(f.center().Z, 6), f.area)).center(),
+                [0, 0, 1]) for l in body.solids()]
+
+
+@pytest.mark.parametrize("pair", sorted(LUMP_PAIRS))
+@pytest.mark.parametrize("direction", ("inside", "outside"))
+def test_no_lump_ever_comes_back_a_solid_block(pair, direction):
+    """Every lump of the result must be walls, or the whole thing must be a
+    sentence. A lump whose volume is unchanged is the P0's signature: the
+    kernel handed it back raw and every whole-body check passed it green."""
+    body = two_lumps(LUMP_PAIRS[pair])
+    was = [l.volume for l in body.solids()]
+    built = 0
+    for t in (0.5, 1, 2, 3, 5, 6):
+        out = assert_op(f"{pair} {direction} t={t}", lambda t=t: sk.shell(body, t, tops_of(body),
+                                                                         direction))
+        if out is None:
+            continue                        # refused with a sentence: allowed
+        built += 1
+        for lump in out.solids():
+            for v in was:
+                assert abs(lump.volume - v) > 1e-6, \
+                    f"{pair} {direction} t={t}: a lump came back unchanged at {v:g} mm3"
+        assert len(out.solids()) >= len(was), f"{pair} {direction} t={t}: a lump vanished"
+    assert built > 0, f"{pair} {direction}: nothing built at any thickness"
+
+
+def test_the_openings_guard_and_the_hollowed_guard_are_both_live():
+    """The two halves, so neither can quietly stop firing: a lump with NO
+    opening (round one) and a lump the wall does not fit (round two)."""
+    body = two_lumps(LUMP_PAIRS["equal"])
+    with pytest.raises(ValueError, match="separate lumps and 1 of them has no face open"):
+        sk.shell(body, 2, [tops_of(body)[0]])
+    thin = two_lumps(LUMP_PAIRS["narrow"])
+    with pytest.raises(ValueError, match="do not fit 1 of the 2 separate lumps"):
+        sk.shell(thin, 2, tops_of(thin))

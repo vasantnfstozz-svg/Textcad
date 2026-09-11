@@ -680,6 +680,15 @@ export function tool(spec) {
   function startPreview(closeOnRefusal = true) {
     st.featureId = null;
     st.plan = null;                   // a fresh input means a fresh plan
+    // ...and no values that built, because none did on THIS profile. Only
+    // changeProfile() reaches here with a session already under way (begin()
+    // opens a new one; an edit goes straight to setupTool), and both of these
+    // survived the switch: the revert then pushed the OTHER sketch's values
+    // and — since the plan they came from rides along now — put the arrow
+    // and the safe range on the other sketch too (round two of the review of
+    // fb0b8c8). The first values a new profile refuses leave a red row that
+    // says why, which is what a session with nothing good to revert to does.
+    st.lastGood = null; st.lastGoodPlan = null;
     setupTool(closeOnRefusal);
   }
 

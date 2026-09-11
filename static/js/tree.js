@@ -500,10 +500,16 @@ function addAct(parent, label, title, fn) {
 }
 
 /* a stored form the user can read: {center: [0,0,6], normal: [0,0,1]} ->
-   "center 0, 0, 6 · normal 0, 0, 1" */
+   "center 0, 0, 6 · normal 0, 0, 1". A part that is ITSELF a form reads as its
+   own parts in brackets — a fillet's stored edge carries `faces: [{center,
+   normal}, ...]`, and joining that list wrote "[object Object]" straight into
+   the tree on the user's live designs (round two of the review of fb0b8c8),
+   which is the very thing the P4 review's rule forbids. */
 const isNamedParts = v => !!v && typeof v === 'object' && !Array.isArray(v);
+const readable = v => Array.isArray(v) ? v.map(readable).join(', ')
+  : isNamedParts(v) ? `(${namedParts(v)})` : `${v}`;
 const namedParts = v => Object.entries(v).map(([pk, pv]) =>
-  `${pk} ${Array.isArray(pv) ? pv.join(', ') : pv}`).join(' · ');
+  `${pk} ${readable(pv)}`).join(' · ');
 
 function buildBody(f) {
   const body = document.createElement('div'); body.className = 'nbody';
@@ -551,10 +557,13 @@ function buildBody(f) {
       val.className = 'pro';
       // a stored form with named parts (Mirror's plane {mid: "X"} or a face
       // {face_center, face_normal}, a Pattern axis {origin, dir}) reads as its
-      // parts, never as "[object Object]" (P4 review) — and a LIST of them
-      // (Shell's open faces) reads as one line each, not as raw JSON
+      // parts, never as "[object Object]" (P4 review)
+      // ...and a LIST of them (Shell's open faces) reads as one line each, not
+      // as raw JSON — including the MIXED list a click on a second face makes,
+      // since the planner keeps a stored NAME a name: ["top", {center, normal}]
       val.textContent = Array.isArray(v)
-        ? (v.length && v.every(isNamedParts) ? v.map(namedParts).join(' ; ')
+        ? (v.length && v.every(x => isNamedParts(x) || typeof x === 'string')
+          ? v.map(x => isNamedParts(x) ? namedParts(x) : x).join(' ; ')
           : JSON.stringify(v))
         : isNamedParts(v) ? namedParts(v) : v;
       pr.appendChild(val); body.appendChild(pr);

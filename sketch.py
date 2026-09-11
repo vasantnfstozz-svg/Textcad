@@ -2154,6 +2154,56 @@ def assert_every_lump_open(solid, openings: list) -> None:
             f"of walls. Open a face on every lump, or none at all (a closed hollow)")
 
 
+def assert_every_lump_hollowed(solid, out, direction: str, walls: str) -> None:
+    """The sibling of `assert_every_lump_open`, and the SAME P0 through another
+    door: that one asks that every lump have an opening, this one that every
+    lump actually became WALLS. It has to run AFTER the kernel because only the
+    kernel knows whether a wall fits a particular lump.
+
+    Measured 2026-09-11 (round two of the review of fb0b8c8,
+    probes/shell_round2_confirm_probe.py): with a top open on EVERY lump — so
+    the opening guard is satisfied — a lump the thickness does not fit comes
+    back UNTOUCHED. 20 x 20 x 10 beside 3 x 20 x 10 at t = 2 gave [1952, 600],
+    where 600 is the raw block; beside 20 x 20 x 4 at t = 5 it gave
+    [3500, 1600] the same way; three patterned bosses with the middle one
+    narrow left that one solid. Every check passed: watertight, health [], the
+    total volume down, the row green. ALONE each of those small lumps is
+    correctly refused ("nothing was hollowed") — it is the WHOLE-BODY volume
+    check that a second, bigger lump defeats, because the big lump's hollow
+    pays for the small one's block.
+
+    The rule is the whole-body one applied per lump, so it cannot refuse a
+    result the whole-body check would accept on its own."""
+    lumps = solid.solids()
+    if len(lumps) < 2:
+        return                           # the whole-body check above IS this one
+
+    def _centre(shape):
+        c = shape.bounding_box().center()
+        return (c.X, c.Y, c.Z)
+
+    # each result lump belongs to the input lump it came from — nearest bounding
+    # box centre, and separate lumps stand apart by far more than one wall, so
+    # it never ties (an inside shell keeps the box exactly; an outside one grows
+    # it by the wall). A lump that SPLIT adds its pieces up under its parent.
+    seats = [_centre(s) for s in lumps]
+    got = [0.0] * len(lumps)
+    for piece in out.solids():
+        c = _centre(piece)
+        near = min(range(len(seats)),
+                   key=lambda i: sum((a - b) ** 2 for a, b in zip(seats[i], c)))
+        got[near] += piece.volume
+    bare = sum(1 for i, v in enumerate(got)
+               if v <= _CUT_FLOOR_MM3 or abs(v - lumps[i].volume) <= _CUT_FLOOR_MM3
+               or (direction == "inside" and v >= lumps[i].volume))
+    if bare:
+        raise ValueError(
+            f"shell: {walls} do not fit {bare} of the {len(lumps)} separate lumps "
+            f"of this body — the kernel handed "
+            f"{'that one' if bare == 1 else 'those'} back as a solid block "
+            f"instead of walls. Use a thinner wall")
+
+
 def shell(solid, thickness: float = 0.0, faces=None, direction: str = "inside",
           open_face=None):
     """Hollow `solid` into walls of `thickness` (Fusion's Shell). `faces` lists
@@ -2199,6 +2249,7 @@ def shell(solid, thickness: float = 0.0, faces=None, direction: str = "inside",
     if v_out <= 0 or not inspector.closed_shell(out):
         why = "empty result" if v_out <= 0 else "an open shell, not watertight"
         raise ValueError(f"shell: {walls} leave a broken solid ({why}) — use a thinner wall")
+    assert_every_lump_hollowed(solid, out, d, walls)
     return out
 
 

@@ -145,6 +145,57 @@ def test_every_lump_open_and_no_lump_open_both_still_build_exactly():
         == [pytest.approx(24 * 24 * 14 - 4000, rel=1e-6)] * 3
 
 
+def mixed_lumps(second):
+    """ONE body in two separate lumps: a 20 x 20 x 10 boss beside a smaller one
+    — a linear_pattern whose seed is not square, or a cut that severed a plate
+    into unequal halves."""
+    return b3d.Part() + b3d.Box(20.0, 20.0, 10.0) + b3d.Pos(40, 0, 0) * second
+
+
+def tops_of(body):
+    return [{"center": list(max(l.faces(), key=lambda f: (round(f.center().Z, 6), f.area)).center()),
+             "normal": [0, 0, 1]} for l in body.solids()]
+
+
+def test_a_lump_the_wall_does_not_fit_is_refused_not_left_a_solid_block():
+    """Round TWO of the review of fb0b8c8: the SAME P0 through another door.
+    `assert_every_lump_open` asks that every lump have an opening — not that
+    every lump actually HOLLOWS. With a top open on each, a lump the thickness
+    does not fit comes back UNTOUCHED and the whole-body checks all pass:
+    measured 20 x 20 x 10 beside 3 x 20 x 10 at t = 2 -> [1952, 600] where 600
+    is the raw block, and beside 20 x 20 x 4 at t = 5 -> [3500, 1600] the same
+    way. Both watertight, health [], the total volume down, the row green.
+    ALONE each small lump is correctly refused ("nothing was hollowed") — it is
+    the WHOLE-BODY volume check that a second, bigger lump defeats."""
+    for second, t, block in ((b3d.Box(3.0, 20.0, 10.0), 2, 600.0),      # too NARROW
+                             (b3d.Box(20.0, 20.0, 4.0), 5, 1600.0)):    # too FLAT
+        alone = b3d.Part() + second
+        with pytest.raises(ValueError, match="nothing was hollowed"):
+            sk.shell(alone, t, tops_of(alone))              # one lump: already refused
+        body = mixed_lumps(second)
+        assert len(body.solids()) == 2
+        with pytest.raises(ValueError, match="do not fit 1 of the 2 separate lumps"):
+            sk.shell(body, t, tops_of(body))
+        assert block > 0          # the volume the block used to come back with
+
+
+def test_a_thickness_that_fits_every_lump_still_builds_exactly():
+    """The other half of the guard: it must not refuse a shell that is right.
+    20 x 20 x 10 beside 12 x 20 x 10 at t = 2 is exact per lump, and the whole
+    OUTSIDE direction measured clean on the hostile corpus
+    (probes/shell_round2_outside_probe.py) — walls there are added around every
+    lump, so no lump can come back untouched."""
+    body = mixed_lumps(b3d.Box(12.0, 20.0, 10.0))
+    out = healthy(sk.shell(body, 2, tops_of(body)))
+    assert [round(s.volume, 6) for s in out.solids()] == [
+        pytest.approx(20 * 20 * 10 - 16 * 16 * 8), pytest.approx(12 * 20 * 10 - 8 * 16 * 8)]
+    # outside grows every lump: the narrow one that Inside refuses is fine here
+    thin = mixed_lumps(b3d.Box(3.0, 20.0, 10.0))
+    grown = healthy(sk.shell(thin, 2, tops_of(thin), "outside"))
+    assert [round(s.volume, 6) for s in grown.solids()] == [
+        pytest.approx(24 * 24 * 12 - 20 * 20 * 10), pytest.approx(7 * 24 * 12 - 3 * 20 * 10)]
+
+
 def test_a_curved_opening_is_refused_with_its_type():
     cyl = b3d.Cylinder(25, 40)
     wall = next(f for f in cyl.faces() if f.geom_type.name == "CYLINDER")
