@@ -881,10 +881,15 @@ def machine_gave_up(child_output: str) -> bool:
 
 
 def write_crash(name: str, seed: int, code: int, steps_rec: dict, err: str,
-                bugs_dir: Path, stamp: str | None = None) -> tuple[Path | None, str | None]:
+                bugs_dir: Path, stamp: str | None = None,
+                verdict_on: str | None = None) -> tuple[Path | None, str | None]:
     """File a process-died folder. -> (folder, None), (None, dup name), or
-    (None, None) when the machine, not the product, gave up."""
-    if machine_gave_up(err):
+    (None, None) when the machine, not the product, gave up.
+
+    `err` is what the folder keeps (a tail); `verdict_on` is what the verdict
+    is read from (the whole of it), so truncating the display can never turn
+    the box's failure back into the product's."""
+    if machine_gave_up(verdict_on if verdict_on is not None else err):
         return None, None
     last = (steps_rec.get("steps") or [{}])[-1]
     hexcode = f"0x{code & 0xFFFFFFFF:08X}"
@@ -938,7 +943,10 @@ def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path) -
                           text=True, errors="replace")
     secs = round(time.perf_counter() - t0)
     code = proc.returncode
-    err = (proc.stderr or "")[-8000:]
+    # the WHOLE stderr decides whether the machine gave up; only the tail is
+    # kept for the folder, and a display cut must not change the verdict
+    full_err = proc.stderr or ""
+    err = full_err[-8000:]
     out = {"design": name, "seed": seed, "exit": code, "secs": secs}
     if code in (EXIT_CLEAN, EXIT_BUG, EXIT_DUP):
         Path(log).unlink(missing_ok=True)
@@ -957,7 +965,8 @@ def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path) -
     except (OSError, ValueError):
         steps_rec = {"steps": []}
     Path(log).unlink(missing_ok=True)
-    d, dup = write_crash(name, seed, code, steps_rec, err, bugs_dir)
+    d, dup = write_crash(name, seed, code, steps_rec, err, bugs_dir,
+                         verdict_on=full_err)
     hexcode = f"0x{code & 0xFFFFFFFF:08X}"
     if dup:
         append_log(f"dup    {name} s{seed}: process died {hexcode} (already in {dup})", bugs_dir)

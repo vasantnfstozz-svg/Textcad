@@ -210,6 +210,58 @@ def test_a_rename_of_the_struck_row_itself_still_restores_only_its_own_set(clien
     assert r["strike_plan"]["restored"] == ["plate"]
 
 
+def _round_and_base(client):
+    client.post("/api/new", json={"name": "other-hand"})
+    client.post("/api/feature/add", json={
+        "id": "base", "op": "plate",
+        "params": {"width": 40, "depth": 30, "thickness": 6}, "inputs": []})
+    client.post("/api/feature/add", json={
+        "id": "round", "op": "fillet", "params": {"radius": 2, "edges": "all"},
+        "inputs": ["base"]})
+
+
+def test_a_row_suppressed_by_another_hand_is_not_restored_by_someone_elses_arrow(client):
+    """/api/feature/suppress sets the flag directly, behind strike and
+    restore — no UI button does, but the AI and the MCP can. Striking 'base'
+    swept 'round' up; suppressing and re-suppressing 'round' by hand makes it
+    the user's own choice again, so ↩ on 'base' must leave it alone (P5b
+    review round two, 2026-09-12)."""
+    _round_and_base(client)
+    client.post("/api/feature/strike", json={"feature_id": "base"})
+    assert {k for k, f in _feats(client).items() if f["suppressed"]} == {"base", "round"}
+    client.post("/api/feature/suppress", json={"feature_id": "round", "suppressed": False})
+    client.post("/api/feature/suppress", json={"feature_id": "round", "suppressed": True})
+
+    r = client.post("/api/feature/strike",
+                    json={"feature_id": "base", "restore": True}).json()
+    feats = _feats(client)
+    assert feats["round"]["suppressed"], "a row struck by another hand came back"
+    assert not feats["base"]["suppressed"]
+    assert r["strike_plan"]["restored"] == ["base"]
+
+
+def test_toggling_the_struck_rows_own_flag_does_not_lose_what_its_arrow_owes(client):
+    """The other direction, and the guard against the fix above overreaching:
+    the record KEYED on a row stays true when that row's OWN flag is toggled
+    by hand. Round two's first attempt dropped the key as well, which fell
+    back to the recomputed plan — round one's exact bug. This test is green
+    either way on c11fd74; it is here to catch that overreach, not to prove
+    the pruning. Here 'round' was struck first, so base's ✕ swept up only
+    itself."""
+    _round_and_base(client)
+    client.post("/api/feature/strike", json={"feature_id": "round"})
+    client.post("/api/feature/strike", json={"feature_id": "base"})
+    client.post("/api/feature/suppress", json={"feature_id": "base", "suppressed": False})
+    client.post("/api/feature/suppress", json={"feature_id": "base", "suppressed": True})
+
+    r = client.post("/api/feature/strike",
+                    json={"feature_id": "base", "restore": True}).json()
+    feats = _feats(client)
+    assert feats["round"]["suppressed"], "the rounding the user turned off came back"
+    assert not feats["base"]["suppressed"]
+    assert r["strike_plan"]["restored"] == ["base"]
+
+
 def test_strike_is_one_undo_step(client):
     _chain(client)
     client.post("/api/feature/strike", json={"feature_id": "sk"})

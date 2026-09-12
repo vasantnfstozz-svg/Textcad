@@ -762,6 +762,26 @@ class Document:
         self._mark_stale()
         return plan
 
+    def set_suppressed(self, feature_id: str, value: bool) -> None:
+        """Set the suppress flag by hand (/api/feature/suppress, the AI, the
+        MCP) — NOT the tree's ✕, which is strike().
+
+        This feature's flag becomes its OWN business, so it is dropped from
+        every ✕'s record of what that ✕ swept up — otherwise striking A (which
+        swept B), then suppressing and re-suppressing B by hand, then pressing
+        ↩ on A, brings B back although the last hand on B struck it
+        deliberately (measured 2026-09-12, P5b review round two).
+
+        The record KEYED on this feature is left alone on purpose: what A's ✕
+        took away does not change because someone toggled A's flag afterwards,
+        and dropping it would fall back to the recomputed plan — which is the
+        very thing round one found bringing unrelated rows back."""
+        self.get(feature_id).suppressed = bool(value)
+        for k, v in self._struck_by.items():
+            if k != feature_id and feature_id in v:
+                self._struck_by[k] = [i for i in v if i != feature_id]
+        self._mark_stale()
+
     def strike(self, feature_id: str) -> dict:
         """SOFT delete (user mandate 2026-08-31: "instead of deleting the
         operation, just strike out that operation, also delete it in the
@@ -812,7 +832,10 @@ class Document:
             raise ValueError(f"'{feature_id}' is not struck out")
         plan = self.remove_plan(feature_id, "auto")
         recorded = self._struck_by.get(feature_id)
-        back = set(recorded if recorded else plan["deleted"])
+        # `is not None`, not truthiness: a record pruned down to nothing by
+        # set_suppressed means "that ✕ swept up only its own row", and falling
+        # back to the recomputed plan there is exactly round one's bug
+        back = set(recorded if recorded is not None else plan["deleted"])
         back.add(feature_id)
         by_id = {f.id: f for f in self.features}
         kinds = self._kinds()

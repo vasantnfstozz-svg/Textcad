@@ -2402,12 +2402,13 @@ def rename_feature(req: RenameReq):
 def suppress_feature(req: SuppressReq):
     _snapshot()
     try:
-        _doc().get(req.feature_id).suppressed = req.suppressed
+        # set_suppressed, not the flag by hand: it also drops what the last ✕
+        # recorded, which another hand on this flag makes untrue (P5b review)
+        _doc().set_suppressed(req.feature_id, req.suppressed)
     except KeyError as e:
         _unsnapshot()
         return _refused(e)
     _hand_edit()              # AFTER it lands: a refusal is not a hand edit
-    _doc()._mark_stale()
     _rebuild_and_mesh()
     return _doc_json()
 
@@ -2851,7 +2852,14 @@ def _bug_report_lines(d: Path, req: BugReq, doc: Document, e: dict, files: list[
     if reds:
         lines += ["Red features:", "", *reds, ""]
     if req.requests:
-        lines += ["## The last requests this tab made (oldest first)", ""]
+        # NOT every request: bugreport.js drops a read that succeeded, or the
+        # 3-second live watcher's GET /api/doc would be the whole ring within
+        # two minutes and the step being reported would be gone (P5b review
+        # round one). So this is the ACTIONS, plus any read that failed —
+        # saying "every request" would invite the wrong conclusion from a tab
+        # that looks like it never loaded a mesh.
+        lines += ["## The last things this tab did (oldest first; a read that "
+                  "succeeded is not kept)", ""]
         for r in req.requests[-15:]:
             if not isinstance(r, dict):
                 continue
