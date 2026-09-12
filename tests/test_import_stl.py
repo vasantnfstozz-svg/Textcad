@@ -482,3 +482,83 @@ def test_truncated_binary_stl_is_named_as_cut_short(tmp_path):
     p.write_bytes(full.read_bytes()[:200])
     with pytest.raises(ValueError, match="cut short"):
         blocks.import_stl(str(p))
+
+
+# ---------------------------------------------------------------------------
+# Section 8 ROUND TWO (2026-09-12): the fix commit 94eb47e re-read. Every case
+# measured on 94eb47e first (probes/s8r2_*.py).
+# ---------------------------------------------------------------------------
+
+def test_inverted_hollow_stl_keeps_its_cavity(tmp_path):
+    """The P0 through the INVERSION door. A hollow part whose whole file is
+    wound inside-out (a known exporter bug; the plain case has its own test)
+    still imported as 1064 mm3 in TWO bodies on 94eb47e: the sign rule read
+    the outer shell as a 'void' and the cavity as a 'body'. What a shell IS
+    is decided by nesting depth now, and its winding is FORCED to match."""
+    p = tmp_path / "hollow_inv.stl"
+    write_binary_stl(p, flipped(box_tris(s=10)) + box_tris(ox=3, oy=3, oz=3, s=4))
+    part = blocks.import_stl(str(p))
+    assert inspector.health(part) == []
+    assert len(part.solids()) == 1
+    assert part.volume == pytest.approx(936, rel=1e-6)
+
+    q = tmp_path / "hollow_inv_pair.stl"
+    write_binary_stl(q, flipped(box_tris(s=10)) + box_tris(ox=3, oy=3, oz=3, s=4)
+                     + box_tris(ox=30, s=10))
+    pair = blocks.import_stl(str(q))
+    assert len(pair.solids()) == 2
+    assert pair.volume == pytest.approx(1936, rel=1e-6)
+
+
+def test_a_body_inside_a_cavity_is_its_own_body(tmp_path):
+    """Nesting depth 2: a loose part sealed inside a cavity is a BODY again,
+    not a void of the void. 20-cube, cavity 4..16, island 8..12."""
+    p = tmp_path / "island.stl"
+    write_binary_stl(p, box_tris(s=20) + flipped(box_tris(ox=4, oy=4, oz=4, s=12))
+                     + box_tris(ox=8, oy=8, oz=8, s=4))
+    part = blocks.import_stl(str(p))
+    assert inspector.health(part) == []
+    assert len(part.solids()) == 2
+    assert part.volume == pytest.approx(8000 - 1728 + 64, rel=1e-6)
+
+
+def test_pinched_cavity_is_remeshed_not_refused(tmp_path):
+    """REGRESSION caught in round two: a hollow part whose CAVITY surface is
+    pinched sent an inward-wound component through the winding fill, which
+    never sees wind > 0 on an inward surface -> 'voxel remesh produced an
+    empty volume'. The parity fill before it did not care. 40-cube with a
+    cavity of two 8-cubes touching along an edge: 64000 - 1024."""
+    p = tmp_path / "pinched_void.stl"
+    write_binary_stl(p, box_tris(s=40)
+                     + flipped(box_tris(ox=10, oy=10, oz=10, s=8))
+                     + flipped(box_tris(ox=18, oy=18, oz=10, s=8)))
+    part = blocks.import_stl(str(p))
+    assert inspector.health(part) == []
+    assert len(part.solids()) == 1
+    assert part.volume == pytest.approx(64000 - 1024, rel=0.01)
+
+
+def test_pinched_mesh_with_flipped_triangles_keeps_its_volume(tmp_path):
+    """REGRESSION caught in round two: the parity fill did not care which way
+    a triangle faced — the docstring promises 'inconsistent winding' is
+    handled — and the winding fill does. Two pinched 20-cubes with cube A's
+    top face flipped came back 7,998.8 of 16,000 on 94eb47e, drift 0.0, all
+    green. A component whose winding is inconsistent falls back to parity."""
+    tris = box_tris(s=20) + box_tris(ox=20, oy=20, s=20)
+    tris[2], tris[3] = ((tris[2][0], tris[2][2], tris[2][1]),
+                        (tris[3][0], tris[3][2], tris[3][1]))
+    p = tmp_path / "pinched_mixed.stl"
+    write_binary_stl(p, tris)
+    part = blocks.import_stl(str(p))
+    assert inspector.health(part) == []
+    assert part.volume == pytest.approx(16000, rel=0.02)
+
+
+def test_ascii_stl_with_a_byte_order_mark(tmp_path):
+    """A Windows text editor's UTF-8 BOM in front of 'solid' made 94eb47e read
+    the text as a binary header and say 'cut short — its header says
+    824,211,557 triangles'."""
+    p = tmp_path / "bom.stl"
+    p.write_bytes(b"\xef\xbb\xbf" + ASCII_TET.encode())
+    part = blocks.import_stl(str(p))
+    assert part.volume == pytest.approx(TET_VOL, rel=1e-6)

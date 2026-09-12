@@ -111,6 +111,20 @@ def is_clean(faces: np.ndarray) -> bool:
     return once == 0 and more == 0 and not duplicate_triangles(faces).any()
 
 
+def winding_is_consistent(faces: np.ndarray) -> bool:
+    """Do neighbouring triangles agree which way is out? Two triangles that
+    share an edge traverse it in OPPOSITE directions when their winding
+    agrees. Judged on the edges shared by exactly two triangles only: an edge
+    shared by four (a pinch between two bodies) carries each direction twice
+    even when every body is wound perfectly, and would read as a conflict."""
+    e = np.concatenate([faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]])
+    _, inv, cnt = np.unique(np.sort(e, axis=1), axis=0, return_inverse=True,
+                            return_counts=True)
+    directed = e[cnt[inv] == 2]
+    _, dcnt = np.unique(directed, axis=0, return_counts=True)
+    return not (dcnt > 1).any()
+
+
 # ---------------------------------------------------------------------------
 # Repair primitives (each probed against the liquid-piston file)
 # ---------------------------------------------------------------------------
@@ -217,8 +231,20 @@ def voxel_remesh(verts: np.ndarray, faces: np.ndarray,
     enter B), (exit A, exit B), so the solid overlap between them is filled
     with nothing. Measured 2026-09-12 (section 8 review): two interpenetrating
     bodies welded along a shared edge came back 7,998 mm3 of a true 12,000 —
-    a void punched straight through, health [] and status ok."""
+    a void punched straight through, health [] and status ok.
+
+    The winding fill needs a winding to trust. A component whose triangles
+    disagree about which way is out (a scanner or sculpt-tool export) falls
+    back to the parity fill, which never looked at direction — with it,
+    two pinched cubes with one face flipped came back 7,998 mm3 of 16,000
+    (round two, 2026-09-12). And an inward-wound component — a cavity's
+    surface — is turned outward first: the fill enters where the winding
+    says "in", and on an inward surface that is nowhere (a pinched cavity
+    was refused as "an empty volume", round two)."""
     from skimage.measure import marching_cubes
+    consistent = winding_is_consistent(faces)
+    if consistent and signed_volume(verts, faces) < 0:
+        faces = faces[:, ::-1]
     lo, hi = verts.min(axis=0), verts.max(axis=0)
     pitch = float((hi - lo).max()) / res
     # grid offset by irrational-ish fractions so rays dodge exact edge hits
@@ -261,17 +287,25 @@ def voxel_remesh(verts: np.ndarray, faces: np.ndarray,
         cl.sort()
         i, j = divmod(idx, ny)
         col = np.zeros(nz, dtype=bool)
-        wind, entered = 0, 0.0
-        for z, step in cl:
-            nxt = wind + step
-            if wind <= 0 < nxt:
-                entered = z
-            elif nxt <= 0 < wind:
-                col |= (zc > entered) & (zc < z)
-                inside_len += z - entered    # the SAME material, un-quantised
-            wind = nxt
-        grid[i, j] = col                 # a column left open (wind > 0 at the
-        #                                  top) is defective: fill no further
+        if consistent:
+            spans, wind, entered = [], 0, 0.0
+            for z, step in cl:
+                nxt = wind + step
+                if wind <= 0 < nxt:
+                    entered = z
+                elif nxt <= 0 < wind:
+                    spans.append((entered, z))
+                wind = nxt
+            # a column left open (wind > 0 at the top) is defective: it
+            # keeps what closed and fills no further
+        else:
+            if len(cl) % 2:              # defective column — skip it
+                continue
+            spans = [(cl[k][0], cl[k + 1][0]) for k in range(0, len(cl), 2)]
+        for z0, z1 in spans:
+            col |= (zc > z0) & (zc < z1)
+            inside_len += z1 - z0        # the SAME material, un-quantised
+        grid[i, j] = col
     if grid.sum() == 0:
         raise ValueError("voxel remesh produced an empty volume")
     # How much of the body the grid could not hold. Both numbers use the SAME
@@ -335,36 +369,11 @@ def _merge_meshes(parts: list) -> tuple[np.ndarray, np.ndarray]:
     return np.concatenate(vs), np.concatenate(fs)
 
 
-def _group_voids(built: list) -> list:
-    """Sealed voids folded back into the body that contains them.
-
-    split_components separates by shared vertices, so a cavity inside a body
-    is always its OWN component — and written as its own STL piece it comes
-    back a phantom SOLID filling that cavity (measured 2026-09-12: a hollow
-    936 mm3 part imported as TWO bodies totalling 1,064 mm3). An inward-wound
-    component belongs to the smallest body whose box contains it; one that is
-    inside nothing is a lone inside-out body, and its winding is put right."""
-    bodies = [(v, f) for v, f, void in built if not void]
-    boxes = [(v.min(axis=0), v.max(axis=0)) for v, _ in bodies]
-    room = [float(np.prod(hi - lo)) for lo, hi in boxes]
-    groups = [[b] for b in bodies]
-    for v, f, void in built:
-        if not void:
-            continue
-        lo, hi = v.min(axis=0), v.max(axis=0)
-        holds = [i for i, (blo, bhi) in enumerate(boxes)
-                 if (blo <= lo + 1e-6).all() and (bhi >= hi - 1e-6).all()]
-        if holds:
-            groups[min(holds, key=lambda i: room[i])].append((v, f))
-        else:
-            groups.append([(v, np.ascontiguousarray(f[:, ::-1]))])
-    return [_merge_meshes(g) for g in groups]
-
 def repair_stl_mesh(data: bytes, budget: int = DEFAULT_BUDGET
                     ) -> tuple[list[bytes], dict]:
-    """Full repair of one binary STL: returns (per-body binary STL bytes,
-    report). Raises ValueError with a user-facing message when the mesh is
-    beyond honest repair (holes, unsimplifiable)."""
+    """Full repair of one binary STL: returns ([one binary STL holding every
+    repaired component], report). Raises ValueError with a user-facing
+    message when the mesh is beyond honest repair (holes, unsimplifiable)."""
     verts, faces = parse_binary_stl(data)
     n_in = len(faces)
     if n_in > MAX_INPUT_TRIANGLES:
@@ -384,7 +393,7 @@ def repair_stl_mesh(data: bytes, budget: int = DEFAULT_BUDGET
     comps = split_components(faces, len(verts))
     shares = component_shares([len(c) for c in comps], budget)
 
-    built: list[tuple[np.ndarray, np.ndarray, bool]] = []
+    built: list[tuple[np.ndarray, np.ndarray]] = []
     remeshed = 0
     drift_pct = 0.0
     for ci, (fidx, share) in enumerate(zip(comps, shares)):
@@ -398,9 +407,6 @@ def repair_stl_mesh(data: bytes, budget: int = DEFAULT_BUDGET
                 f"body {ci + 1} of the mesh is not watertight ({boundary} "
                 "open edge(s)) — a solid needs a fully closed surface. "
                 "Repair it in a mesh tool and re-export.")
-        signed = signed_volume(cv, cf)
-        void = signed < 0            # inward-wound: a sealed cavity, not a body
-        ref = abs(signed)
         if overshared:
             # the remesh moves EVERY surface of this body by up to half a
             # voxel, and until 2026-09-12 nothing measured it: `ref` was taken
@@ -415,21 +421,27 @@ def repair_stl_mesh(data: bytes, budget: int = DEFAULT_BUDGET
                     f"can hold: {lost * 100:.0f}% of that body is thinner than "
                     "one grid cell. Repair it in a mesh tool "
                     "(Blender/MeshLab) and re-export.")
-            ref = abs(signed_volume(cv, cf))     # the repaired body is the
-            #                                      reference the ladder guards
+        ref = abs(signed_volume(cv, cf))     # the repaired body is what the
+        #                                      decimation ladder must keep
         if len(cf) > share:
             cv, cf = decimate_guarded(cv, cf, share, ref)
-        if void and signed_volume(cv, cf) > 0:      # repair re-wound it
-            cf = np.ascontiguousarray(cf[:, ::-1])
-        built.append((cv, cf, void))
+        built.append((cv, cf))
 
-    groups = _group_voids(built)
-    return ([to_binary_stl(v, f) for v, f in groups],
-            {"input_triangles": n_in,
-             "output_triangles": sum(len(f) for _, f in groups),
-             "bodies": len(groups), "healed_wall_triangles": healed,
-             "remeshed_bodies": remeshed,
-             "remesh_drift_pct": round(drift_pct, 1)})
+    # ONE piece, every component in it. lib3mf reads that as one Solid holding
+    # every shell, and blocks._solids_from_shells sorts the shells into bodies
+    # and the voids inside them by nesting depth — the ONE place that rule
+    # lives. Written component by component, a cavity (always its own
+    # component) came back a phantom solid filling itself (section 8,
+    # 2026-09-12); a second copy of the nesting rule here, on bounding boxes,
+    # was the round-two risk and is gone. `bodies` counts components; the
+    # kernel's count of real bodies replaces it in blocks._read_stl_solids.
+    v, f = _merge_meshes(built)
+    return [to_binary_stl(v, f)], {"input_triangles": n_in,
+                                   "output_triangles": len(f),
+                                   "bodies": len(comps),
+                                   "healed_wall_triangles": healed,
+                                   "remeshed_bodies": remeshed,
+                                   "remesh_drift_pct": round(drift_pct, 1)}
 
 
 if __name__ == "__main__":

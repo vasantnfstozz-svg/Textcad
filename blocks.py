@@ -41,8 +41,11 @@ from build123d import (
 )
 from OCP.BRep import BRep_Tool
 from OCP.BRepAdaptor import BRepAdaptor_Curve      # point-to-edge distance (resolve_edge)
+from OCP.BRepClass3d import BRepClass3d_SolidClassifier   # is this shell inside that one
 from OCP.Extrema import Extrema_ExtPC
 from OCP.gp import gp_Pnt
+from OCP.TopAbs import TopAbs_State
+from OCP.TopoDS import TopoDS
 
 import inspector          # health of every fillet / chamfer result
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
@@ -945,7 +948,10 @@ def _stl_triangles(data: bytes) -> tuple[str, int]:
     """('ascii'|'binary', triangle count) without a full parse. ASCII is
     detected by content, not just the 'solid' prefix — some binary exporters
     put 'solid' in the 80-byte header too, so the size formula decides."""
-    head = data[:80].lstrip()
+    # a Windows text editor's UTF-8 byte-order mark is not part of "solid":
+    # with it in front, the text read as a binary header and was called "cut
+    # short — its header says 824,211,557 triangles" (section 8, round two)
+    head = data[:83].removeprefix(b"\xef\xbb\xbf").lstrip()
     if head.startswith(b"solid") and b"facet" in data:
         return "ascii", data.count(b"facet normal")
     if len(data) >= 84:
@@ -955,7 +961,7 @@ def _stl_triangles(data: bytes) -> tuple[str, int]:
             return "binary", n
         if n == 0 and len(data) == 84:        # a genuinely empty binary STL
             return "binary", 0
-        if n and have:
+        if n and have and n <= 50_000_000:     # a plausible count (2.5 GB)
             # a part-downloaded or truncated file used to read "not an STL
             # file", a diagnosis it does not deserve (section 8 review)
             raise ValueError(
@@ -992,35 +998,61 @@ def _bbox_holds(outer, inner, tol: float = 1e-6) -> bool:
                for a in ("X", "Y", "Z"))
 
 
+def _outward(shell) -> tuple:
+    """(TopoDS_Shell wound outward, its Solid). The file's winding is not
+    trusted: a closed shell's orientation is ours to set from its role."""
+    sol = Solid(BRepBuilderAPI_MakeSolid(shell.wrapped).Solid())
+    if sol.volume < 0:
+        tsh = TopoDS.Shell_s(shell.wrapped.Reversed())
+        return tsh, Solid(BRepBuilderAPI_MakeSolid(tsh).Solid())
+    return shell.wrapped, sol
+
+
+def _shell_inside(shell, solid) -> bool:
+    """Is `shell` nested inside `solid`? One vertex decides — a closed shell
+    inside another has every vertex inside it, one beside it has none. The
+    bounding boxes pre-filter; the answer is OCCT's own point classifier on an
+    OUTWARD solid (against an inward one it says OUT of a point that is
+    inside — probed 2026-09-12, probes/s8r2_e_orient.py)."""
+    if not _bbox_holds(solid.bounding_box(), shell.bounding_box()):
+        return False
+    x, y, z = shell.vertices()[0].to_tuple()
+    return (BRepClass3d_SolidClassifier(solid.wrapped, gp_Pnt(x, y, z), 1e-7)
+            .State() == TopAbs_State.TopAbs_IN)
+
+
 def _solids_from_shells(shp) -> tuple[list, int]:
     """A shape that is not one valid solid, exploded into shells and regrouped
-    into bodies. An INWARD-wound closed shell is a sealed void: it belongs to
-    the smallest body that contains it, added to that body's solid rather than
-    becoming a phantom solid of its own. A shell inside nothing is a lone
-    inside-out body, and its winding is put right."""
-    bodies, voids, open_shells = [], [], 0
+    into bodies by NESTING DEPTH: a shell inside no other is a body; a shell
+    directly inside a body is a sealed void of that body; a shell inside a
+    void is a body again (a loose part sealed in a cavity). Each shell is then
+    wound to fit its role — outward for a body, inward for a void — whatever
+    the file said. MakeSolid.Add needs the void inward (outward, the same
+    void gave 1064 mm3 and an invalid solid), and the file's winding is
+    exactly what an inside-out export gets wrong: deciding void-or-body by the
+    SIGN of each shell's volume, a hollow part wound inside-out still came in
+    as 1064 mm3 in two bodies (section 8 round two, 2026-09-12)."""
+    closed, open_shells = [], 0
     for sh in shp.shells():
         if not BRep_Tool.IsClosed_s(sh.wrapped):
             open_shells += 1
             continue
-        sol = Solid(BRepBuilderAPI_MakeSolid(sh.wrapped).Solid())
-        (voids if sol.volume < 0 else bodies).append((sh, sol))
-    inner: list[list] = [[] for _ in bodies]
+        closed.append((sh, *_outward(sh)))      # (Shell, outward TopoDS_Shell, Solid)
+    n = len(closed)
+    inside = [[j != i and _shell_inside(closed[i][0], closed[j][2])
+               for j in range(n)] for i in range(n)]
+    depth = [sum(row) for row in inside]
     out = []
-    for vsh, vsol in voids:
-        holds = [i for i, (bsh, _) in enumerate(bodies)
-                 if _bbox_holds(bsh.bounding_box(), vsh.bounding_box())]
-        if holds:
-            inner[min(holds, key=lambda i: bodies[i][1].volume)].append(vsh)
-        else:                               # inverted winding — flip it
-            out.append(Solid(vsol.wrapped.Reversed()))
-    for (bsh, bsol), voids_in in zip(bodies, inner):
-        if not voids_in:
-            out.append(bsol)
+    for i, (_, tsh, sol) in enumerate(closed):
+        if depth[i] % 2:
+            continue                             # a void: added to its body below
+        voids = [j for j in range(n) if depth[j] == depth[i] + 1 and inside[j][i]]
+        if not voids:
+            out.append(sol)
             continue
-        mk = BRepBuilderAPI_MakeSolid(bsh.wrapped)
-        for vsh in voids_in:
-            mk.Add(vsh.wrapped)
+        mk = BRepBuilderAPI_MakeSolid(tsh)
+        for j in voids:
+            mk.Add(TopoDS.Shell_s(closed[j][1].Reversed()))
         out.append(Solid(mk.Solid()))
     return out, open_shells
 
@@ -1174,7 +1206,9 @@ def _resolve_step_path(file: str) -> Path:
     # curves alone cannot be used here" and sent the user looking for surfaces
     # in a file that was never STEP (measured 2026-09-12). Every STEP file
     # starts with the ISO-10303-21 header.
-    if b"ISO-10303" not in path.open("rb").read(512):
+    with path.open("rb") as fh:          # closed before the caller may unlink it
+        head = fh.read(512)
+    if b"ISO-10303" not in head:
         raise ValueError(f"import_step: {path.name} is not a STEP file — a "
                          "STEP file starts with ISO-10303-21. Re-export it "
                          "as STEP (.step / .stp).")
