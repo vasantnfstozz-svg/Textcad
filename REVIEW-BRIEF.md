@@ -6,13 +6,15 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING.** Review commit **`8fdfa5b`** — round THREE's fix for
-> `REVIEW-QUEUE.md` section 8 (Import STL and STEP). It is one function
-> family in `blocks.py` (`_shell_inside`, `_shell_points`, `_spread`, the
-> `nested()` closure in `_solids_from_shells`), +122 -12. Round three fixed a
-> P0-class regression round two had introduced, and every round of this
-> section so far has found a hole in the round before it, so the queue's
-> step 8 asks for one more read of THIS diff before section 9.
+> **Status: NOTHING PENDING.** Section 8 (Import STL and STEP) is CLOSED
+> after four rounds (`94eb47e`, `d94518c`, `8fdfa5b`, `8241115`; 13 findings,
+> all fixed, 20 new tests, fast tier 1623 -> 1643). Round four's one finding
+> was a P1 cost cliff, not a P0, so the queue's step 8 does not force a fifth
+> read. The next `code review` goes to `REVIEW-QUEUE.md` and takes the first
+> TODO row of the status board — **section 9, Trace image**. (The user may
+> instead name `d94518c..8241115` — the nesting rule in `blocks.py`,
+> `_solids_from_shells` and its helpers, ~150 lines — for a fifth read; each
+> of rounds two to four found a hole in the round before it.)
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -25,73 +27,48 @@
 
 ---
 
-## What to review: `d94518c..8fdfa5b` (one commit)
+## What the last review closed (section 8 — Import STL and STEP)
 
-`blocks.py` only: `_NEST_SAMPLE`, `_spread`, `_shell_points`, `_shell_inside`
-(now takes `points`), and the `sampled` cache + `nested()` closure inside
-`_solids_from_shells`. Two tests in `tests/test_import_stl.py`
-(`test_a_body_overlapping_a_notch_is_not_a_void`,
-`test_a_pin_through_two_walls_is_not_a_void`). Fast tier 1639 -> 1641.
+Never reviewed before this. Four rounds, 13 findings, all fixed, 0 rejected;
+20 new tests; every finding reproduced by measurement first
+(`probes/s8_*.py`, `s8r2_*`, `s8r3_*`, `s8r4_*`) and every fix locked by a
+test proven RED on the commit it fixes. Rounds two to four ran on Fable 5.1
+at the user's call.
 
-Rounds two and three ran on Fable 5.1 at the user's call ("proceed here
-itself"). Round three re-read `d94518c`: 1 finding, fixed; 1 attack cleared.
+The shape of it: round one found two P0s (a hollow STL imported with its
+cavity FILLED plus a phantom body inside it — `is_valid` is a property, the
+guard called it — and the parity voxel fill XORing overlapping material
+away). Rounds two, three and four each found a hole in the round before it,
+all in the ONE rule "which shell is a cavity of which body": by the SIGN of
+each shell's volume (wrong for an inside-out file) → by nesting depth from
+ONE vertex (turned an overlapping bracket into a void) → by a 400 + 400 point
+survey (right, at ~140 s against a 32k-face housing) → by one confirming
+point, trusting an inward-wound shell, with a survey sized to the container
+only for an outward-wound one.
 
-## Where the risk is
+What the module now promises, each with a test: a hollow part is ONE body
+with its cavity (wound either way, alone or beside other bodies, clean or
+through the repair path, thin walls down to 0.005 mm); a body sealed inside
+a cavity is a body; two bodies that overlap are two bodies (bracket in a
+notch, pin through two walls); a body exported twice is not deleted; a
+pinched cavity remeshes; a pinched mesh with flipped faces keeps its volume;
+overlapping welded bodies keep their material; a remesh reports how much the
+grid could not hold and refuses over 15%; 40 parts in a housing import in
+~1 s; a not-a-STEP file and a truncated or BOM'd STL are named as such.
 
-1. **"Wholly inside" is now a SAMPLE**: up to 400 unique vertices and 400
-   face centres, spread by `_spread` (`1 + (k * n) // cap`). A body that
-   pokes out of its container by less than one sampled point in 400 still
-   reads as a void; `MakeSolid.Add` then builds an INVALID solid, which the
-   deep validity pass paints red. Wrong but not silent — confirm that claim
-   holds (does `_deep_valid` actually run on an import body, and what does
-   the row say?). Attack the spread: a body whose only protruding part is a
-   run of consecutive faces shorter than n/400 — is 400 the right cap, and
-   should it scale with the shell?
-2. **`_spread` is 1-based** for `TopTools_IndexedMapOfShape.FindKey`. Check
-   the arithmetic at the edges: n == cap, n == cap + 1, n == 1, n == 0
-   (a shell with no faces cannot be closed, but `vm.Extent()` of 0 must not
-   index).
-3. **Face centres are the mean of a face's unique vertices** via a nested
-   `MapShapes` per face. Every lib3mf face is a planar triangle, so the mean
-   is the centroid. If a face ever had more than three vertices the mean
-   would still be a point on or near the face; if `sub.Extent()` were 0 it
-   would divide by zero — can it be?
-4. **The `sampled` cache is keyed by shell index and built lazily** only for
-   shells whose box lies inside another's. Confirm `nested(i, j)` and
-   `_shell_inside(..., points)` cannot disagree about which shell the points
-   belong to (the points are shell i's; the solid is shell j's).
-5. **Cost**: the classifier is loaded once per (i, j) pair and performs ≤ 800
-   points; the sample is built once per shell (0.15 s on a 32k-triangle
-   shell). A housing with 40 parts inside its BOX but outside its material
-   pays 40 sample builds + 40 first-point exits. Is that still seconds on a
-   plausible assembly?
+Not changed, measured on every commit: `imports/liquid-piston-2-v1.stl`
+(88,990 triangles) imports to 339,926.9 mm3, 3 bodies, 21,552 triangles,
+health clean, 25 s. No saved design uses `import_stl` or `import_step`.
 
-## Measured, and not worth re-reporting
+Residuals, documented in the code, none silent: a body embedded in another
+by all but less than one sampled point in `_nest_cap` reads as a void and
+`MakeSolid.Add` then builds an INVALID solid (red row); an inside-out body
+that also overlaps another is trusted as a cavity (two exporter bugs at
+once; invalid, red); a mesh whose winding is inconsistent AND overlaps itself
+takes the parity fill and loses the overlap (as before any of this).
 
-- `imports/liquid-piston-2-v1.stl` (88,990 triangles): **339,926.9 mm3, 3
-  bodies, 21,552 triangles, health clean** on `84e7c17`, `94eb47e`,
-  `d94518c` AND `8fdfa5b`; 25.2 s now.
-- **No saved design uses `import_stl` or `import_step`.**
-- Round three's cases on `8fdfa5b`: bracket in a notch **21,640 / 2 bodies**
-  (was 20,360 / 1 on `d94518c`); pin through two walls 2 bodies; a hollow
-  STL with an OUTWARD-wound cavity (MeshLab re-orient) 936 / 1 and 1936 / 2
-  — lib3mf marks that solid invalid, so the as-is fast path never takes it
-  (`probes/s8r3_b_outward_void.py`).
-- Rounds one and two's cases all still measure right on `8fdfa5b` (they are
-  tests now: hollow, inverted hollow, hollow beside a body, hollow through
-  the repair path, island in a cavity, pinched cavity, pinched + flipped
-  face, duplicated body, welded overlap, thin plate drift, BOM).
-- Do not re-open the round-one "checked" list (format detection, winding on
-  clean meshes, `-0.0` welding, the decimation ladder, name collisions, the
-  upload path, `_check_pieces`) or round two's cleared items (viewport mesh
-  of a solid with a void, one-piece read on the real file).
+## Where the next review goes
 
-## The ground rules
-
-Read the diff itself. One reviewer, no subagents. Reproduce by measurement
-before reporting; a finding that does not reproduce is rejected with a line.
-The shared rules of engagement and the output format are in `REVIEW-QUEUE.md`.
-
-**If this round finds nothing**, set this file back to `Status: NOTHING
-PENDING` and the next `code review` takes **REVIEW-QUEUE.md section 9, Trace
-image**.
+`REVIEW-QUEUE.md` section 9, Trace image — `imgtrace.py` and the trace
+functions of `static/js/sketcher.js`, with `/api/trace-png`. The section's
+paste line, finding classes and known items are in the queue.
