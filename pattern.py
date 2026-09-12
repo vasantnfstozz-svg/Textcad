@@ -37,6 +37,7 @@ PATTERN_OPS = ("polar_pattern", "linear_pattern")
 SEEDED_OPS = PATTERN_OPS + ("mirror",)      # every op that repeats a FEATURE's delta (a `seed` param)
 DISTANCE_TYPES = ("spacing", "extent")
 _TOL = 1e-9          # "exactly nothing": a boolean that misses changes the volume by 0.0
+_BALL_CENTRE_TOL_MM = 1e-3   # a mirror plane this close to a part-ball's centre is "through" it
                      # (probes/mirror_probe.py §10: an image ON the seed differs by ≤ 3e-11)
 _WORLD_NORMALS = {"XY": (0, 0, 1), "XZ": (0, 1, 0), "YZ": (1, 0, 0),
                   "X": (1, 0, 0), "Y": (0, 1, 0), "Z": (0, 0, 1)}
@@ -444,6 +445,53 @@ def plane_of(solid, plane, op: str = "mirror"):
                      f"{{origin, normal}} (got {plane!r})")
 
 
+def _part_ball_through(shape, pl: Plane) -> float | None:
+    """The radius of a PARTIAL sphere face of `shape` whose centre lies on the
+    plane `pl` — the one shape the kernel cannot boolean with its own mirror
+    image — or None.
+
+    Measured 2026-09-12, the day the clipped ball joined the gauntlet corpus
+    (probes/mirror_clipped_ball_crash.py §2-§4): a half ball JOINED with its
+    reflection across its flat face — two halves of ONE sphere meeting along
+    a plane through the centre — came back an EMPTY invalid solid; the same
+    with the ball also clipped by two side planes, or clipped at 45 degrees,
+    or a quarter ball, SEGFAULTED OCCT (0xC0000005) in the fuse, glue or not;
+    a half-ball pocket's image CUT from the body returned the full block,
+    pocket gone, invalid. A FULL sphere face centred on the plane is its own
+    image and fuses fine (137258 -> 137258), a partial one whose centre is
+    off the plane (5 mm) fuses fine too (68629 -> 137258, two pieces), and a
+    half cylinder through its axis is exact. And a part ball SYMMETRIC about
+    the plane (the clipped ball across its own mid-planes Y and Z) is its own
+    image and fuses exact too — so the face's centroid must be OFF the plane:
+    the reflection is then a different piece of the same sphere."""
+    import math
+    from OCP.BRepAdaptor import BRepAdaptor_Surface     # local: pattern has no other OCP need
+    for f in shape.faces():
+        if f.geom_type != b3d.GeomType.SPHERE:
+            continue
+        sphere = BRepAdaptor_Surface(f.wrapped).Sphere()
+        r = float(sphere.Radius())
+        if f.area >= 4.0 * math.pi * r * r * (1.0 - 1e-6):
+            continue                                    # the whole ball: its own image
+        c = sphere.Location()
+        if abs((Vector(c.X(), c.Y(), c.Z()) - pl.origin).dot(pl.z_dir)) > _BALL_CENTRE_TOL_MM:
+            continue                                    # the image is another ball
+        if abs((f.center(b3d.CenterOf.MASS) - pl.origin).dot(pl.z_dir)) <= _BALL_CENTRE_TOL_MM:
+            continue                                    # symmetric about the plane: its own image
+        return r
+    return None
+
+
+def _assert_no_part_ball_through(shape, pl: Plane, op: str, noun: str) -> None:
+    r = _part_ball_through(shape, pl) if shape is not None else None
+    if r is not None:
+        raise ValueError(
+            f"{op}: {noun} is part of a ball of radius {r:g} and the plane passes "
+            f"through that ball's centre — the kernel cannot combine a part-ball "
+            f"with its own reflection there. Move the plane off the ball's "
+            f"centre, or mirror without Join")
+
+
 def mirror(feature, plane="YZ", seed: str | None = None, join: bool = False,
            _before=None, _after=None):
     """Mirror: the seed's delta (a feature of `feature`'s history) reflected
@@ -468,8 +516,11 @@ def mirror(feature, plane="YZ", seed: str | None = None, join: bool = False,
             raise ValueError(f"{op}: the kernel could not build the mirror image — pick another plane") from None
         if not join:
             return copy
+        _assert_no_part_ball_through(feature, pl, op, "this body")
         return _body_pattern(feature, [copy], op, "pick another plane",
                              noun="the mirror image")
+    for part, noun in ((removed, f"what '{seed}' removed"), (added, f"what '{seed}' added")):
+        _assert_no_part_ball_through(part, pl, op, noun)
     return _repeat(feature, removed, added, [lambda s: s.mirror(pl)], op, what,
                    label=lambda k, n: f"the mirror image of '{seed}'", noun="the mirror image")
 

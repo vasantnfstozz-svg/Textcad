@@ -33,9 +33,15 @@ def test_a_mirror_of_a_hole_on_every_flat_face(name):
 def test_a_body_joined_with_its_reflection_across_every_face_and_mid_plane(name):
     solid = BODIES[name]()
     for idx, face, _centre, _normal in planar_faces(solid):
+        stored = pattern.stored_face(solid, face)
+        # the ONE legal refusal: a part-ball joined with its reflection through
+        # its own centre SEGFAULTS the kernel (the clipped ball across its flat
+        # face, 2026-09-12) — the product refuses it by the same rule asked here
+        pl, _ = pattern.plane_of(solid, stored, "mirror")
+        part_ball = pattern._part_ball_through(solid, pl) is not None
         assert_op(f"{name}.f{idx} body across its face",
-                  lambda: pattern.mirror(solid, pattern.stored_face(solid, face), join=True),
-                  allow_failure=False)
+                  lambda: pattern.mirror(solid, stored, join=True),
+                  allow_failure=part_ball)
     for plane in MIDS:                    # an asymmetric body grows, a symmetric one is itself
         assert_op(f"{name} body across {plane}",
                   lambda: pattern.mirror(solid, plane, join=True), allow_failure=False)

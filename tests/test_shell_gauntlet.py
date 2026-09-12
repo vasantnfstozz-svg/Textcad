@@ -15,6 +15,14 @@ def ref(c, n):
     return {"center": list(c), "normal": list(n)}
 
 
+# bodies the kernel cannot shell AT ALL — every route is a sentence (measured
+# 2026-09-12, probes/shell_scaled_halfball_crash.py: the clipped ball at t = 2,
+# 10 and 12, any opening, either direction, is "do not fit" or "nothing was
+# hollowed"; at half its extent it used to SEGFAULT). If one of these ever
+# builds, the kernel learned something: move it out of this set on purpose.
+KERNEL_CANNOT_SHELL = {"clipped_ball"}
+
+
 @pytest.mark.parametrize("body", sorted(BODIES))
 def test_every_flat_face_is_an_opening_or_says_why(body):
     solid = BODIES[body]()
@@ -30,7 +38,10 @@ def test_every_flat_face_is_an_opening_or_says_why(body):
             if out is not None:
                 built += 1
                 assert out.volume < solid.volume if direction == "inside" else True
-    assert built > 0, f"{body}: no face could be an opening"
+    if body in KERNEL_CANNOT_SHELL:
+        assert built == 0, f"{body}: the kernel now shells it — take it out of KERNEL_CANNOT_SHELL"
+    else:
+        assert built > 0, f"{body}: no face could be an opening"
     out = assert_op(f"{body} closed hollow t=2", lambda: sk.shell(solid, 2),
                     allow_failure=not strict)
     if out is not None:

@@ -686,3 +686,84 @@ def test_the_scripts_mirror_speaks_the_trees_grammar():
     assert float(fn(box(), {"mid": "X"}, join=True).volume) == pytest.approx(BOX)   # itself, never refused
     with pytest.raises(ValueError, match="not an origin plane"):
         fn(box(), "AB")
+
+
+# ------------------------------------------ a part-ball through its own centre ---
+
+MIN_X = (b3d.Align.MIN, b3d.Align.CENTER, b3d.Align.CENTER)
+
+
+def half_ball(r=32.0):
+    """a ball kept only where x >= 0: ONE sphere face, half of it, plus the flat"""
+    return b3d.Part() + (b3d.Solid.make_sphere(r) & b3d.Box(2 * r, 4 * r, 4 * r, align=MIN_X))
+
+
+def test_a_part_ball_joined_with_its_reflection_through_its_centre_is_refused():
+    """Found the day the clipped ball joined the gauntlet corpus (2026-09-12,
+    probes/mirror_clipped_ball_crash.py): fusing two halves of ONE sphere
+    across a plane through its centre came back an EMPTY invalid solid for a
+    plain half ball and SEGFAULTED OCCT for a half ball with side clips, a
+    45-degree clip or a quarter ball. The guard runs BEFORE the kernel."""
+    from tests.gauntlet import BODIES, planar_faces
+    body = half_ball()
+    with pytest.raises(ValueError, match="part of a ball of radius 32 .* through that ball's centre"):
+        pattern.mirror(body, "YZ", join=True)
+    # the corpus body, across its own flat face (the gauntlet's exact case)
+    clipped = BODIES["clipped_ball"]()
+    flat = next(f for _i, f, c, _n in planar_faces(clipped) if abs(c[0]) < 1e-6)
+    with pytest.raises(ValueError, match="cannot combine a part-ball with its own reflection"):
+        pattern.mirror(clipped, pattern.stored_face(clipped, flat), join=True)
+    # ... and via a SEED: a half-ball pocket's image cut from the body used to
+    # come back as the full block, pocket gone, "invalid" — and _repeat's
+    # health check does not ask is_valid
+    pocket = b3d.Solid.make_sphere(20) & b3d.Box(40, 80, 80, align=MIN_X)
+    plate = b3d.Part() + b3d.Box(100, 100, 50)
+    holed = plate - pocket
+    with pytest.raises(ValueError, match="what 'pocket' removed is part of a ball of radius 20"):
+        pattern.mirror(holed, "YZ", seed="pocket", _before=plate, _after=holed)
+
+
+def test_the_part_ball_guard_fires_on_nothing_else():
+    ball = b3d.Part() + b3d.Solid.make_sphere(32)
+    out = pattern.mirror(ball, {"mid": "X"}, join=True)          # a whole ball is its own image
+    assert out.volume == pytest.approx(ball.volume, rel=1e-6) and inspector.health(out) == []
+    off = b3d.Part() + b3d.Pos(10, 0, 0) * b3d.Solid.make_sphere(32)   # centre 10 mm off the plane
+    grown = pattern.mirror(off, "YZ", join=True)
+    assert grown.volume > off.volume * 1.4 and inspector.health(grown) == []
+    half = half_ball()                                                # plane 5 mm beyond the flat
+    two = pattern.mirror(half, {"origin": [-5, 0, 0], "normal": [1, 0, 0]}, join=True)
+    assert len(two.solids()) == 2 and two.volume == pytest.approx(2 * half.volume, rel=1e-6)
+    cyl = b3d.Part() + (Cylinder(25, 40) & b3d.Box(50, 100, 100, align=MIN_X))   # half cylinder
+    whole = pattern.mirror(cyl, "YZ", join=True)
+    assert whole.volume == pytest.approx(PI * 25 * 25 * 40, rel=1e-6) and inspector.health(whole) == []
+    assert pattern.mirror(half_ball(), "YZ").volume == pytest.approx(half_ball().volume)  # no Join: a copy
+    # a part ball SYMMETRIC about a plane through its centre is its own image
+    from tests.gauntlet import BODIES
+    clipped = BODIES["clipped_ball"]()
+    for mid in ("Y", "Z"):
+        same = pattern.mirror(clipped, {"mid": mid}, join=True)
+        assert same.volume == pytest.approx(clipped.volume, rel=1e-6) and inspector.health(same) == []
+
+
+def test_the_gauntlets_mirror_join_is_a_sentence_in_a_process_that_survives():
+    """The red form is a DEAD child (exit 0xC0000005), so the exact crashing
+    call runs in one: the corpus clipped ball joined across its flat face."""
+    import os
+    import subprocess
+    import sys
+    import textwrap
+    code = textwrap.dedent("""
+        import pattern
+        from tests.gauntlet import BODIES, planar_faces
+        body = BODIES["clipped_ball"]()
+        flat = next(f for _i, f, c, _n in planar_faces(body) if abs(c[0]) < 1e-6)
+        try:
+            pattern.mirror(body, pattern.stored_face(body, flat), join=True)
+        except ValueError as e:
+            print("REFUSED", e)
+        """)
+    env = dict(os.environ, PYTHONPATH=os.getcwd(), PYTHONIOENCODING="utf-8")
+    p = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                       timeout=300, env=env)
+    assert p.returncode == 0, f"the child died with {p.returncode & 0xFFFFFFFF:#x}: {p.stderr[-400:]}"
+    assert "REFUSED mirror: this body is part of a ball of radius 32" in p.stdout

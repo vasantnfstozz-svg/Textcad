@@ -336,5 +336,17 @@ def test_the_machine_running_out_is_not_a_finding(tmp_path):
     assert (folder / "child-output.txt").exists()
     report = (folder / "report.md").read_text(encoding="utf-8")
     assert "access violation" in report and "--designs bit-tray --seed 9001" in report
+    assert "--library" not in report                     # a fixture (no file recorded)
     rec = json.loads((folder / "journey.json").read_text(encoding="utf-8"))
     assert rec["kind"] == "process-died" and rec["replay"] == []
+
+    # a LIVE design's recipe needs --library, or the runner answers "no such
+    # design" (the first real crash folder's recipe failed exactly so)
+    live = dict(steps, file=str(journeys.ROOT / "designs" / "isogrid-panel.tcad.json"))
+    folder, _ = journeys.write_crash("isogrid-panel", 9016, 0xC0000005, live,
+                                     "Windows fatal exception: access violation\n", tmp_path / "live")
+    assert "--library --designs isogrid-panel --seed 9016" in (folder / "report.md").read_text(encoding="utf-8")
+    fixture = dict(steps, file=str(journeys.FIXTURES / "bit-tray.tcad.json"))
+    folder, _ = journeys.write_crash("bit-tray", 9002, 0xC0000005, fixture,
+                                     "Windows fatal exception: access violation\n", tmp_path / "fixture")
+    assert "--library" not in (folder / "report.md").read_text(encoding="utf-8")

@@ -914,8 +914,12 @@ def write_crash(name: str, seed: int, code: int, steps_rec: dict, err: str,
         lines += ["## What the child said before it went", "",
                   "```", err[-1500:].strip(), "```", "",
                   "(the whole tail is in `child-output.txt`)", ""]
+    # a live design needs --library or the runner says "no such design"
+    # (the first crash folder's recipe failed exactly that way, 2026-09-12)
+    src = steps_rec.get("file")
+    lib = "" if not src or Path(str(src)).parent.resolve() == FIXTURES.resolve() else "--library "
     lines += ["## Reproduce", "",
-              f"    python tests/journeys.py --designs {name} --seed {seed} "
+              f"    python tests/journeys.py {lib}--designs {name} --seed {seed} "
               f"--steps {len(steps_rec.get('steps') or [])} --journeys 1", "",
               "There is no before.tcad.json: the process was gone before it could be "
               "written. `journey.json` holds every step from the start of the design, "

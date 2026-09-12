@@ -90,6 +90,17 @@ def _fused_dprism_boss():
     return base + boss
 
 
+def _clipped_ball():
+    """THE SHELL CRASH BODY (2026-09-12, bugs/20260912-175819-isogrid-panel-
+    s9016-crash), ten times its size: a sphere face clipped by three planes —
+    a ball intersected with a prism that does not contain it. A closed inward
+    shell of at least half its smallest extent SEGFAULTED OCCT (0xC0000005 in
+    offset()); the kernel refuses every thinner wall on it, opening or not."""
+    ball = b3d.Solid.make_sphere(32).rotate(b3d.Axis.Z, 180)
+    prism = extrude(Plane.YZ * Rectangle(60, 104), amount=89)
+    return b3d.Part() + (prism & ball)
+
+
 BODIES = {
     "box": _box,
     "wedge": _wedge,
@@ -99,6 +110,7 @@ BODIES = {
     "cylinder": _cylinder,
     "fused_taper_seam": _fused_taper_seam,
     "fused_dprism_boss": _fused_dprism_boss,
+    "clipped_ball": _clipped_ball,
 }
 
 

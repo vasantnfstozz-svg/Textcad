@@ -2345,6 +2345,46 @@ def assert_every_lump_hollowed(solid, out, direction: str, walls: str) -> None:
             f"instead of walls. Use a thinner wall")
 
 
+def assert_wall_fits_every_lump(solid, t: float, walls: str) -> None:
+    """A CLOSED, inward hollow whose wall is at least HALF a lump's smallest
+    extent can leave nothing hollow — and asking the kernel anyway SEGFAULTS it.
+
+    Measured 2026-09-12 (bugs/20260912-175819-isogrid-panel-s9016-crash,
+    probes/shell_scaled_halfball_crash.py): a ball clipped by a box to
+    2.56 x 4.8 x 5.12 mm, shelled closed at t = 1.8, took the server down with
+    0xC0000005 inside `offset()`; so did t = 2 and t = 3, and the same shape
+    ten times bigger at t = 18. Below half the smallest extent (t = 1, 0.5)
+    the kernel refuses with an exception the sentence below already
+    translates. No `except` can catch an access violation, so the only guard
+    is one that runs BEFORE the kernel — and this one is not a judgement
+    call: every point of a lump lies within half its smallest bounding-box
+    extent of the boundary, so an inward offset by that much or more is
+    empty. Per lump, because a big lump's hollow would otherwise pay for the
+    small one's (see `assert_every_lump_hollowed`), and the crash is the
+    small lump's alone.
+
+    The same bound also refuses a silent WRONG result the kernel called a
+    success (probed the same day): a ball of radius 3.2 at t = 5 came back
+    "hollowed" (137 -> 113 mm3) because the offset sphere INVERTED to a
+    radius-1.8 cavity that no 5 mm wall could ever leave."""
+    tight = []
+    for lump in solid.solids():
+        size = lump.bounding_box().size
+        dmin = min(size.X, size.Y, size.Z)
+        if 2.0 * t >= dmin - _SHELL_BOX_TOL_MM:
+            tight.append(dmin)
+    if not tight:
+        return
+    dmin = min(tight)
+    n = len(solid.solids())
+    where = ("this body" if n == 1 else
+             f"{len(tight)} of the {n} separate lumps of this body")
+    raise ValueError(
+        f"shell: {walls} meet in the middle of {where} — it is only {dmin:.4g} mm "
+        f"at its thinnest, so a closed hollow needs walls under {dmin / 2:.4g} mm; "
+        f"use a thinner wall or open a face")
+
+
 def shell(solid, thickness: float = 0.0, faces=None, direction: str = "inside",
           open_face=None):
     """Hollow `solid` into walls of `thickness` (Fusion's Shell). `faces` lists
@@ -2367,6 +2407,8 @@ def shell(solid, thickness: float = 0.0, faces=None, direction: str = "inside",
     openings = shell_openings(solid, faces, open_face)
     assert_every_lump_open(solid, openings)
     walls = f"walls of {t:g} mm"
+    if d == "inside" and not openings:
+        assert_wall_fits_every_lump(solid, t, walls)
     try:
         amount = -t if d == "inside" else t
         if openings:

@@ -99,14 +99,105 @@ def test_the_legacy_open_face_grammar_still_builds():
     (dict(thickness=3, faces=["north"]), "not a direction"),
     (dict(thickness=25, faces=["top"]), "nothing was hollowed"),        # the UNCHANGED body
     (dict(thickness=40, faces=["top"]), "leave a broken solid"),         # the open shell
-    (dict(thickness=25), "do not fit this body"),                       # RuntimeError translated
-    (dict(thickness=24.9), "do not fit this body"),                     # the bare ValueError translated
+    (dict(thickness=25), "meet in the middle of this body"),            # half the 30 mm height or more:
+    (dict(thickness=24.9), "meet in the middle of this body"),          # refused BEFORE the kernel
 ])
 def test_every_refusal_is_a_sentence_in_the_shells_own_words(kwargs, words):
     with pytest.raises(ValueError, match=words) as e:
         sk.shell(box(), **kwargs)
     for leak in ("TopoDS", "Standard_", "BRep", "offset Error"):
         assert leak not in str(e.value)
+
+
+def clipped_ball(scale=0.8):
+    """THE CRASH BODY of bugs/20260912-175819-isogrid-panel-s9016-crash, built
+    the way the journey built it: a YZ rectangle 6 x 10.4 extruded 8.9,
+    intersected with a ball of radius 3.2 turned 180 about Z, scaled 0.8 —
+    a sphere face clipped by three planes, 2.56 x 4.8 x 5.12 mm."""
+    import blocks
+    ball = blocks.rotate(blocks.ball(3.2), "Z", 180, pivot="center")
+    s = sk.make_sketch("YZ", 0, [dict(kind="rectangle", mode="add", x=0, y=0,
+                                      rotation=0, w=6.0, h=10.4)])
+    body = sk.extrude_sketch(s, amount=8.9, both=False) & ball
+    return blocks.scale_uniform(body, scale) if scale != 1 else body
+
+
+def test_a_closed_wall_of_half_the_body_is_refused_before_the_kernel():
+    """bugs/20260912-175819-isogrid-panel-s9016-crash: a closed inward hollow
+    whose wall is at least HALF the body's smallest extent can leave nothing
+    hollow, and asking the kernel anyway SEGFAULTED it (0xC0000005 inside
+    offset(), measured at t = 1.8, 2 and 3 on the 2.56 mm body and at t = 18
+    on the same shape ten times bigger). The bound is not a judgement call:
+    every point lies within half the smallest extent of the boundary."""
+    # the box: 30 mm tall, so 15 is the wall that meets itself
+    for t in (15, 15.5, 29, 100):
+        with pytest.raises(ValueError, match="only 30 mm at its thinnest.*under 15 mm"):
+            sk.shell(box(), t)
+    # just under the bound the kernel takes it: a 0.2 mm cavity, still a hollow
+    out = healthy(sk.shell(box(), 14.9))
+    assert out.volume == pytest.approx(75000 - 20.2 * 20.2 * 0.2, rel=1e-6)
+    # an OPENING changes the bound (a 20 mm floor under a 10 mm-deep cavity is
+    # a real shell of the 30 mm box), so the guard is the closed hollow's only
+    assert healthy(sk.shell(box(), 20, [TOP])).volume == pytest.approx(75000 - 10 * 10 * 10, rel=1e-6)
+    # OUTSIDE grows the body: no bound applies
+    assert healthy(sk.shell(box(), 20, direction="outside")).volume == pytest.approx(90 * 90 * 70 - 75000, rel=1e-6)
+
+
+def test_a_wall_thicker_than_a_balls_radius_is_refused_not_an_inverted_cavity():
+    """The same bound also refuses a SILENT WRONG result the kernel called a
+    success: offset(sphere r 3.2, -5) INVERTS to a radius-1.8 sphere, so
+    shell(ball, 5) came back "hollowed" — 137.26 -> 112.83 mm3, watertight,
+    health [] — with a cavity no 5 mm wall could ever leave."""
+    import blocks
+    with pytest.raises(ValueError, match="only 6.4 mm at its thinnest.*under 3.2 mm"):
+        sk.shell(blocks.ball(3.2), 5)
+    with pytest.raises(ValueError, match="meet in the middle"):
+        sk.shell(blocks.ball(3.2), 3.2)
+    thin = healthy(sk.shell(blocks.ball(3.2), 3.0))          # a 0.2 mm cavity: honest
+    assert thin.volume == pytest.approx(4 / 3 * 3.14159265 * (3.2 ** 3 - 0.2 ** 3), rel=1e-4)
+
+
+def test_the_closed_bound_is_per_lump_so_a_big_lump_cannot_pay_for_a_small_one():
+    body = mixed_lumps(b3d.Box(3.0, 20.0, 10.0))          # 20 x 20 x 10 beside 3 x 20 x 10
+    with pytest.raises(ValueError, match="1 of the 2 separate lumps.*only 3 mm at its thinnest"):
+        sk.shell(body, 2)
+    out = healthy(sk.shell(body, 1))                       # 1 mm fits both
+    assert [round(s.volume, 6) for s in out.solids()] == [
+        pytest.approx(4000 - 18 * 18 * 8), pytest.approx(600 - 1 * 18 * 8)]
+
+
+def test_the_crash_bodys_thinner_walls_are_the_kernels_refusal_not_a_crash():
+    body = clipped_ball()
+    size = body.bounding_box().size
+    assert (round(size.X, 3), round(size.Y, 3), round(size.Z, 3)) == (2.56, 4.8, 5.12)
+    with pytest.raises(ValueError, match="only 2.56 mm at its thinnest.*under 1.28 mm"):
+        sk.shell(body, 1.28)
+    with pytest.raises(ValueError, match="do not fit this body"):
+        sk.shell(body, 1.0)                                # below the bound: the kernel's own no
+
+
+def test_the_journeys_shell_is_a_sentence_in_a_process_that_survives():
+    """The red form of this test is a DEAD child (exit 0xC0000005), which no
+    in-process assertion can express — so the exact crash step runs in a child:
+    tests.test_shell_tool.clipped_ball() shelled closed at 1.8 mm inside,
+    `open_face: "none"` as the journey sent it."""
+    import os
+    import subprocess
+    import sys
+    import textwrap
+    code = textwrap.dedent("""
+        import sketch as sk
+        from tests.test_shell_tool import clipped_ball
+        try:
+            sk.shell(clipped_ball(), 1.8, open_face="none")
+        except ValueError as e:
+            print("REFUSED", e)
+        """)
+    env = dict(os.environ, PYTHONPATH=os.getcwd(), PYTHONIOENCODING="utf-8")
+    p = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                       timeout=300, env=env)
+    assert p.returncode == 0, f"the child died with {p.returncode & 0xFFFFFFFF:#x}: {p.stderr[-400:]}"
+    assert "REFUSED shell: walls of 1.8 mm meet in the middle of this body" in p.stdout
 
 
 def lumps3():

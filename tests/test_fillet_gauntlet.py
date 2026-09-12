@@ -31,7 +31,10 @@ def test_every_edge_picked_alone_builds_or_refuses_friendly(name, op):
             refused += 1
         else:
             built += 1
-            assert r.volume != pytest.approx(solid.volume), f"{name}: {op} changed nothing"
+            # an absolute floor, not approx's relative one: a 0.5 round on the
+            # 160-degree edge where the clipped ball's cap meets its sphere
+            # removes 0.017 mm3 of a 68235 mm3 body — real work, under 1e-6 of it
+            assert abs(r.volume - solid.volume) > 1e-6, f"{name}: {op} changed nothing"
     assert built > 0, f"{name}: no edge could be {op}ed"
 
 
