@@ -102,8 +102,8 @@ Then two closing sections:
 | 5 | Primitives and shape editing | high | **reviewed and fixed e35450d**, ONE reviewer: 8 findings, **all 8 fixed**, 0 rejected, 55 new tests, all 50 saved designs rebuild with no failed feature. The one that mattered: **`polygon_plate` and `hex_plate` span Z 0..thickness, and the AI's positioning rule listed them with disc and plate as CENTERED** — so every `move` it computed for a hex body was half a thickness out (designs/planetary-assembly: four bolt heads seated 1.4 mm high, 0.5 mm of shank overlap where 1.9 mm was intended). The PROMPT was corrected, not the solid: two saved designs are built on the geometry as it stands. Plus: a degenerate dimension put raw kernel text in the feature row (`Standard_DomainError('')` for a zero thickness — the same empty diagnosis for all three of a plate's dimensions; twelve lines of pybind11 constructor overloads for the string "8mm"); `with_center_hole`/`with_bolt_circle` reported success after drilling NOTHING (radius 0, or a PCD that puts the holes off the part — volume unchanged, row green), and a PCD of 0 silently drilled one hole instead of six; the tree painted a red "spec FAIL" whenever the rollback bar was parked, on **42 of the 50 designs** that carry a spec; the placement popup's one shared debounce timer discarded a dimension typed just before touching x/y/z. A P0-class finding was fixed, so **round two re-reviewed the FIX COMMIT: 2d2e8a9**, 2 findings, **both fixed**, 4 tests — the fix pass's own `cone` guard had taken away a legitimate shape (a funnel standing POINT-DOWN: `cone(0, 10, h)` builds at 2094.40 mm3, exactly the flipped cone's volume), and `spec_checked` defaulted True so a never-rebuilt document claimed a green "spec PASS". The brief's other four named risks CLEARED by measurement: `_drilled`'s 1e-6 floor has six orders of magnitude of headroom (a 0.05 mm hole in a 100-million-mm3 plate measures to 8 significant figures), `numeric_params` misses no numeric parameter (pattern's unannotated `count` already refuses plainly in `pattern.py`), `plain_cause`'s new collapse cannot swallow a ValueError because that branch returns first, and `sides=6.0` is a non-event (no file holds one). **Section 5 is done unless a third read finds something** |
 | 6 | Measure and drive | high | **reviewed and fixed 3ce97a3**, ONE reviewer: 8 findings, **all 8 fixed**, 0 rejected, 10 new tests. The P0 was silent wrong geometry through a door nobody had opened: over 400 faces the mesh switches to a cheaper path that handed the viewport one edge id PER ADJACENT FACE in face order, while `measure.resolve` indexes `part.edges()` — so on **12 of the 50 saved designs** every edge click measured a DIFFERENT edge and never said so (esp32-remote: 7176 ids for 3588 edges, 6517 wrong), and on isogrid-panel a straight 210 mm edge read ⌀4.50 mm AND opened an edit box driving another hole's circle. Plus: the verification re-read the face INDEX the pick was made on, so a rebuild that renumbered the faces REVERTED a correct edit (x-frame's ⌀8 pad hole really became 8.5 and the tool said it had not — 7 of 81 editable diameters, and the move path too); an imported STL answered "face -1 is not on this body any more — click it again" for ever; a tilted face's extents came from the WORLD bbox (a 45° chamfer read 6.00 where it is 8.49, and the pick panel said 8.49); every dimension typed to more than 3 decimals was written perfectly and then reverted (5/16" = 7.9375); a bore's "centre" was an arbitrary point along its axis. The revert safety net was ACCIDENTAL (it fired on renumbering) and is now explicit: a dimension that stops a feature building is put back. **A P0 was fixed, so round two re-read the FIX COMMIT: b8a956f**, 2 findings, **both fixed**, 2 tests — both in the fix pass's own new code and NEITHER live for the user (a fallback that shared a `try` with the thing it falls back from, so it could never run; and `picks` still describing the post-write body after a revert put the previous one back). The brief's first-named risk CLEARED by measurement: **322 driven edits across 9 designs — 92 diameters, 58 moves, 172 deliberately destructive — against an independent inline oracle, zero false passes and zero false fails**; plus no outlines lost by the mesh fix (identical distinct edge sets), `_shape_key` collision-free across located copies, and BSPLINE flat walls handled. **Section 6 is CLOSED** |
 | 7 | Extrude as a whole module (with loft and sweep) | medium | **reviewed and fixed `dfcb73f`**, ONE reviewer: 6 findings, **all 6 fixed**, 0 rejected, 11 unit tests + 2 browser journeys, all 50 saved designs rebuild unchanged. The two that mattered were in the ops nobody had ever reviewed: a **loft blends ONE profile per sketch** — build123d chains every section's faces into a single loft, so two sketches of two circles each came back as ONE snaking solid of 1570.8 mm3 (the honest tubes are 3141.6) reaching outside BOTH sketch planes, status ok, no warning — and **`sweep` fed a solid BODY sweeps it face by face**: a 24 000 mm3 plate became a 178 000 mm3 six-lump blob, green and silent, with the plate consumed, one click from the Create ribbon (the Add Feature dialog pre-ticks the newest feature). Plus: a picked face pulled INTO the body kept the default Join and fused a prism already inside it (plate 24 000, prism 9 600, join 24 000 — three green rows, nothing said; the drag-direction rule was written `!isFace(st)`); Through all threw the taper away while the box and the ring still showed the angle (a -10° through cut built 20 x 30 x 2000 mm, dead straight); a typed negative "Distance 2" was dropped; and Through all's into-the-body seeding was missing from Two sides, so the 2 m side ran into the air. No P0, so the queue's step 8 called for no second round — but the brief was deliberately set **PENDING on the fix commit `dfcb73f`** anyway: the pass added two REFUSALS (one of them in `_eval`, which runs for every modifier feature on every rebuild) and changed what Extrude does by default, and on this project a fix pass's OWN new guard has been wrong more often than not. Round two read that diff only and is **done at `a8e96d9`**: 2 findings, both fixed, 3 more browser journeys — the loft refusal quoted ONE profile count for SEVERAL sections, and OK said "Extrude created" over an EMPTY viewport (the inward pull is a Cut by itself now, so "deeper than the body" is one gesture away: the extrude stays green at 72 000 mm3 while the CUT it made fails and no body is left — the OK sentence only ever looked at the tool's OWN feature, never at the combiner it had just added). **Section 7 is CLOSED** |
-| 8 | Import STL and STEP | medium | TODO |
-| 9 | Trace image | medium | TODO - may share a chat with 8 |
+| 8 | Import STL and STEP | medium | **reviewed and fixed `94eb47e`**, ONE reviewer: 7 findings, **all 7 fixed**, 0 rejected, 11 new tests, fast tier 1623 → 1634. The two that mattered were both silent wrong geometry, both green: a **hollow STL imported with its cavity FILLED plus a phantom body inside it** (936 mm3 came in as TWO bodies totalling 1064 — lib3mf had already read the file correctly as one Solid of 936, but the guard meant to take that as-is called `shp.is_valid()`, and `is_valid` is a **property**, so it raised TypeError into a bare `except` and every shape was exploded shell by shell; the as-is path alone is not enough either, since lib3mf returns ONE Solid holding every shell in the file and two disjoint bodies make it invalid, so the shells are regrouped by winding + containment, and `split_components` gave the cavity its own STL piece on the repair path too); and **the parity voxel fill XORed overlapping material away** — two interpenetrating bodies welded along a shared edge, the Fusion assembly export this module exists for, came back **7,998 mm3 of a true 12,000**, a void punched straight through the overlap, health [] and status ok. Plus: a body exported TWICE at the same place was **deleted outright** (2000 mm3 imported as 1000, announced as "merged 24 coincident wall triangles"); the remesh moved every surface of a body with nothing measuring or reporting it (a 0.6 mm plate came back 8.7% light, silently); `MIN_COMPONENT_BUDGET` is a floor per BODY with no cap on the sum (40 bodies = 60,000 triangles of an 18,000 budget); a file that is not STEP at all was diagnosed "surfaces or curves alone cannot be used here" (OCCT does not raise — it returns an empty shape); a truncated STL said "not an STL file". The real 88,990-triangle assembly imports to the SAME geometry as before (339,926.9 mm3, 3 bodies, checked against `84e7c17` in a worktree) and **no saved design uses either op**. Two P0s were fixed, so **round two reviews the fix commit `94eb47e`** — brief is PENDING |
+| 9 | Trace image | medium | TODO - was scoped to share a chat with 8 and did not |
 | 10 | Viewport, picking and face provenance | high | TODO |
 | 11 | Tool framework core | medium | TODO |
 | 12 | Server layer | medium | TODO |
@@ -1582,3 +1582,110 @@ which is why the two findings it did turn up are both in the new code itself.
 **Line delta:** +163 / -9 (two sentences and a framework check, plus 3 journeys).
 **SECTION 7 IS CLOSED**; the brief goes back to `NOTHING PENDING` and the next
 `code review` takes section 8 (Import STL and STEP).
+
+### Section 8 - Import STL and STEP (reviewed and fixed 2026-09-12, commit `94eb47e`)
+
+Never reviewed before. 7 findings, **all 7 fixed, 0 rejected, 0 deferred**,
+11 new tests (fast tier 1623 -> 1634), +417 -37 lines. Every finding was
+reproduced by measurement first (`probes/s8_a_weld.py` .. `s8_m_realfile.py`)
+and every fix is locked by a test proven RED on the code as it stood.
+
+**F1 (P0) - a hollow STL imported with its cavity FILLED, plus a phantom body
+inside it.** A 10 mm cube holding a sealed 4 mm void (936 mm3) came in as TWO
+bodies totalling **1064 mm3**: the outer shell closed into a solid with the
+cavity filled (1000), plus a phantom 64 mm3 block sitting inside it. health
+[], status ok, the chat said "as 2 bodies". lib3mf had already read the file
+correctly - `Solid volume=936.000 shells=2 is_valid=True` - and the guard that
+exists to take exactly that as-is called `shp.is_valid()`. **`is_valid` is a
+PROPERTY** in build123d 0.11.1, so the call raised `TypeError: 'bool' object
+is not callable` into the bare `except Exception: pass` beneath it, and the
+as-is path could never run: every shape was exploded shell by shell, which is
+what the code's own comment says must not happen. Fixing the call alone is not
+enough - lib3mf returns ONE Solid holding every shell in the file, so two
+disjoint bodies make that solid invalid and the shells must still be
+regrouped. `_solids_from_shells` now reads an INWARD-wound closed shell as a
+sealed void and `MakeSolid(...).Add(...)`s it to the smallest body whose box
+contains it. The same wrong answer had a second door: `split_components`
+separates by shared vertices, so a cavity is always its own component and the
+repair path wrote it as its own STL piece (`_group_voids`).
+
+**F2 (P0) - the parity voxel fill XORed overlapping material away.** Two
+bodies that INTERPENETRATE and are welded along a shared edge - the Fusion
+assembly export this module exists for, and one overshared edge is all it
+takes to reach the remesh - came back **7,998.4 mm3 of a true 12,000**, a void
+punched straight through where the two bodies overlap, health [] and status
+ok, the only note "auto-repaired: remeshed 1 defective body". The fill paired
+the crossings as (enter A, enter B), (exit A, exit B). Crossings now carry the
+direction the surface faces (`step = -1 if d > 0 else 1`) and a cell is inside
+where the running **winding number** is positive. A column left open at the
+top keeps what it accumulated instead of being dropped whole.
+
+**F3 (P1) - the remesh moved every surface of a body and nothing measured or
+reported it.** `ref` was taken AFTER the remesh, so even the decimation guard
+below it could not see the remesh's own error; only decimation had a volume
+rule. A 0.6 mm plate 100 mm across, pinched at one edge, came back **8.7%
+light**, green, with no number anywhere. `voxel_remesh` now also returns how
+much material was thinner than one grid cell, reported as `remesh_drift_pct`
+and said to the user, and refused over `REMESH_VOLUME_RTOL` (15%). **The first
+version of that guard was wrong and the pass caught it**: comparing the result
+against the mesh's own `signed_volume` calls a CORRECT repair of two
+overlapping bodies 25% wrong, because a signed volume double-counts material
+where two surfaces overlap. The number reported now compares the filled grid
+against the exact crossing integral over the SAME columns, so overlap cancels
+and what is left is the z-quantisation. It sees only material that is thin in
+Z; a fin thin in X or Y is lost by the column sampling and shows in neither
+term.
+
+**F4 (P1) - a body exported TWICE at the same place was deleted outright.**
+`drop_duplicate_walls` removes ALL copies of a duplicated triangle - right for
+the interface wall between two touching bodies, that is what merges them, and
+fatal when the duplicate IS the whole body. A doubled 10 mm cube beside a
+plain one imported as **one body of 1000 mm3 out of 2000**, announced as
+"auto-repaired: merged 24 coincident wall triangles"; a file holding nothing
+but the doubled body was refused with "no solid found in the mesh".
+`dedupe_walls_per_body` decides per connected component now (duplicates share
+their vertices, so they always live in one), and a component that would vanish
+keeps one copy.
+
+**F5 (P2) - `MIN_COMPONENT_BUDGET` blew the budget the module exists to
+keep.** The floor is per BODY and nothing capped the sum: 40 bodies of 5,000
+triangles got 1,500 apiece = **60,000 triangles out of an 18,000 budget**,
+3.3x what the kernel read and the viewer mesh were budgeted for, and the
+ladder's last rung accepts 3x that again. `component_shares` caps the sum of
+the targets at `MAX_OUTPUT_MULT` (2x).
+
+**F6 (P2) - a file that is not STEP at all was diagnosed "surfaces or curves
+alone cannot be used here"**, sending the user to look for surfaces in a file
+that was never STEP. OCCT's reader does not raise on one: it prints
+`**** ERR StepFile : Undefined Parsing ...` to the server console and hands
+back an EMPTY shape, so the `except` around the read never fired. Checked
+against the `ISO-10303` header now.
+
+**F7 (P3) - two more invented diagnoses on the STL side.** A truncated or
+part-downloaded binary STL read "not an STL file (neither binary nor ascii
+STL)"; it is named as cut short now, with both triangle counts.
+
+**Checked by measurement and left alone** (in the review, so the next round
+need not re-open them): format detection - binary, ASCII with LF and with
+CRLF, and a BINARY file whose 80-byte header starts with `solid`, all at
+exactly 1000 mm3; winding - a fully inverted cube and a 32,204-triangle sphere
+with 5% and then 30% of its triangles flipped all import at the true volume,
+so `is_clean` being winding-blind costs nothing; `-0.0` against `0.0` welds
+(`np.unique(axis=0)`); the decimation ladder's volume guard drifts -0.01% on
+that sphere; the voxel remesh itself is accurate on thick non-overlapping
+geometry (+0.01% at res=100, -0.01% at res=200, ~5 s); import name collisions
+compare BYTES then suffix `-2` so a different file never overwrites an earlier
+import; the upload filename is built from the sanitised `feature_id` and
+cannot escape `imports/`; a multi-body import is not mislabelled "the part
+fell apart" (`_check_pieces` only inspects combiners and modifiers).
+
+**The real file, both ways.** `imports/liquid-piston-2-v1.stl`, the 88,990-
+triangle Fusion assembly this pipeline was built against, imports to the
+**same geometry as before the fix** - 339,926.9 mm3, 3 bodies, 21,552
+triangles, health clean, `remesh_drift_pct` 0.3 - measured against `84e7c17`
+in a throwaway worktree. The remesh path costs ~50% more wall clock there
+(23.4 s -> 35.9 s) for the winding fill: known and accepted. **No saved design
+uses `import_stl` or `import_step`**, so nothing in `designs/` moves.
+
+Two P0s were fixed, so the brief is **PENDING on `94eb47e`** and the next
+`code review` re-reads this fix commit before section 9.

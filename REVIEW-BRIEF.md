@@ -6,12 +6,10 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: NOTHING PENDING.** The P5 step loop has been reviewed and fixed
-> over seven rounds (`4041703`, `5975aad`, `bb0c4ab`, `231bf16`, `7d03e9c`,
-> `5d2d431`; round seven found nothing). The next `code review` goes to
-> `REVIEW-QUEUE.md` and takes the first TODO row of the status board —
-> **section 8, Import STL and STEP** (section 9, Trace image, may share that
-> chat).
+> **Status: PENDING.** Review commit **`94eb47e`** — the fix pass for
+> `REVIEW-QUEUE.md` section 8 (Import STL and STEP). Two P0-class findings
+> were fixed, so the queue's step 8 calls for a second round, and this pass
+> rewrote the inside of the voxel fill and added three refusals.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -24,41 +22,84 @@
 
 ---
 
-## What the last review closed (P5 — the AI uses the tools)
+## What to review: `84e7c17..94eb47e` (one commit)
 
-Range reviewed: `b78dc1f..92bdeef`. Seven rounds, 20 findings, all fixed;
-19 + 3 + 3 + 1 + 2 + 1 new tests (fast tier 1594 → 1623), ui v196. Every
-finding was reproduced by measurement first (`probes/p5_*.py`) and every fix
-is locked by a test proven RED on the commit it fixes (checked in a throwaway
-worktree, not assumed).
+`meshrepair.py`, `blocks.py` (`_bbox_holds`, `_solids_from_shells`,
+`_stl_bytes_to_solids`, `_stl_triangles`, `_resolve_step_path` only),
+`studio.py` (the `repair_note` block in `import_stl_file` only).
++417 -37 lines. Fast tier 1623 -> 1634.
 
-The five that mattered most, all in the AI's "add to the design on screen"
-road:
+Section 8 had never been reviewed. 7 findings, all 7 fixed, 0 rejected, 0
+deferred; each reproduced by measurement first (`probes/s8_a..m`) and each
+locked by a test proven RED on the code as it stood.
 
-- `done` **wrote the model's spec over the user's own** (31 of the 50 live
-  designs pin a size, 22 pin holes). A design that already exists now keeps
-  its spec, and a spec its new geometry breaks is reported to the USER in the
-  reply instead of being deleted to look green.
-- **A correct step was undone and blamed** whenever some other feature was
-  red: one red row locked the AI out of the design entirely. A step now
-  answers for what it touched; `done` still judges the whole tree.
-- The AI could **delete a feature the user built**, and the reply called it
-  "one or more parameters". Removes are limited to its own steps; the reply
-  is a diff.
-- `{"add": ..., "done": true}` in one reply **finished the design with no
-  final lint and no spec check** — two loose bodies reported as verified.
-- A user edit landing mid-job **broke "one Undo takes it all back"**. A
-  running job is the only writer on its tab now, and the job carries a clock
-  so a slow model cannot hold that tab for ever.
+## Where the risk is
 
-## Known and deliberately left (not findings)
+This pass rewrote the **inside of the voxel fill** and added **three new
+refusals**. On this project a fix pass's own new guard has been wrong more
+often than not, and one of this pass's guards already refused correct
+geometry once during the pass itself (see the third item).
 
-- `/api/tabs/switch` reads the document without the kernel lock, so switching
-  TO a tab mid-step can flash one stale row for under a second before the
-  next step corrects it. Taking the lock would block the switch for the
-  length of a kernel step — and switching away is the user's escape hatch
-  from a busy tab, so it must stay fast.
-- `GET /api/model` still tessellates outside the kernel lock
-  (LAUNCH-PLAN §10, "Two requests can be in the kernel at once").
-- There is no Stop button for a chat job; the 300 s clock is what bounds it.
-  §10 row.
+1. **`voxel_remesh` now fills by WINDING NUMBER, not parity** (meshrepair.py).
+   Every crossing carries `step = -1 if d > 0 else 1` and a cell is inside
+   where the running winding is positive. Worth attacking: a surface exactly
+   tangent in Z (`abs(d) < 1e-12` is skipped, so a vertical wall contributes
+   nothing — is that still right when the winding has to balance?); two
+   coincident crossings at the same z with opposite steps; a column left open
+   (`wind > 0` at the top) now keeps what it accumulated instead of being
+   dropped whole, which is a deliberate change of behaviour.
+2. **`_solids_from_shells` decides what a VOID is by the sign of its solid's
+   volume, and which body owns it by BOUNDING BOX containment, smallest
+   first** (blocks.py). Bounding boxes are not containment: two bodies whose
+   boxes nest but whose material does not (an L inside the box of a C) can
+   hand a void to the wrong body, and a void touching its body's own box
+   within 1e-6 is a tie. The same rule runs again, independently, over the
+   MESH in `meshrepair._group_voids` — two copies of one rule.
+3. **The remesh fidelity number** (`lost` out of `voxel_remesh`) compares the
+   filled grid against the exact crossing integral over the SAME columns. The
+   first version of this guard compared against the mesh's own signed volume
+   and refused a CORRECT repair of two overlapping bodies as "25% wrong"
+   (measured). The number it reports now only sees material that is thin in
+   **Z** — a fin thin in X or Y is lost by the column sampling and shows up
+   in neither term. It refuses over `REMESH_VOLUME_RTOL` (15%).
+4. **`dedupe_walls_per_body` calls `split_components` a second time** on every
+   dirty import, and decides "the whole body is a duplicate of itself" with
+   `dup.all()`. What does that do to a body whose every triangle happens to
+   be duplicated for some other reason?
+5. **`component_shares`** changed what every multi-body import is decimated
+   to. The cap is on the sum of the TARGETS; `decimate_guarded`'s ladder can
+   still return up to 3x a share, or the undecimated component.
+6. **`_stl_triangles`** now raises "cut short" where it used to say "not an
+   STL file". Check the branch order against a genuinely empty binary STL
+   (exactly 84 bytes), an ASCII file whose header does not start with `solid`,
+   and the `MAX_INPUT_TRIANGLES` test's synthetic file.
+
+## Measured, and not worth re-reporting
+
+- The real 88,990-triangle Fusion assembly (`imports/liquid-piston-2-v1.stl`)
+  imports to the **same geometry as before this commit** — 339,926.9 mm3, 3
+  bodies, 21,552 triangles, health clean, drift 0.3% — checked against
+  `84e7c17` in a throwaway worktree. The remesh path costs ~50% more wall
+  clock there (23.4 s -> 35.9 s) for the winding fill; that is known and
+  accepted, not a finding.
+- **No saved design uses `import_stl` or `import_step`** (0 of the library),
+  so nothing in `designs/` moves.
+- The winding fill is identical to the parity fill on any mesh that does not
+  overlap itself, by construction.
+- Already checked and sound in the review, do not re-open: format detection
+  (binary, ASCII LF and CRLF, a binary header that starts with `solid`);
+  inverted and mixed winding (a sphere with 30% of its triangles flipped
+  imports at the true volume); `-0.0`/`0.0` welding; the decimation ladder's
+  volume guard (-0.01% on a 32,204-triangle sphere); import name collisions
+  (byte comparison then a `-2` suffix); the upload filename cannot escape
+  `imports/`; a multi-body import is not called "the part fell apart".
+
+## The ground rules
+
+Read the diff itself. One reviewer, no subagents. Reproduce by measurement
+before reporting; a finding that does not reproduce is rejected with a line.
+The shared rules of engagement and the output format are in `REVIEW-QUEUE.md`.
+
+**If this round finds nothing**, set this file back to `Status: NOTHING
+PENDING` and the next `code review` takes **REVIEW-QUEUE.md section 9, Trace
+image** (it was scoped to share a chat with section 8 and did not).
