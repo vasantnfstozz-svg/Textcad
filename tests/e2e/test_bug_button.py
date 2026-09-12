@@ -51,3 +51,38 @@ def test_one_click_saves_a_repro_folder(page, fresh_doc, tmp_path, monkeypatch):
     assert png[:8] == b"\x89PNG\r\n\x1a\n"
     assert len(png) > 5000, f"{len(png)} bytes: a blank canvas, not the rendered viewport"
     assert studio._doc().to_data() == before and not page.errors
+
+
+FLOOD = """
+async () => {
+  for (let i = 0; i < 60; i++) await fetch('/api/doc');
+}
+"""
+
+
+def test_the_step_being_reported_survives_the_watchers_polling(
+        page, fresh_doc, tmp_path, monkeypatch):
+    """main.js asks GET /api/doc every three seconds and every document change
+    re-reads GET /api/model, so a ring that kept successful reads held about
+    two minutes of history: the fillet the user is reporting was pushed out
+    while they were still looking at it, and after a kernel crash
+    waitForServer's one-per-second polling flushed it completely — losing the
+    one request that mattered most (P5b review, 2026-09-12)."""
+    import studio
+    monkeypatch.setattr(studio, "BUGS", tmp_path / "bugs")
+    page.evaluate(BUILD)
+    page.wait_for_timeout(1000)
+    page.evaluate(FLOOD)              # 60 successful reads: one and a half rings
+
+    page.click("#bugBtn")
+    assert "What went wrong" in ask_text(page)
+    page.fill("#askInput", "the plate looks wrong, after a while")
+    page.click("#askOk")
+    page.wait_for_function(
+        "() => document.getElementById('chatLog').innerText.includes('Saved to')", timeout=15000)
+
+    f = next(iter((tmp_path / "bugs").iterdir()))
+    state = json.loads((f / "state.json").read_text(encoding="utf-8"))
+    assert any(r["url"].endswith("/api/feature/add") for r in state["requests"]), \
+        f"60 reads pushed the add out of the ring: {[r['url'] for r in state['requests']]}"
+    assert not page.errors

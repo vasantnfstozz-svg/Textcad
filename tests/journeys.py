@@ -66,9 +66,48 @@ SLOW_MS = 60_000                     # a step slower than this is noted, not a b
 # half the wall") versus one the _never_die barrier wrote from an exception
 # ("KeyError: 'face'", "Standard_ConstructionError: ..."). Only the second is
 # a finding: the first is the product working.
+#
+# _never_die writes f"{type(e).__name__}: {e}", so the classifier has to know
+# the class NAMES the app can raise. Most end in Error/Exception; OpenCASCADE
+# has two families and only Standard_* was listed, so a leaked
+# `StdFail_NotDone: BRep_API: command not done` — the commonest kernel
+# exception there is — read as the product working (P5b review, 2026-09-12).
+# The suffix-less builtins are enumerated for the same reason: a `next()` over
+# an empty generator raises StopIteration, whose name carries no suffix at all.
+# test_journeys.py walks OCP and the builtins and asserts every one is known.
 _UNHANDLED = re.compile(
     r"^(?:[A-Za-z_][\w.]*\.)?[A-Z]\w*(?:Error|Exception|Failure|Fault)\b\s*:"
-    r"|Standard_\w+|^Traceback \(most recent")
+    r"|Standard_\w+|StdFail_\w+"
+    r"|^Traceback \(most recent")
+
+# ... and the names that fit no pattern at all (Exception, ExceptionGroup,
+# StopIteration, StopAsyncIteration, _IncompleteInputError,
+# KeyboardInterrupt) are ASKED FOR rather than guessed at: every exception
+# class in builtins and in OpenCASCADE's two families. A sentence of the
+# product's own that happens to start "Word: " is still not a leak, because
+# "Word" is not one of them.
+_CLASS_COLON = re.compile(r"^(?:[A-Za-z_][\w.]*\.)?([A-Za-z_]\w*)\s*:")
+_LEAK_NAMES: frozenset | None = None
+
+
+def _leak_names() -> frozenset:
+    """Every exception class name the app can put in front of a colon."""
+    global _LEAK_NAMES
+    if _LEAK_NAMES is None:
+        import builtins
+        names = {n for n, o in vars(builtins).items()
+                 if isinstance(o, type) and issubclass(o, BaseException)
+                 and not issubclass(o, Warning)}
+        for mod in ("Standard", "StdFail"):
+            try:
+                m = __import__(f"OCP.{mod}", fromlist=["*"])
+            except Exception:                    # noqa: BLE001 — no OCP: skip it
+                continue
+            names |= {n for n in dir(m)
+                      if isinstance(getattr(m, n, None), type)
+                      and issubclass(getattr(m, n), BaseException)}
+        _LEAK_NAMES = frozenset(names)
+    return _LEAK_NAMES
 
 # The tools that ask the server for a plan (toolplan._PLANNERS).
 PLAN_TOOLS = ("extrude", "revolve", "sketch", "fillet", "hole", "pattern",
@@ -77,7 +116,13 @@ PLAN_TOOLS = ("extrude", "revolve", "sketch", "fillet", "hole", "pattern",
 
 def unhandled(error) -> bool:
     """True when an `error` string is an exception that leaked, not a sentence."""
-    return bool(error) and bool(_UNHANDLED.search(str(error).strip()))
+    text = str(error).strip() if error else ""
+    if not text:
+        return False
+    if _UNHANDLED.search(text):
+        return True
+    m = _CLASS_COLON.match(text)
+    return bool(m and m.group(1) in _leak_names())
 
 
 def _slug(name: str) -> str:
@@ -97,11 +142,16 @@ def signature(kind: str, op: str | None, detail: str) -> str:
 
 def make_client(history_root: str | None = None):
     """The app in this process, on a throwaway history root. -> (studio, client)"""
-    os.environ["TEXTCAD_HISTORY_ROOT"] = history_root or tempfile.mkdtemp(
-        prefix="journey-hist-")
+    root = history_root or tempfile.mkdtemp(prefix="journey-hist-")
+    os.environ["TEXTCAD_HISTORY_ROOT"] = root
     os.environ.setdefault("TEXTCAD_NO_BROWSER", "1")
     import studio
     from fastapi.testclient import TestClient
+    # The viewport's STL lives at ROOT/_studio_mesh.stl, and /api/new and a
+    # remove that empties the design DELETE it — the user's own Studio, open on
+    # this checkout while the runner plays overnight, would lose the file under
+    # its feet. Point it at the throwaway root instead (P5b review).
+    studio.MESH_PATH = Path(root) / "_studio_mesh.stl"
     studio.STATE["docs"].clear()
     studio.STATE["active"] = None
     studio.STATE["seq"] = 0
@@ -143,11 +193,26 @@ def load_document(path: Path | None):
 # --------------------------------------------------------------------------
 
 class Bug(Exception):
+    """A finding, with everything a repro needs.
+
+    `before` and `replay` exist because half the oracles judge a PAIR of
+    requests, not one: strike + restore, rollback + release, edit + undo. The
+    document they compare against is the one from before the FIRST of the
+    pair, and resending only the last one puts the second half against a
+    document that has already had the first — which passed, so the folder's
+    own `--replay` line printed "the step passes now" for a bug that is still
+    there every single time (P5b review, 2026-09-12). A move that judges a
+    pair hands over its own baseline and the whole sequence."""
+
     def __init__(self, kind: str, detail: str, request: dict | None,
-                 response: dict | None):
+                 response: dict | None, before: dict | None = None,
+                 replay: list[dict] | None = None):
         super().__init__(f"{kind}: {detail}")
         self.kind, self.detail = kind, detail
         self.request, self.response = request, response
+        self.before = before
+        self.replay = list(replay) if replay is not None else (
+            [request] if request and request.get("url") else [])
 
 
 class Journey:
@@ -255,7 +320,16 @@ class Journey:
         # 2. a refusal leaves the document exactly as it was
         if mutating and r.status_code == 400 and self.data() != before:
             raise Bug("refusal-changed-doc",
-                      f"a 400 ({resp.get('error')}) changed the document", rec, resp)
+                      f"a 400 ({resp.get('error')}) changed the document", rec, resp,
+                      before=before)
+        # 2b. a DRY RUN is a question ("what would deleting this take with
+        # it?"), answered before anything is snapshotted — so a dry run that
+        # wrote would be a change with no undo step behind it. The move sends
+        # one with mutating=True for exactly this check.
+        if mutating and (body or {}).get("dry_run") and self.data() != before:
+            raise Bug("dry-run-changed-doc",
+                      f"a dry run of {url} changed the document", rec, resp,
+                      before=before)
         # 3. every green body on screen is sound
         if mutating and r.status_code == 200:
             self.check_bodies(rec, resp)
@@ -419,7 +493,7 @@ class Journey:
             value = round(cur * self.pick([0.5, 0.8, 0.9, 1.1, 1.25, 2]), 3)
             if isinstance(cur, int):
                 value = max(0, int(round(value)))
-        before, vols = self.data(), None
+        before, n0 = self.data(), len(self.steps)
         resp = self.call("edit", "POST", "/api/edit",
                          {"feature_id": f.id, "param": param, "value": value})
         if resp.get("error") or before == self.data():
@@ -428,9 +502,8 @@ class Journey:
         self.call("undo", "POST", "/api/undo")
         if self.data() != before:
             raise Bug("undo-mismatch", f"undo after editing '{f.id}.{param}' did not restore the document",
-                      self.steps[-1], resp)
+                      self.steps[-1], resp, before=before, replay=self.steps[n0:])
         self.call("redo", "POST", "/api/redo")
-        del vols
 
     def move_undo_add(self):
         """Add something, then undo: the document must be exactly as before."""
@@ -444,14 +517,14 @@ class Journey:
             self.call("undo", "POST", "/api/undo")
         if self.data() != before:
             raise Bug("undo-mismatch", f"undo after {len(added)} add step(s) did not restore the document",
-                      self.steps[-1], None)
+                      self.steps[-1], None, before=before, replay=self.steps[n0:])
 
     def move_strike_restore(self):
         feats = self.features()
         if not feats:
             return self.move_add_creator()
         f = self.pick(feats)
-        before, vols = self.data(), self.volumes()
+        before, vols, n0 = self.data(), self.volumes(), len(self.steps)
         resp = self.call("strike", "POST", "/api/feature/strike", {"feature_id": f.id})
         if resp.get("error"):
             return
@@ -461,27 +534,28 @@ class Journey:
             return
         if self.data() != before:
             raise Bug("strike-restore-mismatch",
-                      f"strike + restore of '{f.id}' left a different document", self.steps[-1], resp)
+                      f"strike + restore of '{f.id}' left a different document", self.steps[-1], resp,
+                      before=before, replay=self.steps[n0:])
         if self.volumes() != vols:
             raise Bug("strike-restore-volume",
                       f"strike + restore of '{f.id}' changed a body volume: {vols} -> {self.volumes()}",
-                      self.steps[-1], resp)
+                      self.steps[-1], resp, before=before, replay=self.steps[n0:])
 
     def move_rollback(self):
         feats = self.features()
         if len(feats) < 2:
             return self.move_add_creator()
         f = self.pick(feats[:-1])
-        before, vols = self.data(), self.volumes()
+        before, vols, n0 = self.data(), self.volumes(), len(self.steps)
         self.call("rollback", "POST", "/api/rollback", {"feature_id": f.id})
         self.call("plan", "POST", "/api/tool/plan", {"tool": "extrude", "body_id": f.id}, mutating=False)
         self.call("rollback", "POST", "/api/rollback", {"feature_id": None})
         if self.data() != before:
             raise Bug("rollback-mismatch", f"rollback to '{f.id}' and release changed the document",
-                      self.steps[-1], None)
+                      self.steps[-1], None, before=before, replay=self.steps[n0:])
         if self.volumes() != vols:
             raise Bug("rollback-volume", f"rollback to '{f.id}' and release changed a body: {vols} -> {self.volumes()}",
-                      self.steps[-1], None)
+                      self.steps[-1], None, before=before, replay=self.steps[n0:])
 
     def move_remove(self):
         feats = self.features()
@@ -517,7 +591,7 @@ class Journey:
         self.call("plan", "POST", "/api/tool/plan", body, mutating=False)
 
     def move_tabs(self):
-        before = self.data()
+        before, n0 = self.data(), len(self.steps)
         active = self.studio.STATE["active"]
         r = self.call("tab-new", "POST", "/api/new", {"name": "journey-scratch"})
         tid = r.get("active_tab")
@@ -525,7 +599,7 @@ class Journey:
         self.call("tab-switch", "POST", "/api/tabs/switch", {"id": active}, mutating=False)
         if self.data() != before:
             raise Bug("tab-leak", "switching to a new tab and back changed the first tab's document",
-                      self.steps[-1], None)
+                      self.steps[-1], None, before=before, replay=self.steps[n0:])
         if tid:
             self.call("tab-close", "POST", "/api/tabs/close", {"id": tid}, mutating=False)
         self.call("tab-switch", "POST", "/api/tabs/switch", {"id": active}, mutating=False)
@@ -553,8 +627,11 @@ class Journey:
         data = self.data()
         again = Document.from_data(data).to_data()
         if again != data:
+            # the DOCUMENT is the repro here, not a request: replay opens it
+            # and asks the same question again
             raise Bug("roundtrip", "to_data -> from_data -> to_data is not the identity",
-                      self.steps[-1] if self.steps else None, None)
+                      self.steps[-1] if self.steps else None, None,
+                      before=data, replay=[])
 
     MOVES = [
         ("creator", 2, move_add_creator),
@@ -599,6 +676,15 @@ class Journey:
 # Bug folders
 # --------------------------------------------------------------------------
 
+# The oracles that assert a SEQUENCE is the identity: replaying them means
+# sending the whole recorded sequence and asking the same question again.
+_IDENTITY_BUGS = {"strike-restore-mismatch", "strike-restore-volume",
+                  "rollback-mismatch", "rollback-volume", "undo-mismatch"}
+# ... and the ones a fresh server cannot re-ask: tab ids are minted per run,
+# and a process that died left no document behind.
+_REPLAY_BLIND = {"tab-leak", "process-died"}
+
+
 def existing_signatures(bugs_dir: Path = BUGS) -> dict[str, str]:
     out = {}
     for j in sorted(bugs_dir.glob("*/journey.json")):
@@ -626,6 +712,9 @@ def write_bug(journey: Journey, bug: Bug, before: dict | None, after: dict | Non
     record = {"signature": sig, "kind": bug.kind, "detail": bug.detail,
               "design": journey.name, "file": str(journey.path) if journey.path else None,
               "seed": journey.seed, "failing_step": n, "request": bug.request,
+              # what --replay resends against before.tcad.json, and whether the
+              # question it asks is "did this sequence leave the document alone"
+              "replay": bug.replay, "identity": bug.kind in _IDENTITY_BUGS,
               "response_error": (bug.response or {}).get("error") if bug.response else None,
               "steps": journey.steps, "notes": journey.notes,
               "found": time.strftime("%Y-%m-%d %H:%M:%S")}
@@ -634,21 +723,27 @@ def write_bug(journey: Journey, bug: Bug, before: dict | None, after: dict | Non
         (d / "before.tcad.json").write_text(json.dumps(before, indent=1), encoding="utf-8")
     if after is not None:
         (d / "after.tcad.json").write_text(json.dumps(after, indent=1), encoding="utf-8")
-    req = bug.request or {}
+    seq = [s for s in bug.replay if isinstance(s, dict) and s.get("url")]
+    head = ("## The step that broke it" if len(seq) <= 1 else
+            f"## The {len(seq)} steps that broke it, in order")
     lines = [f"# {bug.kind}: {journey.name}, seed {journey.seed}, step {n}", "",
-             bug.detail, "",
-             "## The step that broke it", "",
-             f"`{req.get('method', '?')} {req.get('url', '?')}`", "",
-             "```json", json.dumps(req.get("body"), indent=1), "```", ""]
+             bug.detail, "", head, ""]
+    for s in (seq or [bug.request or {}]):
+        lines += [f"`{s.get('method', '?')} {s.get('url', '?')}`", "",
+                  "```json", json.dumps(s.get("body"), indent=1), "```", ""]
     if bug.response and bug.response.get("error"):
         lines += ["The server answered:", "", f"> {bug.response['error']}", ""]
+    what = ("sends the step above" if len(seq) <= 1 else
+            f"sends those {len(seq)} steps in order")
+    asks = (" and then asks the same question this finding asks: did that "
+            "sequence leave the document exactly as it was?"
+            if bug.kind in _IDENTITY_BUGS else " and runs the same checks.")
     lines += ["## Reproduce", "",
-              "`before.tcad.json` is the design as it stood before that step; "
-              "`after.tcad.json` (if present) is what it became.", "",
+              "`before.tcad.json` is the design this finding was measured "
+              "against; `after.tcad.json` (if present) is what it became.", "",
               f"    python tests/journeys.py --replay bugs/{d.name}", "",
-              "That opens `before.tcad.json` in a fresh in-process server, sends the "
-              "one request above and runs the same checks. The whole journey is in "
-              "`journey.json` (`steps`), in order.", ""]
+              f"That opens `before.tcad.json` in a fresh in-process server, {what}"
+              + asks + " The whole journey is in `journey.json` (`steps`), in order.", ""]
     if journey.notes:
         lines += ["## Notes (not bugs)", ""] + [f"- {t}" for t in journey.notes] + [""]
     (d / "report.md").write_text("\n".join(lines), encoding="utf-8")
@@ -693,7 +788,10 @@ def run_one(name: str, path: Path | None, seed: int, steps: int, log_path: Path 
         after = j.data()
     except Exception:                    # noqa: BLE001 — the doc may be broken; that IS the bug
         after = None
-    folder, dup = write_bug(j, bug, before, after, bugs_dir)
+    # a move that judged a PAIR of requests carries its own baseline; for a
+    # single request the one remembered above is that baseline
+    folder, dup = write_bug(j, bug, bug.before if bug.before is not None else before,
+                            after, bugs_dir)
     if folder:
         out["exit"], out["folder"] = EXIT_BUG, str(folder)
         append_log(f"BUG    {name} s{seed} step {(bug.request or {}).get('n')}: {bug.kind} -> {folder.name}", bugs_dir)
@@ -708,11 +806,13 @@ def replay(folder: Path, verbose: bool = True) -> dict:
     folder = Path(folder)
     rec = json.loads((folder / "journey.json").read_text(encoding="utf-8")) \
         if (folder / "journey.json").exists() else {}
-    src = folder / "before.tcad.json"
-    if not src.exists():
-        src = folder / "doc.tcad.json"       # a bug-button folder
-    if not src.exists():
-        raise SystemExit(f"{folder} holds no before.tcad.json / doc.tcad.json")
+    src = next((folder / n for n in ("before.tcad.json", "doc.tcad.json",
+                                     "after.tcad.json")
+                if (folder / n).exists()), None)
+    if src is None:
+        # a finding made by the OPENING check has no `before` — the document it
+        # was measured on is the one the folder calls after.tcad.json
+        raise SystemExit(f"{folder} holds no before/doc/after.tcad.json")
     j = Journey(rec.get("design") or folder.name, src, rec.get("seed", 0), 0, verbose=verbose)
     doc = load_document(src)
     j.studio._new_tab(doc, source=f"replay:{folder.name}")
@@ -721,28 +821,104 @@ def replay(folder: Path, verbose: bool = True) -> dict:
             if f.status != "ok" and not f.suppressed]
     print(f"opened {src.name}: {len(doc.features)} features, {len(j.solids())} bodies"
           + (f", red: {reds}" if reds else ""), flush=True)
-    req = rec.get("request")
-    if not req or not req.get("url"):
+    steps = rec.get("replay")
+    if steps is None:                        # a folder written before P5b's fix
+        req = rec.get("request") or {}
+        steps = [req] if req.get("url") else []
+    steps = [s for s in steps if isinstance(s, dict) and s.get("url")]
+    if not steps:
         try:
             j.check_bodies({"n": 0, "kind": "open"}, None)
-            print("no failing request recorded; the opened design passes the body checks")
+            j.check_roundtrip()
+            print("no failing request recorded; the opened design passes the checks")
             return {"result": "clean"}
         except Bug as b:
             print(f"STILL THERE: {b}")
             return {"result": "bug", "bug": b}
+    base, vols = j.data(), j.volumes()
     try:
-        j.call(req.get("kind", "replay"), req.get("method", "POST"), req["url"], req.get("body"),
-               mutating=req.get("method", "POST") != "GET")
-        print("the step passes now (fixed, or not deterministic)")
-        return {"result": "clean"}
+        for s in steps:
+            j.call(s.get("kind", "replay"), s.get("method", "POST"), s["url"],
+                   s.get("body"), mutating=s.get("method", "POST") != "GET")
     except Bug as b:
         print(f"STILL THERE: {b}")
         return {"result": "bug", "bug": b}
+    # The pair oracles all assert one thing: the sequence left the document
+    # exactly as it was. Sending the steps is not enough — the question has to
+    # be asked again, or a live bug replays as "passes now" (P5b review).
+    if rec.get("identity"):
+        if j.data() != base or j.volumes() != vols:
+            b = Bug(rec.get("kind") or "identity", "the replayed sequence did not "
+                    "leave the document as it was", steps[-1], None, before=base,
+                    replay=steps)
+            print(f"STILL THERE: {b}")
+            return {"result": "bug", "bug": b}
+    elif rec.get("kind") in _REPLAY_BLIND:
+        print(f"a '{rec.get('kind')}' cannot be re-asked in a fresh server "
+              "(tab ids are minted per run) — read `steps` in journey.json")
+        return {"result": "clean"}
+    print("the step passes now (fixed, or not deterministic)")
+    return {"result": "clean"}
 
 
 # --------------------------------------------------------------------------
 # Parent: the overnight loop
 # --------------------------------------------------------------------------
+
+# The machine giving up is not the product failing. Measured 2026-09-12: a
+# 20-journey run beside a full pytest run put the box out of memory, and two
+# children died — one with a STACK OVERFLOW (0xC00000FD) mid-`ball`, one with
+# a MemoryError importing sklearn through build123d — and both were filed as
+# "the server process died", with the console evidence kept nowhere.
+_MACHINE_GAVE_UP = re.compile(
+    r"MemoryError|std::bad_alloc|Cannot allocate memory|"
+    r"OpenBLAS error: Memory allocation|unable to allocate")
+
+
+def machine_gave_up(child_output: str) -> bool:
+    """True when the child died because the BOX ran out, not the product."""
+    return bool(child_output) and bool(_MACHINE_GAVE_UP.search(child_output))
+
+
+def write_crash(name: str, seed: int, code: int, steps_rec: dict, err: str,
+                bugs_dir: Path, stamp: str | None = None) -> tuple[Path | None, str | None]:
+    """File a process-died folder. -> (folder, None), (None, dup name), or
+    (None, None) when the machine, not the product, gave up."""
+    if machine_gave_up(err):
+        return None, None
+    last = (steps_rec.get("steps") or [{}])[-1]
+    hexcode = f"0x{code & 0xFFFFFFFF:08X}"
+    what = "OpenCASCADE access violation (segfault)" if (code & 0xFFFFFFFF) == 0xC0000005 \
+        else f"exit code {code}"
+    sig = signature("process-died", last.get("op"), f"{hexcode} {last.get('kind')} {last.get('op')}")
+    dup = existing_signatures(bugs_dir).get(sig)
+    if dup:
+        return None, dup
+    d = bugs_dir / f"{stamp or time.strftime('%Y%m%d-%H%M%S')}-{_slug(name)}-s{seed}-crash"
+    d.mkdir(parents=True, exist_ok=True)
+    steps_rec.update(signature=sig, kind="process-died", detail=f"{what} during step {last.get('n')}",
+                     failing_step=last.get("n"), request=last, replay=[], identity=False,
+                     found=time.strftime("%Y-%m-%d %H:%M:%S"))
+    (d / "journey.json").write_text(json.dumps(steps_rec, indent=1, default=str), encoding="utf-8")
+    lines = [f"# process-died: {name}, seed {seed}, step {last.get('n')}", "",
+             f"The server process died with {what} ({hexcode}) while handling:", "",
+             f"`{last.get('method', '?')} {last.get('url', '?')}`", "",
+             "```json", json.dumps(last.get("body"), indent=1), "```", ""]
+    if err:
+        (d / "child-output.txt").write_text(err, encoding="utf-8")
+        lines += ["## What the child said before it went", "",
+                  "```", err[-1500:].strip(), "```", "",
+                  "(the whole tail is in `child-output.txt`)", ""]
+    lines += ["## Reproduce", "",
+              f"    python tests/journeys.py --designs {name} --seed {seed} "
+              f"--steps {len(steps_rec.get('steps') or [])} --journeys 1", "",
+              "There is no before.tcad.json: the process was gone before it could be "
+              "written. `journey.json` holds every step from the start of the design, "
+              "in order; replaying them (`steps`) rebuilds the state. In the app this "
+              "is what the crash supervisor (supervise.py) recovers from.", ""]
+    (d / "report.md").write_text("\n".join(lines), encoding="utf-8")
+    return d, None
+
 
 def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path) -> dict:
     """One journey in a child process, so a kernel crash is a finding."""
@@ -755,13 +931,20 @@ def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path) -
         cmd += ["--file", str(path)]
     env = {**os.environ, "PYTHONIOENCODING": "utf-8", "TEXTCAD_NO_BROWSER": "1"}
     t0 = time.perf_counter()
-    proc = subprocess.run(cmd, env=env, cwd=str(ROOT))
+    # stdout stays live (the per-step lines are what an overnight run is
+    # watched by); stderr is kept, because that is where a traceback and a
+    # MemoryError go and a crash folder needs to say WHY the child went
+    proc = subprocess.run(cmd, env=env, cwd=str(ROOT), stderr=subprocess.PIPE,
+                          text=True, errors="replace")
     secs = round(time.perf_counter() - t0)
     code = proc.returncode
+    err = (proc.stderr or "")[-8000:]
     out = {"design": name, "seed": seed, "exit": code, "secs": secs}
     if code in (EXIT_CLEAN, EXIT_BUG, EXIT_DUP):
         Path(log).unlink(missing_ok=True)
         return out
+    if err:
+        print(err, end="" if err.endswith("\n") else "\n", flush=True)
     if code == EXIT_BROKEN:
         # the RUNNER (or an import) raised: our fault, printed above — not a
         # finding about the product, so no folder
@@ -773,35 +956,20 @@ def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path) -
         steps_rec = json.loads(Path(log).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         steps_rec = {"steps": []}
-    last = (steps_rec.get("steps") or [{}])[-1]
+    Path(log).unlink(missing_ok=True)
+    d, dup = write_crash(name, seed, code, steps_rec, err, bugs_dir)
     hexcode = f"0x{code & 0xFFFFFFFF:08X}"
-    what = "OpenCASCADE access violation (segfault)" if (code & 0xFFFFFFFF) == 0xC0000005 \
-        else f"exit code {code}"
-    sig = signature("process-died", last.get("op"), f"{hexcode} {last.get('kind')} {last.get('op')}")
-    dup = existing_signatures(bugs_dir).get(sig)
     if dup:
         append_log(f"dup    {name} s{seed}: process died {hexcode} (already in {dup})", bugs_dir)
-        Path(log).unlink(missing_ok=True)
         out["folder"] = dup
-        return out
-    d = bugs_dir / f"{time.strftime('%Y%m%d-%H%M%S')}-{_slug(name)}-s{seed}-crash"
-    d.mkdir(parents=True, exist_ok=True)
-    steps_rec.update(signature=sig, kind="process-died", detail=f"{what} during step {last.get('n')}",
-                     failing_step=last.get("n"), request=last,
-                     found=time.strftime("%Y-%m-%d %H:%M:%S"))
-    (d / "journey.json").write_text(json.dumps(steps_rec, indent=1, default=str), encoding="utf-8")
-    (d / "report.md").write_text("\n".join([
-        f"# process-died: {name}, seed {seed}, step {last.get('n')}", "",
-        f"The server process died with {what} ({hexcode}) while handling:", "",
-        f"`{last.get('method', '?')} {last.get('url', '?')}`", "",
-        "```json", json.dumps(last.get("body"), indent=1), "```", "",
-        "There is no before.tcad.json: the process was gone before it could be written. "
-        "`journey.json` holds every step from the start of the design, in order; replaying "
-        "them (`steps`) rebuilds the state. In the app this is what the crash supervisor "
-        "(supervise.py) recovers from.", ""]), encoding="utf-8")
-    Path(log).unlink(missing_ok=True)
-    append_log(f"CRASH  {name} s{seed} step {last.get('n')}: {hexcode} -> {d.name}", bugs_dir)
-    out["folder"] = str(d)
+    elif d is None:
+        out["exit"] = EXIT_BROKEN          # the box gave up, not the product
+        append_log(f"broken {name} s{seed}: the machine ran out ({hexcode}) — "
+                   "not a finding, run fewer things at once", bugs_dir)
+    else:
+        last = (steps_rec.get("steps") or [{}])[-1]
+        append_log(f"CRASH  {name} s{seed} step {last.get('n')}: {hexcode} -> {d.name}", bugs_dir)
+        out["folder"] = str(d)
     return out
 
 

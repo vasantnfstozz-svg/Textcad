@@ -25,6 +25,18 @@ function push(ring, item) {
   if (ring.length > RING) ring.shift();
 }
 
+// Which calls are worth a ring slot. The live watcher asks GET /api/doc every
+// three seconds (main.js) and every document change re-reads GET /api/model,
+// so a ring that kept successful reads held about two minutes of history: the
+// fillet the user is reporting was pushed out while they were still looking at
+// it, and after a kernel crash waitForServer's one-per-second polling flushed
+// the ring completely — losing the one request that mattered most (P5b review,
+// 2026-09-12). What a repro needs is the ACTIONS; a read is news only when it
+// failed.
+function worthKeeping(rec) {
+  return rec.method !== 'GET' || rec.status !== 200;
+}
+
 // Every call the tab makes, as the server saw it from this side. Wrapping
 // fetch once here beats touching every call site, and catches the calls
 // made before any module of ours ran a line.
@@ -45,7 +57,7 @@ function watchFetch() {
       throw e;
     } finally {
       rec.ms = Math.round(performance.now() - t0);
-      if (!rec.url.endsWith('/api/bug')) push(requests, rec);
+      if (!rec.url.endsWith('/api/bug') && worthKeeping(rec)) push(requests, rec);
     }
   };
 }

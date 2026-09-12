@@ -28,6 +28,51 @@ def test_a_leaked_exception_is_told_from_a_sentence():
         assert not journeys.unhandled(sentence), sentence
 
 
+def test_every_exception_class_the_app_can_raise_is_recognised():
+    """_never_die writes f"{type(e).__name__}: {e}", so the classifier has to
+    know the class NAMES, and it only knew the ones ending in
+    Error/Exception/Failure/Fault plus Standard_*. OpenCASCADE has a SECOND
+    family — a leaked `StdFail_NotDone: BRep_API: command not done`, the
+    commonest kernel exception there is, read as the product working — and
+    several builtins carry no suffix at all (P5b review, 2026-09-12)."""
+    import builtins
+    names = []
+    for mod in ("Standard", "StdFail"):
+        try:
+            m = __import__(f"OCP.{mod}", fromlist=["*"])
+        except ImportError:                          # pragma: no cover
+            continue
+        names += [n for n in dir(m) if n.startswith(f"{mod}_")
+                  and isinstance(getattr(m, n), type)
+                  and issubclass(getattr(m, n), BaseException)]
+    assert any(n == "StdFail_NotDone" for n in names), "OCP shape changed"
+    names += [n for n, o in vars(builtins).items()
+              if isinstance(o, type) and issubclass(o, BaseException)
+              and not issubclass(o, Warning)]
+    missed = [n for n in names if not journeys.unhandled(f"{n}: something")]
+    assert not missed, f"a leak of these would read as the product working: {missed}"
+
+
+def test_a_real_leak_through_the_barrier_is_a_bug(monkeypatch):
+    """End to end: make a route raise the OCCT exception the classifier used
+    to miss, and let _never_die word it. The journey must stop."""
+    from OCP.StdFail import StdFail_NotDone
+
+    import document
+    j = journeys.Journey("empty", None, seed=1, steps=0, verbose=False)
+    j.run()
+
+    def boom(self, *a, **k):
+        raise StdFail_NotDone("BRep_API: command not done")
+    monkeypatch.setattr(document.Document, "rebuild", boom)
+    with pytest.raises(journeys.Bug) as ex:
+        j.call("add", "POST", "/api/feature/add",
+               {"id": "leak", "op": "plate",
+                "params": {"width": 20, "depth": 10, "thickness": 4}, "inputs": []})
+    assert ex.value.kind == "unhandled-error"
+    assert "StdFail_NotDone" in ex.value.detail
+
+
 def test_one_signature_per_failure_class_whatever_the_numbers():
     a = journeys.signature("green-but-unsound", "fillet",
                            "'j3_fillet' (fillet) is green but: non-positive volume (-12.5)")
@@ -35,6 +80,44 @@ def test_one_signature_per_failure_class_whatever_the_numbers():
                            "'j9_fillet' (fillet) is green but: non-positive volume (-3)")
     assert a == b
     assert a != journeys.signature("green-but-unsound", "chamfer", "x")
+
+
+def test_a_dry_run_that_changed_the_document_is_a_bug():
+    """A dry run is a question, answered before anything is snapshotted — one
+    that wrote would be a change with no undo step behind it. The move sends it
+    with mutating=True and nothing compared the document across it (P5b
+    review)."""
+    import document
+    j = journeys.Journey("empty", None, seed=1, steps=0, verbose=False)
+    j.run()
+    j.call("add", "POST", "/api/feature/add",
+           {"id": "b1", "op": "plate",
+            "params": {"width": 20, "depth": 10, "thickness": 4}, "inputs": []})
+    j.call("add", "POST", "/api/feature/add",
+           {"id": "b2", "op": "disc", "params": {"radius": 8, "thickness": 3},
+            "inputs": []})
+    orig = document.Document.remove_plan
+
+    def sneaky(self, fid, mode="auto"):
+        plan = orig(self, fid, mode)
+        self.features[0].params["width"] = 999.0
+        return plan
+    document.Document.remove_plan = sneaky
+    try:
+        with pytest.raises(journeys.Bug) as ex:
+            j.call("remove-plan", "POST", "/api/feature/remove",
+                   {"feature_id": "b2", "mode": "auto", "dry_run": True})
+    finally:
+        document.Document.remove_plan = orig
+    assert ex.value.kind == "dry-run-changed-doc"
+
+
+def test_the_runner_never_touches_the_repo_s_own_viewport_mesh():
+    """/api/new and a remove that empties the design DELETE ROOT/_studio_mesh.stl.
+    The user's Studio is open on this checkout while the runner plays overnight
+    (P5b review), so the runner gets its own."""
+    studio, _client = journeys.make_client()
+    assert Path(studio.MESH_PATH).parent != journeys.ROOT
 
 
 def test_sources_name_designs_without_the_tcad_suffix():
@@ -153,3 +236,105 @@ def test_a_bug_is_filed_once_with_a_working_repro(tmp_path):
     # replay opens before.tcad.json in a fresh server and resends the step
     out = journeys.replay(folder, verbose=False)
     assert out["result"] == "clean"          # a plain plate IS sound; the bug above was staged
+
+
+def test_a_pair_move_files_a_repro_that_actually_reproduces(tmp_path):
+    """Half the oracles judge a PAIR of requests (strike + restore, rollback +
+    release, edit + undo) against the document from before the FIRST of them.
+    The folder kept the document from before the LAST one and resent only that
+    one, so a live, 100%-deterministic finding replayed as "the step passes
+    now" every time (P5b review, 2026-09-12)."""
+    import document
+    j = journeys.Journey("empty", None, seed=11, steps=0, verbose=False)
+    j.run()
+    j.call("add", "POST", "/api/feature/add",
+           {"id": "b1", "op": "plate",
+            "params": {"width": 20, "depth": 10, "thickness": 4}, "inputs": []})
+    j.call("add", "POST", "/api/feature/add",
+           {"id": "r1", "op": "fillet", "params": {"radius": 1, "edges": "all"},
+            "inputs": ["b1"]})
+    orig = document.Document.unstrike
+
+    def leaky(self, fid):                 # a restore that puts back too much
+        plan = orig(self, fid)
+        self.features[0].params["width"] = 21.0
+        self._mark_stale()
+        return plan
+    document.Document.unstrike = leaky
+    try:
+        with pytest.raises(journeys.Bug) as ex:
+            j.move_strike_restore()
+        bug = ex.value
+        assert bug.kind.startswith("strike-restore")
+        folder, dup = journeys.write_bug(j, bug, bug.before, j.data(), bugs_dir=tmp_path)
+        assert folder is not None and dup is None
+        rec = json.loads((folder / "journey.json").read_text(encoding="utf-8"))
+        assert len(rec["replay"]) == 2 and rec["identity"] is True
+        report = (folder / "report.md").read_text(encoding="utf-8")
+        assert "2 steps that broke it" in report
+        out = journeys.replay(folder, verbose=False)
+        assert out["result"] == "bug", "the folder's own --replay said it passes now"
+    finally:
+        document.Document.unstrike = orig
+
+
+def test_a_finding_made_on_OPEN_leaves_a_folder_that_replays(tmp_path, monkeypatch):
+    """"This saved design is already broken" is the cheapest finding there is,
+    and it is made before any request — so there was no `before` document and
+    the folder's own --replay line exited with "holds no before.tcad.json"
+    (P5b review). The document IS there, under the name after.tcad.json."""
+    import inspector
+    real_health, real_check = inspector.health, journeys.Journey.check_bodies
+    inside = []
+
+    def check(self, rec, resp):
+        inside.append(1)                  # health is the app's own during rebuild
+        try:
+            return real_check(self, rec, resp)
+        finally:
+            inside.pop()
+    monkeypatch.setattr(journeys.Journey, "check_bodies", check)
+    monkeypatch.setattr(inspector, "health",
+                        lambda p, **k: (["staged: not watertight"] if inside
+                                        else real_health(p, **k)))
+    src = tmp_path / "tiny.tcad.json"
+    src.write_text(json.dumps({"name": "tiny", "spec": {}, "features": [
+        {"id": "b", "op": "plate",
+         "params": {"width": 20, "depth": 10, "thickness": 4},
+         "inputs": [], "suppressed": False}]}), encoding="utf-8")
+
+    out = journeys.run_one("tiny", src, seed=1, steps=0, log_path=None,
+                           bugs_dir=tmp_path / "bugs", verbose=False)
+    assert out["exit"] == journeys.EXIT_BUG, out
+    folder = Path(out["folder"])
+    assert not (folder / "before.tcad.json").exists()
+    assert (folder / "after.tcad.json").exists()
+    assert journeys.replay(folder, verbose=False)["result"] == "bug"
+
+
+# --------------------------------------------------------------- crash folders ---
+
+def test_the_machine_running_out_is_not_a_finding(tmp_path):
+    """Measured 2026-09-12: a 20-journey run beside a full pytest run put the
+    box out of memory and two children died — one with a stack overflow
+    mid-`ball`, one with a MemoryError importing sklearn through build123d.
+    Both were filed as "the server process died" and the console evidence,
+    which said MemoryError in as many words, was kept nowhere."""
+    steps = {"steps": [{"n": 1, "kind": "add", "op": "ball",
+                        "method": "POST", "url": "/api/feature/add", "body": {}}]}
+    oom = ("Traceback (most recent call last):\n  ...\nMemoryError\n"
+           "OpenBLAS error: Memory allocation still failed after 10 retries, giving up.\n")
+    folder, dup = journeys.write_crash("bit-tray", 9001, 3221225725, dict(steps),
+                                       oom, tmp_path)
+    assert folder is None and dup is None, "an out-of-memory child filed a folder"
+    assert not list(tmp_path.glob("*crash"))
+
+    # a real kernel segfault still files one, and says what the child said
+    folder, dup = journeys.write_crash("bit-tray", 9001, 0xC0000005, dict(steps),
+                                       "Windows fatal exception: access violation\n", tmp_path)
+    assert folder is not None and dup is None
+    assert (folder / "child-output.txt").exists()
+    report = (folder / "report.md").read_text(encoding="utf-8")
+    assert "access violation" in report and "--designs bit-tray --seed 9001" in report
+    rec = json.loads((folder / "journey.json").read_text(encoding="utf-8"))
+    assert rec["kind"] == "process-died" and rec["replay"] == []

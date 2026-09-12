@@ -465,6 +465,13 @@ class Document:
     # (cut signature, tool id) pairs whose through-all probe has already been
     # tried and did not help — see _heal_stranding_cuts
     _heal_tried: dict = field(default_factory=dict, repr=False)
+    # struck id -> the ids THAT strike actually suppressed. A restore must put
+    # back exactly what its ✕ took away and nothing else: a feature the user
+    # had already struck on purpose was in the plan too, and recomputing the
+    # plan at restore time turned it back on (P5b review, 2026-09-12). Not
+    # saved: a reopened file falls back to the plan, which is all the
+    # information a file carries.
+    _struck_by: dict = field(default_factory=dict, repr=False)
 
     # -- authoring ----------------------------------------------------------
     def add(self, id: str, op: str, params: dict | None = None,
@@ -711,6 +718,11 @@ class Document:
             self._parts[new] = self._parts.pop(old)
         if old in self._sigs:
             self._sigs[new] = self._sigs.pop(old)
+        # ... including what a pending ✕ took away, or the ↩ that undoes it
+        # would leave the renamed row struck (see _struck_by)
+        self._struck_by = {(new if k == old else k):
+                           [new if i == old else i for i in v]
+                           for k, v in self._struck_by.items()}
         # the viewport keys its bodies by feature id, so a rename IS a change
         # of what is drawable: the fingerprint must move, or picks and
         # overlays keep resolving the OLD id (found by the P2 code review)
@@ -768,24 +780,43 @@ class Document:
             raise ValueError(f"'{feature_id}' is already struck out")
         plan = self.remove_plan(feature_id, "auto")
         gone = set(plan["deleted"])
+        changed = []
         for f in self.features:
-            if f.id in gone:
+            if f.id in gone and not f.suppressed:
                 f.suppressed = True
+                changed.append(f.id)
+        # what THIS ✕ took away, for the ↩ that undoes it (see _struck_by):
+        # anything in the plan that was already struck stays the user's choice
+        self._struck_by[feature_id] = changed
         self._mark_stale()
         return plan
 
     def unstrike(self, feature_id: str) -> dict:
-        """Put a struck-out feature back — geometry and all. The set to
-        restore is the same delete plan recomputed (striking never touches
-        `inputs`, so the plan is identical to the one that struck it) PLUS
-        any struck ANCESTORS it depends on: restoring an extrude whose sketch
-        is still struck would bring it back broken, so the sketch comes back
-        with it."""
+        """Put a struck-out feature back — geometry and all.
+
+        The set is what THIS ✕ actually suppressed (`_struck_by`), so a
+        feature the user had already struck on purpose stays struck; a
+        document reopened since the strike carries no such record and falls
+        back to the delete plan, which is all a file knows.
+
+        PLUS the struck ANCESTORS the restored set cannot build without:
+        restoring an extrude whose sketch is still struck would bring it back
+        broken, so the sketch comes back with it. A struck ancestor that hands
+        its own input down is NOT one of those — rebuild resolves a suppressed
+        node to its first input's part — and pulling those back anyway turned
+        the logo back on in designs/esp32-remote and milled 227 mm3 away from
+        a part the user had switched it off in (P5b review, 2026-09-12).
+        `_passthrough` decides "hands it down", which is the same rule the
+        delete plan heals with, so the two mechanisms still agree."""
         if not self.get(feature_id).suppressed:
             raise ValueError(f"'{feature_id}' is not struck out")
         plan = self.remove_plan(feature_id, "auto")
-        back = set(plan["deleted"])
+        recorded = self._struck_by.get(feature_id)
+        back = set(recorded if recorded else plan["deleted"])
+        back.add(feature_id)
         by_id = {f.id: f for f in self.features}
+        kinds = self._kinds()
+        still = {f.id for f in self.features if f.suppressed} - back
         stack = list(back)
         while stack:                       # walk upstream of everything restored
             f = by_id.get(stack.pop())
@@ -793,13 +824,18 @@ class Document:
                 continue
             for dep in f.inputs:
                 d = by_id.get(dep)
-                if d is not None and d.suppressed and dep not in back:
-                    back.add(dep)
-                    stack.append(dep)
+                if d is None or not d.suppressed or dep in back:
+                    continue
+                if self._passthrough(dep, still, by_id, kinds) is not None:
+                    continue               # struck, but it passes its input down
+                back.add(dep)
+                still.discard(dep)
+                stack.append(dep)
         plan["restored"] = [f.id for f in self.features if f.id in back]
         for f in self.features:
             if f.id in back:
                 f.suppressed = False
+        self._struck_by.pop(feature_id, None)
         self._mark_stale()
         return plan
 

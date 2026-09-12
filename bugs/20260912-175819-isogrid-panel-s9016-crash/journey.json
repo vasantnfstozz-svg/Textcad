@@ -1,0 +1,485 @@
+{
+ "design": "isogrid-panel",
+ "file": "C:\\Users\\VasanSeenivasan\\Desktop\\textcad\\.claude\\worktrees\\p5b-journeys\\designs\\isogrid-panel.tcad.json",
+ "seed": 9016,
+ "steps": [
+  {
+   "n": 1,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j1_disc",
+    "op": "disc",
+    "params": {
+     "radius": 29.9,
+     "thickness": 8.7
+    },
+    "inputs": []
+   },
+   "op": "disc",
+   "ms": 491,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 2,
+   "kind": "remove-plan",
+   "method": "POST",
+   "url": "/api/feature/remove",
+   "body": {
+    "feature_id": "sq_sketch_0",
+    "mode": "auto",
+    "dry_run": true
+   },
+   "op": null,
+   "ms": 10,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 3,
+   "kind": "remove",
+   "method": "POST",
+   "url": "/api/feature/remove",
+   "body": {
+    "feature_id": "sq_sketch_0",
+    "mode": "auto"
+   },
+   "op": null,
+   "ms": 1505,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 4,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j2_sketch",
+    "op": "sketch",
+    "params": {
+     "plane": "YZ",
+     "offset": 0,
+     "entities": [
+      {
+       "kind": "rectangle",
+       "mode": "add",
+       "x": 0,
+       "y": 0,
+       "rotation": 0,
+       "w": 6.0,
+       "h": 10.4
+      }
+     ]
+    },
+    "inputs": []
+   },
+   "op": "sketch",
+   "ms": 12,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 5,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j3_extrude",
+    "op": "extrude",
+    "params": {
+     "amount": 8.9,
+     "both": false
+    },
+    "inputs": [
+     "j2_sketch"
+    ]
+   },
+   "op": "extrude",
+   "ms": 434,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 6,
+   "kind": "plan",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": {
+    "tool": "shell",
+    "body_id": "j1_disc"
+   },
+   "op": "shell",
+   "ms": 9,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 7,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j4_cut",
+    "op": "cut",
+    "params": {},
+    "inputs": [
+     "isogrid_panel",
+     "j1_disc"
+    ]
+   },
+   "op": "cut",
+   "ms": 756,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 8,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j5_sketch",
+    "op": "sketch",
+    "params": {
+     "plane": "XZ",
+     "offset": 0,
+     "entities": [
+      {
+       "kind": "rectangle",
+       "mode": "add",
+       "x": 0,
+       "y": 0,
+       "rotation": 0,
+       "w": 8.2,
+       "h": 15.9
+      }
+     ]
+    },
+    "inputs": []
+   },
+   "op": "sketch",
+   "ms": 14,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 9,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j6_extrude",
+    "op": "extrude",
+    "params": {
+     "amount": 4.3,
+     "both": false
+    },
+    "inputs": [
+     "j5_sketch"
+    ]
+   },
+   "op": "extrude",
+   "ms": 556,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 10,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j7_plate",
+    "op": "plate",
+    "params": {
+     "width": 13.4,
+     "depth": 41.7,
+     "thickness": 7.8
+    },
+    "inputs": []
+   },
+   "op": "plate",
+   "ms": 481,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 11,
+   "kind": "undo",
+   "method": "POST",
+   "url": "/api/undo",
+   "body": null,
+   "op": null,
+   "ms": 631,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 12,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j8_ball",
+    "op": "ball",
+    "params": {
+     "radius": 17.9
+    },
+    "inputs": []
+   },
+   "op": "ball",
+   "ms": 533,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 13,
+   "kind": "undo",
+   "method": "POST",
+   "url": "/api/undo",
+   "body": null,
+   "op": null,
+   "ms": 656,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 14,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j9_ball",
+    "op": "ball",
+    "params": {
+     "radius": 3.2
+    },
+    "inputs": []
+   },
+   "op": "ball",
+   "ms": 632,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 15,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j10_rotate",
+    "op": "rotate",
+    "params": {
+     "axis": "Z",
+     "angle_deg": 180,
+     "pivot": "center"
+    },
+    "inputs": [
+     "j9_ball"
+    ]
+   },
+   "op": "rotate",
+   "ms": 475,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 16,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j11_intersect",
+    "op": "intersect",
+    "params": {},
+    "inputs": [
+     "j3_extrude",
+     "j10_rotate"
+    ]
+   },
+   "op": "intersect",
+   "ms": 477,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 17,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j12_with_center_hole",
+    "op": "with_center_hole",
+    "params": {
+     "radius": 1.5
+    },
+    "inputs": [
+     "j6_extrude"
+    ]
+   },
+   "op": "with_center_hole",
+   "ms": 603,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 18,
+   "kind": "plan",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": {
+    "tool": "rotate",
+    "body_id": "j4_cut"
+   },
+   "op": "rotate",
+   "ms": 10,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 19,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j13_scale",
+    "op": "scale",
+    "params": {
+     "factor": 0.8
+    },
+    "inputs": [
+     "j11_intersect"
+    ]
+   },
+   "op": "scale",
+   "ms": 450,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 20,
+   "kind": "rollback",
+   "method": "POST",
+   "url": "/api/rollback",
+   "body": {
+    "feature_id": "j1_disc"
+   },
+   "op": null,
+   "ms": 12,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 21,
+   "kind": "plan",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": {
+    "tool": "extrude",
+    "body_id": "j1_disc"
+   },
+   "op": "extrude",
+   "ms": 6,
+   "status": 200,
+   "error": "Extrude needs a sketch profile or a picked flat face"
+  },
+  {
+   "n": 22,
+   "kind": "rollback",
+   "method": "POST",
+   "url": "/api/rollback",
+   "body": {
+    "feature_id": null
+   },
+   "op": null,
+   "ms": 10,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 23,
+   "kind": "suppress",
+   "method": "POST",
+   "url": "/api/feature/suppress",
+   "body": {
+    "feature_id": "rivet_cut",
+    "suppressed": true
+   },
+   "op": null,
+   "ms": 870,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 24,
+   "kind": "suppress",
+   "method": "POST",
+   "url": "/api/feature/suppress",
+   "body": {
+    "feature_id": "rivet_cut",
+    "suppressed": false
+   },
+   "op": null,
+   "ms": 465,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 25,
+   "kind": "doc",
+   "method": "GET",
+   "url": "/api/doc",
+   "body": null,
+   "op": null,
+   "ms": 10,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 26,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j14_shell",
+    "op": "shell",
+    "params": {
+     "thickness": 1.8,
+     "open_face": "none"
+    },
+    "inputs": [
+     "j13_scale"
+    ]
+   },
+   "op": "shell"
+  }
+ ],
+ "signature": "process-died|shell|#xC# add shell",
+ "kind": "process-died",
+ "detail": "OpenCASCADE access violation (segfault) during step 26",
+ "failing_step": 26,
+ "request": {
+  "n": 26,
+  "kind": "add",
+  "method": "POST",
+  "url": "/api/feature/add",
+  "body": {
+   "id": "j14_shell",
+   "op": "shell",
+   "params": {
+    "thickness": 1.8,
+    "open_face": "none"
+   },
+   "inputs": [
+    "j13_scale"
+   ]
+  },
+  "op": "shell"
+ },
+ "replay": [],
+ "identity": false,
+ "found": "2026-09-12 17:58:19"
+}
