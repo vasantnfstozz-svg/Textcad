@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=42">
+<link rel="stylesheet" href="/static/css/studio.css?v=43">
 </head>
 <body>
 
@@ -110,6 +110,10 @@
   <!-- Which build this TAB is actually running. A tab left open across a
        code change keeps its old JS in memory no matter what the server
        sends, and "did you reload?" is otherwise unanswerable. -->
+  <!-- P5b: one click files the design, the last requests, the browser's
+       warnings and a screenshot under bugs/ for the next fix session. -->
+  <button id="bugBtn" class="bugbtn" type="button"
+          title="Something wrong? Save this design, the last steps and a screenshot to bugs/ — you keep working">🐞 Report a bug</button>
   <span id="sBuild" title="the UI build this tab is running — reload if it is behind"></span>
 </div>
 
@@ -504,6 +508,6 @@
     "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=196"></script>
+<script type="module" src="/static/js/main.js?v=197"></script>
 </body>
 </html>

@@ -24,8 +24,10 @@ import { initMirror } from './mirror.js';
 import { initMove } from './move.js';
 import { initMeasure } from './measure.js';
 import { initVersions } from './versions.js';
+import { initBugReport } from './bugreport.js';
 
 initSettings();          // load prefs before anything renders (fmtVol/fmtLen)
+initBugReport();         // first, so its request ring sees the boot calls too
 initViewport();
 initChat();
 initDialogs();

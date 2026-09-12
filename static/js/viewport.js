@@ -180,6 +180,14 @@ export function setOrbitUp(upArr) {
 }
 export function getControls() { return controls; }
 
+/** The viewport as a PNG data-URL, for the bug button (bugreport.js). The
+ *  renderer keeps no drawing buffer between frames, so a read without a
+ *  render first comes back black: render, then read, in one go. */
+export function snapshotPNG() {
+  renderer.render(scene, camera);
+  return renderer.domElement.toDataURL('image/png');
+}
+
 /* where the model actually is, so a tool can frame on the PART instead of the
    world origin (entering a sketch used to always look at 0,0) */
 export function modelExtent() {

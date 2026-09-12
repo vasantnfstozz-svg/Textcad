@@ -84,6 +84,10 @@ MESH_PATH = ROOT / "_studio_mesh.stl"
 CHAT_DELETE_LIMIT = 6
 DESIGNS = ROOT / "designs"
 DESIGNS.mkdir(exist_ok=True)
+# The bug inbox (LAUNCH-PLAN.md P5b): the Studio bug button and
+# tests/journeys.py both file a repro folder here; the chat that fixes one
+# deletes its folder.
+BUGS = ROOT / "bugs"
 
 app = FastAPI(title="TextCAD Studio")
 
@@ -523,7 +527,10 @@ if os.environ.get("TEXTCAD_CRASH_TEST") == "1":
 # landing between two steps answered a confident sentence about geometry that
 # was simply absent ("'base' is a plate, not fillet / chamfer" — measured
 # 2026-09-11) while touching OCCT beside the job's own kernel call.
-_JOB_OPEN_POSTS = {"/api/tabs/switch"}
+_JOB_OPEN_POSTS = {"/api/tabs/switch",
+                   # the bug button reads the design, never writes it — and
+                   # "the AI is stuck" is exactly when the user presses it
+                   "/api/bug"}
 
 
 @app.middleware("http")
@@ -2821,6 +2828,84 @@ def label_version(req: LabelReq):
     except HistoryError as e:
         return {"error": str(e)}
     return {"labelled": req.id, "label": req.label}
+
+
+class BugReq(BaseModel):
+    note: str = ""                   # the user's one line, may be empty
+    screenshot: str | None = None    # data-URL PNG of the viewport canvas
+    requests: list = []              # the tab's last calls: method, url, body, status, ms
+    console: list = []               # window errors + the warnings the chat showed
+    ui_build: str = ""               # the tab's "ui vN" stamp
+
+
+def _bug_report_lines(d: Path, req: BugReq, doc: Document, e: dict, files: list[str]) -> list[str]:
+    reds = [f"- '{f.id}' ({f.op}): " + ("; ".join(f.problems) or "no problem text")
+            for f in doc.features if f.status != "ok" and not f.suppressed]
+    lines = [f"# Bug report: {doc.name}", "", f"Filed from the app at {time.strftime('%Y-%m-%d %H:%M:%S')}"
+             + (f", tab running {req.ui_build}" if req.ui_build else "") + ".", ""]
+    lines += ["## What the user said", "", f"> {req.note.strip() or '(no note)'}", ""]
+    lines += ["## The design", "",
+              f"{len(doc.features)} features, {len(doc.leaf_solid_ids())} bodies on screen, "
+              f"{'healthy' if e.get('ok') else 'with red features'}; opened from "
+              f"{e.get('source') or 'nothing (a new design)'}; {len(e.get('history') or [])} undo steps.", ""]
+    if reds:
+        lines += ["Red features:", "", *reds, ""]
+    if req.requests:
+        lines += ["## The last requests this tab made (oldest first)", ""]
+        for r in req.requests[-15:]:
+            if not isinstance(r, dict):
+                continue
+            body = r.get("body")
+            body = (str(body)[:160]) if body else ""
+            lines.append(f"- `{r.get('method', '?')} {r.get('url', '?')}` -> {r.get('status', '?')} "
+                         f"in {r.get('ms', '?')} ms" + (f"  `{body}`" if body else ""))
+        lines.append("")
+    if req.console:
+        lines += ["## What the browser reported", ""]
+        lines += [f"- {str(c.get('text') if isinstance(c, dict) else c)[:300]}" for c in req.console[-15:]]
+        lines.append("")
+    lines += ["## Files", "", *[f"- `{f}`" for f in files], "",
+              "## Reproduce", "",
+              f"    python tests/journeys.py --replay bugs/{d.name}", "",
+              "That opens `doc.tcad.json` in a fresh in-process server and runs the body "
+              "checks; `state.json` carries the tree with every status and problem sentence "
+              "as the user saw it. Open the design in Studio to look at it in 3D.", ""]
+    return lines
+
+
+@app.post("/api/bug")
+def report_bug(req: BugReq):
+    """The bug button (LAUNCH-PLAN.md P5b): ONE click saves the open design,
+    the tab's last requests, what the browser reported and a screenshot
+    under bugs/, and the user keeps designing. A later chat reads the folder
+    and has the repro without a description. Reads the document, never
+    writes it — no snapshot, no rebuild, no version."""
+    e = _entry()
+    doc = e["doc"]
+    d = BUGS / f"{time.strftime('%Y%m%d-%H%M%S')}-button-{re.sub(r'[^\w\-]+', '-', doc.name).strip('-').lower()[:40] or 'untitled'}"
+    d.mkdir(parents=True, exist_ok=True)
+    files = ["doc.tcad.json", "state.json", "report.md"]
+    (d / "doc.tcad.json").write_text(json.dumps(doc.to_data(), indent=1), encoding="utf-8")
+    skipped = None
+    if req.screenshot:
+        try:
+            raw = base64.b64decode(req.screenshot.split(",", 1)[-1], validate=False)
+            if raw[:8] == b"\x89PNG\r\n\x1a\n":
+                (d / "screenshot.png").write_bytes(raw)
+                files.append("screenshot.png")
+            else:
+                skipped = "the screenshot was not a PNG"
+        except (ValueError, TypeError) as ex:
+            skipped = f"the screenshot could not be decoded: {ex}"
+    state = {"note": req.note, "when": time.strftime("%Y-%m-%d %H:%M:%S"),
+             "ui_build": req.ui_build, "source": e.get("source"),
+             "undo_depth": len(e.get("history") or []), "screenshot_skipped": skipped,
+             "doc": _doc_json(), "requests": req.requests[-40:], "console": req.console[-40:]}
+    (d / "state.json").write_text(json.dumps(jsonable_encoder(state), indent=1, default=str),
+                                  encoding="utf-8")
+    (d / "report.md").write_text("\n".join(_bug_report_lines(d, req, doc, e, files)), encoding="utf-8")
+    saved = d.relative_to(ROOT).as_posix() if d.is_relative_to(ROOT) else d.as_posix()
+    return {"saved": saved, "files": files, "screenshot_skipped": skipped}
 
 
 @app.get("/api/examples")

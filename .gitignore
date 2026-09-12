@@ -13,6 +13,12 @@ _studio_mesh.stl
 # frozen design copies the code tests read (LAUNCH-PLAN.md R6) — must travel
 # with the code or a fresh clone's suite is red
 !tests/fixtures/*.tcad.json
+# the bug inbox (LAUNCH-PLAN.md P5b): tests/journeys.py and the Studio bug
+# button save a design copy + the failing request per folder. Tracked so a
+# repro survives to the chat that fixes it; that chat deletes the folder.
+!bugs/**
+# ... except the runner's own run log, which grows every night
+bugs/journeys.log
 
 # Version histories are user work too (VERSION-TREE-PLAN.md): designs/<slug>.history/
 # holds index.json + gzipped snapshots, ~10 KB each. User's call 2026-08-26:
