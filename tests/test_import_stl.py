@@ -568,10 +568,10 @@ def test_ascii_stl_with_a_byte_order_mark(tmp_path):
 # Section 8 ROUND THREE (2026-09-12): the round-two commit d94518c re-read.
 # ---------------------------------------------------------------------------
 
-def _stl_of(shape, path):
+def _stl_of(shape, path, **kw):
     """build123d shape -> (verts, faces) via export_stl."""
     import meshrepair
-    b3d.export_stl(shape, str(path))
+    b3d.export_stl(shape, str(path), **kw)
     return meshrepair.parse_binary_stl(path.read_bytes())
 
 
@@ -618,3 +618,75 @@ def test_a_pin_through_two_walls_is_not_a_void(tmp_path):
     part = blocks.import_stl(str(p))
     assert len(part.solids()) == 2
     assert part.volume == pytest.approx(housing.volume + pin.volume, rel=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Section 8 ROUND FOUR (2026-09-12): the round-three commit 8fdfa5b re-read.
+# ---------------------------------------------------------------------------
+
+class _CountingClassifier:
+    """Stands in for BRepClass3d_SolidClassifier and counts Perform calls."""
+    calls = 0
+
+    def __init__(self, solid, *args):
+        from OCP.BRepClass3d import BRepClass3d_SolidClassifier
+        self._real = BRepClass3d_SolidClassifier(solid, *args)
+        if args:
+            _CountingClassifier.calls += 1
+
+    def Perform(self, *args):
+        _CountingClassifier.calls += 1
+        return self._real.Perform(*args)
+
+    def State(self):
+        return self._real.State()
+
+
+def test_a_properly_wound_cavity_costs_a_handful_of_point_tests(tmp_path, monkeypatch):
+    """Round three made 'wholly inside' a sample of up to 800 points. OCCT's
+    classifier is linear in the CONTAINER's faces — 173 ms a point against a
+    32k-face body (probes/s8r4_b_bigcontainer.py) — so a real faceted hollow
+    part, the P0's own motivating case, would take ~140 s to import. A cavity
+    the file already winds INWARD needs one confirming point, not 800: the
+    file said cavity and geometry agrees it sits inside."""
+    import meshrepair
+    frame = b3d.Box(40, 40, 40, align=b3d.Align.MIN)
+    cavity = b3d.Sphere(12).moved(b3d.Location((20, 20, 20)))
+    other = b3d.Pos(60, 0, 0) * b3d.Box(10, 10, 10, align=b3d.Align.MIN)
+    fv, ff = _stl_of(frame, tmp_path / "f.stl")
+    cv, cf = _stl_of(cavity, tmp_path / "c.stl")
+    ov, of = _stl_of(other, tmp_path / "o.stl")
+    assert len(cf) > 400                               # a FACETED cavity
+    p = tmp_path / "hollow_faceted.stl"
+    # a second body in the file makes lib3mf's one Solid INVALID, so the
+    # shells are regrouped — a hollow part ALONE is valid and taken as-is
+    _write_merged(p, [(fv, ff), (cv, cf[:, ::-1]), (ov, of)])   # cavity wound inward
+    want = (meshrepair.signed_volume(fv, ff) - abs(meshrepair.signed_volume(cv, cf))
+            + meshrepair.signed_volume(ov, of))
+    monkeypatch.setattr(blocks, "BRepClass3d_SolidClassifier", _CountingClassifier)
+    _CountingClassifier.calls = 0
+    part = blocks.import_stl(str(p))
+    assert len(part.solids()) == 2
+    assert part.volume == pytest.approx(want, rel=1e-6)
+    assert _CountingClassifier.calls <= 8, _CountingClassifier.calls
+
+
+def test_a_reoriented_cavity_is_still_a_cavity_within_a_bounded_sample(tmp_path, monkeypatch):
+    """The ambiguous case — the cavity wound OUTWARD (MeshLab's re-orient) —
+    is the one that must pay for a surface sample, and the sample must shrink
+    with the container's face count so the price stays bounded."""
+    frame = b3d.Sphere(30).moved(b3d.Location((30, 30, 30)))      # a BIG faceted container
+    cavity = b3d.Sphere(8).moved(b3d.Location((30, 30, 30)))
+    fv, ff = _stl_of(frame, tmp_path / "f.stl", tolerance=0.01, angular_tolerance=0.1)
+    cv, cf = _stl_of(cavity, tmp_path / "c.stl")
+    assert len(ff) > 2000
+    p = tmp_path / "reoriented.stl"
+    _write_merged(p, [(fv, ff), (cv, cf)])             # BOTH outward
+    monkeypatch.setattr(blocks, "BRepClass3d_SolidClassifier", _CountingClassifier)
+    _CountingClassifier.calls = 0
+    part = blocks.import_stl(str(p))
+    import meshrepair
+    assert len(part.solids()) == 1
+    want = meshrepair.signed_volume(fv, ff) - meshrepair.signed_volume(cv, cf)
+    assert part.volume == pytest.approx(want, rel=1e-6)
+    assert _CountingClassifier.calls <= 2 + 2 * blocks._nest_cap(len(ff)), _CountingClassifier.calls

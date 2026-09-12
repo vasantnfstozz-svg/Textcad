@@ -1001,16 +1001,29 @@ def _bbox_holds(outer, inner, tol: float = 1e-6) -> bool:
 
 
 def _outward(shell) -> tuple:
-    """(TopoDS_Shell wound outward, its Solid). The file's winding is not
-    trusted: a closed shell's orientation is ours to set from its role."""
+    """(TopoDS_Shell wound outward, its Solid, was the FILE's winding inward).
+    A closed shell's orientation is ours to set from its role; what the file
+    said is kept as a hint — an inward shell that sits inside a body is the
+    cavity the file says it is, and needs one confirming point, not a survey."""
     sol = Solid(BRepBuilderAPI_MakeSolid(shell.wrapped).Solid())
     if sol.volume < 0:
         tsh = TopoDS.Shell_s(shell.wrapped.Reversed())
-        return tsh, Solid(BRepBuilderAPI_MakeSolid(tsh).Solid())
-    return shell.wrapped, sol
+        return tsh, Solid(BRepBuilderAPI_MakeSolid(tsh).Solid()), True
+    return shell.wrapped, sol, False
 
 
 _NEST_SAMPLE = 400      # vertices sampled per shell, and as many face centres
+_NEST_BUDGET = 100_000  # face-evaluations the classifier may spend per kind
+
+
+def _nest_cap(container_faces: int) -> int:
+    """How many vertices (and as many face centres) to test against a
+    container of that many faces. OCCT's point classifier is LINEAR in the
+    container's faces — ~5 us a face, so 173 ms a point against a 32k-face
+    body (probes/s8r4_b_bigcontainer.py) — and round three's fixed 400 + 400
+    would have taken ~140 s for one cavity. The budget keeps it near a
+    second: 8 + 8 points against 32k faces, 100 + 100 against 1k."""
+    return max(8, min(_NEST_SAMPLE, _NEST_BUDGET // max(1, container_faces)))
 
 
 def _spread(n: int, cap: int):
@@ -1018,20 +1031,20 @@ def _spread(n: int, cap: int):
     return range(1, n + 1) if n <= cap else [1 + (k * n) // cap for k in range(cap)]
 
 
-def _shell_points(shell) -> list:
-    """Points ON a shell: up to _NEST_SAMPLE of its unique vertices and as many
-    face centres, spread over the whole shell. TopExp.MapShapes does the walk
-    in C++ — build123d's .vertices() took 1.8 s on a 32k-triangle shell and a
+def _shell_points(shell, cap: int = _NEST_SAMPLE) -> list:
+    """Points ON a shell: up to `cap` of its unique vertices and as many face
+    centres, spread over the whole shell. TopExp.MapShapes does the walk in
+    C++ — build123d's .vertices() took 1.8 s on a 32k-triangle shell and a
     Python explorer 3.8 s; this takes 0.15 s (probes/s8r3_d_mapshapes.py)."""
     pts = []
     vm = TopTools_IndexedMapOfShape()
     TopExp.MapShapes_s(shell.wrapped, TopAbs_ShapeEnum.TopAbs_VERTEX, vm)
-    for i in _spread(vm.Extent(), _NEST_SAMPLE):
+    for i in _spread(vm.Extent(), cap):
         p = BRep_Tool.Pnt_s(TopoDS.Vertex_s(vm.FindKey(i)))
         pts.append((p.X(), p.Y(), p.Z()))
     fm = TopTools_IndexedMapOfShape()
     TopExp.MapShapes_s(shell.wrapped, TopAbs_ShapeEnum.TopAbs_FACE, fm)
-    for i in _spread(fm.Extent(), _NEST_SAMPLE):
+    for i in _spread(fm.Extent(), cap):
         sub = TopTools_IndexedMapOfShape()
         TopExp.MapShapes_s(fm.FindKey(i), TopAbs_ShapeEnum.TopAbs_VERTEX, sub)
         x = y = z = 0.0
@@ -1082,22 +1095,38 @@ def _solids_from_shells(shp) -> tuple[list, int]:
         if not BRep_Tool.IsClosed_s(sh.wrapped):
             open_shells += 1
             continue
-        closed.append((sh, *_outward(sh)))      # (Shell, outward TopoDS_Shell, Solid)
+        closed.append((sh, *_outward(sh)))  # (Shell, outward TopoDS_Shell, Solid, inward?)
     n = len(closed)
-    sampled: dict = {}                     # shell index -> its sample points, once
+    sampled: dict = {}                     # (shell index, cap) -> sample points, once
+    faces: dict = {}                       # shell index -> its face count, once
 
     def nested(i, j):
-        if i == j or not _bbox_holds(closed[j][2].bounding_box(),
-                                     closed[i][0].bounding_box()):
+        """Is shell i wholly inside body j? One point says whether it sits
+        inside at all. If it does and the FILE wound it inward, it is the
+        cavity the file says it is. If the file wound it OUTWARD — a cavity
+        MeshLab re-oriented, or a body embedded in / overlapping j — only its
+        surface can tell, and that survey is sized to what j costs to ask."""
+        sh_i, _, _, inward_i = closed[i]
+        sol_j = closed[j][2]
+        if i == j or not _bbox_holds(sol_j.bounding_box(), sh_i.bounding_box()):
             return False
-        if i not in sampled:
-            sampled[i] = _shell_points(closed[i][0])
-        return _shell_inside(closed[i][0], closed[j][2], sampled[i])
+        if not _shell_inside(sh_i, sol_j, _shell_points(sh_i, 1)):
+            return False
+        if inward_i:
+            return True
+        if j not in faces:
+            fm = TopTools_IndexedMapOfShape()
+            TopExp.MapShapes_s(sol_j.wrapped, TopAbs_ShapeEnum.TopAbs_FACE, fm)
+            faces[j] = fm.Extent()
+        cap = _nest_cap(faces[j])
+        if (i, cap) not in sampled:
+            sampled[i, cap] = _shell_points(sh_i, cap)
+        return _shell_inside(sh_i, sol_j, sampled[i, cap])
 
     inside = [[nested(i, j) for j in range(n)] for i in range(n)]
     depth = [sum(row) for row in inside]
     out = []
-    for i, (_, tsh, sol) in enumerate(closed):
+    for i, (_, tsh, sol, _) in enumerate(closed):
         if depth[i] % 2:
             continue                             # a void: added to its body below
         voids = [j for j in range(n) if depth[j] == depth[i] + 1 and inside[j][i]]
