@@ -6,8 +6,9 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING.** Review `7a811b6..c11fd74` — P5b, the machine plays the
-> user (LAUNCH-PLAN.md §7 P5b, §6 tier 4). Base `7a811b6`. One code commit.
+> **Status: PENDING.** Review `bf5550b` — the FIX COMMIT of the P5b
+> review (round two). Base `f6add94`. A P0-class finding was fixed, so the
+> queue's rule applies: the fix pass's own new code gets read.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -22,65 +23,82 @@
 
 ## The commit
 
-- `c11fd74` P5b: `tests/journeys.py` (the random-journey runner, ~800 lines),
-  `POST /api/bug` + `BugReq` + `_bug_report_lines` in `studio.py` (~90 lines,
-  and `/api/bug` added to `_JOB_OPEN_POSTS`), `static/js/bugreport.js` (fetch
-  ring, error ring, the button), `snapshotPNG` in `viewport.js`, the button in
-  `index.html` (ui v197, css v43), `tests/__init__.py`, `tests/test_library.py`,
-  `tests/test_journeys.py`, `tests/test_bugreport.py`,
-  `tests/e2e/test_bug_button.py`, `.gitignore` (`!bugs/**`, `bugs/journeys.log`).
+Round one of the P5b review (`7a811b6..c11fd74`) found 9, fixed 9, 0 rejected,
+12 new tests (fast tier 1657 -> 1668). TWO were in the PRODUCT, found by the
+instrument P5b had just added; seven were the instrument lying about it.
+
+- `document.py` — `strike` records the ids it actually suppressed
+  (`_struck_by`, in memory, not in the file; `rename` rewrites it) and
+  `unstrike` puts back exactly those plus the struck ancestors the restored
+  set cannot build without, decided by `_passthrough` (the delete plan's own
+  healing rule).
+- `tests/journeys.py` — `unhandled()` asks builtins and OCP for the exception
+  NAMES instead of guessing at suffixes; `Bug` carries a baseline document and
+  the whole sequence to resend; `call` checks a dry run; `replay` re-asks the
+  identity question, falls back to `after.tcad.json`, and still reads a
+  pre-fix folder; `make_client` moves `MESH_PATH` off the repo root; a new
+  `write_crash` keeps the child's stderr and refuses to file a folder when the
+  MACHINE ran out of memory.
+- `static/js/bugreport.js` — a successful GET no longer costs a ring slot
+  (`worthKeeping`), ui v198.
+- Tests: `tests/test_strike.py` (+4), `tests/test_journeys.py` (+7),
+  `tests/e2e/test_bug_button.py` (+1). Every one proven RED in a worktree at
+  `c11fd74` before the fix, except the two whose red proof is a missing
+  function (`write_crash`) and the one that locks a case two mechanisms
+  already cover (its docstring says so).
 
 ## Where the risk is
 
-This commit is a TEST INSTRUMENT plus one read-only route. The product's
-geometry did not change. What can be wrong is the instrument lying:
+On this project a fix pass's OWN new guard has been wrong more often than not,
+and this one changed a path every saved design walks.
 
-1. **False negatives in the oracles** (`Journey.call`, `check_bodies`, the
-   pair moves). `unhandled()` decides "leaked exception" by a regex on the
-   `error` sentence; a leak worded without a class name passes. `check_bodies`
-   looks at LEAF solids only (cost), so an intermediate feature that is green
-   and unsound is not caught unless it is on screen. The undo oracle runs only
-   inside `move_edit` and `move_undo_add`; a route that snapshots differently
-   is not judged. `signature()` masks numbers and cuts at 80 chars, so two
-   distinct bugs with the same opening words file as one folder.
-2. **False positives** — a clean journey must stay clean: does any route
-   legitimately answer 400 AND change the document (the runner calls that a
-   bug)? Does `strike` + `restore` legitimately change `to_data()` anywhere
-   (struck ancestors)? Does `rollback` + release legitimately move a volume?
-   12 journeys × 30 moves over `empty`, `pump-impeller`, `esp32-remote` were
-   clean; the e2e and library tiers are the other evidence.
-3. **The child-process protocol** (`spawn`): exit codes 0/2/3/4 versus a
-   Windows access violation (3221225477); the step log written BEFORE each
-   request; a "broken runner" (exit 2) must never file a folder. A crash
-   folder has no `before.tcad.json` by construction.
-4. **`/api/bug`**: writes under `ROOT/bugs` from `doc.name` (slugged); decodes
-   a data-URL of any size; `_doc_json()` inside the report under no lock while
-   a job may be writing that tab (the route is deliberately in
-   `_JOB_OPEN_POSTS`). It must never snapshot, rebuild or mint a version.
-5. **`bugreport.js` wraps `window.fetch` for the whole tab** from
-   `initBugReport()` (first init in `main.js`). A body that is not a string
-   (FormData) is recorded as null; `/api/bug` itself is not recorded. The
-   `msg` bus listener keeps every bot line — is anything sensitive said there?
-6. **`tests/__init__.py`** changes the fast tier's module names to
-   `tests.test_x`; e2e files stay rootless (their `from conftest import`
-   depends on that). Both tiers collect (1841 / 197).
+1. **`unstrike`'s new rule.** `_passthrough(dep, still, by_id, kinds)` decides
+   whether a struck ancestor hands its own input down. `still` is rebuilt as
+   `back` grows — is it right for a chain of several struck nodes, for a
+   `move` (whose `_kinds` entry follows its input), and for a struck node
+   whose first input is itself struck and a SKETCH? The regression guard is
+   `test_restoring_a_dependent_restores_its_struck_sketch_too`, which existed
+   before; the new tests cover a cut chain and a fillet.
+2. **`_struck_by` is state that outlives nothing.** Undo replaces the document
+   object, so the record is gone and the restore falls back to the plan
+   (§10 P2 row). `Document.rename` rewrites the record (found and fixed inside
+   this pass, with the key case proven red). Is there another sequence where
+   the record is present but STALE and the fallback would have been better —
+   a `remove` of a recorded id, an `edit` that changes what the plan would be,
+   `edit_many`, a version restore into the same tab?
+3. **`unhandled()` now flags any `<ExceptionName>: ...` prefix.** The name set
+   is builtins + `OCP.Standard` + `OCP.StdFail`. A product sentence that
+   begins with one of those names and a colon would file a phantom finding —
+   is there one? (`Error: none` is not in the set, and is tested.)
+4. **`replay`'s identity re-ask.** `_IDENTITY_BUGS` is a hand-kept set of
+   kinds; a new pair oracle added later and forgotten there replays as
+   "passes now" again. And the comparison is `j.data() != base or
+   j.volumes() != vols` — `volumes()` swallows a raising `.volume` as None.
+5. **`worthKeeping`** drops every 200 GET, so `/api/model` and `/api/mesh.stl`
+   are no longer in the report at all. Was one of them load-bearing for a
+   repro (a mesh that never arrived)?
+6. **`spawn` now captures stderr** (`subprocess.PIPE`, `text=True`). stdout is
+   still live, so a child that fills the stderr pipe cannot deadlock — but is
+   that true of a child that dies mid-write, and does the `[-8000:]` tail ever
+   cut a `MemoryError` line out of reach of `machine_gave_up`, which would
+   file the box's failure as the product's again?
 
 ## Ground rules for this review
 
-Reproduce before reporting: a false-negative claim needs a staged failure the
-oracle misses (as `test_journeys.py` stages one it catches); a false-positive
-claim needs a seed that files a folder for correct behaviour. Fix in the same
-chat, smallest fix, test proven red first. Restart the user's server if
-`studio.py` changes. Never `--fix`.
+Reproduce before reporting. Fix in the same chat, smallest fix, test proven
+red first. Restart the user's server if `studio.py` changes (it did not this
+time). Never `--fix`.
 
-## Do not report (already in LAUNCH-PLAN.md §10 or decided)
+## Do not report (already decided or recorded)
 
-- Values drawn at random instead of from the plan's safe range; measure,
-  params, export and save routes not exercised; one circle/rectangle per
-  sketch (§10 P3 row).
-- The screenshot is the viewport canvas only (§10 P3 row).
-- `bugs/journeys.log` is ignored while `bugs/**` is tracked — on purpose.
-- The runner never calls `/api/save` or `/api/open` — on purpose (writes into
-  designs/ and the real `.history/`).
-- `test_library.py` reporting a red feature in a live design is the tier
-  doing its job, not a finding about the tier.
+- `_struck_by` not surviving a save or an undo — §10 P2 row, on purpose: the
+  file format carries one boolean per feature and changing it touches every
+  saved design.
+- `/api/bug` reading the document without the kernel lock — §10 P3 row;
+  measured to touch no OCCT at all.
+- The journey runner's unchecked rename / suppress round-trips, and that it
+  never plays `loft` or `sweep` — appended to the existing §10 P3 row.
+- `check_bodies` re-asking the product's own `inspector.health` on the
+  product's own leaf set: it is a cache-coherence check by design, not an
+  independent witness.
+- The values-at-random and viewport-only-screenshot rows (§10 P3).
