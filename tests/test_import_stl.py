@@ -562,3 +562,59 @@ def test_ascii_stl_with_a_byte_order_mark(tmp_path):
     p.write_bytes(b"\xef\xbb\xbf" + ASCII_TET.encode())
     part = blocks.import_stl(str(p))
     assert part.volume == pytest.approx(TET_VOL, rel=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Section 8 ROUND THREE (2026-09-12): the round-two commit d94518c re-read.
+# ---------------------------------------------------------------------------
+
+def _stl_of(shape, path):
+    """build123d shape -> (verts, faces) via export_stl."""
+    import meshrepair
+    b3d.export_stl(shape, str(path))
+    return meshrepair.parse_binary_stl(path.read_bytes())
+
+
+def _write_merged(path, parts):
+    import numpy as np
+    import meshrepair
+    vs, fs, off = [], [], 0
+    for v, f in parts:
+        vs.append(v)
+        fs.append(f + off)
+        off += len(v)
+    path.write_bytes(meshrepair.to_binary_stl(np.concatenate(vs), np.concatenate(fs)))
+
+
+def test_a_body_overlapping_a_notch_is_not_a_void(tmp_path):
+    """REGRESSION caught in round three. Round two decided 'shell B is inside
+    shell A' from ONE vertex of B. A bracket sitting in the notch of a
+    C-shaped frame, overlapping the frame's wall by 2 mm, has its box inside
+    the frame's box and one corner inside the frame's material — and on
+    d94518c it came in as ONE body of 20,360 mm3: the 640 mm3 bracket had
+    been made a VOID of the 21,000 mm3 frame, valid and green. Two bodies
+    that overlap are two bodies (the documented decision: never fuse)."""
+    frame = (b3d.Box(30, 30, 30, align=b3d.Align.MIN)
+             - b3d.Pos(10, 0, 10) * b3d.Box(10, 30, 20, align=b3d.Align.MIN))
+    bracket = b3d.Pos(8, 11, 12) * b3d.Box(10, 8, 8, align=b3d.Align.MIN)
+    p = tmp_path / "notch.stl"
+    _write_merged(p, [_stl_of(frame, tmp_path / "a.stl"),
+                      _stl_of(bracket, tmp_path / "b.stl")])
+    part = blocks.import_stl(str(p))
+    assert len(part.solids()) == 2
+    assert part.volume == pytest.approx(21000 + 640, rel=1e-6)
+
+
+def test_a_pin_through_two_walls_is_not_a_void(tmp_path):
+    """The nastier cousin: a pin whose two ENDS are embedded in the two walls
+    of a housing and whose middle spans the gap between them. Every vertex of
+    the pin is inside wall material; only its faces cross the gap."""
+    housing = (b3d.Box(40, 20, 20, align=b3d.Align.MIN)          # a U: two walls
+               - b3d.Pos(10, 0, 0) * b3d.Box(20, 20, 15, align=b3d.Align.MIN))  # + a floor
+    pin = b3d.Pos(5, 8, 8) * b3d.Box(30, 4, 4, align=b3d.Align.MIN)    # x 5..35
+    p = tmp_path / "pin.stl"
+    _write_merged(p, [_stl_of(housing, tmp_path / "h.stl"),
+                      _stl_of(pin, tmp_path / "p.stl")])
+    part = blocks.import_stl(str(p))
+    assert len(part.solids()) == 2
+    assert part.volume == pytest.approx(housing.volume + pin.volume, rel=1e-6)

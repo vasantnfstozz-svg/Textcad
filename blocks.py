@@ -44,8 +44,10 @@ from OCP.BRepAdaptor import BRepAdaptor_Curve      # point-to-edge distance (res
 from OCP.BRepClass3d import BRepClass3d_SolidClassifier   # is this shell inside that one
 from OCP.Extrema import Extrema_ExtPC
 from OCP.gp import gp_Pnt
-from OCP.TopAbs import TopAbs_State
+from OCP.TopAbs import TopAbs_ShapeEnum, TopAbs_State
+from OCP.TopExp import TopExp                      # unique vertices/faces of a shell, in C++
 from OCP.TopoDS import TopoDS
+from OCP.TopTools import TopTools_IndexedMapOfShape
 
 import inspector          # health of every fillet / chamfer result
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
@@ -1008,17 +1010,60 @@ def _outward(shell) -> tuple:
     return shell.wrapped, sol
 
 
-def _shell_inside(shell, solid) -> bool:
-    """Is `shell` nested inside `solid`? One vertex decides — a closed shell
-    inside another has every vertex inside it, one beside it has none. The
-    bounding boxes pre-filter; the answer is OCCT's own point classifier on an
-    OUTWARD solid (against an inward one it says OUT of a point that is
-    inside — probed 2026-09-12, probes/s8r2_e_orient.py)."""
+_NEST_SAMPLE = 400      # vertices sampled per shell, and as many face centres
+
+
+def _spread(n: int, cap: int):
+    """1-based indices into a map of n: all of them, or `cap` spread evenly."""
+    return range(1, n + 1) if n <= cap else [1 + (k * n) // cap for k in range(cap)]
+
+
+def _shell_points(shell) -> list:
+    """Points ON a shell: up to _NEST_SAMPLE of its unique vertices and as many
+    face centres, spread over the whole shell. TopExp.MapShapes does the walk
+    in C++ — build123d's .vertices() took 1.8 s on a 32k-triangle shell and a
+    Python explorer 3.8 s; this takes 0.15 s (probes/s8r3_d_mapshapes.py)."""
+    pts = []
+    vm = TopTools_IndexedMapOfShape()
+    TopExp.MapShapes_s(shell.wrapped, TopAbs_ShapeEnum.TopAbs_VERTEX, vm)
+    for i in _spread(vm.Extent(), _NEST_SAMPLE):
+        p = BRep_Tool.Pnt_s(TopoDS.Vertex_s(vm.FindKey(i)))
+        pts.append((p.X(), p.Y(), p.Z()))
+    fm = TopTools_IndexedMapOfShape()
+    TopExp.MapShapes_s(shell.wrapped, TopAbs_ShapeEnum.TopAbs_FACE, fm)
+    for i in _spread(fm.Extent(), _NEST_SAMPLE):
+        sub = TopTools_IndexedMapOfShape()
+        TopExp.MapShapes_s(fm.FindKey(i), TopAbs_ShapeEnum.TopAbs_VERTEX, sub)
+        x = y = z = 0.0
+        for j in range(1, sub.Extent() + 1):
+            p = BRep_Tool.Pnt_s(TopoDS.Vertex_s(sub.FindKey(j)))
+            x, y, z = x + p.X(), y + p.Y(), z + p.Z()
+        pts.append((x / sub.Extent(), y / sub.Extent(), z / sub.Extent()))
+    return pts
+
+
+def _shell_inside(shell, solid, points=None) -> bool:
+    """Is `shell` WHOLLY inside `solid`? The bounding boxes pre-filter; then
+    every sampled vertex AND face centre of the shell must classify IN on an
+    OUTWARD solid (against an inward one OCCT says OUT of a point that is
+    inside — probed 2026-09-12, probes/s8r2_e_orient.py).
+
+    ONE vertex was not enough (round three, 2026-09-12): a bracket overlapping
+    the notch of a C-shaped frame has a corner inside the frame's material,
+    and it became a VOID of the frame — 640 mm3 gone from a 21,640 mm3 pair,
+    valid and green. Face centres catch the pin whose ends are embedded in two
+    walls while its middle spans the gap between them: every vertex inside,
+    not one face. A body that pokes out by less than one sampled point in 400
+    still reads as a void, and MakeSolid.Add then builds an INVALID solid,
+    which the deep validity pass paints red — wrong, but never silent."""
     if not _bbox_holds(solid.bounding_box(), shell.bounding_box()):
         return False
-    x, y, z = shell.vertices()[0].to_tuple()
-    return (BRepClass3d_SolidClassifier(solid.wrapped, gp_Pnt(x, y, z), 1e-7)
-            .State() == TopAbs_State.TopAbs_IN)
+    cls = BRepClass3d_SolidClassifier(solid.wrapped)
+    for x, y, z in (_shell_points(shell) if points is None else points):
+        cls.Perform(gp_Pnt(x, y, z), 1e-7)
+        if cls.State() != TopAbs_State.TopAbs_IN:
+            return False
+    return True
 
 
 def _solids_from_shells(shp) -> tuple[list, int]:
@@ -1039,8 +1084,17 @@ def _solids_from_shells(shp) -> tuple[list, int]:
             continue
         closed.append((sh, *_outward(sh)))      # (Shell, outward TopoDS_Shell, Solid)
     n = len(closed)
-    inside = [[j != i and _shell_inside(closed[i][0], closed[j][2])
-               for j in range(n)] for i in range(n)]
+    sampled: dict = {}                     # shell index -> its sample points, once
+
+    def nested(i, j):
+        if i == j or not _bbox_holds(closed[j][2].bounding_box(),
+                                     closed[i][0].bounding_box()):
+            return False
+        if i not in sampled:
+            sampled[i] = _shell_points(closed[i][0])
+        return _shell_inside(closed[i][0], closed[j][2], sampled[i])
+
+    inside = [[nested(i, j) for j in range(n)] for i in range(n)]
     depth = [sum(row) for row in inside]
     out = []
     for i, (_, tsh, sol) in enumerate(closed):
