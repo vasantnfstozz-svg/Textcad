@@ -61,6 +61,130 @@ EMPTY = "empty"                      # the pseudo-design: start from nothing
 
 EXIT_CLEAN, EXIT_BROKEN, EXIT_BUG, EXIT_DUP = 0, 2, 3, 4
 SLOW_MS = 60_000                     # a step slower than this is noted, not a bug
+# A request that takes longer than this, or that grows the process by more
+# than this, is a FINDING even when it answers 200. On 2026-09-12 one plate
+# add on bottle_cap_28mm took 22 minutes and 44 GB (the spec's symmetry
+# boolean), the runner logged "200 1351644 ms" and moved on, and the 16 GB
+# laptop died fifty minutes later. Under a 6 GB cap the same request took
+# 55 s and still answered 200: the time oracle alone would have missed it.
+HANG_MS = 120_000
+MEMORY_BUG_MB = 2048
+# ... and the hard backstop: every child runs inside a Windows Job object
+# with this much memory, so the kernel refuses the allocation and the CHILD
+# dies (a finding) instead of the box. 0 switches it off.
+MEM_CAP_GB = 6.0
+
+
+def peak_mb() -> float:
+    """This process's peak working set, MB (0.0 where it cannot be read)."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            import ctypes.wintypes as wt
+
+            class _Counters(ctypes.Structure):
+                _fields_ = [("cb", wt.DWORD), ("PageFaultCount", wt.DWORD),
+                            ("PeakWorkingSetSize", ctypes.c_size_t),
+                            ("WorkingSetSize", ctypes.c_size_t),
+                            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                            ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                            ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                            ("PagefileUsage", ctypes.c_size_t),
+                            ("PeakPagefileUsage", ctypes.c_size_t)]
+            c = _Counters()
+            c.cb = ctypes.sizeof(c)
+            k32 = ctypes.WinDLL("kernel32")
+            # without these the 64-bit pseudo-handle is truncated to a C int
+            # and the call fails with ERROR_INVALID_HANDLE (measured)
+            k32.GetCurrentProcess.restype = wt.HANDLE
+            k32.K32GetProcessMemoryInfo.argtypes = [wt.HANDLE, ctypes.POINTER(_Counters), wt.DWORD]
+            k32.K32GetProcessMemoryInfo.restype = wt.BOOL
+            if k32.K32GetProcessMemoryInfo(k32.GetCurrentProcess(), ctypes.byref(c), c.cb):
+                return c.PeakWorkingSetSize / 1024 ** 2
+            return 0.0
+        import resource
+        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return rss / 1024 if sys.platform != "darwin" else rss / 1024 ** 2
+    except Exception:                        # noqa: BLE001 — no reading beats a crash here
+        return 0.0
+
+
+class JobCap:
+    """A Windows Job object with a hard memory ceiling for one child.
+
+    `start(cmd, ...)` launches the child SUSPENDED, puts it in the job, then
+    lets it run, so not one allocation escapes the cap. `peak_gb()` is what
+    the job reached; `hit` says whether it reached the ceiling. On other
+    platforms there is no cap (`available` is False) and the child simply runs.
+    Measured on the toy that asks for 4 GB under a 1 GB cap: MemoryError at
+    1.18 GB, box untouched (probes/memcap.py)."""
+    available = sys.platform == "win32"
+
+    def __init__(self, gb: float):
+        self.gb = float(gb or 0)
+        self.job = None
+        if self.gb <= 0 or not self.available:
+            return
+        import ctypes
+        import ctypes.wintypes as wt
+        self._ct, self._wt = ctypes, wt
+        self.k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+        class IoCounters(ctypes.Structure):
+            _fields_ = [(n, ctypes.c_ulonglong) for n in
+                        ("ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+                         "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+        class Basic(ctypes.Structure):
+            _fields_ = [("PerProcessUserTimeLimit", wt.LARGE_INTEGER),
+                        ("PerJobUserTimeLimit", wt.LARGE_INTEGER),
+                        ("LimitFlags", wt.DWORD),
+                        ("MinimumWorkingSetSize", ctypes.c_size_t),
+                        ("MaximumWorkingSetSize", ctypes.c_size_t),
+                        ("ActiveProcessLimit", wt.DWORD),
+                        ("Affinity", ctypes.c_size_t),
+                        ("PriorityClass", wt.DWORD),
+                        ("SchedulingClass", wt.DWORD)]
+
+        class Extended(ctypes.Structure):
+            _fields_ = [("BasicLimitInformation", Basic), ("IoInfo", IoCounters),
+                        ("ProcessMemoryLimit", ctypes.c_size_t),
+                        ("JobMemoryLimit", ctypes.c_size_t),
+                        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                        ("PeakJobMemoryUsed", ctypes.c_size_t)]
+        self._Extended = Extended
+        self.job = self.k32.CreateJobObjectW(None, None)
+        if not self.job:
+            raise ctypes.WinError(ctypes.get_last_error())
+        info = Extended()
+        info.BasicLimitInformation.LimitFlags = 0x200 | 0x2000   # JOB_MEMORY | KILL_ON_JOB_CLOSE
+        info.JobMemoryLimit = int(self.gb * 1024 ** 3)
+        if not self.k32.SetInformationJobObject(self.job, 9, ctypes.byref(info), ctypes.sizeof(info)):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def start(self, cmd: list[str], **popen_kw) -> subprocess.Popen:
+        if self.job is None:
+            return subprocess.Popen(cmd, **popen_kw)
+        proc = subprocess.Popen(cmd, creationflags=0x4, **popen_kw)      # CREATE_SUSPENDED
+        h = self._wt.HANDLE(proc._handle)
+        if not self.k32.AssignProcessToJobObject(self.job, h):
+            proc.kill()
+            raise self._ct.WinError(self._ct.get_last_error())
+        self._ct.WinDLL("ntdll").NtResumeProcess(h)
+        return proc
+
+    def peak_gb(self) -> float:
+        if self.job is None:
+            return 0.0
+        info = self._Extended()
+        self.k32.QueryInformationJobObject(self.job, 9, self._ct.byref(info),
+                                           self._ct.sizeof(info), None)
+        return info.PeakJobMemoryUsed / 1024 ** 3
+
+    @property
+    def hit(self) -> bool:
+        return self.job is not None and self.peak_gb() >= self.gb * 0.95
 
 # An `error` sentence the app meant to say ("the radius must be smaller than
 # half the wall") versus one the _never_die barrier wrote from an exception
@@ -293,12 +417,15 @@ class Journey:
                "body": body, "op": op}
         self.steps.append(rec)
         self._flush_log()
+        mem0 = peak_mb()
         t0 = time.perf_counter()
         if method == "GET":
             r = self.client.get(url)
         else:
             r = self.client.post(url, json=body or {})
         rec["ms"] = round((time.perf_counter() - t0) * 1000)
+        rec["peak_mb"] = round(peak_mb())
+        rec["grew_mb"] = round(rec["peak_mb"] - mem0)
         rec["status"] = r.status_code
         try:
             resp = r.json()
@@ -317,6 +444,16 @@ class Journey:
             raise Bug("http-status", f"HTTP {r.status_code}: {r.text[:300]}", rec, resp)
         if unhandled(resp.get("error")):
             raise Bug("unhandled-error", str(resp["error"]), rec, resp)
+        # 1b. the machine is part of the product: a request that runs away
+        # in time or memory is a finding whatever it answered (see HANG_MS)
+        if rec["ms"] > HANG_MS:
+            raise Bug("hang", f"{kind} {op or ''} took {rec['ms'] / 1000:.0f} s "
+                      f"(the limit is {HANG_MS // 1000} s) and answered {r.status_code}",
+                      rec, resp)
+        if rec["grew_mb"] > MEMORY_BUG_MB:
+            raise Bug("memory", f"{kind} {op or ''} grew the server by {rec['grew_mb']} MB "
+                      f"in one request (the limit is {MEMORY_BUG_MB} MB) and answered "
+                      f"{r.status_code}", rec, resp)
         # 2. a refusal leaves the document exactly as it was
         if mutating and r.status_code == 400 and self.data() != before:
             raise Bug("refusal-changed-doc",
@@ -882,31 +1019,42 @@ def machine_gave_up(child_output: str) -> bool:
 
 def write_crash(name: str, seed: int, code: int, steps_rec: dict, err: str,
                 bugs_dir: Path, stamp: str | None = None,
-                verdict_on: str | None = None) -> tuple[Path | None, str | None]:
+                verdict_on: str | None = None,
+                cap_hit_gb: float | None = None) -> tuple[Path | None, str | None]:
     """File a process-died folder. -> (folder, None), (None, dup name), or
     (None, None) when the machine, not the product, gave up.
 
     `err` is what the folder keeps (a tail); `verdict_on` is what the verdict
     is read from (the whole of it), so truncating the display can never turn
-    the box's failure back into the product's."""
-    if machine_gave_up(verdict_on if verdict_on is not None else err):
+    the box's failure back into the product's. `cap_hit_gb` set means the
+    child ran into ITS OWN memory ceiling (JobCap): then an out-of-memory
+    death is the product eating the box, and is filed as one."""
+    ran_out = machine_gave_up(verdict_on if verdict_on is not None else err)
+    if ran_out and cap_hit_gb is None:
         return None, None
     last = (steps_rec.get("steps") or [{}])[-1]
     hexcode = f"0x{code & 0xFFFFFFFF:08X}"
-    what = "OpenCASCADE access violation (segfault)" if (code & 0xFFFFFFFF) == 0xC0000005 \
-        else f"exit code {code}"
-    sig = signature("process-died", last.get("op"), f"{hexcode} {last.get('kind')} {last.get('op')}")
+    if cap_hit_gb is not None:
+        what = f"more than {cap_hit_gb:g} GB of memory (the child's ceiling)"
+    elif (code & 0xFFFFFFFF) == 0xC0000005:
+        what = "OpenCASCADE access violation (segfault)"
+    else:
+        what = f"exit code {code}"
+    kind = "memory" if cap_hit_gb is not None else "process-died"
+    sig = signature(kind, last.get("op"), f"{hexcode} {last.get('kind')} {last.get('op')}"
+                    if cap_hit_gb is None else f"{last.get('kind')} {last.get('op')}")
     dup = existing_signatures(bugs_dir).get(sig)
     if dup:
         return None, dup
     d = bugs_dir / f"{stamp or time.strftime('%Y%m%d-%H%M%S')}-{_slug(name)}-s{seed}-crash"
     d.mkdir(parents=True, exist_ok=True)
-    steps_rec.update(signature=sig, kind="process-died", detail=f"{what} during step {last.get('n')}",
+    steps_rec.update(signature=sig, kind=kind, detail=f"{what} during step {last.get('n')}",
                      failing_step=last.get("n"), request=last, replay=[], identity=False,
                      found=time.strftime("%Y-%m-%d %H:%M:%S"))
     (d / "journey.json").write_text(json.dumps(steps_rec, indent=1, default=str), encoding="utf-8")
-    lines = [f"# process-died: {name}, seed {seed}, step {last.get('n')}", "",
-             f"The server process died with {what} ({hexcode}) while handling:", "",
+    lines = [f"# {kind}: {name}, seed {seed}, step {last.get('n')}", "",
+             (f"The server process took {what} while handling:" if kind == "memory" else
+              f"The server process died with {what} ({hexcode}) while handling:"), "",
              f"`{last.get('method', '?')} {last.get('url', '?')}`", "",
              "```json", json.dumps(last.get("body"), indent=1), "```", ""]
     if err:
@@ -929,8 +1077,10 @@ def write_crash(name: str, seed: int, code: int, steps_rec: dict, err: str,
     return d, None
 
 
-def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path) -> dict:
-    """One journey in a child process, so a kernel crash is a finding."""
+def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path,
+          mem_gb: float = MEM_CAP_GB) -> dict:
+    """One journey in a child process, so a kernel crash is a finding — and
+    under a memory ceiling (`mem_gb`), so a runaway op is one too."""
     bugs_dir.mkdir(parents=True, exist_ok=True)
     fd, log = tempfile.mkstemp(prefix=f"journey-{_slug(name)}-s{seed}-", suffix=".json")
     os.close(fd)
@@ -943,15 +1093,18 @@ def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path) -
     # stdout stays live (the per-step lines are what an overnight run is
     # watched by); stderr is kept, because that is where a traceback and a
     # MemoryError go and a crash folder needs to say WHY the child went
-    proc = subprocess.run(cmd, env=env, cwd=str(ROOT), stderr=subprocess.PIPE,
-                          text=True, errors="replace")
+    cap = JobCap(mem_gb)
+    proc = cap.start(cmd, env=env, cwd=str(ROOT), stderr=subprocess.PIPE,
+                     text=True, errors="replace")
+    _, full_err = proc.communicate()
     secs = round(time.perf_counter() - t0)
     code = proc.returncode
     # the WHOLE stderr decides whether the machine gave up; only the tail is
     # kept for the folder, and a display cut must not change the verdict
-    full_err = proc.stderr or ""
+    full_err = full_err or ""
     err = full_err[-8000:]
-    out = {"design": name, "seed": seed, "exit": code, "secs": secs}
+    out = {"design": name, "seed": seed, "exit": code, "secs": secs,
+           "peak_gb": round(cap.peak_gb(), 2)}
     if code in (EXIT_CLEAN, EXIT_BUG, EXIT_DUP):
         Path(log).unlink(missing_ok=True)
         return out
@@ -970,7 +1123,7 @@ def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path) -
         steps_rec = {"steps": []}
     Path(log).unlink(missing_ok=True)
     d, dup = write_crash(name, seed, code, steps_rec, err, bugs_dir,
-                         verdict_on=full_err)
+                         verdict_on=full_err, cap_hit_gb=cap.gb if cap.hit else None)
     hexcode = f"0x{code & 0xFFFFFFFF:08X}"
     if dup:
         append_log(f"dup    {name} s{seed}: process died {hexcode} (already in {dup})", bugs_dir)
@@ -981,7 +1134,8 @@ def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path) -
                    "not a finding, run fewer things at once", bugs_dir)
     else:
         last = (steps_rec.get("steps") or [{}])[-1]
-        append_log(f"CRASH  {name} s{seed} step {last.get('n')}: {hexcode} -> {d.name}", bugs_dir)
+        what = f"ate the {cap.gb:g} GB ceiling" if cap.hit else hexcode
+        append_log(f"CRASH  {name} s{seed} step {last.get('n')}: {what} -> {d.name}", bugs_dir)
         out["folder"] = str(d)
     return out
 
@@ -995,6 +1149,8 @@ def main(argv=None) -> int:
     p.add_argument("--journeys", type=int, default=0, help="how many journeys (0 = until --hours / Ctrl+C)")
     p.add_argument("--hours", type=float, default=0, help="stop starting new journeys after this long")
     p.add_argument("--in-process", action="store_true", help="no child processes (a crash ends the run)")
+    p.add_argument("--mem-gb", type=float, default=MEM_CAP_GB,
+                   help=f"memory ceiling per child, GB (default {MEM_CAP_GB:g}; 0 = none)")
     p.add_argument("--bugs-dir", default=str(BUGS))
     p.add_argument("--replay", help="a bugs/<folder>: open its before-document and resend the failing step")
     # child mode
@@ -1019,8 +1175,10 @@ def main(argv=None) -> int:
     srcs = sources(a.library, a.designs.split(",") if a.designs else None)
     seed = a.seed if a.seed is not None else int(time.time()) % 100_000
     deadline = time.time() + a.hours * 3600 if a.hours else None
+    cap_note = (f"{a.mem_gb:g} GB per child" if a.mem_gb and JobCap.available
+                else "NO memory ceiling" + ("" if JobCap.available else " (not Windows)"))
     print(f"journeys over {', '.join(n for n, _ in srcs)}; {a.steps} steps each; first seed {seed}; "
-          f"findings -> {bugs_dir}", flush=True)
+          f"{cap_note}; findings -> {bugs_dir}", flush=True)
     counts = {"clean": 0, "bug": 0, "dup": 0, "crash": 0, "broken": 0}
     n = 0
     try:
@@ -1035,7 +1193,7 @@ def main(argv=None) -> int:
                 out = run_one(name, path, seed + n, a.steps, None, bugs_dir)
                 code = out["exit"]
             else:
-                out = spawn(name, path, seed + n, a.steps, bugs_dir)
+                out = spawn(name, path, seed + n, a.steps, bugs_dir, a.mem_gb)
                 code = out["exit"]
             key = {EXIT_CLEAN: "clean", EXIT_BUG: "bug", EXIT_DUP: "dup", EXIT_BROKEN: "broken"}.get(code, "crash")
             counts[key] += 1

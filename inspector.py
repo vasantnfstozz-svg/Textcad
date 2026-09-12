@@ -143,17 +143,69 @@ def measure(solid) -> dict:
     return m
 
 
+# The boolean is the PROOF of symmetry, but it is also unbounded work on
+# arbitrary geometry: on 2026-09-12 a random plate added beside the 24-rib
+# bottle cap made `compound - rotated compound` run for 22 minutes and take
+# 44 GB (ShapeUpgrade_UnifySameDomain on the leftovers), and a 16 GB laptop
+# died. Two NECESSARY conditions run first, each a few milliseconds, and a
+# shape that fails either is not symmetric — no boolean. A rotation that maps
+# the shape onto itself keeps its bounding box, and carries every vertex to a
+# point that is still on or inside the shape. Only a shape that passes both
+# reaches the boolean, which then runs without the clean pass (the volume of
+# the residue is all that is read, and the clean is where the memory went).
+_VERTEX_GATE_SAMPLES = 60
+
+
+def _rotation_keeps_extent(solid, rotated, tol: float) -> bool:
+    bb, rb = solid.bounding_box(), rotated.bounding_box()
+    return all(abs(a - b) <= tol for a, b in
+               zip((bb.min.X, bb.min.Y, bb.min.Z, bb.max.X, bb.max.Y, bb.max.Z),
+                   (rb.min.X, rb.min.Y, rb.min.Z, rb.max.X, rb.max.Y, rb.max.Z)))
+
+
+def _rotation_keeps_vertices(solid, rotated, tol: float) -> bool:
+    """Every (sampled) vertex, rotated, lands on the boundary or inside."""
+    verts = rotated.vertices()
+    step = max(1, len(verts) // _VERTEX_GATE_SAMPLES)
+    solids = solid.solids()
+    for v in verts[::step]:
+        p = v.center()
+        if solid.distance_to(p) <= tol:
+            continue
+        if not any(s.is_inside(p) for s in solids):
+            return False
+    return True
+
+
+def _rotation_residual(solid, rotated) -> float:
+    """Volume of what the rotation does NOT map onto the shape (the proof).
+
+    `cut`, not `-`: Compound.__sub__ unpacks the tool into its top-level
+    members and cuts them one by one, and on a compound whose members
+    OVERLAP (the cap with a disc through its wall) that read 6967 mm3 of
+    residue on a shape that maps onto itself exactly; `cut` reads 0."""
+    with b3d.SkipClean():
+        return solid.cut(rotated).volume
+
+
 def is_rotationally_symmetric(solid, n: int, rel_tol: float = 1e-3) -> bool:
-    """Fast single test: does rotating by 360/n map the solid onto itself?
-    ONE boolean op — use this for spec checks; use rotational_symmetry_order
-    only when you need to discover the order (it costs ~max_n boolean ops)."""
+    """Does rotating by 360/n map the solid onto itself? Two cheap gates,
+    then ONE boolean op — use this for spec checks; use
+    rotational_symmetry_order only when you need to discover the order (it
+    costs ~max_n boolean ops)."""
     solid = _as_solid(solid)
     try:
         total = solid.volume
         if total <= 0:
             return False
         rotated = solid.rotate(b3d.Axis.Z, 360.0 / n)
-        return (solid - rotated).volume <= rel_tol * total
+        bb = solid.bounding_box()
+        tol = rel_tol * max(bb.size.X, bb.size.Y, bb.size.Z, 1.0)
+        if not _rotation_keeps_extent(solid, rotated, tol):
+            return False
+        if not _rotation_keeps_vertices(solid, rotated, tol):
+            return False
+        return _rotation_residual(solid, rotated) <= rel_tol * total
     except Exception:
         return False
 

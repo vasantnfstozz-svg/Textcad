@@ -1,4 +1,6 @@
 """Core geometry stack: engine (layer 1), inspector (layer 2), blocks."""
+import time
+
 import engine
 import inspector
 import blocks
@@ -140,3 +142,67 @@ def test_block_input_validation():
         blocks.polar_pattern(blocks.disc(5, 2), 0)
     with pytest.raises(ValueError):
         blocks.curved_blade(40, 10, 25, 55, 20, 2.5)   # inner >= outer
+
+
+# ---------------------------------------------------------------------------
+# The symmetry proof must never be unbounded work (2026-09-12: one plate
+# added beside the 24-rib bottle cap made the spec check's boolean run for
+# 22 minutes and take 44 GB, and a 16 GB laptop died)
+# ---------------------------------------------------------------------------
+
+_BOTTLE_CAP = [   # designs/bottle_cap_28mm as data: revolve + 24 ribs, fused
+    {"id": "cap_shell", "op": "revolve_profile", "inputs": [],
+     "params": {"points": [[0, 22], [19, 22], [20.5, 20], [20.5, 0], [17, 0], [17, 19.5], [0, 19.5]]}},
+    {"id": "grip_rib", "op": "plate", "inputs": [], "params": {"width": 2, "depth": 3, "thickness": 20}},
+    {"id": "rib_placed", "op": "move", "inputs": ["grip_rib"], "params": {"x": 20.5, "y": 0, "z": 10}},
+    {"id": "rib_ring", "op": "polar_pattern", "inputs": ["rib_placed"], "params": {"count": 24}},
+    {"id": "cap", "op": "fuse", "inputs": ["cap_shell", "rib_ring"], "params": {}},
+]
+
+
+def _bottle_cap():
+    import document
+    doc = document.Document.from_data({"name": "cap", "features": _BOTTLE_CAP})
+    assert doc.rebuild(), [f.problems for f in doc.features]
+    return doc.result_shape()
+
+
+def test_a_stray_plate_beside_a_symmetric_part_fails_the_gates_before_any_boolean(monkeypatch):
+    """The exact geometry that ate the box: the cap, a cylinder in its
+    cavity and a 67.9 x 16.9 plate through everything, asked for 24-fold.
+    The bounding-box gate answers in milliseconds; the boolean is never run."""
+    import build123d as b3d
+    cap = _bottle_cap()
+    cyl = b3d.Cylinder(8.3, 7.2, align=(b3d.Align.CENTER, b3d.Align.CENTER, b3d.Align.MIN))
+    plate = b3d.Box(67.9, 16.9, 6.4)
+    comp = b3d.Compound([cap, cyl, plate])
+
+    def never(*_a, **_k):
+        raise AssertionError("the boolean ran on a shape the gates should have refused")
+    monkeypatch.setattr(inspector, "_rotation_residual", never)
+    t0 = time.perf_counter()
+    assert not inspector.is_rotationally_symmetric(comp, 24)
+    assert time.perf_counter() - t0 < 10, "the gates themselves are slow"
+    # a wrong order on the cap alone: the box is round enough to pass the
+    # extent gate, the rib corners land off the part — still no boolean
+    assert not inspector.is_rotationally_symmetric(cap, 23)
+
+
+def test_the_gates_let_a_true_symmetry_through_to_the_proof():
+    """Passing the gates is necessary, not sufficient: the boolean still
+    decides. A pocket at +X on a 2-fold candidate keeps the bounding box and
+    every rotated vertex lands on or inside the part, so both gates pass and
+    only the boolean can say no. And a symmetric compound whose members
+    OVERLAP (the cap with a disc through its wall) is still proven, without
+    the clean pass, in well under a second per op."""
+    import build123d as b3d
+    cap = _bottle_cap()
+    assert inspector.is_rotationally_symmetric(cap, 24)
+    disc = b3d.Cylinder(25, 5, align=(b3d.Align.CENTER, b3d.Align.CENTER, b3d.Align.MIN))
+    assert inspector.is_rotationally_symmetric(b3d.Compound([cap, disc]), 24)
+    bar = b3d.Box(40, 20, 5)
+    pocket = b3d.Pos(12, 0, 2) * b3d.Box(6, 6, 2)      # 1.5 mm deep into the top face
+    assert inspector.is_rotationally_symmetric(bar, 2)
+    assert inspector._rotation_keeps_extent(bar - pocket, (bar - pocket).rotate(b3d.Axis.Z, 180), 0.04)
+    assert inspector._rotation_keeps_vertices(bar - pocket, (bar - pocket).rotate(b3d.Axis.Z, 180), 0.04)
+    assert not inspector.is_rotationally_symmetric(bar - pocket, 2)

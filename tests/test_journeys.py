@@ -350,3 +350,85 @@ def test_the_machine_running_out_is_not_a_finding(tmp_path):
     folder, _ = journeys.write_crash("bit-tray", 9002, 0xC0000005, fixture,
                                      "Windows fatal exception: access violation\n", tmp_path / "fixture")
     assert "--library" not in (folder / "report.md").read_text(encoding="utf-8")
+
+
+# ------------------------------------------------------- the machine oracles ---
+
+def test_a_request_that_runs_away_in_time_or_memory_is_a_bug_even_at_200(monkeypatch):
+    """2026-09-12: a plate add answered 200 after 22 minutes and 44 GB, the
+    runner wrote "clean", and the laptop died. Time AND memory are oracles now;
+    memory matters on its own because under a ceiling the same request took
+    55 s and still answered 200."""
+    j = journeys.Journey("empty", None, seed=1, steps=0, verbose=False)
+    j.run()
+    j.client = _Client(_Resp(200, {}))
+    monkeypatch.setattr(journeys, "HANG_MS", -1)
+    with pytest.raises(journeys.Bug) as ex:
+        j.call("add", "POST", "/api/feature/add", {"id": "x", "op": "plate"})
+    assert ex.value.kind == "hang" and "answered 200" in ex.value.detail
+    monkeypatch.setattr(journeys, "HANG_MS", 120_000)
+    readings = iter([100.0, 100.0 + journeys.MEMORY_BUG_MB + 1])
+    monkeypatch.setattr(journeys, "peak_mb", lambda: next(readings))
+    with pytest.raises(journeys.Bug) as ex:
+        j.call("add", "POST", "/api/feature/add", {"id": "x", "op": "plate"})
+    assert ex.value.kind == "memory" and f"{journeys.MEMORY_BUG_MB + 1} MB" in ex.value.detail
+    assert ex.value.request["grew_mb"] == journeys.MEMORY_BUG_MB + 1
+    # a leaked exception is still named as such first, not as a hang
+    monkeypatch.setattr(journeys, "HANG_MS", -1)
+    monkeypatch.setattr(journeys, "peak_mb", lambda: 0.0)
+    j.client = _Client(_Resp(200, {"error": "KeyError: 'face'"}))
+    with pytest.raises(journeys.Bug) as ex:
+        j.call("add", "POST", "/api/feature/add", {"id": "x", "op": "plate"})
+    assert ex.value.kind == "unhandled-error"
+
+
+def test_the_peak_memory_reading_is_real():
+    """In a FRESH process (the reading is a peak: inside the full tier this
+    process has already been far higher than 300 MB of ballast can reach,
+    which is also the oracle's known limit — it sees the first runaway in a
+    child, and every journey is its own child)."""
+    import subprocess
+    import sys
+    code = "; ".join([
+        "import sys", "sys.path.insert(0, %r)" % str(Path(journeys.__file__).parent),
+        "import journeys", "b = journeys.peak_mb()",
+        "x = bytearray(300 * 1024 * 1024)", "x[::4096] = b'x' * len(x[::4096])",
+        "print(b, journeys.peak_mb() - b)"])
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    before, grew = (float(v) for v in out.stdout.split())
+    assert before > 5, "a Python process is bigger than that"
+    assert grew > 250, grew
+
+
+@pytest.mark.skipif(not journeys.JobCap.available, reason="Job objects are Windows")
+def test_a_child_that_eats_its_ceiling_is_the_product_s_finding_not_the_box_s(tmp_path):
+    """The hard backstop: a child under JobCap gets MemoryError at the cap
+    instead of taking the machine down — and THAT death is filed as a
+    'memory' finding, where the same words from an uncapped child mean the
+    box gave up (test_the_machine_running_out_is_not_a_finding)."""
+    import subprocess
+    import sys
+    cap = journeys.JobCap(0.5)
+    proc = cap.start([sys.executable, "-c",
+                      "b = [bytearray(100 * 1024 * 1024) for _ in range(40)]"],
+                     stderr=subprocess.PIPE, text=True)
+    _, err = proc.communicate(timeout=120)
+    assert proc.returncode != 0 and "MemoryError" in err
+    assert cap.hit and 0.4 < cap.peak_gb() < 1.0, cap.peak_gb()
+    steps = {"steps": [{"n": 5, "kind": "add", "op": "plate",
+                        "method": "POST", "url": "/api/feature/add", "body": {}}]}
+    folder, dup = journeys.write_crash("bottle_cap_28mm", 39331, proc.returncode, dict(steps),
+                                       err, tmp_path, verdict_on=err, cap_hit_gb=cap.gb)
+    assert folder is not None and dup is None
+    rec = json.loads((folder / "journey.json").read_text(encoding="utf-8"))
+    assert rec["kind"] == "memory" and "0.5 GB" in rec["detail"]
+    assert "took more than 0.5 GB" in (folder / "report.md").read_text(encoding="utf-8")
+    # the same death with NO ceiling in place is still the box giving up
+    folder, dup = journeys.write_crash("bottle_cap_28mm", 39331, proc.returncode, dict(steps),
+                                       err, tmp_path / "uncapped", verdict_on=err)
+    assert folder is None and dup is None
+
+
+def test_no_ceiling_means_a_plain_child():
+    cap = journeys.JobCap(0)
+    assert cap.job is None and not cap.hit and cap.peak_gb() == 0.0
