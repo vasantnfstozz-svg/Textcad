@@ -49,7 +49,9 @@ MAX_INPUT_TRIANGLES = 500_000     # numpy parse/voxelize stays in seconds
 MIN_COMPONENT_BUDGET = 1_500
 LADDER = (1.0, 1.5, 2.0, 3.0)     # budget multipliers tried per component
 VOLUME_RTOL = 0.15                # decimation may not eat >15% of a body
+REMESH_VOLUME_RTOL = 0.15         # nor may the remesh that runs before it
 VOXEL_RES = 200                   # remesh grid cells along the longest axis
+MAX_OUTPUT_MULT = 2               # the whole import may not exceed this x budget
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +135,48 @@ def split_components(faces: np.ndarray, n_verts: int) -> list[np.ndarray]:
     return [np.nonzero(labels == c)[0] for c in range(ncomp)]
 
 
+def component_shares(sizes, budget: int) -> np.ndarray:
+    """Per-component triangle budgets: proportional to size, with a floor so a
+    small body is not decimated to nothing — and a CAP on the sum.
+
+    The floor alone is per BODY and so scales with the body COUNT: 40 bodies
+    at the 1,500 floor is 60,000 triangles out of an 18,000 budget (measured
+    2026-09-12, section 8 review), 3.3x what the kernel read and the viewer
+    mesh were budgeted for. The ladder in decimate_guarded can still overshoot
+    a single body's share; what is bounded here is the sum of the targets."""
+    s = np.asarray(sizes, dtype=np.float64)
+    floor = min(MIN_COMPONENT_BUDGET,
+                max(200, budget * MAX_OUTPUT_MULT // max(1, len(s))))
+    return np.maximum(s / s.sum() * budget, floor).astype(int)
+
+
+def dedupe_walls_per_body(faces: np.ndarray, n_verts: int
+                          ) -> tuple[np.ndarray, int]:
+    """drop_duplicate_walls, but a body that is a duplicate of ITSELF keeps one
+    copy instead of vanishing.
+
+    Removing every copy is right for the interface wall between two touching
+    bodies — that is what merges them. It is fatal when the duplicate IS the
+    whole body: an assembly that exports one component twice at the same place
+    lost it outright (measured 2026-09-12: 2,000 mm3 of part imported as
+    1,000 in one body, announced as "merged 24 coincident wall triangles";
+    a file holding nothing else was refused with "no solid found in the
+    mesh"). Duplicates always share their vertices, so they always live in the
+    same connected component — which is why this decides per component."""
+    keep = np.ones(len(faces), dtype=bool)
+    for c in split_components(faces, n_verts):
+        dup = duplicate_triangles(faces[c])
+        if dup.all():                    # the body is in the file twice
+            _, first = np.unique(np.sort(faces[c], axis=1), axis=0,
+                                 return_index=True)
+            mask = np.zeros(len(c), dtype=bool)
+            mask[first] = True
+            keep[c] = mask
+        else:
+            keep[c[dup]] = False
+    return faces[keep], int((~keep).sum())
+
+
 def collapse_repair(verts: np.ndarray, faces: np.ndarray,
                     rounds: int = 6) -> tuple[np.ndarray, np.ndarray]:
     """Heal the few non-manifold edges decimation creates by collapsing them
@@ -162,9 +206,18 @@ def collapse_repair(verts: np.ndarray, faces: np.ndarray,
 
 def voxel_remesh(verts: np.ndarray, faces: np.ndarray,
                  res: int = VOXEL_RES) -> tuple[np.ndarray, np.ndarray]:
-    """Parity-fill remesh: Z-crossings per XY column -> inside/outside grid ->
+    """Winding-fill remesh: Z-crossings per XY column -> inside/outside grid ->
     marching cubes. Output is watertight-manifold by construction, whatever
-    the input's sins (pinches, self-touches, inconsistent winding)."""
+    the input's sins (pinches, self-touches, inconsistent winding).
+
+    Each crossing carries the DIRECTION the surface faces, and a cell is
+    inside where the running winding number is positive. A plain parity fill
+    (every other crossing) is wrong the moment two bodies OVERLAP, which is
+    exactly what an assembly export does: the crossings pair up as (enter A,
+    enter B), (exit A, exit B), so the solid overlap between them is filled
+    with nothing. Measured 2026-09-12 (section 8 review): two interpenetrating
+    bodies welded along a shared edge came back 7,998 mm3 of a true 12,000 —
+    a void punched straight through, health [] and status ok."""
     from skimage.measure import marching_cubes
     lo, hi = verts.min(axis=0), verts.max(axis=0)
     pitch = float((hi - lo).max()) / res
@@ -174,7 +227,7 @@ def voxel_remesh(verts: np.ndarray, faces: np.ndarray,
     nz = int(np.ceil((hi[2] - lo[2]) / pitch)) + 3
     ox, oy, oz = (lo[0] - pitch * 1.0137, lo[1] - pitch * 1.0731,
                   lo[2] - pitch * 1.0421)
-    crossings: list[list[float]] = [[] for _ in range(nx * ny)]
+    crossings: list[list[tuple[float, int]]] = [[] for _ in range(nx * ny)]
     for a, b, c in verts[faces]:
         xmin = int(np.floor((min(a[0], b[0], c[0]) - ox) / pitch))
         xmax = int(np.floor((max(a[0], b[0], c[0]) - ox) / pitch)) + 1
@@ -194,29 +247,49 @@ def voxel_remesh(verts: np.ndarray, faces: np.ndarray,
             continue
         Z = w0 * a[2] + w1 * b[2] + w2 * c[2]
         ii, jj = np.nonzero(insi)
+        # d is the z-component of (b-a)x(c-a): d < 0 is a face looking DOWN,
+        # so a ray travelling up enters the material through it.
+        step = -1 if d > 0 else 1
         for i, j, z in zip(ii + xmin, jj + ymin, Z[insi]):
-            crossings[i * ny + j].append(float(z))
+            crossings[i * ny + j].append((float(z), step))
     grid = np.zeros((nx, ny, nz), dtype=np.float32)
     zc = oz + (np.arange(nz) + 0.5) * pitch
+    inside_len = 0.0                     # exact material depth, summed
     for idx, cl in enumerate(crossings):
         if not cl:
             continue
         cl.sort()
-        if len(cl) % 2:                  # defective column — skip it
-            continue
         i, j = divmod(idx, ny)
         col = np.zeros(nz, dtype=bool)
-        for k in range(0, len(cl), 2):
-            col |= (zc > cl[k]) & (zc < cl[k + 1])
-        grid[i, j] = col
+        wind, entered = 0, 0.0
+        for z, step in cl:
+            nxt = wind + step
+            if wind <= 0 < nxt:
+                entered = z
+            elif nxt <= 0 < wind:
+                col |= (zc > entered) & (zc < z)
+                inside_len += z - entered    # the SAME material, un-quantised
+            wind = nxt
+        grid[i, j] = col                 # a column left open (wind > 0 at the
+        #                                  top) is defective: fill no further
     if grid.sum() == 0:
         raise ValueError("voxel remesh produced an empty volume")
+    # How much of the body the grid could not hold. Both numbers use the SAME
+    # winding rule over the SAME columns, so overlapping bodies cancel out and
+    # what is left is the z-quantisation: the material that is thinner than a
+    # voxel. Comparing against the mesh's own signed volume cannot do this —
+    # that double-counts material where two bodies overlap, and would call a
+    # correct repair of an assembly export 25% wrong (measured 2026-09-12).
+    exact = inside_len * pitch * pitch
+    held = float(grid.sum()) * pitch ** 3
+    lost = abs(held - exact) / exact if exact > 0 else 0.0
     mv, mf, _, _ = marching_cubes(grid, level=0.5)
     mv = mv * pitch + np.array([ox + 0.5 * pitch, oy + 0.5 * pitch,
                                 oz + 0.5 * pitch])
     # marching_cubes winding is inward for our grid convention — flip (probed:
     # OCCT accepts flipped output with positive volumes)
-    return mv.astype(np.float64), np.ascontiguousarray(mf[:, ::-1]).astype(np.int64)
+    return (mv.astype(np.float64),
+            np.ascontiguousarray(mf[:, ::-1]).astype(np.int64), lost)
 
 
 def decimate_guarded(verts: np.ndarray, faces: np.ndarray, budget: int,
@@ -250,6 +323,43 @@ def decimate_guarded(verts: np.ndarray, faces: np.ndarray, budget: int,
 # The pipeline
 # ---------------------------------------------------------------------------
 
+def _merge_meshes(parts: list) -> tuple[np.ndarray, np.ndarray]:
+    """Several (verts, faces) pairs into one, re-basing each face block."""
+    if len(parts) == 1:
+        return parts[0]
+    vs, fs, off = [], [], 0
+    for v, f in parts:
+        vs.append(v)
+        fs.append(f + off)
+        off += len(v)
+    return np.concatenate(vs), np.concatenate(fs)
+
+
+def _group_voids(built: list) -> list:
+    """Sealed voids folded back into the body that contains them.
+
+    split_components separates by shared vertices, so a cavity inside a body
+    is always its OWN component — and written as its own STL piece it comes
+    back a phantom SOLID filling that cavity (measured 2026-09-12: a hollow
+    936 mm3 part imported as TWO bodies totalling 1,064 mm3). An inward-wound
+    component belongs to the smallest body whose box contains it; one that is
+    inside nothing is a lone inside-out body, and its winding is put right."""
+    bodies = [(v, f) for v, f, void in built if not void]
+    boxes = [(v.min(axis=0), v.max(axis=0)) for v, _ in bodies]
+    room = [float(np.prod(hi - lo)) for lo, hi in boxes]
+    groups = [[b] for b in bodies]
+    for v, f, void in built:
+        if not void:
+            continue
+        lo, hi = v.min(axis=0), v.max(axis=0)
+        holds = [i for i, (blo, bhi) in enumerate(boxes)
+                 if (blo <= lo + 1e-6).all() and (bhi >= hi - 1e-6).all()]
+        if holds:
+            groups[min(holds, key=lambda i: room[i])].append((v, f))
+        else:
+            groups.append([(v, np.ascontiguousarray(f[:, ::-1]))])
+    return [_merge_meshes(g) for g in groups]
+
 def repair_stl_mesh(data: bytes, budget: int = DEFAULT_BUDGET
                     ) -> tuple[list[bytes], dict]:
     """Full repair of one binary STL: returns (per-body binary STL bytes,
@@ -270,17 +380,13 @@ def repair_stl_mesh(data: bytes, budget: int = DEFAULT_BUDGET
         raise ValueError("the mesh contains no usable (non-degenerate) "
                          "triangles")
 
-    faces, healed = drop_duplicate_walls(faces)
+    faces, healed = dedupe_walls_per_body(faces, len(verts))
     comps = split_components(faces, len(verts))
+    shares = component_shares([len(c) for c in comps], budget)
 
-    # budget shares proportional to component size, floored
-    sizes = np.array([len(c) for c in comps], dtype=np.float64)
-    shares = np.maximum(sizes / sizes.sum() * budget,
-                        MIN_COMPONENT_BUDGET).astype(int)
-
-    pieces: list[bytes] = []
+    built: list[tuple[np.ndarray, np.ndarray, bool]] = []
     remeshed = 0
-    n_out = 0
+    drift_pct = 0.0
     for ci, (fidx, share) in enumerate(zip(comps, shares)):
         f = faces[fidx]
         v_used, f_local = np.unique(f, return_inverse=True)
@@ -292,18 +398,38 @@ def repair_stl_mesh(data: bytes, budget: int = DEFAULT_BUDGET
                 f"body {ci + 1} of the mesh is not watertight ({boundary} "
                 "open edge(s)) — a solid needs a fully closed surface. "
                 "Repair it in a mesh tool and re-export.")
+        signed = signed_volume(cv, cf)
+        void = signed < 0            # inward-wound: a sealed cavity, not a body
+        ref = abs(signed)
         if overshared:
-            cv, cf = voxel_remesh(cv, cf)
+            # the remesh moves EVERY surface of this body by up to half a
+            # voxel, and until 2026-09-12 nothing measured it: `ref` was taken
+            # AFTER it, so even the decimation guard below could not see it.
+            cv, cf, lost = voxel_remesh(cv, cf)
             remeshed += 1
-        ref = abs(signed_volume(cv, cf))
+            drift_pct = max(drift_pct, lost * 100.0)
+            if lost > REMESH_VOLUME_RTOL:
+                raise ValueError(
+                    f"body {ci + 1} of the mesh has a pinched or self-touching "
+                    f"surface, and its detail is finer than the repair grid "
+                    f"can hold: {lost * 100:.0f}% of that body is thinner than "
+                    "one grid cell. Repair it in a mesh tool "
+                    "(Blender/MeshLab) and re-export.")
+            ref = abs(signed_volume(cv, cf))     # the repaired body is the
+            #                                      reference the ladder guards
         if len(cf) > share:
             cv, cf = decimate_guarded(cv, cf, share, ref)
-        pieces.append(to_binary_stl(cv, cf))
-        n_out += len(cf)
+        if void and signed_volume(cv, cf) > 0:      # repair re-wound it
+            cf = np.ascontiguousarray(cf[:, ::-1])
+        built.append((cv, cf, void))
 
-    return pieces, {"input_triangles": n_in, "output_triangles": n_out,
-                    "bodies": len(comps), "healed_wall_triangles": healed,
-                    "remeshed_bodies": remeshed}
+    groups = _group_voids(built)
+    return ([to_binary_stl(v, f) for v, f in groups],
+            {"input_triangles": n_in,
+             "output_triangles": sum(len(f) for _, f in groups),
+             "bodies": len(groups), "healed_wall_triangles": healed,
+             "remeshed_bodies": remeshed,
+             "remesh_drift_pct": round(drift_pct, 1)})
 
 
 if __name__ == "__main__":

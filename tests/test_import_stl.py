@@ -323,3 +323,162 @@ def test_mesh_mode_winding_on_sphere(tmp_path, monkeypatch):
         signed6 += (ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx)
                     + az * (bx * cy - by * cx))
     assert signed6 / 6.0 == pytest.approx(part.volume, rel=1e-4)
+
+
+# ---------------------------------------------------------------------------
+# Section 8 review (2026-09-12). Every case below was measured on the code as
+# it stood — probes/s8_*.py — before the fix that makes it pass.
+# ---------------------------------------------------------------------------
+
+def flipped(tris):
+    """The same triangles wound the other way: an INWARD surface, which is
+    exactly what a sealed void inside a solid looks like in an STL."""
+    return [(a, c, b) for a, b, c in tris]
+
+
+def brick(x0, y0, z0, x1, y1, z1):
+    """12 watertight triangles of an arbitrary box (box_tris does cubes)."""
+    P = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
+         (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
+    F = [(0, 2, 1), (0, 3, 2), (4, 5, 6), (4, 6, 7), (0, 1, 5), (0, 5, 4),
+         (1, 2, 6), (1, 6, 5), (2, 3, 7), (2, 7, 6), (3, 0, 4), (3, 4, 7)]
+    return [(P[a], P[b], P[c]) for a, b, c in F]
+
+
+def test_hollow_stl_keeps_its_cavity(tmp_path):
+    """A 10 mm cube holding a sealed 4 mm void is ONE body of 936 mm3.
+
+    Measured 2026-09-12: it imported as TWO bodies totalling 1064 mm3 — the
+    cavity FILLED (1000) plus a phantom 64 mm3 block sitting inside it, all
+    green. lib3mf had already read the file correctly as one Solid of 936;
+    the guard meant to take that as-is called `shp.is_valid()`, which is a
+    PROPERTY, so it raised TypeError into a bare `except` and the shape was
+    exploded shell by shell instead."""
+    p = tmp_path / "hollow.stl"
+    write_binary_stl(p, box_tris(s=10)
+                     + flipped(box_tris(ox=3, oy=3, oz=3, s=4)))
+    part = blocks.import_stl(str(p))
+    assert inspector.health(part) == []
+    assert len(part.solids()) == 1
+    assert part.volume == pytest.approx(936, rel=1e-6)
+    assert blocks.import_stl_report(str(p))["bodies"] == 1
+
+
+def test_hollow_body_beside_a_second_body(tmp_path):
+    """The assembly case: a hollow body AND a plain one in one file. The void
+    belongs to the body that contains it; the other body stays its own."""
+    p = tmp_path / "hollow_pair.stl"
+    write_binary_stl(p, box_tris(s=10)
+                     + flipped(box_tris(ox=3, oy=3, oz=3, s=4))
+                     + box_tris(ox=30, s=10))
+    part = blocks.import_stl(str(p))
+    assert inspector.health(part) == []
+    assert len(part.solids()) == 2
+    assert part.volume == pytest.approx(1936, rel=1e-6)
+
+
+def test_hollow_stl_through_the_repair_path(tmp_path):
+    """The same part reached through the OTHER door: a duplicated wall makes
+    the file dirty, so it goes through heal/split/decimate, which splits by
+    connected component — and a void is always its own component."""
+    p = tmp_path / "hollow_dirty.stl"
+    dup_wall = box_tris(ox=30, s=10) + box_tris(ox=30, oz=10, s=10)
+    write_binary_stl(p, box_tris(s=10)
+                     + flipped(box_tris(ox=3, oy=3, oz=3, s=4)) + dup_wall)
+    part = blocks.import_stl(str(p))
+    rep = blocks.import_stl_report(str(p))
+    assert rep["repaired"]
+    assert inspector.health(part) == []
+    assert len(part.solids()) == 2                  # the hollow one + the stack
+    assert part.volume == pytest.approx(936 + 2000, rel=1e-6)
+
+
+def test_duplicate_body_is_not_deleted(tmp_path):
+    """An assembly that exports one component TWICE at the same place must
+    not lose it.
+
+    Measured 2026-09-12: `drop_duplicate_walls` removes ALL copies of a
+    duplicated triangle — right for the interface wall between two touching
+    bodies, fatal when the duplicate IS the whole body. 2000 mm3 of part came
+    in as 1000 mm3 in one body, announced as "merged 24 coincident wall
+    triangles". A file holding nothing but the doubled body was refused with
+    "no solid found in the mesh"."""
+    p = tmp_path / "dup.stl"
+    write_binary_stl(p, box_tris(s=10) + box_tris(s=10) + box_tris(ox=30, s=10))
+    part = blocks.import_stl(str(p))
+    assert inspector.health(part) == []
+    assert len(part.solids()) == 2
+    assert part.volume == pytest.approx(2000, rel=1e-6)
+
+    q = tmp_path / "dup_only.stl"
+    write_binary_stl(q, box_tris(s=10) + box_tris(s=10))
+    only = blocks.import_stl(str(q))
+    assert only.volume == pytest.approx(1000, rel=1e-6)
+
+
+def test_welded_overlapping_bodies_keep_their_material(tmp_path):
+    """Two bodies that INTERPENETRATE and are welded along a shared edge —
+    the Fusion assembly export this pipeline exists for. The pinch sends the
+    component through the voxel remesh.
+
+    Measured 2026-09-12: the parity fill paired the crossings as (enter A,
+    enter B), (exit A, exit B), so the solid overlap between the two bodies
+    was filled with NOTHING: 12 000 mm3 came back as 7 998.4, a void punched
+    straight through, health [] and status ok."""
+    p = tmp_path / "overlap.stl"
+    write_binary_stl(p, brick(0, 0, 0, 20, 20, 20) + brick(0, 0, 0, 10, 20, 40))
+    part = blocks.import_stl(str(p))
+    assert inspector.health(part) == []
+    assert blocks.import_stl_report(str(p))["remeshed_bodies"] == 1
+    assert part.volume == pytest.approx(12000, rel=0.02)
+
+
+def test_remesh_says_how_far_it_moved(tmp_path):
+    """The remesh replaces a whole body with a voxel approximation at
+    pitch = longest bbox axis / 200, and NOTHING used to measure or report
+    that — only decimation had a volume guard, and its reference was taken
+    AFTER the remesh. Measured 2026-09-12: a 0.6 mm plate 100 mm across came
+    back 8.7% light, green, with no number anywhere."""
+    p = tmp_path / "thin_pinch.stl"
+    write_binary_stl(p, brick(0, 0, 0, 100, 100, 0.6)
+                     + brick(100, 100, 0, 110, 110, 0.6))
+    blocks.import_stl(str(p))
+    rep = blocks.import_stl_report(str(p))
+    assert rep["remeshed_bodies"] == 1
+    assert rep["remesh_drift_pct"] >= 1.0
+
+
+def test_gross_remesh_drift_is_refused(tmp_path):
+    """A body whose features are far below the voxel pitch cannot be honestly
+    remeshed: say so instead of importing a different part."""
+    import meshrepair
+    p = tmp_path / "hopeless.stl"
+    write_binary_stl(p, brick(0, 0, 0, 200, 200, 0.12)
+                     + brick(200, 200, 0, 210, 210, 0.12))
+    with pytest.raises(ValueError, match="repair|remesh|thin"):
+        blocks.import_stl(str(p))
+    assert meshrepair.REMESH_VOLUME_RTOL == 0.15
+
+
+def test_many_bodies_stay_within_the_triangle_budget():
+    """MIN_COMPONENT_BUDGET is a floor per BODY, and nothing capped the sum:
+    40 bodies of 5 000 triangles each got 1 500 apiece = 60 000 triangles out
+    of an 18 000 budget (measured 2026-09-12), 3.3x what the kernel and the
+    viewer were budgeted for."""
+    import meshrepair
+    shares = meshrepair.component_shares([5000] * 40, meshrepair.DEFAULT_BUDGET)
+    assert sum(shares) <= meshrepair.DEFAULT_BUDGET * meshrepair.MAX_OUTPUT_MULT
+    # a handful of bodies still gets the full floor
+    few = meshrepair.component_shares([5000] * 3, meshrepair.DEFAULT_BUDGET)
+    assert min(few) >= meshrepair.MIN_COMPONENT_BUDGET
+
+
+def test_truncated_binary_stl_is_named_as_cut_short(tmp_path):
+    """A part-downloaded STL used to read "not an STL file (neither binary nor
+    ascii STL)" — a diagnosis the file does not deserve."""
+    p = tmp_path / "cut.stl"
+    full = tmp_path / "full.stl"
+    write_binary_stl(full, box_tris(s=10))
+    p.write_bytes(full.read_bytes()[:200])
+    with pytest.raises(ValueError, match="cut short"):
+        blocks.import_stl(str(p))

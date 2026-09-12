@@ -950,8 +950,18 @@ def _stl_triangles(data: bytes) -> tuple[str, int]:
         return "ascii", data.count(b"facet normal")
     if len(data) >= 84:
         (n,) = struct.unpack_from("<I", data, 80)
-        if len(data) >= 84 + 50 * n:
+        have = (len(data) - 84) // 50
+        if n and have >= n:
             return "binary", n
+        if n == 0 and len(data) == 84:        # a genuinely empty binary STL
+            return "binary", 0
+        if n and have:
+            # a part-downloaded or truncated file used to read "not an STL
+            # file", a diagnosis it does not deserve (section 8 review)
+            raise ValueError(
+                f"import_stl: this STL file is cut short — its header says "
+                f"{n:,} triangles but only {have:,} are in the file. Export or "
+                "download it again.")
     if head.startswith(b"solid"):
         return "ascii", 0
     raise ValueError("import_stl: not an STL file (neither binary nor ascii STL)")
@@ -975,11 +985,59 @@ def _ascii_stl_to_binary(data: bytes) -> bytes:
     return bytes(out)
 
 
+def _bbox_holds(outer, inner, tol: float = 1e-6) -> bool:
+    """Does `outer`'s bounding box contain `inner`'s?"""
+    return all(getattr(outer.min, a) <= getattr(inner.min, a) + tol
+               and getattr(outer.max, a) >= getattr(inner.max, a) - tol
+               for a in ("X", "Y", "Z"))
+
+
+def _solids_from_shells(shp) -> tuple[list, int]:
+    """A shape that is not one valid solid, exploded into shells and regrouped
+    into bodies. An INWARD-wound closed shell is a sealed void: it belongs to
+    the smallest body that contains it, added to that body's solid rather than
+    becoming a phantom solid of its own. A shell inside nothing is a lone
+    inside-out body, and its winding is put right."""
+    bodies, voids, open_shells = [], [], 0
+    for sh in shp.shells():
+        if not BRep_Tool.IsClosed_s(sh.wrapped):
+            open_shells += 1
+            continue
+        sol = Solid(BRepBuilderAPI_MakeSolid(sh.wrapped).Solid())
+        (voids if sol.volume < 0 else bodies).append((sh, sol))
+    inner: list[list] = [[] for _ in bodies]
+    out = []
+    for vsh, vsol in voids:
+        holds = [i for i, (bsh, _) in enumerate(bodies)
+                 if _bbox_holds(bsh.bounding_box(), vsh.bounding_box())]
+        if holds:
+            inner[min(holds, key=lambda i: bodies[i][1].volume)].append(vsh)
+        else:                               # inverted winding — flip it
+            out.append(Solid(vsol.wrapped.Reversed()))
+    for (bsh, bsol), voids_in in zip(bodies, inner):
+        if not voids_in:
+            out.append(bsol)
+            continue
+        mk = BRepBuilderAPI_MakeSolid(bsh.wrapped)
+        for vsh in voids_in:
+            mk.Add(vsh.wrapped)
+        out.append(Solid(mk.Solid()))
+    return out, open_shells
+
+
 def _stl_bytes_to_solids(data: bytes) -> tuple[list, int]:
     """One binary STL through lib3mf into closed Solids. Returns
     (solids, open_shell_count). A shape that is already a valid positive
     Solid is taken AS-IS — exploding it per shell would split a hollow part
-    into an outer solid plus a phantom cavity solid."""
+    into an outer solid plus a phantom cavity solid.
+
+    That as-is path was DEAD until 2026-09-12 (section 8 review): `is_valid`
+    is a PROPERTY, so calling it raised TypeError into the bare `except` below
+    and every shape was exploded. A hollow 936 mm3 part imported as TWO bodies
+    totalling 1,064 — the cavity filled, plus a phantom block inside it, all
+    green. lib3mf hands back ONE Solid holding every shell in the file, so the
+    as-is path alone is not enough either: two disjoint bodies make that solid
+    invalid, and then the shells must be regrouped (_solids_from_shells)."""
     tmp = tempfile.NamedTemporaryFile(suffix=".stl", delete=False)
     try:
         tmp.write(data)
@@ -995,19 +1053,14 @@ def _stl_bytes_to_solids(data: bytes) -> tuple[list, int]:
     solids, open_shells = [], 0
     for shp in shapes:
         try:
-            if isinstance(shp, Solid) and shp.volume > 0 and shp.is_valid():
+            if isinstance(shp, Solid) and shp.volume > 0 and shp.is_valid:
                 solids.append(shp)
                 continue
         except Exception:
             pass
-        for sh in shp.shells():
-            if not BRep_Tool.IsClosed_s(sh.wrapped):
-                open_shells += 1
-                continue
-            sol = Solid(BRepBuilderAPI_MakeSolid(sh.wrapped).Solid())
-            if sol.volume < 0:               # inverted winding — flip it
-                sol = Solid(sol.wrapped.Reversed())
-            solids.append(sol)
+        grouped, opens = _solids_from_shells(shp)
+        solids.extend(grouped)
+        open_shells += opens
     return solids, open_shells
 
 
@@ -1115,6 +1168,16 @@ def _resolve_step_path(file: str) -> Path:
     if path.suffix.lower() not in (".step", ".stp"):
         raise ValueError(f"import_step: {path.name} is not a STEP file "
                          "(.step / .stp)")
+    # OCCT's reader does NOT raise on a file that is not STEP: it prints its
+    # own parse error to the server console and hands back an EMPTY shape, so
+    # every such file was diagnosed "contains no solid bodies — surfaces or
+    # curves alone cannot be used here" and sent the user looking for surfaces
+    # in a file that was never STEP (measured 2026-09-12). Every STEP file
+    # starts with the ISO-10303-21 header.
+    if b"ISO-10303" not in path.open("rb").read(512):
+        raise ValueError(f"import_step: {path.name} is not a STEP file — a "
+                         "STEP file starts with ISO-10303-21. Re-export it "
+                         "as STEP (.step / .stp).")
     return path
 
 

@@ -2166,6 +2166,12 @@ def import_stl_file(req: ImportStlReq):
         if rep.get("remeshed_bodies"):
             steps.append(f"remeshed {rep['remeshed_bodies']} defective "
                          "bod" + ("y" if rep["remeshed_bodies"] == 1 else "ies"))
+            # the remesh rebuilds a whole body on a voxel grid; say how far it
+            # moved, since nothing else in this sentence hints that it did
+            # (section 8 review: a 0.6 mm plate came back 8.7% light, silently)
+            if rep.get("remesh_drift_pct", 0) >= 1.0:
+                steps.append(f"which changed that body's volume by "
+                             f"{rep['remesh_drift_pct']:.1f}% — check it")
         if rep["output_triangles"] < rep["input_triangles"]:
             steps.append(f"decimated {rep['input_triangles']:,} → "
                          f"{rep['output_triangles']:,} triangles")

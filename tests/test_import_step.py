@@ -147,3 +147,29 @@ def test_the_users_own_export_reimports(client):
     assert r.get("error") is None, r
     assert r["import_info"]["volume_mm3"] == pytest.approx(src_vol, rel=1e-6)
     assert r["ok"] is True
+
+
+def test_a_file_that_is_not_step_is_named_as_such(tmp_path):
+    """Measured 2026-09-12 (section 8 review): OCCT's STEP reader does not
+    raise on a file that is not STEP — it prints its own parse error to the
+    server console and hands back an empty shape, so every such file was
+    diagnosed as "the file contains no solid bodies — surfaces or curves
+    alone cannot be used here", sending the user to look for surfaces in a
+    file that was never STEP."""
+    p = tmp_path / "notstep.step"
+    p.write_bytes(b"hello world")
+    with pytest.raises(ValueError, match="not a STEP file"):
+        blocks.import_step(str(p))
+
+    q = tmp_path / "really_an_stl.stp"
+    q.write_bytes(b"\0" * 80 + b"\x00\x00\x00\x00")
+    with pytest.raises(ValueError, match="not a STEP file"):
+        blocks.import_step(str(q))
+
+
+def test_a_real_step_still_opens(tmp_path):
+    """The guard must not cost the round trip it exists for."""
+    p = tmp_path / "ok.step"
+    b3d.export_step(b3d.Box(10, 10, 10), str(p))
+    part = blocks.import_step(str(p))
+    assert part.volume == pytest.approx(1000, rel=1e-6)
