@@ -6,9 +6,9 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING.** Review `bf5550b` — the FIX COMMIT of the P5b
-> review (round two). Base `f6add94`. A P0-class finding was fixed, so the
-> queue's rule applies: the fix pass's own new code gets read.
+> **Status: NOTHING PENDING.** The P5b review is closed after two rounds. The
+> next `code review` opens `REVIEW-QUEUE.md` and takes the first status-board
+> row marked TODO — **section 9, Trace image**.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -21,84 +21,67 @@
 
 ---
 
-## The commit
+## What the P5b review did (for the record; nothing here needs re-reading)
 
-Round one of the P5b review (`7a811b6..c11fd74`) found 9, fixed 9, 0 rejected,
-12 new tests (fast tier 1657 -> 1668). TWO were in the PRODUCT, found by the
-instrument P5b had just added; seven were the instrument lying about it.
+**Round one — `bf5550b`, paperwork `8e32e69`.** 9 findings, all 9 fixed, 0
+rejected, 12 new tests. TWO were in the PRODUCT, found by running the
+instrument P5b had just added (44 journeys, ~2,700 requests); seven were the
+instrument lying about the product. The P0: `unstrike` walked upstream and
+un-struck every struck ancestor, so on designs/esp32-remote — where the user
+has the logo OFF — striking and restoring any feature below it brought the
+logo back and milled 227.86 mm3 away (107,484.782 -> 107,256.922), announced
+only as a list of ids in a chat line. A strike now RECORDS what it suppressed
+and a restore puts back exactly that plus only the ancestors the set cannot
+build without.
 
-- `document.py` — `strike` records the ids it actually suppressed
-  (`_struck_by`, in memory, not in the file; `rename` rewrites it) and
-  `unstrike` puts back exactly those plus the struck ancestors the restored
-  set cannot build without, decided by `_passthrough` (the delete plan's own
-  healing rule).
-- `tests/journeys.py` — `unhandled()` asks builtins and OCP for the exception
-  NAMES instead of guessing at suffixes; `Bug` carries a baseline document and
-  the whole sequence to resend; `call` checks a dry run; `replay` re-asks the
-  identity question, falls back to `after.tcad.json`, and still reads a
-  pre-fix folder; `make_client` moves `MESH_PATH` off the repo root; a new
-  `write_crash` keeps the child's stderr and refuses to file a folder when the
-  MACHINE ran out of memory.
-- `static/js/bugreport.js` — a successful GET no longer costs a ring slot
-  (`worthKeeping`), ui v198.
-- Tests: `tests/test_strike.py` (+4), `tests/test_journeys.py` (+7),
-  `tests/e2e/test_bug_button.py` (+1). Every one proven RED in a worktree at
-  `c11fd74` before the fix, except the two whose red proof is a missing
-  function (`write_crash`) and the one that locks a case two mechanisms
-  already cover (its docstring says so).
+**Round two — this commit.** The queue's rule sent it at the fix commit's own
+new code, and it found ONE thing, in the half of the fix that was NOT
+measured in round one:
 
-## Where the risk is
+- **`/api/feature/suppress` sets the flag behind `strike`'s back.** No UI
+  button does, but the AI, the MCP and the journey runner's `move_misc` do.
+  Strike A (which sweeps B up), suppress and re-suppress B by hand, then ↩ on
+  A: B came back although the last hand on B struck it deliberately.
+  `Document.set_suppressed` now prunes that row out of every ✕'s record.
+  **The first attempt at this fix was backwards** — it dropped the record
+  KEYED on the row too, which falls back to the recomputed plan, which is
+  round one's exact bug; there is a test for that overreach as well as for the
+  finding.
 
-On this project a fix pass's OWN new guard has been wrong more often than not,
-and this one changed a path every saved design walks.
+The other five risks round one named are CLEARED by measurement, not argument:
 
-1. **`unstrike`'s new rule.** `_passthrough(dep, still, by_id, kinds)` decides
-   whether a struck ancestor hands its own input down. `still` is rebuilt as
-   `back` grows — is it right for a chain of several struck nodes, for a
-   `move` (whose `_kinds` entry follows its input), and for a struck node
-   whose first input is itself struck and a SKETCH? The regression guard is
-   `test_restoring_a_dependent_restores_its_struck_sketch_too`, which existed
-   before; the new tests cover a cut chain and a fillet.
-2. **`_struck_by` is state that outlives nothing.** Undo replaces the document
-   object, so the record is gone and the restore falls back to the plan
-   (§10 P2 row). `Document.rename` rewrites the record (found and fixed inside
-   this pass, with the key case proven red). Is there another sequence where
-   the record is present but STALE and the fallback would have been better —
-   a `remove` of a recorded id, an `edit` that changes what the plan would be,
-   `edit_many`, a version restore into the same tab?
-3. **`unhandled()` now flags any `<ExceptionName>: ...` prefix.** The name set
-   is builtins + `OCP.Standard` + `OCP.StdFail`. A product sentence that
-   begins with one of those names and a colon would file a phantom finding —
-   is there one? (`Error: none` is not in the set, and is tested.)
-4. **`replay`'s identity re-ask.** `_IDENTITY_BUGS` is a hand-kept set of
-   kinds; a new pair oracle added later and forgotten there replays as
-   "passes now" again. And the comparison is `j.data() != base or
-   j.volumes() != vols` — `volumes()` swallows a raising `.volume` as None.
-5. **`worthKeeping`** drops every 200 GET, so `/api/model` and `/api/mesh.stl`
-   are no longer in the report at all. Was one of them load-bearing for a
-   repro (a mesh that never arrived)?
-6. **`spawn` now captures stderr** (`subprocess.PIPE`, `text=True`). stdout is
-   still live, so a child that fills the stderr pipe cannot deadlock — but is
-   that true of a child that dies mid-write, and does the `[-8000:]` tail ever
-   cut a `MemoryError` line out of reach of `machine_gave_up`, which would
-   file the box's failure as the product's again?
+1. **The new `unstrike` rule is never worse than the old one.** Both restore
+   sets computed for every feature of every design that carries struck rows
+   (esp32-remote 81, my-part-8 27, my-part-5 24, pump-impeller 10), then every
+   feature where they DIFFER rebuilt and checked: they differ on 5, 2, 2 and 0
+   features, the difference is always that the new rule KEEPS the user's
+   struck row, nothing is red after any restore, no volume moves, and on a
+   design with nothing struck the new rule is a provable no-op.
+   `probes/p5b_r2_unstrike_sweep.py`. Also measured: a struck `move` chain
+   upstream (whose `_kinds` follows its input) stays struck with no red, and a
+   struck sketch behind a struck extrude still comes back with its tool.
+2. **The widened exception classifier reads no product sentence as a leak.**
+   Every string literal in every `.py` (ast walk) tested against the 90-name
+   set: all 29 matches are docstrings or test literals that genuinely ARE
+   exception text.
+3. **`_IDENTITY_BUGS` is complete today** — every `Bug` raised with a
+   multi-step `replay` is in it, and `tab-leak` is correctly in
+   `_REPLAY_BLIND`. Not a finding, so not touched.
+4. **`spawn`'s stderr capture cannot deadlock** (one pipe, read to EOF by
+   `communicate`). Hardened anyway: the machine-gave-up verdict now reads the
+   WHOLE stderr and only the tail is kept for the folder, so truncating the
+   display cannot turn the box's failure back into the product's.
+5. **`worthKeeping` dropping successful reads** loses nothing a repro needs,
+   but the report's heading claimed "every request this tab made" — it says
+   what it actually keeps now, so a later reader cannot conclude the tab never
+   loaded a mesh.
 
-## Ground rules for this review
+Proof: fast tier and library tier green, run one at a time (two heavy OCCT
+runs at once put the box out of memory and crashed both — see the §10 rows).
 
-Reproduce before reporting. Fix in the same chat, smallest fix, test proven
-red first. Restart the user's server if `studio.py` changes (it did not this
-time). Never `--fix`.
+## Still open, recorded not fixed
 
-## Do not report (already decided or recorded)
-
-- `_struck_by` not surviving a save or an undo — §10 P2 row, on purpose: the
-  file format carries one boolean per feature and changing it touches every
-  saved design.
-- `/api/bug` reading the document without the kernel lock — §10 P3 row;
-  measured to touch no OCCT at all.
-- The journey runner's unchecked rename / suppress round-trips, and that it
-  never plays `loft` or `sweep` — appended to the existing §10 P3 row.
-- `check_bodies` re-asking the product's own `inspector.health` on the
-  product's own leaf set: it is a cache-coherence check by design, not an
-  independent witness.
-- The values-at-random and viewport-only-screenshot rows (§10 P3).
+`LAUNCH-PLAN.md` §10 carries them: the `shell`-on-a-scaled-body SEGFAULT with
+its repro in `bugs/` (P1), `_struck_by` not surviving a save or an undo (P2),
+a sixth pre-existing red browser test (P2), and `/api/bug` reading the
+document without the kernel lock (P3).
