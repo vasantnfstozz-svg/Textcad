@@ -1,0 +1,70 @@
+journeys over empty, esp32-remote, pump-impeller, autonomiq-panel, autonomiq-sat-panel-v1, autonomiq-sat-panel, bit-tray, bottle_cap_28mm, cam-cover-lower, cam-cover-plaque, cam-cover-upper, esp32-remote-live-t2, esp32-remote-live-t3, esp32-remote, fan-disk, flange-100, gear-case, hex-nut-M16, hole-box, isogrid-panel, mcp-flange, mcp-live-washer, my-part-2, my-part-3, my-part-4, my-part-5, my-part-8, my-part-9, my-part, oneplus_7_pro_case, planetary-assembly, planetary-base, planetary-carrier, planetary-gear, planetary-ring, planetary-spacer, popup-test-washer, pump-cover, pump-gasket, pump-housing, pump-impeller, rocky-balboa, rocky-keychain-2, rocky-keychain-3, rocky-keychain, sat-side-panel, spiderman-logo, t-washer, thread-case, untitled, water_bottle_750ml, wing-rib, x-frame; 30 steps each; first seed 39324; findings -> C:\Users\VasanSeenivasan\Desktop\textcad\bugs
+-- journey 1: empty seed 39324
+  [empty s39324 #0] opened: 0 features, 0 bodies
+  [empty s39324 #1] add            plate            -> 200 71 ms
+  [empty s39324 #2] add            sketch_on_face   -> 200 22 ms
+  [empty s39324 #3] add            extrude          -> 200 95 ms
+  [empty s39324 #4] edit                            -> 200 28 ms
+  [empty s39324 #5] undo                            -> 200 20 ms
+  [empty s39324 #6] redo                            -> 200 24 ms
+  [empty s39324 #7] tab-new                         -> 200 14 ms
+  [empty s39324 #8] add            hex_plate        -> 200 41 ms
+  [empty s39324 #9] tab-switch                      -> 200 16 ms
+  [empty s39324 #10] tab-close                       -> 200 15 ms
+  [empty s39324 #11] tab-switch                      -> 200 14 ms
+  [empty s39324 #12] add            sketch           -> 200 18 ms
+  [empty s39324 #13] add            extrude          -> 200 19 ms
+  [empty s39324 #14] strike                          -> 200 14 ms
+  [empty s39324 #15] restore                         -> 200 19 ms
+  [empty s39324 #16] plan           mirror           -> 200 15 ms
+  [empty s39324 #17] add            sketch           -> 200 17 ms
+  [empty s39324 #18] add            extrude          -> 200 18 ms
+  [empty s39324 #19] spec                            -> 200 49 ms
+  [empty s39324 #20] doc                             -> 200 9 ms
+  [empty s39324 #21] edit                            -> 200 52 ms
+  [empty s39324 #22] undo                            -> 200 46 ms
+  [empty s39324 #23] redo                            -> 200 53 ms
+  [empty s39324 #24] add            extrude_face     -> 200 47 ms
+  [empty s39324 #25] tab-new                         -> 200 9 ms
+  [empty s39324 #26] add            tube             -> 200 25 ms
+  [empty s39324 #27] tab-switch                      -> 200 9 ms
+  [empty s39324 #28] tab-close                       -> 200 9 ms
+  [empty s39324 #29] tab-switch                      -> 200 9 ms
+  [empty s39324 #30] edit                            -> 200 10 ms
+  [empty s39324 #31] edit                            -> 200 13 ms
+  [empty s39324 #32] undo                            -> 200 16 ms
+  [empty s39324 #33] redo                            -> 200 15 ms
+  [empty s39324 #34] edit                            -> 200 14 ms
+  [empty s39324 #35] undo                            -> 200 15 ms
+  [empty s39324 #36] redo                            -> 200 19 ms
+  [empty s39324 #37] edit                            -> 200 10 ms
+  [empty s39324 #38] plan           mirror           -> 200 9 ms  Mirror needs a feature or a body to mirror — click a hole, a boss or a body, or select a row i
+  [empty s39324 #39] rollback                        -> 200 10 ms
+  [empty s39324 #40] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [empty s39324 #41] rollback                        -> 200 9 ms
+  [empty s39324 #42] edit                            -> 200 10 ms
+  [empty s39324 #43] add            polygon_plate    -> 200 33 ms
+  [empty s39324 #44] add            move             -> 200 23 ms
+  [empty s39324 #45] undo                            -> 200 20 ms
+  [empty s39324 #46] spec                            -> 200 9 ms
+  [empty s39324 #47] doc                             -> 200 8 ms
+  [empty s39324 #48] edit                            -> 200 11 ms
+  [empty s39324 #49] plan           move             -> 200 9 ms
+  [empty s39324 #50] add            fuse             -> 200 33 ms
+  [empty s39324 #51] add            hole             -> 200 18 ms
+  [empty s39324 #52] rollback                        -> 200 9 ms
+  [empty s39324 #53] plan           extrude          -> 200 9 ms  Extrude needs a sketch profile or a picked flat face
+  [empty s39324 #54] rollback                        -> 200 10 ms
+  [empty s39324 #55] add            fuse             -> 200 23 ms
+  [empty s39324 #56] add            sketch_on_face   -> 200 17 ms
+  [empty s39324 #57] add            extrude          -> 200 16 ms
+  [empty s39324 #58] add            shell            -> 200 40 ms
+   clean
+-- journey 2: esp32-remote seed 39325
+  [esp32-remote s39325 #0] opened: 79 features, 1 bodies
+  [esp32-remote s39325 #1] plan           fillet           -> 200 145 ms  Fillet needs the edges of a body — click an edge, a face, or a row of the tree
+  [esp32-remote s39325 #2] tab-new                         -> 200 30 ms
+  [esp32-remote s39325 #3] add            disc             -> 200 77 ms
+  [esp32-remote s39325 #4] tab-switch                      -> 200 81 ms
+  [esp32-remote s39325 #5] tab-close                       -> 200 76 ms
+  [esp32-remote s39325 #6] tab-switch                      -> 200 88 ms
