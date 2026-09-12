@@ -6,11 +6,13 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING.** Review commit **`d94518c`** — round TWO's fix pass for
-> `REVIEW-QUEUE.md` section 8 (Import STL and STEP). Round two fixed a
-> P0-class gap and two regressions round one had introduced, and it replaced
-> the shell-grouping rule outright, so the queue's step 8 calls for a third
-> read of THIS commit before section 9.
+> **Status: PENDING.** Review commit **`8fdfa5b`** — round THREE's fix for
+> `REVIEW-QUEUE.md` section 8 (Import STL and STEP). It is one function
+> family in `blocks.py` (`_shell_inside`, `_shell_points`, `_spread`, the
+> `nested()` closure in `_solids_from_shells`), +122 -12. Round three fixed a
+> P0-class regression round two had introduced, and every round of this
+> section so far has found a hole in the round before it, so the queue's
+> step 8 asks for one more read of THIS diff before section 9.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -23,78 +25,66 @@
 
 ---
 
-## What to review: `94eb47e..d94518c` (one commit)
+## What to review: `d94518c..8fdfa5b` (one commit)
 
-`blocks.py` (`_outward`, `_shell_inside`, `_solids_from_shells`,
-`_stl_triangles`, `_resolve_step_path` only) and `meshrepair.py`
-(`winding_is_consistent`, `voxel_remesh`, `repair_stl_mesh`; `_group_voids`
-deleted). +207 -81 lines. Fast tier 1634 -> 1639.
+`blocks.py` only: `_NEST_SAMPLE`, `_spread`, `_shell_points`, `_shell_inside`
+(now takes `points`), and the `sampled` cache + `nested()` closure inside
+`_solids_from_shells`. Two tests in `tests/test_import_stl.py`
+(`test_a_body_overlapping_a_notch_is_not_a_void`,
+`test_a_pin_through_two_walls_is_not_a_void`). Fast tier 1639 -> 1641.
 
-Round two (run on Fable 5.1 at the user's call, 2026-09-12) re-read `94eb47e`:
-4 findings, all 4 fixed, 0 rejected — two of them REGRESSIONS round one had
-introduced, one the round-one P0 still open through another door, one a wrong
-diagnosis round one wrote. Each measured on `94eb47e` first
-(`probes/s8r2_a..f`), each locked by a test proven RED there.
+Rounds two and three ran on Fable 5.1 at the user's call ("proceed here
+itself"). Round three re-read `d94518c`: 1 finding, fixed; 1 attack cleared.
 
 ## Where the risk is
 
-1. **`_solids_from_shells` now decides void-or-body by NESTING DEPTH, with
-   OCCT's `BRepClass3d_SolidClassifier` on ONE vertex of each shell against
-   every other shell's outward solid.** One vertex is enough for a shell that
-   is wholly inside or wholly outside; a shell that TOUCHES another (a vertex
-   `ON`) reads as not inside. Worth attacking: a void whose vertex lands
-   exactly on the outer wall (a zero-thickness spot — an invalid solid either
-   way, but what does the row say?); the `1e-7` classifier tolerance on
-   float32 mesh coordinates; a file with dozens of shells (n² classifier
-   calls, bbox-prefiltered — is it still seconds?). The depth rule assumes a
-   nesting TREE: two shells that cross each other (overlapping bodies in the
-   CLEAN path, which never sees the remesh) each get depth 0 — two bodies,
-   as before. Confirm nothing else changed for that case.
-2. **Orientation is FORCED from the role** (`_outward`, then
-   `TopoDS.Shell_s(...Reversed())` for a void). Probed: an outward void gives
-   1064 mm3 and `is_valid False`; the classifier answers OUT against an
-   inward solid. Both traps are now documented in the code — check the code
-   never takes either path.
-3. **`voxel_remesh` has TWO fills again**: winding when
-   `winding_is_consistent(faces)`, parity otherwise. The consistency test
-   judges only edges shared by exactly two triangles. A mesh that is
-   inconsistent AND overlaps itself is wrong either way (as before `94eb47e`,
-   by parity). Attack the test itself: a consistent mesh it calls
-   inconsistent (a component with a pinch AND a legitimately doubled edge?)
-   would silently lose the overlap fix; an inconsistent one it calls
-   consistent would take the winding fill and lose material.
-4. **`repair_stl_mesh` writes ONE STL piece** and lets blocks sort the
-   shells. Confirmed on the real assembly (same three volumes, 25.1 s). The
-   report's `bodies` now counts COMPONENTS (voids included) until
-   `_read_stl_solids` overwrites it with the kernel's count — a caller that
-   read `repair_stl_mesh`'s report directly would see the component count.
-   The only such caller is the module's own self-test.
-5. **`_stl_triangles`** strips a BOM with `data[:83].removeprefix(...)` and
-   bounds the "cut short" claim at 50,000,000 triangles. Check the
-   `test_input_triangle_cap` fixture (500,001 declared, exact size) still
-   takes the binary branch.
+1. **"Wholly inside" is now a SAMPLE**: up to 400 unique vertices and 400
+   face centres, spread by `_spread` (`1 + (k * n) // cap`). A body that
+   pokes out of its container by less than one sampled point in 400 still
+   reads as a void; `MakeSolid.Add` then builds an INVALID solid, which the
+   deep validity pass paints red. Wrong but not silent — confirm that claim
+   holds (does `_deep_valid` actually run on an import body, and what does
+   the row say?). Attack the spread: a body whose only protruding part is a
+   run of consecutive faces shorter than n/400 — is 400 the right cap, and
+   should it scale with the shell?
+2. **`_spread` is 1-based** for `TopTools_IndexedMapOfShape.FindKey`. Check
+   the arithmetic at the edges: n == cap, n == cap + 1, n == 1, n == 0
+   (a shell with no faces cannot be closed, but `vm.Extent()` of 0 must not
+   index).
+3. **Face centres are the mean of a face's unique vertices** via a nested
+   `MapShapes` per face. Every lib3mf face is a planar triangle, so the mean
+   is the centroid. If a face ever had more than three vertices the mean
+   would still be a point on or near the face; if `sub.Extent()` were 0 it
+   would divide by zero — can it be?
+4. **The `sampled` cache is keyed by shell index and built lazily** only for
+   shells whose box lies inside another's. Confirm `nested(i, j)` and
+   `_shell_inside(..., points)` cannot disagree about which shell the points
+   belong to (the points are shell i's; the solid is shell j's).
+5. **Cost**: the classifier is loaded once per (i, j) pair and performs ≤ 800
+   points; the sample is built once per shell (0.15 s on a 32k-triangle
+   shell). A housing with 40 parts inside its BOX but outside its material
+   pays 40 sample builds + 40 first-point exits. Is that still seconds on a
+   plausible assembly?
 
 ## Measured, and not worth re-reporting
 
 - `imports/liquid-piston-2-v1.stl` (88,990 triangles): **339,926.9 mm3, 3
-  bodies, 21,552 triangles, health clean** on `84e7c17`, `94eb47e` AND
-  `d94518c`; 23.4 s / 35.9 s / 25.1 s.
+  bodies, 21,552 triangles, health clean** on `84e7c17`, `94eb47e`,
+  `d94518c` AND `8fdfa5b`; 25.2 s now.
 - **No saved design uses `import_stl` or `import_step`.**
-- Round one's cases all still measure right on `d94518c`: hollow 936/1 body;
-  hollow + plain body 1936/2; hollow through the repair path 2936/2;
-  duplicated body 2000/2; welded overlap 11,998; thin plate 5,531.75 with
-  `remesh_drift_pct` 8.3 reported; disjoint pinched cubes 15,998.
-- Round two's cases on `d94518c`: inverted hollow **936/1** (was 1064/2);
-  inverted hollow + plain **1936/2** (was 2064/3); pinched cavity **62,976.1**
-  (was refused "empty volume"); pinched cubes with a flipped face **15,998**
-  (was 7,998.8); BOM ASCII imports at 1000 (was "cut short, 824,211,557
-  triangles"); a body sealed inside a cavity (depth 2) is its own body,
-  6,336/2.
-- The viewport mesh of a solid carrying a void: signed volume 936.0 = the
-  solid's volume (`studio._tagged_mesh`, `probes/s8r2_d_classifier_bom.py`).
+- Round three's cases on `8fdfa5b`: bracket in a notch **21,640 / 2 bodies**
+  (was 20,360 / 1 on `d94518c`); pin through two walls 2 bodies; a hollow
+  STL with an OUTWARD-wound cavity (MeshLab re-orient) 936 / 1 and 1936 / 2
+  — lib3mf marks that solid invalid, so the as-is fast path never takes it
+  (`probes/s8r3_b_outward_void.py`).
+- Rounds one and two's cases all still measure right on `8fdfa5b` (they are
+  tests now: hollow, inverted hollow, hollow beside a body, hollow through
+  the repair path, island in a cavity, pinched cavity, pinched + flipped
+  face, duplicated body, welded overlap, thin plate drift, BOM).
 - Do not re-open the round-one "checked" list (format detection, winding on
   clean meshes, `-0.0` welding, the decimation ladder, name collisions, the
-  upload path, `_check_pieces`).
+  upload path, `_check_pieces`) or round two's cleared items (viewport mesh
+  of a solid with a void, one-piece read on the real file).
 
 ## The ground rules
 
