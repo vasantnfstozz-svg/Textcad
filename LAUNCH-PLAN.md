@@ -47,7 +47,14 @@
 > model's spec written over the USER's, a correct step undone and blamed for
 > another feature's redness, the AI able to delete a feature the user built,
 > `add` + `done` in one reply finishing a design unchecked, and a user edit
-> landing mid-job breaking "one Undo takes it all back" (§10). Next: P5b. Every other plan file points here; §7 carries the
+> landing mid-job breaking "one Undo takes it all back" (§10). **P5b, the
+> machine plays the user, BUILT 2026-09-12** (c11fd74: `tests/journeys.py`
+> plays random user moves against the in-process app and files each
+> finding as a replayable folder under `bugs/`; a status-bar bug button
+> saves the design, the tab's last requests, the browser's warnings and a
+> viewport PNG there in one click; `pytest -m library` collects again and
+> rebuilds every live design; ui v197; 12 journeys of 30 moves over empty, pump-impeller and esp32-remote, seeds 100-111: 12 clean, 0 bugs, 0 crashes). Next: its
+> `code review`, then P6. Every other plan file points here; §7 carries the
 > done-notes, §10 the ranked open items. **Added 2026-09-10 (user's decision):** P5b, the machine plays the
 > user — a zero-token random-journey runner, a bug button, the library tier
 > fixed — sits between P5 and P6 (§6 tier 4, §7 P5b).
@@ -1056,6 +1063,43 @@ every committed design. What the user does: nothing until it exists; then
 starts the run before leaving and presses the button when something feels
 wrong.
 
+**BUILT 2026-09-12, c11fd74 (review pending).** Layer 3 first, as the plan
+said: `tests/__init__.py` makes tests/ a package so the seven tool tests
+that share a basename with `tests/e2e/` collect (pytest 9 refuses two
+rootless modules of one name), and `tests/test_library.py` rebuilds every
+live design ONCE per run and asks four things of it: the file round-trips,
+every green body on screen passes `inspector.health`, a red feature
+carries a sentence, and every live feature is green (50 designs, 101 passed in 8 min 50 s on 2026-09-12). Layer 1:
+`tests/journeys.py` opens a design the way the app does (FastAPI in-process,
+the routes the toolbar calls, a throwaway history root, never `/api/save`)
+and plays weighted random moves — creators, a face sketch + extrude in or
+out, every modifier, fuse/cut/intersect, edits to half, double, zero and
+negative, undo/redo, strike + restore, rollback + release, remove with each
+mode, every tool plan on random targets, a scratch tab. After EVERY request
+it asks the reviewer's questions: an `error` naming an exception class or
+a status outside 200/400; a 400 that changed the document; a green body
+that is unsound; undo that does not give back the document before the
+step; strike+restore or rollback+release that leave a different document or
+a different body volume; a `to_data` that does not round-trip. Each journey
+is a CHILD process, so an OpenCASCADE segfault (0xC0000005) is a finding and
+the step log written before each request is its recipe. A finding is one
+folder under `bugs/` — `before.tcad.json`, the one request, `after`,
+`report.md` — filed once per signature (kind + op + wording with numbers
+masked) and replayed with `--replay bugs/<folder>`. Layer 2: the status
+bar's **Report a bug** asks one line, then `POST /api/bug` writes
+`doc.tcad.json`, `state.json` (the tree with every status and sentence,
+the tab's last 40 requests from a fetch ring that runs from boot, the
+window errors and chat warnings, the `ui vN` stamp) and `screenshot.png`
+(rendered first, then read — an unrendered canvas reads back black); it
+reads the document only and is open while an AI job runs. `bugs/` is
+tracked except the run log; the chat that fixes a folder deletes it.
+**First runs:** 12 journeys of 30 moves over empty, pump-impeller and esp32-remote, seeds 100-111: 12 clean, 0 bugs, 0 crashes. Tests: 9 runner, 6 button, 1 browser, 2 per live
+design in the library tier; fast tier 1657. **Line delta +1330/−3:**
+P5b is a new tier and a new button, not a refactor. What the user does:
+`python tests/journeys.py --hours 8` before leaving (add `--library` to
+include the real designs, read-only), and press the button when something
+feels wrong; the next chat reads `bugs/`.
+
 **P6 — Launch preparation.** Vendor three.js locally (offline today = broken),
 LICENSE + third-party notices, units label, a one-click run script, examples
 gallery review, CI running the fast tiers, a fresh-machine install test.
@@ -1145,6 +1189,8 @@ assemblies, the user's personal project.
 | Pri | Item | Source |
 |-----|------|--------|
 | done | **Code review of P5, the AI step loop (`b78dc1f..92bdeef`, seven rounds 2026-09-11, `4041703` -> `5d2d431`; round seven found nothing).** 20 findings, all fixed, 29 new tests (fast tier 1594 -> 1623), ui v196. Every one reproduced by measurement first (`probes/p5_*.py`) and locked by a test proven RED on the commit it fixes, in a throwaway worktree. The five that mattered, all on the AI's "add to the design on screen" road: `done` WROTE THE MODEL'S SPEC OVER THE USER'S OWN (31 of the 50 live designs pin a size, 22 pin holes — and a refused `done` left its spec behind too); a CORRECT step was undone and blamed whenever some OTHER feature was red, which locked the AI out of the design entirely after three tries; the AI could DELETE a feature the user built while the reply said "Added one or more parameters"; `{"add": ..., "done": true}` in one reply FINISHED the design with no final lint and no spec check (two loose bodies reported as verified); and a user edit landing mid-job broke "one Undo takes it all back" — the busy overlay covers the viewport only, so the ribbon, tree and tab strip stayed live. Also: a dead job thread left the browser polling for ever behind the overlay; a parked rollback bar made every step "UNDONE (after rollback bar)" and the give-up restore then dropped the bar; the create door walked past MAX_TABS and left empty "designing..." tabs behind; `/api/tool/plan` ran inside the kernel between two AI steps. Rounds two to six were all findings in the previous round's OWN new guards. | 2026-09-11 |
+| P3 | **The journey runner picks values at random, not from the plan's own safe range** (§6 tier 4 wording). A fillet radius is drawn from 0.3–3 mm whatever the wall, so most moves on a thin part are clean refusals and the interesting band just inside the limit is rarely hit. Read `/api/tool/plan` first and draw inside (and just outside) its limits. Also not exercised yet: `/api/measure*`, `/api/feature/params`, sketch entities other than one circle or rectangle, `/api/export`, `/api/save` round-trip (kept off on purpose: it writes designs/). | P5b c11fd74 |
+| P3 | **The bug button's screenshot is the viewport only.** The feature tree and the open panel are in `state.json` as data, not as pixels; a whole-window capture needs a browser API the page does not have. | P5b c11fd74 |
 | P3 | **A chat job has no Stop button.** An "add" job makes its tab read-only while it runs (`_one_writer_per_tab`), and the only way out is the 300 s clock (`author.MAX_SECONDS`, checked between steps) or switching to another tab. Fusion lets you cancel. Fix when the AI panel gets its own UI: `POST /api/chat/job/<id>/stop` setting a flag the step loop reads, and a Stop button beside the step log. | P5 review 2026-09-11 |
 | P3 | **`/api/tabs/switch` reads the document without the kernel lock.** It is the one POST left open while a chat job builds — deliberately, because switching away is the user's escape hatch from a busy tab — so switching TO a tab mid-step can flash one stale row for under a second before the next step's `doc-updated` corrects it. Measured and left: taking the lock there would block the switch for the length of a kernel step, which is the opposite of what the escape hatch is for. Closes properly with the `/api/model` row above (one lock over every kernel-touching request). | P5 review 2026-09-11 |
 | done | **P5's step protocol met the real model 2026-09-11** (after the user renewed the expired OpenRouter key): "a 60x40x5 plate, a 16 mm boss on top, four 5 mm corner holes" came out as 8 steps — base sketch, extrude, sketch_on_face, extrude, fuse, one 4-circle sketch, through extrude, cut — every step ok first time, volumes add up (12000 + 4021.2 − 4 × 98.2 = 15628.5), spec met. The only flaw was ours: the 4-cylinder cutting tool was told to "fix" being in 4 pieces (softened in the commit after 5dc7817). | P5 ship check |

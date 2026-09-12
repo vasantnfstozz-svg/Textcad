@@ -6,15 +6,8 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: NOTHING PENDING.** Section 8 (Import STL and STEP) is CLOSED
-> after four rounds (`94eb47e`, `d94518c`, `8fdfa5b`, `8241115`; 13 findings,
-> all fixed, 20 new tests, fast tier 1623 -> 1643). Round four's one finding
-> was a P1 cost cliff, not a P0, so the queue's step 8 does not force a fifth
-> read. The next `code review` goes to `REVIEW-QUEUE.md` and takes the first
-> TODO row of the status board — **section 9, Trace image**. (The user may
-> instead name `d94518c..8241115` — the nesting rule in `blocks.py`,
-> `_solids_from_shells` and its helpers, ~150 lines — for a fifth read; each
-> of rounds two to four found a hole in the round before it.)
+> **Status: PENDING.** Review `7a811b6..c11fd74` — P5b, the machine plays the
+> user (LAUNCH-PLAN.md §7 P5b, §6 tier 4). Base `7a811b6`. One code commit.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -27,48 +20,67 @@
 
 ---
 
-## What the last review closed (section 8 — Import STL and STEP)
+## The commit
 
-Never reviewed before this. Four rounds, 13 findings, all fixed, 0 rejected;
-20 new tests; every finding reproduced by measurement first
-(`probes/s8_*.py`, `s8r2_*`, `s8r3_*`, `s8r4_*`) and every fix locked by a
-test proven RED on the commit it fixes. Rounds two to four ran on Fable 5.1
-at the user's call.
+- `c11fd74` P5b: `tests/journeys.py` (the random-journey runner, ~800 lines),
+  `POST /api/bug` + `BugReq` + `_bug_report_lines` in `studio.py` (~90 lines,
+  and `/api/bug` added to `_JOB_OPEN_POSTS`), `static/js/bugreport.js` (fetch
+  ring, error ring, the button), `snapshotPNG` in `viewport.js`, the button in
+  `index.html` (ui v197, css v43), `tests/__init__.py`, `tests/test_library.py`,
+  `tests/test_journeys.py`, `tests/test_bugreport.py`,
+  `tests/e2e/test_bug_button.py`, `.gitignore` (`!bugs/**`, `bugs/journeys.log`).
 
-The shape of it: round one found two P0s (a hollow STL imported with its
-cavity FILLED plus a phantom body inside it — `is_valid` is a property, the
-guard called it — and the parity voxel fill XORing overlapping material
-away). Rounds two, three and four each found a hole in the round before it,
-all in the ONE rule "which shell is a cavity of which body": by the SIGN of
-each shell's volume (wrong for an inside-out file) → by nesting depth from
-ONE vertex (turned an overlapping bracket into a void) → by a 400 + 400 point
-survey (right, at ~140 s against a 32k-face housing) → by one confirming
-point, trusting an inward-wound shell, with a survey sized to the container
-only for an outward-wound one.
+## Where the risk is
 
-What the module now promises, each with a test: a hollow part is ONE body
-with its cavity (wound either way, alone or beside other bodies, clean or
-through the repair path, thin walls down to 0.005 mm); a body sealed inside
-a cavity is a body; two bodies that overlap are two bodies (bracket in a
-notch, pin through two walls); a body exported twice is not deleted; a
-pinched cavity remeshes; a pinched mesh with flipped faces keeps its volume;
-overlapping welded bodies keep their material; a remesh reports how much the
-grid could not hold and refuses over 15%; 40 parts in a housing import in
-~1 s; a not-a-STEP file and a truncated or BOM'd STL are named as such.
+This commit is a TEST INSTRUMENT plus one read-only route. The product's
+geometry did not change. What can be wrong is the instrument lying:
 
-Not changed, measured on every commit: `imports/liquid-piston-2-v1.stl`
-(88,990 triangles) imports to 339,926.9 mm3, 3 bodies, 21,552 triangles,
-health clean, 25 s. No saved design uses `import_stl` or `import_step`.
+1. **False negatives in the oracles** (`Journey.call`, `check_bodies`, the
+   pair moves). `unhandled()` decides "leaked exception" by a regex on the
+   `error` sentence; a leak worded without a class name passes. `check_bodies`
+   looks at LEAF solids only (cost), so an intermediate feature that is green
+   and unsound is not caught unless it is on screen. The undo oracle runs only
+   inside `move_edit` and `move_undo_add`; a route that snapshots differently
+   is not judged. `signature()` masks numbers and cuts at 80 chars, so two
+   distinct bugs with the same opening words file as one folder.
+2. **False positives** — a clean journey must stay clean: does any route
+   legitimately answer 400 AND change the document (the runner calls that a
+   bug)? Does `strike` + `restore` legitimately change `to_data()` anywhere
+   (struck ancestors)? Does `rollback` + release legitimately move a volume?
+   12 journeys × 30 moves over `empty`, `pump-impeller`, `esp32-remote` were
+   clean; the e2e and library tiers are the other evidence.
+3. **The child-process protocol** (`spawn`): exit codes 0/2/3/4 versus a
+   Windows access violation (3221225477); the step log written BEFORE each
+   request; a "broken runner" (exit 2) must never file a folder. A crash
+   folder has no `before.tcad.json` by construction.
+4. **`/api/bug`**: writes under `ROOT/bugs` from `doc.name` (slugged); decodes
+   a data-URL of any size; `_doc_json()` inside the report under no lock while
+   a job may be writing that tab (the route is deliberately in
+   `_JOB_OPEN_POSTS`). It must never snapshot, rebuild or mint a version.
+5. **`bugreport.js` wraps `window.fetch` for the whole tab** from
+   `initBugReport()` (first init in `main.js`). A body that is not a string
+   (FormData) is recorded as null; `/api/bug` itself is not recorded. The
+   `msg` bus listener keeps every bot line — is anything sensitive said there?
+6. **`tests/__init__.py`** changes the fast tier's module names to
+   `tests.test_x`; e2e files stay rootless (their `from conftest import`
+   depends on that). Both tiers collect (1841 / 197).
 
-Residuals, documented in the code, none silent: a body embedded in another
-by all but less than one sampled point in `_nest_cap` reads as a void and
-`MakeSolid.Add` then builds an INVALID solid (red row); an inside-out body
-that also overlaps another is trusted as a cavity (two exporter bugs at
-once; invalid, red); a mesh whose winding is inconsistent AND overlaps itself
-takes the parity fill and loses the overlap (as before any of this).
+## Ground rules for this review
 
-## Where the next review goes
+Reproduce before reporting: a false-negative claim needs a staged failure the
+oracle misses (as `test_journeys.py` stages one it catches); a false-positive
+claim needs a seed that files a folder for correct behaviour. Fix in the same
+chat, smallest fix, test proven red first. Restart the user's server if
+`studio.py` changes. Never `--fix`.
 
-`REVIEW-QUEUE.md` section 9, Trace image — `imgtrace.py` and the trace
-functions of `static/js/sketcher.js`, with `/api/trace-png`. The section's
-paste line, finding classes and known items are in the queue.
+## Do not report (already in LAUNCH-PLAN.md §10 or decided)
+
+- Values drawn at random instead of from the plan's safe range; measure,
+  params, export and save routes not exercised; one circle/rectangle per
+  sketch (§10 P3 row).
+- The screenshot is the viewport canvas only (§10 P3 row).
+- `bugs/journeys.log` is ignored while `bugs/**` is tracked — on purpose.
+- The runner never calls `/api/save` or `/api/open` — on purpose (writes into
+  designs/ and the real `.history/`).
+- `test_library.py` reporting a red feature in a live design is the tier
+  doing its job, not a finding about the tier.
