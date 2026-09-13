@@ -1,0 +1,864 @@
+{
+  "name": "my-part-8",
+  "spec": {},
+  "features": [
+    {
+      "id": "sketch1",
+      "op": "sketch",
+      "params": {
+        "plane": "XY",
+        "offset": 0,
+        "entities": [
+          {
+            "kind": "rectangle",
+            "mode": "add",
+            "x": 37.5,
+            "y": 37.5,
+            "w": 75,
+            "h": 75,
+            "rotation": 0
+          }
+        ]
+      },
+      "inputs": [],
+      "suppressed": false
+    },
+    {
+      "id": "extrude1",
+      "op": "extrude",
+      "params": {
+        "amount": 19.75,
+        "both": false,
+        "amount2": 0,
+        "taper": 0,
+        "flip": false,
+        "through": false
+      },
+      "inputs": [
+        "sketch1"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "fillet1",
+      "op": "fillet",
+      "params": {
+        "radius": 1.7,
+        "edges": [
+          {
+            "mid": [
+              37.5,
+              75,
+              19.75
+            ],
+            "dir": [
+              1,
+              0,
+              0
+            ],
+            "type": "LINE",
+            "faces": [
+              {
+                "center": [
+                  37.5,
+                  75,
+                  9.875
+                ],
+                "normal": [
+                  0,
+                  1,
+                  0
+                ]
+              },
+              {
+                "center": [
+                  37.5,
+                  37.5,
+                  19.75
+                ],
+                "normal": [
+                  0,
+                  0,
+                  1
+                ]
+              }
+            ]
+          },
+          {
+            "mid": [
+              75,
+              37.5,
+              19.75
+            ],
+            "dir": [
+              0,
+              1,
+              0
+            ],
+            "type": "LINE",
+            "faces": [
+              {
+                "center": [
+                  75,
+                  37.5,
+                  9.875
+                ],
+                "normal": [
+                  1,
+                  0,
+                  0
+                ]
+              },
+              {
+                "center": [
+                  37.5,
+                  37.5,
+                  19.75
+                ],
+                "normal": [
+                  0,
+                  0,
+                  1
+                ]
+              }
+            ]
+          },
+          {
+            "mid": [
+              37.5,
+              0,
+              19.75
+            ],
+            "dir": [
+              1,
+              0,
+              0
+            ],
+            "type": "LINE",
+            "faces": [
+              {
+                "center": [
+                  37.5,
+                  0,
+                  9.875
+                ],
+                "normal": [
+                  0,
+                  -1,
+                  0
+                ]
+              },
+              {
+                "center": [
+                  37.5,
+                  37.5,
+                  19.75
+                ],
+                "normal": [
+                  0,
+                  0,
+                  1
+                ]
+              }
+            ]
+          },
+          {
+            "mid": [
+              0,
+              37.5,
+              19.75
+            ],
+            "dir": [
+              0,
+              1,
+              0
+            ],
+            "type": "LINE",
+            "faces": [
+              {
+                "center": [
+                  0,
+                  37.5,
+                  9.875
+                ],
+                "normal": [
+                  -1,
+                  0,
+                  0
+                ]
+              },
+              {
+                "center": [
+                  37.5,
+                  37.5,
+                  19.75
+                ],
+                "normal": [
+                  0,
+                  0,
+                  1
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "inputs": [
+        "extrude1"
+      ],
+      "suppressed": true
+    },
+    {
+      "id": "revolve1",
+      "op": "revolve_face",
+      "params": {
+        "axis": [
+          [
+            0,
+            0
+          ],
+          [
+            75,
+            0
+          ]
+        ],
+        "angle": -90,
+        "angle2": 0,
+        "both": false,
+        "face_center": [
+          37.5,
+          75,
+          9.88
+        ],
+        "face_normal": [
+          0,
+          1,
+          0
+        ]
+      },
+      "inputs": [
+        "extrude1"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "revolve1_join1",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "extrude1",
+        "revolve1"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "revolve2",
+      "op": "revolve_face",
+      "params": {
+        "axis": [
+          [
+            0,
+            0
+          ],
+          [
+            75,
+            0
+          ]
+        ],
+        "angle": 90,
+        "angle2": 0,
+        "both": false,
+        "face_center": [
+          37.5,
+          0,
+          9.88
+        ],
+        "face_normal": [
+          0,
+          -1,
+          0
+        ]
+      },
+      "inputs": [
+        "revolve1_join1"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "revolve2_join1",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "revolve1_join1",
+        "revolve2"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "revolve3",
+      "op": "revolve_face",
+      "params": {
+        "axis": [
+          [
+            -19.75,
+            0
+          ],
+          [
+            94.75,
+            0
+          ]
+        ],
+        "angle": 90,
+        "angle2": 0,
+        "both": false,
+        "face_center": [
+          75,
+          37.5,
+          9.44
+        ],
+        "face_normal": [
+          1,
+          0,
+          0
+        ]
+      },
+      "inputs": [
+        "revolve2_join1"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "revolve3_join1",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "revolve2_join1",
+        "revolve3"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "revolve4",
+      "op": "revolve_face",
+      "params": {
+        "axis": [
+          [
+            -19.75,
+            0
+          ],
+          [
+            94.75,
+            0
+          ]
+        ],
+        "angle": -90,
+        "angle2": 0,
+        "both": false,
+        "face_center": [
+          0,
+          37.5,
+          9.44
+        ],
+        "face_normal": [
+          -1,
+          0,
+          0
+        ]
+      },
+      "inputs": [
+        "revolve3_join1"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "revolve4_join1",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "revolve3_join1",
+        "revolve4"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "extrude2",
+      "op": "extrude_face",
+      "params": {
+        "face_center": [
+          37.5,
+          37.5,
+          19.75
+        ],
+        "face_normal": [
+          0,
+          0,
+          1
+        ],
+        "amount": 4.83,
+        "taper": -32.1,
+        "flip": false
+      },
+      "inputs": [
+        "revolve4_join1"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "extrude2_join1",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "revolve4_join1",
+        "extrude2"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "sketch2",
+      "op": "sketch_on_face",
+      "params": {
+        "face_center": [
+          37.5,
+          37.5,
+          24.58
+        ],
+        "face_normal": [
+          0,
+          0,
+          1
+        ],
+        "entities": [
+          {
+            "kind": "rectangle",
+            "mode": "add",
+            "x": 37.5,
+            "y": 37.5,
+            "w": 55,
+            "h": 55,
+            "rotation": 0
+          }
+        ]
+      },
+      "inputs": [
+        "extrude2_join1"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "extrude3",
+      "op": "extrude",
+      "params": {
+        "amount": -6.11,
+        "both": false,
+        "amount2": 0,
+        "taper": -27.4,
+        "flip": false,
+        "through": false
+      },
+      "inputs": [
+        "sketch2"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "extrude3_cut1",
+      "op": "cut",
+      "params": {},
+      "inputs": [
+        "extrude2_join1",
+        "extrude3"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "sketch3",
+      "op": "sketch_on_face",
+      "params": {
+        "face_center": [
+          37.5,
+          37.5,
+          18.47
+        ],
+        "face_normal": [
+          0,
+          0,
+          1
+        ],
+        "entities": [
+          {
+            "kind": "regular_polygon",
+            "mode": "add",
+            "x": 37.5,
+            "y": 37.5,
+            "radius": 14.57737973711325,
+            "sides": 6,
+            "rotation": 0
+          }
+        ]
+      },
+      "inputs": [
+        "extrude3_cut1"
+      ],
+      "suppressed": true
+    },
+    {
+      "id": "sketch4",
+      "op": "sketch_on_face",
+      "params": {
+        "face_center": [
+          37.5,
+          37.5,
+          18.47
+        ],
+        "face_normal": [
+          0,
+          0,
+          1
+        ],
+        "entities": [
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 25.3335,
+            "y": 25.3335,
+            "length": 34.41,
+            "height": 2,
+            "rotation": -45
+          },
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 50,
+            "y": 50,
+            "length": 34.41,
+            "height": 2,
+            "rotation": -225
+          },
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 25,
+            "y": 50,
+            "length": 34.41,
+            "height": 2,
+            "rotation": 225
+          },
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 49.66613608515728,
+            "y": 25.333863914842727,
+            "length": 34.412058628618425,
+            "height": 2,
+            "rotation": 45
+          },
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 25.3335,
+            "y": 49.6665,
+            "length": 34.412058613224524,
+            "height": 2,
+            "rotation": -45
+          },
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 49.6665,
+            "y": 49.749784019928676,
+            "length": 34.29447947825137,
+            "height": 2,
+            "rotation": 45
+          },
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 25.33355,
+            "y": 25.416834019928675,
+            "length": 34.52989945896154,
+            "height": 2,
+            "rotation": 45
+          },
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 49.6665,
+            "y": 25.416784019928677,
+            "length": 34.53004087949506,
+            "height": 2,
+            "rotation": -45
+          },
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 13.167,
+            "y": 37.5,
+            "length": 48.666,
+            "height": 2,
+            "rotation": -90
+          },
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 37.50004999985457,
+            "y": 13.208620989513413,
+            "length": 48.74932606093309,
+            "height": 2,
+            "rotation": 0
+          },
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 37.50005,
+            "y": 61.83295,
+            "length": 48.665900000102745,
+            "height": 2,
+            "rotation": 0
+          },
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 61.83307126424417,
+            "y": 37.54166725380465,
+            "length": 48.666163791152464,
+            "height": 2,
+            "rotation": -90
+          },
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 25.312643484865085,
+            "y": 37.56249852509925,
+            "length": 24.291608569799177,
+            "height": 2,
+            "rotation": 0
+          },
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 49.666535632122084,
+            "y": 37.60402666948096,
+            "length": 24.333390884496126,
+            "height": 2,
+            "rotation": 0
+          },
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 37.47924888480962,
+            "y": 25.385559757306332,
+            "length": 24.353913068824504,
+            "height": 2,
+            "rotation": -90
+          },
+          {
+            "kind": "slot",
+            "mode": "add",
+            "x": 37.5,
+            "y": 49.749693042578635,
+            "length": 24.166613914842728,
+            "height": 2,
+            "rotation": -90
+          }
+        ]
+      },
+      "inputs": [
+        "extrude3_cut1"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "extrude4",
+      "op": "extrude",
+      "params": {
+        "amount": 2,
+        "both": false,
+        "amount2": 0,
+        "taper": 0,
+        "flip": false,
+        "through": false
+      },
+      "inputs": [
+        "sketch4"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "extrude5",
+      "op": "extrude_face",
+      "params": {
+        "face_center": [
+          37.5,
+          37.5,
+          0
+        ],
+        "face_normal": [
+          0,
+          0,
+          -1
+        ],
+        "amount": 17.34,
+        "taper": 0,
+        "flip": false
+      },
+      "inputs": [
+        "extrude3_cut1"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "extrude5_join1",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "extrude3_cut1",
+        "extrude5"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "revolve5",
+      "op": "revolve_face",
+      "params": {
+        "axis": [
+          [
+            0,
+            -17.34
+          ],
+          [
+            75,
+            -17.34
+          ]
+        ],
+        "angle": -90,
+        "angle2": 0,
+        "both": false,
+        "face_center": [
+          -19.75,
+          37.5,
+          -8.67
+        ],
+        "face_normal": [
+          -1,
+          0,
+          0
+        ]
+      },
+      "inputs": [
+        "extrude5_join1"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "revolve5_join1",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "extrude5_join1",
+        "revolve5"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "revolve6",
+      "op": "revolve_face",
+      "params": {
+        "axis": [
+          [
+            0,
+            -17.34
+          ],
+          [
+            75,
+            -17.34
+          ]
+        ],
+        "angle": 90,
+        "angle2": 0,
+        "both": false,
+        "face_center": [
+          94.75,
+          37.5,
+          -8.67
+        ],
+        "face_normal": [
+          1,
+          0,
+          0
+        ]
+      },
+      "inputs": [
+        "revolve5_join1"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "revolve6_join1",
+      "op": "fuse",
+      "params": {},
+      "inputs": [
+        "revolve5_join1",
+        "revolve6"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "hole1",
+      "op": "hole",
+      "params": {
+        "at": [
+          38.8832,
+          -10.9093
+        ],
+        "diameter": 6,
+        "depth": 44.8,
+        "through": false,
+        "kind": "simple",
+        "face": null,
+        "face_center": [
+          37.5,
+          37.5,
+          -17.34
+        ],
+        "face_normal": [
+          0,
+          0,
+          -1
+        ]
+      },
+      "inputs": [
+        "revolve6_join1"
+      ],
+      "suppressed": false
+    },
+    {
+      "id": "hole2",
+      "op": "hole",
+      "params": {
+        "at": [
+          39.9055,
+          81.248
+        ],
+        "diameter": 6,
+        "depth": 45.3,
+        "through": false,
+        "kind": "simple",
+        "face": null,
+        "face_center": [
+          37.4975,
+          37.5892,
+          -17.34
+        ],
+        "face_normal": [
+          0,
+          0,
+          -1
+        ]
+      },
+      "inputs": [
+        "hole1"
+      ],
+      "suppressed": false
+    }
+  ]
+}

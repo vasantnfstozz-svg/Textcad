@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "design_id": "d_f56ed71f32f9",
+  "name": "my-part-9",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-09-08T13:39:51+00:00",
+      "label": "chamfer added; fillet added; fillet added +28 more",
+      "source": "manual",
+      "hash": "sha1:70436a00a87de12ad6b15d6281ccce0a9d606f36",
+      "features": 30,
+      "spec": {
+        "features": 30,
+        "ok": true,
+        "volume": 382050.92
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    }
+  ]
+}

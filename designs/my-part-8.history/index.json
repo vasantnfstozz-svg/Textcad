@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "design_id": "d_607ebe11ca43",
+  "name": "my-part-8",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-09-07T17:53:00+00:00",
+      "label": "saved",
+      "source": "save",
+      "hash": "sha1:49c2e947f7808cfacdde99879baf566d53d55be6",
+      "features": 27,
+      "spec": {
+        "features": 27,
+        "ok": true,
+        "volume": 482708.8
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    }
+  ]
+}

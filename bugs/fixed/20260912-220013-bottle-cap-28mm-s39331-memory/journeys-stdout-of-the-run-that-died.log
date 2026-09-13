@@ -1,0 +1,414 @@
+journeys over empty, esp32-remote, pump-impeller, autonomiq-panel, autonomiq-sat-panel-v1, autonomiq-sat-panel, bit-tray, bottle_cap_28mm, cam-cover-lower, cam-cover-plaque, cam-cover-upper, esp32-remote-live-t2, esp32-remote-live-t3, esp32-remote, fan-disk, flange-100, gear-case, hex-nut-M16, hole-box, isogrid-panel, mcp-flange, mcp-live-washer, my-part-2, my-part-3, my-part-4, my-part-5, my-part-8, my-part-9, my-part, oneplus_7_pro_case, planetary-assembly, planetary-base, planetary-carrier, planetary-gear, planetary-ring, planetary-spacer, popup-test-washer, pump-cover, pump-gasket, pump-housing, pump-impeller, rocky-balboa, rocky-keychain-2, rocky-keychain-3, rocky-keychain, sat-side-panel, spiderman-logo, t-washer, thread-case, untitled, water_bottle_750ml, wing-rib, x-frame; 30 steps each; first seed 39324; findings -> C:\Users\VasanSeenivasan\Desktop\textcad\bugs
+-- journey 1: empty seed 39324
+  [empty s39324 #0] opened: 0 features, 0 bodies
+  [empty s39324 #1] add            plate            -> 200 71 ms
+  [empty s39324 #2] add            sketch_on_face   -> 200 22 ms
+  [empty s39324 #3] add            extrude          -> 200 95 ms
+  [empty s39324 #4] edit                            -> 200 28 ms
+  [empty s39324 #5] undo                            -> 200 20 ms
+  [empty s39324 #6] redo                            -> 200 24 ms
+  [empty s39324 #7] tab-new                         -> 200 14 ms
+  [empty s39324 #8] add            hex_plate        -> 200 41 ms
+  [empty s39324 #9] tab-switch                      -> 200 16 ms
+  [empty s39324 #10] tab-close                       -> 200 15 ms
+  [empty s39324 #11] tab-switch                      -> 200 14 ms
+  [empty s39324 #12] add            sketch           -> 200 18 ms
+  [empty s39324 #13] add            extrude          -> 200 19 ms
+  [empty s39324 #14] strike                          -> 200 14 ms
+  [empty s39324 #15] restore                         -> 200 19 ms
+  [empty s39324 #16] plan           mirror           -> 200 15 ms
+  [empty s39324 #17] add            sketch           -> 200 17 ms
+  [empty s39324 #18] add            extrude          -> 200 18 ms
+  [empty s39324 #19] spec                            -> 200 49 ms
+  [empty s39324 #20] doc                             -> 200 9 ms
+  [empty s39324 #21] edit                            -> 200 52 ms
+  [empty s39324 #22] undo                            -> 200 46 ms
+  [empty s39324 #23] redo                            -> 200 53 ms
+  [empty s39324 #24] add            extrude_face     -> 200 47 ms
+  [empty s39324 #25] tab-new                         -> 200 9 ms
+  [empty s39324 #26] add            tube             -> 200 25 ms
+  [empty s39324 #27] tab-switch                      -> 200 9 ms
+  [empty s39324 #28] tab-close                       -> 200 9 ms
+  [empty s39324 #29] tab-switch                      -> 200 9 ms
+  [empty s39324 #30] edit                            -> 200 10 ms
+  [empty s39324 #31] edit                            -> 200 13 ms
+  [empty s39324 #32] undo                            -> 200 16 ms
+  [empty s39324 #33] redo                            -> 200 15 ms
+  [empty s39324 #34] edit                            -> 200 14 ms
+  [empty s39324 #35] undo                            -> 200 15 ms
+  [empty s39324 #36] redo                            -> 200 19 ms
+  [empty s39324 #37] edit                            -> 200 10 ms
+  [empty s39324 #38] plan           mirror           -> 200 9 ms  Mirror needs a feature or a body to mirror — click a hole, a boss or a body, or select a row i
+  [empty s39324 #39] rollback                        -> 200 10 ms
+  [empty s39324 #40] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [empty s39324 #41] rollback                        -> 200 9 ms
+  [empty s39324 #42] edit                            -> 200 10 ms
+  [empty s39324 #43] add            polygon_plate    -> 200 33 ms
+  [empty s39324 #44] add            move             -> 200 23 ms
+  [empty s39324 #45] undo                            -> 200 20 ms
+  [empty s39324 #46] spec                            -> 200 9 ms
+  [empty s39324 #47] doc                             -> 200 8 ms
+  [empty s39324 #48] edit                            -> 200 11 ms
+  [empty s39324 #49] plan           move             -> 200 9 ms
+  [empty s39324 #50] add            fuse             -> 200 33 ms
+  [empty s39324 #51] add            hole             -> 200 18 ms
+  [empty s39324 #52] rollback                        -> 200 9 ms
+  [empty s39324 #53] plan           extrude          -> 200 9 ms  Extrude needs a sketch profile or a picked flat face
+  [empty s39324 #54] rollback                        -> 200 10 ms
+  [empty s39324 #55] add            fuse             -> 200 23 ms
+  [empty s39324 #56] add            sketch_on_face   -> 200 17 ms
+  [empty s39324 #57] add            extrude          -> 200 16 ms
+  [empty s39324 #58] add            shell            -> 200 40 ms
+   clean
+-- journey 2: esp32-remote seed 39325
+  [esp32-remote s39325 #0] opened: 79 features, 1 bodies
+  [esp32-remote s39325 #1] plan           fillet           -> 200 145 ms  Fillet needs the edges of a body — click an edge, a face, or a row of the tree
+  [esp32-remote s39325 #2] tab-new                         -> 200 30 ms
+  [esp32-remote s39325 #3] add            disc             -> 200 77 ms
+  [esp32-remote s39325 #4] tab-switch                      -> 200 81 ms
+  [esp32-remote s39325 #5] tab-close                       -> 200 76 ms
+  [esp32-remote s39325 #6] tab-switch                      -> 200 88 ms
+  [esp32-remote s39325 #7] edit                            -> 200 8184 ms
+  [esp32-remote s39325 #8] undo                            -> 200 2264 ms
+  [esp32-remote s39325 #9] redo                            -> 200 2350 ms
+  [esp32-remote s39325 #10] add            sketch_on_face   -> 200 687 ms
+  [esp32-remote s39325 #11] add            extrude          -> 200 1672 ms
+  [esp32-remote s39325 #12] plan           pattern          -> 200 37 ms  no plan for tool 'pattern' — known: ['chamfer', 'extrude', 'fillet', 'hole', 'linear_p
+  [esp32-remote s39325 #13] add            disc             -> 200 1930 ms
+  [esp32-remote s39325 #14] add            scale            -> 200 2080 ms
+  [esp32-remote s39325 #15] add            with_bolt_circle -> 200 4691 ms
+  [esp32-remote s39325 #16] plan           hole             -> 200 251 ms  Hole needs a flat face — click a face of a body
+  [esp32-remote s39325 #17] add            ball             -> 200 2079 ms
+  [esp32-remote s39325 #18] undo                            -> 200 2513 ms
+  [esp32-remote s39325 #19] plan           fillet           -> 200 173 ms
+  [esp32-remote s39325 #20] rename                          -> 200 137 ms
+  [esp32-remote s39325 #21] rename                          -> 200 193 ms
+  [esp32-remote s39325 #22] doc                             -> 200 94 ms
+  [esp32-remote s39325 #23] add            sketch_on_face   -> 200 552 ms
+  [esp32-remote s39325 #24] add            extrude          -> 200 2150 ms
+  [esp32-remote s39325 #25] edit                            -> 200 7906 ms
+  [esp32-remote s39325 #26] undo                            -> 200 2426 ms
+  [esp32-remote s39325 #27] redo                            -> 200 3032 ms
+  [esp32-remote s39325 #28] rename                          -> 200 137 ms
+  [esp32-remote s39325 #29] rename                          -> 200 315 ms
+  [esp32-remote s39325 #30] doc                             -> 200 189 ms
+  [esp32-remote s39325 #31] strike                          -> 200 5752 ms
+  [esp32-remote s39325 #32] restore                         -> 200 2030 ms
+  [esp32-remote s39325 #33] add            rotate           -> 200 2038 ms
+  [esp32-remote s39325 #34] edit                            -> 200 11736 ms
+  [esp32-remote s39325 #35] undo                            -> 200 2245 ms
+  [esp32-remote s39325 #36] redo                            -> 200 2441 ms
+  [esp32-remote s39325 #37] edit                            -> 200 8224 ms
+  [esp32-remote s39325 #38] undo                            -> 200 2727 ms
+  [esp32-remote s39325 #39] redo                            -> 200 3260 ms
+  [esp32-remote s39325 #40] add            fuse             -> 200 2709 ms
+  [esp32-remote s39325 #41] strike                          -> 200 12038 ms
+  [esp32-remote s39325 #42] restore                         -> 200 1437 ms
+  [esp32-remote s39325 #43] add            move             -> 200 1766 ms
+  [esp32-remote s39325 #44] add            cone             -> 200 1498 ms
+  [esp32-remote s39325 #45] add            sketch           -> 200 105 ms
+  [esp32-remote s39325 #46] add            extrude          -> 200 1767 ms
+  [esp32-remote s39325 #47] add            sketch           -> 200 142 ms
+  [esp32-remote s39325 #48] add            extrude          -> 200 1718 ms
+  [esp32-remote s39325 #49] add            sketch           -> 200 122 ms
+  [esp32-remote s39325 #50] add            extrude          -> 200 1488 ms
+  [esp32-remote s39325 #51] add            polar_pattern    -> 200 150 ms
+  [esp32-remote s39325 #52] add            scale            -> 200 217 ms
+  [esp32-remote s39325 #53] add            cut              -> 200 352 ms
+  [esp32-remote s39325 #54] add            move             -> 200 642 ms
+   clean
+-- journey 3: pump-impeller seed 39326
+  [pump-impeller s39326 #0] opened: 10 features, 1 bodies
+  [pump-impeller s39326 #1] strike                          -> 200 23 ms
+  [pump-impeller s39326 #2] restore                         -> 200 11 ms
+  [pump-impeller s39326 #3] add            sketch_on_face   -> 200 28 ms
+  [pump-impeller s39326 #4] add            extrude          -> 200 184 ms
+  [pump-impeller s39326 #5] suppress                        -> 200 8 ms
+  [pump-impeller s39326 #6] suppress                        -> 200 18 ms
+  [pump-impeller s39326 #7] doc                             -> 200 8 ms
+  [pump-impeller s39326 #8] strike                          -> 200 568 ms
+  [pump-impeller s39326 #9] restore                         -> 200 248 ms
+  [pump-impeller s39326 #10] add            polygon_plate    -> 200 249 ms
+  [pump-impeller s39326 #11] edit                            -> 200 331 ms
+  [pump-impeller s39326 #12] undo                            -> 200 188 ms
+  [pump-impeller s39326 #13] redo                            -> 200 195 ms
+  [pump-impeller s39326 #14] plan           pattern          -> 200 8 ms  no plan for tool 'pattern' — known: ['chamfer', 'extrude', 'fillet', 'hole', 'linear_p
+  [pump-impeller s39326 #15] plan           shell            -> 200 13 ms
+  [pump-impeller s39326 #16] add            linear_pattern   -> 200 184 ms
+  [pump-impeller s39326 #17] edit                            -> 200 155 ms
+  [pump-impeller s39326 #18] undo                            -> 200 159 ms
+  [pump-impeller s39326 #19] redo                            -> 200 161 ms
+  [pump-impeller s39326 #20] add            cone             -> 200 133 ms
+  [pump-impeller s39326 #21] add            with_center_hole -> 200 147 ms
+  [pump-impeller s39326 #22] add            mirror           -> 200 158 ms
+  [pump-impeller s39326 #23] add            move             -> 200 199 ms
+  [pump-impeller s39326 #24] add            sketch           -> 200 9 ms
+  [pump-impeller s39326 #25] add            extrude          -> 200 198 ms
+  [pump-impeller s39326 #26] add            cut              -> 200 196 ms
+  [pump-impeller s39326 #27] rollback                        -> 200 8 ms
+  [pump-impeller s39326 #28] plan           extrude          -> 200 6 ms  Extrude needs a sketch profile or a picked flat face
+  [pump-impeller s39326 #29] rollback                        -> 200 8 ms
+  [pump-impeller s39326 #30] rollback                        -> 200 8 ms
+  [pump-impeller s39326 #31] plan           extrude          -> 200 7 ms  Extrude needs a sketch profile or a picked flat face
+  [pump-impeller s39326 #32] rollback                        -> 200 8 ms
+  [pump-impeller s39326 #33] add            fuse             -> 200 191 ms
+  [pump-impeller s39326 #34] rollback                        -> 200 8 ms
+  [pump-impeller s39326 #35] plan           extrude          -> 200 6 ms  Extrude needs a sketch profile or a picked flat face
+  [pump-impeller s39326 #36] rollback                        -> 200 8 ms
+  [pump-impeller s39326 #37] add            tube             -> 200 187 ms
+  [pump-impeller s39326 #38] rollback                        -> 200 9 ms
+  [pump-impeller s39326 #39] plan           extrude          -> 200 6 ms  Extrude needs a sketch profile or a picked flat face
+  [pump-impeller s39326 #40] rollback                        -> 200 8 ms
+  [pump-impeller s39326 #41] add            sketch           -> 200 11 ms
+  [pump-impeller s39326 #42] add            extrude          -> 200 188 ms
+  [pump-impeller s39326 #43] add            intersect        -> 200 231 ms
+  [pump-impeller s39326 #44] edit                            -> 200 195 ms
+  [pump-impeller s39326 #45] undo                            -> 200 213 ms
+  [pump-impeller s39326 #46] redo                            -> 200 211 ms
+  [pump-impeller s39326 #47] add            sketch           -> 200 10 ms
+  [pump-impeller s39326 #48] add            extrude          -> 200 190 ms
+  [pump-impeller s39326 #49] add            with_center_hole -> 200 352 ms
+  [pump-impeller s39326 #50] add            with_center_hole -> 200 22 ms
+  [pump-impeller s39326 #51] undo                            -> 200 72 ms
+  [pump-impeller s39326 #52] add            fillet           -> 200 16 ms
+  [pump-impeller s39326 #53] add            hole             -> 200 151 ms
+   clean
+-- journey 4: autonomiq-panel seed 39327
+  [autonomiq-panel s39327 #0] opened: 35 features, 1 bodies
+  [autonomiq-panel s39327 #1] add            with_center_hole -> 200 2116 ms
+  [autonomiq-panel s39327 #2] add            rotate           -> 200 4137 ms
+  [autonomiq-panel s39327 #3] undo                            -> 200 1461 ms
+  [autonomiq-panel s39327 #4] add            mirror           -> 200 2101 ms
+  [autonomiq-panel s39327 #5] spec                            -> 200 1382 ms
+  [autonomiq-panel s39327 #6] doc                             -> 200 10 ms
+  [autonomiq-panel s39327 #7] remove-plan                     -> 400 11 ms  cannot remove 'pyrB_loft': used by ['pyrB_row']
+  [autonomiq-panel s39327 #8] remove                          -> 400 11 ms  cannot remove 'pyrB_loft': used by ['pyrB_row']
+  [autonomiq-panel s39327 #9] add            sketch_on_face   -> 200 295 ms
+  [autonomiq-panel s39327 #10] add            extrude          -> 200 1267 ms
+  [autonomiq-panel s39327 #11] plan           fillet           -> 200 628 ms
+  [autonomiq-panel s39327 #12] add            scale            -> 200 2284 ms
+  [autonomiq-panel s39327 #13] add            with_center_hole -> 200 20 ms
+  [autonomiq-panel s39327 #14] add            plate            -> 200 17 ms
+  [autonomiq-panel s39327 #15] add            with_center_hole -> 200 1042 ms
+  [autonomiq-panel s39327 #16] add            linear_pattern   -> 200 35 ms
+  [autonomiq-panel s39327 #17] add            mirror           -> 200 642 ms
+  [autonomiq-panel s39327 #18] remove-plan                     -> 200 11 ms
+  [autonomiq-panel s39327 #19] remove                          -> 200 4326 ms
+  [autonomiq-panel s39327 #20] add            shell            -> 200 52 ms
+  [autonomiq-panel s39327 #21] add            hole             -> 200 286 ms
+  [autonomiq-panel s39327 #22] add            sketch_on_face   -> 200 21 ms
+  [autonomiq-panel s39327 #23] add            extrude          -> 200 17 ms
+  [autonomiq-panel s39327 #24] suppress                        -> 200 2656 ms
+  [autonomiq-panel s39327 #25] suppress                        -> 200 15 ms
+  [autonomiq-panel s39327 #26] doc                             -> 200 9 ms
+  [autonomiq-panel s39327 #27] add            fillet           -> 200 18 ms
+  [autonomiq-panel s39327 #28] rollback                        -> 200 14 ms
+  [autonomiq-panel s39327 #29] plan           extrude          -> 200 7 ms  Extrude needs a sketch profile or a picked flat face
+  [autonomiq-panel s39327 #30] rollback                        -> 200 14 ms
+  [autonomiq-panel s39327 #31] edit                            -> 200 3007 ms
+  [autonomiq-panel s39327 #32] undo                            -> 200 38 ms
+  [autonomiq-panel s39327 #33] redo                            -> 200 39 ms
+  [autonomiq-panel s39327 #34] add            sketch           -> 200 16 ms
+  [autonomiq-panel s39327 #35] add            extrude          -> 200 20 ms
+  [autonomiq-panel s39327 #36] add            hex_plate        -> 200 28 ms
+  [autonomiq-panel s39327 #37] add            with_bolt_circle -> 200 83 ms
+  [autonomiq-panel s39327 #38] undo                            -> 200 42 ms
+  [autonomiq-panel s39327 #39] plan           extrude          -> 200 25 ms
+  [autonomiq-panel s39327 #40] add            polar_pattern    -> 200 16 ms
+  [autonomiq-panel s39327 #41] add            cone             -> 200 18 ms
+  [autonomiq-panel s39327 #42] undo                            -> 200 44 ms
+  [autonomiq-panel s39327 #43] add            intersect        -> 200 53 ms
+  [autonomiq-panel s39327 #44] edit                            -> 200 190 ms
+  [autonomiq-panel s39327 #45] undo                            -> 200 23 ms
+  [autonomiq-panel s39327 #46] redo                            -> 200 22 ms
+  [autonomiq-panel s39327 #47] add            fuse             -> 200 34 ms
+   clean
+-- journey 5: autonomiq-sat-panel-v1 seed 39328
+  [autonomiq-sat-panel-v1 s39328 #0] opened: 46 features, 1 bodies
+  [autonomiq-sat-panel-v1 s39328 #1] rollback                        -> 200 27 ms
+  [autonomiq-sat-panel-v1 s39328 #2] plan           extrude          -> 200 7 ms  Extrude needs a sketch profile or a picked flat face
+  [autonomiq-sat-panel-v1 s39328 #3] rollback                        -> 200 18 ms
+  [autonomiq-sat-panel-v1 s39328 #4] edit                            -> 200 3266 ms
+  [autonomiq-sat-panel-v1 s39328 #5] undo                            -> 200 1229 ms
+  [autonomiq-sat-panel-v1 s39328 #6] redo                            -> 200 1222 ms
+  [autonomiq-sat-panel-v1 s39328 #7] edit                            -> 200 2936 ms
+  [autonomiq-sat-panel-v1 s39328 #8] undo                            -> 200 1153 ms
+  [autonomiq-sat-panel-v1 s39328 #9] redo                            -> 200 1171 ms
+  [autonomiq-sat-panel-v1 s39328 #10] add            shell            -> 200 12339 ms
+  [autonomiq-sat-panel-v1 s39328 #11] strike                          -> 200 13653 ms
+  [autonomiq-sat-panel-v1 s39328 #12] restore                         -> 200 19 ms
+  [autonomiq-sat-panel-v1 s39328 #13] plan           hole             -> 200 6 ms  'rimB_slab' is a cut, not hole
+  [autonomiq-sat-panel-v1 s39328 #14] plan           hole             -> 200 6 ms  Hole needs a flat face — click a face of a body
+  [autonomiq-sat-panel-v1 s39328 #15] add            sketch           -> 200 20 ms
+  [autonomiq-sat-panel-v1 s39328 #16] add            extrude          -> 200 24 ms
+  [autonomiq-sat-panel-v1 s39328 #17] add            sketch_on_face   -> 200 23 ms
+  [autonomiq-sat-panel-v1 s39328 #18] add            extrude          -> 200 24 ms
+  [autonomiq-sat-panel-v1 s39328 #19] plan           extrude          -> 200 10 ms
+  [autonomiq-sat-panel-v1 s39328 #20] rename                          -> 200 16 ms
+  [autonomiq-sat-panel-v1 s39328 #21] rename                          -> 200 15 ms
+  [autonomiq-sat-panel-v1 s39328 #22] doc                             -> 200 13 ms
+  [autonomiq-sat-panel-v1 s39328 #23] add            sketch           -> 200 22 ms
+  [autonomiq-sat-panel-v1 s39328 #24] add            extrude          -> 200 23 ms
+  [autonomiq-sat-panel-v1 s39328 #25] edit                            -> 200 13818 ms
+  [autonomiq-sat-panel-v1 s39328 #26] undo                            -> 200 25 ms
+  [autonomiq-sat-panel-v1 s39328 #27] redo                            -> 200 137 ms
+  [autonomiq-sat-panel-v1 s39328 #28] add            fillet           -> 200 105 ms
+  [autonomiq-sat-panel-v1 s39328 #29] add            fuse             -> 200 36 ms
+  [autonomiq-sat-panel-v1 s39328 #30] add            hole             -> 200 41 ms
+  [autonomiq-sat-panel-v1 s39328 #31] strike                          -> 200 20 ms
+  [autonomiq-sat-panel-v1 s39328 #32] restore                         -> 200 20 ms
+  [autonomiq-sat-panel-v1 s39328 #33] edit                            -> 200 11553 ms
+  [autonomiq-sat-panel-v1 s39328 #34] undo                            -> 200 23 ms
+  [autonomiq-sat-panel-v1 s39328 #35] redo                            -> 200 23 ms
+  [autonomiq-sat-panel-v1 s39328 #36] edit                            -> 200 12713 ms
+  [autonomiq-sat-panel-v1 s39328 #37] undo                            -> 200 23 ms
+  [autonomiq-sat-panel-v1 s39328 #38] redo                            -> 200 23 ms
+  [autonomiq-sat-panel-v1 s39328 #39] add            linear_pattern   -> 200 62 ms
+  [autonomiq-sat-panel-v1 s39328 #40] add            sketch_on_face   -> 200 31 ms
+  [autonomiq-sat-panel-v1 s39328 #41] add            extrude          -> 200 23 ms
+  [autonomiq-sat-panel-v1 s39328 #42] add            sketch_on_face   -> 200 24 ms
+  [autonomiq-sat-panel-v1 s39328 #43] add            extrude          -> 200 23 ms
+  [autonomiq-sat-panel-v1 s39328 #44] rollback                        -> 200 20 ms
+  [autonomiq-sat-panel-v1 s39328 #45] plan           extrude          -> 200 6 ms  Extrude needs a sketch profile or a picked flat face
+  [autonomiq-sat-panel-v1 s39328 #46] rollback                        -> 200 19 ms
+  [autonomiq-sat-panel-v1 s39328 #47] add            scale            -> 200 24 ms
+  [autonomiq-sat-panel-v1 s39328 #48] plan           revolve          -> 200 56 ms
+  [autonomiq-sat-panel-v1 s39328 #49] add            sketch           -> 200 22 ms
+  [autonomiq-sat-panel-v1 s39328 #50] add            extrude          -> 200 26 ms
+  [autonomiq-sat-panel-v1 s39328 #51] add            with_center_hole -> 200 86 ms
+  [autonomiq-sat-panel-v1 s39328 #52] edit                            -> 200 175 ms
+  [autonomiq-sat-panel-v1 s39328 #53] undo                            -> 200 37 ms
+  [autonomiq-sat-panel-v1 s39328 #54] redo                            -> 200 37 ms
+  [autonomiq-sat-panel-v1 s39328 #55] add            tube             -> 200 32 ms
+  [autonomiq-sat-panel-v1 s39328 #56] undo                            -> 200 37 ms
+  [autonomiq-sat-panel-v1 s39328 #57] edit                            -> 200 2018 ms
+  [autonomiq-sat-panel-v1 s39328 #58] undo                            -> 200 38 ms
+  [autonomiq-sat-panel-v1 s39328 #59] redo                            -> 200 38 ms
+   clean
+-- journey 6: autonomiq-sat-panel seed 39329
+  [autonomiq-sat-panel s39329 #0] opened: 97 features, 1 bodies
+  [autonomiq-sat-panel s39329 #1] edit                            -> 200 16936 ms
+  [autonomiq-sat-panel s39329 #2] undo                            -> 200 2751 ms
+  [autonomiq-sat-panel s39329 #3] redo                            -> 200 3259 ms
+  [autonomiq-sat-panel s39329 #4] rename                          -> 200 28 ms
+  [autonomiq-sat-panel s39329 #5] rename                          -> 200 23 ms
+  [autonomiq-sat-panel s39329 #6] doc                             -> 200 19 ms
+  [autonomiq-sat-panel s39329 #7] add            move             -> 200 4232 ms
+  [autonomiq-sat-panel s39329 #8] undo                            -> 200 2763 ms
+  [autonomiq-sat-panel s39329 #9] add            polar_pattern    -> 200 32 ms
+  [autonomiq-sat-panel s39329 #10] add            sketch           -> 200 32 ms
+  [autonomiq-sat-panel s39329 #11] add            extrude          -> 200 35 ms
+  [autonomiq-sat-panel s39329 #12] rename                          -> 200 22 ms
+  [autonomiq-sat-panel s39329 #13] rename                          -> 200 22 ms
+  [autonomiq-sat-panel s39329 #14] doc                             -> 200 19 ms
+  [autonomiq-sat-panel s39329 #15] strike                          -> 200 11085 ms
+  [autonomiq-sat-panel s39329 #16] restore                         -> 200 34 ms
+  [autonomiq-sat-panel s39329 #17] add            sketch_on_face   -> 200 41 ms
+  [autonomiq-sat-panel s39329 #18] add            extrude          -> 200 37 ms
+  [autonomiq-sat-panel s39329 #19] plan           mirror           -> 200 7 ms  Mirror needs a feature or a body to mirror — click a hole, a boss or a body, or 
+  [autonomiq-sat-panel s39329 #20] add            sketch           -> 200 37 ms
+  [autonomiq-sat-panel s39329 #21] add            extrude          -> 200 35 ms
+  [autonomiq-sat-panel s39329 #22] add            sketch           -> 200 34 ms
+  [autonomiq-sat-panel s39329 #23] add            extrude          -> 200 35 ms
+  [autonomiq-sat-panel s39329 #24] rename                          -> 200 23 ms
+  [autonomiq-sat-panel s39329 #25] rename                          -> 200 22 ms
+  [autonomiq-sat-panel s39329 #26] doc                             -> 200 19 ms
+  [autonomiq-sat-panel s39329 #27] add            hole             -> 200 160 ms
+  [autonomiq-sat-panel s39329 #28] undo                            -> 200 37 ms
+  [autonomiq-sat-panel s39329 #29] add            move             -> 200 38 ms
+  [autonomiq-sat-panel s39329 #30] add            shell            -> 200 35 ms
+  [autonomiq-sat-panel s39329 #31] undo                            -> 200 39 ms
+  [autonomiq-sat-panel s39329 #32] remove-plan                     -> 200 21 ms
+  [autonomiq-sat-panel s39329 #33] remove                          -> 200 4126 ms
+  [autonomiq-sat-panel s39329 #34] add            sketch_on_face   -> 200 36 ms
+  [autonomiq-sat-panel s39329 #35] add            extrude          -> 200 40 ms
+  [autonomiq-sat-panel s39329 #36] add            disc             -> 200 34 ms
+  [autonomiq-sat-panel s39329 #37] add            cone             -> 200 36 ms
+  [autonomiq-sat-panel s39329 #38] add            linear_pattern   -> 200 49 ms
+  [autonomiq-sat-panel s39329 #39] add            with_bolt_circle -> 200 59 ms
+  [autonomiq-sat-panel s39329 #40] add            with_bolt_circle -> 200 59 ms
+  [autonomiq-sat-panel s39329 #41] add            disc             -> 200 37 ms
+  [autonomiq-sat-panel s39329 #42] undo                            -> 200 40 ms
+  [autonomiq-sat-panel s39329 #43] add            sketch           -> 200 35 ms
+  [autonomiq-sat-panel s39329 #44] add            extrude          -> 200 39 ms
+  [autonomiq-sat-panel s39329 #45] edit                            -> 200 48 ms
+  [autonomiq-sat-panel s39329 #46] undo                            -> 200 42 ms
+  [autonomiq-sat-panel s39329 #47] redo                            -> 200 42 ms
+  [autonomiq-sat-panel s39329 #48] add            sketch           -> 200 36 ms
+  [autonomiq-sat-panel s39329 #49] add            extrude          -> 200 37 ms
+  [autonomiq-sat-panel s39329 #50] add            mirror           -> 200 36 ms
+  [autonomiq-sat-panel s39329 #51] add            mirror           -> 200 36 ms
+  [autonomiq-sat-panel s39329 #52] add            move             -> 200 36 ms
+   clean
+-- journey 7: bit-tray seed 39330
+  [bit-tray s39330 #0] opened: 47 features, 1 bodies
+  [bit-tray s39330 #1] add            mirror           -> 200 2251 ms
+  [bit-tray s39330 #2] add            ball             -> 200 1097 ms
+  [bit-tray s39330 #3] undo                            -> 200 1135 ms
+  [bit-tray s39330 #4] add            sketch_on_face   -> 200 46 ms
+  [bit-tray s39330 #5] add            extrude          -> 200 1017 ms
+  [bit-tray s39330 #6] strike                          -> 200 2635 ms
+  [bit-tray s39330 #7] restore                         -> 200 1100 ms
+  [bit-tray s39330 #8] edit                            -> 200 2957 ms
+  [bit-tray s39330 #9] undo                            -> 200 981 ms
+  [bit-tray s39330 #10] redo                            -> 200 998 ms
+  [bit-tray s39330 #11] add            ball             -> 200 1070 ms
+  [bit-tray s39330 #12] plan           rotate           -> 200 8 ms
+  [bit-tray s39330 #13] add            scale            -> 200 1034 ms
+  [bit-tray s39330 #14] spec                            -> 200 1036 ms
+  [bit-tray s39330 #15] doc                             -> 200 8 ms
+  [bit-tray s39330 #16] add            cut              -> 200 1301 ms
+  [bit-tray s39330 #17] plan           sketch           -> 200 8 ms
+  [bit-tray s39330 #18] add            cut              -> 200 1248 ms
+  [bit-tray s39330 #19] add            sketch_on_face   -> 200 49 ms
+  [bit-tray s39330 #20] add            extrude          -> 200 1009 ms
+  [bit-tray s39330 #21] plan           fillet           -> 200 164 ms
+  [bit-tray s39330 #22] add            shell            -> 200 50737 ms
+  [bit-tray s39330 #23] strike                          -> 200 55894 ms
+  [bit-tray s39330 #24] restore                         -> 200 13 ms
+  [bit-tray s39330 #25] add            disc             -> 200 15 ms
+  [bit-tray s39330 #26] add            cut              -> 200 17 ms
+  [bit-tray s39330 #27] add            sketch           -> 200 14 ms
+  [bit-tray s39330 #28] add            extrude          -> 200 22 ms
+  [bit-tray s39330 #29] edit                            -> 200 18 ms
+  [bit-tray s39330 #30] undo                            -> 200 13 ms
+  [bit-tray s39330 #31] redo                            -> 200 13 ms
+  [bit-tray s39330 #32] remove-plan                     -> 200 11 ms
+  [bit-tray s39330 #33] remove                          -> 200 40500 ms
+  [bit-tray s39330 #34] add            with_bolt_circle -> 200 145 ms
+  [bit-tray s39330 #35] remove-plan                     -> 200 10 ms
+  [bit-tray s39330 #36] remove                          -> 200 44046 ms
+  [bit-tray s39330 #37] rename                          -> 200 10 ms
+  [bit-tray s39330 #38] rename                          -> 200 10 ms
+  [bit-tray s39330 #39] doc                             -> 200 8 ms
+  [bit-tray s39330 #40] tab-new                         -> 200 7 ms
+  [bit-tray s39330 #41] add            hex_plate        -> 200 18 ms
+  [bit-tray s39330 #42] tab-switch                      -> 200 9 ms
+  [bit-tray s39330 #43] tab-close                       -> 200 12 ms
+  [bit-tray s39330 #44] tab-switch                      -> 200 9 ms
+  [bit-tray s39330 #45] strike                          -> 200 28687 ms
+  [bit-tray s39330 #46] restore                         -> 200 11 ms
+  [bit-tray s39330 #47] strike                          -> 200 25488 ms
+  [bit-tray s39330 #48] restore                         -> 200 12 ms
+  [bit-tray s39330 #49] tab-new                         -> 200 7 ms
+  [bit-tray s39330 #50] add            polygon_plate    -> 200 14 ms
+  [bit-tray s39330 #51] tab-switch                      -> 200 9 ms
+  [bit-tray s39330 #52] tab-close                       -> 200 10 ms
+  [bit-tray s39330 #53] tab-switch                      -> 200 9 ms
+  [bit-tray s39330 #54] plan           revolve          -> 200 7 ms  Revolve needs a sketch profile or a picked flat face
+  [bit-tray s39330 #55] add            sketch_on_face   -> 200 16 ms
+  [bit-tray s39330 #56] add            extrude          -> 200 14 ms
+   clean
+-- journey 8: bottle_cap_28mm seed 39331
+  [bottle_cap_28mm s39331 #0] opened: 5 features, 1 bodies
+  [bottle_cap_28mm s39331 #1] edit                            -> 200 14 ms
+  [bottle_cap_28mm s39331 #2] edit                            -> 200 7 ms
+  [bottle_cap_28mm s39331 #3] add            sketch           -> 200 9 ms
+  [bottle_cap_28mm s39331 #4] add            extrude          -> 200 635 ms
+  [bottle_cap_28mm s39331 #5] add            plate            -> 200 1351644 ms
+  [bottle_cap_28mm s39331 #6] edit                            -> 200 31 ms
+  [bottle_cap_28mm s39331 #7] tab-new                         -> 200 9 ms
+  [bottle_cap_28mm s39331 #8] add            disc             -> 200 59 ms
+  [bottle_cap_28mm s39331 #9] tab-switch                      -> 200 8 ms
+  [bottle_cap_28mm s39331 #10] tab-close                       -> 200 7 ms
+  [bottle_cap_28mm s39331 #11] tab-switch                      -> 200 6 ms
