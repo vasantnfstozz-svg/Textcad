@@ -871,6 +871,60 @@ def plain_cause(e: Exception) -> str:
     return f"{type(e).__name__}: {first}"
 
 
+# A blend is a LOCAL change: the corpus of every fillet and chamfer in the
+# library (probes/fillet_result_corpus.py, 2026-09-13) moves between 0.204 and
+# 0.377 of `value^2 x picked edge length` — the 90-degree ideals are 1 - pi/4 =
+# 0.215 for a round and 0.5 for a bevel — and retracts the bounding box by at
+# most 0.155 x value. These bounds leave that eight- and seventy-fold behind,
+# because they exist to catch a kernel answer that is not a blend at all.
+_BLEND_VOLUME_FACTOR = 3.0      # x value^2 x edge length
+_BLEND_SHRINK_FACTOR = 12.0     # x value
+
+
+def _bbox_retreat(before, after) -> float:
+    """How far `after`'s bounding box pulled IN from `before`'s, mm, on its
+    worst side. Growth reads negative: a blend fills a concave corner, it
+    never pushes past a face it was tangent to."""
+    return max(max(getattr(after.min, k) - getattr(before.min, k),
+                   getattr(before.max, k) - getattr(after.max, k))
+               for k in ("X", "Y", "Z"))
+
+
+def _assert_is_a_blend(name: str, part: Part, out, picked, value: float, unit: str) -> None:
+    """A fillet/chamfer the kernel called a success, MEASURED — because on the
+    wrong body it hands back a different part and every check we had said fine.
+
+    Measured 2026-09-13 (the overnight journey run, my-part-8 seed 46791,
+    probes/fillet_eats_body.py): an `intersect` body of 181.499 mm3 — valid by
+    BRepCheck_Analyzer, unchanged by `.clean()`, but carrying a ZERO-area
+    cylindrical face and edges 0.00014 mm long — filleted on ONE picked edge at
+    radius 0.4 came back 44.621 mm3. Valid. `inspector.health` empty. Three
+    quarters of the part gone, a green row, and saved. Every one of its eight
+    flat rims did the same (34-46 mm3 of 181.5, bounding box 50.67 mm wide
+    collapsing to 1.0 mm); the same call on all eight at once SEGFAULTED, which
+    no `except` can catch and this cannot help. The volume test alone misses the
+    widest radius (3.8x, under the bound) and the box test alone is loose on a
+    sharp wedge, so BOTH run: a real blend passes both by an order of magnitude.
+    """
+    total = part.volume
+    length = sum(e.length for e in picked)
+    moved = abs(out.volume - total)
+    allowed = max(_BLEND_VOLUME_FACTOR * value * value * length, 1e-6 * abs(total))
+    retreat = _bbox_retreat(part.bounding_box(), out.bounding_box())
+    if moved <= allowed and retreat <= _BLEND_SHRINK_FACTOR * value:
+        return
+    n = len(picked)
+    low = unit.lower()
+    raise ValueError(
+        f"{name}: the kernel accepted {low} {value:g} mm on {n} edge{'s' if n != 1 else ''} "
+        f"but what it returned is not a blend of this body — "
+        f"{total:.4g} mm3 became {out.volume:.4g} mm3"
+        + (f" and it shrank by {retreat:.4g} mm" if retreat > _BLEND_SHRINK_FACTOR * value else "")
+        + f". That happens on a body carrying sliver faces or near-zero-length "
+        f"edges. Try a smaller {low}, pick different edges, or round the shape "
+        f"before the step that made those slivers")
+
+
 def _finish(name: str, part: Part, edges, value: float, unit: str, build):
     """Shared by fillet_edges / chamfer_edges: the value guard, the kernel call,
     the health check, and a refusal that says the TRUE reason.
@@ -905,11 +959,13 @@ def _finish(name: str, part: Part, edges, value: float, unit: str, build):
     # measured OUTSIDE that try on purpose: a health check that throws is our
     # own problem, and must never be reported as a value that "does not fit"
     problems = inspector.health(out, check_valid=False)
-    if not problems:
-        return out
-    raise ValueError(f"{name}: {low} {value:g} mm leaves a broken solid on {on} — "
-                     f"{problems[0]}. It runs into a neighbouring face or round; "
-                     f"try a smaller {low}.")
+    if problems:
+        raise ValueError(f"{name}: {low} {value:g} mm leaves a broken solid on {on} — "
+                         f"{problems[0]}. It runs into a neighbouring face or round; "
+                         f"try a smaller {low}.")
+    # ... and healthy is not the same as RIGHT: measure what came back
+    _assert_is_a_blend(name, part, out, picked, value, unit)
+    return out
 
 
 def fillet_edges(part: Part, radius: float, edges="all") -> Part:

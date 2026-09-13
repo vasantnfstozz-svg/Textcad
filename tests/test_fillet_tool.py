@@ -15,7 +15,9 @@ probes/fillet_edges_probe.py (2026-09-04) found in the kernel:
 Every geometric claim below is checked against the kernel.
 """
 import pytest
-from build123d import Axis
+from pathlib import Path
+
+from build123d import Axis, Box, Part, Pos, import_brep
 
 import blocks
 import inspector
@@ -839,3 +841,100 @@ def test_the_memo_is_fresh_after_an_in_place_move():
     assert stored[1] != blocks._shape_key(b), "the hash can"
     got = blocks.resolve_face(b, [0, 0, 15], [0, 0, 1])
     assert [round(v, 3) for v in tuple(got.center())] == [0, 0, 15]
+
+
+# ---------------------------------------------------------------------------
+# "the kernel said yes" is not "the kernel was right"  (overnight run 2026-09-13)
+# ---------------------------------------------------------------------------
+
+SLIVER_PLATE = Path(__file__).parent / "fixtures" / "sliver_intersect_plate.brep"
+
+
+def sliver_plate():
+    """my-part-8, seed 46791, step 14 of the overnight journey run: the
+    `intersect` body a fillet ATE. 181.499 mm3, 19 faces, 53 edges — valid by
+    BRepCheck_Analyzer, unchanged by `.clean()`, health empty, and carrying a
+    zero-area cylindrical face with edges 0.00014 mm long."""
+    return Part(import_brep(str(SLIVER_PLATE)).wrapped)
+
+
+def test_the_kernel_really_does_hand_back_a_different_body():
+    """Why the guard exists, asserted against the kernel so it cannot rot: a
+    radius-0.4 round on ONE flat rim returns a quarter of the part, and every
+    check the op had before said it was fine."""
+    part = sliver_plate()
+    assert part.volume == pytest.approx(181.4986, abs=1e-3)
+    assert part.is_valid                                  # a property, not a call
+    assert inspector.health(part, check_valid=True) == []
+    rim = blocks.edges_for(part, "horizontal")[0]
+    built = blocks._b3d_fillet([rim], radius=0.4)
+    assert built.is_valid and inspector.health(built, check_valid=False) == []
+    assert built.volume == pytest.approx(37.764, abs=0.01)   # of 181.499
+    assert built.bounding_box().size.X < part.bounding_box().size.X - 1.9
+
+
+def test_a_blend_that_eats_the_body_is_refused_not_saved():
+    """Every one of the eight flat rims, picked ALONE the way the viewport
+    hands one over. None may come back as a body."""
+    part = sliver_plate()
+    rims = blocks.edges_for(part, "horizontal")
+    assert len(rims) == 8
+    said_not_a_blend = 0
+    for e in rims:
+        mid = e.center()
+        with pytest.raises(ValueError) as ei:
+            blocks.fillet_edges(part, 0.4, [{"mid": [mid.X, mid.Y, mid.Z]}])
+        said_not_a_blend += "not a blend of this body" in str(ei.value)
+    assert said_not_a_blend == 7        # the eighth is refused by the kernel itself
+
+
+def test_the_refusal_names_the_body_it_measured():
+    part = sliver_plate()
+    mid = blocks.edges_for(part, "horizontal")[0].center()
+    with pytest.raises(ValueError) as ei:
+        blocks.fillet_edges(part, 0.4, [{"mid": [mid.X, mid.Y, mid.Z]}])
+    msg = str(ei.value)
+    assert "181.5 mm3 became 37.76 mm3" in msg
+    assert "radius 0.4 mm on 1 edge" in msg
+    assert not any(w in msg for w in blocks._KERNEL_WORDS)
+
+
+@pytest.mark.parametrize("op,value,edges,expected", [
+    ("fillet", 0.4, "horizontal", 4811.314569),
+    ("fillet", 0.4, "all", 4811.086117),
+    ("chamfer", 0.4, "all", 4792.723733),
+    ("fillet", 0.4, "vertical", 4824.734924),
+])
+def test_the_guard_leaves_honest_work_exactly_alone(op, value, edges, expected):
+    """A 50 x 50 x 1.93 mm plate — the same size as the body above, without the
+    slivers. The kernel's own answer, to the micron, still comes through."""
+    plate = Part(Box(50, 50, 1.93).wrapped)
+    fn = blocks.fillet_edges if op == "fillet" else blocks.chamfer_edges
+    assert fn(plate, value, edges).volume == pytest.approx(expected, abs=1e-4)
+
+
+def test_a_right_angle_bevel_sits_well_inside_the_bound():
+    """The tightest honest case there is: a 45-degree chamfer on a square edge
+    moves exactly half of value^2 x length, and the bound is 3x that."""
+    plate = Part(Box(50, 50, 10).wrapped)
+    picked = blocks.edges_for(plate, "vertical")
+    out = blocks.chamfer_edges(plate, 2.0, "vertical")
+    length = sum(e.length for e in picked)
+    moved = plate.volume - out.volume
+    assert moved == pytest.approx(0.5 * 2.0 ** 2 * length, rel=1e-6)
+    assert moved < blocks._BLEND_VOLUME_FACTOR * 2.0 ** 2 * length
+
+
+def test_a_blend_may_fill_a_concave_corner_without_being_called_wrong():
+    """A round on an inside corner ADDS material and pushes no bounding box
+    out, so the retreat test must read it as zero, not as a shrink."""
+    step = Part((Box(40, 40, 10) + Pos(0, 0, 10) * Box(40, 20, 10)).wrapped)
+    # the two inside corners where the upper block meets the lower slab's top
+    inner = [e for e in step.edges()
+             if abs(e.center().Z - 5) < 1e-6 and abs(abs(e.center().Y) - 10) < 1e-6
+             and e.length == pytest.approx(40, abs=1e-6)]
+    assert len(inner) == 2, "the step has two inside corners"
+    ref = [blocks.edge_ref(step, inner[0])]
+    out = blocks.fillet_edges(step, 2.0, ref)
+    assert out.volume > step.volume
+    assert blocks._bbox_retreat(step.bounding_box(), out.bounding_box()) <= 1e-9

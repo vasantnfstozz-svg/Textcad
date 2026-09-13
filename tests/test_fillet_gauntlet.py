@@ -35,6 +35,10 @@ def test_every_edge_picked_alone_builds_or_refuses_friendly(name, op):
             # 160-degree edge where the clipped ball's cap meets its sphere
             # removes 0.017 mm3 of a 68235 mm3 body — real work, under 1e-6 of it
             assert abs(r.volume - solid.volume) > 1e-6, f"{name}: {op} changed nothing"
+            # ... and what it changed must be a BLEND of this body, not a new
+            # shape: on the sliver plate of 2026-09-13 the kernel returned a
+            # quarter of the part, valid and healthy (see test_fillet_tool)
+            assert blocks._bbox_retreat(solid.bounding_box(), r.bounding_box())                 <= blocks._BLEND_SHRINK_FACTOR * 0.5, f"{name}: {op} moved the body's extremes"
     assert built > 0, f"{name}: no edge could be {op}ed"
 
 
