@@ -6,13 +6,14 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING.** Review `8f72d9e..53f5653` (two code commits, `ac5c11d`
-> and `53f5653`): the journey runner's first two catches. `ac5c11d` — two
-> kernel SEGFAULTS turned into sentences before the kernel, in Shell and in
-> Mirror, plus the gauntlet corpus grown by the body that crashed them.
-> `53f5653` — the spec check's symmetry boolean made bounded (it ran 22 minutes
-> and 44 GB on one random plate and the laptop died), and the runner given
-> time and memory oracles plus a hard memory ceiling per child.
+> **Status: PENDING.** Review `53f5653..2231095` (two commits, `77bc7fa` and
+> `2231095`) - the fix pass for the overnight run's eight findings, and for
+> the review of `8f72d9e..53f5653`, which is now DONE (what it found is below).
+> A P0-class finding was fixed, so the queue's step 8 asks for a second read of
+> the FIX COMMIT, and this project's own history is the reason: a fix pass's
+> own new guard has been wrong more often than not. `77bc7fa` puts a measured
+> bound on the RESULT of every fillet and chamfer, and it runs on every rebuild
+> of one.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -25,130 +26,140 @@
 
 ---
 
-## The range: `8f72d9e..53f5653`
+## The range: `53f5653..2231095`
 
-- `ac5c11d` — Shell + Mirror: two kernel segfaults become sentences before the
-  kernel; the clipped ball joins the corpus; 9 new tests (fast tier 1695).
-  Files: `sketch.py` (+42: `assert_wall_fits_every_lump`), `pattern.py` (+51:
-  `_part_ball_through`, `_assert_no_part_ball_through`, three call sites in
-  `mirror`), `tests/gauntlet.py` (`clipped_ball`), `tests/journeys.py` (the
-  crash recipe gains `--library` for a live design), the four gauntlet / tool
-  test files, four probes.
-- `53f5653` — Symmetry check: two gates before the boolean; the runner gets
-  `HANG_MS`, `MEMORY_BUG_MB`, `peak_mb()`, `JobCap` and `--mem-gb`; 5 new
-  tests (fast tier 1701). Files: `inspector.py` (+58: `_rotation_keeps_extent`,
-  `_rotation_keeps_vertices`, `_rotation_residual`, the rewritten
-  `is_rotationally_symmetric`), `tests/journeys.py` (+190), `tests/test_core.py`
-  (2 tests + the bottle cap as data), `tests/test_journeys.py` (3 tests), five
-  probes (`memcap.py` is a standalone tool: any command under a memory ceiling).
-  The evidence folder is `bugs/fixed/20260912-220013-bottle-cap-28mm-s39331-memory/`
-  (untracked, like all of `bugs/`).
+- `77bc7fa` - Fillet/Chamfer: `blocks._assert_is_a_blend` measures what the
+  kernel returned; 9 new tests (fast tier 1701 -> 1710). Files: `blocks.py`
+  (+45: `_BLEND_VOLUME_FACTOR`, `_BLEND_SHRINK_FACTOR`, `_bbox_retreat`,
+  `_assert_is_a_blend`, and the tail of `_finish` re-shaped so the health
+  refusal comes first and the measurement runs after it),
+  `tests/test_fillet_tool.py` (+7 tests), `tests/test_fillet_gauntlet.py` (the
+  bound asserted across the whole corpus),
+  `tests/fixtures/sliver_intersect_plate.brep`, seven probes.
+- `2231095` - the journey runner's oracles: the geometry is asked before the
+  clock, and a child that answers nothing is killed; 3 new tests (1710 ->
+  1713). Files: `tests/journeys.py` (+45: `STALL_KILL_S`, `steps_taken`,
+  `wait_or_kill_a_stalled_child`, `spawn` draining stderr on a thread,
+  `write_crash` gaining `stalled_s`, `--stall-secs`), `tests/test_journeys.py`
+  (+3 tests), `LAUNCH-PLAN.md` (4 section-10 rows), two shell fixtures, two
+  probes, and the eight bug folders the overnight run filed.
 
 ## What each fixes, in one paragraph
 
-**Shell (`ac5c11d`).** `bugs/fixed/20260912-175819-isogrid-panel-s9016-crash`:
-a CLOSED inward shell (`open_face: "none"`) of a ball clipped by a box,
-2.56 x 4.8 x 5.12 mm, at t = 1.8 killed the server child (0xC0000005 in
-`offset()`). A thickness sweep (`probes/shell_thick_wall_sweep.py`) puts the
-edge exactly at half the smallest extent: 1.27 refuses, 1.29 crashes. A closed
-inward wall of half a lump's smallest bounding-box extent or more leaves
-nothing hollow, so it is refused per lump before the kernel. The bound also
-refuses a silent wrong result the kernel called a success (`shell(ball r 3.2,
-t 5)` came back 137 -> 113 mm3 through an inverted offset sphere).
+**The P0 (`77bc7fa`).** The overnight run - 512 journeys, 496 clean, 8
+findings - filed `bugs/20260912-232440-my-part-8-s46791-crash/` as a segfault.
+It is one, but underneath it was worse. On that design's `intersect` body
+(181.499 mm3, valid by `BRepCheck_Analyzer`, unchanged by `.clean()`,
+`inspector.health` empty, and carrying a ZERO-area cylindrical face with edges
+0.00014 mm long) a radius-0.4 round on ONE picked edge came back 44.621 mm3.
+Valid. Healthy. Green row. Saved. All eight of its flat rims did the same
+(34-46 mm3 of 181.5; the 50.67 mm wide bounding box collapsing to 1.0 mm).
+`_finish` called the kernel once and never asked what came back. It measures
+now: over every fillet and chamfer in the library
+(`probes/fillet_result_corpus.py`) an honest one moves 0.204 to 0.377 of
+`value^2 x picked edge length` - the 90-degree ideals are `1 - pi/4` and 0.5 -
+and retracts the bounding box by at most 0.155 x value. The bounds are 3x and
+12x. BOTH run: the volume test alone misses the widest radius (3.8x, under the
+bound) and the box test alone is loose on a sharp wedge. All 52 designs
+rebuild with zero feature errors (`probes/library_blend_guard.py`).
 
-**Mirror (`ac5c11d`).** The clipped ball joined `tests/gauntlet.py` and the
-mirror gauntlet segfaulted on it: Join across its own flat face fuses two
-halves of ONE sphere. Measured class (`probes/mirror_clipped_ball_crash.py`):
-a plain half ball -> empty invalid solid; with side clips, a 45-degree clip or
-a quarter ball -> segfault, glue or not; a half-ball pocket's image CUT from
-the body -> the full block, pocket gone, invalid. The guard: a SPHERE face,
-centre within 1e-3 mm of the plane, centroid OFF the plane -> a sentence.
-Applied to the join body and to both seed deltas.
-
-**Symmetry (`53f5653`).** The spec check's proof of N-fold symmetry was
-`result_shape - result_shape.rotate(360/N)`, unbounded work on arbitrary
-geometry. On bottle_cap_28mm (spec `symmetry: 24`) a random 67.9 x 16.9 plate
-added beside the cap and a cylinder made `Compound(3 overlapping bodies) -
-rotated` run 22 minutes and 34 -> 44 GB (the stack, dumped 20 s in, is in
-`ShapeUpgrade_UnifySameDomain` under `_bool_op`'s clean pass); Windows logged
-four Resource-Exhaustion events and the 16 GB laptop died at 22:00. Two
-NECESSARY conditions now run first, each milliseconds: a rotation that maps
-the shape onto itself keeps its bounding box, and carries every (sampled, at
-most 60) vertex to a point on or inside the shape. Only a shape that passes
-both reaches the boolean, which runs under `SkipClean` and via `cut()`, not
-`-` (`Compound.__sub__` unpacks the tool's members and read 6967 mm3 of
-residue on an exactly symmetric overlapping compound; `cut` reads 0). The
-plate case answers False in 11 ms; the journey's step 5 takes 203 ms; all ten
-live designs with a symmetry spec keep their verdict
-(`probes/symmetry_gate_corpus.py`, old vs new side by side).
-
-**The runner (`53f5653`).** It had logged `200 1351644 ms` and written
-"clean". `HANG_MS` (120 s) and `MEMORY_BUG_MB` (2 GB of peak growth in ONE
-request) are findings whatever the status; every child runs inside a Windows
-Job object with `--mem-gb` (default 6) so the KERNEL refuses the allocation
-and the child dies instead of the box; a child that dies AT its ceiling is
-filed as a `memory` finding where the same MemoryError from an uncapped child
-still means "the box gave up".
+**The runner (`2231095`).** Two defects in `53f5653`'s own new oracles. First,
+the clock spoke over the geometry: a Bug ENDS the journey, and `HANG_MS` was
+checked before "every green body on screen is sound", so autonomiq-panel's
+1195 s shell was filed as a "hang" and nothing ever asked whether the body it
+returned was sound. The document and geometry oracles run first now; the clock
+and the memory reading are last. Second, `HANG_MS` is only read when a request
+COMES BACK, so one that never does is invisible to it: journey 512
+(planetary-ring s47276) sat in one `POST /api/edit` from 05:09:13 to 08:15:33
+- three hours and six minutes - and what ended it came from outside the
+runner, which filed "exit code 4294967295". The PARENT watches the child's
+step log now (`_flush_log` writes it BEFORE each request, so the count rising
+is progress and the last entry is the request the child is in): no new step
+for `--stall-secs` (default 600) and the child is killed and filed as a `hang`
+naming that request. Verified end to end on that very seed at
+`--stall-secs 90`.
 
 ## Where the risk is
 
-1. **The two gates refuse something correct.** Both are necessary conditions
-   of a true symmetry, so a false refusal needs a numerical miss: the extent
-   gate compares `bounding_box()` corners at `rel_tol x largest extent`
-   (0.043 mm on the cap) — build123d's `optimal=True` box was tight on every
-   probed body, but a loose box on some surface kind rotated by an odd angle
-   would fail a symmetric part; the vertex gate uses `distance_to` (boundary)
-   OR `Solid.is_inside`, sampling every k-th vertex. Ten live designs and the
-   three test shapes agree with the boolean; nothing else was measured.
-2. **The vertex gate's cost.** Roughly +0.3 to +0.9 s on the heavy designs
-   (sat-side-panel 2.7 -> 3.6 s, bottle cap 0.67 -> 1.3 s), paid on a
-   rebuild whose leaf geometry changed while a spec is set (the result is
-   cached on the spec signature). A reviewer may want the gate skipped for a
-   single solid (the boolean was never the problem there) or the distance
-   queries batched.
-3. **`cut()` vs `-` changed the proof's arithmetic on compounds.** For one
-   body they are the same call. For a multi-body result the old `-` gave a
-   wrong non-zero residue on an exactly symmetric overlapping compound, so
-   any multi-body design that used to fail its symmetry spec for that reason
-   alone would now pass — none of the ten live ones is multi-body.
-4. **The memory oracle reads a PEAK.** `grew_mb` is the peak working set
-   after minus before, so a request that stays under the process's earlier
-   high point reads 0; the first runaway in a child is seen, later ones only
-   by the ceiling. The Job ceiling is Windows-only (`JobCap.available`), and
-   `hit` is `peak >= 0.95 x cap`.
-5. **OCCT under a refused allocation answered 200.** Under the 6 GB cap the
-   original request still completed in 55 s with the "Boolean operation
-   unable to clean" warning and a plausible verdict. The product does not
-   know an allocation was refused inside the kernel; whether a degraded
-   boolean can come back as a "successful" wrong solid is not measured
-   (recorded in §10 as P2).
-6. **Shell / Mirror (`ac5c11d`)**: the shell bound applies ONLY to the closed
-   hollow in the INSIDE direction, per lump, with an axis-aligned box (fires
-   LESS on a tilted body); the mirror guard reads "symmetric about the plane"
-   as "the sphere face's centroid lies on the plane"; the seed path's guard
-   was measured on `body - image` directly, not through `pattern.mirror(seed)`
-   on a Document; the mirror gauntlet asks `pattern._part_ball_through` to
-   decide `allow_failure` (the test leaning on the code it tests).
+1. **The blend bound's two constants are the whole guard.** They come from 14
+   fillet/chamfer features across 52 designs - a small corpus, and every one
+   of them a round or bevel the user meant. A legitimate blend on a SHARP
+   wedge moves more material and retracts the box further than a 90-degree one
+   (the removed cross-section grows like `r^2 / sin(theta)`); the library has
+   no such edge, so nothing measured that case. A false refusal would read
+   "what it returned is not a blend of this body" over geometry that is fine.
+2. **`_assert_is_a_blend` runs on every rebuild of a fillet or chamfer.** It
+   costs one `volume` and two `bounding_box()` calls on the input and on the
+   result. Not measured against the cached-rebuild path, which skips the build
+   and the health check together.
+3. **The bound cannot fence the segfault it was found beside.** Filleting
+   several edges of that same body at once still dies (section 10 row); the
+   guard is post-kernel by construction, and nothing it does helps there.
+4. **The stall watchdog polls a JSON file every 2 s and kills on no change.**
+   `steps_taken` returns -1 for a half-written file and the loop reads that as
+   no news, so a child writing its log slowly could in principle be killed
+   while alive; 600 s against a file written before every request makes that
+   unlikely but it is not proven. `proc.kill()` on a process inside a Job
+   object, and the stderr reader thread's 30 s join, are unmeasured against a
+   child that ignores the kill.
+5. **`spawn` no longer calls `communicate()` on the main thread.** stderr is
+   drained on a daemon thread; if that thread has not finished when
+   `reader.join(30)` returns, `full_err` is None and the "did the machine give
+   up" verdict is read from an empty string - which would file a MEMORY death
+   of the box as a product finding, the exact confusion `machine_gave_up`
+   exists to prevent.
+
+## The review of `8f72d9e..53f5653` - DONE, and what it found
+
+ONE finding, fixed in `2231095`: the oracle ordering (defect 1 above). The
+rest of that range was read and is sound. Cleared by measurement or by reading
+the library, so none of it needs re-deriving:
+
+- `bounding_box()` in build123d defaults to `optimal=True`
+  (`topology/shape_core.py:1142`), so the brief's own risk 1 - a loose box
+  failing a symmetric part - does not arise.
+- `Shape.distance_to` takes `Shape | VectorLike` (`shape_core.py:1255`), so
+  the vertex gate's point argument is supported and is not being swallowed by
+  the outer `except Exception: return False`.
+- `SkipClean` has exactly ONE user in the product (`inspector.py:187`), so its
+  `__exit__` restoring `clean = True` unconditionally cannot un-nest an outer
+  block. Two requests at once there is the known FastAPI-threadpool P2.
+- `assert_wall_fits_every_lump`'s bound is a true necessary condition: a
+  lump's inradius is at most half its smallest bounding-box extent, so
+  `2t >= dmin` does imply an empty inward offset. It refuses nothing correct.
+  It also does not reach the open-face or multi-lump crashes below - measured,
+  not assumed.
+- The `--library` line in a crash folder's repro is right in all eight folders
+  the overnight run filed: the live designs get it, the `pump-impeller`
+  fixture does not.
 
 ## Do not re-report
 
-- **Shell OUTSIDE on the clipped ball still segfaults from 1.2 mm up.** Known,
-  measured, §10 P1: no geometric bound applies to growing a body, every
-  intersection-join flag combination crashes (`probes/shell_offset_flags_probe.py`).
-- The kernel cannot shell the clipped ball at ANY thickness (OCCT, recorded in
-  the shell gauntlet).
-- `bugs/` is untracked except `journeys-stdout.log`; fixed folders live in
-  `bugs/fixed/` so the runner's signature de-duplication cannot mask a recurrence.
-- `rotational_symmetry_order` (the discovery loop, up to 24 booleans) is
-  unchanged and un-gated: nothing in the app calls it (author / MCP only via
-  `is_rotationally_symmetric`).
-- The pre-existing red browser tests (§10) are untouched; no frontend change,
-  no `ui v` bump in either commit.
+- **The four LAUNCH-PLAN section-10 rows this chat added**: the multi-edge
+  fillet segfault on the sliver body; `shell` segfaulting on two more real
+  bodies (oneplus_7_pro_case at 0.5-1.5 mm through an open face; the
+  pump-impeller 3-lump CLOSED shell at every thickness from 0.8 to 2.9, where
+  the same shell built at the previous `z` and no bounding box changed); the
+  three-hour planetary-ring edit; and fillet/chamfer of ALL the edges of a
+  traced keychain outline taking 156 to 630 s. All measured, all with a
+  committed fixture or a seed.
+- **A pre-kernel guard on sliver geometry was measured and REJECTED**:
+  `probes/sliver_body_corpus.py` shows real bodies carry faces of 0.00028 mm2
+  and edges of 0.000035 mm (my-part-9, planetary-assembly, planetary-ring,
+  autonomiq-sat-panel) and fillet correctly, so refusing them blocks real work.
+- Whether autonomiq-panel's 1195 s shell returns a SOUND body is still
+  unmeasured: it needs 20+ minutes under `probes/memcap.py --timeout 1800`,
+  and `sketch.shell` already measures its own result four ways. The next
+  overnight run answers it by itself now that the geometry oracle runs first.
+- `bugs/journeys-stdout.log` is tracked and grows every night; it is left
+  uncommitted on purpose.
+- The pre-existing red browser tests (section 10) are untouched; there is no
+  frontend change and no `ui v` bump in either commit.
 
 ## Ground rules
 
-Ruff zero; fast tier `1700 passed` at `53f5653` before the last test file's
-own fix (`1701` with it: `tests/test_journeys.py` 20 passed). Probe first;
-anything that can eat memory runs under `probes/memcap.py --gb 6`. Fix in the
-same chat, then this file -> `Status: NOTHING PENDING` (next review takes
+Ruff zero; fast tier `1713 passed` at `2231095`. Probe first; anything that
+can eat memory runs under `probes/memcap.py --gb 6` - note its `--timeout`
+defaults to 600 s, which is not enough for a shell on a 3000-face body. Fix in
+the same chat, then this file -> `Status: NOTHING PENDING` (next review takes
 REVIEW-QUEUE section 9, Trace image).
