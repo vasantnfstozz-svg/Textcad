@@ -431,6 +431,14 @@ def _facts(job: dict) -> dict:
             if k not in ("marks", "crashed", "stopped")}
 
 
+def warm_up() -> None:
+    """Start the worker now, in the background, so the first guarded call of a
+    session does not pay for `import build123d`. The server calls this once at
+    startup; everything else lets the first call start it lazily."""
+    if _on():
+        _warm_up_soon()
+
+
 def _record(what: str, detail: dict, tail: list) -> None:
     """A crash still has to be findable after it has been turned into a polite
     sentence — otherwise the journey runner stops filing them and the next one

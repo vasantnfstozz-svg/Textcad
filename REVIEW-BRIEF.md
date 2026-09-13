@@ -107,20 +107,26 @@ of the difference, so the spin is inside a guarded call.
    in a fixed order is not a deadlock, but nothing proves the order is fixed -
    `_warm_up_soon` takes `_LOCK` on a daemon thread, and `shutdown()` takes it
    from wherever it is called.
-6. **The worker restart path is the least exercised code here.** `_fresh_worker`
+6. **The worker is started at server boot, on a daemon thread** (`studio.py`
+   calls `kernelguard.warm_up()` just before `uvicorn.run`). It made the first
+   blend of a session 33 ms instead of 7253 ms, measured on the live server -
+   but it also means the server now always has a second python holding OCCT,
+   it starts before `uvicorn.run` binds the port, and a worker that fails to
+   start there fails silently by design.
+7. **The worker restart path is the least exercised code here.** `_fresh_worker`
    raising `KernelGone`, a worker that dies during its own startup import, a
    `_warm_up_soon` thread that fails silently and leaves `_WORKER` None for
    ever, `READY_SECONDS` (180) on a loaded box - none of those is a test.
-7. **`_cap_memory` is untested and silent.** It assigns the worker to a Windows
+8. **`_cap_memory` is untested and silent.** It assigns the worker to a Windows
    Job object AFTER `Popen` (no `CREATE_SUSPENDED`, unlike `tests/journeys.py`'s
    `JobCap`), swallows every exception, leaks the job handle on purpose, and
    reaches into `proc._handle`. If it silently does nothing, the 6 GB ceiling
    the user's laptop crash bought is not there.
-8. **The blend bound's two constants (`77bc7fa`, still unreviewed).** They come
+9. **The blend bound's two constants (`77bc7fa`, still unreviewed).** They come
    from 14 fillet/chamfer features across 52 designs, and a legitimate blend on
    a SHARP wedge moves more material than a 90-degree one (`r^2 / sin(theta)`);
    the library has no such edge, so nothing measured that case.
-9. **The runner's stall watchdog (`2231095`, still unreviewed).** It polls a
+10. **The runner's stall watchdog (`2231095`, still unreviewed).** It polls a
    JSON file every 2 s and kills on no change; `steps_taken` returns -1 for a
    half-written file and the loop reads that as no news.
 

@@ -65,6 +65,7 @@ import author
 import blocks
 import imgtrace
 import inspector
+import kernelguard
 import measure as measurelib
 import sketch as sketchlib
 import toolplan
@@ -3422,6 +3423,16 @@ if __name__ == "__main__":
     if STATE["active"] is None:
         _new_tab(Document(name="untitled"))
         _rebuild_and_mesh()
+
+    # Warm the kernel worker NOW, on a background thread, so the first fillet,
+    # chamfer or shell of the session does not pay for it. Measured on the live
+    # server: the first blend took 7.3 s and the shell after it 116 ms -- the
+    # whole difference is `import build123d` in a fresh python (10-30 s cold).
+    # An unexplained seven-second wait on the first click is the same complaint
+    # the busy overlay was just taught to answer, so it is better not to have
+    # it. Here and not at import: a test process that never touches geometry
+    # must not spawn a worker, and the e2e tier runs `app` in a thread.
+    kernelguard.warm_up()
 
     # The port check, the browser tab and the restart-after-crash loop live in
     # supervise.py -- what `python studio.py` actually runs.
