@@ -7,11 +7,40 @@ import { S } from './state.js';
 
 const busyEl = () => document.getElementById('busy');
 
-export function setBusy(msg) {
-  document.getElementById('busyText').textContent = msg || 'rebuilding…';
-  busyEl().style.display = 'flex';
+/* The overlay SAYS SOMETHING while a long step runs. A round, bevel or shell
+   on a body with hundreds of edges genuinely takes minutes — the overnight
+   journey run of 2026-09-13 measured 156 s, 630 s and 1195 s on the user's own
+   traced parts, all of them CORRECT answers — and an overlay that shows one
+   unchanging word for ten minutes is indistinguishable from a frozen app.
+   That was three of that run's eight findings, filed as one class.
+
+   No number is quoted here on purpose (R1): how long a step may run before the
+   kernel worker stops it is the server's fact, not the browser's, so the
+   second line promises only that it WILL end and that nothing is lost. */
+let busySteps = [];
+
+function busyStep(text) {
+  const el = document.getElementById('busyText');
+  if (el && isBusy()) el.textContent = text;
 }
-export function clearBusy() { busyEl().style.display = 'none'; }
+
+export function setBusy(msg) {
+  const base = msg || 'rebuilding…';
+  document.getElementById('busyText').textContent = base;
+  busyEl().style.display = 'flex';
+  busySteps.forEach(clearTimeout);
+  busySteps = [
+    setTimeout(() => busyStep(`${base} · still working — rounding, bevelling or `
+      + 'hollowing a body with hundreds of edges takes minutes'), 20000),
+    setTimeout(() => busyStep(`${base} · still working — this step stops itself `
+      + 'if it runs too long, and nothing you have made will be lost'), 90000),
+  ];
+}
+export function clearBusy() {
+  busySteps.forEach(clearTimeout);
+  busySteps = [];
+  busyEl().style.display = 'none';
+}
 export function isBusy() { return busyEl().style.display === 'flex'; }
 
 export async function getJSON(url) {

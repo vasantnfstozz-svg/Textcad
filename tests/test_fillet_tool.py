@@ -67,7 +67,7 @@ def test_too_big_refuses_and_says_why(op, value):
 
 
 @pytest.mark.parametrize("op", ["fillet", "chamfer"])
-def test_the_kernel_is_called_once_with_the_value_the_user_typed(op):
+def test_the_kernel_is_called_once_with_the_value_the_user_typed(op, in_process_kernel):
     """No speculative probing. Searching for "the largest that would fit" means
     building at radii nobody asked for, and on esp32-remote one of those
     segfaulted OCCT (2026-09-04) — it would take the user's server with it."""
@@ -178,7 +178,7 @@ def test_an_invalid_success_is_refused_and_says_what_health_found():
     healthy(blocks.fillet_edges(rc, 3, rim))        # a value that does fit still builds
 
 
-def test_a_non_geometric_failure_is_not_dressed_up_as_geometry(monkeypatch):
+def test_a_non_geometric_failure_is_not_dressed_up_as_geometry(monkeypatch, in_process_kernel):
     """Before the review fix every failure — including our own bugs — was
     reported as 'a face beside them is too small', a fabricated diagnosis that
     also hid the real cause from the tree."""
@@ -193,7 +193,7 @@ def test_a_non_geometric_failure_is_not_dressed_up_as_geometry(monkeypatch):
     assert "too small" not in msg
 
 
-def test_kernel_jargon_never_reaches_the_user(monkeypatch):
+def test_kernel_jargon_never_reaches_the_user(monkeypatch, in_process_kernel):
     class StdFail_NotDone(Exception):
         pass
 

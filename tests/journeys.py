@@ -365,7 +365,9 @@ class Journey:
             studio, client = make_client()
         self.studio, self.client = studio, client
         import inspector
+        import kernelguard
         self.inspector = inspector
+        self.kernelguard = kernelguard
 
     # -- helpers ------------------------------------------------------------
 
@@ -503,6 +505,16 @@ class Journey:
                 continue
             if f.status == "failed" and not f.problems:
                 raise Bug("red-without-sentence", f"'{f.id}' ({f.op}) is red with no problem text", rec, resp)
+            # A kernel crash used to end this child, and the runner filed it by
+            # reading the corpse. Since kernelguard.py it is a polite sentence
+            # in a red row and the process walks on — which is the point, and
+            # would also make every FUTURE crash invisible here. So the phrase
+            # the guard puts in that sentence is an oracle of its own.
+            for said in (f.problems or ()):
+                if self.kernelguard.CRASH_PHRASE in said:
+                    raise Bug("kernel-crash", f"'{f.id}' ({f.op}): {said}", rec, resp)
+                if self.kernelguard.STOPPED_PHRASE in said:
+                    raise Bug("kernel-stalled", f"'{f.id}' ({f.op}): {said}", rec, resp)
 
     def _flush_log(self):
         if self.log_path is None:

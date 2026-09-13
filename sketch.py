@@ -2409,6 +2409,38 @@ def shell(solid, thickness: float = 0.0, faces=None, direction: str = "inside",
     walls = f"walls of {t:g} mm"
     if d == "inside" and not openings:
         assert_wall_fits_every_lump(solid, t, walls)
+    import kernelguard                           # local: kernelguard reads sketch
+    return kernelguard.guarded(
+        "shell", solid,
+        {"thickness": t, "direction": d, "walls": walls,
+         "picks": kernelguard.indices(solid.faces(), openings),
+         "marks": kernelguard._marks(openings),
+         "crashed":
+             f"shell: {walls} {kernelguard.CRASH_PHRASE} — nothing was changed "
+             f"and the app is unharmed. This body's faces cannot all be offset "
+             f"by {t:g} mm at once. The thicknesses that work are not one band, "
+             f"so a thinner AND a thicker wall are both worth trying, or open "
+             f"another face.",
+         "stopped":
+             f"shell: {walls} {kernelguard.STOPPED_PHRASE} <minutes> and nothing "
+             f"was changed. Hollowing a body with hundreds of faces can take "
+             f"that long. Try a thinner wall, or shell the body before the "
+             f"features that added those faces."},
+        lambda: shell_after_guards(solid, t, d, openings, walls))
+
+
+def shell_after_guards(solid, t: float, d: str, openings: list, walls: str):
+    """The half of shell() that can kill the process — the kernel offset, the
+    boolean that follows a closed hollow, and the four checks that judge what
+    comes back.
+
+    Split out of `shell` on 2026-09-13 so it can run in the kernel worker
+    (kernelguard.py). FOUR bodies segfault OpenCASCADE in here and no bound on
+    the bounding box fences any of them: a box-clipped ball outside from 1.2 mm
+    up, the oneplus case open-bottom at 0.5/0.8/1.0/1.1/1.5 but NOT at 0.2 or
+    2.0, and the pump impeller's three lumps closed at every thickness from 0.8
+    to 2.9. Both sides of the guard call THIS, so the in-process path and the
+    worker path are the same code, not two copies."""
     try:
         amount = -t if d == "inside" else t
         if openings:

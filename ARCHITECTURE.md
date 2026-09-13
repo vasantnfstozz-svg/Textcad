@@ -169,6 +169,31 @@ eagerly, others lazily; per-port file for non-8123 servers). Versions are
 minted ONLY on explicit Save and on open/reload; tools, imports and AI edits
 mark the tab dirty and add `pending` notes that become the save label.
 
+**The kernel worker** (`kernelguard.py`, 2026-09-13). Crash recovery above is
+the net; this is the fence in front of it. Three ops are known to segfault
+OpenCASCADE on real bodies with no warning any bound can read — `fillet`,
+`chamfer` and `shell` — so the part of each that touches the kernel runs in a
+WARM child process instead of in the server: `blocks.blend_after_guards` and
+`sketch.shell_after_guards`, both called identically by the in-process path and
+by the worker, so there is one copy of the logic and not two. The worker's
+death becomes a plain refusal and a red feature row; a call that outruns
+`TEXTCAD_KERNEL_SECONDS` (default 900) is killed and says so; both are recorded
+in `bugs/kernel-crashes.log` and both are oracles in `tests/journeys.py`, so a
+crash made polite is still a finding. Warm because a fresh python that imports
+build123d costs 10–30 s here (`probes/sidecar_cost.py`), and the replacement
+after a death is started in the background so the user's next click is usually
+warm again. The body crosses as a `.brep` (order and geometry preserved
+exactly — `probes/sidecar_roundtrip.py`) and picks cross as INDICES plus a
+fingerprint of each picked edge or face, which the worker re-measures before it
+works: build123d silently DROPS an opening face that is not `IsSame` with a
+face of the solid it offsets, and a re-resolve in the child could land on a
+different edge, so a mismatch must fail the step — a crash turned into silent
+wrong geometry would be worse than the crash. Both bodies are weighed on both
+sides of the pipe for the same reason. `TEXTCAD_KERNEL_GUARD=0` runs everything
+in-process, which is how the tests that spy on the raw kernel still reach it.
+Deliberately NOT universal: booleans, 2D offsets and tessellation still run in
+the server, and the supervisor below is what covers those.
+
 **Crash recovery** (`supervise.py`, 2026-09-05). The kernel can segfault (a
 fillet at radius 2.0 on esp32-remote's top rim, `probes/fillet_segfault_probe.py`)
 and a segfault is not an exception. `python studio.py` therefore runs a light

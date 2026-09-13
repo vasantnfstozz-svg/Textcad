@@ -1144,8 +1144,14 @@ class Document:
                 sk.drain_notes()
                 self._parts[f.id] = None
                 # cache the FAILURE too: a broken parameter must not cost a
-                # full re-evaluation on every rebuild while the user fixes it
-                self._cache_put(sigs[f.id], None, f.problems, None, None)
+                # full re-evaluation on every rebuild while the user fixes it.
+                # NOT a transient one (kernelguard.KernelGone: the geometry
+                # worker died or was stopped). That is not a broken parameter,
+                # the cache is shared by every tab in the process, and a user
+                # who presses the same button again must get a real attempt
+                # instead of yesterday's crash read back to them.
+                if not getattr(e, "transient", False):
+                    self._cache_put(sigs[f.id], None, f.problems, None, None)
             if f.status == "failed":
                 ok = False
 

@@ -925,7 +925,43 @@ def _assert_is_a_blend(name: str, part: Part, out, picked, value: float, unit: s
         f"before the step that made those slivers")
 
 
-def _finish(name: str, part: Part, edges, value: float, unit: str, build):
+_BLEND_KERNEL = {
+    "fillet": lambda es, v: _b3d_fillet(es, radius=v),
+    "chamfer": lambda es, v: _b3d_chamfer(es, length=v),
+}
+
+
+def blend_after_guards(name: str, part: Part, picked, value: float, unit: str):
+    """The half of a fillet/chamfer that can kill the process — the kernel call
+    and the two measurements that judge what it hands back.
+
+    Split out of `_finish` on 2026-09-13 so it can run in the kernel worker
+    (kernelguard.py): `fillet` on eight picked rims of a sliver body dies with
+    an access violation at every radius from 0.05 to 0.5, and no `except` in
+    this process could ever see it. Both sides of the guard call THIS, so the
+    in-process path and the worker path are the same code, not two copies."""
+    n = len(picked)
+    on = f"{n} edge{'s' if n != 1 else ''}"
+    low = unit.lower()
+    try:
+        out = _BLEND_KERNEL[name](picked, value)
+    except Exception as e:                      # OCP errors are Exception, not RuntimeError
+        raise ValueError(f"{name}: {low} {value:g} mm does not fit on {on} — "
+                         f"{plain_cause(e)}. Try a smaller {low}, or pick "
+                         f"different edges.") from e
+    # measured OUTSIDE that try on purpose: a health check that throws is our
+    # own problem, and must never be reported as a value that "does not fit"
+    problems = inspector.health(out, check_valid=False)
+    if problems:
+        raise ValueError(f"{name}: {low} {value:g} mm leaves a broken solid on {on} — "
+                         f"{problems[0]}. It runs into a neighbouring face or round; "
+                         f"try a smaller {low}.")
+    # ... and healthy is not the same as RIGHT: measure what came back
+    _assert_is_a_blend(name, part, out, picked, value, unit)
+    return out
+
+
+def _finish(name: str, part: Part, edges, value: float, unit: str):
     """Shared by fillet_edges / chamfer_edges: the value guard, the kernel call,
     the health check, and a refusal that says the TRUE reason.
 
@@ -950,22 +986,24 @@ def _finish(name: str, part: Part, edges, value: float, unit: str, build):
     n = len(picked)
     on = f"{n} edge{'s' if n != 1 else ''}"
     low = unit.lower()
-    try:
-        out = build(picked, value)
-    except Exception as e:                      # OCP errors are Exception, not RuntimeError
-        raise ValueError(f"{name}: {low} {value:g} mm does not fit on {on} — "
-                         f"{plain_cause(e)}. Try a smaller {low}, or pick "
-                         f"different edges.") from e
-    # measured OUTSIDE that try on purpose: a health check that throws is our
-    # own problem, and must never be reported as a value that "does not fit"
-    problems = inspector.health(out, check_valid=False)
-    if problems:
-        raise ValueError(f"{name}: {low} {value:g} mm leaves a broken solid on {on} — "
-                         f"{problems[0]}. It runs into a neighbouring face or round; "
-                         f"try a smaller {low}.")
-    # ... and healthy is not the same as RIGHT: measure what came back
-    _assert_is_a_blend(name, part, out, picked, value, unit)
-    return out
+    import kernelguard                           # local: kernelguard reads blocks
+    return kernelguard.guarded(
+        "blend", part,
+        {"kind": name, "value": value, "unit": unit,
+         "picks": kernelguard.indices(part.edges(), picked),
+         "marks": kernelguard._marks(picked),
+         "crashed":
+             f"{name}: {low} {value:g} mm on {on} {kernelguard.CRASH_PHRASE} — "
+             f"nothing was changed and the app is unharmed. That happens on a "
+             f"body carrying sliver faces or near-zero-length edges. Try a "
+             f"smaller {low}, pick fewer edges, or round the shape before the "
+             f"step that made those slivers.",
+         "stopped":
+             f"{name}: {low} {value:g} mm on {on} {kernelguard.STOPPED_PHRASE} "
+             f"<minutes> and nothing was changed. Rounding every edge of a "
+             f"traced outline can take that long. Pick fewer edges, or try a "
+             f"smaller {low}."},
+        lambda: blend_after_guards(name, part, picked, value, unit))
 
 
 def fillet_edges(part: Part, radius: float, edges="all") -> Part:
@@ -974,14 +1012,12 @@ def fillet_edges(part: Part, radius: float, edges="all") -> Part:
     "horizontal" (the flat top+bottom rims), or a LIST of picked edges (see
     edge_ref). The radius must be smaller than the neighbouring faces allow;
     the refusal names the largest that fits."""
-    return _finish("fillet", part, edges, radius, "radius",
-                   lambda es, v: _b3d_fillet(es, radius=v))
+    return _finish("fillet", part, edges, radius, "radius")
 
 
 def chamfer_edges(part: Part, length: float, edges="all") -> Part:
     """Cut a flat 45-degree bevel on edges. `edges` as for fillet_edges."""
-    return _finish("chamfer", part, edges, length, "distance",
-                   lambda es, v: _b3d_chamfer(es, length=v))
+    return _finish("chamfer", part, edges, length, "distance")
 
 
 def shell_out(part: Part, thickness: float = 0.0, faces=None, direction: str = "inside",

@@ -212,13 +212,14 @@ class _Studio:
         self.proc = None
         self.log = None
 
-    def start(self, seed: dict | None = None):
+    def start(self, seed: dict | None = None, kernel_guard: bool = True):
         for f in self.files:
             f.unlink(missing_ok=True)
         if seed is not None:                     # a previous run's session
             self.files[0].write_text(json.dumps(seed), encoding="utf-8")
         env = dict(os.environ, TEXTCAD_PORT=str(self.port), TEXTCAD_NO_BROWSER="1",
-                   TEXTCAD_CRASH_TEST="1", TEXTCAD_HISTORY_ROOT=str(self.hist))
+                   TEXTCAD_CRASH_TEST="1", TEXTCAD_HISTORY_ROOT=str(self.hist),
+                   TEXTCAD_KERNEL_GUARD="1" if kernel_guard else "0")
         self.log = open(self.log_path, "w", encoding="utf-8")
         self.proc = subprocess.Popen([sys.executable, str(ROOT / "studio.py")],
                                      cwd=str(ROOT), env=env,
@@ -313,13 +314,21 @@ def test_stopping_the_listener_on_purpose_ends_the_supervisor_too(live):
 def test_a_session_that_crashes_on_load_comes_back_unbuilt(live):
     """The user saved the fatal step itself (a fillet whose rebuild segfaults)
     — every restart would die rebuilding it. The supervisor's second launch
-    restores the tabs UNBUILT, with an empty tab active, and says so."""
+    restores the tabs UNBUILT, with an empty tab active, and says so.
+
+    The kernel guard is switched OFF for this one server (2026-09-13). Since
+    kernelguard.py a fillet cannot take the process down any more, which is the
+    point of it — but the supervisor still has to work, because the guard
+    covers fillet, chamfer and shell and NOT every other door the kernel has
+    (a boolean, a 2D offset, a tessellation). This test is about the
+    supervisor, so it keeps the crash it was written for."""
     data = json.loads(FIXTURE.read_text(encoding="utf-8"))
     data["features"].append({"id": "fatal", "op": "fillet",
                              "params": {"radius": 2.0, "edges": "top"},
                              "inputs": [data["features"][-1]["id"]],
                              "suppressed": False})
-    live.start(seed={"tabs": [{"doc": data, "source": None, "active": True}]})
+    live.start(seed={"tabs": [{"doc": data, "source": None, "active": True}]},
+               kernel_guard=False)
     doc = _wait(live.doc, 180)
     assert doc, "no server after a startup crash:\n" + live.logged()
     assert doc["recovery"]["startup"] is True, live.logged()

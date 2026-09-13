@@ -19,6 +19,10 @@ _studio_mesh.stl
 !bugs/**
 # ... except the runner's own run log, which grows every night
 bugs/journeys.log
+# ... and the kernel worker's own record of every crash and stopped call it
+# turned into a sentence (kernelguard.py). It is a LOG, appended to for ever
+# by every run; the findings that matter become bug folders and plan rows.
+bugs/kernel-crashes.log
 
 # Version histories are user work too (VERSION-TREE-PLAN.md): designs/<slug>.history/
 # holds index.json + gzipped snapshots, ~10 KB each. User's call 2026-08-26:
@@ -35,3 +39,6 @@ bugs/journeys.log
 .claude/lint/node_modules/
 .claude/lint/package-lock.json
 .ruff_cache/
+
+# probe scratch: bodies and timings written by probes/sidecar_*.py
+probes/_sidecar_tmp/
