@@ -34,7 +34,7 @@ from collections import OrderedDict
 from pathlib import Path
 from build123d import (
     Box, Cylinder, Sphere, Cone, Pos, PolarLocations, BuildSketch, RegularPolygon, BuildLine, Polyline, Spline, make_face,
-    trace, extrude, revolve, Axis, Plane, Part, Mesher, Solid, Compound,
+    trace, extrude, revolve, Axis, Plane, Part, Mesher, Solid, Compound, Face,
     scale as _b3d_scale,
     fillet as _b3d_fillet, chamfer as _b3d_chamfer,
     import_step as b3d_import_step,
@@ -47,7 +47,8 @@ from OCP.gp import gp_Pnt
 from OCP.TopAbs import TopAbs_ShapeEnum, TopAbs_State
 from OCP.TopExp import TopExp                      # unique vertices/faces of a shell, in C++
 from OCP.TopoDS import TopoDS
-from OCP.TopTools import TopTools_IndexedMapOfShape
+from OCP.TopTools import (TopTools_IndexedDataMapOfShapeListOfShape,
+                          TopTools_IndexedMapOfShape)
 
 import inspector          # health of every fillet / chamfer result
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
@@ -880,6 +881,80 @@ def plain_cause(e: Exception) -> str:
 _BLEND_VOLUME_FACTOR = 3.0      # x value^2 x edge length
 _BLEND_SHRINK_FACTOR = 12.0     # x value
 
+# The 90-degree ideal itself: a round on a right-angled edge moves
+# tan(45) - pi/4 of `radius^2` per mm of edge. Every figure above is a multiple
+# of it, and the sharpness below is measured against it.
+_BLEND_SQUARE_UNIT = math.tan(math.pi / 4) - math.pi / 4     # 0.2146
+
+# A corner sharper than 5 degrees is a slit, not a corner: past it the formula
+# below runs away (tan -> infinity) and the bound would stop bounding anything.
+_BLEND_SHARP_CAP = 100.0
+
+
+def _corner_sharpness(faces_of, edge) -> float:
+    """How much more material a round on THIS edge moves than the same round on
+    a right-angled one: 1.0 for a right angle or blunter, about 15 for a
+    25-degree corner, 46 for a 10-degree spike. Never below 1.0, so a blunt
+    edge keeps the flat bound above and nothing gets TIGHTER than it was.
+
+    A round of radius r on an edge whose two faces meet at `a` (the angle
+    between their normals) moves r^2 x (tan(a/2) - a/2) per mm of edge. Derived
+    and then MEASURED to the fourth decimal on extruded wedges of 90, 30 and 10
+    degrees (review of 2026-09-13). The same size holds for a CONCAVE crease,
+    which ADDS that much instead of removing it, because tan((pi+x)/2)-(pi+x)/2
+    is exactly the negative of tan((pi-x)/2)-(pi-x)/2 — so nothing here has to
+    work out which way the corner turns, which is the kind of test that has
+    refused correct geometry twice on this project already.
+
+    WHY IT EXISTS. The flat bound refuses CORRECT geometry on any corner
+    sharper than about 26 degrees. On the user's own spiderman-logo a round of
+    0.2 mm on a 160.5-degree crease moved 0.0628 mm3 of a 26707 mm3 body —
+    0.0002 per cent of it, bounding box untouched, health empty — and was told
+    it was "not a blend of this body", blaming sliver faces on a sound part.
+    rocky-balboa carries two such edges; a traced outline or a wing rib's
+    trailing edge is where they come from."""
+    if faces_of is None:
+        return 1.0
+    try:
+        if not faces_of.Contains(edge.wrapped):
+            return 1.0
+        faces = faces_of.FindFromKey(edge.wrapped)
+        if faces.Size() != 2:                # a seam, or a non-manifold edge
+            return 1.0
+        point = edge @ 0.5
+        n0 = Face(faces.First()).normal_at(point)
+        n1 = Face(faces.Last()).normal_at(point)
+        a = math.acos(max(-1.0, min(1.0, n0.dot(n1))))
+    except Exception:                        # a corner we cannot measure keeps
+        return 1.0                           # the flat bound, never a looser one
+    if a <= math.pi / 2:
+        return 1.0
+    if a >= math.radians(175.0):
+        return _BLEND_SHARP_CAP
+    return min(_BLEND_SHARP_CAP,
+               max(1.0, (math.tan(a / 2) - a / 2) / _BLEND_SQUARE_UNIT))
+
+
+def _blend_span(name: str, part: Part, picked) -> float:
+    """The picked edge length the volume bound may spend, each edge counted by
+    the sharpness of the corner it sits in.
+
+    Only a ROUND grows with sharpness. A bevel of leg d removes
+    d^2 x sin(a) / 2 per mm at ANY angle, which is largest at a right angle, so
+    the flat bound is already a chamfer's worst case and a chamfer is counted
+    plainly. One C++ pass for the edge -> faces map (TopExp), not
+    `_edge_topo`: this runs in the kernel worker, on a body that has no cache,
+    and `_edge_topo` also evaluates a tangent at both ends of every edge."""
+    if name != "fillet":
+        return sum(e.length for e in picked)
+    try:
+        m = TopTools_IndexedDataMapOfShapeListOfShape()
+        TopExp.MapShapesAndAncestors_s(part.wrapped, TopAbs_ShapeEnum.TopAbs_EDGE,
+                                       TopAbs_ShapeEnum.TopAbs_FACE, m)
+    except Exception:                        # no map: every edge counts plainly
+        m = None
+    return sum(e.length * _corner_sharpness(m, e) for e in picked)
+
 
 def _bbox_retreat(before, after) -> float:
     """How far `after`'s bounding box pulled IN from `before`'s, mm, on its
@@ -905,11 +980,16 @@ def _assert_is_a_blend(name: str, part: Part, out, picked, value: float, unit: s
     no `except` can catch and this cannot help. The volume test alone misses the
     widest radius (3.8x, under the bound) and the box test alone is loose on a
     sharp wedge, so BOTH run: a real blend passes both by an order of magnitude.
-    """
+
+    The volume half is per-CORNER, not per-mm (see `_corner_sharpness`): the
+    flat bound refused correct rounds on anything sharper than 26 degrees, and
+    the user's own logo designs have such edges. It costs the crash body
+    nothing — its rims meet at 90 and 62.6 degrees, and both halves still
+    refuse them at every radius by 2x and 10x (review of 2026-09-13)."""
     total = part.volume
-    length = sum(e.length for e in picked)
+    span = _blend_span(name, part, picked)
     moved = abs(out.volume - total)
-    allowed = max(_BLEND_VOLUME_FACTOR * value * value * length, 1e-6 * abs(total))
+    allowed = max(_BLEND_VOLUME_FACTOR * value * value * span, 1e-6 * abs(total))
     retreat = _bbox_retreat(part.bounding_box(), out.bounding_box())
     if moved <= allowed and retreat <= _BLEND_SHRINK_FACTOR * value:
         return

@@ -15,8 +15,14 @@ const busyEl = () => document.getElementById('busy');
    That was three of that run's eight findings, filed as one class.
 
    No number is quoted here on purpose (R1): how long a step may run before the
-   kernel worker stops it is the server's fact, not the browser's, so the
-   second line promises only that it WILL end and that nothing is lost. */
+   kernel worker stops it is the server's fact, not the browser's.
+
+   Neither line says WHICH step is running, and the second does not promise the
+   step will stop itself. This overlay is shown for EVERY request — the AI
+   writing a design, a model loading, a boolean — and only a round, a bevel and
+   a hollow have a budget that ends them (kernelguard.py). Telling someone
+   waiting on a boolean that it stops itself would be a sentence the product
+   cannot keep, and would keep them waiting instead of reloading. */
 let busySteps = [];
 
 function busyStep(text) {
@@ -30,10 +36,10 @@ export function setBusy(msg) {
   busyEl().style.display = 'flex';
   busySteps.forEach(clearTimeout);
   busySteps = [
-    setTimeout(() => busyStep(`${base} · still working — rounding, bevelling or `
-      + 'hollowing a body with hundreds of edges takes minutes'), 20000),
-    setTimeout(() => busyStep(`${base} · still working — this step stops itself `
-      + 'if it runs too long, and nothing you have made will be lost'), 90000),
+    setTimeout(() => busyStep(`${base} · still working — a big body can take `
+      + 'minutes; rounding, bevelling and hollowing are the slow ones'), 20000),
+    setTimeout(() => busyStep(`${base} · still working — nothing you have made `
+      + 'will be lost, whether this finishes or is refused'), 90000),
   ];
 }
 export function clearBusy() {

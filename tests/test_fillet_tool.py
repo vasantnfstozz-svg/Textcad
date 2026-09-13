@@ -14,10 +14,13 @@ probes/fillet_edges_probe.py (2026-09-04) found in the kernel:
 
 Every geometric claim below is checked against the kernel.
 """
+import math
+
 import pytest
 from pathlib import Path
 
-from build123d import Axis, Box, Part, Pos, import_brep
+from build123d import (Axis, Box, BuildPart, BuildSketch, Part, Polygon, Pos,
+                        extrude, import_brep)
 
 import blocks
 import inspector
@@ -938,3 +941,127 @@ def test_a_blend_may_fill_a_concave_corner_without_being_called_wrong():
     out = blocks.fillet_edges(step, 2.0, ref)
     assert out.volume > step.volume
     assert blocks._bbox_retreat(step.bounding_box(), out.bounding_box()) <= 1e-9
+
+
+# ---------------------------------------------------------------------------
+# ... and "the kernel was wrong" is not "the corner was square" (review 2026-09-13)
+# ---------------------------------------------------------------------------
+
+def wedge(apex_deg: float, height: float = 12.0, side: float = 40.0) -> Part:
+    """An extruded triangle whose vertical edge at the origin is a convex
+    corner of `apex_deg`. A traced logo, a wing rib's trailing edge and a
+    milled spike all look like this, and the user's own spiderman-logo and
+    rocky-balboa carry corners of 19.5 and 13.6 degrees."""
+    h = math.radians(apex_deg) / 2
+    with BuildPart() as bp:
+        with BuildSketch():
+            Polygon((0, 0), (side * math.cos(h), side * math.sin(h)),
+                    (side * math.cos(h), -side * math.sin(h)), align=None)
+        extrude(amount=height)
+    return Part(bp.part.wrapped)
+
+
+def spike(part: Part, height: float = 12.0):
+    """The sharp vertical edge of `wedge`."""
+    es = [e for e in part.edges()
+          if abs(e.center().X) < 1e-6 and e.length == pytest.approx(height, abs=1e-6)]
+    assert len(es) == 1
+    return es
+
+
+@pytest.mark.parametrize("apex", [25, 20, 15, 10])
+def test_a_round_on_a_sharp_corner_is_not_called_a_broken_result(apex):
+    """The volume half of the guard used to be flat in `value^2 x length`, so
+    it refused every CORRECT round on a corner sharper than about 26 degrees —
+    the kernel built it, it was valid, health was empty, and the user was told
+    the body carried sliver faces. A round of 1 mm on a 10-degree spike really
+    does move 46x what the same round takes off a square edge, and that is
+    arithmetic, not damage."""
+    part = wedge(apex)
+    out = blocks.fillet_edges(part, 1.0, [blocks.edge_ref(part, spike(part)[0])])
+    assert inspector.health(out, check_valid=True) == []
+    assert out.volume < part.volume            # a round on a convex spike removes
+    assert out.volume > part.volume * 0.9      # ... and only from the tip
+
+
+def test_a_bevel_on_a_sharp_corner_was_never_in_danger_and_still_is_not():
+    """A bevel of leg d removes d^2 x sin(a) / 2 whatever the angle, which is
+    biggest at a RIGHT angle — so the flat bound is already a chamfer's worst
+    case and the sharpness must not loosen it."""
+    part = wedge(15)
+    picked = spike(part)
+    assert blocks._blend_span("chamfer", part, picked) == pytest.approx(
+        sum(e.length for e in picked))
+    out = blocks.chamfer_edges(part, 1.0, [blocks.edge_ref(part, picked[0])])
+    assert inspector.health(out, check_valid=True) == []
+
+
+@pytest.mark.parametrize("apex,expect", [
+    (90, 1.0),          # a square edge: the bound is exactly what it always was
+    (120, 1.0),         # blunter than square: floored, never TIGHTER than before
+    (30, 11.29),
+    (10, 46.35),
+])
+def test_the_sharpness_of_a_corner_is_measured_not_guessed(apex, expect):
+    """tan(a/2) - a/2 over the 90-degree ideal, checked against the kernel's own
+    faces rather than against the formula that produced it."""
+    part = wedge(apex)
+    picked = spike(part)
+    got = blocks._blend_span("fillet", part, picked) / sum(e.length for e in picked)
+    assert got == pytest.approx(expect, rel=1e-3)
+
+
+def test_a_concave_crease_is_read_as_sharp_as_the_convex_one_beside_it():
+    """The magnitude is the same on both sides — tan((pi+x)/2)-(pi+x)/2 is the
+    negative of tan((pi-x)/2)-(pi-x)/2 — so nothing has to work out which way a
+    corner turns. Deciding that has refused correct geometry twice on this
+    project, and a round FILLS a concave crease: the user's spiderman-logo edge
+    is one, and it was the design that found this."""
+    tip = wedge(20)
+    convex = blocks._blend_span("fillet", tip, spike(tip)) / 12.0
+    # cut that same wedge OUT of a slab and its apex is a 20-degree groove: the
+    # two faces still meet at 160 degrees, the material is on the other side
+    slab = Pos(0, 0, 6) * Box(60, 60, 12)
+    notch = Part((slab - Pos(-10, 0, 0) * wedge(20)).wrapped)
+    groove = [e for e in notch.edges()
+              if e.length == pytest.approx(12.0, abs=1e-6)
+              and e.center().X == pytest.approx(-10.0, abs=1e-6)]
+    assert len(groove) == 1, "the notch has one apex crease"
+    assert blocks._blend_span("fillet", notch, groove) / 12.0 == pytest.approx(
+        convex, rel=1e-6)
+    assert convex > 19.0, "a 20-degree corner is nineteen square edges' worth"
+
+
+def test_a_corner_measures_the_same_whichever_door_the_pick_came_through():
+    """`blend_after_guards` runs BOTH in this process and in the kernel worker,
+    and the two get the picked edge from different places: `resolve_edge` hands
+    over an edge taken from a FACE of the body, while the worker takes
+    `part.edges()[i]`. They are the same edge with OPPOSITE orientation, so the
+    bound would split in two if the ancestor map cared — OCCT's shape hash does
+    not (measured: the two hash equal, FORWARD against REVERSED), and this is
+    the test that says so."""
+    part = wedge(20)
+    from_body = spike(part)
+    through_a_face = [blocks.resolve_edge(part, blocks.edge_ref(part, from_body[0]))]
+    assert through_a_face[0] is not from_body[0]
+    assert through_a_face[0] == from_body[0]                    # IsSame
+    assert blocks._blend_span("fillet", part, through_a_face) == pytest.approx(
+        blocks._blend_span("fillet", part, from_body), rel=1e-12)
+
+
+@pytest.mark.parametrize("radius", [0.1, 0.2, 0.4, 0.6])
+def test_the_body_the_guard_exists_for_is_still_refused_at_every_radius(radius):
+    """The reason the volume half may be loosened at all: on the crash body the
+    BOX half refuses every one of these by 5x to 40x, and the volume half still
+    refuses most of them on its own. Its rims meet at 90 and 62.6 degrees, so
+    the sharpness never lifts them far. If a round on this body is ever
+    ACCEPTED, the P0 of 2026-09-13 is back."""
+    part = sliver_plate()
+    refused = 0
+    for e in blocks.edges_for(part, "horizontal"):
+        m = e.center()
+        try:
+            blocks.fillet_edges(part, radius, [{"mid": [m.X, m.Y, m.Z]}])
+        except ValueError:
+            refused += 1
+    assert refused == 8, "a body-eating round came back as a body"
