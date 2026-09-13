@@ -432,3 +432,81 @@ def test_a_child_that_eats_its_ceiling_is_the_product_s_finding_not_the_box_s(tm
 def test_no_ceiling_means_a_plain_child():
     cap = journeys.JobCap(0)
     assert cap.job is None and not cap.hit and cap.peak_gb() == 0.0
+
+
+def test_a_slow_request_is_still_asked_what_it_built(monkeypatch):
+    """A Bug ENDS the journey, so whichever oracle speaks first is the only
+    thing the folder records. The clock used to speak before the geometry: on
+    2026-09-13 autonomiq-panel's 1195 s shell was filed as a "hang" and nothing
+    ever asked whether the body it returned was sound. Geometry first, clock
+    last (review of 53f5653)."""
+    j = journeys.Journey("empty", None, seed=1, steps=0, verbose=False)
+    j.run()
+    j.client = _Client(_Resp(200, {}))
+    monkeypatch.setattr(journeys, "HANG_MS", -1)
+
+    def unsound(rec, resp):
+        raise journeys.Bug("green-but-unsound", "'x' (shell) is green but: not manifold",
+                           rec, resp)
+    monkeypatch.setattr(j, "check_bodies", unsound)
+    with pytest.raises(journeys.Bug) as ex:
+        j.call("add", "POST", "/api/feature/add", {"id": "x", "op": "shell"})
+    assert ex.value.kind == "green-but-unsound", \
+        "the clock spoke over the geometry finding again"
+    # and with a sound body the clock still speaks
+    monkeypatch.setattr(j, "check_bodies", lambda rec, resp: None)
+    with pytest.raises(journeys.Bug) as ex:
+        j.call("add", "POST", "/api/feature/add", {"id": "x", "op": "shell"})
+    assert ex.value.kind == "hang"
+
+
+def test_a_child_that_answers_nothing_at_all_is_killed_and_filed(tmp_path):
+    """`HANG_MS` is read when a request COMES BACK, so one that never does is
+    invisible to it. On 2026-09-13 journey 512 (planetary-ring s47276) sat in
+    one /api/edit from 05:09 to 08:15 — three hours — and what ended it came
+    from outside the runner, which filed an exit code nobody could read. The
+    PARENT watches the child's step log now (review of 53f5653)."""
+    import subprocess
+    import sys
+    import time as _time
+    log = tmp_path / "steps.json"
+    log.write_text(json.dumps({"design": "x", "seed": 1, "steps": [{"n": 1}]}),
+                   encoding="utf-8")
+    assert journeys.steps_taken(str(log)) == 1
+    half = tmp_path / "half.json"
+    half.write_text('{"steps": [', encoding="utf-8")      # caught mid-write
+    assert journeys.steps_taken(str(half)) == -1
+    assert journeys.steps_taken(str(tmp_path / "nope.json")) == -1
+
+    stuck = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+    t0 = _time.monotonic()
+    try:
+        assert journeys.wait_or_kill_a_stalled_child(stuck, str(log), stall_s=3)
+    finally:
+        stuck.kill()
+    assert _time.monotonic() - t0 < 60, "the watchdog took too long to give up"
+    assert stuck.poll() is not None, "the stalled child is still running"
+
+    quick = subprocess.Popen([sys.executable, "-c", "pass"])
+    assert not journeys.wait_or_kill_a_stalled_child(quick, str(log), stall_s=60)
+
+
+def test_a_stall_is_filed_as_a_hang_naming_the_request_it_was_in(tmp_path):
+    """The folder must say what the child was still doing, not what the OS
+    called the corpse — planetary-ring's read `exit code 4294967295`."""
+    rec = {"design": "planetary-ring", "seed": 47276, "steps": [
+        {"n": 33, "kind": "edit", "op": None, "method": "POST", "url": "/api/edit",
+         "body": {"feature_id": "space_sketch", "param": "offset", "value": 0}}]}
+    d, dup = journeys.write_crash("planetary-ring", 47276, -1, rec, "", tmp_path,
+                                  verdict_on="", stalled_s=600)
+    assert dup is None and d is not None
+    report = (d / "report.md").read_text(encoding="utf-8")
+    assert report.startswith("# hang: planetary-ring")
+    assert "600 s without answering" in report and "/api/edit" in report
+    saved = json.loads((d / "journey.json").read_text(encoding="utf-8"))
+    assert saved["kind"] == "hang" and saved["failing_step"] == 33
+    # and the machine running out is STILL not a finding when nothing stalled
+    none_d, none_dup = journeys.write_crash(
+        "x", 1, -1, {"steps": [{"n": 1}]}, "MemoryError", tmp_path,
+        verdict_on="MemoryError")
+    assert (none_d, none_dup) == (None, None)

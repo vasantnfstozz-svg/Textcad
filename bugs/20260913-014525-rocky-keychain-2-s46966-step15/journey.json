@@ -1,0 +1,342 @@
+{
+ "signature": "hang|chamfer|add chamfer took # s (the limit is # s) and answered #",
+ "kind": "hang",
+ "detail": "add chamfer took 630 s (the limit is 120 s) and answered 200",
+ "design": "rocky-keychain-2",
+ "file": "C:\\Users\\VasanSeenivasan\\Desktop\\textcad\\designs\\rocky-keychain-2.tcad.json",
+ "seed": 46966,
+ "failing_step": 15,
+ "request": {
+  "n": 15,
+  "kind": "add",
+  "method": "POST",
+  "url": "/api/feature/add",
+  "body": {
+   "id": "j5_chamfer",
+   "op": "chamfer",
+   "params": {
+    "length": 2.5,
+    "edges": "all"
+   },
+   "inputs": [
+    "j3_mirror"
+   ]
+  },
+  "op": "chamfer",
+  "ms": 629507,
+  "peak_mb": 491,
+  "grew_mb": 4,
+  "status": 200,
+  "error": null
+ },
+ "replay": [
+  {
+   "n": 15,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j5_chamfer",
+    "op": "chamfer",
+    "params": {
+     "length": 2.5,
+     "edges": "all"
+    },
+    "inputs": [
+     "j3_mirror"
+    ]
+   },
+   "op": "chamfer",
+   "ms": 629507,
+   "peak_mb": 491,
+   "grew_mb": 4,
+   "status": 200,
+   "error": null
+  }
+ ],
+ "identity": false,
+ "response_error": null,
+ "steps": [
+  {
+   "n": 1,
+   "kind": "plan",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": {
+    "tool": "pattern",
+    "sketch_id": "field_sketch"
+   },
+   "op": "pattern",
+   "ms": 16,
+   "peak_mb": 465,
+   "grew_mb": 0,
+   "status": 200,
+   "error": "no plan for tool 'pattern' \u2014 known: ['chamfer', 'extrude', 'fillet', 'hole', 'linear_pattern', 'mirror', 'move', 'polar_pattern', 'revolve', 'rotate', 'shell', 'sketch']"
+  },
+  {
+   "n": 2,
+   "kind": "plan",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": {
+    "tool": "shell",
+    "sketch_id": "field_sketch"
+   },
+   "op": "shell",
+   "ms": 293,
+   "peak_mb": 465,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 3,
+   "kind": "strike",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": {
+    "feature_id": "keychain"
+   },
+   "op": null,
+   "ms": 34,
+   "peak_mb": 465,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 4,
+   "kind": "restore",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": {
+    "feature_id": "keychain",
+    "restore": true
+   },
+   "op": null,
+   "ms": 1122,
+   "peak_mb": 465,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 5,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j1_sketch",
+    "op": "sketch",
+    "params": {
+     "plane": "YZ",
+     "offset": 0,
+     "entities": [
+      {
+       "kind": "circle",
+       "mode": "add",
+       "x": 0,
+       "y": 0,
+       "r": 10.4
+      }
+     ]
+    },
+    "inputs": []
+   },
+   "op": "sketch",
+   "ms": 16,
+   "peak_mb": 465,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 6,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j2_extrude",
+    "op": "extrude",
+    "params": {
+     "amount": 23.8,
+     "both": false
+    },
+    "inputs": [
+     "j1_sketch"
+    ]
+   },
+   "op": "extrude",
+   "ms": 1940,
+   "peak_mb": 465,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 7,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j3_mirror",
+    "op": "mirror",
+    "params": {
+     "plane": "XZ",
+     "join": true
+    },
+    "inputs": [
+     "keychain"
+    ]
+   },
+   "op": "mirror",
+   "ms": 5759,
+   "peak_mb": 487,
+   "grew_mb": 22,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 8,
+   "kind": "tab-new",
+   "method": "POST",
+   "url": "/api/new",
+   "body": {
+    "name": "journey-scratch"
+   },
+   "op": null,
+   "ms": 11,
+   "peak_mb": 487,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 9,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j4_tube",
+    "op": "tube",
+    "params": {
+     "outer_radius": 15.0,
+     "inner_radius": 1.6,
+     "height": 34.7
+    },
+    "inputs": []
+   },
+   "op": "tube",
+   "ms": 15,
+   "peak_mb": 487,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 10,
+   "kind": "tab-switch",
+   "method": "POST",
+   "url": "/api/tabs/switch",
+   "body": {
+    "id": "t1"
+   },
+   "op": null,
+   "ms": 11,
+   "peak_mb": 487,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 11,
+   "kind": "tab-close",
+   "method": "POST",
+   "url": "/api/tabs/close",
+   "body": {
+    "id": "t2"
+   },
+   "op": null,
+   "ms": 9,
+   "peak_mb": 487,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 12,
+   "kind": "tab-switch",
+   "method": "POST",
+   "url": "/api/tabs/switch",
+   "body": {
+    "id": "t1"
+   },
+   "op": null,
+   "ms": 10,
+   "peak_mb": 487,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 13,
+   "kind": "remove-plan",
+   "method": "POST",
+   "url": "/api/feature/remove",
+   "body": {
+    "feature_id": "j2_extrude",
+    "mode": "auto",
+    "dry_run": true
+   },
+   "op": null,
+   "ms": 12,
+   "peak_mb": 487,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 14,
+   "kind": "remove",
+   "method": "POST",
+   "url": "/api/feature/remove",
+   "body": {
+    "feature_id": "j2_extrude",
+    "mode": "auto"
+   },
+   "op": null,
+   "ms": 2124,
+   "peak_mb": 487,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 15,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j5_chamfer",
+    "op": "chamfer",
+    "params": {
+     "length": 2.5,
+     "edges": "all"
+    },
+    "inputs": [
+     "j3_mirror"
+    ]
+   },
+   "op": "chamfer",
+   "ms": 629507,
+   "peak_mb": 491,
+   "grew_mb": 4,
+   "status": 200,
+   "error": null
+  }
+ ],
+ "notes": [
+  "step 15 (add chamfer) took 629507 ms"
+ ],
+ "found": "2026-09-13 01:45:25"
+}

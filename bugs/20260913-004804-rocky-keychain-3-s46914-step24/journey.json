@@ -1,0 +1,519 @@
+{
+ "signature": "hang|-|edit  took # s (the limit is # s) and answered #",
+ "kind": "hang",
+ "detail": "edit  took 124 s (the limit is 120 s) and answered 200",
+ "design": "rocky-keychain-3",
+ "file": "C:\\Users\\VasanSeenivasan\\Desktop\\textcad\\designs\\rocky-keychain-3.tcad.json",
+ "seed": 46914,
+ "failing_step": 24,
+ "request": {
+  "n": 24,
+  "kind": "edit",
+  "method": "POST",
+  "url": "/api/edit",
+  "body": {
+   "feature_id": "j8_fillet",
+   "param": "radius",
+   "value": 2.75
+  },
+  "op": null,
+  "ms": 124363,
+  "peak_mb": 490,
+  "grew_mb": 0,
+  "status": 200,
+  "error": null
+ },
+ "replay": [
+  {
+   "n": 24,
+   "kind": "edit",
+   "method": "POST",
+   "url": "/api/edit",
+   "body": {
+    "feature_id": "j8_fillet",
+    "param": "radius",
+    "value": 2.75
+   },
+   "op": null,
+   "ms": 124363,
+   "peak_mb": 490,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  }
+ ],
+ "identity": false,
+ "response_error": null,
+ "steps": [
+  {
+   "n": 1,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j1_sketch_on_face",
+    "op": "sketch_on_face",
+    "params": {
+     "face_center": [
+      11.87,
+      35.14,
+      2.4
+     ],
+     "face_normal": [
+      0.853,
+      0.522,
+      -0.0
+     ],
+     "entities": [
+      {
+       "kind": "rectangle",
+       "mode": "add",
+       "x": 0,
+       "y": 0,
+       "rotation": 0,
+       "w": 2.2,
+       "h": 2.6
+      }
+     ],
+     "offset": 0
+    },
+    "inputs": [
+     "keychain"
+    ]
+   },
+   "op": "sketch_on_face",
+   "ms": 148,
+   "peak_mb": 476,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 2,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j2_extrude",
+    "op": "extrude",
+    "params": {
+     "amount": 7.9,
+     "flip": true,
+     "through": true
+    },
+    "inputs": [
+     "j1_sketch_on_face"
+    ]
+   },
+   "op": "extrude",
+   "ms": 1514,
+   "peak_mb": 476,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 3,
+   "kind": "plan",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": {
+    "tool": "fillet",
+    "sketch_id": "j1_sketch_on_face"
+   },
+   "op": "fillet",
+   "ms": 6,
+   "peak_mb": 476,
+   "grew_mb": 0,
+   "status": 200,
+   "error": "Fillet needs the edges of a body \u2014 click an edge, a face, or a row of the tree"
+  },
+  {
+   "n": 4,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j3_sketch",
+    "op": "sketch",
+    "params": {
+     "plane": "XY",
+     "offset": 0,
+     "entities": [
+      {
+       "kind": "rectangle",
+       "mode": "add",
+       "x": 0,
+       "y": 0,
+       "rotation": 0,
+       "w": 10.8,
+       "h": 10.4
+      }
+     ]
+    },
+    "inputs": []
+   },
+   "op": "sketch",
+   "ms": 15,
+   "peak_mb": 476,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 5,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j4_extrude",
+    "op": "extrude",
+    "params": {
+     "amount": 10.0,
+     "both": true
+    },
+    "inputs": [
+     "j3_sketch"
+    ]
+   },
+   "op": "extrude",
+   "ms": 1539,
+   "peak_mb": 476,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 6,
+   "kind": "strike",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": {
+    "feature_id": "j2_extrude"
+   },
+   "op": null,
+   "ms": 1523,
+   "peak_mb": 476,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 7,
+   "kind": "restore",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": {
+    "feature_id": "j2_extrude",
+    "restore": true
+   },
+   "op": null,
+   "ms": 1420,
+   "peak_mb": 476,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 8,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j5_fillet",
+    "op": "fillet",
+    "params": {
+     "radius": 2.3,
+     "edges": "vertical"
+    },
+    "inputs": [
+     "j2_extrude"
+    ]
+   },
+   "op": "fillet",
+   "ms": 45,
+   "peak_mb": 479,
+   "grew_mb": 2,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 9,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j6_hex_plate",
+    "op": "hex_plate",
+    "params": {
+     "across_flats": 45.6,
+     "thickness": 12.1
+    },
+    "inputs": []
+   },
+   "op": "hex_plate",
+   "ms": 34,
+   "peak_mb": 479,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 10,
+   "kind": "undo",
+   "method": "POST",
+   "url": "/api/undo",
+   "body": null,
+   "op": null,
+   "ms": 572,
+   "peak_mb": 479,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 11,
+   "kind": "plan",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": {
+    "tool": "fillet",
+    "sketch_id": "j1_sketch_on_face"
+   },
+   "op": "fillet",
+   "ms": 6,
+   "peak_mb": 479,
+   "grew_mb": 0,
+   "status": 200,
+   "error": "Fillet needs the edges of a body \u2014 click an edge, a face, or a row of the tree"
+  },
+  {
+   "n": 12,
+   "kind": "plan",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": {
+    "tool": "move",
+    "sketch_id": "j1_sketch_on_face"
+   },
+   "op": "move",
+   "ms": 7,
+   "peak_mb": 479,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 13,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j7_with_bolt_circle",
+    "op": "with_bolt_circle",
+    "params": {
+     "count": 4,
+     "bolt_radius": 1.0,
+     "pitch_circle_dia": 47.5
+    },
+    "inputs": [
+     "keychain"
+    ]
+   },
+   "op": "with_bolt_circle",
+   "ms": 1388,
+   "peak_mb": 479,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 14,
+   "kind": "edit",
+   "method": "POST",
+   "url": "/api/edit",
+   "body": {
+    "feature_id": "plate",
+    "param": "amount",
+    "value": 1.5
+   },
+   "op": null,
+   "ms": 392,
+   "peak_mb": 480,
+   "grew_mb": 1,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 15,
+   "kind": "undo",
+   "method": "POST",
+   "url": "/api/undo",
+   "body": null,
+   "op": null,
+   "ms": 362,
+   "peak_mb": 480,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 16,
+   "kind": "redo",
+   "method": "POST",
+   "url": "/api/redo",
+   "body": null,
+   "op": null,
+   "ms": 25,
+   "peak_mb": 480,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 17,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j8_fillet",
+    "op": "fillet",
+    "params": {
+     "radius": 2.5,
+     "edges": "all"
+    },
+    "inputs": [
+     "j7_with_bolt_circle"
+    ]
+   },
+   "op": "fillet",
+   "ms": 202,
+   "peak_mb": 480,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 18,
+   "kind": "plan",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": {
+    "tool": "extrude",
+    "sketch_id": "j1_sketch_on_face"
+   },
+   "op": "extrude",
+   "ms": 9,
+   "peak_mb": 482,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 19,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j9_ball",
+    "op": "ball",
+    "params": {
+     "radius": 13.4
+    },
+    "inputs": []
+   },
+   "op": "ball",
+   "ms": 17,
+   "peak_mb": 482,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 20,
+   "kind": "edit",
+   "method": "POST",
+   "url": "/api/edit",
+   "body": {
+    "feature_id": "field_sketch",
+    "param": "offset",
+    "value": -1.8
+   },
+   "op": null,
+   "ms": 109633,
+   "peak_mb": 490,
+   "grew_mb": 8,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 21,
+   "kind": "undo",
+   "method": "POST",
+   "url": "/api/undo",
+   "body": null,
+   "op": null,
+   "ms": 27,
+   "peak_mb": 490,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 22,
+   "kind": "redo",
+   "method": "POST",
+   "url": "/api/redo",
+   "body": null,
+   "op": null,
+   "ms": 18,
+   "peak_mb": 490,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 23,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j10_fuse",
+    "op": "fuse",
+    "params": {},
+    "inputs": [
+     "j4_extrude",
+     "j9_ball"
+    ]
+   },
+   "op": "fuse",
+   "ms": 28,
+   "peak_mb": 490,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 24,
+   "kind": "edit",
+   "method": "POST",
+   "url": "/api/edit",
+   "body": {
+    "feature_id": "j8_fillet",
+    "param": "radius",
+    "value": 2.75
+   },
+   "op": null,
+   "ms": 124363,
+   "peak_mb": 490,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  }
+ ],
+ "notes": [
+  "step 20 (edit ) took 109633 ms",
+  "step 24 (edit ) took 124363 ms"
+ ],
+ "found": "2026-09-13 00:48:04"
+}

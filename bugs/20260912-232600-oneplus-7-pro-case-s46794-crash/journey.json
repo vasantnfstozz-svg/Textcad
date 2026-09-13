@@ -1,0 +1,181 @@
+{
+ "design": "oneplus_7_pro_case",
+ "file": "C:\\Users\\VasanSeenivasan\\Desktop\\textcad\\designs\\oneplus_7_pro_case.tcad.json",
+ "seed": 46794,
+ "steps": [
+  {
+   "n": 1,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j1_sketch",
+    "op": "sketch",
+    "params": {
+     "plane": "XZ",
+     "offset": 0,
+     "entities": [
+      {
+       "kind": "rectangle",
+       "mode": "add",
+       "x": 0,
+       "y": 0,
+       "rotation": 0,
+       "w": 13.5,
+       "h": 17.6
+      }
+     ]
+    },
+    "inputs": []
+   },
+   "op": "sketch",
+   "ms": 70,
+   "peak_mb": 436,
+   "grew_mb": 1,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 2,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j2_extrude",
+    "op": "extrude",
+    "params": {
+     "amount": 2.3,
+     "both": false
+    },
+    "inputs": [
+     "j1_sketch"
+    ]
+   },
+   "op": "extrude",
+   "ms": 196,
+   "peak_mb": 437,
+   "grew_mb": 1,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 3,
+   "kind": "edit",
+   "method": "POST",
+   "url": "/api/edit",
+   "body": {
+    "feature_id": "charging_port",
+    "param": "thickness",
+    "value": 13.2
+   },
+   "op": null,
+   "ms": 432,
+   "peak_mb": 438,
+   "grew_mb": 1,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 4,
+   "kind": "undo",
+   "method": "POST",
+   "url": "/api/undo",
+   "body": null,
+   "op": null,
+   "ms": 150,
+   "peak_mb": 438,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 5,
+   "kind": "redo",
+   "method": "POST",
+   "url": "/api/redo",
+   "body": null,
+   "op": null,
+   "ms": 148,
+   "peak_mb": 438,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 6,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j3_ball",
+    "op": "ball",
+    "params": {
+     "radius": 19.3
+    },
+    "inputs": []
+   },
+   "op": "ball",
+   "ms": 123,
+   "peak_mb": 438,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 7,
+   "kind": "undo",
+   "method": "POST",
+   "url": "/api/undo",
+   "body": null,
+   "op": null,
+   "ms": 150,
+   "peak_mb": 438,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 8,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j4_shell",
+    "op": "shell",
+    "params": {
+     "thickness": 1.1,
+     "open_face": "bottom"
+    },
+    "inputs": [
+     "final_case"
+    ]
+   },
+   "op": "shell"
+  }
+ ],
+ "signature": "process-died|shell|#xC# add shell",
+ "kind": "process-died",
+ "detail": "OpenCASCADE access violation (segfault) during step 8",
+ "failing_step": 8,
+ "request": {
+  "n": 8,
+  "kind": "add",
+  "method": "POST",
+  "url": "/api/feature/add",
+  "body": {
+   "id": "j4_shell",
+   "op": "shell",
+   "params": {
+    "thickness": 1.1,
+    "open_face": "bottom"
+   },
+   "inputs": [
+    "final_case"
+   ]
+  },
+  "op": "shell"
+ },
+ "replay": [],
+ "identity": false,
+ "found": "2026-09-12 23:26:00"
+}

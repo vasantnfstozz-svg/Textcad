@@ -1,0 +1,174 @@
+{
+ "signature": "hang|fillet|add fillet took # s (the limit is # s) and answered #",
+ "kind": "hang",
+ "detail": "add fillet took 156 s (the limit is 120 s) and answered 200",
+ "design": "rocky-keychain-2",
+ "file": "C:\\Users\\VasanSeenivasan\\Desktop\\textcad\\designs\\rocky-keychain-2.tcad.json",
+ "seed": 47178,
+ "failing_step": 5,
+ "request": {
+  "n": 5,
+  "kind": "add",
+  "method": "POST",
+  "url": "/api/feature/add",
+  "body": {
+   "id": "j3_fillet",
+   "op": "fillet",
+   "params": {
+    "radius": 2.2,
+    "edges": "all"
+   },
+   "inputs": [
+    "field_tool"
+   ]
+  },
+  "op": "fillet",
+  "ms": 156152,
+  "peak_mb": 474,
+  "grew_mb": 8,
+  "status": 200,
+  "error": null
+ },
+ "replay": [
+  {
+   "n": 5,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j3_fillet",
+    "op": "fillet",
+    "params": {
+     "radius": 2.2,
+     "edges": "all"
+    },
+    "inputs": [
+     "field_tool"
+    ]
+   },
+   "op": "fillet",
+   "ms": 156152,
+   "peak_mb": 474,
+   "grew_mb": 8,
+   "status": 200,
+   "error": null
+  }
+ ],
+ "identity": false,
+ "response_error": null,
+ "steps": [
+  {
+   "n": 1,
+   "kind": "remove-plan",
+   "method": "POST",
+   "url": "/api/feature/remove",
+   "body": {
+    "feature_id": "plate_sketch",
+    "mode": "cascade",
+    "dry_run": true
+   },
+   "op": null,
+   "ms": 28,
+   "peak_mb": 466,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 2,
+   "kind": "remove",
+   "method": "POST",
+   "url": "/api/feature/remove",
+   "body": {
+    "feature_id": "plate_sketch",
+    "mode": "cascade"
+   },
+   "op": null,
+   "ms": 2187,
+   "peak_mb": 466,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 3,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j1_sketch",
+    "op": "sketch",
+    "params": {
+     "plane": "YZ",
+     "offset": 0,
+     "entities": [
+      {
+       "kind": "circle",
+       "mode": "add",
+       "x": 0,
+       "y": 0,
+       "r": 3.3
+      }
+     ]
+    },
+    "inputs": []
+   },
+   "op": "sketch",
+   "ms": 16,
+   "peak_mb": 466,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 4,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j2_extrude",
+    "op": "extrude",
+    "params": {
+     "amount": 26.7,
+     "both": false
+    },
+    "inputs": [
+     "j1_sketch"
+    ]
+   },
+   "op": "extrude",
+   "ms": 2186,
+   "peak_mb": 466,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 5,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j3_fillet",
+    "op": "fillet",
+    "params": {
+     "radius": 2.2,
+     "edges": "all"
+    },
+    "inputs": [
+     "field_tool"
+    ]
+   },
+   "op": "fillet",
+   "ms": 156152,
+   "peak_mb": 474,
+   "grew_mb": 8,
+   "status": 200,
+   "error": null
+  }
+ ],
+ "notes": [
+  "step 5 (add fillet) took 156152 ms"
+ ],
+ "found": "2026-09-13 04:06:20"
+}

@@ -1,0 +1,291 @@
+{
+ "design": "my-part-8",
+ "file": "C:\\Users\\VasanSeenivasan\\Desktop\\textcad\\designs\\my-part-8.tcad.json",
+ "seed": 46791,
+ "steps": [
+  {
+   "n": 1,
+   "kind": "strike",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": {
+    "feature_id": "sketch1"
+   },
+   "op": null,
+   "ms": 24,
+   "peak_mb": 442,
+   "grew_mb": 1,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 2,
+   "kind": "restore",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": {
+    "feature_id": "sketch1",
+    "restore": true
+   },
+   "op": null,
+   "ms": 13,
+   "peak_mb": 442,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 3,
+   "kind": "plan",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": {
+    "tool": "extrude",
+    "body_id": "hole2",
+    "face_center": [
+     102.11,
+     -0.0,
+     -9.98
+    ],
+    "face_normal": [
+     -0.0,
+     -1.0,
+     -0.0
+    ]
+   },
+   "op": "extrude",
+   "ms": 21,
+   "peak_mb": 446,
+   "grew_mb": 1,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 4,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j1_intersect",
+    "op": "intersect",
+    "params": {},
+    "inputs": [
+     "hole2",
+     "extrude4"
+    ]
+   },
+   "op": "intersect",
+   "ms": 247,
+   "peak_mb": 464,
+   "grew_mb": 18,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 5,
+   "kind": "edit",
+   "method": "POST",
+   "url": "/api/edit",
+   "body": {
+    "feature_id": "hole1",
+    "param": "depth",
+    "value": 40.32
+   },
+   "op": null,
+   "ms": 386,
+   "peak_mb": 467,
+   "grew_mb": 3,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 6,
+   "kind": "undo",
+   "method": "POST",
+   "url": "/api/undo",
+   "body": null,
+   "op": null,
+   "ms": 26,
+   "peak_mb": 467,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 7,
+   "kind": "redo",
+   "method": "POST",
+   "url": "/api/redo",
+   "body": null,
+   "op": null,
+   "ms": 24,
+   "peak_mb": 467,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 8,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j2_cone",
+    "op": "cone",
+    "params": {
+     "bottom_radius": 18.6,
+     "top_radius": 0.5,
+     "height": 17.9
+    },
+    "inputs": []
+   },
+   "op": "cone",
+   "ms": 15,
+   "peak_mb": 467,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 9,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j3_sketch",
+    "op": "sketch",
+    "params": {
+     "plane": "XY",
+     "offset": 0,
+     "entities": [
+      {
+       "kind": "circle",
+       "mode": "add",
+       "x": 0,
+       "y": 0,
+       "r": 9.4
+      }
+     ]
+    },
+    "inputs": []
+   },
+   "op": "sketch",
+   "ms": 15,
+   "peak_mb": 467,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 10,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j4_extrude",
+    "op": "extrude",
+    "params": {
+     "amount": 25.2,
+     "both": false
+    },
+    "inputs": [
+     "j3_sketch"
+    ]
+   },
+   "op": "extrude",
+   "ms": 16,
+   "peak_mb": 467,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 11,
+   "kind": "suppress",
+   "method": "POST",
+   "url": "/api/feature/suppress",
+   "body": {
+    "feature_id": "j1_intersect",
+    "suppressed": true
+   },
+   "op": null,
+   "ms": 103,
+   "peak_mb": 467,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 12,
+   "kind": "suppress",
+   "method": "POST",
+   "url": "/api/feature/suppress",
+   "body": {
+    "feature_id": "j1_intersect",
+    "suppressed": false
+   },
+   "op": null,
+   "ms": 12,
+   "peak_mb": 467,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 13,
+   "kind": "doc",
+   "method": "GET",
+   "url": "/api/doc",
+   "body": null,
+   "op": null,
+   "ms": 9,
+   "peak_mb": 467,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 14,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j5_fillet",
+    "op": "fillet",
+    "params": {
+     "radius": 0.4,
+     "edges": "horizontal"
+    },
+    "inputs": [
+     "j1_intersect"
+    ]
+   },
+   "op": "fillet"
+  }
+ ],
+ "signature": "process-died|fillet|#xC# add fillet",
+ "kind": "process-died",
+ "detail": "OpenCASCADE access violation (segfault) during step 14",
+ "failing_step": 14,
+ "request": {
+  "n": 14,
+  "kind": "add",
+  "method": "POST",
+  "url": "/api/feature/add",
+  "body": {
+   "id": "j5_fillet",
+   "op": "fillet",
+   "params": {
+    "radius": 0.4,
+    "edges": "horizontal"
+   },
+   "inputs": [
+    "j1_intersect"
+   ]
+  },
+  "op": "fillet"
+ },
+ "replay": [],
+ "identity": false,
+ "found": "2026-09-12 23:24:40"
+}

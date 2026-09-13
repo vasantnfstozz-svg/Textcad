@@ -45,6 +45,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -73,6 +74,14 @@ MEMORY_BUG_MB = 2048
 # with this much memory, so the kernel refuses the allocation and the CHILD
 # dies (a finding) instead of the box. 0 switches it off.
 MEM_CAP_GB = 6.0
+# ... and the oracle the other two cannot be: HANG_MS is read when a request
+# COMES BACK, so a request that never does is invisible to it. On 2026-09-13
+# journey 512 (planetary-ring s47276) sat in one /api/edit from 05:09 to
+# 08:15 — three hours — and what ended it came from outside the runner, which
+# filed it as an exit code nobody could read. The PARENT watches the child's
+# step log instead: no new step for this long and the child is killed and the
+# stall filed, naming the request it was still in. 0 switches it off.
+STALL_KILL_S = 600.0
 
 
 def peak_mb() -> float:
@@ -444,16 +453,6 @@ class Journey:
             raise Bug("http-status", f"HTTP {r.status_code}: {r.text[:300]}", rec, resp)
         if unhandled(resp.get("error")):
             raise Bug("unhandled-error", str(resp["error"]), rec, resp)
-        # 1b. the machine is part of the product: a request that runs away
-        # in time or memory is a finding whatever it answered (see HANG_MS)
-        if rec["ms"] > HANG_MS:
-            raise Bug("hang", f"{kind} {op or ''} took {rec['ms'] / 1000:.0f} s "
-                      f"(the limit is {HANG_MS // 1000} s) and answered {r.status_code}",
-                      rec, resp)
-        if rec["grew_mb"] > MEMORY_BUG_MB:
-            raise Bug("memory", f"{kind} {op or ''} grew the server by {rec['grew_mb']} MB "
-                      f"in one request (the limit is {MEMORY_BUG_MB} MB) and answered "
-                      f"{r.status_code}", rec, resp)
         # 2. a refusal leaves the document exactly as it was
         if mutating and r.status_code == 400 and self.data() != before:
             raise Bug("refusal-changed-doc",
@@ -470,6 +469,20 @@ class Journey:
         # 3. every green body on screen is sound
         if mutating and r.status_code == 200:
             self.check_bodies(rec, resp)
+        # 4. the machine is part of the product: a request that runs away in
+        # time or memory is a finding whatever it answered (see HANG_MS).
+        # LAST, after the document and geometry oracles: a slow request can
+        # also hand back a broken body, and a Bug ends the journey — raising
+        # the clock first filed autonomiq-panel's 1195 s shell as a "hang"
+        # and never asked what it had built (review of 53f5653, 2026-09-13).
+        if rec["ms"] > HANG_MS:
+            raise Bug("hang", f"{kind} {op or ''} took {rec['ms'] / 1000:.0f} s "
+                      f"(the limit is {HANG_MS // 1000} s) and answered {r.status_code}",
+                      rec, resp)
+        if rec["grew_mb"] > MEMORY_BUG_MB:
+            raise Bug("memory", f"{kind} {op or ''} grew the server by {rec['grew_mb']} MB "
+                      f"in one request (the limit is {MEMORY_BUG_MB} MB) and answered "
+                      f"{r.status_code}", rec, resp)
         return resp
 
     def check_bodies(self, rec, resp):
@@ -1020,7 +1033,8 @@ def machine_gave_up(child_output: str) -> bool:
 def write_crash(name: str, seed: int, code: int, steps_rec: dict, err: str,
                 bugs_dir: Path, stamp: str | None = None,
                 verdict_on: str | None = None,
-                cap_hit_gb: float | None = None) -> tuple[Path | None, str | None]:
+                cap_hit_gb: float | None = None,
+                stalled_s: float | None = None) -> tuple[Path | None, str | None]:
     """File a process-died folder. -> (folder, None), (None, dup name), or
     (None, None) when the machine, not the product, gave up.
 
@@ -1034,15 +1048,22 @@ def write_crash(name: str, seed: int, code: int, steps_rec: dict, err: str,
         return None, None
     last = (steps_rec.get("steps") or [{}])[-1]
     hexcode = f"0x{code & 0xFFFFFFFF:08X}"
-    if cap_hit_gb is not None:
+    if stalled_s is not None:
+        what = f"longer than {stalled_s:g} s without answering (the runner killed it)"
+    elif cap_hit_gb is not None:
         what = f"more than {cap_hit_gb:g} GB of memory (the child's ceiling)"
     elif (code & 0xFFFFFFFF) == 0xC0000005:
         what = "OpenCASCADE access violation (segfault)"
     else:
         what = f"exit code {code}"
-    kind = "memory" if cap_hit_gb is not None else "process-died"
-    sig = signature(kind, last.get("op"), f"{hexcode} {last.get('kind')} {last.get('op')}"
-                    if cap_hit_gb is None else f"{last.get('kind')} {last.get('op')}")
+    kind = ("hang" if stalled_s is not None else
+            "memory" if cap_hit_gb is not None else "process-died")
+    # a hang and a memory death are about the REQUEST, not the exit code the
+    # OS happened to give the corpse
+    sig = signature(kind, last.get("op"),
+                    f"{hexcode} {last.get('kind')} {last.get('op')}"
+                    if cap_hit_gb is None and stalled_s is None
+                    else f"{last.get('kind')} {last.get('op')}")
     dup = existing_signatures(bugs_dir).get(sig)
     if dup:
         return None, dup
@@ -1053,7 +1074,8 @@ def write_crash(name: str, seed: int, code: int, steps_rec: dict, err: str,
                      found=time.strftime("%Y-%m-%d %H:%M:%S"))
     (d / "journey.json").write_text(json.dumps(steps_rec, indent=1, default=str), encoding="utf-8")
     lines = [f"# {kind}: {name}, seed {seed}, step {last.get('n')}", "",
-             (f"The server process took {what} while handling:" if kind == "memory" else
+             (f"The server process took {what} while handling:"
+              if kind in ("memory", "hang") else
               f"The server process died with {what} ({hexcode}) while handling:"), "",
              f"`{last.get('method', '?')} {last.get('url', '?')}`", "",
              "```json", json.dumps(last.get("body"), indent=1), "```", ""]
@@ -1077,10 +1099,41 @@ def write_crash(name: str, seed: int, code: int, steps_rec: dict, err: str,
     return d, None
 
 
+def steps_taken(log: str) -> int:
+    """How many requests the child has written to its step log (-1 = unreadable
+    right now, which a half-written file is; the caller treats it as no news)."""
+    try:
+        return len(json.loads(Path(log).read_text(encoding="utf-8")).get("steps") or [])
+    except Exception:                        # noqa: BLE001 — mid-write is normal
+        return -1
+
+
+def wait_or_kill_a_stalled_child(proc, log: str, stall_s: float) -> bool:
+    """Wait for the child, killing it if it stops taking steps. -> was it killed.
+
+    `Journey._flush_log` writes the log BEFORE each request, so the count rising
+    is the child making progress and the last entry is the request it is in."""
+    if not stall_s or stall_s <= 0:
+        proc.wait()
+        return False
+    seen, since = steps_taken(log), time.monotonic()
+    while proc.poll() is None:
+        time.sleep(2.0)
+        now = steps_taken(log)
+        if now != seen and now >= 0:
+            seen, since = now, time.monotonic()
+        elif time.monotonic() - since > stall_s:
+            proc.kill()
+            proc.wait()
+            return True
+    return False
+
+
 def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path,
-          mem_gb: float = MEM_CAP_GB) -> dict:
+          mem_gb: float = MEM_CAP_GB, stall_s: float = STALL_KILL_S) -> dict:
     """One journey in a child process, so a kernel crash is a finding — and
-    under a memory ceiling (`mem_gb`), so a runaway op is one too."""
+    under a memory ceiling (`mem_gb`) and a stall ceiling (`stall_s`), so a
+    runaway op is one too whether it ends in memory, in time, or never."""
     bugs_dir.mkdir(parents=True, exist_ok=True)
     fd, log = tempfile.mkstemp(prefix=f"journey-{_slug(name)}-s{seed}-", suffix=".json")
     os.close(fd)
@@ -1096,7 +1149,16 @@ def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path,
     cap = JobCap(mem_gb)
     proc = cap.start(cmd, env=env, cwd=str(ROOT), stderr=subprocess.PIPE,
                      text=True, errors="replace")
-    _, full_err = proc.communicate()
+    # stderr is drained on a thread so the watchdog can watch the step log:
+    # communicate() would block until the child ends, which is the one case
+    # a stall never reaches
+    drained: dict = {}
+    reader = threading.Thread(
+        target=lambda: drained.update(err=proc.communicate()[1]), daemon=True)
+    reader.start()
+    stalled = wait_or_kill_a_stalled_child(proc, log, stall_s)
+    reader.join(30)
+    full_err = drained.get('err')
     secs = round(time.perf_counter() - t0)
     code = proc.returncode
     # the WHOLE stderr decides whether the machine gave up; only the tail is
@@ -1105,7 +1167,7 @@ def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path,
     err = full_err[-8000:]
     out = {"design": name, "seed": seed, "exit": code, "secs": secs,
            "peak_gb": round(cap.peak_gb(), 2)}
-    if code in (EXIT_CLEAN, EXIT_BUG, EXIT_DUP):
+    if code in (EXIT_CLEAN, EXIT_BUG, EXIT_DUP) and not stalled:
         Path(log).unlink(missing_ok=True)
         return out
     if err:
@@ -1123,7 +1185,8 @@ def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path,
         steps_rec = {"steps": []}
     Path(log).unlink(missing_ok=True)
     d, dup = write_crash(name, seed, code, steps_rec, err, bugs_dir,
-                         verdict_on=full_err, cap_hit_gb=cap.gb if cap.hit else None)
+                         verdict_on=full_err, cap_hit_gb=cap.gb if cap.hit else None,
+                         stalled_s=stall_s if stalled else None)
     hexcode = f"0x{code & 0xFFFFFFFF:08X}"
     if dup:
         append_log(f"dup    {name} s{seed}: process died {hexcode} (already in {dup})", bugs_dir)
@@ -1134,7 +1197,8 @@ def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path,
                    "not a finding, run fewer things at once", bugs_dir)
     else:
         last = (steps_rec.get("steps") or [{}])[-1]
-        what = f"ate the {cap.gb:g} GB ceiling" if cap.hit else hexcode
+        what = (f"answered nothing for {stall_s:g} s" if stalled else
+                f"ate the {cap.gb:g} GB ceiling" if cap.hit else hexcode)
         append_log(f"CRASH  {name} s{seed} step {last.get('n')}: {what} -> {d.name}", bugs_dir)
         out["folder"] = str(d)
     return out
@@ -1151,6 +1215,9 @@ def main(argv=None) -> int:
     p.add_argument("--in-process", action="store_true", help="no child processes (a crash ends the run)")
     p.add_argument("--mem-gb", type=float, default=MEM_CAP_GB,
                    help=f"memory ceiling per child, GB (default {MEM_CAP_GB:g}; 0 = none)")
+    p.add_argument("--stall-secs", type=float, default=STALL_KILL_S,
+                   help=f"kill a child that takes no new step for this long "
+                        f"(default {STALL_KILL_S:g}; 0 = never)")
     p.add_argument("--bugs-dir", default=str(BUGS))
     p.add_argument("--replay", help="a bugs/<folder>: open its before-document and resend the failing step")
     # child mode
@@ -1177,6 +1244,8 @@ def main(argv=None) -> int:
     deadline = time.time() + a.hours * 3600 if a.hours else None
     cap_note = (f"{a.mem_gb:g} GB per child" if a.mem_gb and JobCap.available
                 else "NO memory ceiling" + ("" if JobCap.available else " (not Windows)"))
+    cap_note += (f"; killed after {a.stall_secs:g} s with no new step"
+                 if a.stall_secs else "; NO stall ceiling")
     print(f"journeys over {', '.join(n for n, _ in srcs)}; {a.steps} steps each; first seed {seed}; "
           f"{cap_note}; findings -> {bugs_dir}", flush=True)
     counts = {"clean": 0, "bug": 0, "dup": 0, "crash": 0, "broken": 0}
@@ -1193,7 +1262,8 @@ def main(argv=None) -> int:
                 out = run_one(name, path, seed + n, a.steps, None, bugs_dir)
                 code = out["exit"]
             else:
-                out = spawn(name, path, seed + n, a.steps, bugs_dir, a.mem_gb)
+                out = spawn(name, path, seed + n, a.steps, bugs_dir, a.mem_gb,
+                            a.stall_secs)
                 code = out["exit"]
             key = {EXIT_CLEAN: "clean", EXIT_BUG: "bug", EXIT_DUP: "dup", EXIT_BROKEN: "broken"}.get(code, "crash")
             counts[key] += 1
