@@ -485,3 +485,73 @@ def test_plan_refuses_with_a_sentence_never_an_exception():
     e = Document(name="empty")
     r = toolplan.plan(e, {"tool": "shell", "body_id": None})
     assert not r["ok"] and "build a body first" in r["error"]
+
+
+# ---------------------------------------------------------------------------
+# The body handed back as a hollow (my-part-5 seed 18800, 2026-09-14)
+# ---------------------------------------------------------------------------
+
+def mirror_body():
+    """my-part-5's `j2_mirror` at the step the overnight runner crashed on:
+    413262.875 mm3, 25 faces, one lump, 35 x 313.383 x 116.214 mm."""
+    from pathlib import Path
+    p = Path(__file__).resolve().parent / "fixtures" / "my_part_5_mirror_body.brep"
+    return b3d.Part(b3d.import_brep(str(p)).wrapped)
+
+
+def test_the_body_handed_back_as_a_hollow_is_refused():
+    """The P0 found beside the segfault the folder was filed for. A closed 3 mm
+    shell returned 413260.165 of 413262.875 mm3 — 2.709 mm3 removed, 0.00066
+    per cent — valid, watertight, health empty, green in the tree and saved.
+    Every check that existed asked about IDENTITY, and "nothing was hollowed"
+    is `abs(v_out - v_in) <= 1e-6`, which 2.709 clears by seven orders of
+    magnitude."""
+    body = mirror_body()
+    assert round(body.volume, 3) == 413262.875, "the fixture is not the crash body"
+    with pytest.raises(ValueError, match="came back as the body itself"):
+        sk.shell(body, 3.0, None, "inside", None)
+
+
+def test_a_solid_OpenCASCADE_calls_invalid_never_leaves_the_op():
+    """The same body at 1.5 mm: 137707.973 mm3, `closed_shell` True — every edge
+    on exactly two faces — and `is_valid` False. `closed_shell` is a topology
+    census, not BRepCheck_Analyzer, so the op has to ask OCCT too: the document
+    runs health with check_valid=False on INTERMEDIATE features, and an op that
+    eats its body must not hand one of those on."""
+    with pytest.raises(ValueError, match="OpenCASCADE itself reports it invalid"):
+        sk.shell(mirror_body(), 1.5, None, "inside", None)
+
+
+def test_a_correct_shell_that_is_almost_a_block_still_builds():
+    """The guard that catches the block must not catch this: a 12 mm plate at
+    5.9 mm walls leaves 521 mm3 of cavity — the walls are 98.91 per cent of the
+    body, closer to a block than anything else measured — and it is CORRECT.
+    That is why the ceiling is `area * t` and not a volume fraction; this plate
+    reads 0.72 of its skin where the wrong result reads 2.72."""
+    plate = b3d.Box(80.0, 50.0, 12.0)
+    out = healthy(sk.shell(plate, 5.9, None, "inside", None))
+    assert out.volume == pytest.approx(47478.952, rel=1e-6)
+    assert out.volume / plate.volume > 0.98, "this case is only interesting if it is near-solid"
+
+
+def test_the_skin_ceiling_sits_above_every_sound_result_ever_measured():
+    """Calibrated, not guessed (probes/shell_wall_bound_corpus.py, 2026-09-14):
+    over the gauntlet corpus and the committed crash bodies at nine thicknesses
+    from 0.2 to 8 mm, a sound CLOSED hollow measured 0.61-1.056 of `area * t`
+    and a sound OPEN one 0.61-0.955. Above 1 is real and expected — a surface
+    that is mostly CONCAVE has inner parallel faces larger than its outer ones
+    — so the ceiling has to clear it with room."""
+    assert sk._SHELL_SKIN_FACTOR >= 1.056 * 1.5, "no margin over the measured ceiling"
+    assert sk._SHELL_SKIN_FACTOR <= 2.72 / 1.25, "no margin under the result it must catch"
+
+
+def test_the_skin_ceiling_leaves_outside_shells_alone():
+    """Their walls sit OUTSIDE the old surface and were never measured, so they
+    are not judged by this bound (they keep every other check)."""
+    # a 50 mm cube is 125000 mm3 against a 3 mm skin of 6 x 2500 x 3 = 45000,
+    # so handing the body back as its own walls is 2.78x the ceiling
+    cube = b3d.Box(50.0, 50.0, 50.0)
+    assert cube.volume / (cube.area * 3.0) == pytest.approx(2.778, rel=1e-3)
+    assert sk.assert_walls_could_be_a_skin(cube, cube, 3.0, "outside", "walls of 3 mm") is None
+    with pytest.raises(ValueError, match="came back as the body itself"):
+        sk.assert_walls_could_be_a_skin(cube, cube, 3.0, "inside", "walls of 3 mm")

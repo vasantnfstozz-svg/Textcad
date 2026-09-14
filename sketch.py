@@ -2345,6 +2345,59 @@ def assert_every_lump_hollowed(solid, out, direction: str, walls: str) -> None:
             f"instead of walls. Use a thinner wall")
 
 
+# How many times `area * t` the walls of an inward shell may measure before the
+# result is refused as the body itself. Calibrated 2026-09-14, not guessed
+# (probes/shell_wall_bound_corpus.py): across the gauntlet corpus and the
+# committed crash bodies, nine thicknesses from 0.2 to 8 mm, every SOUND closed
+# hollow landed between 0.61 and 1.056, and every sound OPEN one between 0.61
+# and 0.955. The silent wrong result this exists for reads 2.72.
+_SHELL_SKIN_FACTOR = 2.0
+
+
+def assert_walls_could_be_a_skin(solid, out, t: float, direction: str, walls: str) -> None:
+    """An inward shell's walls lie within `t` of the surface they came from, so
+    their volume is about `area * t` — never a multiple of it. A result that
+    measures more than that is the BODY, handed back as a hollow.
+
+    The P0 this closes (my-part-5 seed 18800, 2026-09-14, found beside the
+    segfault the folder was filed for): a CLOSED 3 mm shell of a 413262.875 mm3
+    mirrored body returned 413260.165 mm3 — 2.709 mm3 removed, 0.00066 per cent
+    — valid, watertight, health empty, green in the tree and saved. Every check
+    that existed passed, because all of them ask about IDENTITY: "nothing was
+    hollowed" is `abs(v_out - v_in) <= 1e-6`, and 2.709 clears 1e-6 by seven
+    orders of magnitude. Identity is the wrong question; "is this plausibly a
+    wall" is the right one.
+
+    Why a VOLUME FRACTION cannot do this job, measured the same day: a 12 mm
+    plate shelled at 5.9 mm leaves 521 mm3 of cavity and walls that are 98.91
+    per cent of the body — CORRECT, and closer to a block than anything else in
+    the corpus. Dividing by `area * t` normalises that away: the same plate
+    reads 0.72 while the wrong result reads 2.72.
+
+    The factor is 2.0 against a measured ceiling of 1.056, so it sits 1.9x
+    above every sound result on record and 1.36x under the one it exists to
+    catch. It is a ceiling, not a theorem: a body whose surface is mostly
+    CONCAVE detail has inner parallel surfaces larger than its outer one (the
+    oneplus case at t = 0.5 is the 1.056), which is exactly why the margin is
+    not tighter. OUTSIDE shells are not judged here — their walls sit outside
+    the old surface and were not measured."""
+    if direction != "inside":
+        return
+    import inspector                                 # local: avoids an import cycle
+    area = inspector._try(lambda: float(solid.area))
+    v_out = inspector._try(lambda: float(out.volume))
+    if not area or area <= 0 or v_out is None:
+        return                                       # nothing to judge against
+    skin = area * t
+    if v_out <= _SHELL_SKIN_FACTOR * skin:
+        return
+    raise ValueError(
+        f"shell: {walls} came back as the body itself, not as walls — the kernel "
+        f"returned {v_out:,.6g} mm3 of walls where a {t:g} mm skin over this surface "
+        f"holds about {skin:,.6g} mm3, so almost nothing was hollowed. Try a "
+        f"different thickness, or open a face")
+
+
 def assert_wall_fits_every_lump(solid, t: float, walls: str) -> None:
     """A CLOSED, inward hollow whose wall is at least HALF a lump's smallest
     extent can leave nothing hollow — and asking the kernel anyway SEGFAULTS it.
@@ -2464,6 +2517,20 @@ def shell_after_guards(solid, t: float, d: str, openings: list, walls: str):
     if v_out <= 0 or not inspector.closed_shell(out):
         why = "empty result" if v_out <= 0 else "an open shell, not watertight"
         raise ValueError(f"shell: {walls} leave a broken solid ({why}) — use a thinner wall")
+    # OCCT's own verdict, which `closed_shell` is NOT: the topology census walks
+    # the edges, and a shell can have every edge on exactly two faces while
+    # BRepCheck_Analyzer still refuses the solid. Measured 2026-09-14 on
+    # my-part-5 s18800's mirror body at t = 1.5: 413262.875 -> 137707.973 mm3,
+    # closed_shell True, `is_valid` False. `inspector.health` reads the same
+    # flag, so the DOCUMENT catches this one on a result feature — but it runs
+    # health with check_valid=False on INTERMEDIATE features (Document.rebuild,
+    # for the 270 ms), and the op that eats its body must not hand one on.
+    # A property that RAISES is not an exception to this — `_try` handles it
+    # (section 4 round two).
+    if inspector._try(lambda: bool(out.is_valid)) is False:
+        raise ValueError(f"shell: {walls} leave a broken solid (OpenCASCADE itself "
+                         f"reports it invalid) — use a thinner wall")
+    assert_walls_could_be_a_skin(solid, out, t, d, walls)
     assert_every_lump_hollowed(solid, out, d, walls)
     return out
 

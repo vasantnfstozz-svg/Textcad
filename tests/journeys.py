@@ -920,9 +920,12 @@ class Journey:
 # sending the whole recorded sequence and asking the same question again.
 _IDENTITY_BUGS = {"strike-restore-mismatch", "strike-restore-volume",
                   "rollback-mismatch", "rollback-volume", "undo-mismatch"}
-# ... and the ones a fresh server cannot re-ask: tab ids are minted per run,
-# and a process that died left no document behind.
-_REPLAY_BLIND = {"tab-leak", "process-died"}
+# ... and the one a fresh server cannot re-ask: tab ids are minted per run.
+# `process-died` used to be here too ("a process that died left no document
+# behind"), and that was the whole reason the folders MOST worth re-running
+# could not be: `replay` opens the design the journey opened and re-sends its
+# steps now (2026-09-14).
+_REPLAY_BLIND = {"tab-leak"}
 
 
 def existing_signatures(bugs_dir: Path = BUGS) -> dict[str, str]:
@@ -1041,6 +1044,21 @@ def run_one(name: str, path: Path | None, seed: int, steps: int, log_path: Path 
     return out
 
 
+def design_a_journey_opened(rec: dict, folder: Path) -> Path:
+    """The design file a killed journey started from: the path it recorded, or
+    the same name under designs/ when the folder has travelled."""
+    named = rec.get("file")
+    if named and Path(named).exists():
+        return Path(named)
+    name = rec.get("design") or ""
+    here = ROOT / "designs" / f"{name}.tcad.json"
+    if name and here.exists():
+        return here
+    raise SystemExit(
+        f"{folder} holds no before/doc/after.tcad.json, and the design it "
+        f"opened ({named or name or 'unknown'}) is not on this machine")
+
+
 def replay(folder: Path, verbose: bool = True) -> dict:
     """Open a bug folder's before-document and send its failing request again."""
     folder = Path(folder)
@@ -1049,10 +1067,18 @@ def replay(folder: Path, verbose: bool = True) -> dict:
     src = next((folder / n for n in ("before.tcad.json", "doc.tcad.json",
                                      "after.tcad.json")
                 if (folder / n).exists()), None)
-    if src is None:
-        # a finding made by the OPENING check has no `before` — the document it
-        # was measured on is the one the folder calls after.tcad.json
-        raise SystemExit(f"{folder} holds no before/doc/after.tcad.json")
+    # A child that was KILLED — a segfault, or the stall ceiling — dies before
+    # it can write `before.tcad.json`, and those are the folders most worth
+    # re-running. `journey.json` keeps the design it opened and every step in
+    # order (the in-flight one included, with a null status), so the journey
+    # itself is the repro: open that design and send them again. Without this
+    # the documented `--replay` line printed "holds no before/doc/after" and
+    # the only way back to the finding was a seeded overnight-length run
+    # (measured 2026-09-14 on the s18884 hang folder, whose own report tells
+    # the reader the steps rebuild the state).
+    whole_journey = src is None
+    if whole_journey:
+        src = design_a_journey_opened(rec, folder)
     j = Journey(rec.get("design") or folder.name, src, rec.get("seed", 0), 0, verbose=verbose)
     doc = load_document(src)
     j.studio._new_tab(doc, source=f"replay:{folder.name}")
@@ -1061,7 +1087,13 @@ def replay(folder: Path, verbose: bool = True) -> dict:
             if f.status != "ok" and not f.suppressed]
     print(f"opened {src.name}: {len(doc.features)} features, {len(j.solids())} bodies"
           + (f", red: {reds}" if reds else ""), flush=True)
-    steps = rec.get("replay")
+    if whole_journey:
+        # the LIVE design, as it stands today — say so, because it is the one
+        # input to this repro that nobody froze
+        print(f"no document was saved before the child was killed, so this "
+              f"replays all {len(rec.get('steps') or [])} steps against "
+              f"{src} as it is today", flush=True)
+    steps = rec.get("steps") if whole_journey else rec.get("replay")
     if steps is None:                        # a folder written before P5b's fix
         req = rec.get("request") or {}
         steps = [req] if req.get("url") else []
@@ -1183,8 +1215,10 @@ def write_crash(name: str, seed: int, code: int, steps_rec: dict, err: str,
               f"--steps {len(steps_rec.get('steps') or [])} --journeys 1", "",
               "There is no before.tcad.json: the process was gone before it could be "
               "written. `journey.json` holds every step from the start of the design, "
-              "in order; replaying them (`steps`) rebuilds the state. In the app this "
-              "is what the crash supervisor (supervise.py) recovers from.", ""]
+              "in order, so the replay opens that design and sends them again:", "",
+              f"    python tests/journeys.py --replay bugs/{d.name}", "",
+              "In the app this is what the crash supervisor (supervise.py) recovers "
+              "from.", ""]
     (d / "report.md").write_text("\n".join(lines), encoding="utf-8")
     return d, None
 

@@ -88,6 +88,12 @@ KILLERS = {
     # pump-impeller seed 47244 step 56 (probes/shell_third_crash.py)
     "shell_closed_impeller": lambda: sketch.shell(
         body("impeller_cut_shell_body"), 1.9, None, "inside", None),
+    # my-part-5 seed 18800 step 25 (probes/shell_mirror_crash.py): an OPEN
+    # bottom on a mirrored body, and unlike the oneplus case the window is not
+    # a window at all — every thickness from 0.2 to 5 mm dies with the bottom
+    # open, and all but 0.2 with the top open
+    "shell_open_mirror": lambda: sketch.shell(
+        body("my_part_5_mirror_body"), 2.1, None, "inside", "bottom"),
 }
 
 
@@ -295,8 +301,18 @@ def test_the_shipped_budget_is_above_every_correct_answer_ever_measured():
     autonomiq-panel); its slowest correct blend was 630 s. A ceiling under
     those would refuse the user's own parts to catch a spin. 900 s sits above
     the blends and below the 3-hour spin; the shell above it is itself a
-    finding the user should hear about, not silently wait 20 minutes for."""
-    assert 630 < kernelguard.DEFAULT_BUDGET < 3 * 3600
+    finding the user should hear about, not silently wait 20 minutes for.
+
+    The lower bound is 879 s, not 630, since 2026-09-14: a closed 2.7 mm shell
+    on a 1.5x scale of designs/autonomiq-panel (675 faces, one lump) is
+    REFUSED by the kernel — "the kernel could not offset its faces", the
+    sentence the user should read — and takes 879 s standalone, 692 s through
+    the API, to say so (probes/shell_slow_panel.py; bugs/fixed/...s18884).
+    A budget under that turns a correct refusal into "was stopped after 15
+    minutes", which tells the user nothing they can act on. The margin is 21
+    seconds, and that is the honest state of it: a slower box crosses the
+    line."""
+    assert 879 < kernelguard.DEFAULT_BUDGET < 3 * 3600
 
 
 def test_the_budget_reads_in_words_a_person_can_act_on():

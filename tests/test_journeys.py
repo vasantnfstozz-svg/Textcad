@@ -630,3 +630,75 @@ def test_the_step_limit_is_the_product_s_own_kernel_budget():
     # time a fresh worker needs, so the guard's sentence is what gets filed
     assert journeys.STALL_KILL_S >= kernelguard.DEFAULT_BUDGET + kernelguard.READY_SECONDS
     assert journeys.STALL_KILL_S * 1000 > journeys.HANG_MS
+
+
+# ------------------------------------------------------- replaying a corpse ---
+
+def _killed_folder(tmp_path, design: Path, steps: list) -> Path:
+    """The folder a KILLED child leaves: a journey.json naming the design and
+    every step, and no document at all."""
+    rec = {"design": design.stem, "seed": 7, "file": str(design), "steps": steps}
+    d, dup = journeys.write_crash(design.stem, 7, 0xC0000005, rec, "",
+                                  tmp_path / "bugs", verdict_on="")
+    assert dup is None and d is not None
+    assert not any((d / n).exists() for n in ("before.tcad.json", "doc.tcad.json",
+                                              "after.tcad.json"))
+    return d
+
+
+def _tiny_design(tmp_path) -> Path:
+    src = tmp_path / "tiny.tcad.json"
+    src.write_text(json.dumps({"name": "tiny", "spec": {}, "features": [
+        {"id": "b", "op": "plate", "params": {"width": 20, "depth": 10, "thickness": 4},
+         "inputs": [], "suppressed": False}]}), encoding="utf-8")
+    return src
+
+
+def test_a_folder_whose_child_was_killed_replays_from_its_own_steps(tmp_path, monkeypatch):
+    """A segfault or a stall kills the child before it can write
+    `before.tcad.json` — and those are the folders most worth re-running. The
+    s18884 hang folder answered the documented `--replay` line with "holds no
+    before/doc/after.tcad.json" (measured 2026-09-14), so the only way back to
+    the finding was a seeded overnight-length run. journey.json has the design
+    and every step in order; that IS the repro."""
+    src = _tiny_design(tmp_path)
+    steps = [{"n": 1, "kind": "add", "method": "POST", "url": "/api/feature/add",
+              "op": "plate", "body": {"id": "j1_plate", "op": "plate",
+                                      "params": {"width": 8, "depth": 8, "thickness": 3},
+                                      "inputs": []}},
+             {"n": 2, "kind": "add", "method": "POST", "url": "/api/feature/add",
+              "op": "fuse", "body": {"id": "j2_fuse", "op": "fuse",
+                                     "inputs": ["b", "j1_plate"], "params": {}}}]
+    d = _killed_folder(tmp_path, src, steps)
+
+    sent = []
+    real_call = journeys.Journey.call
+
+    def call(self, kind, method, url, body=None, **kw):
+        sent.append((url, (body or {}).get("id")))
+        return real_call(self, kind, method, url, body, **kw)
+    monkeypatch.setattr(journeys.Journey, "call", call)
+
+    assert journeys.replay(d, verbose=False)["result"] == "clean"
+    # both steps went back, in order, against the design the journey opened
+    assert sent == [("/api/feature/add", "j1_plate"), ("/api/feature/add", "j2_fuse")]
+    # and the folder's own report hands the reader that one line
+    assert f"--replay bugs/{d.name}" in (d / "report.md").read_text(encoding="utf-8")
+
+
+def test_a_corpse_whose_design_is_gone_says_so_instead_of_guessing(tmp_path):
+    src = _tiny_design(tmp_path)
+    d = _killed_folder(tmp_path, src, [{"n": 1, "kind": "add", "method": "POST",
+                                        "url": "/api/feature/add", "op": "plate",
+                                        "body": {"id": "j1", "op": "plate",
+                                                 "params": {}, "inputs": []}}])
+    src.unlink()
+    with pytest.raises(SystemExit) as ei:
+        journeys.replay(d, verbose=False)
+    assert "is not on this machine" in str(ei.value)
+
+
+def test_a_process_death_is_no_longer_declared_unreplayable():
+    """It was blind only because there was no document to open."""
+    assert "process-died" not in journeys._REPLAY_BLIND
+    assert "tab-leak" in journeys._REPLAY_BLIND
