@@ -87,10 +87,14 @@ is deliberately ABOVE it.
 
 ## Do not re-report
 
-- **The four `bugs/` folders from the night of 2026-09-13 that this commit
-  reclassifies** (the 405 s shell, the 164 s pattern, the 135 s chamfer, the
-  8 h 16 m undo). They are false findings by the new rules and are still on
-  disk, untracked, awaiting the user's word on deleting them.
+- **The four `bugs/fixed/` folders from the night of 2026-09-13 that this
+  commit reclassifies** (the 405 s shell, the 164 s pattern, the 135 s
+  chamfer, the 8 h 16 m undo). They were the runner's own clock and limit, not
+  the product; each carries a "Retired 2026-09-14 - NOT a product bug" note
+  saying which of the two defects filed it. `bugs/` itself is down to the two
+  real ones: `20260913-193839-my-part-5` (a shell segfault) and
+  `20260913-212515-autonomiq-panel` (killed at 600 s; it would now be allowed
+  the guard's own 900 s and answer in words).
 - **`kernelguard`'s own budget counting machine sleep.** Found, measured, and
   deliberately NOT fixed here: it is product code and its `queue.get(timeout=)`
   expires on the OS's biased timer too, so it needs its own pass. It is a

@@ -113,7 +113,7 @@ def awake_s() -> float:
     2026-09-13 one `/api/undo` — a rebuild in memory, its neighbours 23 ms and
     3598 ms, its working set flat at 512 MB — was measured at 29 781 465 ms
     (8 h 16 m) and filed as a hang: the laptop had slept in the middle of it
-    (bugs/20260914-065540-autonomiq-sat-panel-s18939-step16). Measured on this
+    (bugs/fixed/20260914-065540-autonomiq-sat-panel-s18939-step16). Measured on this
     box in the same hour: 33.08 hours of uptime against 29.48 hours awake
     (probes/awake_clock.py). QueryUnbiasedInterruptTime is the clock that
     stops at suspend. Where it cannot be read, and on Linux and macOS (whose

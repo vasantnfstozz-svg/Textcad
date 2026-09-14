@@ -1,7 +1,7 @@
 """Probe: a clock that does NOT count the time the machine was asleep.
 
 Why. tests/journeys.py timed one `undo` at 29 781 465 ms (8 h 16 m) on the
-2026-09-13 overnight run (bugs/20260914-065540-autonomiq-sat-panel-s18939-step16)
+2026-09-13 overnight run (bugs/fixed/20260914-065540-autonomiq-sat-panel-s18939-step16)
 with a FLAT 512 MB working set and neighbouring steps at 23-3598 ms. Nothing
 ran for eight hours: the laptop slept in the middle of the request and both
 `time.perf_counter()` (the child's step clock) and `time.monotonic()` (the

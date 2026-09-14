@@ -1,0 +1,72 @@
+{
+ "design": "autonomiq-panel",
+ "file": "C:\\Users\\VasanSeenivasan\\Desktop\\textcad\\designs\\autonomiq-panel.tcad.json",
+ "seed": 18884,
+ "steps": [
+  {
+   "n": 1,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j1_scale",
+    "op": "scale",
+    "params": {
+     "factor": 1.5
+    },
+    "inputs": [
+     "autonomiq_panel"
+    ]
+   },
+   "op": "scale",
+   "ms": 2397,
+   "peak_mb": 467,
+   "grew_mb": 1,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 2,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j2_shell",
+    "op": "shell",
+    "params": {
+     "thickness": 2.7,
+     "open_face": "none"
+    },
+    "inputs": [
+     "j1_scale"
+    ]
+   },
+   "op": "shell"
+  }
+ ],
+ "signature": "hang|shell|add shell",
+ "kind": "hang",
+ "detail": "longer than 600 s without answering (the runner killed it) during step 2",
+ "failing_step": 2,
+ "request": {
+  "n": 2,
+  "kind": "add",
+  "method": "POST",
+  "url": "/api/feature/add",
+  "body": {
+   "id": "j2_shell",
+   "op": "shell",
+   "params": {
+    "thickness": 2.7,
+    "open_face": "none"
+   },
+   "inputs": [
+    "j1_scale"
+   ]
+  },
+  "op": "shell"
+ },
+ "replay": [],
+ "identity": false,
+ "found": "2026-09-13 21:25:15"
+}

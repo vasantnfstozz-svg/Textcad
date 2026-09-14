@@ -1,0 +1,228 @@
+{
+ "signature": "hang|shell|add shell took # s (the limit is # s) and answered #",
+ "kind": "hang",
+ "detail": "add shell took 405 s (the limit is 120 s) and answered 200",
+ "design": "cam-cover-plaque",
+ "file": "C:\\Users\\VasanSeenivasan\\Desktop\\textcad\\designs\\cam-cover-plaque.tcad.json",
+ "seed": 18784,
+ "failing_step": 8,
+ "request": {
+  "n": 8,
+  "kind": "add",
+  "method": "POST",
+  "url": "/api/feature/add",
+  "body": {
+   "id": "j4_shell",
+   "op": "shell",
+   "params": {
+    "thickness": 2.7,
+    "open_face": "bottom"
+   },
+   "inputs": [
+    "cam_cover_plaque"
+   ]
+  },
+  "op": "shell",
+  "ms": 404941,
+  "peak_mb": 494,
+  "grew_mb": 0,
+  "status": 200,
+  "error": null
+ },
+ "replay": [
+  {
+   "n": 8,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j4_shell",
+    "op": "shell",
+    "params": {
+     "thickness": 2.7,
+     "open_face": "bottom"
+    },
+    "inputs": [
+     "cam_cover_plaque"
+    ]
+   },
+   "op": "shell",
+   "ms": 404941,
+   "peak_mb": 494,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  }
+ ],
+ "identity": false,
+ "response_error": null,
+ "steps": [
+  {
+   "n": 1,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j1_hex_plate",
+    "op": "hex_plate",
+    "params": {
+     "across_flats": 9.6,
+     "thickness": 6.7
+    },
+    "inputs": []
+   },
+   "op": "hex_plate",
+   "ms": 3154,
+   "peak_mb": 489,
+   "grew_mb": 2,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 2,
+   "kind": "strike",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": {
+    "feature_id": "fins_1_sk"
+   },
+   "op": null,
+   "ms": 42,
+   "peak_mb": 491,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 3,
+   "kind": "restore",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": {
+    "feature_id": "fins_1_sk",
+    "restore": true
+   },
+   "op": null,
+   "ms": 44,
+   "peak_mb": 491,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 4,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j2_sketch",
+    "op": "sketch",
+    "params": {
+     "plane": "XZ",
+     "offset": 0,
+     "entities": [
+      {
+       "kind": "rectangle",
+       "mode": "add",
+       "x": 0,
+       "y": 0,
+       "rotation": 0,
+       "w": 18.3,
+       "h": 18.6
+      }
+     ]
+    },
+    "inputs": []
+   },
+   "op": "sketch",
+   "ms": 40,
+   "peak_mb": 492,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 5,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j3_extrude",
+    "op": "extrude",
+    "params": {
+     "amount": 24.1,
+     "both": false
+    },
+    "inputs": [
+     "j2_sketch"
+    ]
+   },
+   "op": "extrude",
+   "ms": 2768,
+   "peak_mb": 492,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 6,
+   "kind": "remove-plan",
+   "method": "POST",
+   "url": "/api/feature/remove",
+   "body": {
+    "feature_id": "j3_extrude",
+    "mode": "cascade",
+    "dry_run": true
+   },
+   "op": null,
+   "ms": 24,
+   "peak_mb": 493,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 7,
+   "kind": "remove",
+   "method": "POST",
+   "url": "/api/feature/remove",
+   "body": {
+    "feature_id": "j3_extrude",
+    "mode": "cascade"
+   },
+   "op": null,
+   "ms": 2835,
+   "peak_mb": 494,
+   "grew_mb": 1,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 8,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j4_shell",
+    "op": "shell",
+    "params": {
+     "thickness": 2.7,
+     "open_face": "bottom"
+    },
+    "inputs": [
+     "cam_cover_plaque"
+    ]
+   },
+   "op": "shell",
+   "ms": 404941,
+   "peak_mb": 494,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  }
+ ],
+ "notes": [
+  "step 8 (add shell) took 404941 ms"
+ ],
+ "found": "2026-09-13 19:20:27"
+}

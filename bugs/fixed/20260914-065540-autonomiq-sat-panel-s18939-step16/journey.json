@@ -1,0 +1,318 @@
+{
+ "signature": "hang|-|undo  took # s (the limit is # s) and answered #",
+ "kind": "hang",
+ "detail": "undo  took 29781 s (the limit is 120 s) and answered 200",
+ "design": "autonomiq-sat-panel",
+ "file": "C:\\Users\\VasanSeenivasan\\Desktop\\textcad\\designs\\autonomiq-sat-panel.tcad.json",
+ "seed": 18939,
+ "failing_step": 16,
+ "request": {
+  "n": 16,
+  "kind": "undo",
+  "method": "POST",
+  "url": "/api/undo",
+  "body": null,
+  "op": null,
+  "ms": 29781465,
+  "peak_mb": 512,
+  "grew_mb": 0,
+  "status": 200,
+  "error": null
+ },
+ "replay": [
+  {
+   "n": 16,
+   "kind": "undo",
+   "method": "POST",
+   "url": "/api/undo",
+   "body": null,
+   "op": null,
+   "ms": 29781465,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  }
+ ],
+ "identity": false,
+ "response_error": null,
+ "steps": [
+  {
+   "n": 1,
+   "kind": "strike",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": {
+    "feature_id": "gear_sketch_4"
+   },
+   "op": null,
+   "ms": 61,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 2,
+   "kind": "restore",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": {
+    "feature_id": "gear_sketch_4",
+    "restore": true
+   },
+   "op": null,
+   "ms": 45,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 3,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j1_with_bolt_circle",
+    "op": "with_bolt_circle",
+    "params": {
+     "count": 7,
+     "bolt_radius": 1.3,
+     "pitch_circle_dia": 30.4
+    },
+    "inputs": [
+     "autonomiq_sat_panel"
+    ]
+   },
+   "op": "with_bolt_circle",
+   "ms": 12431,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 4,
+   "kind": "undo",
+   "method": "POST",
+   "url": "/api/undo",
+   "body": null,
+   "op": null,
+   "ms": 4587,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 5,
+   "kind": "rename",
+   "method": "POST",
+   "url": "/api/feature/rename",
+   "body": {
+    "feature_id": "trace_cut",
+    "name": "trace_cut_r"
+   },
+   "op": null,
+   "ms": 36,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 6,
+   "kind": "rename",
+   "method": "POST",
+   "url": "/api/feature/rename",
+   "body": {
+    "feature_id": "trace_cut_r",
+    "name": "trace_cut_r"
+   },
+   "op": null,
+   "ms": 32,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 7,
+   "kind": "doc",
+   "method": "GET",
+   "url": "/api/doc",
+   "body": null,
+   "op": null,
+   "ms": 26,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 8,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j2_polygon_plate",
+    "op": "polygon_plate",
+    "params": {
+     "sides": 8,
+     "circumradius": 36.1,
+     "thickness": 10.2
+    },
+    "inputs": []
+   },
+   "op": "polygon_plate",
+   "ms": 3547,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 9,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j3_cut",
+    "op": "cut",
+    "params": {},
+    "inputs": [
+     "autonomiq_sat_panel",
+     "j2_polygon_plate"
+    ]
+   },
+   "op": "cut",
+   "ms": 4888,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 10,
+   "kind": "tab-new",
+   "method": "POST",
+   "url": "/api/new",
+   "body": {
+    "name": "journey-scratch"
+   },
+   "op": null,
+   "ms": 12,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 11,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j4_tube",
+    "op": "tube",
+    "params": {
+     "outer_radius": 9.5,
+     "inner_radius": 3.4,
+     "height": 23.5
+    },
+    "inputs": []
+   },
+   "op": "tube",
+   "ms": 23,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 12,
+   "kind": "tab-switch",
+   "method": "POST",
+   "url": "/api/tabs/switch",
+   "body": {
+    "id": "t1"
+   },
+   "op": null,
+   "ms": 33,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 13,
+   "kind": "tab-close",
+   "method": "POST",
+   "url": "/api/tabs/close",
+   "body": {
+    "id": "t2"
+   },
+   "op": null,
+   "ms": 27,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 14,
+   "kind": "tab-switch",
+   "method": "POST",
+   "url": "/api/tabs/switch",
+   "body": {
+    "id": "t1"
+   },
+   "op": null,
+   "ms": 31,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 15,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j5_plate",
+    "op": "plate",
+    "params": {
+     "width": 33.7,
+     "depth": 15.2,
+     "thickness": 8.7
+    },
+    "inputs": []
+   },
+   "op": "plate",
+   "ms": 3598,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 16,
+   "kind": "undo",
+   "method": "POST",
+   "url": "/api/undo",
+   "body": null,
+   "op": null,
+   "ms": 29781465,
+   "peak_mb": 512,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  }
+ ],
+ "notes": [
+  "step 16 (undo ) took 29781465 ms"
+ ],
+ "found": "2026-09-14 06:55:40"
+}

@@ -1,0 +1,574 @@
+{
+ "signature": "kernel-crash|shell|'j#_shell' (shell): shell: walls of # mm crashed the geometry kernel \u2014 nothing w",
+ "kind": "kernel-crash",
+ "detail": "'j14_shell' (shell): shell: walls of 2.1 mm crashed the geometry kernel \u2014 nothing was changed and the app is unharmed. This body's faces cannot all be offset by 2.1 mm at once. The thicknesses that work are not one band, so a thinner AND a thicker wall are both worth trying, or open another face.",
+ "design": "my-part-5",
+ "file": "C:\\Users\\VasanSeenivasan\\Desktop\\textcad\\designs\\my-part-5.tcad.json",
+ "seed": 18800,
+ "failing_step": 25,
+ "request": {
+  "n": 25,
+  "kind": "add",
+  "method": "POST",
+  "url": "/api/feature/add",
+  "body": {
+   "id": "j14_shell",
+   "op": "shell",
+   "params": {
+    "thickness": 2.1,
+    "open_face": "bottom"
+   },
+   "inputs": [
+    "j2_mirror"
+   ]
+  },
+  "op": "shell",
+  "ms": 7620,
+  "peak_mb": 449,
+  "grew_mb": 1,
+  "status": 200,
+  "error": null
+ },
+ "replay": [
+  {
+   "n": 25,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j14_shell",
+    "op": "shell",
+    "params": {
+     "thickness": 2.1,
+     "open_face": "bottom"
+    },
+    "inputs": [
+     "j2_mirror"
+    ]
+   },
+   "op": "shell",
+   "ms": 7620,
+   "peak_mb": 449,
+   "grew_mb": 1,
+   "status": 200,
+   "error": null
+  }
+ ],
+ "identity": false,
+ "response_error": null,
+ "steps": [
+  {
+   "n": 1,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j1_cut",
+    "op": "cut",
+    "params": {},
+    "inputs": [
+     "extrude3",
+     "extrude4"
+    ]
+   },
+   "op": "cut",
+   "ms": 65,
+   "peak_mb": 447,
+   "grew_mb": 2,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 2,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j2_mirror",
+    "op": "mirror",
+    "params": {
+     "plane": {
+      "mid": "X"
+     },
+     "join": false
+    },
+    "inputs": [
+     "extrude11_join1"
+    ]
+   },
+   "op": "mirror",
+   "ms": 44,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 3,
+   "kind": "plan",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": {
+    "tool": "extrude",
+    "sketch_id": "sketch4"
+   },
+   "op": "extrude",
+   "ms": 14,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 4,
+   "kind": "edit",
+   "method": "POST",
+   "url": "/api/edit",
+   "body": {
+    "feature_id": "extrude9",
+    "param": "taper",
+    "value": 0
+   },
+   "op": null,
+   "ms": 14,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 5,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j3_ball",
+    "op": "ball",
+    "params": {
+     "radius": 4.2
+    },
+    "inputs": []
+   },
+   "op": "ball",
+   "ms": 15,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 6,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j4_sketch",
+    "op": "sketch",
+    "params": {
+     "plane": "XZ",
+     "offset": 0,
+     "entities": [
+      {
+       "kind": "circle",
+       "mode": "add",
+       "x": 0,
+       "y": 0,
+       "r": 4.3
+      }
+     ]
+    },
+    "inputs": []
+   },
+   "op": "sketch",
+   "ms": 16,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 7,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j5_extrude",
+    "op": "extrude",
+    "params": {
+     "amount": 15.2,
+     "both": false
+    },
+    "inputs": [
+     "j4_sketch"
+    ]
+   },
+   "op": "extrude",
+   "ms": 22,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 8,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j6_sketch",
+    "op": "sketch",
+    "params": {
+     "plane": "YZ",
+     "offset": 0,
+     "entities": [
+      {
+       "kind": "circle",
+       "mode": "add",
+       "x": 0,
+       "y": 0,
+       "r": 10.4
+      }
+     ]
+    },
+    "inputs": []
+   },
+   "op": "sketch",
+   "ms": 20,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 9,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j7_extrude",
+    "op": "extrude",
+    "params": {
+     "amount": 23.7,
+     "both": false
+    },
+    "inputs": [
+     "j6_sketch"
+    ]
+   },
+   "op": "extrude",
+   "ms": 22,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 10,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j8_rotate",
+    "op": "rotate",
+    "params": {
+     "axis": "Y",
+     "angle_deg": 90
+    },
+    "inputs": [
+     "j5_extrude"
+    ]
+   },
+   "op": "rotate",
+   "ms": 22,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 11,
+   "kind": "undo",
+   "method": "POST",
+   "url": "/api/undo",
+   "body": null,
+   "op": null,
+   "ms": 48,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 12,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j9_hole",
+    "op": "hole",
+    "params": {
+     "face": "top",
+     "at": [
+      -2.5,
+      -4.9
+     ],
+     "diameter": 7.9,
+     "depth": 1.3,
+     "through": false
+    },
+    "inputs": [
+     "j1_cut"
+    ]
+   },
+   "op": "hole",
+   "ms": 48,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 13,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j10_mirror",
+    "op": "mirror",
+    "params": {
+     "plane": "XZ",
+     "join": true
+    },
+    "inputs": [
+     "j3_ball"
+    ]
+   },
+   "op": "mirror",
+   "ms": 23,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 14,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j11_chamfer",
+    "op": "chamfer",
+    "params": {
+     "length": 2.6,
+     "edges": "vertical"
+    },
+    "inputs": [
+     "j10_mirror"
+    ]
+   },
+   "op": "chamfer",
+   "ms": 15,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 15,
+   "kind": "plan",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": {
+    "tool": "shell",
+    "sketch_id": "sketch1"
+   },
+   "op": "shell",
+   "ms": 11,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": "j10_mirror has no flat face to shell from \u2014 pick another body"
+  },
+  {
+   "n": 16,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j12_hole",
+    "op": "hole",
+    "params": {
+     "face": "bottom",
+     "at": [
+      -4.9,
+      -1.5
+     ],
+     "diameter": 1.9,
+     "depth": 4.6,
+     "through": false
+    },
+    "inputs": [
+     "j7_extrude"
+    ]
+   },
+   "op": "hole",
+   "ms": 16,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 17,
+   "kind": "rollback",
+   "method": "POST",
+   "url": "/api/rollback",
+   "body": {
+    "feature_id": "extrude7"
+   },
+   "op": null,
+   "ms": 13,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 18,
+   "kind": "plan",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": {
+    "tool": "extrude",
+    "body_id": "extrude7"
+   },
+   "op": "extrude",
+   "ms": 9,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": "Extrude needs a sketch profile or a picked flat face"
+  },
+  {
+   "n": 19,
+   "kind": "rollback",
+   "method": "POST",
+   "url": "/api/rollback",
+   "body": {
+    "feature_id": null
+   },
+   "op": null,
+   "ms": 12,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 20,
+   "kind": "tab-new",
+   "method": "POST",
+   "url": "/api/new",
+   "body": {
+    "name": "journey-scratch"
+   },
+   "op": null,
+   "ms": 10,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 21,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j13_disc",
+    "op": "disc",
+    "params": {
+     "radius": 19.3,
+     "thickness": 14.2
+    },
+    "inputs": []
+   },
+   "op": "disc",
+   "ms": 12,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 22,
+   "kind": "tab-switch",
+   "method": "POST",
+   "url": "/api/tabs/switch",
+   "body": {
+    "id": "t1"
+   },
+   "op": null,
+   "ms": 12,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 23,
+   "kind": "tab-close",
+   "method": "POST",
+   "url": "/api/tabs/close",
+   "body": {
+    "id": "t2"
+   },
+   "op": null,
+   "ms": 12,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 24,
+   "kind": "tab-switch",
+   "method": "POST",
+   "url": "/api/tabs/switch",
+   "body": {
+    "id": "t1"
+   },
+   "op": null,
+   "ms": 11,
+   "peak_mb": 448,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 25,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j14_shell",
+    "op": "shell",
+    "params": {
+     "thickness": 2.1,
+     "open_face": "bottom"
+    },
+    "inputs": [
+     "j2_mirror"
+    ]
+   },
+   "op": "shell",
+   "ms": 7620,
+   "peak_mb": 449,
+   "grew_mb": 1,
+   "status": 200,
+   "error": null
+  }
+ ],
+ "notes": [],
+ "found": "2026-09-13 19:38:39"
+}

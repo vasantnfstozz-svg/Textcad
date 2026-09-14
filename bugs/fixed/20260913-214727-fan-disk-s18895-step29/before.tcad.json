@@ -1,0 +1,366 @@
+{
+ "name": "fan-disk",
+ "spec": {
+  "n_solids": 1,
+  "size": [
+   110,
+   110,
+   10
+  ],
+  "symmetry": 14,
+  "tip_radius": 55,
+  "holes": {
+   "11.0": 1
+  },
+  "tol": 0.3
+ },
+ "features": [
+  {
+   "id": "disk",
+   "op": "disc",
+   "params": {
+    "radius": 55,
+    "thickness": 10
+   },
+   "inputs": [],
+   "suppressed": false
+  },
+  {
+   "id": "disk_seat",
+   "op": "move",
+   "params": {
+    "z": 4
+   },
+   "inputs": [
+    "disk"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "window_sketch",
+   "op": "sketch",
+   "params": {
+    "plane": "XY",
+    "offset": -1,
+    "entities": [
+     {
+      "kind": "path",
+      "mode": "add",
+      "start": [
+       14.873,
+       1.95
+      ],
+      "segments": [
+       {
+        "type": "arc",
+        "via": [
+         22.979,
+         5.717
+        ],
+        "to": [
+         30.103,
+         12.013
+        ]
+       },
+       {
+        "type": "arc",
+        "via": [
+         35.548,
+         20.798
+        ],
+        "to": [
+         38.449,
+         31.964
+        ]
+       },
+       {
+        "type": "arc",
+        "via": [
+         31.594,
+         38.753
+        ],
+        "to": [
+         23.564,
+         44.099
+        ]
+       },
+       {
+        "type": "arc",
+        "via": [
+         25.448,
+         32.511
+        ],
+        "to": [
+         24.068,
+         21.904
+        ]
+       },
+       {
+        "type": "arc",
+        "via": [
+         20.061,
+         12.759
+        ],
+        "to": [
+         13.974,
+         5.452
+        ]
+       },
+       {
+        "type": "arc",
+        "via": [
+         14.529,
+         3.728
+        ],
+        "to": [
+         14.873,
+         1.95
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "inputs": [],
+   "suppressed": false
+  },
+  {
+   "id": "window_tool",
+   "op": "extrude",
+   "params": {
+    "amount": 12
+   },
+   "inputs": [
+    "window_sketch"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "window_ring",
+   "op": "polar_pattern",
+   "params": {
+    "count": 14
+   },
+   "inputs": [
+    "window_tool"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "windows_cut",
+   "op": "cut",
+   "params": {},
+   "inputs": [
+    "disk_seat",
+    "window_ring"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "fan_disk",
+   "op": "with_center_hole",
+   "params": {
+    "radius": 11
+   },
+   "inputs": [
+    "windows_cut"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "j1_linear_pattern",
+   "op": "linear_pattern",
+   "params": {
+    "count": 4,
+    "dx": 5.0,
+    "dy": 31.4,
+    "dz": 0
+   },
+   "inputs": [
+    "fan_disk"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "j2_plate",
+   "op": "plate",
+   "params": {
+    "width": 44.4,
+    "depth": -38.5,
+    "thickness": 2.9
+   },
+   "inputs": [],
+   "suppressed": false
+  },
+  {
+   "id": "j5_sketch_on_face",
+   "op": "sketch_on_face",
+   "params": {
+    "face_center": [
+     7.23,
+     81.3,
+     4.0
+    ],
+    "face_normal": [
+     0.93,
+     -0.367,
+     -0.0
+    ],
+    "entities": [
+     {
+      "kind": "rectangle",
+      "mode": "add",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "w": 2.9,
+      "h": 3.0
+     }
+    ],
+    "offset": 0
+   },
+   "inputs": [
+    "j1_linear_pattern"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "j6_extrude",
+   "op": "extrude",
+   "params": {
+    "amount": 1.7,
+    "flip": true,
+    "through": false
+   },
+   "inputs": [
+    "j5_sketch_on_face"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "j7_linear_pattern",
+   "op": "linear_pattern",
+   "params": {
+    "count": 4,
+    "dx": 15.0,
+    "dy": 0.7,
+    "dz": 0
+   },
+   "inputs": [
+    "j6_extrude"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "j8_sketch_on_face",
+   "op": "sketch_on_face",
+   "params": {
+    "face_center": [
+     6.38,
+     -0.0,
+     1.5
+    ],
+    "face_normal": [
+     -0.0,
+     -0.0,
+     1.0
+    ],
+    "entities": [
+     {
+      "kind": "rectangle",
+      "mode": "add",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "w": 2.3,
+      "h": 2.2
+     }
+    ],
+    "offset": 0
+   },
+   "inputs": [
+    "j7_linear_pattern"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "j9_extrude",
+   "op": "extrude",
+   "params": {
+    "amount": 6.9,
+    "flip": false,
+    "through": false
+   },
+   "inputs": [
+    "j8_sketch_on_face"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "j10_fuse",
+   "op": "fuse",
+   "params": {},
+   "inputs": [
+    "j9_extrude",
+    "j1_linear_pattern"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "j11_move",
+   "op": "move",
+   "params": {
+    "x": -7.2,
+    "y": -16.8,
+    "z": -8.1
+   },
+   "inputs": [
+    "j10_fuse"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "j12_sketch_on_face",
+   "op": "sketch_on_face",
+   "params": {
+    "face_center": [
+     -4.97,
+     33.1,
+     -4.1
+    ],
+    "face_normal": [
+     0.93,
+     -0.367,
+     -0.0
+    ],
+    "entities": [
+     {
+      "kind": "circle",
+      "mode": "add",
+      "x": 0,
+      "y": 0,
+      "r": 1.1
+     }
+    ],
+    "offset": 0
+   },
+   "inputs": [
+    "j11_move"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "j13_extrude",
+   "op": "extrude",
+   "params": {
+    "amount": 11.7,
+    "flip": false,
+    "through": false
+   },
+   "inputs": [
+    "j12_sketch_on_face"
+   ],
+   "suppressed": false
+  }
+ ]
+}
