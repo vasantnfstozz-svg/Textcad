@@ -6,10 +6,8 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: NOTHING PENDING.** The review of `53f5653..0eaf9a2` is DONE
-> (2026-09-13, one round, commit `edd60a9`). The next `code review` takes
-> `REVIEW-QUEUE.md` section 9, **Trace image**, which is the first status-board
-> row still marked TODO.
+> **Status: PENDING.** Review `b17d626..751db79` - one commit, the journey
+> runner's clock and its step limit.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -22,57 +20,81 @@
 
 ---
 
-## What the last review found (`53f5653..0eaf9a2`, closed 2026-09-13)
+## The range
 
-ONE finding, fixed in `edd60a9`; 15 new tests (fast tier 1734 -> 1749),
-`-m library` 101 passed, ruff and ESLint zero, ui v200.
+    b17d626..751db79        (base b17d626, the paperwork for the kernel-worker review)
 
-**P1 — the blend guard refused correct geometry on a sharp corner.** The volume
-half of `blocks._assert_is_a_blend` (`77bc7fa`) was flat in
-`value^2 x edge length`, which is the 90-degree case. A round moves
-`r^2 x (tan(a/2) - a/2)` per mm of edge, where `a` is the angle between the two
-faces — so on any corner sharper than about 26 degrees a CORRECT round was
-called "not a blend of this body" and the user was told their part carried
-sliver faces. Measured on the user's own designs: spiderman-logo has a
-160.5-degree crease where a 0.2 mm round moves 0.0628 mm3 of a 26707 mm3 body
-(0.0002 per cent, bounding box untouched, BRepCheck valid, health empty) and was
-refused; rocky-balboa carries two more. Each picked edge is now counted by its
-corner, floored at 1.0 (nothing is tighter than before) and capped at 100. A
-bevel is counted plainly — it removes `d^2 x sin(a) / 2` at any angle, largest
-at a right angle, so the flat bound was already its worst case.
+One commit:
 
-Safe because the two halves are ANDed and the BOX half is the decisive one on
-the body the guard exists for: across rims 0/2/4 of `sliver_intersect_plate` at
-every radius from 0.05 to 0.79, the crash-class results retreat 49.6-50.0 mm
-against a 1.2-9.5 mm limit — 5x to 40x — and the volume half still refuses 11 of
-12 on its own. All eight rims are still refused at every radius.
+- `751db79` - the journey runner stops timing the hours the laptop slept, and
+  asks the kernel's own budget what a hang is; 4 new tests.
 
-Plus one P3, fixed in the same commit: the busy overlay told anyone waiting
-past 90 s that "this step stops itself if it runs too long". Only a round, a
-bevel and a hollow have that budget; the overlay is shown for every request.
+Touched: `tests/journeys.py` (+92/-10), `tests/test_journeys.py` (+122/-1),
+`probes/awake_clock.py` (new), one `LAUNCH-PLAN.md` section 10 row.
+No product code, no frontend, no `static/`, so ui stays v200.
+Fast tier 1749 -> 1753, ruff zero.
 
-**Cleared by measurement, not by argument** (the brief's own named risks, so
-they need not be re-asked):
+## What it changes
 
-- The `.brep` round trip of a TESSELLATED body is exact to the last decimal in
-  volume and in every face and edge fingerprint.
-- `hash(TopoDS_Shape)` IS stable across both routes a pick arrives by: the same
-  edge taken from `part.edges()` and from `face.edges()` hashes equal even
-  though their orientations are opposite (FORWARD against REVERSED). So
-  `kernelguard.indices`' hash path is sound and the linear fallback is
-  belt-and-braces, not load-bearing.
-- `_cap_memory` really does cap: a child under a 0.5 GB ceiling gets
-  `MemoryError`, not the machine.
-- The two locks cannot deadlock: no thread that holds `kernelguard._LOCK` ever
-  asks for `studio._KERNEL_LOCK`, and `shutdown()` is called from a probe only.
-- `build123d.fillet` takes its target from `object_list[0].topo_parent`, and
-  build123d propagates the TOP parent through `face.edges()` — so the
-  in-process path and the worker path fillet the same body, not a face.
-- `plain_cause` passes the crash sentence through unchanged: `_KERNEL_WORDS`
-  contains no form of "kernel", so the journey runner's `CRASH_PHRASE` oracle
-  really does see it.
+**1. A clock that does not count machine sleep.** `journeys.awake_s()` reads
+Windows' `QueryUnbiasedInterruptTime` (100-ns units) instead of
+`time.monotonic()`, falling back to `time.monotonic` off Windows and whenever
+the call cannot be made. `awake_elapsed(perf0, awake0)` returns
+`(how long it really ran, how much of it was sleep)`: it keeps
+`perf_counter`'s 100 ns resolution for ordinary steps and only subtracts a gap
+bigger than `SLEPT_FLOOR_S` (1.0 s). Three call sites move onto it - the
+child's per-request timer in `Journey.call`, the parent's stall watchdog in
+`wait_or_kill_a_stalled_child`, and the per-journey total in `spawn`.
 
-Known and deliberately left (already rows in `LAUNCH-PLAN.md` section 10): the
-900 s budget stopping autonomiq-panel's 1195 s shell; a transient refusal not
-being cached, so a crashing feature pays a worker restart on every rebuild; and
-the guard not covering booleans, 2D offsets or tessellation.
+**2. The step limit is `kernelguard.DEFAULT_BUDGET`**, not the runner's own
+120 s, and `STALL_KILL_S` is `DEFAULT_BUDGET + READY_SECONDS` (1080 s), which
+is deliberately ABOVE it.
+
+## Where the risk is
+
+- **The subtraction could hide a real hang.** `awake_elapsed` takes time OFF a
+  measurement. If the awake clock could ever lag the perf clock for a reason
+  that is not a suspend - a VM's timer, a frequency change, the 9 ms
+  resolution against a 100 ns one - the runner would shorten a genuine
+  runaway. The floor is 1.0 s and the two agreed within 6 ms over 2 s on this
+  box; that is one box.
+- **A 7.5x looser step limit.** Anything that used to be caught between 120 s
+  and 900 s is now only a note in `notes`. That is the intent, but it is the
+  change most likely to be wrong: is the budget really the right line for a
+  request that makes SEVERAL guarded calls (a rebuild re-running three
+  fillets), or for one that makes none at all (a tab switch)?
+- **The stall ceiling now outlives the budget by 180 s.** If the guard fails to
+  stop a call, an overnight run loses 18 minutes to it instead of 10.
+- **`import kernelguard` at `tests/journeys.py` module level.** It is only read
+  for two constants, and it has no import-time side effects today (checked);
+  it is still the test runner importing product code at import time.
+- **A function attribute as a cache** (`awake_s._fn`).
+
+## Cleared by measurement, not by argument
+
+- `time.monotonic()` on this Python IS the uptime clock: 119554.9 s against
+  `GetTickCount64`'s 119554.8 s. So it counts suspend, and the 8 h 16 m undo
+  reading was the laptop sleeping, not work.
+- `QueryUnbiasedInterruptTime` resolution is about 9 ms, and it tracks
+  `perf_counter` to within 6 ms over a 2 s sleep (`probes/awake_clock.py`).
+- All four new tests are RED against `b17d626` and green after. The clock test
+  is red with a message naming the gap ("the runner is 12954 s out: it is back
+  on a clock that counts the 216 min this box slept") when `awake_s` is
+  swapped back to `time.monotonic`, so it cannot rot quietly.
+- One real journey (`bit-tray`, seed 4242, 11 steps, `--library`) ran clean
+  with step times from 7 ms to 2555 ms: the awake clock did not coarsen the
+  readings.
+
+## Do not re-report
+
+- **The four `bugs/` folders from the night of 2026-09-13 that this commit
+  reclassifies** (the 405 s shell, the 164 s pattern, the 135 s chamfer, the
+  8 h 16 m undo). They are false findings by the new rules and are still on
+  disk, untracked, awaiting the user's word on deleting them.
+- **`kernelguard`'s own budget counting machine sleep.** Found, measured, and
+  deliberately NOT fixed here: it is product code and its `queue.get(timeout=)`
+  expires on the OS's biased timer too, so it needs its own pass. It is a
+  `LAUNCH-PLAN.md` section 10 P2 row.
+- **`--hours` still being wall-clock.** An overnight deadline is when the user
+  wants the run to stop, not how much work it got through; left on purpose.
+- The reviewer may of course say any of these three calls was wrong.
