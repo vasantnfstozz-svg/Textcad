@@ -362,11 +362,12 @@ def test_a_request_that_runs_away_in_time_or_memory_is_a_bug_even_at_200(monkeyp
     j = journeys.Journey("empty", None, seed=1, steps=0, verbose=False)
     j.run()
     j.client = _Client(_Resp(200, {}))
+    real_limit = journeys.HANG_MS
     monkeypatch.setattr(journeys, "HANG_MS", -1)
     with pytest.raises(journeys.Bug) as ex:
         j.call("add", "POST", "/api/feature/add", {"id": "x", "op": "plate"})
     assert ex.value.kind == "hang" and "answered 200" in ex.value.detail
-    monkeypatch.setattr(journeys, "HANG_MS", 120_000)
+    monkeypatch.setattr(journeys, "HANG_MS", real_limit)      # the clock back on
     readings = iter([100.0, 100.0 + journeys.MEMORY_BUG_MB + 1])
     monkeypatch.setattr(journeys, "peak_mb", lambda: next(readings))
     with pytest.raises(journeys.Bug) as ex:
@@ -510,3 +511,122 @@ def test_a_stall_is_filed_as_a_hang_naming_the_request_it_was_in(tmp_path):
         "x", 1, -1, {"steps": [{"n": 1}]}, "MemoryError", tmp_path,
         verdict_on="MemoryError")
     assert (none_d, none_dup) == (None, None)
+
+
+# ------------------------------------------------------------- the clock ---
+
+class _Clock:
+    """The real `time` module with a scripted `perf_counter`, so a test can
+    put an eight-hour reading on one request without touching anything else
+    the runner asks the clock for."""
+
+    def __init__(self, readings):
+        self._it = iter(readings)
+
+    def __getattr__(self, name):
+        import time
+        return getattr(time, name)
+
+    def perf_counter(self):
+        return next(self._it)
+
+
+def test_the_clock_does_not_count_the_time_the_machine_was_asleep():
+    """2026-09-13 overnight: one `/api/undo` was timed at 29 781 465 ms
+    (8 h 16 m) between neighbours of 23 ms and 3598 ms, on a working set flat
+    at 512 MB, and filed as a hang. Nothing ran for eight hours — the laptop
+    slept in the middle of the request, and Windows' monotonic clock
+    (QueryPerformanceCounter) keeps ticking through a suspend."""
+    import sys
+    import time
+    if sys.platform == "win32":
+        # Ground truth, read here and not through the runner: kernel32 offers
+        # BOTH clocks — GetTickCount64 counts the suspend, QueryUnbiased-
+        # InterruptTime does not — and the gap between them is everything this
+        # box has slept since boot. `time.monotonic` is the biased one to the
+        # millisecond (measured), which is why the runner could not use it.
+        import ctypes
+        import ctypes.wintypes as wt
+        k32 = ctypes.WinDLL("kernel32")
+        k32.QueryUnbiasedInterruptTime.argtypes = [ctypes.POINTER(wt.ULARGE_INTEGER)]
+        v = wt.ULARGE_INTEGER()
+        assert k32.QueryUnbiasedInterruptTime(ctypes.byref(v))
+        uptime, unbiased = k32.GetTickCount64() / 1000, v.value / 1e7
+        assert abs(time.monotonic() - uptime) < 1.0, "monotonic is not the uptime clock"
+        # the runner's clock IS the unbiased one — not monotonic wearing its name
+        assert abs(journeys.awake_s() - unbiased) < 1.0,             (f"the runner is {uptime - unbiased:.0f} s out: it is back on a clock "
+             f"that counts the {(uptime - unbiased) / 60:.0f} min this box slept")
+        if uptime - unbiased < 60:
+            # a box up half a day that has never once slept is possible, so
+            # the line above cannot prove itself on every machine — say when
+            # it could not, rather than read green as proof
+            print(f"  (box up {uptime / 3600:.1f} h and never slept: the two "
+                  f"clocks cannot be told apart on this run)")
+    # it advances like the fine clock while the box is awake...
+    t0, a0 = time.perf_counter(), journeys.awake_s()
+    time.sleep(0.3)
+    ran, slept = journeys.awake_elapsed(t0, a0)
+    assert 0.2 < ran < 2.0 and slept == 0.0, (ran, slept)
+    # ... and a suspend inside the measurement is taken off it: the awake
+    # clock stood still for the eight hours the perf clock counted
+    ran, slept = journeys.awake_elapsed(time.perf_counter() - 29781.465,
+                                        journeys.awake_s() - 3.0)
+    assert 2.5 < ran < 3.5, f"the sleep was still counted as work: {ran} s"
+    assert slept > 29_000
+
+
+def test_a_step_that_only_looks_slow_because_the_box_slept_is_not_a_hang(monkeypatch):
+    """The 8 h 16 m undo, end to end: no Bug, and a note saying why the
+    reading is not the wall clock."""
+    j = journeys.Journey("empty", None, seed=1, steps=0, verbose=False)
+    j.run()
+    j.client = _Client(_Resp(200, {}))
+    slept_for = 29781.465
+    still = journeys.awake_s()
+    monkeypatch.setattr(journeys, "awake_s", lambda: still)        # asleep
+    monkeypatch.setattr(journeys, "time", _Clock([100.0, 100.0 + slept_for]))
+    j.call("add", "POST", "/api/undo", None)
+    assert j.steps[-1]["ms"] < 5_000, "the sleep was timed as work again"
+    assert j.steps[-1]["slept_s"] > 29_000
+    assert any("machine slept" in n for n in j.notes), j.notes
+    # the same reading with the box AWAKE throughout is still a hang
+    awake = iter([still, still + slept_for])
+    monkeypatch.setattr(journeys, "awake_s", lambda: next(awake))
+    monkeypatch.setattr(journeys, "time", _Clock([100.0, 100.0 + slept_for]))
+    with pytest.raises(journeys.Bug) as ex:
+        j.call("add", "POST", "/api/undo", None)
+    assert ex.value.kind == "hang" and "slept_s" not in ex.value.request
+
+
+def test_a_child_that_took_no_step_because_the_lid_was_shut_is_not_killed(monkeypatch, tmp_path):
+    """The parent's watchdog runs on the same clock: a suspend is not a
+    stall, and killing the child would file the sleep as the product
+    hanging."""
+    import subprocess
+    import sys
+    log = tmp_path / "steps.json"
+    log.write_text(json.dumps({"steps": [{"n": 1}]}), encoding="utf-8")
+    still = journeys.awake_s()
+    monkeypatch.setattr(journeys, "awake_s", lambda: still)        # asleep
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(3)"])
+    try:
+        assert not journeys.wait_or_kill_a_stalled_child(child, str(log), stall_s=1), \
+            "the watchdog counted the suspend as a stall"
+        assert child.returncode == 0, "the child was killed"
+    finally:
+        child.kill()
+
+
+def test_the_step_limit_is_the_product_s_own_kernel_budget():
+    """Under the guard's budget the app is entitled to be slow: a 405 s shell,
+    a 164 s pattern and a 135 s chamfer all answered 200 on the night of
+    2026-09-13 and were filed as hangs by the runner's private 120 s ceiling.
+    The guard's own is the only honest line."""
+    import kernelguard
+    assert journeys.HANG_MS == int(kernelguard.DEFAULT_BUDGET * 1000)
+    assert journeys.HANG_MS > 630_000, "the 630 s keychain chamfer answers CORRECTLY"
+    assert journeys.HANG_MS < 1_351_644, "2026-09-12's 22-minute plate add is still a finding"
+    # and the parent kills only after the guard has had its budget AND the
+    # time a fresh worker needs, so the guard's sentence is what gets filed
+    assert journeys.STALL_KILL_S >= kernelguard.DEFAULT_BUDGET + kernelguard.READY_SECONDS
+    assert journeys.STALL_KILL_S * 1000 > journeys.HANG_MS

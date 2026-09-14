@@ -54,6 +54,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import kernelguard                    # noqa: E402 — after sys.path, and only for its constants
+
 BUGS = ROOT / "bugs"
 FIXTURES = ROOT / "tests" / "fixtures"
 DESIGNS = ROOT / "designs"
@@ -68,7 +70,17 @@ SLOW_MS = 60_000                     # a step slower than this is noted, not a b
 # boolean), the runner logged "200 1351644 ms" and moved on, and the 16 GB
 # laptop died fifty minutes later. Under a 6 GB cap the same request took
 # 55 s and still answered 200: the time oracle alone would have missed it.
-HANG_MS = 120_000
+#
+# The limit is the PRODUCT'S OWN: kernelguard gives one guarded kernel call
+# `DEFAULT_BUDGET` seconds and only then calls it a hang. Under that ceiling
+# the app is entitled to be slow — the guard has not reached its own limit,
+# and a correct answer there is correct behaviour, not a finding; the runner's
+# private 120 s filed three of them on the night of 2026-09-13 alone (a 405 s
+# shell, a 164 s pattern, a 135 s chamfer, all answering 200, all triaged by
+# hand). Past the budget something the guard should have ended ran on, which
+# is a finding whatever it answered — and 2026-09-12's 22-minute plate add is
+# still one. A step slower than SLOW_MS is still written down as a note.
+HANG_MS = int(kernelguard.DEFAULT_BUDGET * 1000)
 MEMORY_BUG_MB = 2048
 # ... and the hard backstop: every child runs inside a Windows Job object
 # with this much memory, so the kernel refuses the allocation and the CHILD
@@ -81,7 +93,66 @@ MEM_CAP_GB = 6.0
 # filed it as an exit code nobody could read. The PARENT watches the child's
 # step log instead: no new step for this long and the child is killed and the
 # stall filed, naming the request it was still in. 0 switches it off.
-STALL_KILL_S = 600.0
+#
+# It sits ABOVE the step limit on purpose. The guard's own timeout is the
+# better finding — it comes back as a sentence naming the feature and the op,
+# the child files a folder with the document on both sides of it, and the
+# `kernel-stalled` oracle reads it. Killing the child first throws all of that
+# away for a corpse and an exit code (bugs/20260913-212515-autonomiq-panel-
+# s18884-crash was killed at 600 s with the guard's 900 s budget still
+# running). So the parent waits out the budget plus the longest a fresh worker
+# may take to come up, and only kills when the guard itself has failed to.
+STALL_KILL_S = kernelguard.DEFAULT_BUDGET + kernelguard.READY_SECONDS
+
+
+def awake_s() -> float:
+    """Seconds since boot NOT counting the time the machine spent asleep.
+
+    Windows' monotonic clock is QueryPerformanceCounter and it keeps ticking
+    through a suspend, so an overnight run times the sleep as work. On
+    2026-09-13 one `/api/undo` — a rebuild in memory, its neighbours 23 ms and
+    3598 ms, its working set flat at 512 MB — was measured at 29 781 465 ms
+    (8 h 16 m) and filed as a hang: the laptop had slept in the middle of it
+    (bugs/20260914-065540-autonomiq-sat-panel-s18939-step16). Measured on this
+    box in the same hour: 33.08 hours of uptime against 29.48 hours awake
+    (probes/awake_clock.py). QueryUnbiasedInterruptTime is the clock that
+    stops at suspend. Where it cannot be read, and on Linux and macOS (whose
+    monotonic clocks already stop at suspend), `time.monotonic` is the answer.
+    """
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            import ctypes.wintypes as wt
+            fn = getattr(awake_s, "_fn", None)
+            if fn is None:
+                fn = ctypes.WinDLL("kernel32").QueryUnbiasedInterruptTime
+                fn.argtypes = [ctypes.POINTER(wt.ULARGE_INTEGER)]
+                fn.restype = wt.BOOL
+                awake_s._fn = fn
+            v = wt.ULARGE_INTEGER()
+            if fn(ctypes.byref(v)):
+                return v.value / 1e7          # 100-ns units -> seconds
+    except Exception:                        # noqa: BLE001 — a clock is never worth a crash
+        pass
+    return time.monotonic()
+
+
+# Below this the two clocks are merely disagreeing with each other (they read
+# within 6 ms over 2 s, measured); a suspend is minutes to hours.
+SLEPT_FLOOR_S = 1.0
+
+
+def awake_elapsed(perf0: float, awake0: float) -> tuple[float, float]:
+    """How long something really took, and how much of it was machine sleep.
+
+    Both clocks are read, because they are good at different things:
+    `perf_counter` has 100 ns resolution and the awake clock about 9 ms
+    (measured), so an ordinary step keeps its millisecond reading and only a
+    real suspend is taken off it.
+    """
+    ran = time.perf_counter() - perf0
+    slept = ran - (awake_s() - awake0)
+    return (ran - slept, slept) if slept > SLEPT_FLOOR_S else (ran, 0.0)
 
 
 def peak_mb() -> float:
@@ -429,12 +500,19 @@ class Journey:
         self.steps.append(rec)
         self._flush_log()
         mem0 = peak_mb()
-        t0 = time.perf_counter()
+        t0, awake0 = time.perf_counter(), awake_s()
         if method == "GET":
             r = self.client.get(url)
         else:
             r = self.client.post(url, json=body or {})
-        rec["ms"] = round((time.perf_counter() - t0) * 1000)
+        ran, slept = awake_elapsed(t0, awake0)
+        rec["ms"] = round(ran * 1000)
+        if slept:
+            # said out loud, not quietly subtracted: the reading is no longer
+            # the wall clock and the log has to be able to say why
+            rec["slept_s"] = round(slept)
+            self.notes.append(f"step {self.counter} ran while the machine slept "
+                              f"for {slept / 60:.0f} min (not counted)")
         rec["peak_mb"] = round(peak_mb())
         rec["grew_mb"] = round(rec["peak_mb"] - mem0)
         rec["status"] = r.status_code
@@ -1124,17 +1202,21 @@ def wait_or_kill_a_stalled_child(proc, log: str, stall_s: float) -> bool:
     """Wait for the child, killing it if it stops taking steps. -> was it killed.
 
     `Journey._flush_log` writes the log BEFORE each request, so the count rising
-    is the child making progress and the last entry is the request it is in."""
+    is the child making progress and the last entry is the request it is in.
+
+    The wait is counted on the awake clock: a child that took no step because
+    the LID WAS SHUT has not stalled, and killing it would file the sleep as
+    the product hanging (see `awake_s`)."""
     if not stall_s or stall_s <= 0:
         proc.wait()
         return False
-    seen, since = steps_taken(log), time.monotonic()
+    seen, since = steps_taken(log), awake_s()
     while proc.poll() is None:
         time.sleep(2.0)
         now = steps_taken(log)
         if now != seen and now >= 0:
-            seen, since = now, time.monotonic()
-        elif time.monotonic() - since > stall_s:
+            seen, since = now, awake_s()
+        elif awake_s() - since > stall_s:
             proc.kill()
             proc.wait()
             return True
@@ -1154,7 +1236,7 @@ def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path,
     if path is not None:
         cmd += ["--file", str(path)]
     env = {**os.environ, "PYTHONIOENCODING": "utf-8", "TEXTCAD_NO_BROWSER": "1"}
-    t0 = time.perf_counter()
+    t0, awake0 = time.perf_counter(), awake_s()
     # stdout stays live (the per-step lines are what an overnight run is
     # watched by); stderr is kept, because that is where a traceback and a
     # MemoryError go and a crash folder needs to say WHY the child went
@@ -1171,7 +1253,7 @@ def spawn(name: str, path: Path | None, seed: int, steps: int, bugs_dir: Path,
     stalled = wait_or_kill_a_stalled_child(proc, log, stall_s)
     reader.join(30)
     full_err = drained.get('err')
-    secs = round(time.perf_counter() - t0)
+    secs = round(awake_elapsed(t0, awake0)[0])
     code = proc.returncode
     # the WHOLE stderr decides whether the machine gave up; only the tail is
     # kept for the folder, and a display cut must not change the verdict
