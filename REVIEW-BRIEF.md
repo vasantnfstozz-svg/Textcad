@@ -6,9 +6,8 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING.** Review `cc78019..3bbfcca` - the fix pass for the review of
-> `b17d626..cc78019`. One commit, and it puts SIXTY new lines of geometry into
-> the pre-kernel shell guard.
+> **Status: NOTHING PENDING.** The next `code review` goes to `REVIEW-QUEUE.md`
+> and takes the first status-board row marked TODO - **section 9, Trace image**.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -21,116 +20,95 @@
 
 ---
 
-## Why this is PENDING when no P0 was fixed
+## What was just reviewed and fixed
 
-`REVIEW-QUEUE.md` step 8 says a second round happens only after a P0, and the
-finding below is a P1. It is PENDING anyway, and the reason is this repo's own
-record: of the shell guard's three reviews, **round two and round three were
-both bugs inside the previous round's own new guard** (fb0b8c8 -> 667ccc0 ->
-b99a24d -> b5c6e70), and section 7's round two was too. This fix adds a new
-geometric search to that same guard, and while writing it one bug of exactly
-that kind was already found and fixed in it (a failed measurement left `None`
-where a float was compared). A reviewer who disagrees may close it in a line.
+    cc78019..3bbfcca   reviewed        (the shell depth guard's climb)
+    b9a8f8f            the fix pass    1 of 1 findings fixed, 0 rejected, 2 tests
 
-## The range
+`3bbfcca`'s own brief asked the reviewer to hunt for one thing: the climb is a
+local search, so a body whose real maximum sits in a basin none of its three
+seeds reaches still reads low. It is there, it was reproduced, and **half of it
+is fixed**.
 
-    cc78019..3bbfcca       (base cc78019, the "thin everywhere" shell guard)
+**The finding (P2).** The guard still reads below the real deepest material, so
+its refusal quotes a wall limit that is too low. Measured against an
+independent grid over the whole interior, **18 of 58 library body/modes read
+low**, my-part-3 by 1.5 mm (26.1037 against 27.6094).
 
-One commit: the fix pass for the review of `b17d626..cc78019`. Two findings
-fixed, none rejected, 4 new tests.
+**Fixed - COVERAGE.** A flat face tessellates into one to six triangles however
+big it is, so one ray per centroid spent **33 of a 108-point sample budget** on
+the review's wedge-in-a-slab and put no ray within 40 mm of the taper's thick
+end. The climb is a LOCAL walk: what it needed was a seed nearby, not more
+steps (400 steps move nothing). `sketch._barycentres` fills each picked
+triangle to the budget, the centroid FIRST, so a body that already had enough
+triangles is sampled exactly as before.
 
-Touched by `3bbfcca`: `sketch.py` (+114/-6, the only product file),
-`tests/test_shell_tool.py` (+74, four new tests), seven probes, and the
-paperwork. No frontend, so ui stays v200. Fast tier 1770, `-m library` 101,
-ruff zero.
-
-## What it changes
-
-**F1 (P1), `sketch._climb_to_the_deepest`, new, called from
-`deepest_material` ONLY when the guard is about to refuse.**
-`cc78019`'s stations lie on rays through face sample points, so they find the
-deepest material only when symmetry puts it on one - a box, a plate, a
-cylinder. On a plain draft wedge (2 mm at one end, 30 at the other, 40 deep)
-the stations reached 10.62 mm where the real maximum is 12.42, so a CLOSED
-shell at 11, 11.5 and 12 mm was refused BEFORE the kernel, in a sentence that
-told the user "walls must be under 10.62 mm", while the kernel builds all
-three sound (314, 127 and 27 mm3 of cavity). The best measured points are now
-walked uphill - away from the face nearest them, which is the direction the
-inscribed sphere grows - and only then may a refusal stand.
-
-**F2 (P3), `deepest_material` returns None when NO face stays.** Six clicks on
-a box opens all six faces; the distance to an empty compound is no answer, and
-the sentence came out "no point of it is more than 0 mm from the faces that
-stay ... so walls must be under 0 mm". The kernel's own refusal speaks again.
+**Deferred - SEED RANKING** (LAUNCH-PLAN section 10, P2,
+`probes/shell_depth_plateau_probe.py`). The climb seeds from the three DEEPEST
+samples, and a uniform region measures exactly what its chord allows, so it
+outranks every station on a taper whose real maximum is higher. On a 2-to-30 mm
+draft wedge fused into an 80 x 80 x 24 slab the guard reads the slab's 12.0000
+against a real 12.4300, and `shell` refuses 12.05 / 12.2 / 12.4 mm while the
+kernel builds all three valid. **24 seeds do not fix it** (the slab holds dozens
+of samples at exactly 12.0, all more than 12 mm apart) and neither does 400
+steps: a plateau has no gradient to climb. The candidate is spatial seeding and
+it wants its own cost measurement first.
 
 ## Where the risk is
 
-- **The climb is a local search on a field with several maxima.** It takes the
-  three deepest measured points and climbs each; a body whose real maximum sits
-  in a basin none of those three reaches still reads low. That is the same
-  class of hole as the one it fixes, one level further in - the reviewer should
-  look for it. The safety argument is that it can only ever RAISE the answer
-  (a point is accepted only when the same exact `BRepExtrema` measures it
-  deeper), so it can turn a refusal into a build and can never invent one.
-- **It runs only on the refusal path**, so the cost is paid exactly where the
-  answer was going to be a refusal. Measured on the 675-face autonomiq-panel
-  body; the numbers are below.
-- **`_DEPTH_CLIMB_STEPS = 40` and `_DEPTH_CLIMB_SEEDS = 3` are budget numbers**,
-  not theorems. They were set so the wedge converges to 0.005 mm of an
-  independent grid's answer; a body needing more steps reads low.
+- **The change can only RAISE a measured depth, and a raised depth turns a
+  REFUSAL into an ALLOW.** That is the whole of the risk, and the corpus cannot
+  see it - `shell_thin_wall_corpus.py` asks the kernel only where the guard
+  REFUSES. The complement was measured instead: **every wall this change newly
+  permits, put to the kernel one by one**
+  (`probes/shell_depth_newly_allowed_probe.py`). Corpus bodies and crash
+  bodies: every one refused in a sentence. The three live designs whose depth
+  rose: **24 walls, all sound or refused in a sentence, 0 not.**
+- **Said out loud: two walls now reach the kernel and SEGFAULT it.** my-part-3
+  top open at 26.41 and 26.87 mm were refused before on a number that was
+  wrong; the kernel worker catches both as a sentence with nothing changed,
+  which is what it is for, and that band is the kernel's own pathology rather
+  than this guard's question. A reviewer may say that trade was wrong.
+- **The budget arithmetic is what keeps big bodies free.** `per_face` is
+  `200_000 // faces**2`, so a body of 130+ faces already gets ONE sample and
+  `_barycentres(1)` is the centroid and nothing else. That is measured, not
+  argued: the 675-face panel's refusal path reads 7.2 s against 7.7 s before.
+  A reviewer who doubts it should re-measure `probes/shell_depth_cost_probe.py`.
 
-## Cleared by measurement, not by argument
+## Cleared by measurement - do not re-report
 
-- The committed corpus (`probes/shell_thin_wall_corpus.py`) returns the SAME
-  verdict as it did for `cc78019`: 238 cases, 24 refusals the kernel would have
-  crashed/stalled/refused on, **0 false refusals** - and every crash body still
-  reads its documented depth (`finding_mypart` 0.65 closed / 1.3 open,
-  `oneplus_case` 1.0 / 1.2, `impeller_cut` 3.5, box 15 / 25, cylinder 20 / 25,
-  hex prism 12.5 / 25, l-bracket 10, plate with hole 5 / 10). The crash
-  protection `cc78019` exists for is untouched.
-- An independent oracle - a hierarchical grid over the whole interior,
-  `probes/shell_depth_oracle_probe.py` - now agrees with the guard on every
-  shape tried, where before it found the wedge 1.80 mm and an L-plate 4.75 mm
-  short.
-- **The user's designs, both ways** (`probes/shell_depth_library_probe.py`,
-  the finished body of every design measured with the climb and without it):
-  50 designs, 47 bodies, **36 body/mode combinations across 25 designs sat in a
-  band `cc78019` refused wrongly** - widest `my-part-2` closed 38.62 -> 41.47
-  (2.85 mm), then planetary-carrier 6.667 -> 9.092 open, thread-case
-  17.13 -> 19, isogrid-panel 7.427 -> 9.198, pump-housing 7.333 -> 8.292. Half
-  the library, so this was not a corner.
-
-## Cleared for `b17d626..cc78019` - do not re-report
-
-- **The cost of the pre-kernel guard on a 675-face body**, which `cc78019`'s
-  own brief flagged as unmeasured: `probes/shell_depth_cost_probe.py` on the
-  scaled autonomiq-panel body reads tessellate-every-face 0.96 s, the allow
-  path 2.4 s and the whole refusal path 7.1 s, against a shell that takes
-  692 s. It is not a problem.
-- **`stays()` comparing openings by `IsSame`** where `assert_every_lump_open`
-  uses a geometric `_shape_key`: measured sound for a NAME and for a PICK, and
-  the three depths agree exactly (`probes/shell_depth_review_probe.py`).
-- **Reversed faces on a mirrored body** (12 of my-part-5's 25): `normal_at`
-  carries the orientation, so the inward ray really goes inward - zero faces
-  wrong.
-- **`face.is_inside(face.center())`** really is a face classifier in this
-  build123d, not a solid one.
-- **An OCCT exception escaping the guard**, which runs OUTSIDE kernelguard:
-  `document.rebuild` catches it and `blocks.plain_cause` renders it as "the
-  geometry kernel rejected the shape it would produce" - a sentence, not a
-  traceback.
-- **`275eeab`'s skin ceiling, which its own brief called "the one judgement
-  call".** Measured over the user's library for the first time
-  (`probes/shell_skin_library_probe.py`, 50 designs, the skin check patched off
-  so a result it would refuse is still measured): of 37 results that pass every
-  OTHER check, 35 read 0.4449-1.0377 and two read 2.0524 and 2.7189 - and both
-  of those are genuinely WRONG bodies. On designs/cam-cover-lower at t = 1 the
-  kernel removed 971.569 mm3 where the real cavity is 39,921.8 +/- 280.9 by
-  Monte Carlo (`probes/shell_skin_camcover_probe.py`). The check earns its keep
-  on the user's real parts. The caution runs the OTHER way and is now
-  LAUNCH-PLAN section 10 (P2): 2.0524 clears the ceiling by 2.6 per cent.
-- Everything `cc78019`'s own brief listed under "Do not re-report" still
-  stands: the my-part 1.1 mm crash reaching the kernel, the my-part-9 stall,
-  the lone-rib expectation moving one step earlier, the my-part-5 segfault,
-  OUTSIDE shells not being judged, kernelguard's sleep-counting budget.
+- **The crash protection `cc78019` exists for is untouched.** Every committed
+  crash body reads exactly its documented depth (oneplus_case 1.0 closed /
+  1.2 open, impeller_cut 3.5, mirror_shell 17.5, crash_fillet 24.3295), and the
+  corpus returns the same verdict as before: **238 cases, 24 correct refusals,
+  0 false refusals.**
+- **The climb's containment gate, the ONE door to a false ALLOW.** `outside()`
+  takes UNKNOWN and ON as inside, and an escaped point measures a real distance
+  that RISES with every step outside the body - so one wrong classification
+  would let the answer run away. `BRepClass3d_SolidClassifier` gave **zero
+  UNKNOWN in 116,000 classifications** over 9 shapes including a Compound of two
+  lumps, a mirrored body and 5 live designs, with on-face points reading
+  ON / IN / OUT exactly as the step logic assumes
+  (`probes/shell_depth_classifier_probe.py`).
+- **The classifier works on a Compound**, which is what every build123d
+  `Part.wrapped` is: IN/OUT correct across the gap between lumps, inside a
+  through hole and inside a closed void.
+- **`3bbfcca`'s F2 (every face opened) is sound and hands the kernel no crash.**
+  With all 6 faces of a box, a 12.7 mm thin box and the 60-face oneplus_case
+  crash body opened, `deepest_material` returns `None` and `shell` comes back
+  with the kernel's own "nothing was hollowed" - in process, no worker needed.
+- **How much the residual actually costs the user, measured rather than
+  assumed:** on 6 of the 8 live bands put to the kernel it REFUSES TOO, so only
+  the number in the sentence is wrong; on 2 it builds sound and the cavity is a
+  sliver (fan-disk t = 2.55 removes 301.190 mm3 of 34,649; my-part-2 t = 41.8
+  removes 6.014 of 1,297,968). That is why the residual is P2 and not P1.
+- Everything `3bbfcca`'s own brief listed under "Cleared for `b17d626..cc78019`
+  - do not re-report" still stands: the pre-kernel guard's cost on a 675-face
+  body, `stays()` comparing openings by `IsSame`, reversed faces on a mirrored
+  body, `face.is_inside(face.center())`, an OCCT exception escaping the guard,
+  and `275eeab`'s skin ceiling (LAUNCH-PLAN section 10, P2).
+- **Coverage of the review's own sweep, said out loud:** 11 bodies over 400
+  faces were skipped (the grid oracle is too slow on them) and the library
+  sweep was stopped on rocky-keychain's second mode, so **58 body/modes were
+  measured, not the whole library**.
 - The reviewer may of course say any of these calls was wrong.
