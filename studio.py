@@ -2498,7 +2498,20 @@ def strike_feature(req: StrikeReq):
 
 
 def _num(v) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool)
+    """A number inspector.verify can actually do arithmetic on.
+
+    Not just "is it a number": round two of this review (2026-09-16) measured
+    {"volume": 10**400} — a JSON integer no float can hold — walking straight
+    through the type check below, because it IS an int. /api/spec answered 200
+    with "OverflowError: int too large to convert to float", the value stayed
+    in the document, and every later /api/edit answered the same thing: F3's
+    own brick, through a shape F3's guard admitted."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return False
+    try:
+        return math.isfinite(v)
+    except (OverflowError, TypeError):   # int too large to convert to float
+        return False
 
 
 def _spec_problem(key: str, v) -> str | None:
@@ -2533,11 +2546,15 @@ def _spec_problem(key: str, v) -> str | None:
             return ('"holes" must be a table of radius to count, like '
                     f'{{"4": 6}} — not {v!r}')
         for r, n in v.items():
+            # OverflowError too, and isfinite on both halves: "int too large
+            # to convert to float" is raised BY THE CHECK on 10**400 and by
+            # inspector.verify on the value it let through (round two).
             try:
-                float(r)
+                if not math.isfinite(float(r)):
+                    raise ValueError
                 if int(n) != float(n):
                     raise ValueError
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 return ('"holes" must be a table of radius to count, like '
                         f'{{"4": 6}} — {r!r}: {n!r} is not')
     return None
@@ -3236,7 +3253,21 @@ def export_step():
     taken from the written FILE rather than from the shapes in memory.
     """
     doc = _doc()
-    slug = _design_slug(doc.name)
+    # The FILE this design already lives in, when it has one. A design opened
+    # from the library is bound to designs/<stem>.tcad.json and its one .step
+    # belongs beside it; only a tab with no file of its own (untitled, a
+    # sample, an AI's new design) is named by what it is CALLED.
+    #
+    # Round one of this review keyed it off doc.name alone, and the two drift:
+    # measured over the user's own 50 designs (round two, 2026-09-16,
+    # probes/section12_round2_export_probe.py), FOUR carry a name that does not
+    # slug to their own stem — and on two of them Export was then REFUSED
+    # outright, because designs/esp32-remote-live-t2.tcad.json is named
+    # "esp32-remote" and a DIFFERENT design already holds that name. The other
+    # two exported beside their own design file under another spelling
+    # (bottle_cap_28mm.tcad.json -> bottle-cap-28mm.step), which is the
+    # twin-file trap this export exists to avoid.
+    slug = _slug_of_active() or _design_slug(doc.name)
     clash = _name_clash(slug, "exporting")
     if clash:
         return _refused(None, message=f"{clash} (designs/{slug}.step is that "
