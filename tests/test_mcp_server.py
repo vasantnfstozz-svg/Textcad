@@ -37,7 +37,7 @@ def out(tmp_path, monkeypatch):
     """Write into a throwaway directory, never the user's library, and never
     ring the doorbell at the live server."""
     monkeypatch.setattr(mcp_server, "OUT", tmp_path)
-    monkeypatch.setattr(mcp_server, "_MINE", set(), raising=False)
+    monkeypatch.setattr(mcp_server, "_MINE", {}, raising=False)
     RUNG.clear()
     monkeypatch.setattr(mcp_server, "_notify_studio", RUNG.append)
     return tmp_path
@@ -81,6 +81,31 @@ def test_the_iteration_loop_still_lands_in_one_file(out):
     second = mcp_server.build_design(dict(PLATE_TREE), export_name="my-widget")
     assert first["design_name"] == second["design_name"] == "my-widget"
     assert first["recipe_path"] == second["recipe_path"]
+
+
+def test_a_design_the_user_has_changed_since_i_wrote_it_is_theirs_now(out):
+    """ROUND TWO (2026-09-17). `_MINE` was a promise made once and never
+    re-checked, and the doorbell's whole purpose is to put the design in front
+    of the user in Studio — where the tab is bound to that file, so File ▸ Save
+    writes to it (the section 3 owner guard lets the owning tab through). Open
+    the AI's part, change the bore, save, ask the AI for one more change: the
+    next build_design landed on the same name and the user's edit was gone,
+    with nothing said. A name is only still ours while the file is still what
+    we wrote."""
+    first = mcp_server.build_design(dict(PLATE_TREE), export_name="my-widget")
+    recipe = out / "my-widget.tcad.json"
+    assert first["recipe_path"] == str(recipe)
+    theirs = json.loads(recipe.read_text(encoding="utf-8"))
+    theirs["features"][0]["params"]["thickness"] = 9      # the user's own edit
+    recipe.write_text(json.dumps(theirs), encoding="utf-8")
+
+    again = mcp_server.build_design(dict(PLATE_TREE), export_name="my-widget")
+    assert again["verified"], again
+    assert json.loads(recipe.read_text(encoding="utf-8")) == theirs, \
+        "the user's edit was overwritten"
+    assert again["design_name"] == "my-widget-2"
+    assert "changed" in again.get("renamed", "")
+    assert RUNG[-1] == "my-widget-2"
 
 
 def test_the_doorbell_names_the_file_that_was_actually_written(out):
@@ -153,6 +178,26 @@ def test_a_degenerate_duty_is_a_sentence_not_a_traceback():
         assert rep["verified"] is False, duty
         assert "error" in rep and "Error" not in rep["error"], rep
         assert "division" not in rep["error"], rep
+
+
+def test_a_backsweep_the_euler_relation_cannot_answer_is_a_sentence_too():
+    """ROUND TWO. `_check`'s window is -90 < beta2 < 90, but the tip speed is
+    sqrt(dh0 / (sigma * (1 - phi*tan(beta2)))) — so the equation runs out at
+    atan(1/phi), 74.36 degrees at the default flow coefficient, not at 90.
+    Measured 2026-09-17: every backsweep from 74.36 to 89.99 answered the MCP
+    caller "expected a nonnegative input, got -1037485500.38" — math's
+    sentence, not one in words, from the guard that exists to stop exactly
+    that."""
+    for beta in (74.36, 75.0, 80.0, 89.9):
+        rep = mcp_server._design_compressor(1.0, 3.0, 40000, beta)
+        assert rep["verified"] is False, beta
+        assert "nonnegative" not in rep["error"], rep
+        assert "backsweep" in rep["error"], rep
+    # ...and the duties either side of it are untouched
+    import meanline
+    for beta in (-60.0, 0.0, 25.0, 35.0, 45.0, 60.0, 70.0, 74.0):
+        meanline.design(meanline.Duty(mass_flow=1.0, pressure_ratio=3.0,
+                                      rpm=40000, backsweep_deg=beta))
 
 
 # -------------------------------------------- the catalogue the AI reads ----

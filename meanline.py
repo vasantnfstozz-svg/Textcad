@@ -91,7 +91,7 @@ class CompressorDesign:
 # The meanline design calculation
 # ---------------------------------------------------------------------------
 
-def _check(duty: Duty) -> None:
+def _check(duty: Duty, flow_coeff: float = 0.28) -> None:
     """A duty the equations below cannot answer, refused in words.
 
     Every one of these was measured reaching the caller as a Python traceback
@@ -110,10 +110,22 @@ def _check(duty: Duty) -> None:
     if duty.mass_flow <= 0:
         raise ValueError("mass flow must be greater than 0 kg/s — with no "
                          "flow the exit width and inducer have no area")
-    if not -90.0 < duty.backsweep_deg < 90.0:
-        raise ValueError(f"backsweep must be between -90 and 90 degrees from "
-                         f"radial (got {duty.backsweep_deg:g}); 25 to 45 is "
-                         f"the usual range")
+    # The window is not -90..90: the Euler relation with backsweep is
+    #   U2 = sqrt(dh0 / (sigma * (1 - phi*tan(beta2))))
+    # and that denominator reaches zero at atan(1/phi) — 74.36 degrees at the
+    # default flow coefficient — where the blade turns the flow back as fast
+    # as the through-flow pushes it and no positive tip speed exists. Past it
+    # the square root failed with math's own "expected a nonnegative input,
+    # got -1037485500.38", straight out to the MCP caller, from the guard
+    # that exists to stop exactly that (measured 2026-09-17, round two).
+    limit = math.degrees(math.atan(1.0 / flow_coeff)) if flow_coeff > 0 else 90.0
+    if not -90.0 < duty.backsweep_deg < min(90.0, limit):
+        raise ValueError(f"backsweep must be between -90 and {limit:.1f} "
+                         f"degrees from radial (got {duty.backsweep_deg:g}) — "
+                         f"at {limit:.1f} the blade turns the flow back as "
+                         f"fast as it is pushed through and there is no tip "
+                         f"speed that does the work; 25 to 45 is the usual "
+                         f"range")
     if duty.eta <= 0 or duty.T01 <= 0:
         raise ValueError("efficiency and inlet temperature must be above 0")
 
@@ -121,7 +133,7 @@ def _check(duty: Duty) -> None:
 def design(duty: Duty, flow_coeff: float = 0.28,
            inlet_flow_coeff: float = 0.30) -> CompressorDesign:
     """First-order centrifugal compressor meanline design."""
-    _check(duty)
+    _check(duty, flow_coeff)
     g, cp = duty.gamma, duty.cp
     beta2 = math.radians(duty.backsweep_deg)
 

@@ -451,42 +451,34 @@ def _parse(raw: str) -> dict:
 _GENERIC_ID = re.compile(r"^(feature|node|item|part|f)_?\d*$", re.I)
 
 
-def lint_tree(features, final: bool = True, only=None) -> list[str]:
-    """History-quality rules for AUTHORED trees (AI/MCP paths only — the
-    manual UI records history naturally, one action per feature).
-    `final=False` while a design is still being built step by step: the
-    "whole design is one blob" rule judges the FINISHED design and must not
-    refuse the second step of a ten-step part.
+def _lint_items(features, final: bool = True) -> list[tuple]:
+    """Every history-lint problem as (key, rank, sentence).
 
-    `only` is the set of feature ids the verdict may be about — the ones the
-    model itself wrote. The rules still READ the whole tree ("once a body
-    exists" is a fact about the tree, not about one feature), but a problem
-    is only reported against a feature in `only`. Without it, an "add to this
-    design" job was judged on the features the USER drew by hand, and since
-    it may not remove them it could never get past them: measured over the
-    saved library on 2026-09-16 (probes/author_live_designs_probe.py), 27 of
-    the 50 designs refused the AI's FIRST correct step, naming the user's own
-    sketch. `only=None` judges everything — a design the model is creating,
-    and the MCP whole-tree door, where every feature is the model's."""
-    problems = []
-    mine = (lambda fid: True) if only is None else (lambda fid: fid in only)
+    `key` names the RULE and the feature it is about; `rank` is the number
+    that must not RISE. Together they answer the only question a step-by-step
+    job can fairly be asked — "is this problem one I WROTE?" — by comparing
+    the tree now against the tree the job started with (`lint_baseline`,
+    `_lint_since`). A problem whose key is new, or whose rank has gone up, is
+    the job's; one the tree already carried is the user's news."""
+    items = []
     sketches = [f for f in features if f.op == "sketch"]
     for f in sketches:
         n = len(f.params.get("entities") or [])
-        if n > 10 and mine(f.id):
-            problems.append(
-                f"sketch '{f.id}' crams {n} entities into one feature — "
-                f"split the artwork into logical sketches (one per design "
-                f"element, each with its own extrude, fused/cut together)")
-    if (final and len(features) == 2 and len(sketches) == 1
-            and all(mine(f.id) for f in features)):
+        if n > 10:
+            items.append((("cram", f.id), n,
+                          f"sketch '{f.id}' crams {n} entities into one "
+                          f"feature — split the artwork into logical sketches "
+                          f"(one per design element, each with its own "
+                          f"extrude, fused/cut together)"))
+    if final and len(features) == 2 and len(sketches) == 1:
         n = len(sketches[0].params.get("entities") or [])
         if n > 4:
-            problems.append(
-                f"the whole design is ONE sketch ({n} entities) + one "
-                f"consumer — that is a blob, not a design history. Record "
-                f"it as steps: base_sketch -> base_extrude, then each "
-                f"element as its own sketch -> extrude, fused or cut")
+            items.append((("blob",), n,
+                          f"the whole design is ONE sketch ({n} entities) + "
+                          f"one consumer — that is a blob, not a design "
+                          f"history. Record it as steps: base_sketch -> "
+                          f"base_extrude, then each element as its own "
+                          f"sketch -> extrude, fused or cut"))
     # THE OFFSET METHOD (user mandate 2026-08-27). Once a body exists, a
     # sketch floating at an absolute Z is the banned old habit: it hardcodes
     # the base thickness into every downstream feature, so 251 of the 274
@@ -494,28 +486,64 @@ def lint_tree(features, final: bool = True, only=None) -> list[str]:
     # changed. face+offset is exactly as expressive (any Z is reachable as an
     # offset from a face) and it rides the geometry — so there is no
     # legitimate reason left to write the absolute form.
+    # The OFFSET VALUE is part of the key: a number the model puts there is
+    # the model's, even in a sketch that was already floating.
     import sketch as _sk
     body_yet = False
     for f in features:
-        if (f.op == "sketch" and body_yet and mine(f.id)
-                and float(f.params.get("offset") or 0)):
-            problems.append(
-                f"sketch '{f.id}' floats at absolute Z (offset "
-                f"{f.params['offset']}) even though a body already exists — "
-                f"that hardcodes the base thickness and breaks the moment it "
-                f"changes. Use sketch_on_face on the current body instead: "
-                f'{{"face":"top","offset":<depth from that face, negative = '
-                f'into the material>}}, then extrude with flip/through and '
-                f"cut or fuse")
+        if f.op == "sketch" and body_yet and float(f.params.get("offset") or 0):
+            items.append((("offset", f.id, float(f.params["offset"])), 0,
+                          f"sketch '{f.id}' floats at absolute Z (offset "
+                          f"{f.params['offset']}) even though a body already "
+                          f"exists — that hardcodes the base thickness and "
+                          f"breaks the moment it changes. Use sketch_on_face "
+                          f"on the current body instead: "
+                          f'{{"face":"top","offset":<depth from that face, '
+                          f'negative = into the material>}}, then extrude '
+                          f"with flip/through and cut or fuse"))
         if f.op not in _sk.SKETCH_PRODUCERS:
             body_yet = True
-    generic = [f.id for f in features
-               if mine(f.id) and _GENERIC_ID.match(f.id)]
-    if generic:
-        problems.append(
-            f"ids {generic} are meaningless — name features after what "
-            f"they ARE (base_plate, web_sketch, eye_cut...)")
-    return problems
+    for f in features:
+        if _GENERIC_ID.match(f.id):
+            items.append((("generic", f.id), 0,
+                          f"id '{f.id}' is meaningless — name features after "
+                          f"what they ARE (base_plate, web_sketch, eye_cut...)"))
+    return items
+
+
+def lint_tree(features, final: bool = True) -> list[str]:
+    """History-quality rules for AUTHORED trees (AI/MCP paths only — the
+    manual UI records history naturally, one action per feature), over the
+    WHOLE tree: the MCP `build_design` door, where every feature is the
+    model's. `final=False` while a design is still being built step by step:
+    the "whole design is one blob" rule judges the FINISHED design and must
+    not refuse the second step of a ten-step part."""
+    return [t for _, _, t in _lint_items(features, final)]
+
+
+def lint_baseline(features) -> dict:
+    """What a tree ALREADY breaks when a job starts on it, as {key: rank}.
+
+    A step-by-step job is answerable for the history it writes, not for the
+    one it inherits — it may not remove the user's features, so a rule about
+    them is a wall it can never get past. Measured over the saved library
+    (probes/author_live_designs_probe.py, probes/s13_round2_probe.py): judged
+    on the whole tree, 27 of the 50 designs refused the AI's first correct
+    step for a sketch the USER drew, and scoping the verdict to the ids the
+    job WROTE still refused an EDIT to any such feature on the same 27 —
+    which is the one move the opening message invites. Three refusals give
+    the job up and studio puts the snapshot back: "I did NOT change your
+    design". `final=True` here because it is a superset: the blob rule is the
+    only final-only rule, and a baseline may only ever forgive."""
+    return {k: r for k, r, _ in _lint_items(features, final=True)}
+
+
+def _lint_since(features, baseline, final: bool = True) -> list[str]:
+    """The lint problems a job is answerable for: the ones its tree did not
+    already carry, and the ones it has made WORSE. `baseline=None` judges
+    everything (a design being created from nothing, and any direct caller)."""
+    return [t for k, r, t in _lint_items(features, final)
+            if baseline is None or k not in baseline or r > baseline[k]]
 
 
 def checked_spec(spec) -> dict:
@@ -672,7 +700,7 @@ def _first_problem(doc: Document, was_ok=frozenset(),
 
 
 def _apply_step(doc: Document, step: dict, protected=frozenset(),
-                keep_spec: bool = False, authored=None
+                keep_spec: bool = False, authored=None, baseline=None
                 ) -> tuple[bool, str, str | None]:
     """Apply ONE reply to the document. -> (ok, sentence, feature id).
     Never raises for the model's mistakes; the sentence is what it hears.
@@ -682,12 +710,13 @@ def _apply_step(doc: Document, step: dict, protected=frozenset(),
     edit them but never remove them. `keep_spec`: the design already records
     the user's own requirement, so "done" may not write a spec over it.
     `authored`: the MUTABLE set of ids this job has written or changed — what
-    the model is answerable for. The lint and `done`'s health question are
-    asked about those features and the ones that were HEALTHY when the step
-    started; a row the user left red, or a sketch they drew by hand, is
-    reported to them and is not the model's to be stopped by. None (a caller
-    with no job, and every design the model creates from nothing) keeps the
-    whole tree in scope."""
+    `done`'s health question is asked about, together with the ones that were
+    HEALTHY when the step started; a row the user left red is reported to
+    them and is not the model's to be stopped by. `baseline`: what the tree
+    already broke when the job started (`lint_baseline`) — the history lint
+    answers for what this job wrote or made worse, not for what it inherited.
+    None for either (a caller with no job, and every design the model creates
+    from nothing) keeps the whole tree in scope."""
     before = doc.to_data()
     was_ok = {f.id for f in doc.features if f.status == "ok"}
     scope = None if authored is None else (was_ok | set(authored))
@@ -710,9 +739,7 @@ def _apply_step(doc: Document, step: dict, protected=frozenset(),
         try:
             doc.add(fid, str(a["op"]), a.get("params") or {},
                     a.get("inputs") or [], strict=True)
-            lint = lint_tree(doc.features, final=False,
-                             only=None if authored is None
-                             else set(authored) | {fid})
+            lint = _lint_since(doc.features, baseline, final=False)
         except (ValueError, KeyError, TypeError) as e:
             _restore(doc, before)
             return False, f"REFUSED '{fid}': {e}", fid
@@ -740,11 +767,11 @@ def _apply_step(doc: Document, step: dict, protected=frozenset(),
             return False, f"REFUSED edit of '{fid}': {err}", fid
         # An edit was the one step the lint never saw, so the banned
         # absolute-offset form could be edited INTO a tree a number at a time
-        # (only `done` looked, by which point it was in). Its own feature
-        # only: the rest of the tree is not what this step changed.
-        lint = lint_tree(doc.features, final=False,
-                         only={fid} if authored is None
-                         else set(authored) | {fid})
+        # (only `done` looked, by which point it was in). What it may NOT do
+        # is refuse the edit for a problem the feature already had before this
+        # job touched it — that was the same lock-out one door further on, on
+        # 27 of the 50 saved designs (section 13 round two, 2026-09-17).
+        lint = _lint_since(doc.features, baseline, final=False)
         if lint:
             _restore(doc, before)
             return False, (f"REFUSED edit of '{fid}' (history lint): "
@@ -779,7 +806,7 @@ def _apply_step(doc: Document, step: dict, protected=frozenset(),
         if not doc.leaf_solid_ids():
             return False, ("REFUSED done: the design has no solid body yet "
                            "(a sketch alone has no volume) — add features"), None
-        lint = lint_tree(doc.features, only=authored)
+        lint = _lint_since(doc.features, baseline)
         if lint:
             return False, "REFUSED done (history lint): " + "; ".join(lint), None
         if keep_spec:
@@ -848,6 +875,7 @@ def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
     and in-flight marker there). -> (finished, transcript)."""
     protected = frozenset(f.id for f in doc.features)   # the user's own work
     authored: set[str] = set()          # what THIS job wrote: what it answers for
+    baseline = lint_baseline(doc.features)   # ...and what it did NOT write
     # Adding to a design that ALREADY EXISTS never writes a spec. Keying this
     # on "does it have a spec" left the 8 live designs that carry none open to
     # the model writing one over them (measured 2026-09-11, review round two):
@@ -920,10 +948,10 @@ def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
             if guard is not None:
                 with guard():
                     ok, text, fid = _apply_step(doc, step, protected,
-                                                keep_spec, authored)
+                                                keep_spec, authored, baseline)
             else:
                 ok, text, fid = _apply_step(doc, step, protected, keep_spec,
-                                            authored)
+                                            authored, baseline)
             if ok and naming and pending_name:
                 doc.name = pending_name
         if ok and step.get("done"):

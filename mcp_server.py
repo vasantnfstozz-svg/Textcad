@@ -50,10 +50,34 @@ def _safe_name(name: str) -> str:
     return re.sub(r"[^\w\-]+", "-", name).strip("-") or "design"
 
 
-# Design names THIS server has written. A name in here may be written again —
-# the whole point of the doorbell is "regenerate -> POST /api/open/<name> ->
-# look at it in 3D", and ten iterations must land in ONE file and ONE tab.
-_MINE: set[str] = set()
+# Design names THIS server has written, each against the digest of the recipe
+# it wrote. A name in here may be written again — the whole point of the
+# doorbell is "regenerate -> POST /api/open/<name> -> look at it in 3D", and
+# ten iterations must land in ONE file and ONE tab — but only while the file
+# is still the one we wrote. The doorbell opens it in Studio, that tab is
+# bound to it, and the section 3 owner guard lets the owning tab save over it:
+# the moment the user changes the AI's part and saves, it is their work
+# (section 13 round two, 2026-09-17).
+_MINE: dict[str, str] = {}
+
+
+def _digest(name: str) -> str:
+    import hashlib
+    try:
+        return hashlib.sha256(
+            (OUT / f"{name}.tcad.json").read_bytes()).hexdigest()
+    except OSError:
+        return ""                      # no recipe yet: nothing to have changed
+
+
+def _still_mine(name: str) -> bool:
+    return name in _MINE and _digest(name) in (_MINE[name], "")
+
+
+def _wrote(name: str) -> None:
+    """Record what we just put at `name`, so a later call can tell whether the
+    file is still ours or the user has made it theirs."""
+    _MINE[name] = _digest(name)
 
 
 def _taken(name: str) -> bool:
@@ -73,20 +97,21 @@ def _free_name(base: str) -> str:
     none of that, and `build_design(tree)` with no "name" is called
     "untitled" — a real design with a real history in that folder.
 
-    So: a name this server wrote is written again; a name anything else owns
-    gets the first free "-2", "-3"… and the report says which file it is."""
+    So: a name this server wrote AND still holds unchanged is written again;
+    anything else gets the first free "-2", "-3"… and the report says which
+    file it is."""
     name = _safe_name(base)
-    if name in _MINE or not _taken(name):
-        _MINE.add(name)
+    if _still_mine(name) or not _taken(name):
+        _MINE.setdefault(name, "")
         return name
     for n in range(2, 100):
         cand = f"{name}-{n}"
-        if cand in _MINE or not _taken(cand):
-            _MINE.add(cand)
+        if _still_mine(cand) or not _taken(cand):
+            _MINE.setdefault(cand, "")
             return cand
     import time
     cand = f"{name}-{int(time.time())}"
-    _MINE.add(cand)
+    _MINE.setdefault(cand, "")
     return cand
 
 
@@ -169,18 +194,22 @@ def build_design(tree: dict, export_name: str = "") -> dict:
         rep = _report(doc, ok)
         if ok:
             asked = _safe_name(export_name or doc.name)
+            mine_before = asked in _MINE
             name = _free_name(export_name or doc.name)
             step = OUT / f"{name}.step"
             doc.to_step(str(step))
             recipe = OUT / f"{name}.tcad.json"
             doc.save(str(recipe))
+            _wrote(name)
             rep["design_name"] = name
             rep["step_path"] = str(step)
             rep["recipe_path"] = str(recipe)
             if name != asked:
-                rep["renamed"] = (f"'{asked}' is already a design in this "
-                                  f"library and was left untouched; this one "
-                                  f"is saved as '{name}'")
+                rep["renamed"] = (
+                    f"'{asked}' has been changed since I wrote it, so it is "
+                    f"the user's now" if mine_before else
+                    f"'{asked}' is already a design in this library"
+                ) + (f" and was left untouched; this one is saved as '{name}'")
             _notify_studio(name)
         return rep
 
@@ -202,14 +231,20 @@ def design_part(description: str) -> dict:
         if doc is None:
             return {"verified": False, "transcript": transcript}
         rep = _report(doc, True)
+        asked = _safe_name(doc.name)
         name = _free_name(doc.name)        # never over a design of the user's
         step = OUT / f"{name}.step"
         doc.to_step(str(step))
         recipe = OUT / f"{name}.tcad.json"
         doc.save(str(recipe))
+        _wrote(name)
         rep["design_name"] = name
         rep["step_path"] = str(step)
         rep["recipe_path"] = str(recipe)
+        if name != asked:                  # the report must name the FILE
+            rep["renamed"] = (f"'{asked}' is a design in this library that is "
+                              f"not mine to overwrite; it was left untouched "
+                              f"and this one is saved as '{name}'")
         rep["transcript"] = transcript
         _notify_studio(name)
         return rep

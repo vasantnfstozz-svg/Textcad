@@ -960,3 +960,114 @@ def test_a_spec_size_must_name_all_three_axes():
         author.checked_spec({"size": [40, 30]})
     assert "size" in str(e.value)
     assert author.checked_spec({"size": [40, None, 5]})["size"] == [40, None, 5]
+
+
+# ---------------------------------------------------------------------------
+# Section 13 ROUND TWO (2026-09-17): the same lock-out, through the EDIT door.
+#
+# Round one scoped the lint to the ids the job WROTE and measured the ADD
+# door: 28 of the 50 saved designs blocked became 1. But `edit` is the one
+# move the opening message actively invites on an existing design ("these
+# features are the user's — you may edit a number in one, never remove one"),
+# and round one gave the edit branch a lint of its OWN, scoped to
+# `authored | {fid}` — which ALWAYS contains the edited feature. So an edit to
+# a feature the USER drew is judged on that feature's own pre-existing
+# problem: measured over the library (probes/s13_round2_probe.py), an AI edit
+# to one named user feature is refused on 27 of the 50 designs, for an
+# absolute-Z offset the AI neither wrote nor touched. Three of those and the
+# job gives up and studio puts the snapshot back — "I did NOT change your
+# design", the very sentence round one existed to stop.
+#
+# The rule is the JOB's authorship, not the feature's: a lint problem the tree
+# already carried when the job started is the user's news; one the job writes,
+# or makes worse, is refused exactly as before.
+# ---------------------------------------------------------------------------
+
+def _design_with_the_users_floating_sketch():
+    """The shape 27 of the 50 saved designs have: a base body, then a sketch
+    the user placed at an absolute Z (esp32-remote's keypad_recess_sketch,
+    isogrid-panel's tri_sketch_0, cam-cover-*'s face_skim_c_sk...)."""
+    d = Document(name="hand-built")
+    d.add("base_sketch", "sketch",
+          {"plane": "XY", "offset": 0,
+           "entities": [{"kind": "rectangle", "w": 40, "h": 30}]})
+    d.add("base", "extrude", {"amount": 10}, inputs=["base_sketch"])
+    d.add("recess_sketch", "sketch",
+          {"plane": "XY", "offset": 10.0,
+           "entities": [{"kind": "circle", "r": 5}]})
+    d.add("recess_tool", "extrude", {"amount": -3}, inputs=["recess_sketch"])
+    d.add("recess", "cut", {}, inputs=["base", "recess_tool"])
+    d.rebuild()
+    assert author.lint_tree(d.features), "the fixture must break the lint"
+    return d
+
+
+def test_an_edit_to_the_users_feature_is_not_refused_for_the_users_own_problem():
+    doc = _design_with_the_users_floating_sketch()
+    m = Scripted({"edit": {"feature_id": "recess_sketch", "param": "entities",
+                           "value": [{"kind": "circle", "r": 7}]}},
+                 {"done": True})
+    ok, transcript = author.author_steps(doc, "widen the recess", m,
+                                         max_fails=1)
+    assert ok, transcript
+    assert doc.get("recess_sketch").params["entities"][0]["r"] == 7
+
+
+def test_a_step_after_an_edit_is_not_blamed_for_the_users_problem_either():
+    """The same through the add door: the edited id joins `authored`, so every
+    LATER step was scoped to include the user's feature too."""
+    doc = _design_with_the_users_floating_sketch()
+    m = Scripted({"edit": {"feature_id": "recess_tool", "param": "amount",
+                           "value": -4}},
+                 {"add": {"id": "boss_sketch", "op": "sketch_on_face",
+                          "params": {"face": "top", "offset": 0,
+                                     "entities": [{"kind": "circle", "r": 3}]},
+                          "inputs": ["recess"]}},
+                 {"add": {"id": "boss", "op": "extrude",
+                          "params": {"amount": 2}, "inputs": ["boss_sketch"]}},
+                 {"add": {"id": "boss_join", "op": "fuse",
+                          "inputs": ["recess", "boss"]}},
+                 {"done": True})
+    ok, transcript = author.author_steps(doc, "deepen it and add a boss", m,
+                                         max_fails=1)
+    assert ok, transcript
+    assert "recess_sketch" not in "".join(transcript)
+
+
+def test_the_ai_may_still_not_write_a_new_absolute_z_into_the_users_sketch():
+    """The user mandate, undiminished: a number the MODEL puts there is the
+    model's, even in a sketch that was already floating."""
+    doc = _design_with_the_users_floating_sketch()
+    m = Scripted({"edit": {"feature_id": "recess_sketch", "param": "offset",
+                           "value": 6.0}}, {"done": True})
+    ok, transcript = author.author_steps(doc, "lower it", m, max_fails=1)
+    assert not ok and "floats at absolute Z" in transcript[0]
+    assert doc.get("recess_sketch").params["offset"] == 10.0, "the edit stood"
+
+
+def test_the_ai_may_not_make_the_users_crammed_sketch_worse():
+    doc = Document(name="hand-built")
+    ents = [{"kind": "circle", "r": 1, "x": -25 + i * 4, "y": 0}
+            for i in range(11)]
+    doc.add("art_sketch", "sketch", {"plane": "XY", "offset": 0,
+                                     "entities": ents})
+    doc.add("art", "extrude", {"amount": 4}, inputs=["art_sketch"])
+    doc.rebuild()
+    m = Scripted({"edit": {"feature_id": "art_sketch", "param": "entities",
+                           "value": ents + [{"kind": "circle", "r": 1,
+                                             "x": 22, "y": 0}]}},
+                 {"done": True})
+    ok, transcript = author.author_steps(doc, "one more hole", m, max_fails=1)
+    assert not ok and "crams 12 entities" in transcript[0]
+    assert len(doc.get("art_sketch").params["entities"]) == 11
+
+
+def test_done_is_not_refused_for_a_lint_problem_the_job_never_wrote():
+    """`done` lints `only=authored`, and an edit puts the USER's id in there,
+    so the last step of an edit-only job was refused for their own sketch."""
+    doc = _design_with_the_users_floating_sketch()
+    m = Scripted({"edit": {"feature_id": "recess_tool", "param": "amount",
+                           "value": -5}}, {"done": True})
+    ok, transcript = author.author_steps(doc, "deeper", m, max_fails=1)
+    assert ok, transcript
+    assert "history lint" not in "".join(transcript)
