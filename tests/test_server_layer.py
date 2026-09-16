@@ -256,13 +256,20 @@ def test_one_designs_geometry_never_lands_in_another_designs_step(client,
 
     r = client.post("/api/export").json()
     theirs = studio.DESIGNS / f"{TMP}-two.step"
-    if not theirs.exists():
-        assert r.get("error"), r          # refused: nothing was written
-        return
-    m = inspector.measure(str(theirs))    # 20x20x9 is theirs, 20x20x5 is ours
-    assert m["volume"] == pytest.approx(20 * 20 * 9, rel=1e-6), \
-        (f"designs/{TMP}-two.step came back holding {TMP}'s geometry "
-         f"({m['volume']} mm3), reported as a successful export")
+    if theirs.exists():
+        m = inspector.measure(str(theirs))  # 20x20x9 theirs, 20x20x5 ours
+        assert m["volume"] == pytest.approx(20 * 20 * 9, rel=1e-6), \
+            (f"designs/{TMP}-two.step came back holding {TMP}'s geometry "
+             f"({m['volume']} mm3), reported as a successful export")
+    if r.get("error"):
+        return                            # refused: nothing was written
+    # Round three answered this case with a REFUSAL, because _name_clash still
+    # asked STATE["active"] and saw the arriving tab. Round four addresses the
+    # whole request to one tab, so the honest answer is available: this
+    # design's own geometry, in this design's own file.
+    assert r["path"].endswith(f"{TMP}.step"), r["path"]
+    assert inspector.measure(r["path"])["volume"] == pytest.approx(
+        20 * 20 * 5, rel=1e-6), r
 
 
 def test_a_tab_that_arrives_mid_save_is_not_bound_to_this_designs_file(
@@ -317,6 +324,24 @@ def test_a_step_file_the_user_made_is_put_back_not_deleted(tmp_path,
         "the fast tier changed a .step the user made"
     assert not (tmp_path / "roundtrip-src.step").exists(), \
         "the fast tier left its own export in the library"
+
+
+def test_a_library_step_comes_back_even_when_the_test_blows_up(tmp_path,
+                                                               monkeypatch):
+    """The guard is in a SHARED file, so its failure path matters as much as
+    its happy one: a test that raises mid-export must still leave the user's
+    .step exactly as it was (round four)."""
+    from conftest import library_steps_kept
+
+    monkeypatch.setattr(studio, "DESIGNS", tmp_path)
+    users = tmp_path / "flange-100.step"
+    users.write_bytes(b"ISO-10303-21; the user's own export")
+    with pytest.raises(ZeroDivisionError):
+        with library_steps_kept("flange-100.step"):
+            users.write_bytes(b"half an export")
+            raise ZeroDivisionError("the test blew up mid-export")
+    assert users.read_bytes() == b"ISO-10303-21; the user's own export", \
+        "a test that blew up left the user's .step half-written"
 
 
 # -------------------------------------------------------------- F5 / F4 ---
@@ -553,3 +578,221 @@ def test_an_untouched_sample_can_still_be_exported(client):
     r = client.post("/api/sample/flange")
     assert r.status_code == 200
     assert not client.post("/api/export").json().get("error")
+
+
+# ------------------------------------------ round four, ONE TAB PER REQUEST --
+#
+# Round three bound /api/export and /api/save to a single read of the tab.
+# Every other write route kept the seam: _snapshot(), _doc(), _hand_edit(),
+# _rebuild_and_mesh() and _doc_json() each go to STATE["active"] on their own,
+# and other threads move it (the MCP doorbell's /api/open/<slug>?external=1).
+# Measured with a REAL race, nothing patched inside studio
+# (probes/section12_round4_probe.py): a traced logo landed in the library
+# design the doorbell had just opened, with the undo entry left on the tab it
+# was drawn for. The tests below force the move at the same points, as round
+# three forced its export race.
+
+def _two_tabs(client):
+    """Tab OTHER (a saved library design) and tab MINE, MINE active."""
+    _library_design(f"{TMP}-two", thickness=9).save(
+        str(studio.DESIGNS / f"{TMP}-two.tcad.json"))
+    client.post(f"/api/open/{TMP}-two")
+    other = studio.STATE["active"]
+    client.post("/api/new", json={"name": TMP})
+    client.post("/api/feature/add", json={
+        "id": "base", "op": "plate",
+        "params": {"width": 20, "depth": 20, "thickness": 5}, "inputs": []})
+    return studio.STATE["active"], other
+
+
+def _doorbell_at(monkeypatch, attr, other):
+    """Move the active tab the first time `studio.<attr>` is called — which
+    is what the doorbell's /api/open does, from its own thread."""
+    real = getattr(studio, attr)
+    fired = {"done": False}
+
+    def moved(*a, **kw):
+        if not fired["done"]:
+            fired["done"] = True
+            studio.STATE["active"] = other
+        return real(*a, **kw)
+
+    monkeypatch.setattr(studio, attr, moved)
+    return fired
+
+
+def test_a_tab_that_arrives_mid_add_cannot_take_the_feature(client,
+                                                            monkeypatch):
+    """A feature must land in the design it was added to.
+
+    /api/feature/add reads the tab for the snapshot and again for the
+    document. With the doorbell in between, the boss went into the OTHER
+    design — a saved library design — while the undo entry stayed on this
+    one, so Ctrl+Z could not take it back."""
+    mine, other = _two_tabs(client)
+    _doorbell_at(monkeypatch, "_doc", other)
+    r = client.post("/api/feature/add", json={
+        "id": "boss", "op": "plate",
+        "params": {"width": 4, "depth": 4, "thickness": 1}, "inputs": []})
+    assert r.status_code == 200, r.json()
+    theirs = [f.id for f in studio.STATE["docs"][other]["doc"].features]
+    ours = [f.id for f in studio.STATE["docs"][mine]["doc"].features]
+    assert "boss" not in theirs, \
+        f"the feature landed in the other design ({theirs})"
+    assert "boss" in ours, f"the feature never landed ({ours})"
+
+
+def test_a_tab_that_arrives_mid_edit_cannot_take_the_value(client,
+                                                           monkeypatch):
+    """The same two reads on /api/edit: base.thickness 9 -> 99 in a design
+    the user never opened, announced as a successful edit of this one."""
+    mine, other = _two_tabs(client)
+    _doorbell_at(monkeypatch, "_doc", other)
+    r = client.post("/api/edit", json={
+        "feature_id": "base", "param": "thickness", "value": 99})
+    assert r.status_code == 200, r.json()
+    assert studio.STATE["docs"][other]["doc"].features[0].params[
+        "thickness"] == 9, "the edit landed in the other design"
+    assert studio.STATE["docs"][mine]["doc"].features[0].params[
+        "thickness"] == 99
+
+
+def test_a_tab_that_arrives_mid_trace_cannot_take_the_logo(client,
+                                                           monkeypatch):
+    """The widest window of the lot: /api/trace-png snapshots one tab, spends
+    the whole trace (106 ms on a 1400 px logo, measured) inside imgtrace, and
+    then adds the sketch to whatever tab is active by then."""
+    import base64
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    mine, other = _two_tabs(client)
+    art = np.zeros((120, 120, 4), dtype=np.uint8)
+    art[30:90, 30:90] = (0, 0, 0, 255)
+    buf = io.BytesIO()
+    Image.fromarray(art, "RGBA").save(buf, format="PNG")
+
+    real = studio.imgtrace.image_to_entities
+    fired = {"done": False}
+
+    def traced(*a, **kw):
+        out = real(*a, **kw)
+        if not fired["done"]:                  # ...while the trace was running
+            fired["done"] = True
+            studio.STATE["active"] = other
+        return out
+
+    monkeypatch.setattr(studio.imgtrace, "image_to_entities", traced)
+    r = client.post("/api/trace-png", json={
+        "png_base64": base64.b64encode(buf.getvalue()).decode(),
+        "feature_id": "logo", "height_mm": 10})
+    assert r.status_code == 200, r.json()
+    theirs = [f.id for f in studio.STATE["docs"][other]["doc"].features]
+    assert "logo" not in theirs, \
+        f"the logo landed in the other design ({theirs})"
+    assert "logo" in [f.id for f in studio.STATE["docs"][mine]["doc"].features]
+
+
+def test_a_tab_that_arrives_mid_save_cannot_open_the_clash_guard(client,
+                                                                 monkeypatch):
+    """Round three's own residual: _name_clash is the REST of /api/save and
+    /api/export, and it asked STATE["active"] itself.
+
+    With the doorbell landing inside it, all three doors opened — the file's
+    owner WAS the newly active tab, and the `source` read on the next line was
+    that tab's — so this tab's document was written over the other design's
+    file and into its version tree."""
+    mine, other = _two_tabs(client)          # `other` is bound to <TMP>-two
+    studio.STATE["docs"][mine]["doc"].name = f"{TMP}-two"     # same slug
+    before = (studio.DESIGNS / f"{TMP}-two.tcad.json").read_text(
+        encoding="utf-8")
+    _doorbell_at(monkeypatch, "_file_owner", other)
+    r = client.post("/api/save")
+    assert r.status_code == 400, \
+        f"the save was allowed onto the other design's file: {r.json()}"
+    assert (studio.DESIGNS / f"{TMP}-two.tcad.json").read_text(
+        encoding="utf-8") == before, "the other design's file was overwritten"
+    assert studio.STATE["docs"][other].get("source") == f"file:{TMP}-two"
+
+
+def test_a_tab_that_arrives_mid_export_does_not_refuse_the_right_file(
+        client, monkeypatch):
+    """The other half of _name_clash's own read of the tab: a WRONG REFUSAL.
+
+    The guard's first door is "another TAB already owns this file". With the
+    doorbell landing inside it, the tab that owns the file is compared against
+    the tab that just arrived, so a design exporting to its OWN .step was told
+    it was open in another tab. Nothing is lost by it — but the user is
+    refused a correct export for a reason that is not true."""
+    _library_design(TMP).save(str(studio.DESIGNS / f"{TMP}.tcad.json"))
+    _library_design(f"{TMP}-two", thickness=9).save(
+        str(studio.DESIGNS / f"{TMP}-two.tcad.json"))
+    client.post(f"/api/open/{TMP}-two")
+    other = studio.STATE["active"]
+    client.post(f"/api/open/{TMP}")               # bound to its own file
+    _doorbell_at(monkeypatch, "_file_owner", other)
+    r = client.post("/api/export").json()
+    assert not r.get("error"), \
+        f"the design's own .step was refused: {r['error']}"
+    assert r["path"].endswith(f"{TMP}.step"), r["path"]
+    assert r["volume"] == pytest.approx(20 * 20 * 5, rel=1e-6), r
+
+
+def test_the_tab_a_request_is_addressed_to_does_not_leak_to_the_next(client):
+    """The pin is per REQUEST. A leak would be worse than the race: every
+    later request in the process would answer about one tab for ever."""
+    mine, other = _two_tabs(client)
+    assert client.post("/api/tabs/switch",
+                       json={"id": other}).json()["name"] == f"{TMP}-two"
+    assert client.get("/api/doc").json()["name"] == f"{TMP}-two"
+    assert client.post("/api/tabs/switch",
+                       json={"id": mine}).json()["name"] == TMP
+    assert client.get("/api/doc").json()["name"] == TMP
+    assert studio._REQ_TAB.get() is None, \
+        "the request pin escaped into this process's own context"
+
+
+def test_a_request_that_opens_a_tab_is_addressed_to_the_tab_it_opened(client):
+    """The pin must never outrank a DELIBERATE switch inside the same
+    request: new, open, switch, close and sample all move the tab on purpose
+    and everything after must talk about the new one."""
+    mine, other = _two_tabs(client)
+    assert client.post(f"/api/open/{TMP}-two").json()["name"] == f"{TMP}-two"
+    sample = client.post("/api/sample/flange").json()
+    assert sample["name"] != f"{TMP}-two"
+    assert client.post("/api/tabs/close",
+                       json={"id": studio.STATE["active"]}).json()[
+                           "name"] != sample["name"]
+    assert client.post("/api/new", json={"name": "fresh"}).json()[
+        "name"] == "fresh"
+
+
+def test_a_request_may_name_the_tab_it_is_addressed_to(client):
+    """The browser half, ready for when it is sent: a request carrying
+    X-TextCAD-Tab is addressed to THAT tab, not to whichever one a doorbell
+    made active. Dormant until the browser sends it, so nothing breaks today;
+    a header naming a tab that is no longer open is ignored, because a browser
+    one poll behind is not an error."""
+    mine, other = _two_tabs(client)
+    studio.STATE["active"] = other                 # the doorbell got there
+    r = client.post("/api/feature/add",
+                    headers={"X-TextCAD-Tab": mine},
+                    json={"id": "boss", "op": "plate",
+                          "params": {"width": 4, "depth": 4, "thickness": 1},
+                          "inputs": []})
+    assert r.status_code == 200, r.json()
+    assert "boss" in [f.id for f in studio.STATE["docs"][mine]["doc"].features]
+    assert "boss" not in [f.id
+                          for f in studio.STATE["docs"][other]["doc"].features]
+
+    studio.STATE["active"] = mine
+    r = client.post("/api/feature/add",
+                    headers={"X-TextCAD-Tab": "t-gone"},
+                    json={"id": "boss2", "op": "plate",
+                          "params": {"width": 4, "depth": 4, "thickness": 1},
+                          "inputs": []})
+    assert r.status_code == 200, r.json()
+    assert "boss2" in [f.id
+                       for f in studio.STATE["docs"][mine]["doc"].features]

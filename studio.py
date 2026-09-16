@@ -33,6 +33,7 @@ if __name__ == "__main__" and os.environ.get("TEXTCAD_SERVER_CHILD") != "1":
 
 import base64
 import contextlib
+import contextvars
 import itertools
 import json
 import math
@@ -142,6 +143,42 @@ STATE: dict = {"docs": {}, "active": None, "seq": 0}
 MAX_HISTORY = 25
 MAX_TABS = 12
 
+# ONE TAB PER REQUEST. STATE["active"] is moved from OTHER THREADS — the MCP
+# doorbell posts /api/open/<slug>?external=1 and takes it, a second browser
+# window switches tabs — and FastAPI runs every sync endpoint in the
+# threadpool, so those moves land BETWEEN two reads inside one request.
+# Section 12 round three measured that on /api/export (one design's solid
+# written into another design's .step) and on /api/save, and bound those two
+# shut by hand. Every other write route has the same seam and reads the tab
+# three to six times: _snapshot(), _doc(), _hand_edit(), _rebuild_and_mesh(),
+# _doc_json(). Measured 2026-09-16 with a REAL race, nothing patched inside
+# studio (probes/section12_round4_probe.py): a traced logo left the design it
+# was drawn for and landed in the library design the doorbell had just
+# opened — 106 ms of tracing between the snapshot and the add — with the undo
+# entry on the OTHER tab, so Ctrl+Z could not take it back.
+#
+# So a request resolves "which tab am I addressed to" ONCE and every later
+# read in that request gets the same answer. The middleware ARMS this
+# (value "") and the first _active_tid() resolves it; a context var is what
+# makes it per-request — FastAPI's threadpool runs each sync endpoint in a
+# COPY of the request's context, measured in
+# probes/section12_round4_ctxvar_probe.py. Unarmed (None) means "not in a
+# request" — startup and the chat job thread — and behaves exactly as before,
+# which matters: a .set() in the MAIN context would pin every later request
+# to one tab for the life of the process (also measured).
+_ARMED = ""
+_REQ_TAB: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "textcad_request_tab", default=None)
+
+# The browser does not send this yet, and the server must not start requiring
+# it (every existing client, the MCP included, sends nothing). When it IS
+# present and names an OPEN tab, that is the tab the request is addressed to:
+# the user clicked in the tab they can see, not in whichever tab a doorbell
+# made active a moment ago. A header naming a tab that is no longer open is
+# ignored rather than refused — a browser one poll behind is not an error, and
+# falling back to the active tab is exactly what happens today.
+TAB_HEADER = "x-textcad-tab"
+
 # THE DOORBELL'S ONE-SHOT MARKER. A design can arrive from OUTSIDE the browser
 # — an AI over MCP posts /api/open/<slug>?external=1 — and the page announces
 # it once. Whether something arrived is the SERVER's fact (R1): the browser
@@ -190,7 +227,7 @@ def _new_tab(doc: Document, source: str | None = None,
                           "clean_hash": content_hash(doc.to_data()),
                           "dirty": False}
     if activate:
-        STATE["active"] = tid
+        _activate(tid)
     return tid
 
 
@@ -215,13 +252,41 @@ def _file_owner(slug: str) -> str | None:
     return None
 
 
-def _entry() -> dict:
+def _active_tid() -> str:
+    """The tab THIS REQUEST is addressed to — resolved once, then held.
+
+    Inside a request (the middleware armed it) the first call pins the answer
+    and every later read returns the same tab, whatever another thread does to
+    STATE["active"] meanwhile. Outside one — startup, the chat job thread —
+    nothing is pinned and this is the plain active tab, as it always was."""
+    pinned = _REQ_TAB.get()
+    if pinned and pinned in STATE["docs"]:
+        return pinned
     # Degrade gracefully: if no tab is open (fresh import / all tabs closed),
     # auto-create an empty "untitled" document instead of raising KeyError:None
     # (which 500'd /api/doc and left the UI booting half-dead with no guidance).
+    # The same branch catches a pinned tab CLOSED under this request.
     if STATE["active"] is None or STATE["active"] not in STATE["docs"]:
         _new_tab(Document(name="untitled"))
-    return STATE["docs"][STATE["active"]]
+    tid = STATE["active"]
+    if pinned is not None:            # armed: this request now has its answer
+        _REQ_TAB.set(tid)
+    return tid
+
+
+def _activate(tid: str) -> None:
+    """Switch to `tid` — and address the REST of this request to it.
+
+    The five routes that move the active tab on purpose (new, switch, close,
+    open, sample) go through here, so a deliberate move is never mistaken for
+    the doorbell's."""
+    STATE["active"] = tid
+    if _REQ_TAB.get() is not None:    # only inside a request; never at startup
+        _REQ_TAB.set(tid)
+
+
+def _entry() -> dict:
+    return STATE["docs"][_active_tid()]
 
 
 def _doc() -> Document:
@@ -572,6 +637,23 @@ _JOB_OPEN_POSTS = {"/api/tabs/switch",
 
 
 @app.middleware("http")
+async def _one_tab_per_request(request, call_next):
+    """Arm the per-request tab pin (see _REQ_TAB / _active_tid).
+
+    Nothing is resolved here — the first read inside the endpoint does that,
+    and it must be the endpoint's own read so a route that deliberately opens
+    or switches a tab still gets the tab it just made. Registered as a
+    middleware because that is the one place every request passes through,
+    and because a set made HERE reaches the endpoint while the endpoint's own
+    set never comes back out (both measured,
+    probes/section12_round4_ctxvar_probe.py) — so nothing leaks into the next
+    request or into _persist_session."""
+    want = request.headers.get(TAB_HEADER)
+    _REQ_TAB.set(want if want and want in STATE["docs"] else _ARMED)
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def _one_writer_per_tab(request, call_next):
     """While the AI is building in a tab, it is that tab's only writer.
 
@@ -586,7 +668,11 @@ async def _one_writer_per_tab(request, call_next):
     if request.method != "POST" or request.url.path in _JOB_OPEN_POSTS:
         return await call_next(request)
     try:
-        busy = _job_on(STATE["active"]) is not None
+        # the tab the request is ADDRESSED to (see TAB_HEADER), else the
+        # active one — so when the browser starts naming its tab, a write to
+        # a quiet tab is not refused because the AI is busy in another
+        busy = _job_on(request.headers.get(TAB_HEADER)
+                       or STATE["active"]) is not None
     except Exception:        # noqa: BLE001 — a broken guard FAILS OPEN
         # This middleware is registered after _never_die, so Starlette puts it
         # OUTSIDE that barrier and anything it raises is a bare 500 — plain
@@ -1203,7 +1289,7 @@ def get_tabs():
 def switch_tab(req: TabReq):
     if req.id not in STATE["docs"]:
         return _refused(None, f"no tab '{req.id}'")
-    STATE["active"] = req.id
+    _activate(req.id)
     # geometry is cached inside the Document — no rebuild needed on switch —
     # EXCEPT a tab restored from the last session, which holds only its intent
     # until someone actually looks at it (rebuild_ms None = never built)
@@ -1228,7 +1314,7 @@ def close_tab(req: TabReq):
         _new_tab(Document(name="untitled"))
         _rebuild_and_mesh()
     elif STATE["active"] == req.id or STATE["active"] not in STATE["docs"]:
-        STATE["active"] = next(reversed(STATE["docs"]))
+        _activate(next(reversed(STATE["docs"])))
     return _doc_json()
 
 
@@ -2684,7 +2770,15 @@ def _name_clash(slug: str, deed: str) -> str | None:
 
     `deed` is the gerund the sentence uses ("saving", "exporting")."""
     owner = _file_owner(slug)
-    if owner is not None and owner != STATE["active"]:
+    # _active_tid(), not STATE["active"]: this guard is the REST of /api/save
+    # and /api/export, and round three bound those two to one read of the tab
+    # while this — their shared clash check, which also calls _entry() and
+    # _doc() below — went on asking the live state. Measured 2026-09-16: with
+    # the doorbell landing here, a save of tab A under a name tab B owns
+    # passed all three doors (owner == the tab that had just become active,
+    # and the source read on the next line was B's) and wrote A's document
+    # over B's design file and into B's version tree.
+    if owner is not None and owner != _active_tid():
         # 1. another TAB already owns this file. One tab per design is an
         # invariant everywhere else — /api/open reuses the tab instead of
         # cloning it — and this was the one place that broke it: a save of
@@ -3189,7 +3283,7 @@ def open_design(file: str, external: bool = False):
         return {"tab_reused": False, "reloaded": False,
                 **_record_version(f"opened {file}", "open"), **_doc_json()}
     e = STATE["docs"][tid]
-    STATE["active"] = tid
+    _activate(tid)
     if external:
         _note_arrival(tid, fresh.name, file)
     if e["doc"].to_data() == fresh.to_data():
@@ -3219,7 +3313,7 @@ def load_sample(name: str):
         return _refused(None, f"unknown sample '{name}'")
     tid = _find_tab(f"sample:{name}")
     if tid is not None:
-        STATE["active"] = tid
+        _activate(tid)
         STATE["docs"][tid]["mesh_stale"] = True
         return {"tab_reused": True, **_doc_json()}
     _new_tab(SAMPLES[name](), source=f"sample:{name}")
@@ -3565,7 +3659,7 @@ def chat(req: ChatReq):
             # takes the whole AI change back; a job that gives up restores it.
             _snapshot()
             e = _entry()
-            tid = STATE["active"]
+            tid = _active_tid()       # the tab _snapshot() just pushed onto
             job = _start_job("add", desc, tid, model, before=e["history"][-1])
             reply = ("Adding to this design step by step — every feature is "
                      "verified as it lands. One Undo takes it all back.")
