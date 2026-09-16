@@ -328,3 +328,26 @@ def test_an_edge_whose_two_faces_do_not_meet_is_still_refused():
                       "area": 3600.0}]}
     with pytest.raises(ValueError, match="no longer on the body"):
         blocks.resolve_edge(two_pads(20.0), ref)
+
+
+def test_the_fall_back_is_right_across_the_whole_sweep_not_just_at_24():
+    """ROUND TWO. The test above proves the fall-back ANSWERS at one pad width;
+    the danger it cannot see is that the answer is WRONG — dropping the size is
+    a fall-back to the very rule the size gate exists to correct, so "it stopped
+    refusing" is not the same news as "it is right".
+
+    So the pick is stored once at 20 mm and re-resolved at every width from 16
+    to 34, against the edge that body really has. Measured 2026-09-16
+    (probes/section10_round2_probe.py §1d): the sized pass refuses at 11 of the
+    12 widths — every one of them a red feature before the fall-back — and the
+    sizeless rule names the correct rim at all 12, never a neighbour's."""
+    ref = blocks.edge_ref(two_pads(20.0), _pad_p_top_rim(two_pads(20.0)))
+    rescued = 0
+    for w in (16, 18, 19, 20, 21, 22, 24, 26, 28, 30, 32, 34):
+        part = two_pads(float(w))
+        got = blocks.resolve_edge(part, ref)   # raises at 11 of 12 before the fix
+        assert blocks._shape_key(got) == blocks._shape_key(_pad_p_top_rim(part)), \
+            f"w={w}: the fall-back named {got @ 0.5}, not pad P's own rim"
+        if not blocks._shared_edges(part, ref["faces"], True):
+            rescued += 1                       # the sized pass alone was RED here
+    assert rescued >= 10, f"only {rescued} widths exercised the fall-back"
