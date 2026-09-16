@@ -41,25 +41,76 @@ function tabHeaders(base) {
    the header is installed once here, for every same-origin /api/ request the
    page makes. Same rule as tabHeaders, same single fact (S.lastDoc.active_tab,
    the server's own answer): this is a safety net under the four explicit
-   calls, not a second rule. Non-/api URLs (the static modules, the mesh
-   files) are passed through untouched. */
+   calls, not a second rule. Non-/api URLs (the static modules, the vendored
+   three.js) are passed through untouched. */
+const TAB_H = 'X-TextCAD-Tab';
 const _rawFetch = globalThis.fetch;
+
+/* WHICH URLs THIS DOOR CLAIMS. Round five asked `input.startsWith('/api/')`,
+   which is only ever true of a root-relative STRING — and three.js r160's
+   FileLoader, the loader behind BOTH of the viewport's STL calls, does
+   `fetch(new Request(url, {...}))`. So the tree-selection highlight and the
+   Move/Rotate drag ghost went out with no tab and the server fell back to
+   whichever tab is globally active. Measured 2026-09-17
+   (probes/section12_round6_fetchdoor.py): with the page on a 20x20x5 plate
+   and another window's 60x60x30 block active, /api/feature-mesh/base.stl
+   came back as the 60x60x30 — another design's solid, drawn over this one as
+   "what that feature makes". A URL object and an absolute same-origin string
+   fell through the same hole. Round five's own fix turned that from a
+   3-second window into a permanent one, because two browser windows now hold
+   INDEPENDENT tabs and STATE["active"] stays on the other window's.
+
+   So the URL is RESOLVED, whatever shape it arrives in, and only then asked
+   the same two questions: same origin, path under /api/. Cross-origin is now
+   excluded by the origin test rather than by accident, so the tab id can
+   never leave this server. */
+function _isApiUrl(u) {
+  try {
+    const here = (typeof location !== 'undefined' && location.href) || null;
+    const abs = new URL(String(u), here || 'http://localhost/');
+    return abs.origin === (here ? new URL(here).origin : 'http://localhost')
+           && abs.pathname.startsWith('/api/');
+  } catch { return false; }        // not a URL at all: not ours
+}
+
+/* The three legal shapes of init.headers, each kept as itself. An ARRAY OF
+   PAIRS is legal fetch input, and `{ ...[['Content-Type', 'application/json']] }`
+   turns it into `{ 0: [...] }` — the Content-Type gone and a `0:` header
+   invented, which is a broken POST — so it goes through Headers the way a
+   Headers instance does. A plain object stays a plain object: that is what
+   the four explicit tabHeaders() calls hand in. */
+function _withTab(h, tid) {
+  if (typeof Headers !== 'undefined'
+      && (h instanceof Headers || Array.isArray(h))) {
+    const out = new Headers(h);
+    out.set(TAB_H, tid);
+    return out;
+  }
+  return { ...(h || {}), [TAB_H]: tid };
+}
+
 if (typeof _rawFetch === 'function' && !globalThis.__textcadTabFetch) {
   globalThis.__textcadTabFetch = true;
   globalThis.fetch = function (input, init) {
-    if (typeof input !== 'string' || !input.startsWith('/api/')) {
+    const isReq = typeof Request !== 'undefined' && input instanceof Request;
+    const tid = S.lastDoc && S.lastDoc.active_tab;
+    if (!tid || !_isApiUrl(isReq ? input.url : input)) {
       return _rawFetch.call(globalThis, input, init);
     }
-    const tid = S.lastDoc && S.lastDoc.active_tab;
-    if (!tid) return _rawFetch.call(globalThis, input, init);
-    const o = { ...(init || {}) };
-    if (typeof Headers !== 'undefined' && o.headers instanceof Headers) {
-      const h = new Headers(o.headers);
-      h.set('X-TextCAD-Tab', tid);
-      o.headers = h;
-    } else {
-      o.headers = { ...(o.headers || {}), 'X-TextCAD-Tab': tid };
+    if (isReq && (!init || init.headers == null)) {
+      // A Request built by a loader carries its own Headers and they are
+      // writable, so the header goes on without rebuilding anything: body,
+      // signal, credentials and mode stay exactly as the loader set them.
+      // A Request whose headers are immutable falls through to the init
+      // route below rather than going out bare.
+      try {
+        input.headers.set(TAB_H, tid);
+        return _rawFetch.call(globalThis, input, init);
+      } catch { /* immutable headers */ }
     }
+    const o = { ...(init || {}) };
+    o.headers = _withTab(isReq && o.headers == null ? input.headers : o.headers,
+                         tid);
     return _rawFetch.call(globalThis, input, o);
   };
 }
