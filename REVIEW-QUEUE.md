@@ -104,7 +104,7 @@ Then two closing sections:
 | 7 | Extrude as a whole module (with loft and sweep) | medium | **reviewed and fixed `dfcb73f`**, ONE reviewer: 6 findings, **all 6 fixed**, 0 rejected, 11 unit tests + 2 browser journeys, all 50 saved designs rebuild unchanged. The two that mattered were in the ops nobody had ever reviewed: a **loft blends ONE profile per sketch** — build123d chains every section's faces into a single loft, so two sketches of two circles each came back as ONE snaking solid of 1570.8 mm3 (the honest tubes are 3141.6) reaching outside BOTH sketch planes, status ok, no warning — and **`sweep` fed a solid BODY sweeps it face by face**: a 24 000 mm3 plate became a 178 000 mm3 six-lump blob, green and silent, with the plate consumed, one click from the Create ribbon (the Add Feature dialog pre-ticks the newest feature). Plus: a picked face pulled INTO the body kept the default Join and fused a prism already inside it (plate 24 000, prism 9 600, join 24 000 — three green rows, nothing said; the drag-direction rule was written `!isFace(st)`); Through all threw the taper away while the box and the ring still showed the angle (a -10° through cut built 20 x 30 x 2000 mm, dead straight); a typed negative "Distance 2" was dropped; and Through all's into-the-body seeding was missing from Two sides, so the 2 m side ran into the air. No P0, so the queue's step 8 called for no second round — but the brief was deliberately set **PENDING on the fix commit `dfcb73f`** anyway: the pass added two REFUSALS (one of them in `_eval`, which runs for every modifier feature on every rebuild) and changed what Extrude does by default, and on this project a fix pass's OWN new guard has been wrong more often than not. Round two read that diff only and is **done at `a8e96d9`**: 2 findings, both fixed, 3 more browser journeys — the loft refusal quoted ONE profile count for SEVERAL sections, and OK said "Extrude created" over an EMPTY viewport (the inward pull is a Cut by itself now, so "deeper than the body" is one gesture away: the extrude stays green at 72 000 mm3 while the CUT it made fails and no body is left — the OK sentence only ever looked at the tool's OWN feature, never at the combiner it had just added). **Section 7 is CLOSED** |
 | 8 | Import STL and STEP | medium | **reviewed and fixed `94eb47e`**, ONE reviewer: 7 findings, **all 7 fixed**, 0 rejected, 11 new tests, fast tier 1623 → 1634. The two that mattered were both silent wrong geometry, both green: a **hollow STL imported with its cavity FILLED plus a phantom body inside it** (936 mm3 came in as TWO bodies totalling 1064 — lib3mf had already read the file correctly as one Solid of 936, but the guard meant to take that as-is called `shp.is_valid()`, and `is_valid` is a **property**, so it raised TypeError into a bare `except` and every shape was exploded shell by shell; the as-is path alone is not enough either, since lib3mf returns ONE Solid holding every shell in the file and two disjoint bodies make it invalid, so the shells are regrouped by winding + containment, and `split_components` gave the cavity its own STL piece on the repair path too); and **the parity voxel fill XORed overlapping material away** — two interpenetrating bodies welded along a shared edge, the Fusion assembly export this module exists for, came back **7,998 mm3 of a true 12,000**, a void punched straight through the overlap, health [] and status ok. Plus: a body exported TWICE at the same place was **deleted outright** (2000 mm3 imported as 1000, announced as "merged 24 coincident wall triangles"); the remesh moved every surface of a body with nothing measuring or reporting it (a 0.6 mm plate came back 8.7% light, silently); `MIN_COMPONENT_BUDGET` is a floor per BODY with no cap on the sum (40 bodies = 60,000 triangles of an 18,000 budget); a file that is not STEP at all was diagnosed "surfaces or curves alone cannot be used here" (OCCT does not raise — it returns an empty shape); a truncated STL said "not an STL file". The real 88,990-triangle assembly imports to the SAME geometry as before (339,926.9 mm3, 3 bodies, checked against `84e7c17` in a worktree) and **no saved design uses either op**. Two P0s were fixed, so **round two re-read the fix commit `94eb47e`: `d94518c`** (on Fable 5.1 at the user's call), 4 findings, **all 4 fixed**, 5 tests, fast tier 1639 — the round-one P0 was still open through the INVERSION door (a hollow part wound inside-out came in as 1064 mm3 in two bodies because void-or-body was decided by the SIGN of each shell's volume; it is decided by NESTING DEPTH now, with OCCT's point classifier, and each shell is WOUND to fit its role), and round one had introduced two REGRESSIONS: a pinched CAVITY surface was refused as "an empty volume" (the winding fill enters where the winding says in, and on an inward surface that is nowhere), and the winding fill broke the parity fill's documented indifference to inconsistent winding (two pinched cubes with one face flipped came back 7,998.8 of 16,000, green) — a component whose triangles disagree falls back to parity. The duplicate bbox grouping rule in meshrepair is DELETED: one STL piece, one exact rule in blocks. A P0-class gap was fixed again, so **round three re-read `d94518c`: `8fdfa5b`**, 1 finding, **fixed**, 2 tests, fast tier 1641 — round two's nesting rule judged "B is inside A" from ONE vertex of B, so a bracket overlapping the notch of a C-shaped frame (box inside the frame's box, one corner inside its material) came in as ONE body of 20,360 mm3, the 640 mm3 bracket made a VOID of the frame, valid and green; "wholly inside" is a spread SAMPLE of up to 400 vertices and 400 face centres now (TopExp.MapShapes in C++, one loaded classifier, 0.25 s per nested pair), and the face centres catch a pin whose ends sit in two walls while its middle spans the gap. Cleared: an OUTWARD-wound cavity (MeshLab re-orient) — lib3mf marks it invalid, the regroup gives 936. **Round four re-read `8fdfa5b`: `8241115`**, 1 finding (P1), **fixed**, 2 tests, fast tier 1643 — round three's 400 + 400 point survey put each point to OCCT's classifier, which is LINEAR in the container's faces (173 ms a point against a 32k-face body; the 55 us figure had been measured against a 12-face box), so a real faceted hollow part beside another body made 800 calls, ~140 s. Now: one confirming point; an INWARD-wound shell that sits inside a body is the cavity the file says it is; an OUTWARD-wound one (MeshLab re-orient, or an embedded body) gets a survey sized to the container (`_nest_cap`, a 100,000 face-evaluation budget per kind). Cleared: thin walls to 0.005 mm, 40 parts in a tray and 40 islands in a housing (~1 s), `_spread` edges, `BRepExtrema_ShapeProximity` (dead end in OCP). No P0 in round four, so **Section 8 is CLOSED** — 4 rounds, 13 findings, all fixed, 20 tests, 1623 → 1643 |
 | 9 | Trace image | medium | TODO - was scoped to share a chat with 8 and did not |
-| 10 | Viewport, picking and face provenance | high | TODO |
+| 10 | Viewport, picking and face provenance | high | **reviewed and fixed `8aa30a2`**, ONE reviewer: 5 findings, **all 5 fixed**, 0 rejected, 9 new tests. The P1 was in the face-pick SIZE GATE committed hours earlier (`1a8d28f`): a pick whose face GROWS past its recorded area falls through to a same-sized face elsewhere, and when the two host faces of an edge no longer share one the feature goes RED - measured on a plate with two 200 mm2 pads, widening one 20 -> 24 mm killed its own chamfer though the rim had moved 2 mm. `resolve_edge` tries stored sizes first and sizeless second, so a refusal is earned by both rules. Plus: the Sketch tool's plane picker decided FLAT from the surface TYPE, so no tapered, lofted or swept wall could be sketched on though `sketch_on_face` and the pick panel's own button accept it (all four walls of a 12-degree tapered box are BSPLINE and planar); `attribute_face`'s stale-index fall-back never consulted the area it was handed, so a flush pad in a pocket was attributed to the plate with 'high' confidence; a 'Created by' link revealed the tree row and lit nothing; an imported mesh body's face click blamed a document change that never happened. **Round two re-read the fix commit: `9f1b421`, 0 findings** - round one's work was put to the kernel, not to a reading (the sizeless fall-back is DORMANT over the 9 gauntlet bodies' 135 edges, RIGHT at all twelve widths when it does run, and newly answers in 1 of 752 cross-body resolutions; 6 of round one's 9 tests go red on revert, the 3 that do not are documented guard tests). Round two's own extra measurement found a defect in `toolplan._face_of` instead - see the done log. **Section 10 is CLOSED** |
 | 11 | Tool framework core | medium | TODO |
 | 12 | Server layer | medium | TODO |
 | 13 | AI author, MCP and chat | medium | TODO |
@@ -1850,3 +1850,58 @@ before any of this.
 tests, fast tier 1623 -> 1643. The real 88,990-triangle assembly imports to
 the same geometry on all five commits. No saved design uses either op. Brief
 is NOTHING PENDING; the next `code review` takes section 9, Trace image.
+
+### Section 10 - Viewport, picking and face provenance (reviewed and fixed 2026-09-16, commit `8aa30a2`; round two `9f1b421`)
+
+ONE reviewer, high effort. 5 findings, **all 5 fixed, 0 rejected**, 9 new
+tests. The scope was widened on purpose to include `blocks.resolve_face` and
+the face-pick size gate of `1a8d28f`, which was hours old and had never been
+read by anyone but its author.
+
+- **F1 (P1) - the size gate could refuse an edge that is still on the body.**
+  A stored pick whose face GROWS past its recorded area falls through to a
+  same-sized face elsewhere; the two host faces of the picked edge then share
+  no edge and the feature goes red with "the picked edge is no longer on the
+  body - re-pick the edges of this feature". Measured on a plate with two
+  200 mm2 pads (20x10 and 25x8): widening the filleted pad 20 -> 24 mm killed
+  its own chamfer, though the rim had moved 2 mm. Fixed with `_shared_edges`
+  and a two-pass loop - stored sizes first, sizeless second, a refusal earned
+  by both.
+- **F2 (P2) - no tapered, lofted or swept wall could be sketched on.** The
+  Sketch tool's plane picker decided FLAT from the surface TYPE while
+  `selectFace`'s own button read `planar`; all four walls of a 12-degree
+  tapered box are BSPLINE and planar, and `face_outline_2d` returns 56 points
+  for them. One `isFlatFace` helper now serves all four doors.
+- **F3 (P2) - `attribute_face` named the wrong feature with "high" confidence.**
+  Its stale-index fall-back never consulted the area it was handed, and the
+  browser rounds the centre to 2 decimals, so a flush pad in a round pocket
+  (113.10 mm2) tied exactly with the pocket top (2343.36 mm2) and the kernel's
+  face order decided. `_area_matches` narrows the candidates when something
+  matches and fails open when nothing does.
+- **F4 (P2)** a link in the "Created by" chain revealed the tree row and lit
+  nothing (`S.selected` is never written on that path). **F5 (P3)** an
+  imported mesh body's face click blamed a document change that never
+  happened, for ever.
+
+**Round two (`9f1b421`) found 0 findings in round one's own code** and proved
+it by measurement rather than by reading: the sizeless fall-back never runs on
+any of the 9 gauntlet bodies' 135 edges; when forced to run it names the right
+rim at all twelve widths, never the pad 50 mm away; and over 752 resolutions
+of every corpus edge against every other corpus body it newly answers in
+exactly one. `isFlatFace` admits no wall `selectFace` did not already admit
+(the diff's pre-image proves it). `_area_matches` falls open on a pick with no
+area at all - every design saved before 2026-09-16.
+
+**The one thing round two did find is NOT in section 10's files.** A live face
+click carries the area of the mesh ON SCREEN, and while Fillet/Chamfer is open
+that mesh is the tool's PREVIEW body - so a face the preview TRIMMED resolves
+on the input body by its trimmed area. Measured: a bracket whose pad Q top is
+180 mm2, exactly what an r2 fillet leaves of pad P's 200 mm2 top; clicking pad
+P's top resolves pad Q's, 50 mm away, and `toolplan._face_of` does not refuse
+because `surface_gap` ignores trimming on purpose and both tops are coplanar
++Z. `plan_fillet` would then round every edge of the wrong pad, silently. It
+needs the area coincidence - a sweep of 64 planar preview faces at four radii
+found none - but it is silent wrong geometry when it happens. Carried out of
+the section because `toolplan.py` belongs to section 11.
+
+**Section 10 is CLOSED** (two rounds, 5 findings, all fixed, 10 tests).
