@@ -68,11 +68,11 @@ function fill(id, items, val) {
 
 /* ---------------- R4: ONE selection, in one place ----------------
    What a tool works on when it is pressed, in this order: the explicit
-   argument (a tree row's action button), the viewport's face pick, the
-   viewport's profile pick, the sketch row selected in the tree, a curved-face
-   pick (a tool that needs a FLAT face refuses it with a sentence) and, last
-   of all, a non-sketch tree row — the feature itself (Pattern's seed). EVERY
-   viewport pick outranks a tree row: a tree click REPLACES the viewport pick
+   argument (a tree row's action button), the viewport's edge pick, its face
+   pick, its profile pick, a curved-face pick (a tool that needs a FLAT face
+   refuses it with a sentence) and then — last of all — the tree row: the
+   sketch it names, or the feature itself (Pattern's seed). EVERY viewport
+   pick outranks a tree row: a tree click REPLACES the viewport pick
    (tree.selectFeature calls viewport.clearPick) but nothing clears the row,
    so the row comes last. One selection set, like Fusion.
    Direction and sign are the server's (the plan), never decided here. */
@@ -103,20 +103,25 @@ function currentSelection(explicit) {
              point: face.point || null };     // where it was clicked (Hole's centre)
   }
   if (S.pickedProfile) return { kind: 'profile', id: S.pickedProfile.id };
-  const sel = feats().find(f => f.id === S.selected);
-  if (sel && isSketch(sel) && !sel.suppressed) return { kind: 'profile', id: sel.id };
   // a curved face carries where it is and whose it is, so a tool that takes ANY
   // face (Pattern: a bore's wall names the hole) can read it like a face pick.
-  // It outranks a tree ROW: a tree click clears the viewport pick but not the
-  // other way round, so a row selected minutes ago hid the face just clicked —
-  // and Extrude / Revolve lost their "needs a FLAT face" refusal (P4 review).
+  // It outranks EVERY tree row — sketch rows included: a tree click clears the
+  // viewport pick but not the other way round, so a row selected minutes ago hid
+  // the face just clicked, and Extrude / Revolve lost their "needs a FLAT face"
+  // refusal (P4 review). The feature row was moved below this then; the SKETCH
+  // row stayed above it and kept the same hole open — select a sketch row, click
+  // a cylinder wall, press Extrude and the sketch was extruded with never a word
+  // about the face just clicked (section 11 review, 2026-09-16).
   if (S.pickedCurved) {
     const c = S.pickedCurved;
     return { kind: 'curved', type: c.type, center: c.center, normal: c.normal || null,
              area: c.area == null ? null : c.area,   // how big it was when clicked
              body: pickedBody(c), point: c.point || null };
   }
-  // a tree row that is not a sketch is the FEATURE itself (Pattern's seed)
+  // ...and only now the tree row: the sketch it names, or the FEATURE itself
+  // (Pattern's seed)
+  const sel = feats().find(f => f.id === S.selected);
+  if (sel && isSketch(sel) && !sel.suppressed) return { kind: 'profile', id: sel.id };
   if (sel && !sel.suppressed) return { kind: 'feature', id: sel.id };
   return null;
 }

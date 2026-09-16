@@ -11,8 +11,21 @@
 import { bus } from './bus.js';
 import { postJSON } from './api.js';
 import { loadMesh, clearMesh } from './viewport.js';
-import { actionNew } from './dialogs.js';
+import { actionNew, modalGuard } from './dialogs.js';
 import { askThree } from './ask.js';
+
+/* ONE COMMAND AT A TIME reaches the tab bar too (fusion-parity rule 9).
+   An open tool panel remembers its feature by ID and nothing else — it never
+   listens for 'doc-updated' — and every write it makes (/api/feature/params,
+   /api/feature/add, /api/rollback) is addressed to whatever tab is ACTIVE. So
+   a tab click under an open panel sends that panel's next write into the OTHER
+   design: `uid()` hands out the same names in every design, so both usually
+   have an `extrude1`, and OK (or Cancel, which restores the original params)
+   rewrote the wrong one — measured 2026-09-16, probes/tool_tab_switch_probe.py:
+   design B's extrude1 went from 9 mm / 1017.88 mm3 to 30 mm / 3392.92 mm3 on an
+   edit made in design A's panel, and A's rollback bar stayed parked. The ribbon
+   already refuses every File action this way; the tab bar is the same gesture. */
+const guarded = fn => (...a) => { if (!modalGuard()) fn(...a); };
 
 async function closeTab(t) {
   if (t.dirty) {
@@ -62,10 +75,10 @@ export function renderDocTabs(doc) {
     x.className = 'x'; x.textContent = '✕';
     x.title = t.dirty ? 'close tab (asks about the unsaved changes)'
                       : 'close tab';
-    x.onclick = e => { e.stopPropagation(); closeTab(t); };
+    x.onclick = e => { e.stopPropagation(); if (!modalGuard()) closeTab(t); };
     el.appendChild(x);
     if (!t.active) {
-      el.onclick = async () => {
+      el.onclick = guarded(async () => {
         // Empty the viewport FIRST. Switching used to leave the previous
         // design on screen for as long as the new one took to arrive, so the
         // user stared at the wrong part with no sign anything was happening
@@ -79,13 +92,13 @@ export function renderDocTabs(doc) {
         } finally {
           el.classList.remove('loading');
         }
-      };
+      });
     }
     bar.appendChild(el);
   }
   const plus = document.createElement('button');
   plus.id = 'dtabNew'; plus.textContent = '＋'; plus.title = 'new design';
-  plus.onclick = actionNew;
+  plus.onclick = guarded(actionNew);
   bar.appendChild(plus);
 }
 bus.on('doc-updated', renderDocTabs);

@@ -62,7 +62,19 @@ export async function planRequest(req) {
     const r = await fetch('/api/tool/plan', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req) });
-    return await r.json();
+    const data = await r.json();
+    /* Same trap askJSON closed: a 422 (a field pydantic will not take) or a
+       500 answers with `detail`, never `ok` — so the panel refused with
+       "cannot start: undefined" and closed itself, which tells the user
+       nothing at all (rule 7). Turn it into the sentence it should have been. */
+    if (!r.ok || data == null || data.ok === undefined) {
+      const d = data && data.detail;
+      const why = Array.isArray(d)
+        ? d.map(x => `${(x.loc || []).at(-1)}: ${x.msg}`).join('; ')
+        : (typeof d === 'string' ? d : null);
+      return { ok: false, error: why || `the server said ${r.status}` };
+    }
+    return data;
   } catch (e) {
     /* A plan asks the kernel too (tangent chains, face normals), so this is a
        route into the crash — same recovery as any other request, and an honest

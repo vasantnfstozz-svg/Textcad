@@ -367,16 +367,28 @@ function renderFeatForm() {
 export function initDialogs() {
   document.getElementById('featForm').onsubmit = async e => {
     if (e.submitter && e.submitter.value === 'cancel') return;
-    e.preventDefault(); featDialog().close();
+    e.preventDefault();
     const params = {};
     for (const inp of document.querySelectorAll('#featParams input')) {
       if (inp.dataset.bool) { params[inp.dataset.param] = inp.checked; continue; }
       const v = inp.value.trim(); if (!v) continue;
-      params[inp.dataset.param] = v.startsWith('[') ? JSON.parse(v)
-        : (isNaN(Number(v)) ? v : Number(v));
+      if (v.startsWith('[')) {
+        // A missing bracket used to THROW out of this handler — and the dialog
+        // had already closed, so the feature was never added and nothing was
+        // said at all (rule 7: failures speak). The dialog now stays open on
+        // the box that needs fixing.
+        try { params[inp.dataset.param] = JSON.parse(v); }
+        catch {
+          bus.emit('msg', 'bot', `⚠ "${inp.dataset.param}" is not a valid list — ` +
+            'it must be JSON like [[r,z],[r,z],…]. Nothing was added; fix that ' +
+            'box and press OK again.');
+          return;
+        }
+      } else params[inp.dataset.param] = isNaN(Number(v)) ? v : Number(v);
     }
     for (const sel of document.querySelectorAll('#featParams select[data-enum]'))
       params[sel.dataset.param] = sel.value;
+    featDialog().close();
     const inputs = [...document.querySelectorAll('#featInputs input:checked')]
       .map(c => c.value);
     const doc = await postJSON('/api/feature/add', {
@@ -391,7 +403,7 @@ export function initDialogs() {
 
   document.getElementById('specForm').onsubmit = async e => {
     if (e.submitter && e.submitter.value === 'cancel') return;
-    e.preventDefault(); specDialog().close();
+    e.preventDefault();
     const num = id => { const v = document.getElementById(id).value.trim();
                         return v === '' ? null : Number(v); };
     const spec = { n_solids: num('spN'), symmetry: num('spSym'),
@@ -400,9 +412,19 @@ export function initDialogs() {
     if (size.some(v => v !== null)) spec.size = size;
     const holesRaw = document.getElementById('spHoles').value.trim();
     if (holesRaw) {
+      // /api/spec REPLACES the whole spec with what is sent, so carrying on
+      // after a parse failure DELETED the hole requirement and the next line
+      // then said "✓ design verifies against the new requirements" — a green
+      // verdict from a check the user never meant to drop. Stop instead, and
+      // leave the dialog open on the box that needs fixing.
       try { spec.holes = JSON.parse(holesRaw); }
-      catch { bus.emit('msg', 'bot', '⚠ holes must be JSON like {"4": 6}'); }
+      catch {
+        bus.emit('msg', 'bot', '⚠ holes must be JSON like {"4": 6} — the spec ' +
+          'was NOT changed; fix that box and press OK again.');
+        return;
+      }
     }
+    specDialog().close();
     const doc = await postJSON('/api/spec', { spec }, 're-verifying…');
     if (!doc.error) bus.emit('msg', 'bot', doc.ok
       ? '✓ Spec updated — design verifies against the new requirements.'
