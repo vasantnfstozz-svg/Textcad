@@ -2454,6 +2454,25 @@ _DEPTH_CLIMB_SEEDS = 3
 _DEPTH_CLIMB_STEPS = 40
 
 
+def _barycentres(k: int) -> tuple:
+    """`k` points spread INSIDE a triangle, as barycentric weights.
+
+    The centroid comes first, so asking for one point is exactly what
+    `deepest_material` did before this existed; the rest are the interior of
+    the order-`d` lattice, `d` raised until there are enough of them. Points of
+    a tessellation triangle lie on the face, so this needs no `is_inside` test
+    and no surface evaluation — it is arithmetic on three vertices."""
+    if k <= 1:
+        return ((1 / 3, 1 / 3, 1 / 3),)
+    d = 4
+    while (d - 1) * (d - 2) // 2 < k - 1:
+        d += 1
+    pts = [(1 / 3, 1 / 3, 1 / 3)]
+    pts += [(i / d, j / d, (d - i - j) / d)
+            for i in range(1, d) for j in range(1, d - i)]
+    return tuple(pts[:k])
+
+
 def deepest_material(solid, t: float, openings=()) -> tuple | None:
     """Is there ANY material at least `t` from every face that stays?
 
@@ -2524,15 +2543,28 @@ def deepest_material(solid, t: float, openings=()) -> tuple | None:
     stations = []                         # (upper bound on depth, point)
 
     def samples(face):
-        """spread triangle centroids, plus the face's own centre when it lies
-        on the face — a rectangle's centroids never reach its middle (two
-        triangles, centroids a third of the way in), and the middle is where
-        the deepest material under an opening sits (the plain 50 mm box read
-        16.67 without it, 25 with)"""
+        """spread points over the face's triangles, plus the face's own centre
+        when it lies on the face — a rectangle's centroids never reach its
+        middle (two triangles, centroids a third of the way in), and the middle
+        is where the deepest material under an opening sits (the plain 50 mm box
+        read 16.67 without it, 25 with).
+
+        A FLAT face tessellates into one to six triangles however big it is, so
+        one centroid each spent 33 of a 108-point budget on the wedge-in-a-slab
+        of the 2026-09-16 review and put no ray within 40 mm of the taper's
+        thick end. Each picked triangle is filled to the budget instead — the
+        centroid first, so a body that already had enough triangles is sampled
+        exactly as before, and a body with hundreds of faces has `per_face` 1
+        and is untouched."""
         verts, tris = face.tessellate(tol)
         m = len(tris)
-        picks = range(m) if m <= per_face else [(k * m) // per_face for k in range(per_face)]
-        pts = [sum((verts[i] for i in tris[k]), Vector()) / 3 for k in picks]
+        picks = list(range(m)) if m <= per_face else [(k * m) // per_face
+                                                     for k in range(per_face)]
+        pts = []
+        for k in picks:
+            a, b, c = (verts[i] for i in tris[k])
+            for wa, wb, wc in _barycentres(max(1, per_face // max(1, len(picks)))):
+                pts.append(a * wa + b * wb + c * wc)
         centre = face.center()
         if face.is_inside(centre):
             pts.append(centre)

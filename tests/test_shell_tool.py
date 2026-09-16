@@ -694,3 +694,57 @@ def test_opening_every_face_is_the_kernels_refusal_not_a_zero_millimetre_one():
     assert sk.deepest_material(cube, 1e9, sk.shell_openings(cube, names)) is None
     with pytest.raises(ValueError, match="nothing was hollowed"):
         sk.shell(cube, 3.0, names)
+
+
+def long_draft_prism():
+    """a plain draft 180 mm long: 2 mm at one end, 34 at the other, 40 deep"""
+    return b3d.Part() + b3d.extrude(b3d.Plane.XZ * b3d.make_face(
+        b3d.Polyline((-90, 0), (90, 0), (90, 34), (-90, 2), close=True)), 40)
+
+
+def ramped_plate():
+    """a plate with a ramped rib whose thick part sits away from the base face's
+    centre AND away from both its triangle centroids"""
+    return b3d.Part() + b3d.extrude(b3d.Plane.XZ * b3d.make_face(
+        b3d.Polyline((-60, 0), (60, 0), (60, 8), (10, 26), (-60, 8), close=True)), 50)
+
+
+def test_a_flat_face_is_sampled_to_its_budget_not_to_its_triangle_count():
+    """A FLAT face tessellates into one to six triangles however big it is, so
+    one ray per centroid spent 33 of a 108-point budget on the review's
+    wedge-in-a-slab and put no ray within 40 mm of the taper's thick end. The
+    climb is a LOCAL walk, so a seed has to start somewhere near: coverage is
+    what it needs, not more steps. Each picked triangle is filled to the budget
+    now. Measured 2026-09-16 (the code review of 3bbfcca, probes/
+    shell_depth_oracle_probe.py for the truth): this 180 mm draft read 14.8189
+    where the real maximum is 15.4781, and the ramped plate 11.8232 against
+    12.6900 — so every wall between those numbers was refused before the kernel
+    while the kernel builds them sound. On the user's library the same change
+    takes my-part-3 from 26.1037 to 27.6434 (its oracle is 27.6094) and
+    cam-cover-lower from 3.2447 to 3.7189."""
+    prism = long_draft_prism()
+    assert prism.volume == pytest.approx(129600.0, rel=1e-6)
+    assert sk.deepest_material(prism, 1e9)[0] == pytest.approx(15.34, abs=0.05)
+    for t, cavity in ((14.9, 49.795), (15.2, 11.742), (15.34, 3.255)):
+        out = healthy(sk.shell(prism, t))
+        assert prism.volume - out.volume == pytest.approx(cavity, rel=0.05)
+    plate = ramped_plate()
+    assert sk.deepest_material(plate, 1e9)[0] == pytest.approx(12.30, abs=0.05)
+    for t, cavity in ((11.9, 241.427), (12.29, 63.407)):
+        out = healthy(sk.shell(plate, t))
+        assert plate.volume - out.volume == pytest.approx(cavity, rel=0.05)
+
+
+def test_the_extra_samples_cost_a_body_with_hundreds_of_faces_nothing():
+    """The budget is `200_000 // faces**2` rays per face, so a body of 130+ faces
+    already gets ONE, and one sample is the centroid and nothing else — the same
+    point cc78019 fired its ray through. That is what keeps the 675-face panel's
+    refusal path at 7.6 s (measured 2026-09-16) while small bodies are sampled
+    properly."""
+    assert sk._barycentres(1) == ((1 / 3, 1 / 3, 1 / 3),)
+    assert sk._barycentres(4)[0] == (1 / 3, 1 / 3, 1 / 3)
+    for k in (1, 2, 3, 4, 7, 12):
+        got = sk._barycentres(k)
+        assert len(got) == k
+        assert all(abs(sum(w) - 1.0) < 1e-12 for w in got), "barycentric"
+        assert all(all(0.0 < x < 1.0 for x in w) for w in got), "strictly inside"
