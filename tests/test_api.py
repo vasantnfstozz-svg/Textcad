@@ -1,11 +1,35 @@
 """Studio HTTP API (via FastAPI TestClient — no server process) + MCP tools
 + meanline design math."""
+import pathlib
+
 import pytest
 from fastapi.testclient import TestClient
 
 import studio
 import mcp_server
 import meanline
+
+
+@pytest.fixture(autouse=True)
+def _mcp_writes_nowhere_near_the_user(tmp_path, monkeypatch):
+    """No test may build into the user's library, or ring their doorbell.
+
+    `mcp_server.build_design` writes <name>.step and <name>.tcad.json to
+    mcp_server.OUT — which IS designs/ — and then calls `_notify_studio`,
+    which POSTs /api/open/<slug>?external=1 to 127.0.0.1:8123. That is the
+    user's RUNNING app: the design arrives, takes the active tab and puts an
+    "X just arrived" banner over whatever they were doing. Measured
+    2026-09-16 (probes/section12_round3_probe.py): every fast-tier run wrote
+    designs/t-washer.step + designs/t-washer.tcad.json and rang
+    http://127.0.0.1:8123/api/open/t-washer?external=1, with the user's
+    server listening. tests/conftest.py isolates TEXTCAD_HISTORY_ROOT; this
+    is the other half.
+
+    Autouse and file-scoped on purpose: a library-wide studio.DESIGNS
+    override is NOT safe (test_examples_gallery.py, test_library.py and the
+    whole `-m library` tier read the real folder by design)."""
+    monkeypatch.setattr(mcp_server, "OUT", tmp_path)
+    monkeypatch.setattr(mcp_server, "_notify_studio", lambda *a, **k: None)
 
 
 @pytest.fixture()
@@ -172,6 +196,40 @@ def test_mcp_build_design_and_verify(tmp_path):
     assert rep["verified"] and rep["step_path"].endswith(".step")
     v = mcp_server.verify_step(rep["step_path"], {"n_solids": 1})
     assert v["matches_spec"]
+
+
+def test_a_test_build_lands_outside_the_library_and_rings_no_doorbell(
+        tmp_path, monkeypatch):
+    """The test above used to design a washer INTO the user's work.
+
+    Measured 2026-09-16 (section 12 round three,
+    probes/section12_round3_probe.py): mcp_server.OUT is designs/, so every
+    fast-tier run rewrote designs/t-washer.step and designs/t-washer.tcad.json
+    — both still carried the timestamp of the last run — and `_notify_studio`
+    then POSTed http://127.0.0.1:8123/api/open/t-washer?external=1 to the
+    user's RUNNING app, where an external open takes the active tab and
+    announces the arrival over whatever they were doing."""
+    import threading
+    import urllib.request
+
+    rung = threading.Event()
+    seen = []
+
+    def spy(req, *a, **kw):
+        seen.append(getattr(req, "full_url", req))
+        rung.set()
+        raise OSError("this test must not reach the user's server")
+
+    monkeypatch.setattr(urllib.request, "urlopen", spy)
+    rep = mcp_server.build_design(
+        {"name": "t-washer", "features": [
+            {"id": "b", "op": "disc", "params": {"radius": 20,
+                                                 "thickness": 4}}]})
+    assert rep["verified"]
+    for key in ("step_path", "recipe_path"):
+        assert pathlib.Path(rep[key]).parent == tmp_path, \
+            f"a test wrote {rep[key]} into the user's design library"
+    assert not rung.wait(0.75), f"a test rang the user's doorbell: {seen}"
 
 
 def test_mcp_rejects_unknown_op():

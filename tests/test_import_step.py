@@ -88,7 +88,11 @@ def test_import_step_works_inside_a_document_tree(tmp_path):
 # ------------------------------------------------------------- the API -------
 
 @pytest.fixture
-def client():
+def client(library_steps_untouched):
+    """`library_steps_untouched` (tests/conftest.py): the round-trip test
+    below presses Export, which writes designs/roundtrip-src.step into the
+    user's own library — measured still sitting there, 15 452 bytes, on
+    2026-09-16 (section 12 round three)."""
     studio.STATE = {"docs": {}, "active": None, "seq": 0}
     return TestClient(studio.app)
 
