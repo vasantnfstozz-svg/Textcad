@@ -311,11 +311,18 @@ def _shift_face_picks(params: dict, delta: tuple) -> bool:
         d[key] = new
         return True
 
-    def shift_ref(ref) -> bool:
+    def shift_ref(ref, seat: list, i: int) -> bool:
         """One stored opening or edge: its own point, and the centre of every
-        host face it names."""
+        host face it names. A BARE [x, y, z] is a picked edge too — that is the
+        form `blocks.edges_for` reads as {"mid": …}, and an AI-written or
+        hand-written design uses it — so it is replaced in its seat. A NAME
+        ("top", "all") has no place and is left alone."""
         if not isinstance(ref, dict):
-            return False
+            new = shift(ref)
+            if new is None:
+                return False
+            seat[i] = new
+            return True
         hit = shift_key(ref, "center") | shift_key(ref, "mid")
         for host in ref.get("faces") or []:
             hit |= shift_key(host, "center")
@@ -333,9 +340,9 @@ def _shift_face_picks(params: dict, delta: tuple) -> bool:
             if new is not None:
                 val["face_center"] = new
                 moved = True
-        elif key in ("faces", "edges") and isinstance(val, (list, tuple)):
-            for ref in val:
-                moved |= shift_ref(ref)
+        elif key in ("faces", "edges") and isinstance(val, list):
+            for i, ref in enumerate(val):
+                moved |= shift_ref(ref, val, i)
     return moved
 
 

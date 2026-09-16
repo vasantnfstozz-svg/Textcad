@@ -538,11 +538,13 @@ def resolve_face(solid, face_center: list, face_normal: list | None = None,
 # boss top against the plate top around it: 201.06 mm2 against 998.94).
 _SIZE_TOL = 0.02
 # ...and never tighter than this in absolute terms. A stored area is rounded to
-# two decimals, so it can sit 0.005 mm2 either side of the truth; on a face
-# under about 0.25 mm2 that is more than 2 per cent, and without the floor such
-# a face could fail to match ITSELF (harmless — the gate fails open — but it
-# would quietly do nothing on small features, which is where picks are hardest)
-_SIZE_FLOOR = 0.02
+# two decimals, so it sits at most 0.005 mm2 off the truth; on a face under
+# about 0.25 mm2 that is already more than 2 per cent, and without a floor such
+# a face could fail to match ITSELF — harmless, because the gate fails open,
+# but it would quietly do nothing on small features, which is exactly where
+# picks are hardest. 0.01 is twice the worst rounding error and no more: a
+# looser floor would start matching one sliver to another.
+_SIZE_FLOOR = 0.01
 
 
 def _still_that_size(solid, cands: list, face_area: float | None) -> list:
@@ -765,12 +767,15 @@ def edge_ref(part: Part, edge, faces_by_edge: dict | None = None) -> dict:
             n = f.normal_at()
         # the SIZE of each host face travels with the pick too, so a stored
         # edge is still found after a parameter change moves a same-facing
-        # neighbour nearer than its own face (resolve_face's size gate). Read
-        # from the body's own cached areas: a fillet plan asks for dozens of
-        # edge_refs at two faces each, and an area is a BRepGProp integration.
+        # neighbour nearer than its own face (resolve_face's size gate).
+        # read from the body's own cached areas rather than measuring here:
+        # a fillet plan asks for dozens of edge_refs at two faces each, and an
+        # area is a BRepGProp integration (71 ms for all 1266 faces of
+        # esp32-remote's logo body, once, against 0.12 ms per face measured
+        # one at a time). Rounded like every other stored area (stored_area).
         a = _face_areas(part).get(_shape_key(f))
         faces.append({"center": _v3(c), "normal": _v3(n),
-                      "area": None if a is None else round(a, 2)})   # stored_area
+                      "area": None if a is None else round(a, 2)})
     d = edge % 0.5
     # a stored direction has ONE sign: an edge comes out of a face with the
     # face's orientation, out of the part with its own — identity ignores sign

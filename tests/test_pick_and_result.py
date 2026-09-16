@@ -240,6 +240,44 @@ def test_a_picked_edge_is_carried_by_the_move_too():
     assert doc.result().volume == pytest.approx(before, abs=1e-6)
 
 
+def test_a_bare_midpoint_edge_pick_is_carried_too():
+    """`edges` also takes bare [x, y, z] midpoints (blocks.edges_for reads them
+    as {"mid": …}) — the form an AI-written or hand-written design uses. It is
+    the same pick and it moves the same way; a NAME ("all") has no place and
+    must come through untouched."""
+    doc = moved_plate_and_boss()
+    doc.rebuild()
+    part = doc._parts["placed"]
+    rim = next(e for e in part.edges()
+               if str(e.geom_type).endswith("CIRCLE")
+               and abs(float((e @ 0.5).Z) - 15.0) < 1e-6)
+    mid = [round(float(v), 6) for v in (rim @ 0.5)]
+    doc.add("round", "fillet", {"radius": 1.0, "edges": [mid]}, inputs=["placed"])
+    doc.rebuild()
+    before = doc.result().volume
+    doc.edit("placed", "z", 8)
+    doc.rebuild()
+    assert doc.get("round").params["edges"][0] == pytest.approx(
+        [mid[0], mid[1], mid[2] + 8.0])
+    assert doc.get("round").status == "ok"
+    assert doc.result().volume == pytest.approx(before, abs=1e-6)
+
+
+def test_a_group_name_is_not_a_place_and_does_not_move():
+    """`edges: "all"` and `faces: ["top"]` name a rule, not a point."""
+    doc = moved_plate_and_boss()
+    doc.add("round", "fillet", {"radius": 0.5, "edges": "all"}, inputs=["placed"])
+    doc.add("hollow", "shell", {"thickness": 2.0, "faces": ["top"]},
+            inputs=["round"])
+    doc.rebuild()
+    before = doc.result().volume
+    doc.edit("placed", "z", 8)
+    doc.rebuild()
+    assert doc.get("round").params["edges"] == "all"
+    assert doc.get("hollow").params["faces"] == ["top"]
+    assert doc.result().volume == pytest.approx(before, abs=1e-6)
+
+
 # ------------------------------------------------- two faces in one place ---
 
 def flush_pad():
