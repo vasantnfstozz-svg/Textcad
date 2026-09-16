@@ -328,8 +328,14 @@ def test_a_step_is_judged_on_what_it_touched_not_on_the_whole_tree():
     ok, transcript = author.author_steps(doc, "add a boss", m, max_fails=1)
     assert [f.id for f in doc.features] == ["base", "bad", "boss"]
     assert transcript[0].startswith("OK: 'boss'")
-    # ...and `done` still judges the WHOLE tree, naming the RIGHT feature
-    assert not ok and transcript[1].startswith("REFUSED done: 'bad'")
+    # ...and `done` REPORTS the row that was already red, naming the RIGHT
+    # feature. It used to REFUSE for it, which is the same lock-out one door
+    # further on: three refusals give the job up, studio puts the snapshot
+    # back and the verified step above is thrown away (section 13 review,
+    # 2026-09-16). What the model may not do is walk away from a row IT broke
+    # — test_a_step_that_breaks_a_healthy_feature_is_still_undone.
+    assert ok and "'bad'" in transcript[1]
+    assert "already broken before I started" in transcript[1]
 
 
 def test_ignoring_a_feature_that_was_already_red_still_catches_a_new_break():
@@ -798,3 +804,159 @@ def test_a_threaded_job_is_followed_through_its_status_route(client, monkeypatch
         time.sleep(0.05)
     assert j["done"] and len(j["log"]) == 3 and "Designed" in j["reply"]
     assert client.get("/api/chat/job/nope").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Section 13 review (2026-09-16): the AI is answerable for ITS OWN work.
+#
+# `lint_tree` is the HISTORY contract for AUTHORED trees, and the step loop ran
+# it over the WHOLE tree — so on an "add to this design" job it judged the
+# features the USER drew by hand. Measured over the saved library
+# (probes/author_live_designs_probe.py): 27 of the 50 designs refused the AI's
+# FIRST correct step, naming a sketch the user made ("sketch
+# 'keypad_recess_sketch' floats at absolute Z", "sketch 'field_sketch' crams 36
+# entities into one feature") — which the model may not remove and did not
+# write. Three of those in a row and the job gives up, and studio puts the
+# snapshot back: the AI's verified work thrown away with the words "I did NOT
+# change your design".
+# ---------------------------------------------------------------------------
+
+def _users_own_design():
+    """A design of the USER's that the authoring lint refuses: one sketch
+    crammed with 12 entities."""
+    d = Document(name="hand-built")
+    ents = [{"kind": "rectangle", "w": 60, "h": 40, "x": 0, "y": 0}]
+    ents += [{"kind": "circle", "r": 1, "x": -25 + i * 5, "y": 0}
+             for i in range(11)]
+    d.add("art_sketch", "sketch", {"plane": "XY", "offset": 0,
+                                   "entities": ents})
+    d.add("art", "extrude", {"amount": 4}, inputs=["art_sketch"])
+    d.rebuild()
+    return d
+
+
+BOSS_SKETCH = {"add": {"id": "boss_sketch", "op": "sketch_on_face",
+                       "params": {"face": "top", "offset": 0,
+                                  "entities": [{"kind": "circle", "r": 3}]},
+                       "inputs": ["art"]}}
+BOSS_PULL = {"add": {"id": "boss", "op": "extrude",
+                     "params": {"amount": 2}, "inputs": ["boss_sketch"]}}
+BOSS_JOIN = {"add": {"id": "boss_join", "op": "fuse",
+                     "inputs": ["art", "boss"]}}
+
+
+def test_the_ai_is_not_blamed_for_a_sketch_the_user_drew():
+    doc = _users_own_design()
+    assert author.lint_tree(doc.features), "the fixture must break the lint"
+    m = Scripted(BOSS_SKETCH, BOSS_PULL, BOSS_JOIN, {"done": True})
+    ok, transcript = author.author_steps(doc, "add a boss", m)
+    assert ok, transcript
+    assert [f.id for f in doc.features][-3:] == ["boss_sketch", "boss",
+                                                 "boss_join"]
+
+
+def test_the_ai_is_still_refused_its_own_absolute_offset_sketch():
+    """The user mandate is untouched: the AI may not write the banned form,
+    even into a design whose own sketches already break the rule."""
+    doc = _users_own_design()
+    m = Scripted({"add": {"id": "pocket_sketch", "op": "sketch",
+                          "params": {"plane": "XY", "offset": 3.0,
+                                     "entities": [{"kind": "circle", "r": 2}]}}},
+                 {"done": True})
+    ok, transcript = author.author_steps(doc, "a pocket", m, max_fails=1)
+    assert not ok
+    assert "floats at absolute Z" in transcript[0]
+    assert "pocket_sketch" in transcript[0]
+    assert "art_sketch" not in transcript[0], "it was blamed for the user's"
+
+
+def test_the_ai_may_not_cram_its_own_sketch_either():
+    """Exempting the user's sketch must not exempt the model's own."""
+    doc = _users_own_design()
+    m = Scripted({"add": {"id": "many_sketch", "op": "sketch",
+                          "params": {"plane": "XY", "offset": 0, "entities": [
+                              {"kind": "circle", "r": 1, "x": i * 3, "y": 0}
+                              for i in range(11)]}}},
+                 {"done": True})
+    ok, transcript = author.author_steps(doc, "lots of holes", m, max_fails=1)
+    assert not ok and "many_sketch" in transcript[0]
+    assert "art_sketch" not in transcript[0]
+
+
+def test_an_edit_may_not_turn_a_sketch_into_the_banned_form():
+    """An `edit` step was never linted at all — only `done` was, so the banned
+    absolute-offset form could be edited INTO a tree one step at a time."""
+    doc = Document(name="mine")
+    doc.add("base_sketch", "sketch",
+            {"plane": "XY", "offset": 0,
+             "entities": [{"kind": "rectangle", "w": 20, "h": 20}]})
+    doc.add("base", "extrude", {"amount": 5}, inputs=["base_sketch"])
+    doc.add("lid_sketch", "sketch",
+            {"plane": "XY", "offset": 0,
+             "entities": [{"kind": "circle", "r": 4}]})
+    doc.rebuild()
+    m = Scripted({"edit": {"feature_id": "lid_sketch", "param": "offset",
+                           "value": 9.0}}, {"done": True})
+    ok, transcript = author.author_steps(doc, "raise it", m, max_fails=1)
+    assert not ok and "floats at absolute Z" in transcript[0]
+    assert doc.get("lid_sketch").params["offset"] == 0, "the edit stood"
+
+
+def test_done_reports_a_row_that_was_red_before_the_job_instead_of_losing_it():
+    """`done` judged the WHOLE tree, so one feature the user had left red
+    refused it — and the job then gives up and studio puts the snapshot back,
+    so the AI's verified work is discarded. It is the user's news, in the
+    reply, not a wall for the model to batter (or to get past by rewriting a
+    number the user set)."""
+    doc = Document(name="half-broken")
+    doc.add("base", "plate", {"width": 40, "depth": 30, "thickness": 5})
+    doc.add("bad", "with_center_hole", {"radius": 500}, inputs=["base"])
+    doc.rebuild()
+    assert doc.get("bad").status != "ok"
+    m = Scripted(BOSS, {"add": {"id": "join", "op": "fuse",
+                                "inputs": ["base", "boss"]}},
+                 {"done": True})
+    ok, transcript = author.author_steps(doc, "add a boss", m, max_fails=1)
+    assert ok, transcript
+    assert "'bad'" in transcript[-1], "the red row must still be reported"
+    assert [f.id for f in doc.features] == ["base", "bad", "boss", "join"]
+
+
+def test_a_step_that_breaks_a_healthy_feature_is_still_undone():
+    """The guarantee that must survive the change above: the job answers for
+    every feature that was healthy when it started."""
+    doc = Document(name="mine")
+    doc.add("base", "plate", {"width": 40, "depth": 30, "thickness": 5})
+    doc.add("round", "fillet", {"radius": 2, "edges": "all"}, inputs=["base"])
+    doc.rebuild()
+    assert all(f.status == "ok" for f in doc.features)
+    m = Scripted({"edit": {"feature_id": "base", "param": "thickness",
+                           "value": 1}}, {"done": True})
+    ok, transcript = author.author_steps(doc, "thinner", m, max_fails=1)
+    assert not ok and "UNDONE" in transcript[0]
+    assert "'round'" in transcript[0], "it must name the feature it broke"
+    assert doc.get("base").params["thickness"] == 5
+
+
+# ------------------------------------------- a spec that IS checked ---------
+
+def test_a_spec_key_nothing_can_check_is_refused_not_dropped():
+    """`checked_spec` kept only the keys inspector.Spec knows and dropped the
+    rest in silence, so "DONE: every feature ok and the spec is met" covered a
+    requirement nothing had measured."""
+    with pytest.raises(ValueError) as e:
+        author.checked_spec({"n_solids": 1, "wall_thickness": 2})
+    assert "wall_thickness" in str(e.value)
+    doc = Document(name="untitled")
+    m = Scripted(DISC, {"done": True, "spec": {"n_solids": 1,
+                                               "wall_thickness": 2}},
+                 {"done": True, "spec": {"n_solids": 1}})
+    ok, transcript = author.author_steps(doc, "a disc", m)
+    assert ok and "wall_thickness" in transcript[1]
+
+
+def test_a_spec_size_must_name_all_three_axes():
+    with pytest.raises(ValueError) as e:
+        author.checked_spec({"size": [40, 30]})
+    assert "size" in str(e.value)
+    assert author.checked_spec({"size": [40, None, 5]})["size"] == [40, None, 5]

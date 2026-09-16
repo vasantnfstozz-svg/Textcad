@@ -50,6 +50,46 @@ def _safe_name(name: str) -> str:
     return re.sub(r"[^\w\-]+", "-", name).strip("-") or "design"
 
 
+# Design names THIS server has written. A name in here may be written again —
+# the whole point of the doorbell is "regenerate -> POST /api/open/<name> ->
+# look at it in 3D", and ten iterations must land in ONE file and ONE tab.
+_MINE: set[str] = set()
+
+
+def _taken(name: str) -> bool:
+    return any((OUT / f"{name}{ext}").exists()
+               for ext in (".tcad.json", ".step", ".history"))
+
+
+def _free_name(base: str) -> str:
+    """A design name that cannot destroy the user's own work.
+
+    `designs/` is the user's library — 50 designs they machine parts from —
+    and `Document.save()` is a plain overwrite: no owner check, no existence
+    check, no version tree. The app's own File > Save has refused to land on
+    another design since the section 3 review, because doing so destroys that
+    file AND (through the doorbell, which POSTs /api/open, which records a
+    version) grafts this design onto their version tree. The MCP door had
+    none of that, and `build_design(tree)` with no "name" is called
+    "untitled" — a real design with a real history in that folder.
+
+    So: a name this server wrote is written again; a name anything else owns
+    gets the first free "-2", "-3"… and the report says which file it is."""
+    name = _safe_name(base)
+    if name in _MINE or not _taken(name):
+        _MINE.add(name)
+        return name
+    for n in range(2, 100):
+        cand = f"{name}-{n}"
+        if cand in _MINE or not _taken(cand):
+            _MINE.add(cand)
+            return cand
+    import time
+    cand = f"{name}-{int(time.time())}"
+    _MINE.add(cand)
+    return cand
+
+
 def _notify_studio(file_stem: str) -> None:
     """If TextCAD Studio is running locally, ask it to open the new design so
     it pops up live in the browser. Fire-and-forget; silent if Studio is off.
@@ -97,8 +137,11 @@ def list_operations() -> dict:
     """The complete catalog of legal CAD operations for build_design feature
     trees, plus the authoring conventions. Call this FIRST before designing.
     Any op not in this catalog will be rejected by name."""
+    # TREE_PROMPT, not AUTHOR_PROMPT: build_design takes a WHOLE tree, and the
+    # step-loop prompt told the caller to answer one feature at a time — a
+    # protocol this door rejects outright (section 13 review, 2026-09-16).
     return {"operations": author.op_catalog(),
-            "conventions": author.AUTHOR_PROMPT}
+            "conventions": author.TREE_PROMPT}
 
 
 @mcp.tool()
@@ -116,18 +159,28 @@ def build_design(tree: dict, export_name: str = "") -> dict:
     with _quiet():
         try:
             doc = author._to_document(tree)
-        except (ValueError, KeyError) as e:
+        # TypeError too: a "feature" that is not an object raises "string
+        # indices must be integers" out of f["id"], and it used to leave this
+        # door as an MCP protocol error instead of the sentence every other
+        # malformed tree gets (the step door has caught it since P5).
+        except (ValueError, KeyError, TypeError) as e:
             return {"verified": False, "rejected_before_build": str(e)}
         ok = doc.rebuild()
         rep = _report(doc, ok)
         if ok:
-            name = _safe_name(export_name or doc.name)
+            asked = _safe_name(export_name or doc.name)
+            name = _free_name(export_name or doc.name)
             step = OUT / f"{name}.step"
             doc.to_step(str(step))
             recipe = OUT / f"{name}.tcad.json"
             doc.save(str(recipe))
+            rep["design_name"] = name
             rep["step_path"] = str(step)
             rep["recipe_path"] = str(recipe)
+            if name != asked:
+                rep["renamed"] = (f"'{asked}' is already a design in this "
+                                  f"library and was left untouched; this one "
+                                  f"is saved as '{name}'")
             _notify_studio(name)
         return rep
 
@@ -149,11 +202,14 @@ def design_part(description: str) -> dict:
         if doc is None:
             return {"verified": False, "transcript": transcript}
         rep = _report(doc, True)
-        name = _safe_name(doc.name)
+        name = _free_name(doc.name)        # never over a design of the user's
         step = OUT / f"{name}.step"
         doc.to_step(str(step))
-        doc.save(str(OUT / f"{name}.tcad.json"))
+        recipe = OUT / f"{name}.tcad.json"
+        doc.save(str(recipe))
+        rep["design_name"] = name
         rep["step_path"] = str(step)
+        rep["recipe_path"] = str(recipe)
         rep["transcript"] = transcript
         _notify_studio(name)
         return rep
@@ -178,9 +234,14 @@ def verify_step(step_path: str, spec: dict) -> dict:
     part provably matches."""
     with _quiet():
         try:
-            spec_obj = inspector.spec_from_dict(spec)
+            # author.checked_spec first: spec_from_dict DROPS a key it does
+            # not know, so a spec of {"size": [...], "wall_thickness": 2} was
+            # answered "matches_spec": true with the wall thickness never
+            # measured — and this tool's own docstring calls an empty
+            # mismatch list a proof. One rule, both doors.
+            spec_obj = inspector.spec_from_dict(author.checked_spec(spec))
         except Exception as e:
-            return {"error": f"malformed spec: {e!r}"}
+            return {"error": f"malformed spec: {e}"}
         fails = inspector.verify(step_path, spec_obj)
         return {"matches_spec": not fails, "mismatches": fails,
                 "measured": inspector.measure(step_path)}
@@ -202,7 +263,14 @@ def _design_compressor(mass_flow_kg_s, pressure_ratio, rpm, backsweep_deg):
     duty = meanline.Duty(mass_flow=mass_flow_kg_s,
                          pressure_ratio=pressure_ratio, rpm=rpm,
                          backsweep_deg=backsweep_deg)
-    d = meanline.design(duty)
+    try:
+        # A duty the physics cannot answer used to come back as a Python
+        # traceback through the MCP protocol: rpm 0 and pressure ratio 1 both
+        # divide by zero, a ratio below 1 and a backsweep of 90 or more take
+        # the square root of a negative number (measured 2026-09-16).
+        d = meanline.design(duty)
+    except ValueError as e:
+        return {"verified": False, "error": str(e)}
     rep_design = {
         "tip_radius_mm": d.tip_radius, "tip_speed_m_s": round(d.tip_speed, 1),
         "blade_count": d.blade_count, "exit_width_mm": d.exit_width,
@@ -218,7 +286,8 @@ def _design_compressor(mass_flow_kg_s, pressure_ratio, rpm, backsweep_deg):
     import build123d as b3d
     m = inspector.measure(build.part)
     sym_ok = inspector.is_rotationally_symmetric(build.part, d.blade_count)
-    step = OUT / f"compressor-PR{pressure_ratio}-{d.blade_count}blades.step"
+    step = OUT / (_free_name(f"compressor-PR{pressure_ratio}-"
+                             f"{d.blade_count}blades") + ".step")
     b3d.export_step(build.part, str(step))
     return {"verified": sym_ok and m.get("is_manifold", False),
             "design": rep_design,

@@ -162,7 +162,16 @@ def test_ops_catalog(client):
 
 # -------------------------------------------------------------- MCP tools ----
 
-def test_mcp_build_design_and_verify(tmp_path):
+def test_mcp_build_design_and_verify(tmp_path, monkeypatch):
+    # `designs/` is the user's tracked library and `_notify_studio` POSTs to
+    # the live server on port 8123 — neither belongs in a code test. This one
+    # already took `tmp_path` and never used it, so every run wrote
+    # designs/t-washer.tcad.json + .step and rang the real doorbell (which
+    # opens the design in the running app and pushes a version into its
+    # .history/). Found by the section 13 review, 2026-09-16.
+    monkeypatch.setattr(mcp_server, "OUT", tmp_path)
+    monkeypatch.setattr(mcp_server, "_MINE", set(), raising=False)
+    monkeypatch.setattr(mcp_server, "_notify_studio", lambda stem: None)
     tree = {"name": "t-washer", "features": [
         {"id": "b", "op": "disc", "params": {"radius": 20, "thickness": 4}},
         {"id": "h", "op": "with_center_hole", "params": {"radius": 10},
