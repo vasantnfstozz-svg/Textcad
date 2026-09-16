@@ -439,7 +439,37 @@ def resolve_face(solid, face_center: list, face_normal: list | None = None):
     from it, so those faces are not candidates at all; when NONE is left the
     answer is a sentence, because a failed feature beats a body built on a face
     nobody chose. Measured inert on the saved library: 47 resolutions, none of
-    them more than 60° off (probes/move_review_probe.py §8)."""
+    them more than 60° off (probes/move_review_probe.py §8).
+
+    A TIE IS STILL A COIN TOSS, and deliberately left one (2026-09-16,
+    LAUNCH-PLAN §10). Two faces can be at the SAME place pointing the SAME way:
+    a round pocket with a flush pad in it has an outer top of 893.142 mm2 and a
+    pad top of 314.159 mm2 whose centroids are both (0, 0, 10) — one stored
+    pick, two faces, and `min` answers with whichever the kernel lists first
+    (probes/face_pick_frame_probe.py §2). Refusing it was built and MEASURED
+    OUT again: a post inside a ring is two concentric lumps whose top faces tie
+    exactly, and Shell asks this question once per lump, so the refusal turned
+    a shell the kernel builds perfectly into a failure
+    (tests/test_shell_tool.py::test_concentric_lumps_a_post_inside_a_ring
+    _still_shell). It is not silent geometry either — the wrong face shows up
+    on the very first click and the answer is stable across rebuilds, so it is
+    a P2 the pickers must fix by SAYING WHICH (an area or a lump with the
+    pick), not something the resolver can guess its way out of.
+
+    WHAT THIS RULE STILL CANNOT DO, measured so nobody has to re-find it
+    (probes/face_pick_frame_probe.py §1 and §4): the pick is remembered in
+    WORLD coordinates. On a stepped body — a plate with a boss, two faces
+    pointing +Z — a pick on the boss top survives a rigid move only as far as
+    HALF the step: at dz = 2.49 mm it is still the boss top (201.06 mm2), at
+    dz = 2.50 it is the plate top (998.94 mm2), and the design silently
+    becomes 18000.0 mm3 where 14010.62 was asked for, every row `ok`, the
+    solid valid. A pure PARAMETER change does the same thing (plate 10 -> 14
+    thick moves the boss top out of reach in exactly the same way). Both are
+    the same missing fact: the pick does not know which body frame it was
+    taken in, and (centre, normal) cannot be made to know. The move half is
+    closed where the answer IS known — Document.edit carries every pick
+    downstream of a `move` by that move's own delta — and the rest is a
+    LAUNCH-PLAN §10 row waiting for a body-frame pick."""
     rows = _face_rows(solid)
     if not rows:
         raise ValueError("solid has no faces")
