@@ -535,7 +535,21 @@ def lint_baseline(features) -> dict:
     the job up and studio puts the snapshot back: "I did NOT change your
     design". `final=True` here because it is a superset: the blob rule is the
     only final-only rule, and a baseline may only ever forgive."""
-    return {k: r for k, r, _ in _lint_items(features, final=True)}
+    base = {k: r for k, r, _ in _lint_items(features, final=True)}
+    if features:
+        # ...with ONE rule a rank cannot carry. "The whole design is one sketch
+        # + one consumer" is a fact about the WHOLE TREE that only comes into
+        # being when the SECOND feature lands, so a baseline taken on a
+        # one-feature tree can never hold it — and round one's blob rule had an
+        # owner test (`all(mine(f.id) for f in features)`) that this mechanism
+        # dropped. Measured 2026-09-17 (probes/s13_round3_probe3.py): the user
+        # draws a sketch of five or more shapes and asks the AI to extrude it,
+        # and `done` is refused for their own history's shape — three times,
+        # after which studio puts the snapshot back ("I did NOT change your
+        # design"). The rule judges a history the JOB wrote end to end, so a
+        # tree it INHERITED is exempt, whatever shape it has or takes.
+        base[("blob",)] = float("inf")
+    return base
 
 
 def _lint_since(features, baseline, final: bool = True) -> list[str]:

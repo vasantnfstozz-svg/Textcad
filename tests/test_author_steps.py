@@ -1071,3 +1071,75 @@ def test_done_is_not_refused_for_a_lint_problem_the_job_never_wrote():
     ok, transcript = author.author_steps(doc, "deeper", m, max_fails=1)
     assert ok, transcript
     assert "history lint" not in "".join(transcript)
+
+
+# ---------------------------------------------------------------------------
+# ROUND THREE (2026-09-17) — the blob rule lost its owner test.
+#
+# Round one's blob rule carried `and all(mine(f.id) for f in features)`, so it
+# could not fire on a design the USER already owned: their features are in
+# neither `authored` nor `{fid}`. Round two replaced the whole mechanism with
+# a baseline and deleted that clause — and a blob is a fact about the WHOLE
+# tree that only comes into being when the SECOND feature lands, so a baseline
+# taken on a ONE-feature tree can never contain it.
+#
+# Measured 2026-09-17 (probes/s13_round3_probe3.py): the user draws a sketch of
+# five or more shapes in the sketcher and asks the AI to extrude it — the most
+# basic request there is on a hand-drawn sketch — and `done` is REFUSED for
+# "the whole design is ONE sketch + one consumer", three times, after which
+# studio puts the snapshot back: "I did NOT change your design". The blob rule
+# judges a history the JOB wrote end to end; a tree it inherited is the user's,
+# whatever shape it has.
+# ---------------------------------------------------------------------------
+
+def _hand_drawn(n_holes: int) -> Document:
+    """A sketch the USER drew in the sketcher: an outline and some holes, one
+    feature, no body yet."""
+    doc = Document(name="hand-drawn")
+    doc.add("plate_sketch", "sketch",
+            {"plane": "XY", "offset": 0,
+             "entities": [{"kind": "rectangle", "w": 60, "h": 40}]
+             + [{"kind": "circle", "r": 2, "x": -20 + i * 10, "y": 0,
+                 "mode": "subtract"} for i in range(n_holes)]})
+    doc.rebuild()
+    return doc
+
+
+def test_the_users_own_hand_drawn_sketch_is_not_the_ais_blob():
+    doc = _hand_drawn(5)                       # six entities, all the user's
+    m = Scripted({"add": {"id": "plate", "op": "extrude",
+                          "params": {"amount": 5}, "inputs": ["plate_sketch"]}},
+                 {"done": True})
+    ok, transcript = author.author_steps(doc, "extrude this 5 mm", m,
+                                         max_fails=1)
+    assert ok, transcript
+    assert "blob" not in "".join(transcript)
+    assert doc.get("plate").volume
+
+
+def test_growing_the_users_one_sketch_plate_is_not_a_blob_either():
+    """Their design is already one sketch + one consumer, and "put four more
+    holes in it" is an edit to the sketch they drew."""
+    doc = _hand_drawn(1)
+    doc.add("plate", "extrude", {"amount": 5}, inputs=["plate_sketch"])
+    doc.rebuild()
+    ents = [{"kind": "rectangle", "w": 60, "h": 40}] + [
+        {"kind": "circle", "r": 2, "x": -20 + i * 10, "y": 0,
+         "mode": "subtract"} for i in range(5)]
+    m = Scripted({"edit": {"feature_id": "plate_sketch", "param": "entities",
+                           "value": ents}}, {"done": True})
+    ok, transcript = author.author_steps(doc, "four more holes", m, max_fails=1)
+    assert ok, transcript
+    assert len(doc.get("plate_sketch").params["entities"]) == 6
+
+
+def test_the_blob_rule_is_disarmed_for_an_inherited_tree_and_only_for_that():
+    """The boundary, stated once: a job that starts from nothing is judged on
+    the blob rule (the MCP `design_part` door and every design the model
+    creates); a job that starts on the user's tree is not."""
+    assert ("blob",) not in author.lint_baseline([])
+    doc = _hand_drawn(5)
+    assert author.lint_baseline(doc.features)[("blob",)] == float("inf")
+    # ...and the rule itself is untouched at the whole-tree door
+    doc.add("plate", "extrude", {"amount": 5}, inputs=["plate_sketch"])
+    assert any("blob" in t for t in author.lint_tree(doc.features))
