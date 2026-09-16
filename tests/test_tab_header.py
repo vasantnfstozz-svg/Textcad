@@ -266,3 +266,183 @@ def test_the_arrival_banner_really_loads_what_it_announces(tmp_path):
                 "console.log(JSON.stringify(posts));\n")
     assert "/api/tabs/switch" in got, got
     assert "/api/arrival/ack" in got, got
+
+
+# ---------------------------------------------------------------------------
+# Section 12 ROUND SIX — the page-wide door re-read.
+#
+# Round five's door claimed a request with `input.startsWith('/api/')`, which
+# is only ever true of a root-relative STRING. three.js r160's FileLoader —
+# the loader behind BOTH of the viewport's STL calls, the tree-selection
+# highlight and the Move/Rotate drag ghost — calls
+# `fetch(new Request(url, {...}))`, so those went out bare and the server fell
+# back to whichever tab is globally active. Measured
+# (probes/section12_round6_fetchdoor.py): with the page on a 20x20x5 plate and
+# another window's 60x60x30 block active, /api/feature-mesh/base.stl came back
+# as the 60x60x30 — another design's solid, drawn over this one.
+#
+# Round five's own behaviour change is what makes that permanent rather than a
+# three-second window: two browser windows now hold INDEPENDENT tabs, so
+# STATE["active"] stays on the other window's tab for as long as both are open.
+# ---------------------------------------------------------------------------
+
+_LOC = ("globalThis.location = { href: 'http://127.0.0.1:8123/', "
+        "origin: 'http://127.0.0.1:8123' };\n")
+
+# A recording fetch installed BEFORE api.js is imported, so the shipped door
+# wraps it — then whatever `cases` asks for, in every header shape a caller
+# can legally use.
+_RECORDER = """
+const seen = [];
+globalThis.fetch = async (input, init) => {
+  const H = 'X-TextCAD-Tab';
+  const url = typeof input === 'string' ? input
+            : String((input && input.url) || input);
+  const pick = (hh, k) => {
+    if (!hh) return null;
+    if (typeof Headers !== 'undefined' && hh instanceof Headers) return hh.get(k);
+    if (Array.isArray(hh)) {
+      const p = hh.find(x => String(x[0]).toLowerCase() === k.toLowerCase());
+      return p ? p[1] : null;
+    }
+    for (const kk of Object.keys(hh)) if (kk.toLowerCase() === k.toLowerCase()) return hh[kk];
+    return null;
+  };
+  const isReq = typeof Request !== 'undefined' && input instanceof Request;
+  const h = init && init.headers;
+  let tab = pick(h, H), ct = pick(h, 'Content-Type');
+  if (tab == null && isReq) tab = input.headers.get(H);
+  if (ct == null && isReq) ct = input.headers.get('Content-Type');
+  seen.push({ url, tab, ct,
+              body: init && init.body != null ? String(init.body) : null,
+              signal: !!(init && init.signal) });
+  return { ok: true, status: 200, json: async () => ({}) };
+};
+"""
+
+
+def _door(tmp_path, cases):
+    """Import the shipped api.js over a recording fetch, then run `cases`."""
+    return _node(
+        tmp_path,
+        _STUBS + _LOC + _RECORDER +
+        f"await import({json.dumps((JS / 'api.js').as_uri())});\n"
+        f"const {{ S }} = await import({json.dumps((JS / 'state.js').as_uri())});\n"
+        "S.lastDoc = { active_tab: 't7' };\n"
+        + cases +
+        "console.log(JSON.stringify(seen));\n")
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not on PATH")
+def test_a_request_object_carries_the_tab(tmp_path):
+    """The shape three.js r160's FileLoader really sends. Without it the
+    viewport's feature highlight and the Move/Rotate drag ghost are served
+    whichever design is globally active — another window's, for as long as
+    both windows are open."""
+    got = _door(tmp_path,
+                "await fetch(new Request("
+                "'http://127.0.0.1:8123/api/feature-mesh/base.stl', "
+                "{ headers: new Headers({}), credentials: 'same-origin' }));\n")
+    assert got[0]["tab"] == "t7", got
+
+
+def test_the_three_js_loader_really_builds_a_request():
+    """The test above is only as true as this: it hand-rolls the loader's call
+    shape, so the shipped three.js must still make it that way. r160's
+    FileLoader has no XMLHttpRequest at all — it is fetch, with a Request."""
+    src = (pathlib.Path(__file__).resolve().parents[1] / "static" / "vendor"
+           / "three" / "0.160.0" / "three.module.js").read_text(
+               encoding="utf-8", errors="ignore")
+    assert "const req = new Request( url, {" in src
+    assert "fetch( req )" in src
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not on PATH")
+def test_every_shape_of_a_same_origin_api_url_carries_the_tab(tmp_path):
+    """A URL object and an absolute same-origin string are the same request as
+    '/api/doc'; only a plain root-relative string used to be recognised."""
+    got = _door(tmp_path,
+                "await fetch(new URL('/api/doc', 'http://127.0.0.1:8123'));\n"
+                "await fetch('http://127.0.0.1:8123/api/doc');\n"
+                "await fetch('/api/model?t=1');\n")
+    assert [g["tab"] for g in got] == ["t7", "t7", "t7"], got
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not on PATH")
+def test_the_tab_id_never_leaves_this_origin(tmp_path):
+    """The door is same-origin by TEST now, not by the accident of a path that
+    has to start with a slash: a cross-origin URL whose path happens to be
+    /api/ must not be told which tab this user is working in."""
+    got = _door(tmp_path,
+                "await fetch('https://example.com/api/doc');\n"
+                "await fetch('//example.com/api/doc');\n"
+                "await fetch('/static/js/main.js');\n"
+                "await fetch(new Request("
+                "'http://127.0.0.1:8123/static/js/main.js'));\n")
+    assert [g["tab"] for g in got] == [None, None, None, None], got
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not on PATH")
+def test_headers_given_as_pairs_keep_their_content_type(tmp_path):
+    """An array of pairs is legal fetch input, and spreading one into an
+    object (`{ ...[['Content-Type', 'application/json']] }`) throws the
+    Content-Type away and invents a `0:` header — a POST the server reads as
+    having no JSON body at all."""
+    got = _door(tmp_path,
+                "await fetch('/api/x', { method: 'POST', "
+                "headers: [['Content-Type', 'application/json']], "
+                "body: '{}' });\n")
+    assert got[0]["tab"] == "t7", got
+    assert got[0]["ct"] == "application/json", got
+    assert got[0]["body"] == "{}", got
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not on PATH")
+def test_the_door_passes_the_rest_of_the_request_through(tmp_path):
+    """Adding a header must not rebuild the request around it: an abort
+    signal and a body belong to the caller."""
+    got = _door(tmp_path,
+                "const ac = new AbortController();\n"
+                "await fetch('/api/s', { signal: ac.signal, method: 'POST', "
+                "body: 'x' });\n")
+    assert got[0]["tab"] == "t7", got
+    assert got[0]["signal"] is True, got
+    assert got[0]["body"] == "x", got
+
+
+def _stl_bbox(body: bytes) -> list[float]:
+    """The binary STL's own bounding box, read from its triangles."""
+    import struct
+    n = struct.unpack("<I", body[80:84])[0]
+    lo, hi = [1e30] * 3, [-1e30] * 3
+    for i in range(n):
+        off = 84 + i * 50 + 12
+        for v in range(3):
+            p = struct.unpack("<3f", body[off + v * 12:off + v * 12 + 12])
+            for k in range(3):
+                lo[k], hi[k] = min(lo[k], p[k]), max(hi[k], p[k])
+    return [round(hi[k] - lo[k], 3) for k in range(3)]
+
+
+def test_a_mesh_load_without_a_tab_is_served_the_other_windows_body():
+    """What the missing header COSTS, in millimetres. The header decides which
+    design /api/feature-mesh answers about; a loader that sends none gets the
+    globally active tab, which after round five is the other browser window's
+    for as long as both are open."""
+    c = TestClient(studio.app)
+    mine = c.post("/api/new", json={}).json()["active_tab"]
+    c.post("/api/feature/add", json={
+        "id": "base", "op": "plate", "inputs": [],
+        "params": {"width": 20, "depth": 20, "thickness": 5}})
+    other = c.post("/api/new", json={}).json()["active_tab"]
+    c.post("/api/feature/add", json={
+        "id": "base", "op": "plate", "inputs": [],
+        "params": {"width": 60, "depth": 60, "thickness": 30}})
+    assert studio.STATE["active"] == other
+
+    named = c.get("/api/feature-mesh/base.stl", headers={"X-TextCAD-Tab": mine})
+    bare = c.get("/api/feature-mesh/base.stl")
+    assert named.status_code == 200 and bare.status_code == 200
+    assert _stl_bbox(named.content) == [20.0, 20.0, 5.0], "the page's own design"
+    assert _stl_bbox(bare.content) == [60.0, 60.0, 30.0], \
+        "no header means the active tab — which is why the loader must send one"
