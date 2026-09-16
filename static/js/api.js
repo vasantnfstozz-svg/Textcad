@@ -66,12 +66,23 @@ export async function planRequest(req) {
     /* Same trap askJSON closed: a 422 (a field pydantic will not take) or a
        500 answers with `detail`, never `ok` — so the panel refused with
        "cannot start: undefined" and closed itself, which tells the user
-       nothing at all (rule 7). Turn it into the sentence it should have been. */
+       nothing at all (rule 7). Turn it into the sentence it should have been.
+
+       `error` FIRST, and only then `detail`: this project's own refusal shape
+       is {"error": <sentence>} with status 400 (studio._refused — "EVERY
+       refusal of a request goes through here"), and the commonest non-200 on
+       THIS route is the one-writer middleware's, because /api/tool/plan is
+       not in _JOB_OPEN_POSTS. Reading `detail` alone threw that sentence away
+       and said "the server said 400" instead — and the sentence it threw away
+       is the one that tells the user what to do: "the AI is still building in
+       this design — wait for it to finish, or switch to another tab to keep
+       working" (section 11 round two, 2026-09-16). */
     if (!r.ok || data == null || data.ok === undefined) {
       const d = data && data.detail;
-      const why = Array.isArray(d)
-        ? d.map(x => `${(x.loc || []).at(-1)}: ${x.msg}`).join('; ')
-        : (typeof d === 'string' ? d : null);
+      const why = (data && typeof data.error === 'string' && data.error)
+        || (Array.isArray(d)
+          ? d.map(x => `${(x.loc || []).at(-1)}: ${x.msg}`).join('; ')
+          : (typeof d === 'string' ? d : null));
       return { ok: false, error: why || `the server said ${r.status}` };
     }
     return data;

@@ -404,12 +404,37 @@ export function initDialogs() {
   document.getElementById('specForm').onsubmit = async e => {
     if (e.submitter && e.submitter.value === 'cancel') return;
     e.preventDefault();
-    const num = id => { const v = document.getElementById(id).value.trim();
-                        return v === '' ? null : Number(v); };
-    const spec = { n_solids: num('spN'), symmetry: num('spSym'),
-                   tip_radius: num('spTip'), tol: num('spTol') };
-    const size = [num('spSX'), num('spSY'), num('spSZ')];
+    // These boxes are plain text, so `Number(v)` is NaN for anything that is
+    // not a number ("two", "6 mm", a stray letter) and Infinity for "1e999" —
+    // and JSON.stringify writes BOTH as null, which /api/spec drops (it keeps
+    // only `v is not None`). So a mistyped box deleted that requirement
+    // outright and the line below then said "✓ design verifies against the
+    // new requirements": measured 2026-09-16, n_solids 2 on a one-body part
+    // went from a red "part has 1 separate solids, expected 2" to a green
+    // pass, with the box still reading "two". The holes box got this guard in
+    // round one; its six siblings share the handler and the consequence.
+    const bad = [];
+    const num = (id, label) => {
+      const v = document.getElementById(id).value.trim();
+      if (v === '') return null;
+      const n = Number(v);
+      if (!Number.isFinite(n)) { bad.push(label); return null; }
+      return n;
+    };
+    const spec = { n_solids: num('spN', 'solid bodies'),
+                   symmetry: num('spSym', 'symmetry'),
+                   tip_radius: num('spTip', 'tip radius'),
+                   tol: num('spTol', 'tolerance') };
+    const size = [num('spSX', 'size X'), num('spSY', 'size Y'),
+                  num('spSZ', 'size Z')];
     if (size.some(v => v !== null)) spec.size = size;
+    if (bad.length) {
+      bus.emit('msg', 'bot', `⚠ ${bad.join(' and ')} ` +
+        `${bad.length > 1 ? 'are not numbers' : 'is not a number'} — the spec ` +
+        `was NOT changed; fix ${bad.length > 1 ? 'those boxes' : 'that box'} ` +
+        'and press OK again.');
+      return;
+    }
     const holesRaw = document.getElementById('spHoles').value.trim();
     if (holesRaw) {
       // /api/spec REPLACES the whole spec with what is sent, so carrying on
