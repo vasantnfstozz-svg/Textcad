@@ -244,3 +244,164 @@ def test_api_trace_png_fits_selected_face():
         "body_feature_id": "base"}).json()
     assert d4.get("error") and "FLAT" in d4["error"]
     assert not any(f["id"] == "bad" for f in d4["features"])
+
+
+# ---------------------------------------------------------------------------
+# REVIEW-QUEUE section 9 (2026-09-17). Every one of these was measured red
+# first; the probes are probes/imgtrace_*_probe.py.
+# ---------------------------------------------------------------------------
+
+
+def _self_crossings(pts):
+    """proper self-crossings of a closed polygon, touches included"""
+    n = len(pts)
+    a = np.asarray(pts, float)
+    b = np.roll(a, -1, axis=0)
+    r = b - a
+    hits = 0
+    for i in range(n):
+        for j in range(i + 2, n):
+            if i == 0 and j == n - 1:
+                continue
+            den = r[i, 0] * r[j, 1] - r[i, 1] * r[j, 0]
+            if abs(den) < 1e-15:
+                continue
+            d = a[j] - a[i]
+            t = (d[0] * r[j, 1] - d[1] * r[j, 0]) / den
+            u = (d[0] * r[i, 1] - d[1] * r[i, 0]) / den
+            if 0 <= t <= 1 and 0 <= u <= 1:
+                hits += 1
+    return hits
+
+
+def test_tight_crop_art_is_not_traced_inside_out():
+    """A logo cropped to its own ink (what every image editor's "trim" does,
+    and what designs/cam-cover-plaque.py does with PIL) covers MORE than half
+    the picture. The polarity rule used to call the MINORITY the artwork, so
+    a 40mm disc came back as its own NEGATIVE — the four corners, 343.5 mm2
+    of a true 1256.6 — status ok, nothing said (measured 2026-09-17)."""
+    img = np.full((400, 400, 3), 255, np.uint8)
+    cv2.circle(img, (200, 200), 199, (0, 0, 0), -1)      # 78% ink
+    ents, info = imgtrace.image_to_entities(_png(img), height_mm=40)
+    area = sk.make_sketch("XY", 0, ents).area
+    assert area == pytest.approx(np.pi * 20 ** 2, rel=0.03), (
+        f"traced {area:.1f} mm2; the disc is {np.pi * 400:.1f}, "
+        f"its negative {1600 - np.pi * 400:.1f}")
+    assert info["contours"] == 1 and info["holes"] == 0
+
+
+def test_light_art_on_a_dark_ground_still_traces_the_art():
+    """The other direction of the same rule: inverse-video artwork (white on
+    black) is the MAJORITY here and must still be the thing traced."""
+    img = np.zeros((400, 400, 3), np.uint8)
+    cv2.circle(img, (200, 200), 199, (255, 255, 255), -1)
+    ents, _ = imgtrace.image_to_entities(_png(img), height_mm=40)
+    assert sk.make_sketch("XY", 0, ents).area == pytest.approx(
+        np.pi * 20 ** 2, rel=0.03)
+
+
+def _specked_art(speck):
+    """A TALL glyph (1:5) in a square picture, optionally with a 2x2 speck of
+    dirt at each side — well under the 0.25mm floor image_to_entities drops,
+    but enough to make the RAW mask read 1.15 wide instead of 0.20."""
+    img = np.zeros((1200, 1200, 4), np.uint8)
+    cv2.rectangle(img, (580, 100), (620, 1100), (0, 0, 0, 255), -1)
+    cv2.rectangle(img, (500, 100), (700, 200), (0, 0, 0, 255), -1)
+    if speck:
+        cv2.rectangle(img, (20, 600), (21, 601), (0, 0, 0, 255), -1)
+        cv2.rectangle(img, (1170, 600), (1171, 601), (0, 0, 0, 255), -1)
+    return _png(img)
+
+
+def test_artwork_aspect_ignores_the_specks_the_trace_removes():
+    """artwork_aspect decides the fit height AND the 90-degree auto-rotate,
+    and its docstring promises the mask image_to_entities traces. It read the
+    RAW mask, so two 3-pixel specks in the corners moved it from 0.20 to 1.00
+    while the traced art was identical (measured 2026-09-17)."""
+    clean, dirty = _specked_art(False), _specked_art(True)
+    # the traced art is the same either way ...
+    assert (imgtrace.image_to_entities(clean, 50)[1]["width_mm"]
+            == imgtrace.image_to_entities(dirty, 50)[1]["width_mm"])
+    # ... so the aspect the fit is computed from must be the same too
+    assert imgtrace.artwork_aspect(dirty) == pytest.approx(
+        imgtrace.artwork_aspect(clean), rel=0.02)
+
+
+def test_a_speck_cannot_flip_the_90_degree_auto_rotate():
+    """End to end: the same tall art on a 120x40 face came in 107.9 x 21.6mm
+    lying along the face, and 7.2 x 35.96mm standing up — a ninth of the
+    area — when two 3-pixel specks were added (measured 2026-09-17)."""
+    import base64
+    from fastapi.testclient import TestClient
+    import document as dm
+    import studio
+    studio.STATE["docs"].clear()
+    studio.STATE["active"] = None
+    studio.STATE["seq"] = 0
+    doc = dm.Document("plate")
+    doc.add("base", "plate", {"width": 120, "depth": 40, "thickness": 10}, [])
+    studio._new_tab(doc)
+    studio._rebuild_and_mesh()
+    client = TestClient(studio.app)
+
+    def fitted(speck):
+        d = client.post("/api/trace-png", json={
+            "png_base64": base64.b64encode(_specked_art(speck)).decode(),
+            "entities_only": True, "fit_box": [120, 40, 0, 0]}).json()
+        assert not d.get("error"), d.get("error")
+        xs = [e["x"] + p[0] for e in d["entities"] for p in e["points"]]
+        ys = [e["y"] + p[1] for e in d["entities"] for p in e["points"]]
+        return (d["trace_info"]["rotated"],
+                max(xs) - min(xs), max(ys) - min(ys))
+
+    clean, dirty = fitted(False), fitted(True)
+    assert clean[0] is True, "tall art on a wide face must lie down"
+    assert dirty[0] is clean[0], "a speck flipped the auto-rotate"
+    assert dirty[1] == pytest.approx(clean[1], abs=0.5)
+    assert dirty[2] == pytest.approx(clean[2], abs=0.5)
+
+
+def test_traced_outline_never_crosses_itself():
+    """OpenCV walks out and back along a one-pixel whisker, and Douglas-
+    Peucker then shortcuts one side past the other: a comb of 1px teeth came
+    out with 26 self-crossings in ONE outline (measured 2026-09-17), which is
+    a polygon sketch.py has no business being handed."""
+    img = np.zeros((300, 300, 4), np.uint8)
+    cv2.rectangle(img, (40, 150), (260, 250), (0, 0, 0, 255), -1)
+    for i in range(20):
+        img[60:150, 50 + i * 10] = (0, 0, 0, 255)
+    ents, _ = imgtrace.image_to_entities(_png(img), height_mm=30)
+    for k, e in enumerate(ents):
+        assert _self_crossings(e["points"]) == 0, f"entity {k} crosses itself"
+    solid = sk.extrude_sketch(sk.make_sketch("XY", 0, ents), 2.0)
+    assert inspector.health(solid) == []
+
+
+def test_art_too_fine_for_the_target_size_says_so():
+    """height_mm=1 on detailed art left NOTHING above the 0.25mm speckle
+    floor and the user was handed numpy's "zero-size array to reduction
+    operation minimum which has no identity" (measured 2026-09-17)."""
+    img = np.zeros((2000, 2000, 4), np.uint8)
+    for i in range(10):
+        cv2.rectangle(img, (100 + i * 180, 100), (160 + i * 180, 1900),
+                      (0, 0, 0, 255), -1)
+    with pytest.raises(ValueError) as ex:
+        imgtrace.image_to_entities(_png(img), height_mm=1.0)
+    msg = str(ex.value)
+    assert "array" not in msg and "reduction" not in msg, msg
+    assert "0.25" in msg or "too fine" in msg or "bigger" in msg, msg
+
+
+def test_holes_inside_holes_alternate_add_and_subtract():
+    """Nesting deeper than two: ring, island, hole in the island. RETR_CCOMP
+    is a two-level hierarchy, so this is worth locking down."""
+    img = np.zeros((900, 900, 4), np.uint8)
+    cv2.circle(img, (450, 450), 400, (0, 0, 0, 255), -1)
+    cv2.circle(img, (450, 450), 300, (0, 0, 0, 0), -1)
+    cv2.circle(img, (450, 450), 200, (0, 0, 0, 255), -1)
+    cv2.circle(img, (450, 450), 100, (0, 0, 0, 0), -1)
+    ents, info = imgtrace.image_to_entities(_png(img), height_mm=60)
+    assert [e["mode"] for e in ents] == ["add", "subtract", "add", "subtract"]
+    want = np.pi * (30 ** 2 - 22.5 ** 2 + 15 ** 2 - 7.5 ** 2)
+    assert sk.make_sketch("XY", 0, ents).area == pytest.approx(want, rel=0.03)
+    assert info["holes"] == 2 and info["contours"] == 2
