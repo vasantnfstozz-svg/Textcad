@@ -7,6 +7,11 @@
 > rules, [ARCHITECTURE.md](ARCHITECTURE.md) for how it works, and
 > [LAUNCH-PLAN.md](LAUNCH-PLAN.md) for what is being built now. The founding
 > idea below — mistakes must never reach the user — is unchanged.
+>
+> **To just run it on a fresh computer:** double-click `run-textcad.cmd`. It
+> finds Python, installs what is missing the first time, and opens Studio in
+> your browser. What TextCAD is built on, and under which licences, is in
+> [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 This is a working prototype that turns a natural-language description into a
 validated, machinable CAD model (a STEP file). It was built step by step; this

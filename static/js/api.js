@@ -141,6 +141,31 @@ export function noteRecovery(doc) {
   return true;
 }
 
+/* THE DOORBELL. A design that arrived from outside the browser (an AI over
+   MCP) is announced ONCE and then forgotten by the server. Whether something
+   arrived is the SERVER's fact, never arithmetic here (R1): this used to be
+   inferred from the active tab differing from the last poll, which made every
+   page load replay the banner and reset the view — sometimes from under an
+   open dialog — long after the design landed (BACKLOG, seen 2026-09-01).
+
+   Two guards, both needed: S.arrivalAt stops THIS page saying it twice while
+   the ack is in flight, and the ack stops any other page (or the next reload)
+   saying it at all. The ack is a bare fetch on purpose — postJSON would raise
+   the busy overlay over a banner nobody is waiting on. */
+export function noteArrival(doc) {
+  const a = doc && doc.arrival;
+  if (!a || a.at === S.arrivalAt) return false;
+  S.arrivalAt = a.at;
+  bus.emit('msg', 'bot',
+    `📡 "${a.name}" just arrived (designed externally, e.g. via MCP) — loaded it.`);
+  fetch('/api/arrival/ack', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ at: a.at }),
+  }).catch(() => { /* the banner is spoken; the ack is best-effort */ });
+  return true;
+}
+
 /* No answer at all: the process is gone. Wait for the supervisor to bring it
    back, then let everyone see what came back. A fetch that rejects while the
    server is ALIVE is not a case this app produces — there is no AbortController

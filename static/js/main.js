@@ -3,7 +3,7 @@
 
 import { bus } from './bus.js';
 import { S } from './state.js';
-import { getJSON, isBusy, noteRecovery } from './api.js';
+import { getJSON, isBusy, noteArrival, noteRecovery } from './api.js';
 import { initViewport, loadMesh } from './viewport.js';
 import { initTreeFind } from './tree.js';  // + the find box
 import './provenance.js';     // face pick -> which feature made it
@@ -91,11 +91,13 @@ setInterval(async () => {
     // keystroke (a design arriving over MCP, another window's edit).
     if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
     if (docSig(d) !== docSig(S.lastDoc)) {
+      // a different design is on screen, so the camera starts fresh; WHETHER
+      // it arrived from outside is the server's one-shot marker, not this
+      // comparison (noteArrival)
       const newTab = !S.lastDoc || d.active_tab !== S.lastDoc.active_tab;
       bus.emit('doc-updated', d);
       loadMesh(newTab);
-      if (newTab) addMsg('bot',
-        `📡 "${d.name}" just arrived (designed externally, e.g. via MCP) — loaded it.`);
+      noteArrival(d);
     }
   } catch (e) { /* server briefly busy */ }
 }, 3000);
@@ -112,3 +114,7 @@ addMsg('bot', 'Welcome to TextCAD Studio.\n' +
    a recent one (the user hit F5 while Studio was restarting) is still news. */
 if (doc.recovery && Date.now() / 1000 - doc.recovery.at > 300) S.recoveredAt = doc.recovery.at;
 noteRecovery(doc);
+/* A design that arrived while no page was open is still news — once. The
+   server drops it if nobody came for it, and forgets it the moment this page
+   says it, so a reload never repeats it. */
+noteArrival(doc);

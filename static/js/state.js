@@ -12,4 +12,5 @@ export const S = {
   modalTool: null,        // e.g. 'Extrude' while its panel is open
   modalToolPanel: null,   // element id of the open panel (flashed on refusal)
   recoveredAt: null,      // the server crash note already spoken (its timestamp)
+  arrivalAt: null,        // the doorbell banner already spoken (its timestamp)
 };

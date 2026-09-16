@@ -142,6 +142,34 @@ STATE: dict = {"docs": {}, "active": None, "seq": 0}
 MAX_HISTORY = 25
 MAX_TABS = 12
 
+# THE DOORBELL'S ONE-SHOT MARKER. A design can arrive from OUTSIDE the browser
+# — an AI over MCP posts /api/open/<slug>?external=1 — and the page announces
+# it once. Whether something arrived is the SERVER's fact (R1): the browser
+# used to infer it from the active tab having changed since the last poll, so
+# every page load replayed "X just arrived — loaded it" and reset the view
+# long after the design landed, sometimes out from under an open dialog
+# (BACKLOG, seen 2026-09-01). The marker is consumed by the first page that
+# shows it (POST /api/arrival/ack) and never again, and it lives in memory
+# only — a restarted server has no arrivals to replay either.
+ARRIVAL: dict | None = None
+ARRIVAL_TTL = 600.0     # nobody came to see it for ten minutes: no longer news
+
+
+def _note_arrival(tid: str, name: str, file: str) -> None:
+    """A design arrived from outside the browser: one banner is owed."""
+    global ARRIVAL
+    ARRIVAL = {"tab": tid, "name": name, "file": file, "at": time.time()}
+
+
+def _arrival_json() -> dict | None:
+    """The arrival still owed a banner, or None. An old one is dropped here
+    rather than in the browser, so "is this still news?" stays one rule in one
+    place: a page opened hours later must not be told a design JUST arrived."""
+    global ARRIVAL
+    if ARRIVAL and time.time() - ARRIVAL["at"] > ARRIVAL_TTL:
+        ARRIVAL = None
+    return ARRIVAL
+
 
 def _new_tab(doc: Document, source: str | None = None,
              activate: bool = True) -> str:
@@ -796,6 +824,9 @@ def _doc_json() -> dict:
         "tabs": _tabs_json(),
         "active_tab": STATE["active"],
         "recovery": RECOVERY,      # the previous process crashed: what, when
+        # a design that arrived from outside the browser and has not been
+        # announced yet — one banner, consumed by whoever shows it
+        "arrival": _arrival_json(),
         "features": [{
             "id": f.id, "op": f.op, "params": f.params, "inputs": f.inputs,
             "status": f.status, "problems": f.problems, "volume": f.volume,
@@ -1120,6 +1151,25 @@ def index():
 @app.get("/api/doc")
 def get_doc():
     return _doc_json()
+
+
+class ArrivalAckReq(BaseModel):
+    at: float
+
+
+@app.post("/api/arrival/ack")
+def ack_arrival(req: ArrivalAckReq):
+    """A page has SHOWN the doorbell banner: nobody says it again.
+
+    `at` names the marker the page actually saw. A bare "clear it" would let a
+    slow page swallow an arrival that landed in the three seconds between its
+    poll and this call — the design loop is "regenerate → POST /api/open →
+    look at it", so the doorbell really does ring twice that fast."""
+    global ARRIVAL
+    if ARRIVAL and ARRIVAL["at"] == req.at:
+        ARRIVAL = None
+        return {"consumed": True}
+    return {"consumed": False}
 
 
 # ---------------------------------------------------------------------------
@@ -2981,8 +3031,13 @@ def list_designs():
 
 
 @app.post("/api/open/{file}")
-def open_design(file: str):
+def open_design(file: str, external: bool = False):
     """Open from the library, REUSING this design's tab if it already has one.
+
+    `external=1` marks the call as the MCP doorbell — a design that arrived
+    from outside the browser, which the open page announces ONCE (see ARRIVAL).
+    The UI's own Open dialog leaves it off: the user who clicked the design
+    does not need to be told it arrived.
 
     This used to make a new tab every time, unconditionally. The design loop is
     "regenerate the script -> POST /api/open/<name> -> look at it in 3D", so ten
@@ -3002,12 +3057,16 @@ def open_design(file: str):
     fresh = Document.load(str(path))
     tid = _find_tab(f"file:{file}")
     if tid is None:
-        _new_tab(fresh, source=f"file:{file}")
+        tid = _new_tab(fresh, source=f"file:{file}")
+        if external:
+            _note_arrival(tid, fresh.name, file)
         _rebuild_and_mesh()
         return {"tab_reused": False, "reloaded": False,
                 **_record_version(f"opened {file}", "open"), **_doc_json()}
     e = STATE["docs"][tid]
     STATE["active"] = tid
+    if external:
+        _note_arrival(tid, fresh.name, file)
     if e["doc"].to_data() == fresh.to_data():
         e["mesh_stale"] = True
         return {"tab_reused": True, "reloaded": False, **_doc_json()}
