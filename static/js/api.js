@@ -7,6 +7,24 @@ import { S } from './state.js';
 
 const busyEl = () => document.getElementById('busy');
 
+/* WHICH TAB THIS REQUEST IS ADDRESSED TO. A design can arrive from OUTSIDE the
+   browser — an AI over MCP posts /api/open/<slug>?external=1 — and take the
+   active tab between the user's click and the request reaching the server. The
+   server then does the work in a design the user never opened: measured
+   2026-09-17, a traced logo landed in another saved design whose undo depth
+   was 0, so Ctrl+Z there does nothing (section 12 round four).
+
+   The server resolves which tab a request is addressed to ONCE and prefers
+   this header when it names an open tab (studio.TAB_HEADER). A header naming
+   a tab that has since closed is IGNORED, not refused, and the header is never
+   required — a page one poll behind must not be an error. The tab id is the
+   server's own fact (R1): it comes straight back from /api/doc as
+   `active_tab`, and is never computed here. */
+function tabHeaders(base) {
+  const tid = S.lastDoc && S.lastDoc.active_tab;
+  return tid ? { ...base, 'X-TextCAD-Tab': tid } : base;
+}
+
 /* The overlay SAYS SOMETHING while a long step runs. A round, bevel or shell
    on a body with hundreds of edges genuinely takes minutes — the overnight
    journey run of 2026-09-13 measured 156 s, 630 s and 1195 s on the user's own
@@ -50,7 +68,7 @@ export function clearBusy() {
 export function isBusy() { return busyEl().style.display === 'flex'; }
 
 export async function getJSON(url) {
-  return (await fetch(url)).json();
+  return (await fetch(url, { headers: tabHeaders({}) })).json();
 }
 
 /* ONE way to ask the geometry authority (LAUNCH-PLAN.md R1): POST
@@ -60,7 +78,7 @@ export async function getJSON(url) {
 export async function planRequest(req) {
   try {
     const r = await fetch('/api/tool/plan', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: tabHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(req) });
     const data = await r.json();
     /* Same trap askJSON closed: a 422 (a field pydantic will not take) or a
@@ -106,7 +124,7 @@ export async function planRequest(req) {
 export async function askJSON(url, body) {
   try {
     const r = await fetch(url, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: tabHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body || {}) });
     const data = await r.json();
     // Silent to the USER, never silent to the CALLER (second code review,
@@ -224,7 +242,7 @@ export async function postJSON(url, body, busyMsg) {
     try {
       const r = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: tabHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(body || {}),
       });
       doc = await r.json();     // a body that dies mid-flight throws here too
