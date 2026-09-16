@@ -179,6 +179,21 @@ _REQ_TAB: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 # falling back to the active tab is exactly what happens today.
 TAB_HEADER = "x-textcad-tab"
 
+
+def _addressed_tab(request) -> str | None:
+    """The OPEN tab a request names, or None. ONE rule, asked in one place.
+
+    Both middlewares below read this header and they must never answer it
+    differently. Round four gave the pin the "must be an open tab" rule and
+    left the one-writer guard taking the header as given, and round five
+    measured what that gap costs: a page one poll behind — or one that
+    outlived a restart, where tab ids start again at t1 — named a tab that is
+    not open, the guard asked "is the AI building in t7?" (no), let the write
+    through, and the pin then fell back to the ACTIVE tab, which is the tab
+    the AI was building in. The write landed there, unrefused."""
+    want = request.headers.get(TAB_HEADER)
+    return want if want and want in STATE["docs"] else None
+
 # THE DOORBELL'S ONE-SHOT MARKER. A design can arrive from OUTSIDE the browser
 # — an AI over MCP posts /api/open/<slug>?external=1 — and the page announces
 # it once. Whether something arrived is the SERVER's fact (R1): the browser
@@ -346,9 +361,14 @@ def _tabs_json() -> list[dict]:
     # ok: True/False = last rebuild's verdict; None = restored from the last
     # session and not rebuilt yet (rebuilds on first switch) — the UI shows
     # that as a grey "not loaded yet" dot instead of a red "broken" one
+    #
+    # "active" is the tab THIS ANSWER is about (see _doc_json's active_tab),
+    # not whichever tab is live at this instant: the strip must highlight the
+    # design whose tree is in the same reply.
+    here = _active_tid()
     return [{"id": tid, "name": e["doc"].name,
              "ok": e["ok"] if e["rebuild_ms"] is not None else None,
-             "active": tid == STATE["active"],
+             "active": tid == here,
              # unsaved-changes marker; the UI asks before closing a dirty tab
              "dirty": _dirty(e)}
             for tid, e in STATE["docs"].items()]
@@ -648,8 +668,7 @@ async def _one_tab_per_request(request, call_next):
     set never comes back out (both measured,
     probes/section12_round4_ctxvar_probe.py) — so nothing leaks into the next
     request or into _persist_session."""
-    want = request.headers.get(TAB_HEADER)
-    _REQ_TAB.set(want if want and want in STATE["docs"] else _ARMED)
+    _REQ_TAB.set(_addressed_tab(request) or _ARMED)
     return await call_next(request)
 
 
@@ -669,10 +688,12 @@ async def _one_writer_per_tab(request, call_next):
         return await call_next(request)
     try:
         # the tab the request is ADDRESSED to (see TAB_HEADER), else the
-        # active one — so when the browser starts naming its tab, a write to
-        # a quiet tab is not refused because the AI is busy in another
-        busy = _job_on(request.headers.get(TAB_HEADER)
-                       or STATE["active"]) is not None
+        # active one — so a write to a quiet tab is not refused because the AI
+        # is busy in another. _addressed_tab, not the raw header: this has to
+        # be the SAME question _one_tab_per_request asks, or a header naming a
+        # tab that is not open walks past the guard and then falls back to the
+        # busy tab anyway (measured, round five).
+        busy = _job_on(_addressed_tab(request) or STATE["active"]) is not None
     except Exception:        # noqa: BLE001 — a broken guard FAILS OPEN
         # This middleware is registered after _never_die, so Starlette puts it
         # OUTSIDE that barrier and anything it raises is a bare 500 — plain
@@ -923,7 +944,19 @@ def _doc_json() -> dict:
         "spec_checked": doc.spec_checked,
         "warnings": doc.warnings,
         "tabs": _tabs_json(),
-        "active_tab": STATE["active"],
+        # THE TAB THIS ANSWER IS ABOUT — never the live active tab. The
+        # browser stores the whole reply as S.lastDoc and api.js sends
+        # S.lastDoc.active_tab back as the next request's X-TextCAD-Tab, so a
+        # reply that carries one design's tree under another design's label
+        # points the NEXT click at the wrong design. Measured, round five
+        # (probes/section12_round5_hammer.py): a poll answered about the
+        # user's own tab came back labelled the tab an MCP doorbell had just
+        # made active, and the next edit — typed against the tree on screen —
+        # set the ARRIVING design's base.thickness to 41 while the design on
+        # screen kept its 5. The per-request pin held for exactly one request
+        # and this line gave the next one away. A design arriving from outside
+        # is still followed, deliberately, off the `arrival` marker below.
+        "active_tab": _active_tid(),
         "recovery": RECOVERY,      # the previous process crashed: what, when
         # a design that arrived from outside the browser and has not been
         # announced yet — one banner, consumed by whoever shows it
@@ -1282,7 +1315,7 @@ def ack_arrival(req: ArrivalAckReq):
 
 @app.get("/api/tabs")
 def get_tabs():
-    return {"tabs": _tabs_json(), "active_tab": STATE["active"]}
+    return {"tabs": _tabs_json(), "active_tab": _active_tid()}
 
 
 @app.post("/api/tabs/switch")
