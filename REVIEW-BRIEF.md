@@ -6,10 +6,11 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING.** Review `6586579..e642756` - three parallel worktree
-> branches merged into master: the face-pick carry and the struck-boolean
-> result, the launch-prep batch (doorbell, vendored three.js, notices, units
-> label), and the shell triage that changed no product code.
+> **Status: NOTHING PENDING.** `6586579..e642756` - the three parallel
+> worktree streams - was reviewed on 2026-09-16 and its findings are fixed and
+> pushed (`f538a76`, `2287157`). The next `code review` goes to
+> `REVIEW-QUEUE.md` and takes the first status-board row marked TODO:
+> **section 9, Trace image.**
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -22,100 +23,64 @@
 
 ---
 
-## The range, and how it was built
+## What the last review found (2026-09-16, range `6586579..e642756`)
 
-Base `6586579`, head `e642756`. **This range was built by three agents working
-in parallel worktrees, not by one session in sequence** - the first time that
-has happened on this project. Each stream was fenced to its own files and each
-ran only its own targeted test files; **no stream ran the full tier, and no
-stream saw the other two's code.** The fast tier was run ONCE, by the parent
-session, after the merge: **1800 passed** (from 1762), Ruff zero, ESLint zero.
+Two findings, both in code the range itself had just added.
 
-That is the structural risk in this range, and it is where a reviewer should
-look first: **a defect that only shows where two streams meet cannot have been
-caught by anyone who worked on it.** The merge itself had one conflict, in the
-`LAUNCH-PLAN.md` §10 table, resolved by hand.
+**1. The carried face pick crossed ops that place geometry against the
+WORLD (P1, silent wrong geometry).** `31684d1` taught `Document.edit` to add
+a `move`'s own delta to every stored `face_center` on a body the move
+carries, and called a feature rigid when the move reaches it and all of its
+inputs are rigid. That is the right question about the body a feature READS
+and the wrong one about the body it HANDS ON. `mirror`, `rotate` about the
+world origin and `polar_pattern` do not travel with their input - every face
+centre of a mirror moves by MINUS the delta - so the carry pushed those picks
+the wrong way. On a plate with two bosses, moved then mirrored, a pick on a
+mirrored boss top was carried 6 mm the wrong way and landed on the plate top:
+**720 mm3 became 7560 mm3 with every tree row `ok` and the solid valid, where
+leaving the pick where it was had been RIGHT.** Fixed by splitting the two
+questions (`document._hands_on_the_move`): a mirror still gets its own plane
+pick carried, nothing below it does, and a `rotate` about the body's own
+centre plus an unseeded `linear_pattern` were measured to travel with the move
+and still carry. 8 new tests, 4 of them measured red first.
 
-## One line per commit
+**2. The doorbell's browser half (P3).** `noteArrival` sat inside main.js's
+`docSig(d) !== docSig(S.lastDoc)` branch, so an MCP redelivery of a design
+whose bytes did not change - the reused-tab path, which does not rebuild -
+left every field of that signature unchanged, the banner was never spoken and
+the marker sat owed for ten minutes. `tests/test_mcp_arrival.py` proved the
+server marker, not the banner. The call moved out of the branch; 3 e2e
+journeys now drive a real page, the redelivery one measured red first.
+ui v202.
 
-| Commit | Stream | What it does |
-|---|---|---|
-| `f0224fe` | shell | Proves the scaled-body segfault already fenced at HEAD and the my-part-9 stall still open; 1 test, 3 probes. **No product code.** |
-| `37afa42` | shell | Line-ending tidy on the triage note. |
-| `31684d1` | picks | Face picks follow a rigid `move`; `_result_feature` follows the tail's own spine; 19 tests. |
-| `6b4c494` | launch | Doorbell arrival marker moves to the server; three.js vendored; `THIRD-PARTY-NOTICES.md`; units label; `run-textcad.cmd`; 8 tests. |
-| `15e38b1` | launch | Paperwork: four backlog rows closed, two new rows. |
+## What was verified
 
-## Where the risk is
+Fast tier **1808 passed** (from 1800). Library tier **101 passed** - all 50
+live designs rebuilt. `tests/e2e/test_doorbell.py` 3 passed. Ruff zero,
+ESLint zero. The user's server restarted and serving `main.js?v=202`, exactly
+one listener on 8123, `three.module.js` served locally (200, 1,326,016 bytes).
+**The user's saved designs were never exposed to finding 1**: a scan of all 50
+found 58 `move` features and not one face pick downstream of a world-placed op
+that a move reaches.
 
-1. **`document.py` `_carry_face_picks` / `_shift_face_picks` is the sharp
-   edge.** It mutates stored `face_center` values on an edit, which is a write
-   to the user's saved design data. The rigidity rule ("a feature is rigid when
-   the move reaches it and every one of its inputs is rigid too") is new and
-   hand-written. Ask it the questions that have caught this class four times
-   before: what does it do with a STRUCK feature in the chain, with a pick
-   nested in a Pattern axis or Mirror plane dict, with a shared tool feeding
-   two bodies, and with a `move` whose delta is zero. The same class of guard
-   has twice shipped refusing correct geometry.
-2. **`_result_feature` changed what "the result" means.** The status-bar
-   volume, `measure`, the spec check and `_check_dangling` all read it.
-   `tests/test_rebuild_cache.py` pinned the OLD answer and was deliberately
-   changed. Check the new spine walk on a design whose tail is struck AND whose
-   `input[0]` is itself struck.
-3. **The doorbell is a server-side singleton.** One module-level `ARRIVAL` in
-   `studio.py`, with a ten-minute staleness and a `POST /api/arrival/ack` that
-   consumes it. Two tabs, two browsers, and a reload racing an ack are the
-   cases to press. FastAPI runs sync endpoints in a threadpool, so this marker
-   is shared mutable state across threads.
-4. **`static/vendor/three/`** is 1.3 MB of third-party code now in the repo and
-   on the import map. Confirm the add-ons import nothing but `three`, and that
-   no code path still expects the CDN.
-5. **The units label is half a feature by design.** §10 carries a new P2: the
-   tool panels have `(mm)` hard-wired and read their boxes with no conversion,
-   so switching to inches converts the readouts and not the inputs. That is
-   known and filed - see the do-not-report list.
+## What was cleared, and must not be re-reported
 
-## Cleared by measurement - do not re-report
-
-- **The scaled-body shell segfault is fenced, and the guard was proved to be
-  what fences it.** At the filed t = 1.8 the wall guard refuses in 0.00 s with
-  the kernel never asked; with `assert_wall_fits_every_lump` stubbed out, the
-  same call kills the process with 0xC0000005 in 4 s. The §10 row is `done`.
-  A test pins the kernel being untouched, not merely the wording.
-- **The my-part-9 shell stall is open on purpose, and its leading candidate is
-  rejected with numbers.** The stall band is not an interval in thickness
-  (1.5 refuses, 1.6 stalls, 1.7 refuses, 2.5 stalls), so no bound monotone in
-  `t` can fence it. The "refuse when a narrow face's offset vanishes" rule was
-  built and measured out: a plain 60 x 40 x 12 plate with the same 0.6 mm rim
-  chamfer shells soundly at the same 2.5 mm, so that rule would refuse correct
-  work. The folder stays in `bugs/`.
-- **The parameter half of the face-pick bug is not fixable at the resolver.**
-  Thickening the plate from 10 to 14 mm flips the pick exactly as a move does
-  (22800.0 mm3 where 18810.62 was asked). From a stored `(centre, normal)` the
-  move case and the thicken case are arithmetically identical - candidates 1 mm
-  and 4 mm away, one right, one wrong, and nothing stored says which body frame
-  the pick was taken in. It needs the pick stored in the body's frame, which
-  touches the viewport pick payload and every saved design. §10 carries it.
-- **The `resolve_face` shared-centre tie refusal was built, then backed out.**
-  A round pocket with a flush round pad gives two +Z faces whose centroids are
-  both (0, 0, 10), so one pick describes both. The refusal broke
-  `test_concentric_lumps_a_post_inside_a_ring_still_shell` - a shell the kernel
-  builds perfectly, because Shell asks `resolve_face` once per lump and
-  concentric lumps tie exactly. It is also not silent. Filed P2 for the
-  pickers to close by saying which face they mean; a test pins the tie.
-- **The user's 50 live designs are clean, and this was swept, not reasoned.**
-  The three parallel streams were forbidden heavy runs, so the parent session
-  ran `-m library` once after the merge: **101 passed**, every live design
-  rebuilt. Beyond that sweep: the pick carry fires only when a `move` feature's
-  x/y/z is edited, never on load, rebuild or save, and `resolve_face` itself
-  changed by docstring only.
-- **The favicon 404 in the browser console is pre-existing** and unrelated to
-  this range.
-
-## What was verified after the merge
-
-Fast tier 1800 passed, library tier 101 passed. Ruff zero. ESLint zero. Server restarted and the page
-loaded in a real browser at `ui v201`: the body draws (so the local three.js
-works), the status bar ends in a dim `mm` chip, `/api/doc` carries
-`arrival: null` so no phantom banner, and **zero network requests left the
-machine** - the offline claim is measured, not assumed.
+- Everything on the previous brief's "cleared by measurement" list still
+  stands: the scaled-body shell segfault is fenced, the my-part-9 stall is
+  open on purpose, the PARAMETER half of the face-pick bug needs a body-frame
+  pick (plan section 10 P1), the `resolve_face` shared-centre tie is a P2 for
+  the pickers, and the favicon 404 is pre-existing.
+- **The tool panels' hard-wired `(mm)`** is known and filed (plan section 10
+  P2, "The tool panels ignore the display unit"). The units label is half a
+  feature on purpose.
+- **`_result_feature`'s spine walk was read and left alone.** Its callers
+  (`_measured`, `_doc_json`, `measure`, `provenance`, `_check_dangling`, the
+  viewport's `result_id`) all take the id and the part from the same call, so
+  they stay consistent; the deliberate change to `tests/test_rebuild_cache.py`
+  carries its reason in the test.
+- **`static/vendor/three/`**: the two add-ons import nothing but `three`, no
+  CDN reference is left anywhere in served code, and the import map matches
+  what `viewport.js` asks for.
+- **`run-textcad.cmd`** reads soundly. One nit, deliberately not changed: its
+  `import build123d` readiness check costs a cold kernel import (10-30 s) on
+  every launch, before `studio.py` pays it again.
