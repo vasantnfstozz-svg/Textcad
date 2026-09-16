@@ -263,6 +263,39 @@ def test_the_journeys_shell_is_a_sentence_in_a_process_that_survives():
     assert "REFUSED shell: walls of 1.8 mm meet in the middle of this body" in p.stdout
 
 
+def test_the_journeys_shell_never_asks_the_kernel_at_all(monkeypatch):
+    """The sentence alone does not prove the crash is fenced: `kernelguard` turns
+    a segfault INTO a sentence, so a guard that had gone missing would still
+    read as a polite refusal — at the cost of a dead worker every time. What
+    makes this row done is that the kernel is never asked.
+
+    Measured 2026-09-16 at HEAD (probes/shell_scaled_ball_head_probe.py, one
+    child per thickness, the body 34.9365 mm3 / 4 faces / 1 lump /
+    2.56 x 4.8 x 5.12 mm): the journey's own t = 1.8 and the 2026-09-12 sweep's
+    crash edge t = 1.29 are both refused in 0.00 s with the kernel untouched,
+    while t = 1.27 — just under the dmin/2 bound — DOES go to the kernel and
+    comes back its own clean refusal in 4.4 s, in a process that lives. No
+    child died at any thickness."""
+    body = clipped_ball()
+    asked = []
+    import kernelguard
+    real = kernelguard.guarded
+    monkeypatch.setattr(kernelguard, "guarded",
+                        lambda kind, solid, info, fn: (asked.append(kind),
+                                                       real(kind, solid, info, fn))[1])
+    # the filed step, and the thickness the 2026-09-12 sweep measured as the
+    # first that segfaulted (1.27 refused cleanly, 1.29 took the process down)
+    for t in (1.8, 1.29):
+        with pytest.raises(ValueError, match="meet in the middle of this body"):
+            sk.shell(body, t, open_face="none")
+        assert asked == [], f"t = {t} reached the kernel — the bound before it has gone"
+    # and the bound is not a blanket no: under it the kernel is asked, and its
+    # own refusal comes back as a sentence
+    with pytest.raises(ValueError, match="do not fit this body"):
+        sk.shell(body, 1.27, open_face="none")
+    assert asked == ["shell"]
+
+
 def lumps3():
     """three separate 20 x 20 x 10 boxes as ONE body — what a linear_pattern of
     a boss hands the tree, and what a cut that severs a plate leaves behind"""
