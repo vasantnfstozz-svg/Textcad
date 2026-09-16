@@ -52,14 +52,20 @@ def _safe_name(name: str) -> str:
 
 def _notify_studio(file_stem: str) -> None:
     """If TextCAD Studio is running locally, ask it to open the new design so
-    it pops up live in the browser. Fire-and-forget; silent if Studio is off."""
+    it pops up live in the browser. Fire-and-forget; silent if Studio is off.
+
+    `external=1` is what makes this the DOORBELL rather than an ordinary open:
+    Studio records a one-shot arrival marker and the open page says "X just
+    arrived" once. Without it the browser had to guess from the active tab
+    moving, and replayed the banner on every reload."""
     import threading
     import urllib.request
 
     def ping():
         try:
             req = urllib.request.Request(
-                f"http://127.0.0.1:8123/api/open/{file_stem}", method="POST")
+                f"http://127.0.0.1:8123/api/open/{file_stem}?external=1",
+                method="POST")
             urllib.request.urlopen(req, timeout=300)
         except Exception:
             pass

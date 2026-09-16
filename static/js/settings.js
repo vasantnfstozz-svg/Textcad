@@ -54,6 +54,25 @@ function round(v, dp) {
   return Math.round(v * k) / k;
 }
 
+/* ---------------- the status bar's unit chip ---------------- */
+
+/* Every number in TextCAD is a millimetre and the screen never said so — a
+   "40" could be anything to someone opening the app for the first time
+   (BACKLOG, "Units/grid settings"). Small and quiet, at the end of the
+   status bar's readouts, and it follows the display unit so it can never
+   disagree with the volume sitting next to it. */
+function paintUnit() {
+  const el = document.getElementById('sUnit');
+  if (!el) return;
+  el.textContent = unitLabel();
+  el.title = SETTINGS.unit === 'mm'
+    ? 'lengths and volumes on this screen are in millimetres — the unit ' +
+      'TextCAD models in'
+    : `lengths and volumes on this screen are shown in ${unitLabel()}; the ` +
+      'design itself is always exact in millimetres';
+}
+bus.on('settings-changed', paintUnit);
+
 /* ---------------- the Settings dialog ---------------- */
 
 const dlg = () => document.getElementById('settingsDialog');
@@ -67,6 +86,7 @@ export function openSettings() {
 
 export function initSettings() {
   loadSettings();
+  paintUnit();
   // explicit button handlers, not native form submit: the number inputs'
   // min/step validation silently blocks a <form method="dialog"> submit.
   document.getElementById('setCancel').onclick = () => dlg().close();

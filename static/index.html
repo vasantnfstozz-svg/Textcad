@@ -106,6 +106,10 @@
   <span id="sFeatures"></span>
   <span id="sVolume"></span>
   <span id="sRebuild"></span>
+  <!-- WHICH UNIT the numbers on this screen are in. TextCAD models in
+       millimetres and nothing on the screen said so (BACKLOG). settings.js
+       fills it in and keeps it in step with Settings ▸ Length unit. -->
+  <span id="sUnit" title="TextCAD models in millimetres"></span>
   <span style="margin-left:auto">verified pipeline: engine · inspector · blocks</span>
   <!-- Which build this TAB is actually running. A tab left open across a
        code change keeps its old JS in memory no matter what the server
@@ -206,7 +210,7 @@
     </select></label>
   <div class="exrow">
     <label>Distance (mm) <input id="exDist" type="number" step="any" value="10"></label>
-    <label id="exDist2Row" style="display:none">Distance 2 <input id="exDist2" type="number" step="any" value="10"></label>
+    <label id="exDist2Row" style="display:none">Distance 2 (mm) <input id="exDist2" type="number" step="any" value="10"></label>
   </div>
   <div class="exrow">
     <label>Taper (°) <input id="exTaper" type="number" step="any" value="0"></label>
@@ -455,6 +459,9 @@
          param, so a read-only number never looks typeable -->
     <div id="meEdit" style="display:none">
       <input id="meInput" type="number" step="any" autocomplete="off">
+      <!-- the one dimension box that said no unit at all; it is typed in mm,
+           like every tool panel -->
+      <span class="punit">mm</span>
       <button class="primary" id="meApply">Set</button>
     </div>
     <div id="meKind"></div>
@@ -502,12 +509,18 @@
   </form>
 </dialog>
 
+<!-- three.js is SHIPPED, not fetched: TextCAD runs on a local machine with no
+     promise of internet, and a viewport that only exists when unpkg answers is
+     not a local app. static/vendor/three/0.160.0/ holds the exact build this
+     app was written against (three r160, MIT — see THIRD-PARTY-NOTICES.md);
+     the addons/ folder holds only the two the viewport imports. Upgrading
+     means putting a new folder beside it and changing these two lines. -->
 <script type="importmap">
 { "imports": {
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    "three": "/static/vendor/three/0.160.0/three.module.js",
+    "three/addons/": "/static/vendor/three/0.160.0/addons/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=200"></script>
+<script type="module" src="/static/js/main.js?v=201"></script>
 </body>
 </html>
