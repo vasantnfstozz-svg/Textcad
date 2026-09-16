@@ -130,9 +130,17 @@ complete. Details + Done history: MANUAL-DESIGN.md.
 
 ## P3 — release preparation / later
 
-- [ ] **Vendor three.js locally** (unpkg CDN today — app breaks offline).
-- [ ] **No LICENSE file / third-party notices.** Decide license; NOTICE for
-  build123d/OCCT/three.js.
+- [x] **Vendor three.js locally** — DONE 6b4c494: `static/vendor/three/0.160.0/`
+  holds the exact r160 build plus the two add-ons the viewport imports and the
+  project's MIT licence; the import map in `static/index.html` points at them.
+  The app no longer needs the internet to draw anything.
+- [x] **Third-party notices** — DONE 6b4c494: `THIRD-PARTY-NOTICES.md`, every
+  licence read from the installed package's own metadata. The one with
+  consequences is OCCT inside the OCP wheel (LGPL-2.1 + the Open CASCADE
+  Exception), and that file is now the "prominent notice" the exception asks
+  for. **Still open and deliberately so: TextCAD's OWN licence.** No LICENSE
+  file is written — it is the user's decision (the options are in the report
+  that came with 6b4c494).
 - [x] **No git remote (backup!)** — DONE 2026-08-05: private repo
   https://github.com/Vasan0021/textcad (gh CLI installed, device-flow auth,
   keyring). designs/*.tcad.json un-ignored so the design library is backed
@@ -147,14 +155,23 @@ complete. Details + Done history: MANUAL-DESIGN.md.
   cache (tests/test_rebuild_cache.py pins the current behaviour so a
   fix is a deliberate change). Probably: prefer the last feature on the
   result body's input[0] spine over any later stray solid.
-- [ ] **MCP doorbell re-fires on every page load** — the "X just arrived
-  (designed externally) — loaded it" banner reappears and FLIPS THE ACTIVE TAB
-  on every reload, long after the design actually arrived (seen 2026-09-01:
-  it stole focus from a scratch tab mid-probe, and can even move the active
-  tab under an open dialog). The arrival marker needs to be consumed once,
-  not replayed per boot.
+- [x] **MCP doorbell re-fires on every page load** — DONE 6b4c494. The banner
+  was inferred in JS from the active tab differing from the previous poll (a
+  backend fact re-derived in the frontend, R1), so every reload replayed it.
+  The server holds ONE marker now: `mcp_server` posts
+  `/api/open/<slug>?external=1`, `/api/doc` carries `arrival`, and
+  `POST /api/arrival/ack` consumes it the moment a page has shown it; an
+  arrival nobody came for goes stale after ten minutes. 8 tests in
+  `tests/test_mcp_arrival.py`.
 - [ ] **Assemblies/joints in Studio** (assembly.py exists; UI is single-part).
-- [ ] **Units/grid settings** — everything is implicitly mm; at least label it.
+- [x] **Units label** — DONE 6b4c494: the status bar carries a quiet unit chip
+  that follows Settings ▸ Length unit, and the two dimension boxes that had no
+  unit at all (Extrude's "Distance 2", the Measure edit box) say mm. Still
+  open, and now visible: the tool panels are hard-wired to mm and ignore the
+  display unit, so choosing inches changes the readouts but not the boxes you
+  type into — see LAUNCH-PLAN §10.
+- [ ] **Grid settings** — sketch grid/snap are in Settings; a model-space grid
+  scale is not.
 - [ ] **AI-flow polish** (chat edits during rollback etc.) — parked until manual
   design is robust.
 
