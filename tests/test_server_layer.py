@@ -37,7 +37,12 @@ TMP = "_test-server-layer"
 
 
 @pytest.fixture()
-def client():
+def client(library_steps_untouched):
+    """`library_steps_untouched` (tests/conftest.py) is the cure for the
+    sample-export test below, which writes designs/flange-100.step into the
+    user's own library. Round one left it there; round two deleted it
+    unconditionally, which removes the user's own export of a gallery design
+    (measured, round three). It is restored byte for byte instead."""
     studio.STATE["docs"].clear()
     studio.STATE["active"] = None
     studio.STATE["seq"] = 0
@@ -48,11 +53,6 @@ def client():
         p.unlink(missing_ok=True)
     for p in list(studio.DESIGNS.glob("_test-tabs-*")):
         p.unlink(missing_ok=True)
-    # designs/ is the user's own work: the sample-export test below writes
-    # flange-100.step into it, and round one left it there (measured, round
-    # two). test_export_guard.py's fixture removes the same file for the same
-    # reason — "keep the library clean".
-    (studio.DESIGNS / "flange-100.step").unlink(missing_ok=True)
 
 
 def _library_design(name: str, thickness: float = 5) -> Document:
@@ -190,6 +190,133 @@ def test_the_export_guard_reads_the_filesystems_own_case_rule(client):
             f"'{TMP.upper()}' exported over designs/{TMP}.step"
     else:                          # a case-SENSITIVE filesystem: two designs
         assert r.status_code == 200
+
+
+# ------------------------------------------------- round three, the binding --
+
+def test_a_tab_that_arrives_mid_export_cannot_rename_the_file(client,
+                                                              monkeypatch):
+    """Design A's geometry must never land in design B's .step.
+
+    /api/export asked STATE["active"] twice — once for the DOCUMENT
+    (`_doc()`) and again for the FILE NAME (`_slug_of_active()`) — and the
+    active tab is moved from OTHER THREADS: the MCP doorbell posts
+    /api/open/<slug>?external=1 and takes it. Between those two reads that is
+    alpha's solid written to designs/beta.step, announced as a successful
+    export. Forced here by moving the tab on the second read; with one read
+    of the tab it cannot happen whatever the scheduler does."""
+    _library_design(TMP).save(str(studio.DESIGNS / f"{TMP}.tcad.json"))
+    _library_design(f"{TMP}-two", thickness=9).save(
+        str(studio.DESIGNS / f"{TMP}-two.tcad.json"))
+    client.post(f"/api/open/{TMP}-two")            # the tab that ARRIVES
+    other = studio.STATE["active"]
+    client.post(f"/api/open/{TMP}")                # the tab the user exports
+    mine = studio.STATE["active"]
+
+    real = studio._slug_of_active
+
+    def the_doorbell_lands_here(*a, **kw):
+        studio.STATE["active"] = other             # ...from another thread
+        try:
+            return real(*a, **kw)
+        finally:
+            studio.STATE["active"] = mine
+    monkeypatch.setattr(studio, "_slug_of_active", the_doorbell_lands_here)
+
+    r = client.post("/api/export").json()
+    assert not r.get("error"), r["error"]
+    assert r["path"].endswith(f"{TMP}.step"), \
+        f"{TMP}'s geometry was written to {r['path']}"
+    # ...and the proof is in the file, not in the sentence
+    m = inspector.measure(r["path"])
+    assert m["volume"] == pytest.approx(20 * 20 * 5, rel=1e-6), \
+        f"designs/{TMP}.step holds the other design ({m['volume']} mm3)"
+
+
+def test_one_designs_geometry_never_lands_in_another_designs_step(client,
+                                                                  monkeypatch):
+    """The same window, with the arriving tab STAYING active — and this is
+    where it stops being a refusal and becomes the 2026-08-31 CAM bug: the
+    other tab owns its own file, so every door of the clash guard opens for
+    it, and designs/<other>.step comes back holding THIS design's solid with
+    "⬇ Exported: …" over it. Two reads of STATE["active"] is all it takes."""
+    _library_design(TMP).save(str(studio.DESIGNS / f"{TMP}.tcad.json"))
+    _library_design(f"{TMP}-two", thickness=9).save(
+        str(studio.DESIGNS / f"{TMP}-two.tcad.json"))
+    client.post(f"/api/open/{TMP}-two")
+    other = studio.STATE["active"]
+    client.post(f"/api/open/{TMP}")
+
+    real = studio._slug_of_active
+
+    def the_doorbell_lands_here(*a, **kw):
+        studio.STATE["active"] = other      # and keeps it, as an open does
+        return real(*a, **kw)
+    monkeypatch.setattr(studio, "_slug_of_active", the_doorbell_lands_here)
+
+    r = client.post("/api/export").json()
+    theirs = studio.DESIGNS / f"{TMP}-two.step"
+    if not theirs.exists():
+        assert r.get("error"), r          # refused: nothing was written
+        return
+    m = inspector.measure(str(theirs))    # 20x20x9 is theirs, 20x20x5 is ours
+    assert m["volume"] == pytest.approx(20 * 20 * 9, rel=1e-6), \
+        (f"designs/{TMP}-two.step came back holding {TMP}'s geometry "
+         f"({m['volume']} mm3), reported as a successful export")
+
+
+def test_a_tab_that_arrives_mid_save_is_not_bound_to_this_designs_file(
+        client, monkeypatch):
+    """The same two reads on /api/save, where they are worse.
+
+    Save decides the FILE NAME from the document and then BINDS THE TAB to
+    it — `_entry()["source"] = f"file:{safe}"` — and those were separate
+    reads of STATE["active"]. A tab that arrives in between is left pointing
+    at a design file that is not its own, after which ITS next save
+    overwrites that design and /api/open comes back to the wrong tab: the
+    section 3 P0 through a new door."""
+    _library_design(f"{TMP}-two", thickness=9).save(
+        str(studio.DESIGNS / f"{TMP}-two.tcad.json"))
+    client.post(f"/api/open/{TMP}-two")           # the tab that ARRIVES
+    other = studio.STATE["active"]
+    client.post("/api/new", json={"name": TMP})   # the tab being saved
+    mine = studio.STATE["active"]
+
+    real = studio._design_slug
+
+    def the_doorbell_lands_here(name):
+        studio.STATE["active"] = other            # ...from another thread
+        return real(name)
+    monkeypatch.setattr(studio, "_design_slug", the_doorbell_lands_here)
+
+    assert client.post("/api/save").status_code == 200
+    assert studio.STATE["docs"][mine].get("source") == f"file:{TMP}", \
+        "the saved tab was not bound to the file it just wrote"
+    assert studio.STATE["docs"][other].get("source") == f"file:{TMP}-two", \
+        (f"the tab holding {TMP}-two was bound to designs/{TMP}.tcad.json — "
+         f"its next save overwrites that design")
+
+
+def test_a_step_file_the_user_made_is_put_back_not_deleted(tmp_path,
+                                                           monkeypatch):
+    """Round two's cure for "a test left flange-100.step behind" was an
+    unconditional unlink, and flange-100 is a LIBRARY design — the user makes
+    that .step by opening it and pressing Export. Measured 2026-09-16
+    (probes/section12_round3_fixture_probe.py): 51 tests green and a
+    flange-100.step the run had NOT created was gone. An export by a test
+    overwriting it is the same loss, so the bytes go back."""
+    from conftest import library_steps_kept
+
+    monkeypatch.setattr(studio, "DESIGNS", tmp_path)
+    users = tmp_path / "flange-100.step"
+    users.write_bytes(b"ISO-10303-21; the user's own export")
+    with library_steps_kept("flange-100.step", "roundtrip-src.step"):
+        users.write_bytes(b"what a test exported over it")
+        (tmp_path / "roundtrip-src.step").write_bytes(b"debris a test left")
+    assert users.read_bytes() == b"ISO-10303-21; the user's own export", \
+        "the fast tier changed a .step the user made"
+    assert not (tmp_path / "roundtrip-src.step").exists(), \
+        "the fast tier left its own export in the library"
 
 
 # -------------------------------------------------------------- F5 / F4 ---

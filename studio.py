@@ -632,12 +632,18 @@ async def _session_autosave(request, call_next):
 # keystrokes; versions are for putting v3 back on screen next week. Nothing
 # here touches the undo stack.
 
-def _slug_of_active() -> str | None:
+def _slug_of_active(e: dict | None = None) -> str | None:
     """The library slug of the active tab, or None for anything unsaved.
 
     A version tree is keyed to a file, so an untitled scratch design has no
-    history until it is saved — "no history dir until first version"."""
-    src = _entry().get("source") or ""
+    history until it is saved — "no history dir until first version".
+
+    Pass the tab ENTRY when the caller has already read it and the two facts
+    must belong to the same design: /api/export takes the document from one
+    read of STATE["active"] and the file name from this one, and the active
+    tab moves from OTHER THREADS — the MCP doorbell posts
+    /api/open/<slug>?external=1 and takes it (round three, 2026-09-16)."""
+    src = ((_entry() if e is None else e).get("source") or "")
     return src[5:] if src.startswith("file:") else None
 
 
@@ -2713,7 +2719,16 @@ def _name_clash(slug: str, deed: str) -> str | None:
 
 @app.post("/api/save")
 def save_design():
-    doc = _doc()
+    # ONE read of the active tab, as /api/export takes it (round three,
+    # 2026-09-16). This endpoint decides a FILE NAME from the document and
+    # then BINDS THE TAB to it, and each of those went to STATE["active"]
+    # separately — which other threads move (the MCP doorbell's
+    # /api/open/<slug>?external=1). A tab that arrives in between is left
+    # pointing at a design file that is not its own; its next save then
+    # overwrites that design and /api/open comes back to the wrong tab, which
+    # is the section 3 P0 through a new door. Measured with a red test.
+    e = _entry()
+    doc = e["doc"]
     safe = _design_slug(doc.name)
     path = DESIGNS / f"{safe}.tcad.json"
     # THREE doors lead onto someone else's design; the first two are shared
@@ -2721,7 +2736,7 @@ def save_design():
     clash = _name_clash(safe, "saving")
     if clash:
         return _refused(None, message=clash)
-    if (_entry().get("source") or "").lower() != f"file:{safe}".lower():
+    if (e.get("source") or "").lower() != f"file:{safe}".lower():
         if not path.exists() and _saved_versions_exist(safe):
             # 3. the FILE is gone but the version tree is NOT. There is no
             # in-app delete, so a design removed in Explorer leaves
@@ -2739,7 +2754,7 @@ def save_design():
     # bind this tab to the file it just wrote (it may not have had a source, or
     # may have been saved under a new name) so opening that design later comes
     # back HERE instead of cloning the tab
-    _entry()["source"] = f"file:{safe}"
+    e["source"] = f"file:{safe}"
     # AFTER the source is bound, so a first-ever save starts the history under
     # the name it was just written as
     return {"saved": safe, **_record_version("saved", "save"), **_doc_json()}
@@ -3252,7 +3267,17 @@ def export_step():
     of the design too, so this readback is the second, independent proof —
     taken from the written FILE rather than from the shapes in memory.
     """
-    doc = _doc()
+    # ONE read of the active tab, for BOTH halves of "which design is this".
+    # The endpoint used to call _doc() and then _slug_of_active(), and each
+    # goes to STATE["active"] on its own — while the active tab is moved from
+    # other threads (the MCP doorbell's /api/open/<slug>?external=1, a second
+    # browser window). Two reads means the geometry can come from one design
+    # and the file name from another: designs/beta.step holding alpha's
+    # solid, announced as a successful export. The window is a scheduler
+    # slot, not a user action — this binds it shut rather than betting on it
+    # (round three, 2026-09-16).
+    e = _entry()
+    doc = e["doc"]
     # The FILE this design already lives in, when it has one. A design opened
     # from the library is bound to designs/<stem>.tcad.json and its one .step
     # belongs beside it; only a tab with no file of its own (untitled, a
@@ -3267,7 +3292,7 @@ def export_step():
     # two exported beside their own design file under another spelling
     # (bottle_cap_28mm.tcad.json -> bottle-cap-28mm.step), which is the
     # twin-file trap this export exists to avoid.
-    slug = _slug_of_active() or _design_slug(doc.name)
+    slug = _slug_of_active(e) or _design_slug(doc.name)
     clash = _name_clash(slug, "exporting")
     if clash:
         return _refused(None, message=f"{clash} (designs/{slug}.step is that "

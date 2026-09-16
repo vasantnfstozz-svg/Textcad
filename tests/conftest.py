@@ -1,3 +1,4 @@
+import contextlib
 import sys
 from pathlib import Path
 
@@ -5,6 +6,45 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))       # tests/gauntlet.py
 
 import pytest
+
+# .step files in designs/ that a fast test writes under a LIBRARY design's
+# name — a name the user can produce themselves by opening that design and
+# pressing Export.
+LIBRARY_STEPS = ("flange-100.step", "roundtrip-src.step")
+
+
+@contextlib.contextmanager
+def library_steps_kept(*names: str):
+    """Leave designs/<name>.step exactly as it was found — either way.
+
+    The export tests write into the real designs/ folder on purpose: the path
+    IS what they assert. Section 12 round two cured "a test leaves
+    flange-100.step behind" with an unconditional `unlink(missing_ok=True)`,
+    and round three measured the other half of it — the fast tier DELETING a
+    flange-100.step it had not created (51 tests green, the user's file gone:
+    probes/section12_round3_fixture_probe.py). flange-100 is a gallery design;
+    that .step may be the user's own export. Overwriting it is the same loss,
+    so the bytes are put back, not just the absence."""
+    import studio
+    was = {n: (studio.DESIGNS / n).read_bytes()
+           if (studio.DESIGNS / n).exists() else None for n in names}
+    try:
+        yield was
+    finally:
+        for n, data in was.items():
+            p = studio.DESIGNS / n
+            if data is None:
+                p.unlink(missing_ok=True)      # ours: the test made it
+            else:
+                p.write_bytes(data)            # the user's: put it back
+
+
+@pytest.fixture()
+def library_steps_untouched():
+    """Fixture form of `library_steps_kept`, for a test file whose client
+    fixture exports into designs/."""
+    with library_steps_kept(*LIBRARY_STEPS) as was:
+        yield was
 
 
 @pytest.fixture(autouse=True)

@@ -24,17 +24,20 @@ OWN_NAME = "_test-export-guard"
 
 
 @pytest.fixture()
-def client():
+def client(library_steps_untouched):
+    """flange-100.step is handled by `library_steps_untouched`
+    (tests/conftest.py): flange-100 is a LIBRARY design, so that .step may be
+    the user's own export and removing it is a loss, not a tidy-up (measured,
+    section 12 round three). OWN_NAME below is this file's own design."""
     studio.STATE["docs"].clear()
     studio.STATE["active"] = None
     studio.STATE["seq"] = 0
     studio._new_tab(studio.sample_flange())
     studio._rebuild_and_mesh()
     yield TestClient(studio.app)
-    for name in ("flange-100.step", f"{OWN_NAME}.step"):
-        step = studio.DESIGNS / name            # keep the library clean
-        if step.exists():
-            os.remove(step)
+    step = studio.DESIGNS / f"{OWN_NAME}.step"   # keep the library clean
+    if step.exists():
+        os.remove(step)
 
 
 def test_export_lands_in_designs_and_is_measured(client):
