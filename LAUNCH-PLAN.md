@@ -1100,9 +1100,19 @@ P5b is a new tier and a new button, not a refactor. What the user does:
 include the real designs, read-only), and press the button when something
 feels wrong; the next chat reads `bugs/`.
 
-**P6 — Launch preparation.** Vendor three.js locally (offline today = broken),
-LICENSE + third-party notices, units label, a one-click run script, examples
-gallery review, CI running the fast tiers, a fresh-machine install test.
+**P6 — Launch preparation. ON HOLD from 2026-09-16 — the user postponed the
+launch ("we will not do p6 now, just hold it, because we are going to postpone
+the launch"). Do not restart it without the user saying so.** Four of its items
+had already landed in `6b4c494` before the hold and they STAY, because each is
+a plain improvement that commits to nothing: three.js vendored locally (the app
+works offline), `THIRD-PARTY-NOTICES.md`, a units label, `run-textcad.cmd`.
+
+**Still unstarted, and now held:** examples gallery review, CI running the fast
+tiers, a fresh-machine install test. **And `LICENSE` — deliberately NOT
+written.** The choice was put to the user on 2026-09-16 (Apache-2.0 to give it
+away and match build123d, GPL/AGPL to stop a competitor closing it, or nothing
+yet to keep selling simple) and the postponement answers it for now: no licence
+file, which keeps every option open. An open release cannot be taken back.
 
 **Later:** named parameters, Sweep/Loft tools, Text entity, section view,
 assemblies, the user's personal project.
@@ -1279,6 +1289,23 @@ assemblies, the user's personal project.
 
 ## 11. Decisions log
 
+- **2026-09-16 — the launch is postponed and P6 is ON HOLD.** The user's words:
+  "we will not do p6 now, just hold it, because we are going to postpone the
+  launch". Said the same day three parallel worktree streams closed four P1s
+  and landed the first four P6 items, so the hold is a change of timing, not a
+  verdict on the work. What this settles: **no `LICENSE` file is written** (the
+  three options were put to the user and the postponement defers the choice —
+  writing nothing keeps all of them open), and the remaining P6 items (examples
+  gallery, CI, fresh-machine install) are not to be started. What is left to
+  work on is therefore the bug list in §10 and the from-scratch module reviews
+  in `REVIEW-QUEUE.md`, which the user runs as separate Opus chats.
+- **2026-09-16 — parallel worktree streams are an approved way to work.** The
+  user asked for three at once ("we are going to use worktree, work parallel on
+  A, B and C … use opus 5.1"). It held: fenced by FILES, every agent's geometry
+  run capped, heavy tiers reserved for the parent, agents commit on their own
+  branch and never push. One merge conflict, in §10's own table. This does not
+  loosen §9's ban on fan-outs — that ban is about exploratory sweeps, this is
+  three agents each owning a named deliverable.
 - **2026-09-02 — plan agreed in conversation.** Direction approved by the
   user ("I really love your idea"). Tool list, AI-uses-tools design and
   testing tiers delegated to Claude's recommendation.

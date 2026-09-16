@@ -130,6 +130,13 @@ complete. Details + Done history: MANUAL-DESIGN.md.
 
 ## P3 — release preparation / later
 
+> **ON HOLD from 2026-09-16.** The user postponed the launch, so nothing in
+> this section is to be started without them saying so. The items already done
+> (three.js vendored, third-party notices, units label, run script) stay — each
+> is a plain improvement. `LICENSE` is deliberately still unwritten: the choice
+> was put to the user and the postponement defers it, and writing nothing keeps
+> every option open. See LAUNCH-PLAN.md §11 for the decision.
+
 - [x] **Vendor three.js locally** — DONE 6b4c494: `static/vendor/three/0.160.0/`
   holds the exact r160 build plus the two add-ons the viewport imports and the
   project's MIT licence; the import map in `static/index.html` points at them.
