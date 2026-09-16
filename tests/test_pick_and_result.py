@@ -263,6 +263,29 @@ def test_a_bare_midpoint_edge_pick_is_carried_too():
     assert doc.result().volume == pytest.approx(before, abs=1e-6)
 
 
+def test_a_pick_list_that_arrived_as_a_tuple_is_carried_too():
+    """A document built in Python (a sample, a generator script, a test) can
+    hand `edges` a TUPLE. Round one of this review narrowed the carry to
+    `list`, which skipped one silently; the list is rebuilt now, so both come
+    through."""
+    doc = moved_plate_and_boss()
+    doc.rebuild()
+    part = doc._parts["placed"]
+    rim = next(e for e in part.edges()
+               if str(e.geom_type).endswith("CIRCLE")
+               and abs(float((e @ 0.5).Z) - 15.0) < 1e-6)
+    mid = [round(float(v), 6) for v in (rim @ 0.5)]
+    doc.add("round", "fillet", {"radius": 1.0, "edges": (tuple(mid),)},
+            inputs=["placed"])
+    doc.rebuild()
+    before = doc.result().volume
+    doc.edit("placed", "z", 8)
+    doc.rebuild()
+    assert list(doc.get("round").params["edges"][0]) == pytest.approx(
+        [mid[0], mid[1], mid[2] + 8.0])
+    assert doc.result().volume == pytest.approx(before, abs=1e-6)
+
+
 def test_a_group_name_is_not_a_place_and_does_not_move():
     """`edges: "all"` and `faces: ["top"]` name a rule, not a point."""
     doc = moved_plate_and_boss()

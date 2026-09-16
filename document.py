@@ -311,22 +311,34 @@ def _shift_face_picks(params: dict, delta: tuple) -> bool:
         d[key] = new
         return True
 
-    def shift_ref(ref, seat: list, i: int) -> bool:
-        """One stored opening or edge: its own point, and the centre of every
-        host face it names. A BARE [x, y, z] is a picked edge too — that is the
-        form `blocks.edges_for` reads as {"mid": …}, and an AI-written or
-        hand-written design uses it — so it is replaced in its seat. A NAME
-        ("top", "all") has no place and is left alone."""
-        if not isinstance(ref, dict):
-            new = shift(ref)
-            if new is None:
-                return False
-            seat[i] = new
-            return True
+    def shift_ref(ref) -> bool:
+        """One stored opening or edge, MUTATED IN PLACE: its own point, and the
+        centre of every host face it names."""
         hit = shift_key(ref, "center") | shift_key(ref, "mid")
         for host in ref.get("faces") or []:
             hit |= shift_key(host, "center")
         return bool(hit)
+
+    def shift_picks(refs):
+        """A whole `faces` / `edges` list -> the list it becomes, or None when
+        nothing in it was a place. Three things can be in there and all three
+        are met here: a REF dict (moved in place), a BARE [x, y, z] — a picked
+        edge too, the form `blocks.edges_for` reads as {"mid": …} and the form
+        an AI-written or hand-written design uses, which has to be REPLACED
+        because a list of floats cannot be moved in place — and a NAME ("top",
+        "all"), which is a rule rather than a place and comes through as it is.
+        Rebuilt rather than assigned into, so a params list that arrived as a
+        TUPLE is carried too instead of being silently skipped."""
+        out, hit = [], False
+        for ref in refs:
+            if isinstance(ref, dict):
+                hit |= shift_ref(ref)
+                out.append(ref)
+                continue
+            new = shift(ref)
+            hit = hit or new is not None
+            out.append(ref if new is None else new)
+        return out if hit else None
 
     moved = False
     for key, val in list((params or {}).items()):
@@ -340,9 +352,11 @@ def _shift_face_picks(params: dict, delta: tuple) -> bool:
             if new is not None:
                 val["face_center"] = new
                 moved = True
-        elif key in ("faces", "edges") and isinstance(val, list):
-            for i, ref in enumerate(val):
-                moved |= shift_ref(ref, val, i)
+        elif key in ("faces", "edges") and isinstance(val, (list, tuple)):
+            out = shift_picks(val)
+            if out is not None:
+                params[key] = out
+                moved = True
     return moved
 
 
