@@ -728,6 +728,82 @@ def _corners(edges, by_edge: dict) -> list:
     return [e for e in edges if len(by_edge.get(blocks._shape_key(e), [])) == 2]
 
 
+# How far the resolved face's OWN centre may sit from the clicked centre
+# before "the size gate sent this somewhere else" is the only explanation left.
+# A click's centre IS a face's centroid rounded to 2 decimals (studio's face
+# payload), so an honest pick is never more than sqrt(3) * 0.005 = 0.0087 mm
+# out — measured at 0.004714 worst over the 62 planar faces of the gauntlet
+# corpus (probes/face_of_preview_trim_probe.py §4). 0.05 is ten times that and
+# three orders of magnitude under the 50 mm this has to catch.
+_PICK_SLACK = 0.05
+
+
+def _centre_gap(face, p) -> float:
+    try:
+        c = face.center()
+    except Exception:
+        return float("inf")
+    return math.dist((float(c.X), float(c.Y), float(c.Z)), p)
+
+
+def _covers(face, p) -> bool:
+    """Is the clicked centre INSIDE this face — within its trimming wires —
+    rather than merely on its infinite surface? A stronger question than
+    surface_gap's, and NOT one that can be asked of every pick: a face's own
+    centroid can sit off its own material (a washer's is in its hole, a
+    U-shape's in the notch), so this answers False for perfectly good picks
+    and may only ever be used to CHOOSE BETWEEN two candidates, never as a
+    gate of its own (measured: probes/face_of_preview_trim_probe.py §6)."""
+    try:
+        return bool(provenance.OnFace(face.wrapped)(*p))
+    except Exception:
+        return False
+
+
+def _not_the_preview_trim(part, face, p, nrm):
+    """The size gate, undone when the click came off the tool's own PREVIEW.
+
+    `face_area` is the area of the face AT THE MOMENT IT WAS CLICKED, and
+    while a Fillet / Chamfer / Shell panel is open the thing on screen is the
+    tool's preview body — so a face the preview has TRIMMED is clicked at its
+    trimmed size, and that size is then the identity resolve_face uses on the
+    INPUT body. Measured 2026-09-16 (probes/face_of_preview_trim_probe.py):
+    a bracket with pad P (top 20x10 = 200 mm2) and pad Q (top 180 mm2) 50 mm
+    away, with an r1 blend that leaves exactly 180 of pad P's top — a click on
+    pad P's top resolved PAD Q, and plan_fillet then took every edge of pad Q,
+    silently. With the pads at different HEIGHTS the same coincidence refused
+    a face that is right there instead. Both were found by section 10's round
+    two; before the size gate (1a8d28f) this click resolved pad P.
+
+    The remedy is the one resolve_edge already uses: try the stored size
+    first, then sizeless, so a refusal is earned by both rules. The sizeless
+    answer is taken only when all four of these hold, which is why no honest
+    pick can be moved by it:
+      * the size-gated face's own centre is further than _PICK_SLACK from the
+        click — an honest pick's is the click, to within rounding;
+      * the sizeless answer is a DIFFERENT face, closer by more than that
+        slack — so the documented exact TIE (a flush pad in a round pocket,
+        two centroids at one point) cannot switch, which is the one case the
+        size gate exists to decide;
+      * the size-gated face does NOT contain the clicked point;
+      * and the sizeless one DOES. A face that does not contain the click is
+        never preferred over one that does."""
+    d_face = _centre_gap(face, p)
+    if d_face <= _PICK_SLACK:               # the gate answered where the click was
+        return face
+    try:
+        alt = blocks.resolve_face(part, list(p), nrm, None)
+    except ValueError:
+        return face
+    if blocks._shape_key(alt) == blocks._shape_key(face):
+        return face
+    if _centre_gap(alt, p) + _PICK_SLACK >= d_face:
+        return face
+    if _covers(face, p) or not _covers(alt, p):
+        return face
+    return alt
+
+
 def _face_of(part, pick: dict, body: str):
     """The face of `body` a click on a face means — or the sentence that says
     there is none. `resolve_face` is a nearest-centre match that never fails,
@@ -750,13 +826,19 @@ def _face_of(part, pick: dict, body: str):
 
     The tolerances are the payload's own: studio.py rounds a centre to 2
     decimals (0.0087 mm at worst, 0.0063 measured over those cases) and a
-    normal to 3, and nothing wider is allowed in."""
+    normal to 3, and nothing wider is allowed in.
+
+    The pick's AREA is the preview's too, and a face the preview has trimmed
+    is not the size it is on the input body — see _not_the_preview_trim."""
     c = pick.get("center") if isinstance(pick, dict) else None
     if c is None:
         raise ValueError("that face has no centre to name it by — click one of its edges instead")
     nrm = pick.get("normal")
-    face = blocks.resolve_face(part, c, nrm, pick.get("area"))
+    area = pick.get("area")
+    face = blocks.resolve_face(part, c, nrm, area)
     x, y, z = (float(v) for v in c)
+    if area is not None:            # the click may have been made on the PREVIEW
+        face = _not_the_preview_trim(part, face, (x, y, z), nrm)
     ok = provenance.surface_gap(face.wrapped, x, y, z) <= 0.02
     if ok and nrm:
         try:
