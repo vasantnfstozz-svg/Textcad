@@ -421,9 +421,12 @@ export function traceIntoSketch() {
                      (Math.max(...xs) + Math.min(...xs)) / 2,
                      (Math.max(...ys) + Math.min(...ys)) / 2];
     } else {
+      // min/max are the server's own limits (imgtrace.image_to_entities):
+      // the box used to accept 0.1 and the trace then came back "height_mm
+      // must be between 1 and 1000" with nothing drawn (review 2026-09-17)
       const h = await askNumber('Trace image', {
         label: 'Artwork height in mm',
-        value: 50, min: 0.1,
+        value: 50, min: 1, max: 1000,
         body: `Tracing ${f.name}. The width follows from the image's own aspect.`,
         ok: 'Trace',
       });
