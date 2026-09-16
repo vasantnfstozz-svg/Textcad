@@ -105,9 +105,9 @@ Then two closing sections:
 | 8 | Import STL and STEP | medium | **reviewed and fixed `94eb47e`**, ONE reviewer: 7 findings, **all 7 fixed**, 0 rejected, 11 new tests, fast tier 1623 → 1634. The two that mattered were both silent wrong geometry, both green: a **hollow STL imported with its cavity FILLED plus a phantom body inside it** (936 mm3 came in as TWO bodies totalling 1064 — lib3mf had already read the file correctly as one Solid of 936, but the guard meant to take that as-is called `shp.is_valid()`, and `is_valid` is a **property**, so it raised TypeError into a bare `except` and every shape was exploded shell by shell; the as-is path alone is not enough either, since lib3mf returns ONE Solid holding every shell in the file and two disjoint bodies make it invalid, so the shells are regrouped by winding + containment, and `split_components` gave the cavity its own STL piece on the repair path too); and **the parity voxel fill XORed overlapping material away** — two interpenetrating bodies welded along a shared edge, the Fusion assembly export this module exists for, came back **7,998 mm3 of a true 12,000**, a void punched straight through the overlap, health [] and status ok. Plus: a body exported TWICE at the same place was **deleted outright** (2000 mm3 imported as 1000, announced as "merged 24 coincident wall triangles"); the remesh moved every surface of a body with nothing measuring or reporting it (a 0.6 mm plate came back 8.7% light, silently); `MIN_COMPONENT_BUDGET` is a floor per BODY with no cap on the sum (40 bodies = 60,000 triangles of an 18,000 budget); a file that is not STEP at all was diagnosed "surfaces or curves alone cannot be used here" (OCCT does not raise — it returns an empty shape); a truncated STL said "not an STL file". The real 88,990-triangle assembly imports to the SAME geometry as before (339,926.9 mm3, 3 bodies, checked against `84e7c17` in a worktree) and **no saved design uses either op**. Two P0s were fixed, so **round two re-read the fix commit `94eb47e`: `d94518c`** (on Fable 5.1 at the user's call), 4 findings, **all 4 fixed**, 5 tests, fast tier 1639 — the round-one P0 was still open through the INVERSION door (a hollow part wound inside-out came in as 1064 mm3 in two bodies because void-or-body was decided by the SIGN of each shell's volume; it is decided by NESTING DEPTH now, with OCCT's point classifier, and each shell is WOUND to fit its role), and round one had introduced two REGRESSIONS: a pinched CAVITY surface was refused as "an empty volume" (the winding fill enters where the winding says in, and on an inward surface that is nowhere), and the winding fill broke the parity fill's documented indifference to inconsistent winding (two pinched cubes with one face flipped came back 7,998.8 of 16,000, green) — a component whose triangles disagree falls back to parity. The duplicate bbox grouping rule in meshrepair is DELETED: one STL piece, one exact rule in blocks. A P0-class gap was fixed again, so **round three re-read `d94518c`: `8fdfa5b`**, 1 finding, **fixed**, 2 tests, fast tier 1641 — round two's nesting rule judged "B is inside A" from ONE vertex of B, so a bracket overlapping the notch of a C-shaped frame (box inside the frame's box, one corner inside its material) came in as ONE body of 20,360 mm3, the 640 mm3 bracket made a VOID of the frame, valid and green; "wholly inside" is a spread SAMPLE of up to 400 vertices and 400 face centres now (TopExp.MapShapes in C++, one loaded classifier, 0.25 s per nested pair), and the face centres catch a pin whose ends sit in two walls while its middle spans the gap. Cleared: an OUTWARD-wound cavity (MeshLab re-orient) — lib3mf marks it invalid, the regroup gives 936. **Round four re-read `8fdfa5b`: `8241115`**, 1 finding (P1), **fixed**, 2 tests, fast tier 1643 — round three's 400 + 400 point survey put each point to OCCT's classifier, which is LINEAR in the container's faces (173 ms a point against a 32k-face body; the 55 us figure had been measured against a 12-face box), so a real faceted hollow part beside another body made 800 calls, ~140 s. Now: one confirming point; an INWARD-wound shell that sits inside a body is the cavity the file says it is; an OUTWARD-wound one (MeshLab re-orient, or an embedded body) gets a survey sized to the container (`_nest_cap`, a 100,000 face-evaluation budget per kind). Cleared: thin walls to 0.005 mm, 40 parts in a tray and 40 islands in a housing (~1 s), `_spread` edges, `BRepExtrema_ShapeProximity` (dead end in OCP). No P0 in round four, so **Section 8 is CLOSED** — 4 rounds, 13 findings, all fixed, 20 tests, 1623 → 1643 |
 | 9 | Trace image | medium | TODO - was scoped to share a chat with 8 and did not |
 | 10 | Viewport, picking and face provenance | high | **reviewed and fixed `8aa30a2`**, ONE reviewer: 5 findings, **all 5 fixed**, 0 rejected, 9 new tests. The P1 was in the face-pick SIZE GATE committed hours earlier (`1a8d28f`): a pick whose face GROWS past its recorded area falls through to a same-sized face elsewhere, and when the two host faces of an edge no longer share one the feature goes RED - measured on a plate with two 200 mm2 pads, widening one 20 -> 24 mm killed its own chamfer though the rim had moved 2 mm. `resolve_edge` tries stored sizes first and sizeless second, so a refusal is earned by both rules. Plus: the Sketch tool's plane picker decided FLAT from the surface TYPE, so no tapered, lofted or swept wall could be sketched on though `sketch_on_face` and the pick panel's own button accept it (all four walls of a 12-degree tapered box are BSPLINE and planar); `attribute_face`'s stale-index fall-back never consulted the area it was handed, so a flush pad in a pocket was attributed to the plate with 'high' confidence; a 'Created by' link revealed the tree row and lit nothing; an imported mesh body's face click blamed a document change that never happened. **Round two re-read the fix commit: `9f1b421`, 0 findings** - round one's work was put to the kernel, not to a reading (the sizeless fall-back is DORMANT over the 9 gauntlet bodies' 135 edges, RIGHT at all twelve widths when it does run, and newly answers in 1 of 752 cross-body resolutions; 6 of round one's 9 tests go red on revert, the 3 that do not are documented guard tests). Round two's own extra measurement found a defect in `toolplan._face_of` instead - see the done log. **Section 10 is CLOSED** |
-| 11 | Tool framework core | medium | TODO |
+| 11 | Tool framework core | medium | **reviewed and fixed `a3d6b03`**, ONE reviewer: 6 findings, **all 6 fixed**, 0 rejected, 18 tests. **P0: a tool panel open on design A wrote its edit into design B** - the document tab bar was the one control not behind `modalGuard` (every ribbon button already is) and `uid()` hands out the same feature names in every design, so B's `extrude1` went 9 mm -> 30 mm / 1017.88 -> 3392.92 mm3 from a panel opened on A. Plus a mistyped holes box deleting a requirement and calling it a pass; a selected sketch row outranking a curved-face pick so Extrude silently extruded the sketch; a missing bracket adding nothing and saying nothing; any non-200 plan answering 'cannot start: undefined'; and the extrude arrow sitting on the average of the SAMPLED boundary points (3.727 mm off on an L profile, 12.404 mm on two islands). **Round two `217d289`: 3 more, the P0 STILL OPEN through the door round one's own commit message named** - a panel does not need a tab CLICK to lose its design; a design ARRIVING from outside (MCP, the doorbell, a second window) takes the active tab, measured 9 -> 30 mm again; and the spec dialog deleted a requirement through the six boxes round one did not look at (typing `two` into n_solids made a red spec a GREEN `{}`). Cleared by measurement, not reading: the tab guard does NOT lock the user in, and the centroid change really is gizmo-only (the whole plan dict byte-identical over ten profiles but `origin`/`outer_radius`). **Round three `931f747`: round two holds (0 findings, the shipped tool.js run in node - a rename does NOT fire the let-go), and the P0 section 10 handed over is CLOSED** - while Fillet is open the click carries the PREVIEW's area, so a face the preview TRIMMED resolved on the input body by its trimmed area and `plan_fillet` rounded every edge of a pad 50 mm away, silently. Section 10's proposed `OnFace` gate was evaluated and REJECTED by measurement (an annulus's centroid lies in its hole), so stored-size-then-sizeless is used with `OnFace` only as the chooser: **284 clicks on real preview bodies, 0 moved, 0 newly refused**. **Section 11 is CLOSED** (three rounds, 10 findings, 39 tests) |
 | 12 | Server layer | medium | TODO |
-| 13 | AI author, MCP and chat | medium | TODO |
+| 13 | AI author, MCP and chat | medium | **reviewed and fixed `6b7198d`**, ONE reviewer: 10 findings, **8 fixed, 0 rejected, 2 deferred**, 20 tests (the section had NO MCP test at all). **P0: the MCP doors overwrite a design in the user's library and graft the AI's part onto its version tree** - `build_design` with no name is called `untitled`, which is a real design with a real `.history/`, and `Document.save` is a plain overwrite; measured, the user's design DESTROYED. **P1: the AI's first CORRECT step was refused on 27 of the 50 saved designs**, for a rule about features the USER drew - three refusals, give-up, snapshot restored, 'I did NOT change your design'. Plus `done` judged on the whole tree; the catalogue advertising three `polar_pattern` axis values the op refuses by name; `list_operations` handing a calling AI the step-loop prompt as `build_design`'s conventions; **`verify_step` answering `matches_spec: true` for requirements it never checked** (an unknown key dropped silently, `size: [40, 30]` never comparing Z) while its docstring calls an empty mismatch list a proof; `design_compressor` answering a degenerate duty with a ZeroDivisionError. **Round two `0cc2faa`: round one opened the ADD door and left the EDIT door shut** - an AI edit to a user's feature was still refused for that feature's own pre-existing problem, 27 of 50 again; `lint_tree(only=)` is deleted and replaced by a BASELINE (what the tree already broke at job start; only what is new or worse is reported), 27 -> 0. Also `_MINE` was a promise made once and never re-checked, so the AI overwrote the user's edits to its own design. **Round three `d369595`: the replaced mechanism was put to the kernel rule by rule, and the ONE rule whose key could not carry its question was wrong** - the blob rule lost its owner test, so the AI refused to extrude a sketch the USER drew by hand (5+ shapes), gave up, and said 'I did NOT change your design' a third time. Verified: the baseline cannot MASK a fault the AI introduces (every other key carries the feature id, `Document.add` refuses duplicates, the baseline is the first statement of the job; every masking attempt refused), `AUTHOR_PROMPT` is byte-identical to before the split, 0 of 50 designs carry a spec key the new `checked_spec` refuses. **Section 13 is CLOSED** (three rounds, 16 findings, 32 tests) |
 
 Skipped on purpose: **Shell** (rebuilt on the framework next; reviewed then),
 **the crash supervisor** (`supervise.py`, reviewed 517f2f6), the prototype
@@ -1905,3 +1905,103 @@ found none - but it is silent wrong geometry when it happens. Carried out of
 the section because `toolplan.py` belongs to section 11.
 
 **Section 10 is CLOSED** (two rounds, 5 findings, all fixed, 10 tests).
+
+### Section 11 - Tool framework core (reviewed and fixed 2026-09-16/17, `a3d6b03`; rounds two `217d289`, three `931f747`)
+
+Three rounds, 10 findings, all fixed, 0 rejected, 39 new tests. **Two P0s, and
+they were the SAME P0 through two doors.**
+
+- **Round one's P0** - a tool panel open on design A, a click on design B's
+  document tab, OK: the edit lands on B. The tab bar was the one control not
+  behind `modalGuard`, and `uid()` hands out the same feature names in every
+  design. Measured: B's `extrude1` 9 -> 30 mm.
+- **Round two found it still open**, through the door round one's own commit
+  message had named: a panel never listens for `doc-updated`, and a design
+  ARRIVING from outside (an AI over MCP, the doorbell, a second browser
+  window) takes the active tab with no tab-bar click at all. The session now
+  records the tab it was opened on and lets go, writing nothing, with a
+  sentence. Its residual - the let-go fires only when the browser HEARS - was
+  closed later by the tab header (section 12 round four plus the browser half).
+- **Round three re-read that let-go in node** and cleared it: it compares
+  `doc.active_tab`, the server's tab id, never the design NAME, so a rebuild,
+  an Undo, a version restore and a **rename** all leave the panel open.
+- **The carried P0 from section 10 was closed here**: while Fillet or Chamfer
+  is open the click carries the PREVIEW body's area, so a face the preview had
+  TRIMMED resolved on the input body by its trimmed area - pad Q's top at
+  180 mm2 is exactly what an r1 blend leaves of pad P's 200 - and
+  `plan_fillet` rounded every edge of the wrong pad, silently. Section 10's
+  proposed `OnFace` gate was **evaluated and rejected by measurement** (an
+  annulus's own centroid lies in its hole, so a good pick would be refused);
+  the rule `resolve_edge` already uses was used instead. **284 clicks on real
+  preview bodies: 0 moved, 0 newly refused.**
+- Also fixed: a mistyped spec box deleting a requirement and reporting a pass
+  (round one for `holes`, round two for the other six); a selected sketch row
+  outranking a curved-face pick so Extrude silently extruded the sketch; a
+  missing bracket adding nothing and saying nothing; a non-200 plan answering
+  "cannot start: undefined", then "the server said 400", before finally
+  speaking the server's own sentence; and the extrude arrow and taper ring
+  sitting on the average of the sampled boundary points (12.404 mm off on two
+  islands) instead of the area centroid.
+
+Cleared by measurement rather than reading: the new tab guard does **not** lock
+the user in (every exit releases the modal), and the centroid change is gizmo
+placement only (the whole plan dict byte-identical over ten profiles apart from
+`origin` and `outer_radius`, which reach only the arrow and the ring).
+
+**Section 11 is CLOSED.**
+
+### Section 13 - AI author, MCP and chat (reviewed and fixed 2026-09-17, `6b7198d`; rounds two `0cc2faa`, three `d369595`)
+
+Three rounds, 16 findings, 14 fixed, 0 rejected, 2 deferred, 32 new tests. The
+section had **no MCP test at all** before this pass.
+
+- **P0 - the MCP doors overwrite a design in the user's library** and graft the
+  AI's part onto its version tree. `build_design` with no `name` is called
+  `untitled`, and `designs/untitled.tcad.json` is a real design with a real
+  `.history/`; `Document.save` is a plain overwrite with no owner check, and
+  the doorbell then pushes a version into that design's history. Measured: the
+  user's design destroyed. A name this server wrote is re-used (so the
+  regenerate-and-look loop still lands in one file); anything else gets the
+  first free `-2`. Round two tightened it further: a name is ours only while
+  the file is still the one we wrote, because the user may have edited it.
+- **P1, three rounds to close - the AI could not touch 27 of the 50 saved
+  designs.** The authoring lint judged the WHOLE tree, so "add a boss to this"
+  on `esp32-remote` was refused for a sketch the user had drawn at an absolute
+  Z. Round one scoped the ADD door (28 blocked -> 1). Round two found the EDIT
+  door still shut - it linted `authored | {the edited feature}`, and the edited
+  feature is always the user's - and replaced scoping with a BASELINE: what the
+  tree already broke when the job started, reporting only what is new or worse
+  (27 -> 0). Round three found the baseline had dropped the owner test on the
+  **blob** rule, the one key with no feature id, so the AI refused to extrude a
+  sketch the user drew by hand. Each time, the failure ended in the same
+  sentence: *"I did NOT change your design."*
+- **`verify_step` gave a verdict on requirements it never checked** - an
+  unknown key is dropped silently by `spec_from_dict`, and `size: [40, 30]`
+  zips against a measured triple so Z is never compared - while its own
+  docstring calls an empty mismatch list a proof. `checked_spec` refuses an
+  unmeasurable key by name now, at the chat's `done` door and the MCP door
+  alike. `measure_step` was cleared: it never invents a number.
+- Also fixed: the catalogue advertised three `polar_pattern` axis values the op
+  refuses by name (the AI reads this, and so does the Add Feature dropdown);
+  `list_operations` handed a calling AI the step-loop prompt as `build_design`'s
+  conventions, so a reply in the shape it asks for is rejected; `done` was
+  judged on the whole tree; `design_compressor` answered a degenerate duty with
+  a ZeroDivisionError, and its first guard was wider than its own equation.
+
+Verified rather than assumed: the baseline **cannot mask a fault the AI
+introduces** (every other key carries the feature id; `Document.add` and
+`from_data` both refuse a duplicate id; the baseline is the first statement of
+`author_steps`; every masking attempt measured was refused); `AUTHOR_PROMPT` is
+byte-identical to before the prompt split (15529 chars, compared out of git);
+0 of the 50 saved designs carry a spec key the new rule refuses.
+
+**Deferred** (rows owed in LAUNCH-PLAN section 10): `op_params` cannot
+distinguish "no default" from "default is None", so the catalogue cannot mark a
+required parameter and a missing one reaches the feature row as a raw
+`TypeError`; the 10-entity sketch limit never looks at `sketch_on_face`, the
+only sketch kind the offset method uses, while the same prompt teaches putting
+a whole bolt grid in one - a product decision; and `meanline.design` answers
+geometrically impossible duties (rpm 1 gives a 4,221,135 mm tip radius; a
+negative radius reaches OCCT).
+
+**Section 13 is CLOSED.**
