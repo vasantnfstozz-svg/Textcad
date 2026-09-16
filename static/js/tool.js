@@ -203,6 +203,28 @@ bus.on('server-recovered', () => {
   if (active) active.recover();           // (releaseIso would post to nothing)
 });
 
+/* THE DESIGN ON SCREEN BECAME ANOTHER ONE, under the open panel. The panel
+   remembers its feature by ID and nothing else, and every write it makes
+   (/api/feature/params, /api/feature/add, /api/rollback) is addressed to
+   whatever design is ACTIVE — while `uid()` hands out the same names in every
+   design, so two of them normally both hold an `extrude1`. a3d6b03 made the
+   tab BAR refuse while a panel is open, but the active tab also moves with no
+   tab click at all: a design arriving from outside takes it (studio's
+   /api/open/<slug>?external=1 — the MCP doorbell, the door doctabs.js's own
+   closeTab comment has recorded since 2026-09-01), and so does a switch made
+   in a second browser window on the same server. Measured 2026-09-16
+   (probes/tool_tab_moves_itself_probe.py): with a panel open on 'panel-design'
+   an arriving design took the tab, and the panel's next write moved the
+   ARRIVING design's extrude1 from 9 mm to 30 mm — green, unasked — while the
+   design the panel was opened on never changed.
+
+   So the session lets go, the same way it lets go of a crashed server and for
+   the same reason: its next write belongs to nobody. It writes NOTHING on the
+   way out — a preview left behind in the other design is a row the user can
+   see and remove, and that beats a silent edit to a design they never opened a
+   tool on. */
+bus.on('doc-updated', doc => { if (active) active.tabMoved(doc); });
+
 /* ------------- editing in isolation (same trick as edit-sketch) -------------
    Editing a feature in the MIDDLE of a tree rebuilt everything below it on
    every keystroke — 5.4 s a keystroke on esp32-remote (user, 2026-08-26). So
@@ -301,7 +323,7 @@ export function tool(spec) {
   const lower = spec.name.toLowerCase();
 
   const ctl = { open, openEdit, init, abandon, apply, cancel, replan, recover,
-                plan: fetchPlan, get st() { return st; } };
+                tabMoved, plan: fetchPlan, get st() { return st; } };
   for (const op of Object.values(spec.ops)) if (op) byOp[op] = ctl;
 
   /* -------- panel + the one-command-at-a-time lock (rule 9) -------- */
@@ -337,8 +359,13 @@ export function tool(spec) {
     el('TargetRow').style.display = el('Op').value === 'new' ? 'none' : '';
     if (spec.sync) spec.sync(st);
   }
+  /* `tab` / `docName`: WHICH design this session belongs to, so it can notice
+     it is no longer the one in front (see the 'doc-updated' let-go above). The
+     document is the authority for both (R1) — never a name typed here. */
   const session = input => ({ input, featureId: null, opId: null, opType: null,
                               opTarget: null, opUser: false, editing: false, plan: null,
+                              tab: (S.lastDoc && S.lastDoc.active_tab) || null,
+                              docName: (S.lastDoc && S.lastDoc.name) || null,
                               lastGood: null, lastGoodPlan: null, firstExtra: null, heldWhy: null });
 
   /* -------- open on the current selection (rules 1, 2, 4) -------- */
@@ -1120,6 +1147,25 @@ export function tool(spec) {
     clearTimeout(timer); timer = null;  // a typed value on its way is dropped
     hide();
     releaseModal();
+  }
+  /* the document on screen became ANOTHER design (see the bus handler above).
+     Nothing is posted on the way out: every write this session could make
+     would land in that other design. */
+  function tabMoved(doc) {
+    if (!st || !st.tab || !doc || !doc.active_tab
+        || doc.active_tab === st.tab) return;
+    clearTimeout(timer); timer = null;  // a typed value on its way is dropped
+    const parked = isoActive;
+    isoActive = false; isoPending = null;   // that bar is in the OTHER design now
+    const built = st.featureId, home = st.docName;
+    hide();
+    releaseModal();
+    say(`⚠ ${spec.name} let go: "${doc.name}" became the design on screen while ` +
+      'its panel was open, and a panel writes to whatever design is in front — so ' +
+      `nothing was written to either. ${home ? `"${home}"` : 'Your design'} is as ` +
+      `it was${built ? `, with ${built} in its tree as far as it got` : ''}` +
+      `${parked ? ', and its rollback bar still parked' : ''}: switch back to it ` +
+      `and press ${spec.name} again.`);
   }
 
   function init() {
