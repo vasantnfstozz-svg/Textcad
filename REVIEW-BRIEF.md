@@ -6,7 +6,7 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING.** Review `cc78019..HEAD` - the fix pass for the review of
+> **Status: PENDING.** Review `cc78019..3bbfcca` - the fix pass for the review of
 > `b17d626..cc78019`. One commit, and it puts SIXTY new lines of geometry into
 > the pre-kernel shell guard.
 >
@@ -34,13 +34,15 @@ where a float was compared). A reviewer who disagrees may close it in a line.
 
 ## The range
 
-    cc78019..HEAD          (base cc78019, the "thin everywhere" shell guard)
+    cc78019..3bbfcca       (base cc78019, the "thin everywhere" shell guard)
 
 One commit: the fix pass for the review of `b17d626..cc78019`. Two findings
 fixed, none rejected, 4 new tests.
 
-Touched: `sketch.py` (the only product file), `tests/test_shell_tool.py`,
-four probes. No frontend, so ui stays v200.
+Touched by `3bbfcca`: `sketch.py` (+114/-6, the only product file),
+`tests/test_shell_tool.py` (+74, four new tests), seven probes, and the
+paperwork. No frontend, so ui stays v200. Fast tier 1770, `-m library` 101,
+ruff zero.
 
 ## What it changes
 
