@@ -302,6 +302,36 @@ def _shift_face_picks(params: dict, delta: tuple) -> bool:
     return moved
 
 
+# WHERE THE MOVE STOPS. `_carry_face_picks` adds the move's own delta to a
+# stored pick, and that arithmetic is only right while every op between the
+# move and the pick hands its input's translation straight on. These do not:
+# they place geometry against the WORLD, so a body that moves +6 mm in x comes
+# out somewhere else entirely. Measured 2026-09-16
+# (probes/pick_carry_commute_probe.py): every face centre of a `mirror`, or of
+# a `polar_pattern` about a world axis, moves by MINUS the delta or by the
+# delta turned; `fillet`, `shell`, `scale`, an unseeded `linear_pattern` and a
+# `rotate` about the body's OWN centre all move by exactly the delta, and are
+# crossed as before.
+_WORLD_PLACED_OPS = {"mirror", "polar_pattern", "rotate"}
+
+
+def _hands_on_the_move(f: "Feature") -> bool:
+    """Does this feature's OUTPUT move by the same delta its input did?
+
+    A struck row is a pass-through to its first input (rebuild does that), so
+    it hands the move on whatever its own op would have done with it.
+    `rotate` is the one op that answers by its parameters: about the body's
+    own centre it turns in place and travels with it, about the world origin
+    (the default, and what every design saved before 2026-09-11 relies on) it
+    does not. A SEEDED pattern repeats a delta taken from elsewhere in the
+    tree, which is not this move's, so it stops here too."""
+    if f.suppressed:
+        return True
+    if f.op == "rotate":
+        return f.params.get("pivot") == "center"
+    return f.op not in _WORLD_PLACED_OPS and not Document.param_refs(f)
+
+
 DELETE_MODES = ("auto", "cascade", "strict")
 
 # A parameter that NAMES another feature. `inputs` is the body a feature works
@@ -690,19 +720,32 @@ class Document:
         `_live_source` says so), so it is rigid when THAT input is, and the
         chain below it does not end at a switched-off row.
 
+        TWO QUESTIONS, NOT ONE (review of 31684d1, 2026-09-16). "Is this
+        feature's pick on a body that moved?" is about the body it READS;
+        "may the delta travel further down the tree?" is about the body it
+        HANDS ON, and `_hands_on_the_move` is that second question. Asking
+        only the first carried picks straight through a `mirror`: a pick on
+        a mirrored boss top was pushed the WRONG WAY by the move's own delta
+        and landed on the plate top, 720 mm3 becoming 7560 mm3 with every row
+        `ok` -- where leaving the pick where it was had been RIGHT
+        (probes/pick_carry_nonrigid_probe.py).
+
         Returns the ids it changed (for tests; callers ignore it)."""
-        rigid = {moved_id}
+        rigid = {moved_id}       # bodies that are the old one, moved
+        reads = []               # features whose picks name such a body
         for f in self.features:              # build order: inputs come first
-            if f.id in rigid or not f.inputs:
+            if f.id == moved_id or not f.inputs:
                 continue
             reaches = (f.inputs[0] in rigid if f.suppressed
                        else all(dep in rigid for dep in f.inputs))
-            if reaches:
+            if not reaches:
+                continue
+            reads.append(f)
+            if _hands_on_the_move(f):
                 rigid.add(f.id)
         touched = []
-        for f in self.features:
-            if f.id != moved_id and f.id in rigid \
-                    and _shift_face_picks(f.params, delta):
+        for f in reads:
+            if _shift_face_picks(f.params, delta):
                 touched.append(f.id)
         return touched
 

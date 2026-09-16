@@ -97,8 +97,15 @@ setInterval(async () => {
       const newTab = !S.lastDoc || d.active_tab !== S.lastDoc.active_tab;
       bus.emit('doc-updated', d);
       loadMesh(newTab);
-      noteArrival(d);
     }
+    /* OUTSIDE that `if` on purpose (review of 6b4c494). The doorbell is the
+       server's fact, so it may not hang off a signature the browser computes:
+       an MCP redelivery of a design whose bytes did not change reuses the open
+       tab WITHOUT rebuilding, so name, feature count, rebuild_ms and ok all
+       stay put and the banner the server had ready was never spoken. It also
+       left the marker owed for its whole ten minutes, to be announced later
+       over some unrelated change. noteArrival carries its own two guards. */
+    noteArrival(d);
   } catch (e) { /* server briefly busy */ }
 }, 3000);
 

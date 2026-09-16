@@ -368,3 +368,134 @@ def test_a_design_of_only_sketches_still_has_no_result():
     assert doc.rebuild()
     assert doc._result_feature() is None
     assert doc.result() is None
+
+
+# ------------------------------------- where the carried delta must STOP ---
+# The carry adds the MOVE's own delta to a stored pick. That is only the right
+# arithmetic while every op between the move and the pick hands its input's
+# translation straight on. `mirror`, a world-origin `rotate` and a
+# `polar_pattern` do not — they place geometry against the WORLD — so carrying
+# through them pushes the pick the WRONG WAY. Measured on the design below
+# (probes/pick_carry_nonrigid_probe.py): the pick left the boss top for the
+# plate top and 720 mm3 became 7560 mm3 with every row `ok`, where NOT moving
+# the pick had been right.
+
+BOSS_TOP_AREA = 12.0 * 12.0            # square bosses: every rival face is PLANAR,
+#                                   so resolve_face's direction gate applies
+
+
+def placed(op, params, move_x=30.0, pick_index=0, riser=True):
+    """plate 60 x 30 x 10, two 12 x 12 x 5 bosses 30 mm apart, moved +x, then
+    `op` — and a riser pulled off one boss top of whatever `op` produced."""
+    doc = Document(name="t-stop")
+    doc.add("outline", "sketch", {"plane": "XY", "entities": [
+        {"kind": "rectangle", "w": 60, "h": 30}]})
+    doc.add("base", "extrude", {"amount": 10}, inputs=["outline"])
+    doc.add("boss_sk", "sketch", {"plane": "XY", "offset": 10, "entities": [
+        {"kind": "rectangle", "w": 12, "h": 12, "x": -15, "y": 0},
+        {"kind": "rectangle", "w": 12, "h": 12, "x": 15, "y": 0}]})
+    doc.add("boss", "extrude", {"amount": 5}, inputs=["boss_sk"])
+    doc.add("part", "fuse", {}, inputs=["base", "boss"])
+    doc.add("placed", "move", {"x": move_x, "y": 0, "z": 0}, inputs=["part"])
+    doc.add("flip", op, dict(params), inputs=["placed"])
+    doc._cache = {}
+    assert doc.rebuild(), doc.tree()
+    if not riser:
+        return doc, None
+    top = boss_top_centres(doc._parts["flip"])[pick_index]
+    doc.add("riser", "extrude_face",
+            {"face_center": list(top), "face_normal": list(UP), "amount": 5},
+            inputs=["flip"])
+    doc._cache = {}
+    assert doc.rebuild(), doc.tree()
+    return doc, top
+
+
+def boss_top_centres(part):
+    out = []
+    for f in part.faces():
+        try:
+            n = f.normal_at(f.center())
+        except Exception:                        # a face the kernel won't measure
+            continue
+        if abs(n.Z - 1.0) < 1e-6 and abs(f.area - BOSS_TOP_AREA) < 1e-3:
+            c = f.center()
+            out.append([round(c.X, 6), round(c.Y, 6), round(c.Z, 6)])
+    return sorted(out)
+
+
+def _pick_survives(op, params, dx=6.0, pick_index=0):
+    """Edit the move by `dx` and report the face the stored pick now finds."""
+    doc, top = placed(op, params, pick_index=pick_index)
+    before = doc.result().volume
+    doc.edit("placed", "x", 30.0 + dx)
+    assert doc.rebuild(), doc.tree()
+    stored = doc.get("riser").params["face_center"]
+    face = blocks.resolve_face(doc._parts["flip"], stored, UP)
+    return doc, top, stored, face, before
+
+
+@pytest.mark.parametrize("op,params", [
+    ("mirror", {"plane": "YZ"}),
+    ("mirror", {"plane": "YZ", "join": True}),
+    ("rotate", {"axis": "Z", "angle_deg": 180}),
+    ("polar_pattern", {"count": 2, "angle": 90}),
+])
+def test_the_delta_does_not_cross_an_op_that_places_against_the_world(op, params):
+    doc, top, stored, face, before = _pick_survives(op, params)
+    assert stored == top, \
+        f"{op}: the pick was carried past an op whose output does not move with it"
+    assert face.area == pytest.approx(BOSS_TOP_AREA, rel=1e-9), \
+        f"{op}: the pick left the boss top for a {face.area:.1f} mm2 face"
+    assert doc.result().volume == pytest.approx(before, rel=1e-9), \
+        f"{op}: the design changed size because the pick moved"
+
+
+def test_a_rotate_about_the_bodys_own_centre_still_carries_the_pick():
+    """The other half of the rule, so it cannot be 'never carry past rotate':
+    pivot='center' is what the Rotate tool sends, it turns the body IN PLACE,
+    and its output really does travel with the move."""
+    doc, top, stored, face, before = _pick_survives(
+        "rotate", {"axis": "Z", "angle_deg": 90, "pivot": "center"})
+    assert stored == [top[0] + 6.0, top[1], top[2]], \
+        "a rotate in place hands the move on; its pick must follow"
+    assert face.area == pytest.approx(BOSS_TOP_AREA, rel=1e-9)
+    assert doc.result().volume == pytest.approx(before, rel=1e-9)
+
+
+def test_a_linear_pattern_still_carries_the_pick():
+    """Measured to move by exactly the delta (probes/pick_carry_commute
+    _probe.py), so the stop rule must not swallow it."""
+    doc, top, stored, face, before = _pick_survives(
+        "linear_pattern", {"count": 2, "dx": 80})
+    assert stored == [top[0] + 6.0, top[1], top[2]]
+    assert face.area == pytest.approx(BOSS_TOP_AREA, rel=1e-9)
+    assert doc.result().volume == pytest.approx(before, rel=1e-9)
+
+
+def test_a_mirrors_own_plane_pick_still_follows_the_move():
+    """The feature that STOPS the delta still READS the moved body: the plane
+    the mirror was given is a face OF that body, so it moves with it. Getting
+    this wrong the other way would mirror about a plane 6 mm from the one the
+    user picked."""
+    doc, _ = placed("mirror", {"plane": {"face_center": [60.0, 0.0, 5.0],
+                                         "face_normal": [1.0, 0.0, 0.0]}},
+                    riser=False)
+    doc.edit("placed", "x", 36.0)
+    assert doc.get("flip").params["plane"]["face_center"] == [66.0, 0.0, 5.0]
+    assert doc.rebuild(), doc.tree()
+    assert doc.get("flip").status == "ok"
+
+
+def test_a_seeded_pattern_stops_the_carry_too():
+    """A seeded pattern repeats a delta taken from ELSEWHERE in the tree, so
+    the move's own delta is not what its copies travel by."""
+    from document import _hands_on_the_move
+    from document import Feature
+    plain = Feature(id="p", op="linear_pattern",
+                    params={"count": 3, "dx": 12}, inputs=["b"])
+    seeded = Feature(id="p", op="linear_pattern",
+                     params={"count": 3, "dx": 12, "seed": "hole1"},
+                     inputs=["b"])
+    assert _hands_on_the_move(plain) is True
+    assert _hands_on_the_move(seeded) is False
