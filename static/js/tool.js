@@ -99,6 +99,7 @@ function currentSelection(explicit) {
     // no normal is invented here: the server resolves the face by its centre
     // and, when the pick gave one, its normal (R1)
     return { kind: 'face', center: face.center, normal: face.normal || null, body: owner,
+             area: face.area == null ? null : face.area,   // how big it was when clicked
              point: face.point || null };     // where it was clicked (Hole's centre)
   }
   if (S.pickedProfile) return { kind: 'profile', id: S.pickedProfile.id };
@@ -112,6 +113,7 @@ function currentSelection(explicit) {
   if (S.pickedCurved) {
     const c = S.pickedCurved;
     return { kind: 'curved', type: c.type, center: c.center, normal: c.normal || null,
+             area: c.area == null ? null : c.area,   // how big it was when clicked
              body: pickedBody(c), point: c.point || null };
   }
   // a tree row that is not a sketch is the FEATURE itself (Pattern's seed)
@@ -463,7 +465,8 @@ export function tool(spec) {
   const firstClick = sel => !sel ? null
     : sel.kind === 'edges' ? { toggle: { points: sel.edges[0].points } }
     : sel.kind === 'face' || sel.kind === 'curved'
-      ? { face_toggle: { center: sel.center, normal: sel.normal || null } }
+      ? { face_toggle: { center: sel.center, normal: sel.normal || null,
+                         area: sel.area ?? null } }
     : sel.kind === 'feature' ? { feature_toggle: sel.id } : null;
   function openEdges(sel, bods) {
     if (!bods.length) {
@@ -509,7 +512,8 @@ export function tool(spec) {
     // a face means every edge of it, toggled as one set; the server names the
     // face by its centre and refuses one only the preview has (a new round)
     if (kind === 'face') {
-      replan({ face_toggle: { center: info.center || null, normal: info.normal || null } });
+      replan({ face_toggle: { center: info.center || null, normal: info.normal || null,
+                              area: info.area ?? null } });
       return;
     }
     replan({ toggle: { points: info.points } });
@@ -738,6 +742,7 @@ export function tool(spec) {
       ? { kind: 'feature', id: p.seed || null, body: f.inputs[0] }   // the server reads the stored seed
       : face
         ? { kind: 'face', center: p.face_center, normal: p.face_normal || null,
+            area: p.face_area == null ? null : p.face_area,
             body: f.inputs[0], point: null }    // the server reads the stored point
         : edges
           ? { kind: 'edges', body: f.inputs[0], edges: null }   // null: the server reads the stored ones
@@ -783,6 +788,7 @@ export function tool(spec) {
     const i = st.input;
     const req = i.kind === 'face'
       ? { tool: spec.tool, body_id: i.body, face_center: i.center, face_normal: i.normal,
+          face_area: i.area == null ? null : i.area,
           face_point: i.point || null }
       : i.kind === 'edges'
         ? { tool: spec.tool, body_id: i.body, edges: i.edges }

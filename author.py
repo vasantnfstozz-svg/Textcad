@@ -93,7 +93,8 @@ OP_NOTES = {
                     "solid; fuse/cut it with the body.",
     "hole": 'Drills ONE hole into the input body from a flat face and RETURNS THE '
             'BODY WITH THE HOLE (no sketch, no cut feature). Name the face '
-            '(face="top"/"bottom"/"+x"/… — never compute a face_center) and place '
+            '(face="top"/"bottom"/"+x"/… — never compute a face_center or '
+            'face_area) and place '
             'it with at=[x, y] in that face\'s own coordinates — on the flat, '
             'axis-aligned faces of a part exactly the x/y a sketch_on_face on that '
             'face uses; on a TILTED face the hole measures in the face\'s true '
@@ -115,7 +116,8 @@ OP_NOTES = {
               "along its normal (mm).",
     "sketch_on_face": 'Sketch on a face of an existing body — the offset method. '
                       'Say WHICH face by name: face="top"|"bottom"|"+x"|"-x"|'
-                      '"+y"|"-y" (never compute a face_center yourself). The '
+                      '"+y"|"-y" (never compute a face_center or face_area '
+                      'yourself — they belong to a mouse click). The '
                       'face gives the plane its POSITION only; x/y always mean '
                       'what they mean in a plane sketch, on every face. offset '
                       'moves the plane along +Z (Z-facing faces), +X (X-facing) '
@@ -371,8 +373,9 @@ A sketch_on_face has ONE input (the body) and params
 {{"face":"top|bottom|+x|-x|+y|-y","offset":mm,"entities":[...]}} — same
 entities, and offset is measured from that face along the axis in rule 2
 (from "top" negative goes into the material; from "bottom" positive is the
-height above it). Do NOT send face_center/face_normal; the named face is
-resolved from the real geometry at every rebuild.
+height above it). Do NOT send face_center/face_normal/face_area; the named
+face is resolved from the real geometry at every rebuild (those three are what
+a mouse click in the app leaves behind, and only it can fill them in).
 extrude params {{"amount":mm,"flip":false,"through":false,"both":false}}; revolve {{"axis":"Z",
 "angle":360}} (draw the profile on XZ at positive X to revolve about Z). Sketch
 features have no volume — only the extrude/revolve/loft result is a solid.

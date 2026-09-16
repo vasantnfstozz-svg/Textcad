@@ -269,7 +269,8 @@ def test_a_failed_hole_is_a_failed_feature_not_a_corrupt_body():
 
 def test_the_catalogue_knows_every_key_and_a_strict_add_refuses_a_stranger():
     names = [n for n, _ in op_params("hole")]
-    assert names == ["face_center", "face_normal", "face", "at", "diameter", "depth",
+    assert names == ["face_center", "face_normal", "face", "face_area",
+                     "at", "diameter", "depth",
                      "through", "kind", "cbore_diameter", "cbore_depth",
                      "csink_diameter", "csink_angle"]
     d = Document(name="strict")

@@ -401,7 +401,12 @@ async function strikeFeature(fid) {
   const doc = await postJSON('/api/feature/strike', { feature_id: fid },
                              'striking out…');
   if (doc.error) return;
-  if (S.selected === fid) { S.selected = null; clearHighlight(); }
+  // The ROW survives a strike (unlike a permanent delete), so the selection
+  // survives with it — only the 3D highlight goes, because there is no
+  // geometry left to highlight. Dropping the selection here made the Del key's
+  // own second half unreachable: the handler says "Del again deletes for good"
+  // and the second Del had nothing selected to act on (measured 2026-09-16).
+  if (S.selected === fid) clearHighlight();
   const plan = doc.strike_plan;
   const also = plan && plan.deleted.filter(id => id !== fid);
   bus.emit('msg', 'bot', `Struck out "${fid}"` +

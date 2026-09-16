@@ -267,14 +267,29 @@ def _move_offsets(params: dict) -> tuple[float, float, float]:
 
 
 def _shift_face_picks(params: dict, delta: tuple) -> bool:
-    """Add `delta` to every stored face-pick CENTRE in one feature's params.
+    """Add `delta` to every stored PICK POINT in one feature's params.
 
-    A pick is `face_center`: [x, y, z] — a point in the room, the centre of
-    the face as it stood when it was clicked. It appears bare (sketch_on_face,
-    extrude_face, revolve_face, hole) and one level down inside a dict
-    (a Pattern axis, a Mirror plane: {"face_center": …, "face_normal": …}).
-    The NORMAL is a direction, so a move leaves it alone, and a hole's `at` is
-    already in the face's own plane (sketch.hole), so that moves by itself.
+    A pick is remembered as a point in the room, and it is written down in
+    THREE shapes — all three have to move, because the one that does not is
+    the one that silently rounds a different edge:
+
+      `face_center`: [x, y, z]   bare (sketch_on_face, extrude_face,
+                                 revolve_face, hole) or one level down inside
+                                 a dict (a Pattern axis, a Mirror plane)
+      a SHELL opening            params["faces"] = [{center, normal, area}, …]
+      a picked EDGE              params["edges"] = [{mid, dir, type,
+                                 faces: [{center, normal, area}, …]}, …]
+
+    Directions (`normal`, `dir`) and sizes (`area`) are not places, so a move
+    leaves them alone, and a hole's `at` is already in the face's own plane
+    (sketch.hole), so that moves by itself.
+
+    MEASURED, because the two list-shaped ones were missed the first time
+    (probes/move_carries_which_picks_probe.py, plate + boss moved 8 mm): a
+    shell whose opening was the boss top reopened on the PLATE top and failed
+    outright — 6597.628 mm3 becoming 13005.31 with a red row — and a fillet on
+    the boss rim rounded a DIFFERENT edge with every row still `ok`, 12994.824
+    against 13016.398 mm3, which is the silent kind.
 
     Rounded to 6 decimals only to keep the saved file readable: the deltas of
     a drag telescope (p + (v1-v0) + (v2-v1) = p + v2 - v0), so this cannot
@@ -286,6 +301,25 @@ def _shift_face_picks(params: dict, delta: tuple) -> bool:
             return [round(float(pt[i]) + delta[i], 6) for i in range(3)]
         except (TypeError, ValueError):
             return None
+
+    def shift_key(d, key) -> bool:
+        if not isinstance(d, dict):
+            return False                      # a named opening ("top") has no place
+        new = shift(d.get(key))
+        if new is None:
+            return False
+        d[key] = new
+        return True
+
+    def shift_ref(ref) -> bool:
+        """One stored opening or edge: its own point, and the centre of every
+        host face it names."""
+        if not isinstance(ref, dict):
+            return False
+        hit = shift_key(ref, "center") | shift_key(ref, "mid")
+        for host in ref.get("faces") or []:
+            hit |= shift_key(host, "center")
+        return bool(hit)
 
     moved = False
     for key, val in list((params or {}).items()):
@@ -299,6 +333,9 @@ def _shift_face_picks(params: dict, delta: tuple) -> bool:
             if new is not None:
                 val["face_center"] = new
                 moved = True
+        elif key in ("faces", "edges") and isinstance(val, (list, tuple)):
+            for ref in val:
+                moved |= shift_ref(ref)
     return moved
 
 

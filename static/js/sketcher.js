@@ -25,7 +25,7 @@ import { SETTINGS, unitLabel, fmtLen, toMm } from './settings.js';
 /* ---------------- state ---------------- */
 
 let skEnts = [];          // the sketch's entities
-let skOnFace = null;      // {center, normal, inputId, frame} when on a face
+let skOnFace = null;      // {center, normal, area, inputId, frame} on a face
 let skEditId = null;      // feature id when EDITING an existing committed sketch
 let faceRef = null;       // {outer:[[x,y]..], holes:[[[x,y]..]..]} reference outline
 let sketchActive = false; // true while in sketch MODE (in-viewport, non-modal)
@@ -270,6 +270,7 @@ export async function editSketch(feature) {
     outline = await fetchFaceOutline({
       center: feature.params.face_center || null,
       normal: feature.params.face_normal || null,
+      area: feature.params.face_area ?? null,
       face: feature.params.face || null,
       offset: Number(feature.params.offset) || 0,
       featureId: feature.inputs?.[0] || null });
@@ -286,6 +287,7 @@ export async function editSketch(feature) {
   skOnFace = onFace
     ? { center: feature.params.face_center || null,
         normal: feature.params.face_normal || null,
+        area: feature.params.face_area ?? null,
         inputId: feature.inputs?.[0] || null, frame }
     : null;
   skFrame = frame;
@@ -323,7 +325,8 @@ export async function openSketchOnFace(faceInfo) {
   // the face's plane IS the sketch frame, so it must arrive BEFORE the mode
   // can open — same fetch also brings the boundary shown as reference
   const data = await fetchFaceOutline({ center: faceInfo.center,
-    normal: faceInfo.normal || null, featureId: owner });
+    normal: faceInfo.normal || null, area: faceInfo.area ?? null,
+    featureId: owner });
   if (!data?.planar || !data.frame) {
     bus.emit('msg', 'bot', '⚠ ' + (data?.error ||
       'That face is curved — a sketch needs a FLAT face. Pick a planar face, ' +
@@ -331,7 +334,7 @@ export async function openSketchOnFace(faceInfo) {
     return;
   }
   skOnFace = { center: faceInfo.center, normal: faceInfo.normal || null,
-               inputId: owner, frame: data.frame };
+               area: faceInfo.area ?? null, inputId: owner, frame: data.frame };
   skEditId = null;
   resetEditor();
   skName = nextName();
@@ -350,12 +353,13 @@ bus.on('sketch-on-face', openSketchOnFace);
 /* The picked face's plane frame + boundary (in the plane's own 2D coords),
    resolved on the body it was picked from — by geometry (center/normal) or
    by name (face: "top"), plus the sketch plane's offset off that face. */
-async function fetchFaceOutline({ center = null, normal = null, face = null,
-                                  offset = 0, featureId = null }) {
+async function fetchFaceOutline({ center = null, normal = null, area = null,
+                                  face = null, offset = 0, featureId = null }) {
   try {
     const r = await fetch('/api/face-outline', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ face_center: center, face_normal: normal,
+                             face_area: area,
                              face, offset, feature_id: featureId }) });
     return await r.json();
   } catch { return null; }
@@ -2053,7 +2057,7 @@ async function create() {
     const added = [];
     const problem = await addChecked({ id, op: 'sketch_on_face',
       params: { face_center: skOnFace.center, face_normal: skOnFace.normal,
-                entities },
+                face_area: skOnFace.area ?? null, entities },
       inputs: [skOnFace.inputId] }, added);
     loadMesh(true);          // the sketch now shows in the viewport (green)
     bus.emit('msg', 'bot', problem

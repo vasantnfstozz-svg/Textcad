@@ -175,6 +175,71 @@ def test_a_face_pick_stored_inside_a_dict_param_is_carried_too():
     assert doc.get("mirrored").params["plane"]["face_normal"] == [0.0, 0.0, 1.0]
 
 
+def moved_plate_and_boss(dz=0.0):
+    """The same plate and boss, MOVED — with nothing hanging off the pick yet,
+    so a caller can hang a shell or a fillet on it."""
+    doc = Document(name="t-carry")
+    doc.add("outline", "sketch", {"plane": "XY", "entities": [
+        {"kind": "rectangle", "w": 40, "h": 30}]})
+    doc.add("base", "extrude", {"amount": 10}, inputs=["outline"])
+    doc.add("boss_sk", "sketch", {"plane": "XY", "offset": 10, "entities": [
+        {"kind": "circle", "r": 8, "x": 0, "y": 0}]})
+    doc.add("boss", "extrude", {"amount": 5}, inputs=["boss_sk"])
+    doc.add("part", "fuse", {}, inputs=["base", "boss"])
+    doc.add("placed", "move", {"x": 0, "y": 0, "z": dz}, inputs=["part"])
+    doc._cache = {}
+    return doc
+
+
+def test_a_shell_opening_is_carried_by_the_move_too():
+    """A shell keeps its opening in `faces` — a LIST of {center, normal}, not a
+    `face_center` — so the first carry walked straight past it. Measured
+    (probes/move_carries_which_picks_probe.py): moving the body 8 mm reopened
+    the shell on the PLATE top, where a 2 mm wall does not fit, and 6597.628
+    mm3 became 13005.31 with a red row."""
+    doc = moved_plate_and_boss()
+    doc.add("hollow", "shell", {"thickness": 2.0, "faces": [
+        {"center": list(BOSS_TOP), "normal": list(UP)}]}, inputs=["placed"])
+    doc.rebuild()
+    before = doc.result().volume
+    doc.edit("placed", "z", 8)
+    doc.rebuild()
+    assert doc.get("hollow").params["faces"][0]["center"] == pytest.approx(
+        [0.0, 0.0, 23.0])
+    assert doc.get("hollow").params["faces"][0]["normal"] == UP   # a direction
+    assert doc.get("hollow").status == "ok"
+    assert doc.result().volume == pytest.approx(before, abs=1e-6)
+
+
+def test_a_picked_edge_is_carried_by_the_move_too():
+    """The silent one. A fillet keeps its pick in `edges` — {mid, dir, faces:
+    [{center, normal}]} — and none of those is a `face_center`. Moving the body
+    8 mm rounded a DIFFERENT edge with every row still `ok`: 12994.824 mm3
+    against 13016.398."""
+    doc = moved_plate_and_boss()
+    doc.rebuild()
+    part = doc._parts["placed"]
+    rim = next(e for e in part.edges()
+               if str(e.geom_type).endswith("CIRCLE")
+               and abs(float((e @ 0.5).Z) - 15.0) < 1e-6)
+    ref = blocks.edge_ref(part, rim)
+    for host in ref["faces"]:                      # the old shape: no size
+        host.pop("area", None)
+    doc.add("round", "fillet", {"radius": 1.0, "edges": [ref]},
+            inputs=["placed"])
+    doc.rebuild()
+    before = doc.result().volume
+    doc.edit("placed", "z", 8)
+    doc.rebuild()
+    got = doc.get("round").params["edges"][0]
+    assert got["mid"] == pytest.approx([-8.0, 0.0, 23.0])
+    assert got["dir"] == ref["dir"]                # a direction does not move
+    assert [h["center"][2] for h in got["faces"]] == pytest.approx(
+        [h["center"][2] + 8.0 for h in blocks.edge_ref(part, rim)["faces"]])
+    assert doc.get("round").status == "ok"
+    assert doc.result().volume == pytest.approx(before, abs=1e-6)
+
+
 # ------------------------------------------------- two faces in one place ---
 
 def flush_pad():

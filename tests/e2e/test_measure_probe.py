@@ -66,7 +66,14 @@ def pick_pair(page):
     assert st["A"] != "—", st
     page.evaluate(CAM, [0, -60, 190])
     page.wait_for_timeout(700)
-    page.evaluate("(c) => window.__vp.pickAtWorld(c)", [0, 4.6, -2])
+    # MID-DEPTH on the far wall. The aim is a world POINT, so what decides the
+    # pick is where the RAY through it crosses the bore (radius 5), not where
+    # the point itself sits: from this camera the ray moves 0.34 mm in y per mm
+    # of depth, so the old aim [0, 4.6, -2] pierced the wall 1.9 mm above the
+    # BOTTOM rim — three screen pixels from it, inside the 5-pixel edge halo,
+    # which then correctly answered with the rim. Through [0, 5, 0] it pierces
+    # at z = 0, 6 mm from either rim.
+    page.evaluate("(c) => window.__vp.pickAtWorld(c)", [0, 5, 0])
     page.wait_for_timeout(1200)
     st = state(page)
     assert "CYLINDER" in st["B"], f"the bore pick landed on {st['B']}"

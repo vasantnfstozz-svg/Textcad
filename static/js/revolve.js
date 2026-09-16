@@ -56,7 +56,10 @@ function axisParam(st) {
 function params(st) {                          // typed values are clamped in beforeApply, drags by the ring
   const x = extents(st);
   const p = { axis: axisParam(st), angle: x.angle, angle2: x.angle2, both: x.both };
-  if (isFace(st)) { p.face_center = st.input.center; p.face_normal = st.input.normal; }
+  if (isFace(st)) {
+    p.face_center = st.input.center; p.face_normal = st.input.normal;
+    p.face_area = st.input.area == null ? null : st.input.area;
+  }
   return p;
 }
 /* the option whose param IS this axis — by name for u / v / a world axis, by
@@ -86,7 +89,10 @@ function snapshot(f) {
   const s = { axis: p.axis == null ? (f.op === 'revolve_face' ? null : 'Z') : p.axis,
               angle: p.angle == null ? 360 : Number(p.angle),
               angle2: Number(p.angle2) || 0, both: !!p.both };
-  if (f.op === 'revolve_face') { s.face_center = p.face_center; s.face_normal = p.face_normal || null; }
+  if (f.op === 'revolve_face') {
+    s.face_center = p.face_center; s.face_normal = p.face_normal || null;
+    s.face_area = p.face_area == null ? null : p.face_area;
+  }
   return s;
 }
 function sync() { g('rvAngle2Row').style.display = g('rvDir').value === 'two' ? '' : 'none'; }

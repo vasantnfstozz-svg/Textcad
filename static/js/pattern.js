@@ -40,7 +40,10 @@ function circular() {
     eats: true,                   // the op returns the body WITH the copies: no Join / Cut row
     anyFace: true,                // a bore's wall is a seed (its hole) and an axis
     repick: 'Click a bore or a flat face of the body for the axis · type the count · Esc cancels',
-    onRepick(st, data, replan) { replan({ axis_pick: { center: data.center, normal: data.normal || null } }); },
+    onRepick(st, data, replan) {
+      replan({ axis_pick: { center: data.center, normal: data.normal || null,
+                            area: data.area ?? null } });
+    },
     fields: { typed: ['Count', 'Angle'] },
     /* once this session HAS built its pattern, every replan is about that
        feature: without it the server walks the tree down from the seed and

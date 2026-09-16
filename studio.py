@@ -954,6 +954,7 @@ class FaceReq(BaseModel):
     # made every named-face sketch un-editable (422 before the JSON was read)
     face_center: list | None = None
     face_normal: list | None = None
+    face_area: float | None = None      # how big the face was when it was clicked
     face: str | None = None
     offset: float = 0.0                 # the sketch plane's offset off the face
     feature_id: str | None = None       # which BODY the face belongs to
@@ -966,6 +967,7 @@ class ToolPlanReq(BaseModel):
     body_id: str | None = None          # face mode: the body the face was picked from
     face_center: list | None = None
     face_normal: list | None = None
+    face_area: float | None = None      # how big that face was when it was clicked
     feature_id: str | None = None       # edit mode: an existing extrude / extrude_face
     plane: str | None = None            # tool "sketch": the principal plane a new
     offset: float = 0.0                 #   plane sketch is drawn on, and its offset
@@ -1045,6 +1047,7 @@ class TracePngReq(BaseModel):
     # sketch_on_face, auto-scaled to fit — height_mm is then ignored
     face_center: list[float] | None = None
     face_normal: list[float] | None = None
+    face_area: float | None = None       # how big that face was when it was clicked
     body_feature_id: str | None = None   # the feature the face was picked from
     fit_margin: float = 0.9          # fraction of the face bbox the art fills
     # entities-only: the sketcher inserting art into the OPEN sketch — return
@@ -1874,7 +1877,8 @@ def face_outline(req: FaceReq):
                 "error": "no solid to sketch on"}
     try:
         return sketchlib.face_outline_2d(part, req.face_center, req.face_normal,
-                                         face=req.face, offset=req.offset)
+                                         face=req.face, offset=req.offset,
+                                         face_area=req.face_area)
     except Exception as e:
         return {"outer": [], "holes": [], "planar": False, "error": str(e)}
 
@@ -2004,7 +2008,8 @@ def _trace_face_fit(req: TracePngReq):
     if part is None:
         raise ValueError("no solid to fit the logo onto — build a body "
                          "first, or trace without a face selected")
-    outline = sketchlib.face_outline_2d(part, req.face_center, req.face_normal)
+    outline = sketchlib.face_outline_2d(part, req.face_center, req.face_normal,
+                                        face_area=req.face_area)
     if not outline.get("planar") or not outline.get("outer"):
         raise ValueError("that face is curved — pick a FLAT face to put "
                          "the logo on")
@@ -2111,6 +2116,7 @@ def trace_png(req: TracePngReq):
             _doc().add(fid, "sketch_on_face",
                        {"face_center": req.face_center,
                         "face_normal": req.face_normal,
+                        "face_area": req.face_area,
                         "offset": req.offset, "entities": ents}, [body_id])
         else:
             _doc().add(fid, "sketch",

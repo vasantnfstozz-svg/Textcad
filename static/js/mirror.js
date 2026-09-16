@@ -36,7 +36,8 @@ function mirrorTool() {
     repick: 'Click a flat face or an origin plane for the mirror plane · Esc cancels',
     onRepick(st, data, replan) {
       replan({ plane_pick: data.world ? { world: data.world }
-                                      : { center: data.center, normal: data.normal || null } });
+                                      : { center: data.center, normal: data.normal || null,
+                                          area: data.area ?? null } });
     },
     fields: {},
     /* once this session HAS built its mirror, every replan is about that

@@ -508,7 +508,8 @@ def _plane_sig(feat) -> tuple:
     """Everything about a sketch feature that changes where its plane sits."""
     p = feat.params or {}
     return (feat.op, p.get("plane"), p.get("offset"), p.get("face"),
-            tuple(p.get("face_center") or ()), tuple(p.get("face_normal") or ()))
+            tuple(p.get("face_center") or ()), tuple(p.get("face_normal") or ()),
+            p.get("face_area"))
 
 
 def _sketch_plane(doc, feat):
@@ -542,7 +543,8 @@ def _build_plane(doc, feat, base):
                 picked = sk.named_face(base, p["face"])
             elif p.get("face_center") is not None:
                 picked = sk.resolve_face(base, p["face_center"],
-                                         p.get("face_normal"))
+                                         p.get("face_normal"),
+                                         p.get("face_area"))
             else:
                 return None
             pl = sk.face_sketch_plane(picked)

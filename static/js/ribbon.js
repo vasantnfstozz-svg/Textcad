@@ -176,7 +176,10 @@ function renderTabs() {
    Solids keep the scale-modifier dialog. */
 async function smartScale() {
   const feats = S.lastDoc?.features || [];
-  const sketches = feats.filter(f => f.op === 'sketch' || f.op === 'sketch_on_face');
+  // a STRUCK sketch is not offered: its row's only actions are ↩ and ✕ until
+  // it comes back (the selection now survives a strike, tree.js strikeFeature)
+  const sketches = feats.filter(f => (f.op === 'sketch' || f.op === 'sketch_on_face')
+                                     && !f.suppressed);
   const f = feats.find(x => x.id === S.selected && sketches.includes(x))
          || (sketches.length === 1 && !S.selected ? sketches[0] : null);
   if (f) {

@@ -152,9 +152,16 @@ def test_clicking_that_row_highlights_the_pocket_not_the_whole_body(
 def test_deleting_the_folded_row_removes_the_boolean_too(page, server,
                                                          fresh_doc):
     build(page, server)
+    # two steps since the strike-out mandate: the row's ✕ strikes it out, the
+    # struck row's ✕ deletes for good (see tests/e2e/test_tree_delete.py)
     row = page.locator("#tree .node[data-fid='pocket_tool'] .nrow")
     row.hover()
-    row.locator("button[title^='delete']").click()
+    row.locator("button[title^='strike out']").click()
+    page.wait_for_selector("#tree .node[data-fid='pocket_tool'].suppressed",
+                           timeout=20000)
+    row = page.locator("#tree .node[data-fid='pocket_tool'] .nrow")
+    row.hover()
+    row.locator("button[title^='delete permanently']").click()
     ask_ok(page)
     page.wait_for_function(
         "() => ![...document.querySelectorAll('#tree .node')]"

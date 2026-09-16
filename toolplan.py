@@ -187,7 +187,7 @@ def _pick_face(part, params: dict):
     may name it (by direction, or by a real pick's centre + normal) — the op's
     own rule, sketch.pick_face."""
     return sk.pick_face(part, params.get("face_center"), params.get("face_normal"),
-                        params.get("face"))
+                        params.get("face"), params.get("face_area"))
 
 
 def _flat_or_raise(face, verb: str = "extruded"):
@@ -243,6 +243,7 @@ def plan_extrude(doc, req: dict) -> dict:
     body_id = req.get("body_id")
     face_center = req.get("face_center")
     face_normal = req.get("face_normal")
+    face_area = req.get("face_area")
 
     fid = req.get("feature_id")
     if fid:
@@ -251,6 +252,7 @@ def plan_extrude(doc, req: dict) -> dict:
             body_id = (f.inputs or [None])[0]
             face_center = f.params.get("face_center")
             face_normal = f.params.get("face_normal")
+            face_area = f.params.get("face_area")
         else:
             sketch_id = (f.inputs or [None])[0]
 
@@ -260,7 +262,7 @@ def plan_extrude(doc, req: dict) -> dict:
     # ---- face mode: extrude_face runs along the face's OUTWARD normal --------
     if sketch_id is None:
         part, body_id = _pick_body(doc, body_id, "extrude a face from")
-        picked = sk.resolve_face(part, face_center, face_normal)
+        picked = sk.resolve_face(part, face_center, face_normal, face_area)
         # the face's OWN plane: z = the outward normal = the build direction.
         # (Not face_sketch_plane: that canonicalises, and snaps a face tilted
         # under ~25° to a principal plane — the ghost would then grow along a
@@ -501,6 +503,7 @@ def plan_revolve(doc, req: dict) -> dict:
     body_id = req.get("body_id")
     face_center = req.get("face_center")
     face_normal = req.get("face_normal")
+    face_area = req.get("face_area")
     want = req.get("axis")
     fid = req.get("feature_id")
     if fid:
@@ -509,6 +512,7 @@ def plan_revolve(doc, req: dict) -> dict:
         if f.op == "revolve_face":
             body_id = (f.inputs or [None])[0]
             face_center, face_normal = p.get("face_center"), p.get("face_normal")
+            face_area = p.get("face_area")
             want = want or p.get("axis")
         else:
             sketch_id = (f.inputs or [None])[0]
@@ -518,7 +522,8 @@ def plan_revolve(doc, req: dict) -> dict:
 
     if sketch_id is None:                       # ---- face mode (P3b) ----
         part, body_id = _pick_body(doc, body_id, "revolve a face of")
-        _picked, _fp, profile = sk.face_profile(part, face_center, face_normal)  # the op's own object
+        _picked, _fp, profile = sk.face_profile(part, face_center, face_normal,
+                                               face_area=face_area)  # the op's own object
         input_id, mode, op, target = body_id, "face", "revolve_face", body_id
     else:                                       # ---- sketch mode ----
         _prof, profile = _sketch_part(doc, sketch_id)
@@ -720,7 +725,7 @@ def _face_of(part, pick: dict, body: str):
     if c is None:
         raise ValueError("that face has no centre to name it by — click one of its edges instead")
     nrm = pick.get("normal")
-    face = blocks.resolve_face(part, c, nrm)
+    face = blocks.resolve_face(part, c, nrm, pick.get("area"))
     x, y, z = (float(v) for v in c)
     ok = provenance.surface_gap(face.wrapped, x, y, z) <= 0.02
     if ok and nrm:
@@ -888,6 +893,7 @@ def plan_hole(doc, req: dict) -> dict:
     nothing (R1)."""
     body_id, params = req.get("body_id"), {}
     face_center, face_normal = req.get("face_center"), req.get("face_normal")
+    face_area = req.get("face_area")
     point, at, face_name = req.get("face_point"), None, None
     fid = req.get("feature_id")
     if fid:
@@ -899,6 +905,7 @@ def plan_hole(doc, req: dict) -> dict:
         # mode moves nothing and says nothing
         face_center = face_center if face_center is not None else params.get("face_center")
         face_normal = face_normal if face_normal is not None else params.get("face_normal")
+        face_area = face_area if face_area is not None else params.get("face_area")
         if point is None:                # no fresh click: the stored face and point stand
             face_name = params.get("face")
             at = params.get("at")
@@ -907,7 +914,7 @@ def plan_hole(doc, req: dict) -> dict:
     if face_center is None and not face_name:
         raise ValueError("Hole needs a flat face — click a face of a body")
     part, body_id = _pick_body(doc, body_id, "drill")
-    face = sk.pick_face(part, face_center, face_normal, face_name)
+    face = sk.pick_face(part, face_center, face_normal, face_name, face_area)
     # ONE flat-face guard and ONE framing rule, the op's own: a curved face, a
     # point off the face and the click -> `at` all speak there
     pl, centre, n, at = sk.hole_frame(face, at, point)
@@ -918,6 +925,9 @@ def plan_hole(doc, req: dict) -> dict:
         "face": face_name,
         "face_center": None if face_name else _vec(face.center()),
         "face_normal": None if face_name else _vec(n),
+        # the size of the face this was planned against, so the feature the
+        # tool writes remembers which face it was (blocks.resolve_face)
+        "face_area": None if face_name else blocks.stored_area(face),
         # the marker circle's frame: the face's own right-handed axes, moved to
         # the hole's centre
         "frame": {**_frame(pl), "origin": _vec(centre)},
@@ -1036,7 +1046,8 @@ def _axis_face(part, pick: dict, tip: str):
     that the click must be somewhere `part` really has that face: inside the
     resolved face's own bounding box. A face the result body shares passes even
     with its centroid drifted; a copy's face is tens of mm outside it."""
-    picked = sk.pick_face(part, pick.get("center"), pick.get("normal"))
+    picked = sk.pick_face(part, pick.get("center"), pick.get("normal"),
+                          face_area=pick.get("area"))
     c = pick.get("center")
     if c is not None:
         bb = picked.bounding_box()
@@ -1188,7 +1199,8 @@ def _plane_face(part, pick: dict, tip: str):
             best = f
     if best is not None:
         return best
-    picked = sk.pick_face(part, pick.get("center"), pick.get("normal"))   # name what was clicked
+    picked = sk.pick_face(part, pick.get("center"), pick.get("normal"),
+                          face_area=pick.get("area"))   # name what was clicked
     pl = sk.face_plane(picked)                    # a dead-flat BSPLINE wall is a plane too
     if pl is None:
         raise ValueError(f"the picked face is {picked.geom_type.name} — a mirror plane is "
@@ -1330,7 +1342,8 @@ def plan_shell(doc, req: dict) -> dict:
     if faces is None:                        # opening the tool: the pick is the first click
         faces = []
         if req.get("face_center") is not None and toggle is None:
-            toggle = {"center": req["face_center"], "normal": req.get("face_normal")}
+            toggle = {"center": req["face_center"], "normal": req.get("face_normal"),
+                      "area": req.get("face_area")}
     part, body_id = _pick_body(doc, body_id, "shell")
     refs = list(sk.shell_refs(faces, None))
     click = None
@@ -1344,7 +1357,8 @@ def plan_shell(doc, req: dict) -> dict:
             click = "closed again"
         else:
             c = face.center()
-            refs.append({"center": _vec(c), "normal": _vec(face.normal_at(c))})
+            refs.append({"center": _vec(c), "normal": _vec(face.normal_at(c)),
+                         "area": blocks.stored_area(face)})
             click = "open now"
     openings = sk.shell_openings(part, refs)          # resolved, de-duplicated, flat
     if openings:

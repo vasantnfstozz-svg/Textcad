@@ -30,6 +30,7 @@ from __future__ import annotations
 import build123d as b3d
 from build123d import Axis, Location, Plane, Vector
 
+import blocks
 import inspector
 import sketch as sk
 
@@ -127,7 +128,7 @@ def axis_of(solid, axis, op: str = "polar_pattern"):
         if axis.get("face") or axis.get("face_center") is not None:
             try:
                 face = sk.pick_face(solid, axis.get("face_center"), axis.get("face_normal"),
-                                    axis.get("face"))
+                                    axis.get("face"), axis.get("face_area"))
             except ValueError as e:
                 raise ValueError(f"{op}: the axis face is gone — {e}; click a face for the axis") from None
             try:
@@ -424,7 +425,7 @@ def plane_of(solid, plane, op: str = "mirror"):
         if plane.get("face") or plane.get("face_center") is not None:
             try:
                 face = sk.pick_face(solid, plane.get("face_center"), plane.get("face_normal"),
-                                    plane.get("face"))
+                                    plane.get("face"), plane.get("face_area"))
             except ValueError as e:
                 raise ValueError(f"{op}: the plane face is gone — {e}; click a face for the plane") from None
             if sk.face_plane(face) is None:
@@ -585,7 +586,17 @@ def seed_face(before, removed, added):
 def stored_face(solid, face) -> dict:
     """the face in the ONE stored form the op resolves by geometry — read off
     the body the op will receive, so the plan stores what the op will find"""
-    got = sk.resolve_face(solid, list(face.center()), list(face.normal_at(face.center())))
+    got = sk.resolve_face(solid, list(face.center()), list(face.normal_at(face.center())),
+                          blocks.stored_area(face))
     c, n = got.center(), got.normal_at(got.center())
-    return {"face_center": [round(c.X, 4), round(c.Y, 4), round(c.Z, 4)],
-            "face_normal": [round(n.X, 4), round(n.Y, 4), round(n.Z, 4)]}
+    out = {"face_center": [round(c.X, 4), round(c.Y, 4), round(c.Z, 4)],
+           "face_normal": [round(n.X, 4), round(n.Y, 4), round(n.Z, 4)]}
+    # the SIZE of the face as it stands, so a later parameter change cannot
+    # slide this axis or mirror plane onto a bigger face at the same place
+    # (blocks.resolve_face). None when the kernel will not measure it: the
+    # gate fails open on that, exactly as it does for an older stored pick.
+    area = blocks.stored_area(got)
+    if area is not None:
+        out["face_area"] = area
+    return out
+

@@ -42,7 +42,11 @@ function params(st) {
               depth: Math.max(0, num('hoDepth')), through: through(), kind,
               face: named,
               face_center: named ? null : (src.face_center || (st && st.input.center) || null),
-              face_normal: named ? null : (src.face_normal || (st && st.input.normal) || null) };
+              face_normal: named ? null : (src.face_normal || (st && st.input.normal) || null),
+              // the plan answers with the size of the face it drilled into; the
+              // pick carries it before the first plan lands
+              face_area: named ? null
+                : (src.face_area ?? (st && st.input.area) ?? null) };
   if (kind === 'counterbore') { p.cbore_diameter = num('hoCbDia'); p.cbore_depth = num('hoCbDepth'); }
   if (kind === 'countersink') { p.csink_diameter = num('hoCsDia'); p.csink_angle = num('hoCsAngle'); }
   return p;
@@ -67,7 +71,8 @@ function snapshot(f) {
            cbore_diameter: Number(p.cbore_diameter) || 0, cbore_depth: Number(p.cbore_depth) || 0,
            csink_diameter: Number(p.csink_diameter) || 0, csink_angle: Number(p.csink_angle) || 90,
            face: p.face || null,
-           face_center: p.face_center || null, face_normal: p.face_normal || null };
+           face_center: p.face_center || null, face_normal: p.face_normal || null,
+           face_area: p.face_area == null ? null : p.face_area };
 }
 function sync() {
   const rows = ROWS[g('hoKind').value] || [];

@@ -419,7 +419,8 @@ def linear_pattern(feature: Part, count: int, dx: float = 0.0,
 _EDGE_RULES = ("all", "top", "bottom", "vertical", "horizontal")
 
 
-def resolve_face(solid, face_center: list, face_normal: list | None = None):
+def resolve_face(solid, face_center: list, face_normal: list | None = None,
+                 face_area: float | None = None):
     """Find the face of `solid` a user picked, by GEOMETRY (nearest center among
     the faces that still point the picked way) — so a stored pick survives
     parameter changes instead of breaking like a face index would. Shared by
@@ -452,24 +453,44 @@ def resolve_face(solid, face_center: list, face_normal: list | None = None):
     a shell the kernel builds perfectly into a failure
     (tests/test_shell_tool.py::test_concentric_lumps_a_post_inside_a_ring
     _still_shell). It is not silent geometry either — the wrong face shows up
-    on the very first click and the answer is stable across rebuilds, so it is
-    a P2 the pickers must fix by SAYING WHICH (an area or a lump with the
-    pick), not something the resolver can guess its way out of.
+    on the very first click and the answer is stable across rebuilds, so the
+    fix was always going to be the picker SAYING WHICH, not the resolver
+    guessing. A pick that carries its size now does say which: the same pocket
+    and pad answer 113.097 or 885.841 mm2 as asked
+    (tests/test_face_pick_size.py). Without one it is still the coin toss.
 
-    WHAT THIS RULE STILL CANNOT DO, measured so nobody has to re-find it
-    (probes/face_pick_frame_probe.py §1 and §4): the pick is remembered in
-    WORLD coordinates. On a stepped body — a plate with a boss, two faces
-    pointing +Z — a pick on the boss top survives a rigid move only as far as
-    HALF the step: at dz = 2.49 mm it is still the boss top (201.06 mm2), at
-    dz = 2.50 it is the plate top (998.94 mm2), and the design silently
-    becomes 18000.0 mm3 where 14010.62 was asked for, every row `ok`, the
-    solid valid. A pure PARAMETER change does the same thing (plate 10 -> 14
-    thick moves the boss top out of reach in exactly the same way). Both are
-    the same missing fact: the pick does not know which body frame it was
-    taken in, and (centre, normal) cannot be made to know. The move half is
-    closed where the answer IS known — Document.edit carries every pick
-    downstream of a `move` by that move's own delta — and the rest is a
-    LAUNCH-PLAN §10 row waiting for a body-frame pick."""
+    THE SIZE IS A GATE TOO, when the pick carries one (2026-09-16). The pick
+    is remembered in WORLD coordinates, and on a stepped body — a plate with a
+    boss, two faces pointing +Z — that used to be enough to lose it. A pick on
+    the boss top survives a rigid move only as far as HALF the step: at
+    dz = 2.49 mm it is still the boss top (201.06 mm2), at dz = 2.50 it is the
+    plate top (998.94 mm2), and the design silently becomes 18000.0 mm3 where
+    14010.62 was asked for, every row `ok`, the solid valid. A pure PARAMETER
+    change does the same thing with no move to carry anything: thicken that
+    plate from 10 to 14 and the boss top steps out of reach in exactly the
+    same way (probes/face_pick_frame_probe.py §1 and §4). The two are
+    ARITHMETICALLY IDENTICAL from a (centre, normal) pick — candidates 1 mm
+    and 4 mm away, one right and one wrong — so distance cannot separate them
+    and no carry can reach the second one.
+
+    What separates them is the fact the click already knew and threw away: how
+    BIG the face was. `face_area` is the area of the face at the moment it was
+    clicked (the server measured it for the viewport's pick panel long before
+    this, so nothing new is computed and nothing is derived in the browser —
+    R1). Among the faces that still point the picked way, the ones that are
+    still that size are the candidates; distance decides between THEM, which
+    is what makes four identical bosses still resolve one each. It FAILS OPEN
+    on purpose: if no face is that size any more — the picked face was itself
+    resized, a `scale` ran, the design predates the field — the gate is
+    skipped entirely and the answer is exactly what it was before, so this
+    cannot turn a correct old answer into a new wrong one.
+
+    WHAT IT STILL CANNOT DO: a pick with no stored area (every design saved
+    before 2026-09-16) is resolved by centre and direction alone, exactly as
+    described above, and a face that changes size AND has a same-size
+    neighbour is still a coin toss. The move half is closed where the answer
+    IS known — Document.edit carries every pick downstream of a `move` by that
+    move's own delta."""
     rows = _face_rows(solid)
     if not rows:
         raise ValueError("solid has no faces")
@@ -497,6 +518,7 @@ def resolve_face(solid, face_center: list, face_normal: list | None = None):
         raise ValueError(
             "the face this was put on does not point that way on the body any "
             "more — it has been turned over. Pick the face again, or undo the turn.")
+    cands = _still_that_size(solid, cands, face_area)
 
     def score(row):
         _f, (x, y, z), n = row[0], row[1], row[2]
@@ -507,6 +529,43 @@ def resolve_face(solid, face_center: list, face_normal: list | None = None):
         return d
 
     return min(cands, key=score)[0]
+
+
+# How close two areas have to be to be "the same face, still". Wide enough to
+# ride out tessellation and rounding (a stored area is rounded to 2 decimals
+# for the file) and the millimetre-scale trimming a neighbouring edit does to a
+# face's rim; far tighter than the step between the faces this tells apart (a
+# boss top against the plate top around it: 201.06 mm2 against 998.94).
+_SIZE_TOL = 0.02
+# ...and never tighter than this in absolute terms. A stored area is rounded to
+# two decimals, so it can sit 0.005 mm2 either side of the truth; on a face
+# under about 0.25 mm2 that is more than 2 per cent, and without the floor such
+# a face could fail to match ITSELF (harmless — the gate fails open — but it
+# would quietly do nothing on small features, which is where picks are hardest)
+_SIZE_FLOOR = 0.02
+
+
+def _still_that_size(solid, cands: list, face_area: float | None) -> list:
+    """The candidates that are still the size the picked face was.
+
+    FAILS OPEN, and that is the whole safety argument: no stored area (every
+    pick made before 2026-09-16) or no candidate anywhere near it (the picked
+    face was itself resized) leaves the list exactly as it came in, so the
+    answer is the one resolve_face would have given before this existed."""
+    try:
+        a0 = float(face_area)
+    except (TypeError, ValueError):
+        return cands
+    if not (a0 > 0) or not math.isfinite(a0):
+        return cands
+    areas = _face_areas(solid)
+    same = []
+    for r in cands:
+        a = areas.get(_shape_key(r[0]))
+        if a is not None and abs(a - a0) <= max(_SIZE_TOL * max(a, a0),
+                                                _SIZE_FLOOR):
+            same.append(r)
+    return same or cands
 
 
 def _face_rows(solid) -> list:
@@ -541,6 +600,37 @@ def _measure_face_rows(solid) -> list:
             planar = False
         rows.append((f, (float(c.X), float(c.Y), float(c.Z)), n, planar))
     return rows
+
+
+def _face_areas(solid) -> dict:
+    """face -> its area, for the faces _face_rows measured, in its own cache
+    slot. SEPARATE from the rows on purpose: an area is a second BRepGProp
+    integration, as dear as the centre (4.5 ms against 3.2 ms over 36 faces),
+    and only a pick that carries a size ever asks for one — so a design saved
+    before there was such a thing, and every plan that resolves by name or by
+    direction, pays nothing at all."""
+    return _cached(solid, "face_areas",
+                   lambda: {_shape_key(r[0]): area_of(r[0])
+                            for r in _face_rows(solid)})
+
+
+def area_of(face) -> float | None:
+    """A face's area, or None when the kernel will not measure it. ONE home,
+    because there were three: toolplan and pattern each had their own copy of
+    this try/except, and a pick's size has to mean the same thing in the plan
+    that writes it and the resolver that reads it."""
+    try:
+        return float(face.area)
+    except Exception:
+        return None
+
+
+def stored_area(face) -> float | None:
+    """The same area as it gets WRITTEN DOWN — two decimals, the same rounding
+    the viewport's own face payload uses (studio._body_payload), so a pick and
+    the plan that re-derives it cannot disagree in the sixth decimal."""
+    a = area_of(face)
+    return None if a is None else round(a, 2)
 
 
 def _shape_key(shape):
@@ -673,7 +763,14 @@ def edge_ref(part: Part, edge, faces_by_edge: dict | None = None) -> dict:
             n = f.normal_at(c)
         except Exception:
             n = f.normal_at()
-        faces.append({"center": _v3(c), "normal": _v3(n)})
+        # the SIZE of each host face travels with the pick too, so a stored
+        # edge is still found after a parameter change moves a same-facing
+        # neighbour nearer than its own face (resolve_face's size gate). Read
+        # from the body's own cached areas: a fillet plan asks for dozens of
+        # edge_refs at two faces each, and an area is a BRepGProp integration.
+        a = _face_areas(part).get(_shape_key(f))
+        faces.append({"center": _v3(c), "normal": _v3(n),
+                      "area": None if a is None else round(a, 2)})   # stored_area
     d = edge % 0.5
     # a stored direction has ONE sign: an edge comes out of a face with the
     # face's orientation, out of the part with its own — identity ignores sign
@@ -776,7 +873,8 @@ def resolve_edge(part: Part, ref: dict):
         return e
     faces = ref.get("faces") or []
     if len(faces) == 2:
-        fa, fb = (resolve_face(part, f["center"], f.get("normal")) for f in faces)
+        fa, fb = (resolve_face(part, f["center"], f.get("normal"), f.get("area"))
+                  for f in faces)
         # resolve_face is a NEAREST match — it always returns something. When
         # one of the two stored faces is gone, both can land on the SAME face,
         # whose edges all "share" it: without this check the refusal below is
@@ -793,7 +891,8 @@ def resolve_edge(part: Part, ref: dict):
                 f"between no longer meet). Re-pick the edges of this feature.")
         return shared[0] if len(shared) == 1 else _nearest_edge(shared, ref)
     if len(faces) == 1:                         # a SEAM of a round face touches one face
-        fa = resolve_face(part, faces[0]["center"], faces[0].get("normal"))
+        fa = resolve_face(part, faces[0]["center"], faces[0].get("normal"),
+                          faces[0].get("area"))
         return _nearest_edge(_face_edges(part, fa), ref)
     if ref.get("mid") is None:
         raise ValueError("a picked edge needs its midpoint ('mid': [x, y, z]) — "

@@ -1024,7 +1024,8 @@ def _face_frame(face, snap: bool):
 
 def face_outline_2d(solid, face_center: list | None = None,
                     face_normal: list | None = None,
-                    face: str | None = None, offset: float = 0.0):
+                    face: str | None = None, offset: float = 0.0,
+                    face_area: float | None = None):
     """Project a picked PLANAR face's boundary into its own plane's local 2D
     coordinates — the outer wire plus any inner wires (holes). Returned in the
     SAME frame the sketch entities are placed in, so the sketcher can show the
@@ -1041,7 +1042,7 @@ def face_outline_2d(solid, face_center: list | None = None,
     if face:
         picked = named_face(solid, face)
     elif face_center is not None:
-        picked = resolve_face(solid, face_center, face_normal)
+        picked = resolve_face(solid, face_center, face_normal, face_area)
     else:
         raise ValueError('face_outline_2d needs either face="top"/"+x"/... '
                          "or a face_center from an actual pick")
@@ -1075,7 +1076,8 @@ def face_outline_2d(solid, face_center: list | None = None,
 
 
 def pick_face(solid, face_center: list | None = None,
-              face_normal: list | None = None, face: str | None = None):
+              face_normal: list | None = None, face: str | None = None,
+              face_area: float | None = None):
     """The face an op names, the two ways it may: by DIRECTION (face="top"/
     "+x"/…, the authoring path — no coordinates to compute, so none to get
     wrong) or by a real pick's centre + normal (resolved by geometry at every
@@ -1084,7 +1086,7 @@ def pick_face(solid, face_center: list | None = None,
     if face:
         return named_face(solid, face)
     if face_center is not None:
-        return resolve_face(solid, face_center, face_normal)
+        return resolve_face(solid, face_center, face_normal, face_area)
     raise ValueError('the face is not named — give face="top"/"bottom"/"+x"/... '
                      "or a face_center from an actual pick")
 
@@ -1092,7 +1094,7 @@ def pick_face(solid, face_center: list | None = None,
 def sketch_on_face(solid, face_center: list | None = None,
                    face_normal: list | None = None,
                    entities: list | None = None, offset: float = 0.0,
-                   face: str | None = None):
+                   face: str | None = None, face_area: float | None = None):
     """Draw a sketch ON a face of an existing solid (the Fusion workflow:
     pick a face, sketch, extrude a boss/cut). Two ways to say which face:
 
@@ -1124,7 +1126,7 @@ def sketch_on_face(solid, face_center: list | None = None,
     thickness and the sketch rides with the face instead of being left behind
     — which is exactly what hardcoded principal-plane offsets did to 251 of
     the 274 sketches authored before this."""
-    picked = pick_face(solid, face_center, face_normal, face)
+    picked = pick_face(solid, face_center, face_normal, face, face_area)
     pl = face_sketch_plane(picked)
     if pl is None:
         raise ValueError(
@@ -1542,14 +1544,15 @@ def _shapefix(solid):
 
 
 def extrude_face(solid, face_center: list, face_normal: list | None = None,
-                 amount: float = 10.0, taper: float = 0.0, flip: bool = False):
+                 amount: float = 10.0, taper: float = 0.0, flip: bool = False,
+                 face_area: float | None = None):
     """Extrude a planar FACE of an existing solid (the Fusion workflow: click a
     face, press Extrude, pull the arrow). The face is resolved by GEOMETRY at
     every rebuild (nearest center + matching normal), so the pick survives
     parameter changes. Returns ONLY the extruded prism — combine it with the
     body via fuse (boss) or cut (pocket, with a negative/into amount).
     The face's exact outline is used — holes and curved edges included."""
-    face = resolve_face(solid, face_center, face_normal)
+    face = resolve_face(solid, face_center, face_normal, face_area)
     if face_plane(face) is None:               # flat BSPLINE/BEZIER walls are OK
         raise ValueError(
             f"extrude_face: the picked face is {face.geom_type.name} and not "
@@ -1653,13 +1656,13 @@ MAX_REVOLVE_DEG = 360.0                          # one full turn either way
 
 
 def face_profile(solid, face_center: list, face_normal: list | None = None,
-                 verb: str = "revolved"):
+                 verb: str = "revolved", face_area: float | None = None):
     """A flat face of `solid`, resolved by GEOMETRY (extrude_face's rule: nearest
     centre, matching normal), as the profile a sketch op reads — the face, its
     true plane (`face_profile_plane`) and the Sketch carrying that plane. ONE
     home for the op AND the planner, so the handles and the solid come from the
     same object. The one sentence for a curved face."""
-    face = resolve_face(solid, face_center, face_normal)
+    face = resolve_face(solid, face_center, face_normal, face_area)
     pl = face_profile_plane(face)
     if pl is None:
         raise ValueError(f"the picked face is {face.geom_type.name} (curved) — only a "
@@ -1955,7 +1958,7 @@ def revolve_sketch(sketch, axis="Z", angle: float = 360.0, angle2: float = 0.0,
 
 def revolve_face(solid, face_center: list, face_normal: list | None = None,
                  axis=None, angle: float = 360.0, angle2: float = 0.0,
-                 both: bool = False):
+                 both: bool = False, face_area: float | None = None):
     """Revolve a planar FACE of an existing solid (the Fusion workflow: click a
     face, press Revolve, choose one of its edges as the axis, drag). The face
     is resolved by GEOMETRY at every rebuild — nearest centre, matching normal,
@@ -1966,7 +1969,8 @@ def revolve_face(solid, face_center: list, face_normal: list | None = None,
     them), or "u" / "v" for a face that lies to one side of the plane's axes.
     Returns ONLY the new solid — Join / Cut are the tree's combiners; the body
     is referenced, not consumed."""
-    _face, _pl, profile = face_profile(solid, face_center, face_normal)
+    _face, _pl, profile = face_profile(solid, face_center, face_normal,
+                                       face_area=face_area)
     if axis is None:
         raise ValueError(
             "revolve_face needs an axis: one of the face's straight edges as a "
@@ -2092,7 +2096,8 @@ def hole_cutter(pl: Plane, centre, into, diameter: float, depth: float,
 
 
 def hole(solid, face_center: list | None = None, face_normal: list | None = None,
-         face: str | None = None, at=HOLE_AT, diameter: float = 6.0,
+         face: str | None = None, face_area: float | None = None,
+         at=HOLE_AT, diameter: float = 6.0,
          depth: float = 10.0, through: bool = False, kind: str = "simple",
          cbore_diameter: float = 0.0, cbore_depth: float = 0.0,
          csink_diameter: float = 0.0, csink_angle: float = 90.0):
@@ -2149,7 +2154,7 @@ def hole(solid, face_center: list | None = None, face_normal: list | None = None
             raise ValueError(f"hole: the countersink (⌀{cs_d:g} at {cs_a:g}°) is {h:.2f} mm "
                              f"deep and reaches past the hole's depth ({dep:g} mm) — "
                              f"deepen the hole or shrink the countersink")
-    picked = pick_face(solid, face_center, face_normal, face)
+    picked = pick_face(solid, face_center, face_normal, face, face_area)
     # the op never delegates its OWN default: hole_frame's point fallback is
     # the planner's (a click to turn into coordinates), and letting `at=None`
     # reach it would drill at the face centre while the plan says (0, 0)
@@ -2227,7 +2232,8 @@ def opening_face(solid, ref):
     if isinstance(ref, str):
         return named_face(solid, ref)
     if isinstance(ref, dict) and ref.get("center") is not None:
-        return resolve_face(solid, ref["center"], ref.get("normal"))
+        return resolve_face(solid, ref["center"], ref.get("normal"),
+                            ref.get("area"))
     raise ValueError(f'shell: an opening is a face name ("top", "+x", ...) or a '
                      f"pick {{center, normal}} — got {ref!r}")
 

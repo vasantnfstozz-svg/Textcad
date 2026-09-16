@@ -34,6 +34,7 @@ function params(st) {
   const flip = g('exFlip').checked, through = g('exThrough').checked;
   if (isFace(st))
     return { face_center: st.input.center, face_normal: st.input.normal,
+             face_area: st.input.area == null ? null : st.input.area,
              amount: d, taper, flip };
   const dir = g('exDir').value;
   // THROUGH ALL with the untouched 0 distance: only the SIGN matters (the cut
@@ -64,6 +65,7 @@ function snapshot(f) {
   const p = f.params || {};
   return f.op === 'extrude_face'
     ? { face_center: p.face_center, face_normal: p.face_normal || null,
+        face_area: p.face_area == null ? null : p.face_area,
         amount: Number(p.amount) || 0, taper: Number(p.taper) || 0, flip: !!p.flip }
     : { amount: Number(p.amount) || 0, both: !!p.both, amount2: Number(p.amount2) || 0,
         taper: Number(p.taper) || 0, flip: !!p.flip, through: !!p.through };

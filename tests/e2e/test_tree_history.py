@@ -1,8 +1,9 @@
 """E2E: the tree reads like a HISTORY (feature-tree workstream step 2).
 
 Locks in, through the real UI:
-  1. a consumed sketch nests as a CHILD row under the feature that used it
-     (Fusion browser grouping), and renders after its consumer;
+  1. a consumed sketch and the feature that used it are one nested pair
+     (Fusion browser grouping): the sketch owns the row, its consumer is the
+     CHILD, and the sketch is drawn first;
   2. double-clicking a feature's NAME renames it in place — references
      (the extrude's inputs) are rewritten, nothing breaks;
   3. a feature that fails to build SPEAKS: a human chat message appears,
@@ -53,9 +54,14 @@ def feats(url):
 def test_sketch_nests_with_its_consumer(server, page, fresh_doc):
     page.evaluate(BUILD)
     page.wait_for_selector("#tree .nrow >> text=ex1")
-    sk_node = page.locator("#tree .node", has=page.locator(".nname", has_text="sk1"))
-    assert "child" in sk_node.get_attribute("class"), \
-        "consumed sketch must nest as a child of its extrude"
+    # the SKETCH owns the row and its consumer is the indented one (tree.js
+    # renderDoc). It used to be the other way round; the pair must stay
+    # together either way, which is what this locks in.
+    ex_node = page.locator("#tree .node[data-fid='ex1']")
+    assert "child" in ex_node.get_attribute("class"), \
+        "an extrude must nest as a child of the sketch it consumed"
+    sk_node = page.locator("#tree .node[data-fid='sk1']")
+    assert "child" not in sk_node.get_attribute("class")
     # creation order (user mandate R4): the sketch FIRST, its consumer below
     names = page.locator("#tree .nname").all_text_contents()
     assert names.index("sk1") < names.index("ex1")

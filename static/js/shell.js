@@ -76,7 +76,8 @@ const sh = tool({
   planExtra: st => ({ direction: direction(), ...(st && st.plan ? { faces: st.plan.faces } : {}) }),
   /* a click while the panel is open toggles that face — the server decides */
   onRepick: (st, data, replan) =>
-    replan({ face_toggle: { center: data.center, normal: data.normal || null } }),
+    replan({ face_toggle: { center: data.center, normal: data.normal || null,
+                            area: data.area ?? null } }),
   fields: { change: ['Direction'], typed: ['Thickness'] },
   show, params, snapshot, gizmos, isEmpty,
   /* Direction changed: the arrow's side is the plan's, so ask again */
