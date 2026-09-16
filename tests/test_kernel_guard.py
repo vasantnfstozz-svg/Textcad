@@ -94,6 +94,16 @@ KILLERS = {
     # open, and all but 0.2 with the top open
     "shell_open_mirror": lambda: sketch.shell(
         body("my_part_5_mirror_body"), 2.1, None, "inside", "bottom"),
+    # my-part seed 95959 step 18 (probes/shell_thin_wall_probe.py): a SECOND
+    # shell, top open, on a 23.4 x 17.1 x 12.7 box already shelled at 1.3 mm
+    # with the bottom open — a legitimate 0.2 mm recess in the lid, and
+    # 0xC0000005 at every wall from 0.66 mm up (0.64 builds). The rays of
+    # `assert_something_would_be_hollowed` draw the line at 1.3 for the open
+    # lid, so this one is the worker's to catch.
+    "shell_twice": lambda: sketch.shell(sketch.shell(sketch.extrude_sketch(
+        sketch.make_sketch("XY", 0, [dict(kind="rectangle", mode="add", x=0, y=0,
+                                          rotation=0, w=23.4, h=17.1)]), amount=12.7),
+        1.3, ["bottom"]), 1.1, ["top"]),
 }
 
 

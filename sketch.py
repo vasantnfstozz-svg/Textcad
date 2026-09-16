@@ -2438,6 +2438,161 @@ def assert_wall_fits_every_lump(solid, t: float, walls: str) -> None:
         f"use a thinner wall or open a face")
 
 
+# Sampling for `deepest_material`: rays per face, the face-evaluation budget
+# that lowers that count on a body with hundreds of faces (the intersector
+# tests a ray against every face's box, so cost is rays x faces), where along
+# each chord the interior is probed, and the extra stations towards an OPENING
+# (the deepest material sits ON the face that goes, not in the middle).
+_DEPTH_RAYS_PER_FACE = 12
+_DEPTH_RAY_BUDGET = 200_000
+_DEPTH_STATIONS = (0.5, 0.25, 0.75)
+_DEPTH_STATIONS_TO_OPENING = (1.0, 0.9)
+
+
+def deepest_material(solid, t: float, openings=()) -> tuple | None:
+    """Is there ANY material at least `t` from every face that stays?
+
+    An inward shell keeps the material within `t` of the faces that stay and
+    removes the rest, so it hollows something exactly when some interior
+    point is `t` or more from all of them — the OPENING faces do not count,
+    their material is what the cavity replaces. Interior points are found by
+    rays: from sample points on every staying face along the inward normal to
+    the first face the ray meets, then stations along that chord, and each
+    station's distance to the staying faces is measured exactly. Stops at the
+    first point that is deep enough (one is all a cavity needs), so a thick
+    body answers in one measurement; a body that is thin everywhere measures
+    every station and comes back with the deepest it found.
+
+    Returns (depth, point, slack): depth >= t - slack means a cavity fits.
+    None when nothing could be measured (no faces, no ray landed).
+
+    Measured 2026-09-16 (probes/shell_thin_wall_probe.py, probes/
+    shell_thin_wall_corpus.py): on the 1.3 mm-walled open box of the my-part
+    finding every station sits 0.65 mm from a wall, and the kernel's crash
+    boundary was exactly there (0.64 built, 0.66 segfaulted). The first draft
+    of this guard asked the OPPOSITE question — is there any wall the offset
+    does not fit? — and refused 11 shells the kernel built SOUND (a 4 mm rib,
+    a 4 mm pin, a 4 mm web between pockets, all left solid inside a hollowed
+    plate): a thin PART of a body is the kernel's to fill; a body that is thin
+    EVERYWHERE is the one that dies. The sample point is a triangle centroid,
+    which sits up to the tessellation tolerance on the AIR side of a curved
+    face, so the ray starts two tolerances in, or it re-crosses its own face
+    at 0.003 mm."""
+    from OCP.BRep import BRep_Builder
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
+    from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+    from OCP.gp import gp_Dir, gp_Lin, gp_Pnt
+    from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
+    from OCP.TopoDS import TopoDS_Compound
+    from build123d import Vector
+    faces = solid.faces()
+    n = len(faces)
+    if n == 0:
+        return None
+    tol = max(1e-3, 1e-4 * float(solid.bounding_box().diagonal))
+    per_face = max(1, min(_DEPTH_RAYS_PER_FACE, _DEPTH_RAY_BUDGET // (n * n)))
+
+    def stays(topo_face) -> bool:
+        return not any(topo_face.IsSame(o.wrapped) for o in openings)
+
+    staying = TopoDS_Compound()
+    builder = BRep_Builder()
+    builder.MakeCompound(staying)
+    for face in faces:
+        if stays(face.wrapped):
+            builder.Add(staying, face.wrapped)
+    inter = IntCurvesFace_ShapeIntersector()
+    inter.Load(solid.wrapped, 1e-6)
+    stations = []                         # (upper bound on depth, point)
+
+    def samples(face):
+        """spread triangle centroids, plus the face's own centre when it lies
+        on the face — a rectangle's centroids never reach its middle (two
+        triangles, centroids a third of the way in), and the middle is where
+        the deepest material under an opening sits (the plain 50 mm box read
+        16.67 without it, 25 with)"""
+        verts, tris = face.tessellate(tol)
+        m = len(tris)
+        picks = range(m) if m <= per_face else [(k * m) // per_face for k in range(per_face)]
+        pts = [sum((verts[i] for i in tris[k]), Vector()) / 3 for k in picks]
+        centre = face.center()
+        if face.is_inside(centre):
+            pts.append(centre)
+        return pts
+
+    for face in faces:
+        if not stays(face.wrapped):
+            # the material AT an opening counts to the faces that stay; its
+            # centre is the deepest such point on a convex opening
+            for q in samples(face):
+                stations.append((float("inf"), q))
+            continue
+        for p in samples(face):
+            nrm = face.normal_at(p)
+            inter.Perform(gp_Lin(gp_Pnt(*(p - nrm * (2 * tol))), gp_Dir(*(-nrm))), 0.0, 1e9)
+            if not inter.IsDone() or inter.NbPnt() == 0:
+                continue
+            hit = min(range(1, inter.NbPnt() + 1), key=inter.WParameter)
+            chord = inter.WParameter(hit) + 2 * tol
+            far_stays = stays(inter.Face(hit))
+            for f in _DEPTH_STATIONS + (() if far_stays else _DEPTH_STATIONS_TO_OPENING):
+                bound = min(f, 1 - f) * chord if far_stays else f * chord
+                stations.append((bound, p - nrm * (f * chord)))
+    if not stations:
+        return None
+    stations.sort(key=lambda st: -st[0])
+    ext = BRepExtrema_DistShapeShape()
+    ext.LoadS1(staying)
+    best = (0.0, stations[0][1])
+    for bound, q in stations:
+        if bound < t - tol and bound <= best[0]:
+            break                         # nothing left can be deep enough, or deeper
+        ext.LoadS2(BRepBuilderAPI_MakeVertex(gp_Pnt(q.X, q.Y, q.Z)).Vertex())
+        ext.Perform()
+        if not ext.IsDone():
+            continue
+        d = float(ext.Value())
+        if d > best[0]:
+            best = (d, q)
+        if d >= t - tol:
+            break                         # one deep point is all a cavity needs
+    return best[0], (best[1].X, best[1].Y, best[1].Z), tol
+
+
+def assert_something_would_be_hollowed(solid, t: float, openings: list, walls: str) -> None:
+    """An inward shell of a body that is thin EVERYWHERE — relative to the wall
+    asked for — has nothing to hollow, and asking the kernel anyway CRASHES it.
+
+    The overnight finding of 2026-09-15 (bugs/20260915-210615-my-part-s95959-
+    step18): a SECOND shell, 1.1 mm with the top open, on a body that already
+    had 1.3 mm walls segfaulted OCCT (0xC0000005 inside offset()). The
+    bounding-box bound of `assert_wall_fits_every_lump` never sees it — that
+    body is 12.7 mm at its smallest extent and the hollow is OPEN anyway. This
+    is the same certainty read from the inside: a point of material survives
+    as wall when it is within `t` of a face that stays, so when no point is
+    `t` or more from all of them the cavity is empty — and that is decided
+    before the kernel, in a sentence that names how thick the body is.
+
+    Refused only when SURE: `deepest_material` measures exact distances but
+    from SAMPLED points, so one deep point allows the shell (the kernel and the
+    checks after it judge the result, as before) and only a body with no deep
+    point among them is refused. Measured 2026-09-16 over the gauntlet corpus,
+    the four committed crash bodies and both finding bodies at seven
+    thicknesses, closed and open: zero refusals of a shell the kernel built
+    sound (probes/shell_thin_wall_corpus.py)."""
+    found = deepest_material(solid, t, openings)
+    if found is None:
+        return
+    depth, at, tol = found
+    if depth >= t - tol:
+        return
+    raise ValueError(
+        f"shell: nothing would be hollowed — {walls} meet in the middle of this body "
+        f"everywhere: no point of it is more than {depth:.4g} mm from the faces that "
+        f"stay (near x {at[0]:.3g}, y {at[1]:.3g}, z {at[2]:.3g}), so walls must be "
+        f"under {depth:.4g} mm; use a thinner wall or open a face")
+
+
 def shell(solid, thickness: float = 0.0, faces=None, direction: str = "inside",
           open_face=None):
     """Hollow `solid` into walls of `thickness` (Fusion's Shell). `faces` lists
@@ -2462,6 +2617,8 @@ def shell(solid, thickness: float = 0.0, faces=None, direction: str = "inside",
     walls = f"walls of {t:g} mm"
     if d == "inside" and not openings:
         assert_wall_fits_every_lump(solid, t, walls)
+    if d == "inside":
+        assert_something_would_be_hollowed(solid, t, openings, walls)
     import kernelguard                           # local: kernelguard reads sketch
     return kernelguard.guarded(
         "shell", solid,

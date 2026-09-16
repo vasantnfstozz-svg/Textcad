@@ -98,7 +98,7 @@ def test_the_legacy_open_face_grammar_still_builds():
     (dict(thickness=3, faces=True), "faces must be a list of openings"),
     (dict(thickness=3, faces=["north"]), "not a direction"),
     (dict(thickness=25, faces=["top"]), "nothing was hollowed"),        # the UNCHANGED body
-    (dict(thickness=40, faces=["top"]), "leave a broken solid"),         # the open shell
+    (dict(thickness=40, faces=["top"]), "nothing would be hollowed"),     # BEFORE the kernel (which built an OPEN SHELL and called it a success)
     (dict(thickness=25), "meet in the middle of this body"),            # half the 30 mm height or more:
     (dict(thickness=24.9), "meet in the middle of this body"),          # refused BEFORE the kernel
 ])
@@ -141,6 +141,69 @@ def test_a_closed_wall_of_half_the_body_is_refused_before_the_kernel():
     assert healthy(sk.shell(box(), 20, [TOP])).volume == pytest.approx(75000 - 10 * 10 * 10, rel=1e-6)
     # OUTSIDE grows the body: no bound applies
     assert healthy(sk.shell(box(), 20, direction="outside")).volume == pytest.approx(90 * 90 * 70 - 75000, rel=1e-6)
+
+
+def hollow_box():
+    """the body of bugs/20260915-210615-my-part-s95959-step18, built the way the
+    journey built it: a 23.4 x 17.1 x 12.7 box shelled at 1.3 mm, bottom open"""
+    return sk.shell(sk.extrude_sketch(sk.make_sketch("XY", 0, [dict(
+        kind="rectangle", mode="add", x=0, y=0, rotation=0, w=23.4, h=17.1)]), amount=12.7),
+        1.3, ["bottom"])
+
+
+NOTHING_DEEP = (r"nothing would be hollowed — walls of {t} mm meet in the middle of this body "
+                r"everywhere: no point of it is more than {d} mm from the faces that stay "
+                r"\(near .*\), so walls must be under {d} mm; use a thinner wall or open a face")
+
+
+def test_a_body_that_is_thin_everywhere_is_refused_before_the_kernel():
+    """bugs/20260915-210615-my-part-s95959-step18 led here: a SECOND shell on
+    a body that already has 1.3 mm walls. CLOSED, every point of it is within
+    0.65 mm of a face, so any wall from 0.66 mm up leaves nothing — the box
+    bound (12.7 mm at its smallest) never sees that, the rays do. With the TOP
+    open the lid's material counts to the cavity ceiling 1.3 mm below it, so
+    the line is 1.3 there: 1.5 and 2 are refused in a moment, 0.6 builds (two
+    skins inside every wall). The filed step itself, 1.1 with the top open, is
+    a legitimate 0.2 mm recess in the lid the kernel CRASHES on, and that one
+    is the kernel worker's — see test_kernel_guard.py."""
+    body = hollow_box()
+    assert body.volume == pytest.approx(1643.538, abs=1e-2)
+    for t in (1.1, 0.7, 0.66):
+        with pytest.raises(ValueError, match=NOTHING_DEEP.format(t=t, d=r"0\.65")):
+            sk.shell(body, t)
+    for t in (1.5, 2):
+        with pytest.raises(ValueError, match=NOTHING_DEEP.format(t=t, d=r"1\.3")):
+            sk.shell(body, t, ["top"])
+    out = healthy(sk.shell(body, 0.6, ["top"]))
+    assert 0 < out.volume < body.volume
+
+
+def test_a_thin_part_of_a_thick_body_is_the_kernels_to_fill_not_a_refusal():
+    """The first draft of that guard asked the OPPOSITE question — is there a
+    wall the offset does not fit? — and refused 11 shells the kernel built
+    SOUND (probes/shell_thin_wall_corpus.py, 2026-09-16). A 4 mm rib on a 12 mm
+    plate at 3 mm walls: the rib stays solid, the plate hollows, and that is
+    correct. Same for a 4 mm web between two pockets."""
+    rib = b3d.Part() + b3d.Box(60, 40, 12) + b3d.Pos(0, 0, 10) * b3d.Box(4, 40, 8)
+    out = healthy(sk.shell(rib, 3))
+    assert 0 < out.volume < rib.volume
+    pockets = b3d.Part() + (b3d.Box(60, 40, 12) - b3d.Pos(-12, 0, 6) * b3d.Box(20, 30, 8)
+                            - b3d.Pos(12, 0, 6) * b3d.Box(20, 30, 8))
+    out = healthy(sk.shell(pockets, 2.5))
+    assert 0 < out.volume < pockets.volume
+
+
+def test_the_material_against_an_opening_counts_to_the_faces_that_stay():
+    """With the top open the deepest material of a 10 mm plate sits right under
+    the opening, 10 mm from the floor — so 8 mm walls leave a 2 mm cavity, and
+    a wall over 10 mm is refused in those words, not after the kernel."""
+    plate = b3d.Box(50, 50, 10)
+    out = healthy(sk.shell(plate, 8, ["top"]))
+    assert out.volume == pytest.approx(50 * 50 * 10 - 34 * 34 * 2, rel=1e-6)
+    with pytest.raises(ValueError, match=NOTHING_DEEP.format(t=12, d="10")):
+        sk.shell(plate, 12, ["top"])
+    # the 30 mm box with the top open takes a 20 mm floor (a 10 mm cavity), as ever
+    assert healthy(sk.shell(box(), 20, [TOP])).volume == pytest.approx(75000 - 10 * 10 * 10, rel=1e-6)
 
 
 def test_a_wall_thicker_than_a_balls_radius_is_refused_not_an_inverted_cavity():
@@ -261,7 +324,9 @@ def test_a_lump_the_wall_does_not_fit_is_refused_not_left_a_solid_block():
     for second, t, block in ((b3d.Box(3.0, 20.0, 10.0), 2, 600.0),      # too NARROW
                              (b3d.Box(20.0, 20.0, 4.0), 5, 1600.0)):    # too FLAT
         alone = b3d.Part() + second
-        with pytest.raises(ValueError, match="nothing was hollowed"):
+        # BEFORE the kernel since 2026-09-16 (no point of a 3 mm rib is 2 mm from
+        # its faces), where it used to be the kernel's "nothing was hollowed"
+        with pytest.raises(ValueError, match="nothing (was|would be) hollowed"):
             sk.shell(alone, t, tops_of(alone))              # one lump: already refused
         body = mixed_lumps(second)
         assert len(body.solids()) == 2
