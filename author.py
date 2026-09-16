@@ -50,6 +50,15 @@ _DEG = {"angle", "angle2", "angle_deg", "rotation", "inlet_angle", "exit_angle",
 # an enum here would tell the AI the one form that cannot work on a face
 _NO_ENUM = {("revolve", "axis"), ("revolve_face", "axis"),
             ("mirror", "plane")}      # also a face, a mid-plane, {origin, normal}
+# ...and ops whose parameter of a shared NAME takes a different VOCABULARY.
+# `polar_pattern`'s axis is not `rotate`'s: pattern.axis_of resolves it against
+# sketch.FACE_DIRS ("+z", "top", …) and refuses "X" / "Y" / "Z" by name, so the
+# shared enum offered the model — and the Add Feature dialog's dropdown, which
+# renders `enum` as a <select> (dialogs.js:330) — three values that fail every
+# time (measured 2026-09-16, section 13 review).
+_ENUMS_BY_OP = {
+    ("polar_pattern", "axis"): ["+z", "-z", "+x", "-x", "+y", "-y"],
+}
 
 # op -> one-line convention note (anchoring, direction, operand meaning)
 OP_NOTES = {
@@ -138,7 +147,9 @@ OP_NOTES = {
 def _annotate(op_name: str, params: list[dict]) -> list[dict]:
     for p in params:
         n = p["name"]
-        if n in _ENUMS and (op_name, n) not in _NO_ENUM:
+        if (op_name, n) in _ENUMS_BY_OP:
+            p["enum"] = list(_ENUMS_BY_OP[(op_name, n)])
+        elif n in _ENUMS and (op_name, n) not in _NO_ENUM:
             p["enum"] = _ENUMS[n]
         elif n in _MM:
             p["unit"] = "mm"
@@ -382,6 +393,46 @@ features have no volume — only the extrude/revolve/loft result is a solid.
 """
 
 
+# The SAME conventions, for the door that takes a WHOLE tree in one answer:
+# the MCP `build_design`, where another AI authors the tree itself. Only the
+# protocol paragraph differs, and it is a real difference — `list_operations`
+# handed that AI the step-loop prompt above ("YOU WORK ONE STEP PER REPLY …
+# one of these four"), which describes a conversation build_design does not
+# have: every reply shaped like it is rejected with "JSON must contain a
+# non-empty 'features' list" (section 13 review, 2026-09-16). Everything from
+# ALLOWED OPERATIONS down is shared verbatim, so the two doors can never
+# teach different geometry.
+_CONV_FROM = AUTHOR_PROMPT.find("ALLOWED OPERATIONS")   # never raise at import
+_SHARED_CONVENTIONS = (AUTHOR_PROMPT[_CONV_FROM:] if _CONV_FROM >= 0
+                       else AUTHOR_PROMPT)
+
+TREE_PROMPT = """You design 3D objects as FEATURE TREES for a parametric CAD
+system — ANY object: mechanical parts, products, furniture, toys, and stylized
+models of real-world things. NEVER refuse a design request; build the best
+RECOGNIZABLE STYLIZED approximation from the operations you have.
+
+You author the WHOLE tree in ONE JSON object — no prose, no markdown:
+
+{"name": "short-part-name",
+ "features": [{"id": "unique_name", "op": "<op>", "params": {...},
+               "inputs": ["upstream_id", ...]}, ...],
+ "spec": {"n_solids": 1, ...optional: "symmetry": N, "tip_radius": mm,
+          "size": [x, y, z or null], "holes": {"5": 2}, "tol": 0.5}}
+
+Every feature is validated against the registry BEFORE anything is built (a
+hallucinated op or parameter is rejected by name), every feature's geometry is
+health-checked, and the finished design is verified against "spec" — the
+numbers are measured, never trusted. spec "holes" maps a NUMERIC hole radius
+in mm to a count; every spec key is measured or the tree is refused, so do not
+invent one. Features evaluate in the order you list them and "inputs" must
+name ids ALREADY listed above them.
+
+The rules below are the ones TextCAD's own authoring loop follows; where they
+speak of "done" and the spec it carries, that is the "spec" key above.
+
+""" + _SHARED_CONVENTIONS
+
+
 # ---------------------------------------------------------------------------
 # Author -> validate -> rebuild -> verify -> repair loop
 # ---------------------------------------------------------------------------
@@ -400,22 +451,35 @@ def _parse(raw: str) -> dict:
 _GENERIC_ID = re.compile(r"^(feature|node|item|part|f)_?\d*$", re.I)
 
 
-def lint_tree(features, final: bool = True) -> list[str]:
+def lint_tree(features, final: bool = True, only=None) -> list[str]:
     """History-quality rules for AUTHORED trees (AI/MCP paths only — the
     manual UI records history naturally, one action per feature).
     `final=False` while a design is still being built step by step: the
     "whole design is one blob" rule judges the FINISHED design and must not
-    refuse the second step of a ten-step part."""
+    refuse the second step of a ten-step part.
+
+    `only` is the set of feature ids the verdict may be about — the ones the
+    model itself wrote. The rules still READ the whole tree ("once a body
+    exists" is a fact about the tree, not about one feature), but a problem
+    is only reported against a feature in `only`. Without it, an "add to this
+    design" job was judged on the features the USER drew by hand, and since
+    it may not remove them it could never get past them: measured over the
+    saved library on 2026-09-16 (probes/author_live_designs_probe.py), 27 of
+    the 50 designs refused the AI's FIRST correct step, naming the user's own
+    sketch. `only=None` judges everything — a design the model is creating,
+    and the MCP whole-tree door, where every feature is the model's."""
     problems = []
+    mine = (lambda fid: True) if only is None else (lambda fid: fid in only)
     sketches = [f for f in features if f.op == "sketch"]
     for f in sketches:
         n = len(f.params.get("entities") or [])
-        if n > 10:
+        if n > 10 and mine(f.id):
             problems.append(
                 f"sketch '{f.id}' crams {n} entities into one feature — "
                 f"split the artwork into logical sketches (one per design "
                 f"element, each with its own extrude, fused/cut together)")
-    if final and len(features) == 2 and len(sketches) == 1:
+    if (final and len(features) == 2 and len(sketches) == 1
+            and all(mine(f.id) for f in features)):
         n = len(sketches[0].params.get("entities") or [])
         if n > 4:
             problems.append(
@@ -433,7 +497,8 @@ def lint_tree(features, final: bool = True) -> list[str]:
     import sketch as _sk
     body_yet = False
     for f in features:
-        if f.op == "sketch" and body_yet and float(f.params.get("offset") or 0):
+        if (f.op == "sketch" and body_yet and mine(f.id)
+                and float(f.params.get("offset") or 0)):
             problems.append(
                 f"sketch '{f.id}' floats at absolute Z (offset "
                 f"{f.params['offset']}) even though a body already exists — "
@@ -444,7 +509,8 @@ def lint_tree(features, final: bool = True) -> list[str]:
                 f"cut or fuse")
         if f.op not in _sk.SKETCH_PRODUCERS:
             body_yet = True
-    generic = [f.id for f in features if _GENERIC_ID.match(f.id)]
+    generic = [f.id for f in features
+               if mine(f.id) and _GENERIC_ID.match(f.id)]
     if generic:
         problems.append(
             f"ids {generic} are meaningless — name features after what "
@@ -452,16 +518,38 @@ def lint_tree(features, final: bool = True) -> list[str]:
     return problems
 
 
-def _spec_of(spec) -> dict:
-    """The spec the model sent, reduced to the keys inspector.Spec knows, with
-    the two fields the AI used to fill with words checked. Raises ValueError
-    with the sentence to feed back."""
+def checked_spec(spec) -> dict:
+    """The spec the model sent, with every key PROVEN checkable. Raises
+    ValueError with the sentence to feed back.
+
+    It used to keep the keys `inspector.Spec` knows and drop the rest in
+    silence — so "DONE: every feature ok and the spec is met" (and the MCP
+    `verify_step`'s "matches_spec": true, whose docstring says an empty
+    mismatch list means the part PROVABLY matches) covered a requirement
+    nothing had measured. A claim about a requirement that was never checked
+    is the one thing this project may never make, so an unknown key is a
+    refusal that names it. `size` and `com` must name all three axes for the
+    same reason: verify() zips them against the measured triple, so
+    {"size": [40, 30]} left Z unchecked and still answered "matches"."""
     spec = spec or {}
     if not isinstance(spec, dict):
         raise ValueError('"spec" must be an object like {"n_solids": 1}')
     known = {"size", "volume", "holes", "n_solids", "symmetry", "tip_radius",
              "com", "require_manifold", "tol", "vol_tol"}
+    unknown = sorted(k for k in spec if k not in known)
+    if unknown:
+        raise ValueError(
+            'nothing here can MEASURE spec ' + ", ".join(f'"{k}"' for k in unknown)
+            + ', so a spec carrying it would claim a check that never ran. '
+              'The requirements that are measured are: ' + ", ".join(sorted(known))
+            + " — express the rest as geometry the tree builds")
     out = {k: v for k, v in spec.items() if k in known}
+    for key in ("size", "com"):
+        v = out.get(key)
+        if v is not None and (not isinstance(v, (list, tuple)) or len(v) != 3):
+            raise ValueError(
+                f'spec "{key}" must name all THREE axes, [x, y, z], with null '
+                f'for an axis you do not pin — {v!r} leaves an axis unchecked')
     if out.get("holes"):
         try:
             out["holes"] = {float(k): int(v) for k, v in out["holes"].items()}
@@ -491,7 +579,7 @@ def _to_document(data: dict) -> Document:
     lint = lint_tree(doc.features)
     if lint:
         raise ValueError("history lint: " + "; ".join(lint))
-    doc.spec = _spec_of(data.get("spec"))
+    doc.spec = checked_spec(data.get("spec"))
     return doc
 
 
@@ -584,16 +672,25 @@ def _first_problem(doc: Document, was_ok=frozenset(),
 
 
 def _apply_step(doc: Document, step: dict, protected=frozenset(),
-                keep_spec: bool = False) -> tuple[bool, str, str | None]:
+                keep_spec: bool = False, authored=None
+                ) -> tuple[bool, str, str | None]:
     """Apply ONE reply to the document. -> (ok, sentence, feature id).
     Never raises for the model's mistakes; the sentence is what it hears.
     On a refusal the document is exactly as it was.
 
     `protected`: ids that were in the tree BEFORE this job — the model may
     edit them but never remove them. `keep_spec`: the design already records
-    the user's own requirement, so "done" may not write a spec over it."""
+    the user's own requirement, so "done" may not write a spec over it.
+    `authored`: the MUTABLE set of ids this job has written or changed — what
+    the model is answerable for. The lint and `done`'s health question are
+    asked about those features and the ones that were HEALTHY when the step
+    started; a row the user left red, or a sketch they drew by hand, is
+    reported to them and is not the model's to be stopped by. None (a caller
+    with no job, and every design the model creates from nothing) keeps the
+    whole tree in scope."""
     before = doc.to_data()
     was_ok = {f.id for f in doc.features if f.status == "ok"}
+    scope = None if authored is None else (was_ok | set(authored))
     # ONE step per reply, or none of the verification means anything: a reply
     # carrying {"add": ...} AND "done": true took the add road, came back ok,
     # and the loop then read "done" and FINISHED — no final lint, no spec, no
@@ -613,7 +710,9 @@ def _apply_step(doc: Document, step: dict, protected=frozenset(),
         try:
             doc.add(fid, str(a["op"]), a.get("params") or {},
                     a.get("inputs") or [], strict=True)
-            lint = lint_tree(doc.features, final=False)
+            lint = lint_tree(doc.features, final=False,
+                             only=None if authored is None
+                             else set(authored) | {fid})
         except (ValueError, KeyError, TypeError) as e:
             _restore(doc, before)
             return False, f"REFUSED '{fid}': {e}", fid
@@ -626,6 +725,8 @@ def _apply_step(doc: Document, step: dict, protected=frozenset(),
         if bad:
             _restore(doc, before)
             return False, f"UNDONE '{fid}' — it built broken geometry: {bad}", fid
+        if authored is not None:
+            authored.add(fid)
         return True, _built(doc, f), fid
     if "edit" in step:
         e = step["edit"]
@@ -637,12 +738,25 @@ def _apply_step(doc: Document, step: dict, protected=frozenset(),
         except (KeyError, ValueError, TypeError) as err:
             _restore(doc, before)
             return False, f"REFUSED edit of '{fid}': {err}", fid
+        # An edit was the one step the lint never saw, so the banned
+        # absolute-offset form could be edited INTO a tree a number at a time
+        # (only `done` looked, by which point it was in). Its own feature
+        # only: the rest of the tree is not what this step changed.
+        lint = lint_tree(doc.features, final=False,
+                         only={fid} if authored is None
+                         else set(authored) | {fid})
+        if lint:
+            _restore(doc, before)
+            return False, (f"REFUSED edit of '{fid}' (history lint): "
+                           + "; ".join(lint)), fid
         doc.rebuild()
         bad = _first_problem(doc, was_ok, only=was_ok | {fid})
         if bad:
             _restore(doc, before)
             return False, (f"UNDONE edit '{fid}.{e['param']}' = {e.get('value')!r} "
                            f"— with it the tree breaks at {bad}"), fid
+        if authored is not None:
+            authored.add(fid)
         return True, (f"OK: '{fid}.{e['param']}' = {e.get('value')!r}. "
                       + _built(doc, doc.get(fid))), fid
     if "remove" in step:
@@ -665,7 +779,7 @@ def _apply_step(doc: Document, step: dict, protected=frozenset(),
         if not doc.leaf_solid_ids():
             return False, ("REFUSED done: the design has no solid body yet "
                            "(a sketch alone has no volume) — add features"), None
-        lint = lint_tree(doc.features)
+        lint = lint_tree(doc.features, only=authored)
         if lint:
             return False, "REFUSED done (history lint): " + "; ".join(lint), None
         if keep_spec:
@@ -679,25 +793,36 @@ def _apply_step(doc: Document, step: dict, protected=frozenset(),
             # requirement written earlier is news for THEM, in the reply —
             # not a wall for the model to batter for three steps.
             doc.rebuild()
-            bad = _first_problem(doc)
+            bad = _first_problem(doc, only=scope)
             if bad:
                 return False, f"REFUSED done: {bad}", None
+            # A row that was ALREADY red when the job started is the user's
+            # news, not a wall: `done` used to judge the whole tree, so one
+            # feature they had left broken refused it — and three refusals
+            # give the job up, after which studio puts the snapshot back and
+            # every verified step is discarded ("I did NOT change your
+            # design"). Worse, the only way past it was for the model to
+            # rewrite a number the user set. It is reported instead.
+            theirs = _first_problem(doc) if scope is not None else None
+            still = (f" One feature was already broken before I started and "
+                     f"still is — {theirs}" if theirs else "")
             if not doc.spec:
-                return True, "DONE: every feature ok; the design records no "\
-                             "spec, and adding to it does not write one.", None
+                return True, ("DONE: every feature I touched is ok; the design "
+                              "records no spec, and adding to it does not write "
+                              "one." + still), None
             miss = "; ".join(doc.spec_problems)
-            return True, ("DONE: every feature ok. The design keeps the spec "
-                          "it already recorded" + (f", and no longer meets it: "
-                                                   f"{miss}" if miss else "")
-                          + "."), None
+            return True, ("DONE: every feature I touched is ok. The design keeps "
+                          "the spec it already recorded"
+                          + (f", and no longer meets it: {miss}" if miss else "")
+                          + "." + still), None
         try:
-            doc.spec = _spec_of(step.get("spec"))
+            doc.spec = checked_spec(step.get("spec"))
         except ValueError as err:
             return False, f"REFUSED done: {err}", None
         doc.spec.setdefault("n_solids", 1)
         if doc.rebuild():
             return True, "DONE: every feature ok and the spec is met.", None
-        bad = _first_problem(doc)
+        bad = _first_problem(doc, only=scope)
         if bad:                        # cannot happen after a clean step; belt
             _restore(doc, before)
             return False, f"REFUSED done: {bad}", None
@@ -722,6 +847,7 @@ def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
     caller may wrap each kernel step in (the server takes its kernel lock
     and in-flight marker there). -> (finished, transcript)."""
     protected = frozenset(f.id for f in doc.features)   # the user's own work
+    authored: set[str] = set()          # what THIS job wrote: what it answers for
     # Adding to a design that ALREADY EXISTS never writes a spec. Keying this
     # on "does it have a spec" left the 8 live designs that carry none open to
     # the model writing one over them (measured 2026-09-11, review round two):
@@ -793,9 +919,11 @@ def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
                 pending_name = step["name"].strip()[:60] or pending_name
             if guard is not None:
                 with guard():
-                    ok, text, fid = _apply_step(doc, step, protected, keep_spec)
+                    ok, text, fid = _apply_step(doc, step, protected,
+                                                keep_spec, authored)
             else:
-                ok, text, fid = _apply_step(doc, step, protected, keep_spec)
+                ok, text, fid = _apply_step(doc, step, protected, keep_spec,
+                                            authored)
             if ok and naming and pending_name:
                 doc.name = pending_name
         if ok and step.get("done"):

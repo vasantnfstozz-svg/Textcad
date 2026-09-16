@@ -91,9 +91,37 @@ class CompressorDesign:
 # The meanline design calculation
 # ---------------------------------------------------------------------------
 
+def _check(duty: Duty) -> None:
+    """A duty the equations below cannot answer, refused in words.
+
+    Every one of these was measured reaching the caller as a Python traceback
+    (section 13 review, 2026-09-16): `rpm` 0 and a pressure ratio of exactly 1
+    divide by zero (omega, and a zero work input that makes the tip speed 0),
+    a ratio under 1 asks for the square root of a negative work input, and a
+    backsweep of 90 degrees or more does the same through cos(beta2) — all of
+    them out of the MCP `design_compressor` tool, which is an AI's door."""
+    if duty.rpm <= 0:
+        raise ValueError("rpm must be greater than 0 — a compressor that does "
+                         "not turn has no tip speed and no size")
+    if duty.pressure_ratio <= 1.0:
+        raise ValueError(f"pressure ratio must be greater than 1 (got "
+                         f"{duty.pressure_ratio:g}) — at 1 the stage does no "
+                         f"work, and below 1 it would be a turbine")
+    if duty.mass_flow <= 0:
+        raise ValueError("mass flow must be greater than 0 kg/s — with no "
+                         "flow the exit width and inducer have no area")
+    if not -90.0 < duty.backsweep_deg < 90.0:
+        raise ValueError(f"backsweep must be between -90 and 90 degrees from "
+                         f"radial (got {duty.backsweep_deg:g}); 25 to 45 is "
+                         f"the usual range")
+    if duty.eta <= 0 or duty.T01 <= 0:
+        raise ValueError("efficiency and inlet temperature must be above 0")
+
+
 def design(duty: Duty, flow_coeff: float = 0.28,
            inlet_flow_coeff: float = 0.30) -> CompressorDesign:
     """First-order centrifugal compressor meanline design."""
+    _check(duty)
     g, cp = duty.gamma, duty.cp
     beta2 = math.radians(duty.backsweep_deg)
 
