@@ -103,17 +103,18 @@ caught by anyone who worked on it.** The merge itself had one conflict, in the
   builds perfectly, because Shell asks `resolve_face` once per lump and
   concentric lumps tie exactly. It is also not silent. Filed P2 for the
   pickers to close by saying which face they mean; a test pins the tie.
-- **The user's 50 live designs were reasoned about, not swept.** The pick carry
-  fires only when a `move` feature's x/y/z is edited, never on load, rebuild or
-  save. `resolve_face` itself changed by docstring only. `-m library` was NOT
-  run (the parallel streams were forbidden heavy runs), so **a library sweep is
-  the one piece of evidence this range is missing** - worth running once.
+- **The user's 50 live designs are clean, and this was swept, not reasoned.**
+  The three parallel streams were forbidden heavy runs, so the parent session
+  ran `-m library` once after the merge: **101 passed**, every live design
+  rebuilt. Beyond that sweep: the pick carry fires only when a `move` feature's
+  x/y/z is edited, never on load, rebuild or save, and `resolve_face` itself
+  changed by docstring only.
 - **The favicon 404 in the browser console is pre-existing** and unrelated to
   this range.
 
 ## What was verified after the merge
 
-Fast tier 1800 passed. Ruff zero. ESLint zero. Server restarted and the page
+Fast tier 1800 passed, library tier 101 passed. Ruff zero. ESLint zero. Server restarted and the page
 loaded in a real browser at `ui v201`: the body draws (so the local three.js
 works), the status bar ends in a dim `mm` chip, `/api/doc` carries
 `arrival: null` so no phantom banner, and **zero network requests left the
