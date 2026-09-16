@@ -24,6 +24,7 @@ was RED before the fix:
 * F5/F6 (P2) — refusals answered 200, against _refused's own contract.
 """
 import json
+import threading
 
 import pytest
 from fastapi.testclient import TestClient
@@ -47,6 +48,21 @@ def client():
         p.unlink(missing_ok=True)
     for p in list(studio.DESIGNS.glob("_test-tabs-*")):
         p.unlink(missing_ok=True)
+    # designs/ is the user's own work: the sample-export test below writes
+    # flange-100.step into it, and round one left it there (measured, round
+    # two). test_export_guard.py's fixture removes the same file for the same
+    # reason — "keep the library clean".
+    (studio.DESIGNS / "flange-100.step").unlink(missing_ok=True)
+
+
+def _library_design(name: str, thickness: float = 5) -> Document:
+    """A minimal saveable design, so a test can give a FILE and the NAME
+    inside it different spellings — which is what four of the user's 50
+    designs actually do."""
+    d = Document(name=name)
+    d.add("base", "plate",
+          {"width": 20, "depth": 20, "thickness": thickness}, [])
+    return d
 
 
 # --------------------------------------------------------------- F1 / F7 ---
@@ -117,6 +133,65 @@ def test_a_design_can_still_export_over_its_own_step(client):
     assert not r.get("error") and r["path"].endswith(f"{TMP}.step")
 
 
+# ------------------------------------------------- round two, F1 of F1/F7 ---
+# Round one keyed the export file (and its new clash guard) off doc.NAME. A
+# design opened from the library is bound to its FILE, and the two can differ:
+# measured over the user's own 50 designs (probes/section12_round2_export_probe
+# .py), FOUR carry a name that does not slug to their own stem —
+# designs/esp32-remote-live-t2.tcad.json and -t3 are both named "esp32-remote",
+# designs/bottle_cap_28mm.tcad.json is named "bottle-cap-28mm",
+# designs/water_bottle_750ml.tcad.json is named "water-bottle-750ml".
+
+def test_a_library_design_can_still_be_exported(client):
+    """Open from the library, press Export. Measured 2026-09-16: on the two
+    esp32-remote-live-t* designs round one's guard REFUSED it outright —
+    "there is already a different design called 'esp32-remote'" — because the
+    export asked about the NAME instead of the file this tab is bound to."""
+    _library_design(TMP).save(str(studio.DESIGNS / f"{TMP}.tcad.json"))
+    _library_design(TMP, thickness=9).save(
+        str(studio.DESIGNS / f"{TMP}-v2.tcad.json"))    # its NAME is the other
+    assert not client.post(f"/api/open/{TMP}-v2").json().get("error")
+
+    r = client.post("/api/export")
+    assert r.status_code == 200, \
+        f"a design opened from the library cannot export: {r.json()['error']}"
+    assert r.json()["path"].endswith(f"{TMP}-v2.step")
+
+
+def test_the_export_lands_beside_the_designs_own_file(client):
+    """One design, ONE .step, beside its own .tcad.json — the twin-file trap
+    the export exists to avoid. designs/bottle_cap_28mm.tcad.json is named
+    "bottle-cap-28mm", so round one exported it as bottle-cap-28mm.step: a
+    .step whose name matches no design file in the library."""
+    stem = f"{TMP}_underscored"
+    _library_design(f"{TMP}-underscored").save(
+        str(studio.DESIGNS / f"{stem}.tcad.json"))
+    client.post(f"/api/open/{stem}")
+    r = client.post("/api/export").json()
+    assert not r.get("error"), r["error"]
+    assert r["path"].endswith(f"{stem}.step"), \
+        f"designs/{stem}.tcad.json exported as {r['path']}"
+
+
+def test_the_export_guard_reads_the_filesystems_own_case_rule(client):
+    """Section 3 of this queue found a P0 where a slug collision on a
+    case-INSENSITIVE filesystem let one design overwrite another's file
+    ("Cam Cover Plaque" onto cam-cover-plaque). designs/X.step and
+    designs/x.step are one file on this machine, so the export's clash guard
+    has to catch the other spelling too — measured here rather than assumed."""
+    _library_design(TMP).save(str(studio.DESIGNS / f"{TMP}.tcad.json"))
+    client.post("/api/new", json={"name": TMP.upper()})    # unbound, different
+    client.post("/api/feature/add", json={
+        "id": "slab", "op": "plate",
+        "params": {"width": 10, "depth": 10, "thickness": 2}, "inputs": []})
+    r = client.post("/api/export")
+    if (studio.DESIGNS / f"{TMP.upper()}.tcad.json").exists():
+        assert r.status_code == 400, \
+            f"'{TMP.upper()}' exported over designs/{TMP}.step"
+    else:                          # a case-SENSITIVE filesystem: two designs
+        assert r.status_code == 200
+
+
 # -------------------------------------------------------------- F5 / F4 ---
 
 def test_an_export_refusal_answers_400(client):
@@ -166,6 +241,41 @@ def test_export_touches_the_kernel_under_the_kernel_lock(client):
     assert seen, "the export made no kernel call at all"
     assert all(held for _, held in seen), \
         f"kernel calls made outside the lock: {seen}"
+
+
+def test_the_export_lock_cannot_deadlock_and_is_always_given_back(client):
+    """Round two. Holding a lock across a whole endpoint is how a race becomes
+    a HANG WITH NO MESSAGE, which is worse than the race. Two things make it
+    safe and both are measured here: the lock is RE-ENTRANT (to_step rebuilds
+    twice inside the with-block, on this very thread), and a `with` gives it
+    back on the failure path too."""
+    # re-entrant: a plain Lock would block on the second acquire
+    assert studio._KERNEL_LOCK.acquire(blocking=False)
+    assert studio._KERNEL_LOCK.acquire(blocking=False), \
+        "_KERNEL_LOCK is not re-entrant: a rebuild inside to_step self-locks"
+    studio._KERNEL_LOCK.release()
+    studio._KERNEL_LOCK.release()
+
+    doc = studio._doc()
+    doc.name = TMP
+    doc.add("broken", "plate",
+            {"width": 20, "depth": 20, "thickness": 5}, [])
+    doc.features[-1].status = "failed"
+    doc.features[-1].problems = ["deliberately broken for the test"]
+    doc._parts["broken"] = None
+    assert client.post("/api/export").status_code == 400
+
+    free = []                    # an RLock is released by its OWNER, so ask
+    def grab():                  # noqa: E306 - the thread is the measurement
+        ok = studio._KERNEL_LOCK.acquire(timeout=5)
+        free.append(ok)
+        if ok:
+            studio._KERNEL_LOCK.release()
+    t = threading.Thread(target=grab)
+    t.start()
+    t.join(10)
+    assert free == [True], \
+        "a refused export kept the kernel lock: every later rebuild would hang"
 
 
 # ---------------------------------------------------------------------- F2 ---
@@ -242,6 +352,31 @@ def test_a_refused_spec_leaves_the_design_editable(client):
     on_disk = json.loads((studio.DESIGNS / f"{TMP}.tcad.json")
                          .read_text(encoding="utf-8"))
     assert "volume" not in (on_disk.get("spec") or {}), on_disk.get("spec")
+
+
+@pytest.mark.parametrize("spec", [
+    {"volume": 10 ** 400},               # a JSON integer no float can hold
+    {"tol": 10 ** 400},
+    {"size": [10 ** 400, None, None]},
+    {"holes": {"4": 10 ** 400}},
+    {"holes": {str(10 ** 400): 2}},
+])
+def test_spec_refuses_a_number_the_verifier_cannot_use(client, spec):
+    """Round two of this review. _spec_problem asks what TYPE the value is and
+    never whether the number can be used: 10**400 is an int, so it walked
+    straight through the guard written to stop exactly this. Measured
+    2026-09-16 — /api/spec answered 200 with "OverflowError: int too large to
+    convert to float", the value STAYED in the document, and every later
+    /api/edit answered with the same OverflowError. That is F3's own brick,
+    through a shape F3's guard admits."""
+    before = dict(studio._doc().spec or {})
+    r = client.post("/api/spec", json={"spec": spec})
+    assert r.status_code == 400, f"{list(spec)} was accepted"
+    assert studio._doc().spec == before, "the unusable value was kept anyway"
+    e = client.post("/api/edit", json={"feature_id": "bore",
+                                       "param": "radius", "value": 9})
+    assert e.status_code == 200 and "error" not in e.json(), \
+        f"the design was bricked: {e.json().get('error')}"
 
 
 def test_spec_still_takes_everything_the_dialog_sends(client):
