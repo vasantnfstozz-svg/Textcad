@@ -10,7 +10,15 @@ import pytest
 # .step files in designs/ that a fast test writes under a LIBRARY design's
 # name — a name the user can produce themselves by opening that design and
 # pressing Export.
-LIBRARY_STEPS = ("flange-100.step", "roundtrip-src.step")
+#
+# ONE name, not two. Round three added roundtrip-src.step here as well, and
+# round four took it out again: that file is a TEST's leftover, not a library
+# design (designs/ holds no roundtrip-src.tcad.json), and this guard cannot
+# tell the two apart — it was preserving the litter it had just measured.
+# tests/test_import_step.py exports into its own folder now, so nothing
+# writes that name any more. flange-100 IS a gallery design, so its .step
+# stays guarded.
+LIBRARY_STEPS = ("flange-100.step",)
 
 
 @contextlib.contextmanager

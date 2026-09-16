@@ -88,11 +88,20 @@ def test_import_step_works_inside_a_document_tree(tmp_path):
 # ------------------------------------------------------------- the API -------
 
 @pytest.fixture
-def client(library_steps_untouched):
-    """`library_steps_untouched` (tests/conftest.py): the round-trip test
-    below presses Export, which writes designs/roundtrip-src.step into the
-    user's own library — measured still sitting there, 15 452 bytes, on
-    2026-09-16 (section 12 round three)."""
+def client(tmp_path, monkeypatch):
+    """Its own designs folder, so the round-trip test's Export writes nowhere
+    near the user's library.
+
+    Round three gave this file `library_steps_untouched` instead, which puts
+    designs/roundtrip-src.step back byte for byte — but that guard cannot tell
+    the user's own export from a test's leftover, so it PRESERVED the 15 452
+    bytes round three had just measured sitting there rather than ending the
+    door. The test never asserts the library path (it reads `exp["path"]`), so
+    the door simply closes — the same cure section 11 gave its own doorbell
+    test (tests/test_tool_framework_round2.py). The file already in the user's
+    library is theirs to delete; nothing here will write it again."""
+    monkeypatch.setattr(studio, "DESIGNS", tmp_path / "designs")
+    studio.DESIGNS.mkdir()
     studio.STATE = {"docs": {}, "active": None, "seq": 0}
     return TestClient(studio.app)
 
