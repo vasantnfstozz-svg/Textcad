@@ -6,9 +6,9 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING.** Review `b17d626..cc78019` - three commits: the journey
-> runner's clock, the shell result checks, and the pre-kernel "thin everywhere"
-> shell guard.
+> **Status: PENDING.** Review `cc78019..HEAD` - the fix pass for the review of
+> `b17d626..cc78019`. One commit, and it puts SIXTY new lines of geometry into
+> the pre-kernel shell guard.
 >
 > **How the review starts.** The user opens a fresh chat on Opus
 > (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
@@ -21,128 +21,114 @@
 
 ---
 
+## Why this is PENDING when no P0 was fixed
+
+`REVIEW-QUEUE.md` step 8 says a second round happens only after a P0, and the
+finding below is a P1. It is PENDING anyway, and the reason is this repo's own
+record: of the shell guard's three reviews, **round two and round three were
+both bugs inside the previous round's own new guard** (fb0b8c8 -> 667ccc0 ->
+b99a24d -> b5c6e70), and section 7's round two was too. This fix adds a new
+geometric search to that same guard, and while writing it one bug of exactly
+that kind was already found and fixed in it (a failed measurement left `None`
+where a float was compared). A reviewer who disagrees may close it in a line.
+
 ## The range
 
-    b17d626..cc78019       (base b17d626, the paperwork for the kernel-worker review)
+    cc78019..HEAD          (base cc78019, the "thin everywhere" shell guard)
 
-Three commits:
+One commit: the fix pass for the review of `b17d626..cc78019`. Two findings
+fixed, none rejected, 4 new tests.
 
-- `751db79` - the journey runner stops timing the hours the laptop slept, and
-  asks the kernel's own budget what a hang is; 4 new tests.
-- `275eeab` - a shell that hollows nothing is not a hollow: the walls are
-  measured against the surface they came from; 13 new tests.
-- `cc78019` - a shell of a body that is thin EVERYWHERE has nothing to hollow
-  and is refused before the kernel; 4 new tests. Built on Fable in the
-  overnight-run chat at the user's call, so it has had no second pair of eyes.
+Touched: `sketch.py` (the only product file), `tests/test_shell_tool.py`,
+four probes. No frontend, so ui stays v200.
 
-Touched by `275eeab`: `sketch.py` (+62/-3), `tests/journeys.py` (+41/-11),
-`tests/test_shell_tool.py` (+72), `tests/test_kernel_guard.py` (+21/-3),
-`tests/test_journeys.py` (+70), `tests/fixtures/my_part_5_mirror_body.brep`
-(new), four probes.
-Touched by `cc78019`: `sketch.py` (+157, the only product file: two new
-functions and one call), `tests/test_shell_tool.py` (+69/-2, three new tests,
-two expectations moved from after the kernel to before it),
-`tests/test_kernel_guard.py` (+10, one KILLERS entry), two probes and two
-probe bodies.
-No frontend in any of the three, so ui stays v200.
-Fast tier 1749 -> 1762 -> 1766, `-m library` 101, ruff zero, eslint untouched.
+## What it changes
 
-## What `cc78019` changes
+**F1 (P1), `sketch._climb_to_the_deepest`, new, called from
+`deepest_material` ONLY when the guard is about to refuse.**
+`cc78019`'s stations lie on rays through face sample points, so they find the
+deepest material only when symmetry puts it on one - a box, a plate, a
+cylinder. On a plain draft wedge (2 mm at one end, 30 at the other, 40 deep)
+the stations reached 10.62 mm where the real maximum is 12.42, so a CLOSED
+shell at 11, 11.5 and 12 mm was refused BEFORE the kernel, in a sentence that
+told the user "walls must be under 10.62 mm", while the kernel builds all
+three sound (314, 127 and 27 mm3 of cavity). The best measured points are now
+walked uphill - away from the face nearest them, which is the direction the
+inscribed sphere grows - and only then may a refusal stand.
 
-**`sketch.deepest_material(solid, t, openings)`, new.** From sample points on
-every face that stays (spread triangle centroids plus the face's own centre
-when it lies on the face) a ray runs along the inward normal to the first
-face it meets; stations along that chord (0.25, 0.5, 0.75; towards an OPENING
-also 0.9 and 1.0), and every point of the opening faces themselves, are
-candidates; each candidate's distance to the compound of staying faces is
-measured with `BRepExtrema_DistShapeShape`, best-bound first, stopping at the
-first that is `>= t - tol`. Returns `(depth, point, tol)`.
-
-**`sketch.assert_something_would_be_hollowed(solid, t, openings, walls)`,
-new, called from `shell()` for the INSIDE direction, open or closed, after
-`assert_wall_fits_every_lump`.** Refuses when no candidate is deep enough:
-"nothing would be hollowed — walls of N mm meet in the middle of this body
-everywhere: no point of it is more than D mm from the faces that stay (near x,
-y, z), so walls must be under D mm; use a thinner wall or open a face".
-
-## What `275eeab` changes
-
-**1. `shell_after_guards` asks OpenCASCADE for its own verdict** (`is_valid`
-through `inspector._try`, because it is a property that can raise).
-
-**2. `sketch.assert_walls_could_be_a_skin`, new.** An inward shell's walls lie
-within `t` of the surface they came from, so their volume is about `area * t`;
-more than `_SHELL_SKIN_FACTOR` (2.0) times that is refused as the body itself.
-
-**3. `tests/journeys.py replay()` can open a corpse** (a folder with no
-before-document re-sends the journey's steps against the live design).
+**F2 (P3), `deepest_material` returns None when NO face stays.** Six clicks on
+a box opens all six faces; the distance to an empty compound is no answer, and
+the sentence came out "no point of it is more than 0 mm from the faces that
+stay ... so walls must be under 0 mm". The kernel's own refusal speaks again.
 
 ## Where the risk is
 
-- **`cc78019` is a SAMPLING guard, and a pre-kernel refusal is final.** The
-  rule itself is a certainty (a point of material survives as wall exactly
-  when it is within `t` of a staying face, so an empty offset has no point
-  `t` from all of them), but the points are sampled: a body whose only deep
-  material is small and sits away from every face centre, chord station and
-  opening point could be refused with a cavity the kernel would have built.
-  The first draft of this guard asked the opposite question and refused 11
-  correct shells before the corpus caught it - the reviewer should assume the
-  same kind of hole can exist in the sampling and look for a body that has it
-  (a deep pocket of material reachable from no face's inward normal; a
-  non-convex opening whose centre is off the face - `is_inside` drops that
-  centre, so the opening's material is then only its triangle centroids).
-- **`face.tessellate(tol)` inside an op.** Meshing every face of the body per
-  shell call: 0.02-0.7 s up to 60 faces, `per_face` falls as `1/n^2` so a
-  700-face body gets one ray per face. Not measured on the 675-face
-  autonomiq-panel body - the one shell that already takes 692 s - so the added
-  cost there is unknown, and a body where `tessellate` itself is slow would be
-  slow at the guard, before the worker's budget starts.
-- **The tolerance is the tessellation's, applied as slack on the refusal
-  (`depth >= t - tol` allows).** `max(1e-3, 1e-4 * diagonal)`: on a 5 m body
-  that is 0.5 mm of slack, so a wall that meets in the middle by less than
-  that goes to the kernel as before. Deliberate, but a number.
-- **The skin ceiling in `275eeab` is the one judgement call there.** 2.0
-  against a measured 1.056; a mostly-concave surface is where the 1.056 comes
-  from.
-- **`is_valid` is now load-bearing inside an op** (`275eeab`).
+- **The climb is a local search on a field with several maxima.** It takes the
+  three deepest measured points and climbs each; a body whose real maximum sits
+  in a basin none of those three reaches still reads low. That is the same
+  class of hole as the one it fixes, one level further in - the reviewer should
+  look for it. The safety argument is that it can only ever RAISE the answer
+  (a point is accepted only when the same exact `BRepExtrema` measures it
+  deeper), so it can turn a refusal into a build and can never invent one.
+- **It runs only on the refusal path**, so the cost is paid exactly where the
+  answer was going to be a refusal. Measured on the 675-face autonomiq-panel
+  body; the numbers are below.
+- **`_DEPTH_CLIMB_STEPS = 40` and `_DEPTH_CLIMB_SEEDS = 3` are budget numbers**,
+  not theorems. They were set so the wedge converges to 0.005 mm of an
+  independent grid's answer; a body needing more steps reads low.
 
 ## Cleared by measurement, not by argument
 
-- `cc78019`: the crash boundary on the finding body is exactly half its wall
-  (0.64 builds, 0.66 segfaults; `probes/shell_thin_wall_probe.py`), the guard
-  reads 0.65 closed and 1.3 open on it. Over the gauntlet corpus, the four
-  committed crash bodies and both finding bodies at seven thicknesses, closed
-  and open (`probes/shell_thin_wall_corpus.py`): 238 cases, ZERO refusals of
-  a shell the kernel built sound; 24 refusals where the kernel crashed
-  (impeller, open, 5 mm), stalled, or refused after 0.5-30 s. Depths read
-  exact on every analytic body (box 15 closed / 25 open, cylinder 20 / 25,
-  hex prism 12.5 / 25, l-bracket 10, plate with hole 5 / 10).
-- `cc78019`: the 4 mm rib, 4 mm pin and 4 mm web bodies build SOUND at 2.5
-  and 3 mm and are now a test (`test_a_thin_part_of_a_thick_body_is_the_
-  kernels_to_fill_not_a_refusal`), so the first draft's mistake cannot come
-  back quietly.
-- `275eeab`: the wrong result is real and reproduced (my-part-5 `j2_mirror` at
-  3 mm: 2.709 mm3 removed, valid, watertight); sound closed hollows measure
-  0.61-1.056 of their skin, sound open ones 0.61-0.955.
-- `-m library` 101 and the fast tier 1766: no live design loses a feature.
+- The committed corpus (`probes/shell_thin_wall_corpus.py`) returns the SAME
+  verdict as it did for `cc78019`: 238 cases, 24 refusals the kernel would have
+  crashed/stalled/refused on, **0 false refusals** - and every crash body still
+  reads its documented depth (`finding_mypart` 0.65 closed / 1.3 open,
+  `oneplus_case` 1.0 / 1.2, `impeller_cut` 3.5, box 15 / 25, cylinder 20 / 25,
+  hex prism 12.5 / 25, l-bracket 10, plate with hole 5 / 10). The crash
+  protection `cc78019` exists for is untouched.
+- An independent oracle - a hierarchical grid over the whole interior,
+  `probes/shell_depth_oracle_probe.py` - now agrees with the guard on every
+  shape tried, where before it found the wedge 1.80 mm and an L-plate 4.75 mm
+  short.
+- **The user's designs, both ways** (`probes/shell_depth_library_probe.py`,
+  the finished body of every design measured with the climb and without it):
+  50 designs, 47 bodies, **36 body/mode combinations across 25 designs sat in a
+  band `cc78019` refused wrongly** - widest `my-part-2` closed 38.62 -> 41.47
+  (2.85 mm), then planetary-carrier 6.667 -> 9.092 open, thread-case
+  17.13 -> 19, isogrid-panel 7.427 -> 9.198, pump-housing 7.333 -> 8.292. Half
+  the library, so this was not a corner.
 
-## Do not re-report
+## Cleared for `b17d626..cc78019` - do not re-report
 
-- **The my-part crash itself (1.1 mm, top open, on 1.3 mm walls) still
-  reaching the kernel.** It is a legitimate 0.2 mm recess in the lid - the
-  lid's material is 1.3 mm from the cavity ceiling - so no pre-kernel rule
-  refuses it without refusing correct geometry. The worker catches it and it
-  is `test_kernel_guard.py` KILLERS `shell_twice`.
-- **The my-part-9 stall** (`bugs/20260916-011919-my-part-9-s96223-step19/`,
-  still in `bugs/`): 1.5 and 1.7 refused in 12-30 s, 1.6 and 1.8-5 stall,
-  thinnest web 3.856 mm, deepest material 15.6 mm. Not a wall problem; section
-  10 P2, with the candidates named.
-- **The lone-rib expectation moving from "nothing was hollowed" (kernel) to
-  "nothing would be hollowed" (guard)** in `test_a_lump_the_wall_does_not_fit_
-  is_refused_not_left_a_solid_block` and the `thickness=40` row: the same
-  refusal, one step earlier.
-- **The my-part-5 SEGFAULT itself** (`275eeab`'s body): the worker's.
-- **OUTSIDE shells not being judged by either new check.** Deliberate.
-- **`kernelguard`'s budget counting machine sleep** (section 10 P2) and **the
-  planetary-ring spin not being narrowed to an op** (P2).
+- **The cost of the pre-kernel guard on a 675-face body**, which `cc78019`'s
+  own brief flagged as unmeasured: `probes/shell_depth_cost_probe.py` on the
+  scaled autonomiq-panel body reads tessellate-every-face 0.96 s, the allow
+  path 2.4 s and the whole refusal path 7.1 s, against a shell that takes
+  692 s. It is not a problem.
+- **`stays()` comparing openings by `IsSame`** where `assert_every_lump_open`
+  uses a geometric `_shape_key`: measured sound for a NAME and for a PICK, and
+  the three depths agree exactly (`probes/shell_depth_review_probe.py`).
+- **Reversed faces on a mirrored body** (12 of my-part-5's 25): `normal_at`
+  carries the orientation, so the inward ray really goes inward - zero faces
+  wrong.
+- **`face.is_inside(face.center())`** really is a face classifier in this
+  build123d, not a solid one.
+- **An OCCT exception escaping the guard**, which runs OUTSIDE kernelguard:
+  `document.rebuild` catches it and `blocks.plain_cause` renders it as "the
+  geometry kernel rejected the shape it would produce" - a sentence, not a
+  traceback.
+- **`275eeab`'s skin ceiling, which its own brief called "the one judgement
+  call".** Measured over the user's library for the first time
+  (`probes/shell_skin_library_probe.py`, 50 designs, the skin check patched off
+  so a result it would refuse is still measured): of 37 results that pass every
+  OTHER check, 35 read 0.4449-1.0377 and two read 2.0524 and 2.7189 - and both
+  of those are genuinely WRONG bodies. On designs/cam-cover-lower at t = 1 the
+  kernel removed 971.569 mm3 where the real cavity is 39,921.8 +/- 280.9 by
+  Monte Carlo (`probes/shell_skin_camcover_probe.py`). The check earns its keep
+  on the user's real parts. The caution runs the OTHER way and is now
+  LAUNCH-PLAN section 10 (P2): 2.0524 clears the ceiling by 2.6 per cent.
+- Everything `cc78019`'s own brief listed under "Do not re-report" still
+  stands: the my-part 1.1 mm crash reaching the kernel, the my-part-9 stall,
+  the lone-rib expectation moving one step earlier, the my-part-5 segfault,
+  OUTSIDE shells not being judged, kernelguard's sleep-counting budget.
 - The reviewer may of course say any of these calls was wrong.

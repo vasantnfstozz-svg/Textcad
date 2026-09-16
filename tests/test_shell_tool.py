@@ -620,3 +620,77 @@ def test_the_skin_ceiling_leaves_outside_shells_alone():
     assert sk.assert_walls_could_be_a_skin(cube, cube, 3.0, "outside", "walls of 3 mm") is None
     with pytest.raises(ValueError, match="came back as the body itself"):
         sk.assert_walls_could_be_a_skin(cube, cube, 3.0, "inside", "walls of 3 mm")
+
+
+# ---------------------------------------------------------------------------
+# The taper the sampler could not find the middle of (review of cc78019)
+# ---------------------------------------------------------------------------
+
+def draft_wedge():
+    """a plain draft: 2 mm at one end, 30 mm at the other, 40 mm deep"""
+    return b3d.Part() + b3d.extrude(b3d.Plane.XZ * b3d.make_face(
+        b3d.Polyline((-40, 0), (40, 0), (40, 30), (-40, 2), close=True)), 40)
+
+
+def thick_L():
+    return b3d.Part() + b3d.Box(60, 60, 30) + b3d.Pos(55, -26, 0) * b3d.Box(50, 8, 30)
+
+
+def test_the_deepest_material_of_a_taper_is_found_not_undershot():
+    """`deepest_material`'s stations lie on rays through face sample points, and
+    the deepest material of a body sits on one of those only when symmetry puts
+    it there — a box, a plate, a cylinder. On a plain draft wedge it does not:
+    the stations reached 10.62 mm where the real maximum is 12.42 (measured
+    independently by a grid over the whole interior,
+    probes/shell_depth_oracle_probe.py), so a CLOSED shell at 11, 11.5 and 12 mm
+    was refused BEFORE the kernel — in a sentence that told the user "walls must
+    be under 10.62 mm" — while the kernel builds all three SOUND. The best
+    sampled points are walked uphill now, away from the face nearest them, which
+    is the direction the inscribed sphere grows."""
+    wedge = draft_wedge()
+    assert wedge.volume == pytest.approx(51200.0, rel=1e-6)
+    depth, _at, _tol = sk.deepest_material(wedge, 1e9)
+    assert depth == pytest.approx(12.42, abs=0.05), "the taper's real maximum"
+    for t, cavity in ((11.0, 314.23), (11.5, 127.46), (12.0, 26.97)):
+        out = healthy(sk.shell(wedge, t))
+        assert wedge.volume - out.volume == pytest.approx(cavity, rel=0.02)
+    # and past the real maximum it is still refused, with the right number
+    with pytest.raises(ValueError, match=r"more than 12\.4\d* mm from the faces"):
+        sk.shell(wedge, 13.0)
+
+
+def test_the_depth_under_an_opening_is_measured_on_an_asymmetric_body_too():
+    """The same undershoot with a face open: an L-plate 30 mm tall, top open,
+    read 24.5 mm where the material under the opening is the full 30."""
+    body = thick_L()
+    depth, _at, _tol = sk.deepest_material(body, 1e9, sk.shell_openings(body, None, "top"))
+    assert depth == pytest.approx(30.0, abs=0.05)
+
+
+def test_walking_uphill_never_invents_a_refusal_nor_lets_a_thin_body_through():
+    """The climb accepts a point only when that point measures DEEPER by the
+    same exact BRepExtrema the stations use, so it can only ever raise the
+    answer: it turns a false refusal into a build and can never create one.
+    The bodies the guard exists for really are thin everywhere — the 1.3 mm
+    walled box's true maximum IS 0.65 mm — so none of them gets through."""
+    body = hollow_box()
+    assert sk.deepest_material(body, 1e9)[0] == pytest.approx(0.65, abs=1e-3)
+    with pytest.raises(ValueError, match="nothing would be hollowed"):
+        sk.shell(body, 0.7)
+    for solid, want in ((box(), 15.0), (b3d.Box(50, 50, 10), 5.0), (b3d.Cylinder(20, 40), 20.0)):
+        assert sk.deepest_material(solid, 1e9)[0] == pytest.approx(want, abs=1e-3)
+
+
+def test_opening_every_face_is_the_kernels_refusal_not_a_zero_millimetre_one():
+    """Six clicks on a box opens all six faces, and then NO face stays — there
+    is no surface left for a wall to lie within, so the depth guard has no
+    question to ask. Measuring against an EMPTY compound answered nothing and
+    the sentence came out "no point of it is more than 0 mm from the faces that
+    stay ... so walls must be under 0 mm"; the kernel's own refusal is the
+    honest one, as it was before the guard existed."""
+    cube = box()
+    names = ["top", "bottom", "+x", "-x", "+y", "-y"]
+    assert len(sk.shell_openings(cube, names)) == len(cube.faces()) == 6
+    assert sk.deepest_material(cube, 1e9, sk.shell_openings(cube, names)) is None
+    with pytest.raises(ValueError, match="nothing was hollowed"):
+        sk.shell(cube, 3.0, names)

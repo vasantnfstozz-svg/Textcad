@@ -2447,6 +2447,11 @@ _DEPTH_RAYS_PER_FACE = 12
 _DEPTH_RAY_BUDGET = 200_000
 _DEPTH_STATIONS = (0.5, 0.25, 0.75)
 _DEPTH_STATIONS_TO_OPENING = (1.0, 0.9)
+# ... and the climb that turns the best SAMPLE into the real maximum before a
+# refusal is allowed to stand: how many of the measured points are walked
+# uphill, and how many steps each is given.
+_DEPTH_CLIMB_SEEDS = 3
+_DEPTH_CLIMB_STEPS = 40
 
 
 def deepest_material(solid, t: float, openings=()) -> tuple | None:
@@ -2461,10 +2466,13 @@ def deepest_material(solid, t: float, openings=()) -> tuple | None:
     station's distance to the staying faces is measured exactly. Stops at the
     first point that is deep enough (one is all a cavity needs), so a thick
     body answers in one measurement; a body that is thin everywhere measures
-    every station and comes back with the deepest it found.
+    every station and comes back with the deepest it found — and only after
+    `_climb_to_the_deepest` has walked that one uphill, because a station is
+    where a ray happened to land and not where the material is thickest.
 
     Returns (depth, point, slack): depth >= t - slack means a cavity fits.
-    None when nothing could be measured (no faces, no ray landed).
+    None when nothing could be measured (no faces, no face STAYS, no ray
+    landed) — then this guard has no question to ask and the kernel speaks.
 
     Measured 2026-09-16 (probes/shell_thin_wall_probe.py, probes/
     shell_thin_wall_corpus.py): on the 1.3 mm-walled open box of the my-part
@@ -2498,9 +2506,19 @@ def deepest_material(solid, t: float, openings=()) -> tuple | None:
     staying = TopoDS_Compound()
     builder = BRep_Builder()
     builder.MakeCompound(staying)
+    kept = 0
     for face in faces:
         if stays(face.wrapped):
             builder.Add(staying, face.wrapped)
+            kept += 1
+    if not kept:
+        # every face opened (six clicks on a box): there is no surface for a
+        # wall to lie within, so this guard has no question to ask and the
+        # distance to an EMPTY compound is no answer — it measured nothing and
+        # the sentence came out "no point of it is more than 0 mm from the
+        # faces that stay, so walls must be under 0 mm". The kernel's own
+        # refusal is the honest one, as it was before this guard existed.
+        return None
     inter = IntCurvesFace_ShapeIntersector()
     inter.Load(solid.wrapped, 1e-6)
     stations = []                         # (upper bound on depth, point)
@@ -2543,20 +2561,110 @@ def deepest_material(solid, t: float, openings=()) -> tuple | None:
     stations.sort(key=lambda st: -st[0])
     ext = BRepExtrema_DistShapeShape()
     ext.LoadS1(staying)
+
+    def measure(q):
+        """distance from `q` to the faces that stay, and the nearest point on
+        them — which is the direction an inscribed sphere grows AWAY from"""
+        ext.LoadS2(BRepBuilderAPI_MakeVertex(gp_Pnt(q.X, q.Y, q.Z)).Vertex())
+        ext.Perform()
+        if not ext.IsDone() or ext.NbSolution() < 1:
+            return None, None
+        near = ext.PointOnShape1(1)
+        return float(ext.Value()), Vector(near.X(), near.Y(), near.Z())
+
     best = (0.0, stations[0][1])
+    seen = []                             # every station actually measured
     for bound, q in stations:
         if bound < t - tol and bound <= best[0]:
             break                         # nothing left can be deep enough, or deeper
-        ext.LoadS2(BRepBuilderAPI_MakeVertex(gp_Pnt(q.X, q.Y, q.Z)).Vertex())
-        ext.Perform()
-        if not ext.IsDone():
+        d, _near = measure(q)
+        if d is None:
             continue
-        d = float(ext.Value())
+        seen.append((d, q))
         if d > best[0]:
             best = (d, q)
         if d >= t - tol:
             break                         # one deep point is all a cavity needs
+    if best[0] < t - tol:
+        best = _climb_to_the_deepest(solid, measure, seen, best, tol)
     return best[0], (best[1].X, best[1].Y, best[1].Z), tol
+
+
+def _climb_to_the_deepest(solid, measure, seen: list, best: tuple, tol: float) -> tuple:
+    """Walk the best sampled points UPHILL, and only then let a refusal stand.
+
+    `deepest_material`'s stations lie on rays through face sample points, so
+    they find the true deepest material only when it happens to sit on one —
+    which symmetry arranges for a box, a plate or a cylinder and nothing
+    arranges for a taper. Measured 2026-09-16 (this review,
+    probes/shell_depth_oracle_probe.py, against a grid over the whole
+    interior): a plain draft wedge (2 mm at one end, 30 at the other, 40 deep)
+    has material 12.42 mm from every face, and the stations reach 10.62 — so a
+    closed shell at 11, 11.5 and 12 mm was refused BEFORE the kernel, in a
+    sentence that told the user "walls must be under 10.62 mm", while the
+    kernel builds all three sound (314, 127 and 27 mm3 of cavity). An L-plate
+    with the top open read 24.5 against 29.25 the same way.
+
+    The deepest material is the centre of the largest sphere that fits, and
+    from any interior point that sphere grows AWAY from the face nearest it —
+    so each seed is stepped along that direction while the distance keeps
+    rising, the step halving whenever it does not, and a candidate outside the
+    body is never taken. Several seeds because the field has one maximum per
+    medial branch and the best sample need not sit on the right one.
+
+    This can only ever RAISE the answer — it accepts a point only when that
+    point measures deeper, by the same exact `BRepExtrema` the stations use —
+    so it can turn a refusal into a build and can never invent one. That is
+    why it is safe to add underneath a guard whose whole job is refusing: the
+    thin-everywhere bodies it exists to catch really are thin everywhere (the
+    1.3 mm-walled box's true maximum IS 0.65 mm), and nothing it does lets one
+    of them through. It runs ONLY when the guard is about to refuse, so the
+    ordinary path — one station deep enough, done — pays nothing for it."""
+    from OCP.BRepClass3d import BRepClass3d_SolidClassifier
+    from OCP.gp import gp_Pnt
+    from OCP.TopAbs import TopAbs_State
+    cls = BRepClass3d_SolidClassifier(solid.wrapped)
+
+    def outside(q) -> bool:
+        cls.Perform(gp_Pnt(q.X, q.Y, q.Z), 1e-7)
+        return cls.State() == TopAbs_State.TopAbs_OUT
+
+    # the deepest measured points, SPREAD OUT: the top three by depth are
+    # usually three stations on one ray, which climb the same hill three
+    # times. A seed must sit further than its own radius from the ones already
+    # taken, which is what puts it on another branch of the medial axis.
+    seeds, taken = [], []
+    for d0, q0 in sorted(seen, key=lambda r: -r[0]):
+        if len(seeds) >= _DEPTH_CLIMB_SEEDS:
+            break
+        if all((q0 - p).length > max(d0, tol) for p in taken):
+            seeds.append((d0, q0))
+            taken.append(q0)
+    seeds = seeds or [best]
+    for d0, q0 in seeds:
+        q, d = q0, d0
+        step, near = max(d0, tol), None
+        for _ in range(_DEPTH_CLIMB_STEPS):
+            if near is None:
+                got = measure(q)
+                if got[0] is None:
+                    break                 # keep the seed's own depth, not None
+                d, near = got
+            away = q - near
+            reach = away.length
+            if reach <= 1e-9:
+                break                     # the point is ON a face: no way uphill
+            cand = q + away * (step / reach)
+            got = (None, None) if outside(cand) else measure(cand)
+            if got[0] is not None and got[0] > d:
+                q, d, near = cand, got[0], got[1]
+            else:
+                step *= 0.5
+                if step <= tol * 0.25:
+                    break                 # the sphere touches on every side
+        if d > best[0]:
+            best = (d, q)
+    return best
 
 
 def assert_something_would_be_hollowed(solid, t: float, openings: list, walls: str) -> None:
