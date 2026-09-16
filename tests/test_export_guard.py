@@ -15,6 +15,13 @@ from fastapi.testclient import TestClient
 import document
 import studio
 
+# A test that CHANGES the sample is no longer the library's flange-100, and
+# since the section 12 review (2026-09-16) /api/export refuses to write over
+# another design's .step exactly as /api/save refuses to write over its
+# .tcad.json. Such a test names its own design — which is what the refusal
+# tells a user to do too.
+OWN_NAME = "_test-export-guard"
+
 
 @pytest.fixture()
 def client():
@@ -24,9 +31,10 @@ def client():
     studio._new_tab(studio.sample_flange())
     studio._rebuild_and_mesh()
     yield TestClient(studio.app)
-    step = studio.DESIGNS / "flange-100.step"   # keep the library clean
-    if step.exists():
-        os.remove(step)
+    for name in ("flange-100.step", f"{OWN_NAME}.step"):
+        step = studio.DESIGNS / name            # keep the library clean
+        if step.exists():
+            os.remove(step)
 
 
 def test_export_lands_in_designs_and_is_measured(client):
@@ -53,6 +61,7 @@ def test_export_ignores_parked_rollback_bar(client):
 
 
 def test_export_refuses_failed_tail_by_name(client):
+    studio._doc().name = OWN_NAME                 # its own design (see above)
     d = client.post("/api/feature/add", json={
         "id": "bad_fillet", "op": "fillet",
         "params": {"radius": 100000, "edges": "all"},
@@ -180,6 +189,7 @@ def test_export_response_measures_the_WHOLE_design(client):
     """/api/export's proof line is what the user reads to trust the file, so
     it must describe every body — the frontend only echoes these fields."""
     c = client
+    studio._doc().name = OWN_NAME                 # its own design (see above)
     c.post("/api/feature/add", json={
         "id": "sk", "op": "sketch_on_face",
         "params": {"face_center": [0, 0, 5], "face_normal": [0, 0, 1],
@@ -209,6 +219,7 @@ def test_the_body_count_still_describes_the_file_with_the_bar_parked(client):
     body reported, and the sentence the multi-body export was written for never
     appeared (review 2026-09-07)."""
     c = client
+    studio._doc().name = OWN_NAME                 # its own design (see above)
     c.post("/api/feature/add", json={
         "id": "sk", "op": "sketch_on_face",
         "params": {"face_center": [0, 0, 5], "face_normal": [0, 0, 1],

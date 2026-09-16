@@ -380,7 +380,16 @@ def _restore_session(rebuild: bool = True) -> int:
     except Exception:
         return 0
     restored, active_tid = 0, None
-    for t in data.get("tabs", [])[:MAX_TABS]:
+    # EVERY tab in the file, not the first MAX_TABS of them. MAX_TABS is the
+    # cap on OPENING a tab (/api/new, the AI's "create"), but /api/open has
+    # none, so a session legitimately holds more — and the slice kept the
+    # OLDEST and threw away the newest, which is the tab the user is actually
+    # working in. Measured 2026-09-16 (section 12 review): 13 tabs, the 13th
+    # active and holding unsaved work, restart, 12 came back and that work was
+    # gone with no prompt — the opposite of what this file exists for ("all
+    # other designs that I am working on close and vanish, do not do that").
+    # Restoring costs nothing per tab: only the active one is rebuilt here.
+    for t in data.get("tabs", []):
         try:
             doc = Document.from_data(t["doc"])
             src = t.get("source")
@@ -1187,7 +1196,7 @@ def get_tabs():
 @app.post("/api/tabs/switch")
 def switch_tab(req: TabReq):
     if req.id not in STATE["docs"]:
-        return {"error": f"no tab '{req.id}'", **_doc_json()}
+        return _refused(None, f"no tab '{req.id}'")
     STATE["active"] = req.id
     # geometry is cached inside the Document — no rebuild needed on switch —
     # EXCEPT a tab restored from the last session, which holds only its intent
@@ -1201,7 +1210,7 @@ def switch_tab(req: TabReq):
 @app.post("/api/tabs/close")
 def close_tab(req: TabReq):
     if req.id not in STATE["docs"]:
-        return {"error": f"no tab '{req.id}'", **_doc_json()}
+        return _refused(None, f"no tab '{req.id}'")
     # A "create" job builds in a tab that is NOT the active one, so the
     # one-writer rule above never sees it: closing that tab would leave the
     # job building into a document with nowhere to be shown.
@@ -1221,8 +1230,8 @@ def close_tab(req: TabReq):
 def new_design(req: NewReq):
     """New design = a NEW TAB; the current design stays open."""
     if len(STATE["docs"]) >= MAX_TABS:
-        return {"error": f"too many open tabs (max {MAX_TABS}) — close some",
-                **_doc_json()}
+        return _refused(None, f"too many open tabs (max {MAX_TABS}) — "
+                              f"close some")
     _new_tab(Document(name=req.name or "untitled"))
     _rebuild_and_mesh()
     if MESH_PATH.exists():
@@ -2488,17 +2497,68 @@ def strike_feature(req: StrikeReq):
     return {**_doc_json(), "strike_plan": plan}
 
 
+def _num(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _spec_problem(key: str, v) -> str | None:
+    """Why this requirement cannot be checked, as a sentence — or None.
+
+    The endpoint used to filter the KEY set and nothing else, so a value of
+    the wrong type went straight into the document and then into
+    inspector.verify, which does plain arithmetic on it. Measured 2026-09-16
+    (section 12 review): {"volume": "50"} answered 200 with "TypeError:
+    unsupported operand type(s) for -: 'float' and 'str'", STAYED in the
+    document so every later /api/edit raised the same TypeError, and was
+    written into the design file by the next save — a design nothing in the
+    app could open and edit again. A degenerate value must be refused where
+    the mistake is (shared rule 5)."""
+    if key in ("volume", "tip_radius", "tol", "vol_tol"):
+        return None if _num(v) else f"'{key}' must be a number, not {v!r}"
+    if key in ("n_solids", "symmetry"):
+        return (None if isinstance(v, int) and not isinstance(v, bool)
+                else f"'{key}' must be a whole number, not {v!r}")
+    if key == "require_manifold":
+        return None if isinstance(v, bool) else \
+            f"'require_manifold' must be true or false, not {v!r}"
+    if key in ("size", "com"):
+        if not isinstance(v, (list, tuple)) or len(v) != 3:
+            return (f"'{key}' must be three values (X, Y, Z), not {v!r} — "
+                    f"leave an axis empty to skip it")
+        bad = [a for a, x in zip("XYZ", v) if x is not None and not _num(x)]
+        return (f"'{key}' {'/'.join(bad)} must be a number or empty"
+                if bad else None)
+    if key == "holes":
+        if not isinstance(v, dict):
+            return ('"holes" must be a table of radius to count, like '
+                    f'{{"4": 6}} — not {v!r}')
+        for r, n in v.items():
+            try:
+                float(r)
+                if int(n) != float(n):
+                    raise ValueError
+            except (TypeError, ValueError):
+                return ('"holes" must be a table of radius to count, like '
+                        f'{{"4": 6}} — {r!r}: {n!r} is not')
+    return None
+
+
 @app.post("/api/spec")
 def set_spec(req: SpecReq):
     """Edit the design's requirements — the legitimate way to change intent
     (e.g. actually wanting 9 blades) instead of fighting the verifier."""
     known = {"size", "volume", "holes", "n_solids", "symmetry", "tip_radius",
              "com", "require_manifold", "tol", "vol_tol"}
+    spec = {k: v for k, v in req.spec.items() if k in known and v is not None}
+    for k, v in spec.items():
+        problem = _spec_problem(k, v)
+        if problem:
+            return _refused(None, f"that requirement cannot be checked: "
+                                  f"{problem}")
     _hand_edit()
     _snapshot()
     doc = _doc()
-    doc.spec = {k: v for k, v in req.spec.items()
-                if k in known and v is not None}
+    doc.spec = spec
     doc._mark_stale()
     _rebuild_and_mesh()
     return _doc_json()
@@ -2571,22 +2631,36 @@ def rollback(req: RollbackReq):
 # Library, samples, export
 # ---------------------------------------------------------------------------
 
-@app.post("/api/save")
-def save_design():
-    doc = _doc()
-    safe = re.sub(r"[^\w\-]+", "-", doc.name).strip("-") or "untitled"
-    path = DESIGNS / f"{safe}.tcad.json"
-    # A save must never land on SOMEONE ELSE'S design. File > New accepts any
-    # name, and the slug rule collapses a natural one onto an existing file
-    # without any exact typing ("cam cover plaque" -> cam-cover-plaque; this
-    # filesystem is case-insensitive, so "Cam Cover Plaque" hits it too). That
-    # overwrote the other design's .tcad.json AND appended this content to its
-    # version tree as a child of its latest version, with both tabs left bound
-    # to the one design (section 3 review, 2026-09-10, measured). The tab that
-    # is ALREADY bound to this file may of course keep saving over it.
-    #
-    # THREE doors lead there, all measured (probes/version_review_probe.py).
-    owner = _file_owner(safe)
+def _design_slug(name: str) -> str:
+    """The library file name a design goes under — ONE rule for every file
+    written into designs/ under a design's name.
+
+    The save has always used it; `mcp_server._safe_name` is the same rule; the
+    STEP export used the RAW name until the section 12 review (2026-09-16), so
+    a design called "cam cover plaque" saved as cam-cover-plaque.tcad.json and
+    exported as "cam cover plaque.step" while the MCP, exporting the very same
+    design, wrote cam-cover-plaque.step — the twin-file trap the export exists
+    to avoid."""
+    return re.sub(r"[^\w\-]+", "-", name).strip("-") or "untitled"
+
+
+def _name_clash(slug: str, deed: str) -> str | None:
+    """The sentence refusing to write designs/<slug>.* on the ACTIVE tab's
+    behalf, or None when this tab owns that name.
+
+    A write must never land on SOMEONE ELSE'S design. File > New accepts any
+    name, and the slug rule collapses a natural one onto an existing file
+    without any exact typing ("cam cover plaque" -> cam-cover-plaque; this
+    filesystem is case-insensitive, so "Cam Cover Plaque" hits it too). For the
+    SAVE that overwrote the other design's .tcad.json AND appended this content
+    to its version tree (section 3 review, 2026-09-10, measured); for the
+    EXPORT it replaced the other design's .step outright — measured
+    2026-09-16, a 68455.304 mm3 flange file came back holding a 200.0 mm3
+    plate, announced as a successful export (section 12 review). The tab that
+    is ALREADY bound to this file may of course keep writing over it.
+
+    `deed` is the gerund the sentence uses ("saving", "exporting")."""
+    owner = _file_owner(slug)
     if owner is not None and owner != STATE["active"]:
         # 1. another TAB already owns this file. One tab per design is an
         # invariant everywhere else — /api/open reuses the tab instead of
@@ -2595,30 +2669,43 @@ def save_design():
         # tab's save silently overwrote the other's and hung its version off
         # the other's latest (measured: bore.radius 11 -> 44, and v3 parented
         # to a v2 it never came out of).
-        return _refused(None, message=(
-            f"'{safe}' is already open in another tab. Two tabs cannot share "
-            f"one design file and one version tree — switch to that tab and "
-            f"save there, or give this design another name."))
-    if (_entry().get("source") or "").lower() != f"file:{safe}".lower():
-        if path.exists():
-            # 2. a DIFFERENT design already holds the name. A save whose
-            # content is exactly what the file holds is still fine — nothing
-            # can be lost that way, and that is how a sample tab writes itself
-            # into the library.
-            try:
-                same = content_hash(json.loads(
-                    path.read_text(encoding="utf-8"))) == content_hash(
-                        doc.to_data())
-            except Exception:
-                same = False           # unreadable: assume it is someone's work
-            if not same:
-                return _refused(None, message=(
-                    f"There is already a different design called '{safe}', "
-                    f"and saving here would replace it. Give this one another "
+        return (f"'{slug}' is already open in another tab. Two tabs cannot "
+                f"share one design file — switch to that tab and work there, "
+                f"or give this design another name.")
+    if (_entry().get("source") or "").lower() == f"file:{slug}".lower():
+        return None
+    path = DESIGNS / f"{slug}.tcad.json"
+    if path.exists():
+        # 2. a DIFFERENT design already holds the name. Content that is
+        # exactly what the file holds is still fine — nothing can be lost that
+        # way, and that is how a sample tab writes itself into the library.
+        try:
+            same = content_hash(json.loads(
+                path.read_text(encoding="utf-8"))) == content_hash(
+                    _doc().to_data())
+        except Exception:
+            same = False               # unreadable: assume it is someone's work
+        if not same:
+            return (f"There is already a different design called '{slug}', "
+                    f"and {deed} here would replace it. Give this one another "
                     f"name first — or, if you meant to work on that design, "
                     f"open it from the library and make your changes in its "
-                    f"tab."))
-        elif _saved_versions_exist(safe):
+                    f"tab.")
+    return None
+
+
+@app.post("/api/save")
+def save_design():
+    doc = _doc()
+    safe = _design_slug(doc.name)
+    path = DESIGNS / f"{safe}.tcad.json"
+    # THREE doors lead onto someone else's design; the first two are shared
+    # with the export (_name_clash), the third is the version tree's own.
+    clash = _name_clash(safe, "saving")
+    if clash:
+        return _refused(None, message=clash)
+    if (_entry().get("source") or "").lower() != f"file:{safe}".lower():
+        if not path.exists() and _saved_versions_exist(safe):
             # 3. the FILE is gone but the version tree is NOT. There is no
             # in-app delete, so a design removed in Explorer leaves
             # <slug>.history/ behind — and a new design of the same name then
@@ -3097,7 +3184,7 @@ def load_sample(name: str):
     Clicking Flange twice must not give you two flanges, and must not throw
     away what you did to the first one either. File > New gets a clean one."""
     if name not in SAMPLES:
-        return {"error": f"unknown sample '{name}'"}
+        return _refused(None, f"unknown sample '{name}'")
     tid = _find_tab(f"sample:{name}")
     if tid is not None:
         STATE["active"] = tid
@@ -3125,10 +3212,17 @@ def get_ops():
 def export_step():
     """Export the ACTIVE design as STEP and PROVE what was written.
 
-    The file goes to designs/<name>.step — the same canonical place the MCP
-    builds write — so a design has ONE .step on disk, not a root copy and a
-    designs/ copy quietly diverging (2026-08-31: the stale twin of that pair
-    is what a CAM import picked up). After writing, the file itself is
+    The file goes to designs/<slug>.step — the same canonical place the MCP
+    builds write (`mcp_server._safe_name` is `_design_slug`) — so a design has
+    ONE .step on disk, not a root copy and a designs/ copy quietly diverging
+    (2026-08-31: the stale twin of that pair is what a CAM import picked up).
+    The name is the design's SLUG, and the same two collision doors the save
+    has apply: until the section 12 review (2026-09-16) this used the raw
+    doc.name, so "cam cover plaque" exported beside the MCP's own
+    cam-cover-plaque.step, and a second design carrying a name already in the
+    library replaced that design's .step outright — measured: a 68455.304 mm3
+    flange file came back holding a 200.0 mm3 plate, announced as a
+    successful export. After writing, the file itself is
     measured and the facts returned, so the UI can show what the reader of
     this file will actually get: never trust, always measure — exports
     included. A parked rollback bar or a failed body is handled/refused in
@@ -3142,12 +3236,23 @@ def export_step():
     taken from the written FILE rather than from the shapes in memory.
     """
     doc = _doc()
-    path = str(DESIGNS / f"{doc.name}.step")
-    try:
-        doc.to_step(path)
-    except Exception as e:
-        return {"error": str(e)}
-    m = inspector.measure(path)
+    slug = _design_slug(doc.name)
+    clash = _name_clash(slug, "exporting")
+    if clash:
+        return _refused(None, message=f"{clash} (designs/{slug}.step is that "
+                                      f"design's export.)")
+    path = str(DESIGNS / f"{slug}.step")
+    # to_step REBUILDS (twice, when an editor has the rollback bar parked) and
+    # the readback reads a STEP file: four OCCT calls, none of which used to
+    # take this lock. The one-writer middleware does not cover them — an AI
+    # "create" job builds in a tab of its OWN, so it is not the ACTIVE tab and
+    # Export stays clickable throughout (section 12 review, 2026-09-16).
+    with _KERNEL_LOCK:
+        try:
+            doc.to_step(path)
+        except Exception as e:                   # noqa: BLE001 - OCP too
+            return _refused(e)
+        m = inspector.measure(path)
     return {"path": path, "n_solids": m.get("n_solids"),
             "volume": m.get("volume"), "size": m.get("size"),
             "is_valid": m.get("is_valid"),
