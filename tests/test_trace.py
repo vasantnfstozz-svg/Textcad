@@ -405,3 +405,158 @@ def test_holes_inside_holes_alternate_add_and_subtract():
     want = np.pi * (30 ** 2 - 22.5 ** 2 + 15 ** 2 - 7.5 ** 2)
     assert sk.make_sketch("XY", 0, ents).area == pytest.approx(want, rel=0.03)
     assert info["holes"] == 2 and info["contours"] == 2
+
+
+# ---------------------------------------------------------------------------
+# REVIEW-QUEUE section 9, ROUND TWO (2026-09-17): the fix pass's own new code.
+# Each was measured red first; the probes are probes/imgtrace_r2_*.py.
+# ---------------------------------------------------------------------------
+
+
+def _ink_mm2(mask, h_mm):
+    """what the picture's ink is worth in mm2 once scaled to h_mm tall"""
+    ys, _ = np.where(mask)
+    mm_px = h_mm / (int(ys.max()) - int(ys.min()) + 1)
+    return float((mask > 0).sum()) * mm_px * mm_px
+
+
+def _alpha_png(mask):
+    img = np.zeros(mask.shape + (4,), np.uint8)
+    img[:, :, 3] = (mask > 0).astype(np.uint8) * 255
+    return _png(img)
+
+
+def _lettered_sheet(frame_px):
+    """Five dark letters on paper, inside a dark edge frame_px thick — a
+    scan's platen edge, a printed rule box, or the one-pixel border an
+    exporter leaves behind."""
+    img = np.full((400, 400, 3), 255, np.uint8)
+    for i in range(5):
+        cv2.rectangle(img, (60 + i * 60, 160), (95 + i * 60, 240),
+                      (0, 0, 0), -1)
+    cv2.rectangle(img, (0, 0), (399, 399), (0, 0, 0), frame_px)
+    return img
+
+
+@pytest.mark.parametrize("frame_px", [1, 5, 12])
+def test_a_thin_dark_edge_is_not_a_dark_background(frame_px):
+    """Round one made the background "whichever side fills the picture's
+    outer BORDER" — read one pixel deep. A scan's dark platen edge, a printed
+    rule box, even a 1 px frame, all fill that pixel, so the paper became the
+    artwork and the tracer produced the NEGATIVE: ONE contour with five
+    letter-shaped holes, 1435.4 mm2 (measured 2026-09-17, round two). That is
+    the same P0 round one fixed, through the other door."""
+    ents, info = imgtrace.image_to_entities(
+        _png(_lettered_sheet(frame_px)), height_mm=40)
+    # the five letters come back as MATERIAL. The frame ring is ink too, so
+    # it rides along as a sixth piece with its own inside as the one hole -
+    # what the pre-4c9ea32 rule gave, to the contour: 6 pieces, 1 hole.
+    assert info["contours"] >= 5 and info["holes"] <= 1, (
+        f"{frame_px} px frame: {info['contours']} pieces and "
+        f"{info['holes']} holes — the paper traced as a slab with "
+        f"letter-shaped holes is the NEGATIVE of the art")
+    area = sk.make_sketch("XY", 0, ents).area
+    assert area < 700, f"{area:.1f} mm2 is the paper, not the lettering"
+
+
+def test_a_dark_ground_that_is_not_a_frame_still_wins():
+    """The guard must not undo round one: inverse-video art (white on black)
+    has a genuinely dark ground, and a white disc that nearly fills its
+    picture is still the artwork."""
+    for r in (110, 190):
+        img = np.zeros((400, 400, 3), np.uint8)
+        cv2.circle(img, (200, 200), r, (255, 255, 255), -1)
+        ents, _ = imgtrace.image_to_entities(_png(img), height_mm=40)
+        assert sk.make_sketch("XY", 0, ents).area == pytest.approx(
+            np.pi * 20 ** 2, rel=0.04), f"radius {r}"
+
+
+def _dumbbell(neck_px):
+    """Two discs joined by a bar neck_px wide — a barbell pendant, and what
+    any hairline join looks like at raster resolution."""
+    m = np.zeros((420, 820), np.uint8)
+    cv2.circle(m, (170, 210), 130, 1, -1)
+    cv2.circle(m, (650, 210), 130, 1, -1)
+    cv2.line(m, (170, 210), (650, 210), 1, neck_px)
+    return m
+
+
+def test_uncross_keeps_both_halves_of_a_pinched_outline():
+    """_uncross cut the SMALLER loop off at every self-crossing, and round
+    one's claim was "the loop thrown away is the width of eps — under a tenth
+    of a millimetre of artwork". Douglas-Peucker shortcuts a ONE-PIXEL join
+    into a real crossing, and there both loops are a whole disc: 1237.16 mm2
+    came back of a true 2498.45, healthy and green, no warning (measured
+    2026-09-17, round two)."""
+    m = _dumbbell(1)
+    ents, _ = imgtrace.image_to_entities(_alpha_png(m), height_mm=40)
+    area = sk.make_sketch("XY", 0, ents).area
+    want = _ink_mm2(m, 40.0)
+    assert area == pytest.approx(want, rel=0.05), (
+        f"traced {area:.2f} mm2 of a true {want:.2f} — half the artwork "
+        f"is one of the two discs")
+
+
+def test_a_pinched_outline_still_builds_a_healthy_solid():
+    """Keeping both loops must not hand OpenCASCADE a pinch instead."""
+    for neck in (1, 2, 3):
+        ents, _ = imgtrace.image_to_entities(
+            _alpha_png(_dumbbell(neck)), height_mm=40)
+        for k, e in enumerate(ents):
+            assert _self_crossings(e["points"]) == 0, f"neck {neck}, ent {k}"
+        solid = sk.extrude_sketch(sk.make_sketch("XY", 0, ents), 2.0)
+        assert inspector.health(solid) == [], f"neck {neck}"
+
+
+def _dotted_sheet(speck):
+    m = np.zeros((3000, 1200), np.uint8)
+    for i in range(5):
+        cv2.rectangle(m, (200 + i * 180, 1400), (230 + i * 180, 1430), 1, -1)
+    if speck:
+        m[40:42, 40:42] = 1
+    return m
+
+
+def test_a_speck_cannot_raise_the_speckle_floor():
+    """Round one's P1 was "a speck of dirt decided the fit"; its own
+    _traceable still measures `h_all` on the RAW mask, and h_all is what the
+    0.25 mm floor is computed from. Five pieces 9.7 mm across were REFUSED
+    outright — "every piece of this artwork would be under 0.25 mm at 10 mm
+    tall" — because of one 2x2 speck in the corner (measured 2026-09-17)."""
+    info = imgtrace.image_to_entities(
+        _alpha_png(_dotted_sheet(False)), height_mm=10)[1]
+    assert info["contours"] == 5
+    info2 = imgtrace.image_to_entities(
+        _alpha_png(_dotted_sheet(True)), height_mm=10)[1]
+    assert info2["contours"] == 5, (
+        "a 2x2 speck refused or ate artwork 9.7 mm across")
+    assert info2["height_mm"] == pytest.approx(info["height_mm"], abs=0.2)
+
+
+def test_a_speck_cannot_drop_the_dot_of_an_i():
+    """The same defect without the refusal: a 1.66 mm dot vanished from art
+    that traced fine, silently, 3 contours -> 2 (measured 2026-09-17)."""
+    def sheet(speck):
+        m = np.zeros((3000, 1200), np.uint8)
+        cv2.rectangle(m, (200, 1400), (230, 1560), 1, -1)
+        cv2.rectangle(m, (208, 1350), (215, 1357), 1, -1)     # the dot
+        cv2.rectangle(m, (300, 1400), (330, 1560), 1, -1)
+        if speck:
+            m[40:42, 40:42] = 1
+        return m
+    a = imgtrace.image_to_entities(_alpha_png(sheet(False)), height_mm=50)[1]
+    b = imgtrace.image_to_entities(_alpha_png(sheet(True)), height_mm=50)[1]
+    assert a["contours"] == 3
+    assert b["contours"] == 3, "a 2x2 speck dropped the dot of the i"
+
+
+def test_art_too_fine_for_the_target_size_still_refuses():
+    """The floor fix must not take the P2 refusal away: art that really is
+    under 0.25 mm at the asked-for height must still get a sentence."""
+    img = np.zeros((2000, 2000, 4), np.uint8)
+    for i in range(10):
+        cv2.rectangle(img, (100 + i * 180, 100), (160 + i * 180, 1900),
+                      (0, 0, 0, 255), -1)
+    with pytest.raises(ValueError) as ex:
+        imgtrace.image_to_entities(_png(img), height_mm=1.0)
+    assert "0.25" in str(ex.value), str(ex.value)

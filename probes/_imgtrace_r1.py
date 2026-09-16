@@ -8,7 +8,7 @@ drawn by hand. No new geometry kinds, no new ops.
 Pipeline (battle-proven on the rocky-keychain design series, 2026-08):
     decode -> binary mask (alpha channel if real, else Otsu on luminance,
     polarity chosen so the BACKGROUND is the side that fills the picture's
-    border, read past a THIN border shell — a scan edge or a printed frame)
+    border)
  -> fill pieces solid + BRIDGE disjoint pieces (art is often split by
     highlight streaks; connect globally-closest pairs until one blob set)
  -> optional CHANNEL ABSORB: morphological open of the background at final
@@ -44,18 +44,10 @@ def _area2(pts) -> float:
                - pts[(i + 1) % n][0] * pts[i][1] for i in range(n))
 
 
-def _first_crossing(pts, tol=1e-9):
-    """The first pair of non-adjacent edges that cross or TOUCH, as
-    (i, j, point) — or None. One vectorised pass per edge, so a few hundred
-    points cost milliseconds.
-
-    `tol` widens the test past the segment ends by a billionth of their own
-    length, because a touch decided in the last bits is not settled geometry:
-    an outline this read as clean came out of `_poly_entity` — the same
-    polygon, moved by its own bbox centre — as one that CROSSES, and the
-    solid was invalid (rand76 in probes/imgtrace_r2_sweep.py, measured
-    2026-09-17, round two). A pair of edges within a billionth of touching
-    is a zero-width sliver whichever coordinates it is written in."""
+def _first_crossing(pts):
+    """The first pair of non-adjacent edges that cross, as (i, j, point) —
+    or None. One vectorised pass per edge, so a few hundred points cost
+    milliseconds."""
     n = len(pts)
     if n < 4:
         return None
@@ -70,8 +62,8 @@ def _first_crossing(pts, tol=1e-9):
         d = a[lo:hi] - a[i]
         t = (d[:, 0] * r[lo:hi, 1] - d[:, 1] * r[lo:hi, 0]) / safe
         u = (d[:, 0] * r[i, 1] - d[:, 1] * r[i, 0]) / safe
-        hit = ((np.abs(den) > 1e-15) & (t >= -tol) & (t <= 1.0 + tol)
-               & (u >= -tol) & (u <= 1.0 + tol))
+        hit = ((np.abs(den) > 1e-15) & (t >= 0.0) & (t <= 1.0)
+               & (u >= 0.0) & (u <= 1.0))
         if hit.any():
             k = int(np.argmax(hit))
             return i, lo + k, (float(a[i, 0] + t[k] * r[i, 0]),
@@ -80,47 +72,27 @@ def _first_crossing(pts, tol=1e-9):
 
 
 def _uncross(pts):
-    """Split a traced outline into SIMPLE polygons at its self-crossings, and
-    return every one of them.
+    """Make a traced outline a SIMPLE polygon by cutting off the smaller of
+    the two loops at every self-crossing.
 
     OpenCV walks out and back along a one-pixel whisker, so the raw contour
     of ordinary anti-aliased art already touches itself; Douglas-Peucker then
     moves a point by up to `eps` and turns the touch into a crossing. Measured
     2026-09-17 (REVIEW-QUEUE section 9): a comb of 1 px teeth came out of the
     tracer with 26 self-crossings in ONE outline, and on random artwork one
-    trace in sixty built a body OpenCASCADE calls invalid.
-
-    Round one cut the SMALLER loop off and kept ONE polygon. That is right for
-    a whisker — its fold-back turns the OTHER way and is `eps` wide — and
-    wrong for a PINCH, where both loops are artwork: two discs joined by a
-    one-pixel bar came back as one disc, 1237.16 mm2 of a true 2498.45,
-    healthy and green with nothing said (measured 2026-09-17, round two). A
-    loop that turns the same way as the piece it was cut from is material the
-    picture really carries, so it is kept as a polygon of its own."""
-    loops, work = [], [list(pts)]
-    for _ in range(256):
-        if not work:
-            break
-        cur = work.pop()
-        hit = _first_crossing(cur)
+    trace in sixty built a body OpenCASCADE calls invalid. The loop thrown
+    away is the width of `eps` — under a tenth of a millimetre of artwork."""
+    for _ in range(64):
+        hit = _first_crossing(pts)
         if hit is None:
-            if len(cur) >= 3:
-                loops.append(cur)
-            continue
+            return pts
         i, j, x = hit
-        a = _round_pts([x] + list(cur[i + 1:j + 1]))
-        b = _round_pts(list(cur[:i + 1]) + [x] + list(cur[j + 1:]))
-        aa, ab = _area2(a), _area2(b)
-        if len(a) < 3 or len(b) < 3 or (aa > 0) != (ab > 0):
-            keep = a if abs(aa) >= abs(ab) else b      # a whisker's fold-back
-            if len(keep) >= 3:
-                work.append(keep)
-        else:
-            work += [a, b]                             # a pinch: both are art
-    else:                                              # pathological outline
-        loops += [w for w in work
-                  if len(w) >= 3 and _first_crossing(w) is None]
-    return loops
+        cut = [x] + list(pts[i + 1:j + 1])
+        rest = list(pts[:i + 1]) + [x] + list(pts[j + 1:])
+        pts = _round_pts(rest if abs(_area2(rest)) >= abs(_area2(cut)) else cut)
+        if len(pts) < 3:
+            return pts
+    return pts
 
 
 def _poly_entity(pts, mode="add"):
@@ -143,68 +115,6 @@ def _poly_entity(pts, mode="add"):
             "points": [[round(x - cx, 3), round(y - cy, 3)] for x, y in pts]}
 
 
-_K3 = np.ones((3, 3), np.uint8)
-
-
-def _inner(valid):
-    """`valid` minus its outermost layer (outside the picture counts as out)"""
-    return cv2.erode(valid, _K3, borderType=cv2.BORDER_CONSTANT, borderValue=0)
-
-
-def _ring_mean(m, valid) -> float:
-    """mean of `m` over the outermost layer of the region `valid`"""
-    edge = valid - _inner(valid)
-    n = int(edge.sum())
-    return float((m * edge).sum()) / n if n else 0.5
-
-
-def _edge_shell(m, side, valid):
-    """the pieces of `side` that reach the outer layer of `valid`, or None"""
-    sel = ((m == side) & valid.astype(bool)).astype(np.uint8)
-    n, labels = cv2.connectedComponents(sel, 8)
-    if n < 2:
-        return None
-    ids = [int(i)
-           for i in np.unique(labels[(valid - _inner(valid)).astype(bool)])
-           if i]
-    return np.isin(labels, ids).astype(np.uint8) if ids else None
-
-
-def _border_bright(m) -> float:
-    """How much of the picture's border is BRIGHT — read PAST a thin border
-    shell.
-
-    Round one read the outermost ONE pixel. A scan's dark platen edge, a
-    printed rule box, even the 1 px frame an exporter leaves behind all fill
-    that pixel, so the paper was called the artwork and the tracer produced
-    its NEGATIVE: five letters inside a 12 px dark edge came back as ONE
-    contour with five letter-shaped holes, 1435.4 mm2, status ok and nothing
-    said (measured 2026-09-17, REVIEW-QUEUE section 9 round two) — the same
-    P0 round one had just fixed, through the other door.
-
-    A shell only counts as a frame when it is THIN (under 5% of the picture)
-    and there is something on both sides of the split left inside it. A
-    genuinely dark ground is fat — a white disc filling all but 10 px of its
-    picture still leaves a 93 px thick corner — so inverse-video art is
-    untouched, and art with a thin light margin has nothing to read inside."""
-    valid = np.ones(m.shape, np.uint8)
-    ring = _ring_mean(m, valid)
-    if 0.4 <= ring <= 0.6:                     # a split border says nothing
-        return ring
-    shell = _edge_shell(m, 1 if ring > 0.5 else 0, valid)
-    if shell is None:
-        return ring
-    if float(cv2.distanceTransform(shell, cv2.DIST_L2, 3).max()) > \
-            0.05 * min(m.shape):
-        return ring                            # a real ground, not a frame
-    rest = (1 - shell).astype(np.uint8)
-    inside = m[rest.astype(bool)]
-    lit = int(inside.sum())
-    if min(lit, int(inside.size) - lit) < max(64.0, 0.01 * inside.size):
-        return ring                            # nothing inside it to read
-    return _ring_mean(m, rest)
-
-
 def _mask_from_image(img) -> np.ndarray:
     """Foreground mask: real alpha channel wins; otherwise Otsu on luminance
     with the BACKGROUND taken to be whichever side fills the picture's outer
@@ -222,10 +132,7 @@ def _mask_from_image(img) -> np.ndarray:
     A border split down the middle says nothing, so there the old minority
     rule still decides. Art that runs off all four edges of its own picture
     with a hollow middle — a picture-frame shape cropped to zero margin — is
-    genuinely ambiguous either way, and this rule reads it as the middle.
-
-    `_border_bright` reads that border PAST a thin shell, because a scan's
-    platen edge or a printed rule box fills it without being the ground."""
+    genuinely ambiguous either way, and this rule reads it as the middle."""
     if img is None:
         raise ValueError("could not decode the image — is it a PNG/JPG?")
     if img.ndim == 3 and img.shape[2] == 4 and int(img[:, :, 3].min()) < 250:
@@ -233,7 +140,10 @@ def _mask_from_image(img) -> np.ndarray:
     gray = (cv2.cvtColor(img[:, :, :3], cv2.COLOR_BGR2GRAY)
             if img.ndim == 3 else img)
     _, m = cv2.threshold(gray, 0, 1, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    bright_edge = _border_bright(m)
+    ring = np.concatenate([np.asarray(m[0]).ravel(), np.asarray(m[-1]).ravel(),
+                           np.asarray(m[:, 0]).ravel(),
+                           np.asarray(m[:, -1]).ravel()])
+    bright_edge = float(ring.mean()) if ring.size else 0.5
     if bright_edge > 0.6:                   # light border -> the art is dark
         m = 1 - m
     elif bright_edge >= 0.4:                # border split: the old rule
@@ -256,28 +166,16 @@ def _traceable(mask: np.ndarray, height_mm: float):
     comp_areas = stats[1:, 4]
     if int(comp_areas.max()) < 64:
         raise ValueError("artwork too small to trace")
-    # The floor is physical, so it needs the scale, and the scale is
-    # height_mm / the artwork's own pixel height. That height must NOT be
-    # measured on the raw mask: one 2x2 speck in a corner stretched it, and
-    # the floor with it, dropping the dot of an i at 1.66 mm and REFUSING
-    # five pieces 9.7 mm across (measured 2026-09-17, section 9 round two).
-    # So start from the pieces above the absolute 9 px floor and shrink to a
-    # fixed point — each round can only drop pieces, so it terminates.
-    keep = [i + 1 for i, a in enumerate(comp_areas) if a >= 9]
-    min_area = 9.0
-    for _ in range(8):
-        ys, _xs = np.where(np.isin(labels, keep))
-        h_all = int(ys.max()) - int(ys.min()) + 1
-        min_area = max(9.0, (0.25 * h_all / float(height_mm)) ** 2)
-        smaller = [i for i in keep if comp_areas[i - 1] >= min_area]
-        if not smaller:
-            raise ValueError(
-                f"every piece of this artwork would be under 0.25 mm at "
-                f"{float(height_mm):g} mm tall — trace it bigger and scale "
-                f"the sketch down")
-        if smaller == keep:
-            break
-        keep = smaller
+    ys, xs = np.where(mask)
+    h_all = int(ys.max()) - int(ys.min()) + 1
+    mm_px = float(height_mm) / h_all
+    min_area = max(9.0, (0.25 / mm_px) ** 2)
+    keep = [i + 1 for i, a in enumerate(comp_areas) if a >= min_area]
+    if not keep:
+        raise ValueError(
+            f"every piece of this artwork would be under 0.25 mm at "
+            f"{float(height_mm):g} mm tall — trace it bigger and scale the "
+            f"sketch down")
     return np.isin(labels, keep).astype(np.uint8), min_area
 
 
@@ -391,21 +289,13 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
     def to_mm(cnt):
         ap = cv2.approxPolyDP(cnt, eps, True).reshape(-1, 2).astype(float)
         if len(ap) < 3:
-            return []
+            return None
         ap = _chaikin(ap, cut_px=cut_px)
         pts = [((px - cx_px) * mm_px, (cy_px - py) * mm_px) for px, py in ap]
         # _uncross AFTER the scale to mm: sketch.py must never be handed a
-        # polygon that crosses itself (REVIEW-QUEUE section 9). One contour
-        # can come back as SEVERAL loops — a pinched piece is several pieces.
-        loops = [p for p in _uncross(_round_pts(pts)) if len(p) >= 3]
-        if not loops:
-            return []
-        # the biggest loop is the piece; the rest have to be worth drawing,
-        # or sketch.py refuses the whole sketch ("encloses no area") over a
-        # sliver (measured 2026-09-17 round two)
-        loops.sort(key=lambda p: abs(_area2(p)), reverse=True)
-        floor = 2.0 * min_area * mm_px * mm_px
-        return loops[:1] + [p for p in loops[1:] if abs(_area2(p)) >= floor]
+        # polygon that crosses itself (REVIEW-QUEUE section 9)
+        pts = _uncross(_round_pts(pts))
+        return pts if len(pts) >= 3 else None
 
     ents, n_holes = [], 0
     hier = hier[0] if hier is not None else []
@@ -415,12 +305,14 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
         if cv2.contourArea(cnts[i]) < min_area:
             continue
         outer = hier[i][3] < 0            # no parent -> outer ring
-        for pts in to_mm(cnts[i]):
-            if outer:
-                ents.append(_poly_entity(pts, "add"))
-            else:
-                ents.append(_poly_entity(pts, "subtract"))
-                n_holes += 1
+        pts = to_mm(cnts[i])
+        if pts is None:
+            continue
+        if outer:
+            ents.append(_poly_entity(pts, "add"))
+        else:
+            ents.append(_poly_entity(pts, "subtract"))
+            n_holes += 1
     if not ents or ents[0]["mode"] != "add":
         raise ValueError("tracing produced no usable outline")
 
