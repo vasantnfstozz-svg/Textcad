@@ -104,8 +104,12 @@ setInterval(async () => {
        tab WITHOUT rebuilding, so name, feature count, rebuild_ms and ok all
        stay put and the banner the server had ready was never spoken. It also
        left the marker owed for its whole ten minutes, to be announced later
-       over some unrelated change. noteArrival carries its own two guards. */
-    noteArrival(d);
+       over some unrelated change. noteArrival carries its own two guards.
+       It now SWITCHES to the arriving design as well as announcing it (the
+       answer names the tab it is about, so nothing drags this page along any
+       more), and the tree comes with that switch — only the viewport has to
+       be told, and only when the follow really happened. */
+    if (await noteArrival(d)) loadMesh(true);
   } catch (e) { /* server briefly busy */ }
 }, 3000);
 
@@ -124,4 +128,4 @@ noteRecovery(doc);
 /* A design that arrived while no page was open is still news — once. The
    server drops it if nobody came for it, and forgets it the moment this page
    says it, so a reload never repeats it. */
-noteArrival(doc);
+if (await noteArrival(doc)) loadMesh(true);

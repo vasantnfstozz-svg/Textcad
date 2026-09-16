@@ -127,3 +127,142 @@ def test_a_header_naming_a_tab_that_has_closed_is_ignored_not_refused():
                headers={"X-TextCAD-Tab": gone})
     assert r.status_code == 200, r.text
     assert [f["id"] for f in r.json()["features"]] == ["base"]
+
+
+# ---------------------------------------------------------------------------
+# Section 12 ROUND FIVE — the browser half re-read.
+#
+# The pin protects the request that CARRIES the header. Round five measured
+# what the RESPONSE then tells the browser
+# (probes/section12_round5_hammer.py): the document was the addressed tab's
+# but `active_tab` was the LIVE active tab, and tabHeaders() feeds
+# `S.lastDoc.active_tab` back as the next request's header — so the pin held
+# for exactly ONE request and the one after it went to the design a doorbell
+# had made active. Measured: a poll answered about the user's own tab came
+# back labelled the arriving design's, and the next edit — made against the
+# tree on screen — set the ARRIVING design's base.thickness to 41 while the
+# design on screen kept its 5.
+# ---------------------------------------------------------------------------
+
+def _two(c):
+    """Two tabs, each with a feature called `base` — the ordinary case, and
+    the one where a misaddressed edit lands instead of being refused."""
+    mine = c.post("/api/new", json={}).json()["active_tab"]
+    c.post("/api/feature/add", json={
+        "id": "base", "op": "plate", "inputs": [],
+        "params": {"width": 20, "depth": 20, "thickness": 5}})
+    other = c.post("/api/new", json={}).json()["active_tab"]
+    c.post("/api/feature/add", json={
+        "id": "base", "op": "plate", "inputs": [],
+        "params": {"width": 30, "depth": 30, "thickness": 9}})
+    return mine, other
+
+
+def test_the_answer_names_the_tab_it_is_about():
+    """A response carrying one design's feature tree must not be labelled
+    another design's tab: the browser hands that label straight back."""
+    c = TestClient(studio.app)
+    mine, other = _two(c)
+    studio.STATE["active"] = other                  # the doorbell got there
+    r = c.get("/api/doc", headers={"X-TextCAD-Tab": mine}).json()
+    assert r["features"][0]["params"]["thickness"] == 5, "wrong document"
+    assert r["active_tab"] == mine, \
+        "the answer is about `mine` and must say so"
+
+
+def test_the_tab_strip_marks_the_tab_the_answer_is_about():
+    c = TestClient(studio.app)
+    mine, other = _two(c)
+    studio.STATE["active"] = other
+    r = c.get("/api/doc", headers={"X-TextCAD-Tab": mine}).json()
+    assert [t["id"] for t in r["tabs"] if t["active"]] == [mine]
+    r = c.get("/api/tabs", headers={"X-TextCAD-Tab": mine}).json()
+    assert r["active_tab"] == mine
+
+
+def test_the_next_click_lands_where_the_last_answer_came_from():
+    """The whole point, end to end: the browser sends back what the last
+    answer called the active tab, so a misaddressed label costs the user the
+    NEXT edit — into a design they never opened, under a feature id both
+    designs happen to share."""
+    c = TestClient(studio.app)
+    mine, other = _two(c)
+    studio.STATE["active"] = other
+    poll = c.get("/api/doc", headers={"X-TextCAD-Tab": mine}).json()
+    # exactly what static/js/api.js tabHeaders() does with S.lastDoc
+    c.post("/api/edit", headers={"X-TextCAD-Tab": poll["active_tab"]},
+           json={"feature_id": "base", "param": "thickness", "value": 41})
+    assert studio.STATE["docs"][mine]["doc"].features[0].params[
+        "thickness"] == 41, "the edit belonged to the design on screen"
+    assert studio.STATE["docs"][other]["doc"].features[0].params[
+        "thickness"] == 9, "the other design must be untouched"
+
+
+def test_a_stale_header_cannot_smuggle_a_write_into_the_busy_tab():
+    """The two middlewares must resolve the header by ONE rule. The pin
+    ignores a header naming a tab that is not open and falls back to the
+    active tab; the one-writer guard took the header as given, so a page one
+    poll behind — or one that outlived a restart, where tab ids start again
+    at t1 — slipped a write into the very tab the AI was building in."""
+    c = TestClient(studio.app)
+    mine, other = _two(c)
+    studio.STATE["active"] = other
+    studio.JOBS.clear()
+    studio.JOBS["j-r5"] = {"id": "j-r5", "tab": other, "done": False}
+    try:
+        r = c.post("/api/edit", headers={"X-TextCAD-Tab": "t-closed-ages-ago"},
+                   json={"feature_id": "base", "param": "thickness",
+                         "value": 77})
+        assert r.status_code == 400, r.json()
+        assert studio.STATE["docs"][other]["doc"].features[0].params[
+            "thickness"] == 9
+    finally:
+        studio.JOBS.clear()
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not on PATH")
+def test_a_raw_fetch_carries_the_tab_too(tmp_path):
+    """Nine call sites under static/js call fetch() directly instead of going
+    through api.js — File -> Export, the viewport's /api/model and
+    /api/sketch-mesh, the face pick, the two measure calls, the sketcher's
+    snap, outline and trim. A write and a read landing on DIFFERENT tabs
+    inside one gesture is how a face picked on one body gets applied to
+    another, so the header is installed once for the whole page."""
+    got = _node(tmp_path,
+                _STUBS +
+                "let seen = [];\n"
+                "globalThis.fetch = async (u, o) => { seen.push([u, (o||{}).headers || null]); "
+                "return { ok: true, json: async () => ({}) }; };\n"
+                f"await import({json.dumps((JS / 'api.js').as_uri())});\n"
+                f"const {{ S }} = await import({json.dumps((JS / 'state.js').as_uri())});\n"
+                "S.lastDoc = { active_tab: 't9' };\n"
+                "await fetch('/api/export', { method: 'POST' });\n"
+                "await fetch('/api/model?t=1');\n"
+                "await fetch('/static/js/main.js');\n"
+                "console.log(JSON.stringify(seen));\n")
+    assert got[0][1]["X-TextCAD-Tab"] == "t9", got
+    assert got[1][1]["X-TextCAD-Tab"] == "t9", got
+    assert "X-TextCAD-Tab" not in (got[2][1] or {}), \
+        "only /api/ calls carry it"
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not on PATH")
+def test_the_arrival_banner_really_loads_what_it_announces(tmp_path):
+    """The banner says "loaded it". That used to be true only because the
+    server's answer named the ARRIVING tab as active and the browser followed
+    the label; now the answer names the tab it is about, so the follow has to
+    be a deliberate switch or the sentence is a lie."""
+    got = _node(tmp_path,
+                _STUBS +
+                "let posts = [];\n"
+                "globalThis.fetch = async (u, o) => { posts.push(u); "
+                "return { ok: true, json: async () => ({ features: [], "
+                "ok: true, active_tab: 't4' }) }; };\n"
+                f"const api = await import({json.dumps((JS / 'api.js').as_uri())});\n"
+                f"const {{ S }} = await import({json.dumps((JS / 'state.js').as_uri())});\n"
+                "S.lastDoc = { active_tab: 't1', tabs: [{ id: 't1' }, { id: 't4' }] };\n"
+                "await api.noteArrival({ tabs: S.lastDoc.tabs, arrival: "
+                "{ tab: 't4', name: 'ring', file: 'ring', at: 123 } });\n"
+                "console.log(JSON.stringify(posts));\n")
+    assert "/api/tabs/switch" in got, got
+    assert "/api/arrival/ack" in got, got

@@ -25,6 +25,45 @@ function tabHeaders(base) {
   return tid ? { ...base, 'X-TextCAD-Tab': tid } : base;
 }
 
+/* ONE DOOR, for the whole page. Nine call sites under static/js call fetch()
+   directly instead of going through this module — File -> Export
+   (dialogs.js), the viewport's /api/model and /api/sketch-mesh, the face pick
+   (provenance.js), the two measure calls, and the sketcher's snap, outline
+   and trim — so adding the header to the four functions below left HALF of
+   one user gesture addressed to the tab on screen and half to whatever tab
+   was live. Measured 2026-09-17 (probes/section12_round5_hammer.py): with a
+   design arriving over MCP, File -> Export wrote the ARRIVING design's
+   36 900 mm3 solid to its own .step and reported it as the export just asked
+   for; and a face picked on the mesh /api/model had served would be applied
+   to the body the tool panel was writing to — a different design.
+
+   Patching the nine call sites would leave the tenth to the next module, so
+   the header is installed once here, for every same-origin /api/ request the
+   page makes. Same rule as tabHeaders, same single fact (S.lastDoc.active_tab,
+   the server's own answer): this is a safety net under the four explicit
+   calls, not a second rule. Non-/api URLs (the static modules, the mesh
+   files) are passed through untouched. */
+const _rawFetch = globalThis.fetch;
+if (typeof _rawFetch === 'function' && !globalThis.__textcadTabFetch) {
+  globalThis.__textcadTabFetch = true;
+  globalThis.fetch = function (input, init) {
+    if (typeof input !== 'string' || !input.startsWith('/api/')) {
+      return _rawFetch.call(globalThis, input, init);
+    }
+    const tid = S.lastDoc && S.lastDoc.active_tab;
+    if (!tid) return _rawFetch.call(globalThis, input, init);
+    const o = { ...(init || {}) };
+    if (typeof Headers !== 'undefined' && o.headers instanceof Headers) {
+      const h = new Headers(o.headers);
+      h.set('X-TextCAD-Tab', tid);
+      o.headers = h;
+    } else {
+      o.headers = { ...(o.headers || {}), 'X-TextCAD-Tab': tid };
+    }
+    return _rawFetch.call(globalThis, input, o);
+  };
+}
+
 /* The overlay SAYS SOMETHING while a long step runs. A round, bevel or shell
    on a body with hundreds of edges genuinely takes minutes — the overnight
    journey run of 2026-09-13 measured 156 s, 630 s and 1195 s on the user's own
@@ -192,8 +231,16 @@ export function noteRecovery(doc) {
    Two guards, both needed: S.arrivalAt stops THIS page saying it twice while
    the ack is in flight, and the ack stops any other page (or the next reload)
    saying it at all. The ack is a bare fetch on purpose — postJSON would raise
-   the busy overlay over a banner nobody is waiting on. */
-export function noteArrival(doc) {
+   the busy overlay over a banner nobody is waiting on.
+
+   "Loaded it" is a promise, and this is now the only thing that keeps it.
+   Every answer names the tab it is ABOUT (studio._doc_json's active_tab), so
+   a doorbell moving the server's active tab no longer drags this page along —
+   which is exactly what stops the user's next click landing in a design they
+   never opened. The follow therefore has to be DELIBERATE, and it belongs
+   here, where the banner is spoken: the arriving tab is the server's own fact
+   (`arrival.tab`), never worked out from the tab list. */
+export async function noteArrival(doc) {
   const a = doc && doc.arrival;
   if (!a || a.at === S.arrivalAt) return false;
   S.arrivalAt = a.at;
@@ -204,6 +251,11 @@ export function noteArrival(doc) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ at: a.at }),
   }).catch(() => { /* the banner is spoken; the ack is best-effort */ });
+  // Closed again before anyone came to look: say so rather than ask for a tab
+  // that is gone (postJSON would put the refusal in the chat as a ⚠).
+  const open = (doc.tabs || []).some(t => t.id === a.tab);
+  if (open) await postJSON('/api/tabs/switch', { id: a.tab },
+                           `opening ${a.name}…`);
   return true;
 }
 
