@@ -122,10 +122,15 @@ def test_suppression_and_rollback_still_work_with_the_cache():
     # a suppressed node passes its first input through untouched
     assert doc._parts["p2"] is doc._parts["p1"]
     assert doc._parts["p1"].volume > full      # p1 has one pocket, not two
-    # NOTE (pre-existing, not the cache): result() walks back past the
-    # suppressed cut and lands on `p2_tool`, because a tool prism is a solid
-    # too. Filed in BACKLOG.md; asserted here so a change to it is deliberate.
-    assert doc._result_feature().id == "p2_tool"
+    # CHANGED DELIBERATELY 2026-09-16 (LAUNCH-PLAN §10 P1). This used to pin
+    # `p2_tool`: result() walked back PAST the suppressed cut and stopped at
+    # the first solid it met, which is the cutting prism. So striking the last
+    # cut made the design's volume, the status bar, measure and the spec check
+    # all read the TOOL — 113.097 mm3 of prism for 11547.611 mm3 of plate
+    # (probes/suppressed_result_probe.py §1). A struck feature passes its own
+    # first input through, so the result is what it passes through: `p1`.
+    assert doc._result_feature().id == "p1"
+    assert doc.result() is doc._parts["p1"]
 
     doc.get("p2").suppressed = False
     doc._mark_stale()

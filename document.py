@@ -266,6 +266,42 @@ def _move_offsets(params: dict) -> tuple[float, float, float]:
     return out[0], out[1], out[2]
 
 
+def _shift_face_picks(params: dict, delta: tuple) -> bool:
+    """Add `delta` to every stored face-pick CENTRE in one feature's params.
+
+    A pick is `face_center`: [x, y, z] — a point in the room, the centre of
+    the face as it stood when it was clicked. It appears bare (sketch_on_face,
+    extrude_face, revolve_face, hole) and one level down inside a dict
+    (a Pattern axis, a Mirror plane: {"face_center": …, "face_normal": …}).
+    The NORMAL is a direction, so a move leaves it alone, and a hole's `at` is
+    already in the face's own plane (sketch.hole), so that moves by itself.
+
+    Rounded to 6 decimals only to keep the saved file readable: the deltas of
+    a drag telescope (p + (v1-v0) + (v2-v1) = p + v2 - v0), so this cannot
+    accumulate past a millionth of a millimetre."""
+    def shift(pt):
+        if not isinstance(pt, (list, tuple)) or len(pt) != 3:
+            return None
+        try:
+            return [round(float(pt[i]) + delta[i], 6) for i in range(3)]
+        except (TypeError, ValueError):
+            return None
+
+    moved = False
+    for key, val in list((params or {}).items()):
+        if key == "face_center":
+            new = shift(val)
+            if new is not None:
+                params[key] = new
+                moved = True
+        elif isinstance(val, dict) and "face_center" in val:
+            new = shift(val.get("face_center"))
+            if new is not None:
+                val["face_center"] = new
+                moved = True
+    return moved
+
+
 DELETE_MODES = ("auto", "cascade", "strict")
 
 # A parameter that NAMES another feature. `inputs` is the body a feature works
@@ -600,8 +636,75 @@ class Document:
         {amount} was refused for a month as "no such parameter"."""
         f = self.get(feature_id)
         self.check_params(f.op, params, feature_id, stored=f.params)
+        delta = self._move_delta(f, params)
         f.params.update(params)
+        if delta:
+            self._carry_face_picks(f.id, delta)
         self._mark_stale()
+
+    @staticmethod
+    def _move_delta(f: Feature, params: dict) -> tuple | None:
+        """How far this edit of a `move` node shifts the body it carries, or
+        None when it shifts nothing. Never raises: a value that is not a
+        number is check_params' business, and it has already spoken."""
+        if f.op != "move" or f.suppressed:
+            return None
+        out = []
+        for axis in ("x", "y", "z"):
+            try:
+                was = float(f.params.get(axis, 0) or 0)
+                now = float(params[axis]) if axis in params else was
+            except (TypeError, ValueError):
+                return None
+            out.append(now - was)
+        return tuple(out) if any(out) else None
+
+    def _carry_face_picks(self, moved_id: str, delta: tuple) -> list[str]:
+        """Move every stored FACE PICK that sits on the body `moved_id` carries.
+
+        A pick is remembered in WORLD coordinates — the centre of the face as
+        it stood when the user clicked it — and `blocks.resolve_face` re-finds
+        it by nearest centre among the faces that still point that way. On a
+        body with one face per direction that follows a move exactly, which is
+        why it has held up. On a STEPPED body it does not: measured
+        2026-09-16 (probes/face_pick_frame_probe.py §1) on a 10 mm plate with
+        a r8 x 5 boss, a pick on the boss top follows a rigid move only as far
+        as HALF the step — at dz = 2.49 mm it is still the boss top, at
+        dz = 2.50 it is the PLATE top, and the design goes from 14010.62 mm3
+        to 18000.0 mm3 with every row `ok` and the solid valid.
+
+        `move` is the one op whose displacement the document KNOWS exactly, so
+        that half is arithmetic rather than a guess: shift the pick by the same
+        delta and it stays on the face the user chose, at any distance, in
+        either direction (probe §3 — correct at dz = 0, 1, 2.5, 4, 6, 10, -7).
+
+        Only picks on a body that really moved RIGIDLY are carried. A feature
+        counts as rigid when the move reaches it and EVERY one of its inputs is
+        rigid too, so a face sketch on the moved body, its extrude and the fuse
+        that lands it are all carried, while `cut(moved, tool_from_a_free
+        _sketch)` is not — that tool stayed where it was, and so did the pocket
+        floor it leaves behind. Anything not proven rigid keeps today's
+        behaviour exactly.
+
+        A STRUCK feature hands its first input on (rebuild does that, and
+        `_live_source` says so), so it is rigid when THAT input is, and the
+        chain below it does not end at a switched-off row.
+
+        Returns the ids it changed (for tests; callers ignore it)."""
+        rigid = {moved_id}
+        for f in self.features:              # build order: inputs come first
+            if f.id in rigid or not f.inputs:
+                continue
+            reaches = (f.inputs[0] in rigid if f.suppressed
+                       else all(dep in rigid for dep in f.inputs))
+            if reaches:
+                rigid.add(f.id)
+        touched = []
+        for f in self.features:
+            if f.id != moved_id and f.id in rigid \
+                    and _shift_face_picks(f.params, delta):
+                touched.append(f.id)
+        return touched
 
     @staticmethod
     def param_names(op: str) -> set:
@@ -1592,24 +1695,43 @@ class Document:
 
     # -- results --------------------------------------------------------------
     def _result_feature(self) -> Feature | None:
-        """The feature whose part result() returns (rollback-aware)."""
+        """The feature whose part result() returns (rollback-aware).
+
+        A STRUCK-OUT feature is not a hole in the tree — rebuild resolves it to
+        its own first input (line ~1092), so the tail of the design is still
+        there, wearing the body it passes through. This used to walk PAST it
+        and take the next solid it met going backwards, which on the everyday
+        sketch -> tool -> cut chain is the TOOL: strike the last cut on a
+        12000 mm3 plate and the design became the 452.389 mm3 cutting prism —
+        the status bar's volume, what `measure` measures, what the spec check
+        reads (probes/suppressed_result_probe.py §1; fuse does the same,
+        565.487 mm3 of boss for 12000 mm3 of plate). Following the SPINE
+        instead answers with the plate, which is what the user is looking at.
+
+        Designs that end on a separate body on purpose — a base plate and a
+        boss nobody joined — are untouched: nothing is struck, so the spine of
+        the tail is the tail (probe §4, 8 chains, only the struck ones move)."""
+        by_id = {f.id: f for f in self.features}
         seen_bar = self.rollback is None
         for f in reversed(self.features):
             if not seen_bar:
                 seen_bar = f.id == self.rollback
                 if not seen_bar:
                     continue
-            part = self._parts.get(f.id)
-            if (not f.suppressed and part is not None
-                    and f.op not in sk.SKETCH_PRODUCERS
+            g = by_id.get(self._live_source(f.id, by_id), f)
+            part = self._parts.get(g.id)
+            if (not g.suppressed and part is not None
+                    and g.op not in sk.SKETCH_PRODUCERS
                     and not sk.is_sketch(part)):
-                return f
+                return g
         return None
 
     def result(self):
-        """The final SOLID — the last built, non-suppressed, non-sketch feature
-        (respects the rollback bar, which stops building partway). Sketches are
-        skipped: the deliverable of a design is a solid, not a 2D profile."""
+        """The final SOLID — the tail of the tree resolved to the body it
+        really carries (a struck feature hands its first input on), skipping
+        sketches, and respecting the rollback bar which stops building partway.
+        Sketches are skipped because the deliverable of a design is a solid,
+        not a 2D profile. See _result_feature for what a strike does here."""
         f = self._result_feature()
         return self._parts.get(f.id) if f else None
 
