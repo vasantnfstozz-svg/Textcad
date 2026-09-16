@@ -1,0 +1,141 @@
+{
+ "name": "my-part",
+ "spec": {},
+ "features": [
+  {
+   "id": "j1_sketch",
+   "op": "sketch",
+   "params": {
+    "plane": "XY",
+    "offset": 0,
+    "entities": [
+     {
+      "kind": "rectangle",
+      "mode": "add",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "w": 23.4,
+      "h": 17.1
+     }
+    ]
+   },
+   "inputs": [],
+   "suppressed": false
+  },
+  {
+   "id": "j2_extrude",
+   "op": "extrude",
+   "params": {
+    "amount": 12.7,
+    "both": false
+   },
+   "inputs": [
+    "j1_sketch"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "j3_sketch",
+   "op": "sketch",
+   "params": {
+    "plane": "YZ",
+    "offset": 0,
+    "entities": [
+     {
+      "kind": "rectangle",
+      "mode": "add",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "w": 16.5,
+      "h": 16.9
+     }
+    ]
+   },
+   "inputs": [],
+   "suppressed": false
+  },
+  {
+   "id": "j4_extrude",
+   "op": "extrude",
+   "params": {
+    "amount": 25.9,
+    "both": false
+   },
+   "inputs": [
+    "j3_sketch"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "j5_shell",
+   "op": "shell",
+   "params": {
+    "thickness": 1.3,
+    "open_face": "bottom"
+   },
+   "inputs": [
+    "j2_extrude"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "j6_sketch_on_face",
+   "op": "sketch_on_face",
+   "params": {
+    "face_center": [
+     -10.4,
+     0.0,
+     5.7
+    ],
+    "face_normal": [
+     1.0,
+     -0.0,
+     -0.0
+    ],
+    "entities": [
+     {
+      "kind": "rectangle",
+      "mode": "add",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "w": 4.3,
+      "h": 3.2
+     }
+    ],
+    "offset": 0
+   },
+   "inputs": [
+    "j5_shell"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "j7_extrude",
+   "op": "extrude",
+   "params": {
+    "amount": 9.2,
+    "flip": true,
+    "through": true
+   },
+   "inputs": [
+    "j6_sketch_on_face"
+   ],
+   "suppressed": false
+  },
+  {
+   "id": "j8_shell",
+   "op": "shell",
+   "params": {
+    "thickness": 1.1,
+    "open_face": "top"
+   },
+   "inputs": [
+    "j5_shell"
+   ],
+   "suppressed": false
+  }
+ ]
+}

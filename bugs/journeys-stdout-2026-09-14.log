@@ -1,0 +1,2368 @@
+journeys over empty, esp32-remote, pump-impeller, autonomiq-panel, autonomiq-sat-panel-v1, autonomiq-sat-panel, bit-tray, bottle_cap_28mm, cam-cover-lower, cam-cover-plaque, cam-cover-upper, esp32-remote-live-t2, esp32-remote-live-t3, esp32-remote, fan-disk, flange-100, gear-case, hex-nut-M16, hole-box, isogrid-panel, mcp-flange, mcp-live-washer, my-part-2, my-part-3, my-part-4, my-part-5, my-part-8, my-part-9, my-part, oneplus_7_pro_case, planetary-assembly, planetary-base, planetary-carrier, planetary-gear, planetary-ring, planetary-spacer, popup-test-washer, pump-cover, pump-gasket, pump-housing, pump-impeller, rocky-balboa, rocky-keychain-2, rocky-keychain-3, rocky-keychain, sat-side-panel, spiderman-logo, t-washer, thread-case, untitled, water_bottle_750ml, wing-rib, x-frame; 30 steps each; first seed 19489; 6 GB per child; killed after 1080 s with no new step; findings -> C:\Users\VasanSeenivasan\Desktop\textcad\bugs
+-- journey 1: empty seed 19489
+  [empty s19489 #0] opened: 0 features, 0 bodies
+  [empty s19489 #1] plan           hole             -> 200 18 ms  Hole needs a flat face — click a face of a body
+  [empty s19489 #2] add            hex_plate        -> 200 20 ms
+  [empty s19489 #3] add            cone             -> 200 9 ms
+  [empty s19489 #4] undo                            -> 200 9 ms
+  [empty s19489 #5] edit                            -> 200 19 ms
+  [empty s19489 #6] undo                            -> 200 9 ms
+  [empty s19489 #7] redo                            -> 200 9 ms
+  [empty s19489 #8] add            cone             -> 200 9 ms
+  [empty s19489 #9] add            cut              -> 200 20 ms
+  [empty s19489 #10] add            shell            -> 200 9 ms
+  [empty s19489 #11] undo                            -> 200 6 ms
+  [empty s19489 #12] add            with_center_hole -> 200 8 ms
+  [empty s19489 #13] edit                            -> 200 10 ms
+  [empty s19489 #14] undo                            -> 200 6 ms
+  [empty s19489 #15] redo                            -> 200 7 ms
+  [empty s19489 #16] add            sketch           -> 200 13 ms
+  [empty s19489 #17] add            extrude          -> 200 11 ms
+  [empty s19489 #18] add            sketch           -> 200 9 ms
+  [empty s19489 #19] add            extrude          -> 200 25 ms
+  [empty s19489 #20] suppress                        -> 200 9 ms
+  [empty s19489 #21] suppress                        -> 200 9 ms
+  [empty s19489 #22] doc                             -> 200 7 ms
+  [empty s19489 #23] add            move             -> 200 14 ms
+  [empty s19489 #24] suppress                        -> 200 9 ms
+  [empty s19489 #25] suppress                        -> 200 8 ms
+  [empty s19489 #26] doc                             -> 200 6 ms
+  [empty s19489 #27] rollback                        -> 200 8 ms
+  [empty s19489 #28] plan           extrude          -> 200 7 ms  Extrude needs a sketch profile or a picked flat face
+  [empty s19489 #29] rollback                        -> 200 10 ms
+  [empty s19489 #30] add            with_bolt_circle -> 200 31 ms
+  [empty s19489 #31] suppress                        -> 200 7 ms
+  [empty s19489 #32] suppress                        -> 200 8 ms
+  [empty s19489 #33] doc                             -> 200 6 ms
+  [empty s19489 #34] rename                          -> 200 8 ms
+  [empty s19489 #35] rename                          -> 200 7 ms
+  [empty s19489 #36] doc                             -> 200 8 ms
+  [empty s19489 #37] add            mirror           -> 200 14 ms
+  [empty s19489 #38] plan           fillet           -> 200 12 ms
+  [empty s19489 #39] edit                            -> 200 8 ms
+  [empty s19489 #40] edit                            -> 200 31 ms
+  [empty s19489 #41] undo                            -> 200 10 ms
+  [empty s19489 #42] redo                            -> 200 9 ms
+  [empty s19489 #43] add            polygon_plate    -> 200 18 ms
+  [empty s19489 #44] edit                            -> 200 34 ms
+  [empty s19489 #45] undo                            -> 200 12 ms
+  [empty s19489 #46] redo                            -> 200 12 ms
+  [empty s19489 #47] edit                            -> 200 8 ms
+  [empty s19489 #48] undo                            -> 200 13 ms
+  [empty s19489 #49] redo                            -> 200 12 ms
+  [empty s19489 #50] strike                          -> 200 11 ms
+  [empty s19489 #51] restore                         -> 200 8 ms
+  [empty s19489 #52] add            sketch           -> 200 9 ms
+  [empty s19489 #53] add            extrude          -> 200 15 ms
+  [empty s19489 #54] strike                          -> 200 10 ms
+  [empty s19489 #55] restore                         -> 200 8 ms
+  [empty s19489 #56] add            move             -> 200 15 ms
+  [empty s19489 #57] rollback                        -> 200 9 ms
+  [empty s19489 #58] plan           extrude          -> 200 7 ms  Extrude needs a sketch profile or a picked flat face
+  [empty s19489 #59] rollback                        -> 200 8 ms
+   clean
+-- journey 2: esp32-remote seed 19490
+  [esp32-remote s19490 #0] opened: 79 features, 1 bodies
+  [esp32-remote s19490 #1] add            sketch           -> 200 48 ms
+  [esp32-remote s19490 #2] add            extrude          -> 200 507 ms
+  [esp32-remote s19490 #3] strike                          -> 200 3076 ms
+  [esp32-remote s19490 #4] restore                         -> 200 490 ms
+  [esp32-remote s19490 #5] add            hole             -> 200 490 ms
+  [esp32-remote s19490 #6] add            shell            -> 200 9317 ms
+  [esp32-remote s19490 #7] plan           hole             -> 200 9 ms  Hole needs a flat face — click a face of a body
+  [esp32-remote s19490 #8] add            with_bolt_circle -> 200 110 ms
+  [esp32-remote s19490 #9] add            ball             -> 200 29 ms
+  [esp32-remote s19490 #10] edit                            -> 200 151 ms
+  [esp32-remote s19490 #11] undo                            -> 200 33 ms
+  [esp32-remote s19490 #12] redo                            -> 200 38 ms
+  [esp32-remote s19490 #13] add            polar_pattern    -> 200 28 ms
+  [esp32-remote s19490 #14] add            rotate           -> 200 29 ms
+  [esp32-remote s19490 #15] add            with_bolt_circle -> 200 531 ms
+  [esp32-remote s19490 #16] tab-new                         -> 200 9 ms
+  [esp32-remote s19490 #17] add            ball             -> 200 12 ms
+  [esp32-remote s19490 #18] tab-switch                      -> 200 19 ms
+  [esp32-remote s19490 #19] tab-close                       -> 200 19 ms
+  [esp32-remote s19490 #20] tab-switch                      -> 200 19 ms
+  [esp32-remote s19490 #21] strike                          -> 200 2860 ms
+  [esp32-remote s19490 #22] restore                         -> 200 27 ms
+  [esp32-remote s19490 #23] strike                          -> 200 27 ms
+  [esp32-remote s19490 #24] restore                         -> 200 26 ms
+  [esp32-remote s19490 #25] edit                            -> 200 4351 ms
+  [esp32-remote s19490 #26] undo                            -> 200 224 ms
+  [esp32-remote s19490 #27] redo                            -> 200 70 ms
+  [esp32-remote s19490 #28] strike                          -> 200 3825 ms
+  [esp32-remote s19490 #29] restore                         -> 200 26 ms
+  [esp32-remote s19490 #30] tab-new                         -> 200 8 ms
+  [esp32-remote s19490 #31] add            plate            -> 200 11 ms
+  [esp32-remote s19490 #32] tab-switch                      -> 200 17 ms
+  [esp32-remote s19490 #33] tab-close                       -> 200 17 ms
+  [esp32-remote s19490 #34] tab-switch                      -> 200 17 ms
+  [esp32-remote s19490 #35] add            sketch           -> 200 28 ms
+  [esp32-remote s19490 #36] add            extrude          -> 200 31 ms
+  [esp32-remote s19490 #37] strike                          -> 200 2970 ms
+  [esp32-remote s19490 #38] restore                         -> 200 25 ms
+  [esp32-remote s19490 #39] plan           extrude          -> 200 18 ms
+  [esp32-remote s19490 #40] add            sketch_on_face   -> 200 32 ms
+  [esp32-remote s19490 #41] add            extrude          -> 200 32 ms
+  [esp32-remote s19490 #42] add            scale            -> 200 84 ms
+  [esp32-remote s19490 #43] edit                            -> 200 1769 ms
+  [esp32-remote s19490 #44] undo                            -> 200 73 ms
+  [esp32-remote s19490 #45] redo                            -> 200 77 ms
+  [esp32-remote s19490 #46] edit                            -> 200 3112 ms
+  [esp32-remote s19490 #47] undo                            -> 200 78 ms
+  [esp32-remote s19490 #48] redo                            -> 200 86 ms
+  [esp32-remote s19490 #49] rollback                        -> 200 24 ms
+  [esp32-remote s19490 #50] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [esp32-remote s19490 #51] rollback                        -> 200 24 ms
+  [esp32-remote s19490 #52] plan           hole             -> 200 8 ms  Hole needs a flat face — click a face of a body
+  [esp32-remote s19490 #53] add            sketch           -> 200 28 ms
+  [esp32-remote s19490 #54] add            extrude          -> 200 31 ms
+  [esp32-remote s19490 #55] edit                            -> 200 38 ms
+  [esp32-remote s19490 #56] undo                            -> 200 74 ms
+  [esp32-remote s19490 #57] redo                            -> 200 75 ms
+  [esp32-remote s19490 #58] add            rotate           -> 200 101 ms
+  [esp32-remote s19490 #59] undo                            -> 200 74 ms
+  [esp32-remote s19490 #60] add            cone             -> 200 41 ms
+   clean
+-- journey 3: pump-impeller seed 19491
+  [pump-impeller s19491 #0] opened: 10 features, 1 bodies
+  [pump-impeller s19491 #1] edit                            -> 200 569 ms
+  [pump-impeller s19491 #2] undo                            -> 200 182 ms
+  [pump-impeller s19491 #3] redo                            -> 200 253 ms
+  [pump-impeller s19491 #4] add            tube             -> 200 200 ms
+  [pump-impeller s19491 #5] add            move             -> 200 171 ms
+  [pump-impeller s19491 #6] undo                            -> 200 165 ms
+  [pump-impeller s19491 #7] add            sketch_on_face   -> 200 13 ms
+  [pump-impeller s19491 #8] add            extrude          -> 200 155 ms
+  [pump-impeller s19491 #9] tab-new                         -> 200 8 ms
+  [pump-impeller s19491 #10] add            cone             -> 200 58 ms
+  [pump-impeller s19491 #11] tab-switch                      -> 200 15 ms
+  [pump-impeller s19491 #12] tab-close                       -> 200 10 ms
+  [pump-impeller s19491 #13] tab-switch                      -> 200 8 ms
+  [pump-impeller s19491 #14] add            move             -> 200 247 ms
+  [pump-impeller s19491 #15] add            sketch           -> 200 12 ms
+  [pump-impeller s19491 #16] add            extrude          -> 200 197 ms
+  [pump-impeller s19491 #17] add            move             -> 200 301 ms
+  [pump-impeller s19491 #18] add            polar_pattern    -> 200 12 ms
+  [pump-impeller s19491 #19] add            sketch_on_face   -> 200 74 ms
+  [pump-impeller s19491 #20] add            extrude          -> 200 13 ms
+  [pump-impeller s19491 #21] add            sketch           -> 200 13 ms
+  [pump-impeller s19491 #22] add            extrude          -> 200 13 ms
+  [pump-impeller s19491 #23] add            intersect        -> 200 147 ms
+  [pump-impeller s19491 #24] add            sketch           -> 200 12 ms
+  [pump-impeller s19491 #25] add            extrude          -> 200 19 ms
+  [pump-impeller s19491 #26] add            cut              -> 200 240 ms
+  [pump-impeller s19491 #27] strike                          -> 200 12 ms
+  [pump-impeller s19491 #28] restore                         -> 200 11 ms
+  [pump-impeller s19491 #29] edit                            -> 200 15 ms
+  [pump-impeller s19491 #30] suppress                        -> 200 11 ms
+  [pump-impeller s19491 #31] suppress                        -> 200 12 ms
+  [pump-impeller s19491 #32] doc                             -> 200 9 ms
+  [pump-impeller s19491 #33] add            cut              -> 200 27 ms
+  [pump-impeller s19491 #34] add            sketch_on_face   -> 200 16 ms
+  [pump-impeller s19491 #35] add            extrude          -> 200 20 ms
+  [pump-impeller s19491 #36] add            hole             -> 200 27 ms
+  [pump-impeller s19491 #37] add            with_bolt_circle -> 200 28 ms
+  [pump-impeller s19491 #38] strike                          -> 200 13 ms
+  [pump-impeller s19491 #39] restore                         -> 200 12 ms
+  [pump-impeller s19491 #40] add            sketch           -> 200 14 ms
+  [pump-impeller s19491 #41] add            extrude          -> 200 18 ms
+  [pump-impeller s19491 #42] edit                            -> 200 349 ms
+  [pump-impeller s19491 #43] undo                            -> 200 84 ms
+  [pump-impeller s19491 #44] redo                            -> 200 17 ms
+  [pump-impeller s19491 #45] add            ball             -> 200 14 ms
+  [pump-impeller s19491 #46] spec                            -> 200 12 ms
+  [pump-impeller s19491 #47] doc                             -> 200 9 ms
+  [pump-impeller s19491 #48] add            rotate           -> 200 15 ms
+  [pump-impeller s19491 #49] undo                            -> 200 16 ms
+  [pump-impeller s19491 #50] tab-new                         -> 200 8 ms
+  [pump-impeller s19491 #51] add            ball             -> 200 11 ms
+  [pump-impeller s19491 #52] tab-switch                      -> 200 10 ms
+  [pump-impeller s19491 #53] tab-close                       -> 200 10 ms
+  [pump-impeller s19491 #54] tab-switch                      -> 200 10 ms
+  [pump-impeller s19491 #55] plan           revolve          -> 200 13 ms  Revolve needs a sketch profile or a picked flat face
+  [pump-impeller s19491 #56] edit                            -> 200 328 ms
+  [pump-impeller s19491 #57] undo                            -> 200 17 ms
+  [pump-impeller s19491 #58] redo                            -> 200 16 ms
+   clean
+-- journey 4: autonomiq-panel seed 19492
+  [autonomiq-panel s19492 #0] opened: 35 features, 1 bodies
+  [autonomiq-panel s19492 #1] suppress                        -> 200 5013 ms
+  [autonomiq-panel s19492 #2] suppress                        -> 200 1685 ms
+  [autonomiq-panel s19492 #3] doc                             -> 200 11 ms
+  [autonomiq-panel s19492 #4] suppress                        -> 200 9297 ms
+  [autonomiq-panel s19492 #5] suppress                        -> 200 1411 ms
+  [autonomiq-panel s19492 #6] doc                             -> 200 10 ms
+  [autonomiq-panel s19492 #7] add            with_bolt_circle -> 200 5882 ms
+  [autonomiq-panel s19492 #8] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [autonomiq-panel s19492 #9] add            rotate           -> 200 2833 ms
+  [autonomiq-panel s19492 #10] add            ball             -> 200 2022 ms
+  [autonomiq-panel s19492 #11] add            sketch           -> 200 18 ms
+  [autonomiq-panel s19492 #12] add            extrude          -> 200 2050 ms
+  [autonomiq-panel s19492 #13] add            scale            -> 200 2025 ms
+  [autonomiq-panel s19492 #14] add            linear_pattern   -> 200 10772 ms
+  [autonomiq-panel s19492 #15] undo                            -> 200 3191 ms
+  [autonomiq-panel s19492 #16] plan           sketch           -> 200 8 ms
+  [autonomiq-panel s19492 #17] add            shell            -> 200 7264 ms
+  [autonomiq-panel s19492 #18] tab-new                         -> 200 9 ms
+  [autonomiq-panel s19492 #19] add            hex_plate        -> 200 20 ms
+  [autonomiq-panel s19492 #20] tab-switch                      -> 200 13 ms
+  [autonomiq-panel s19492 #21] tab-close                       -> 200 13 ms
+  [autonomiq-panel s19492 #22] tab-switch                      -> 200 12 ms
+  [autonomiq-panel s19492 #23] add            hole             -> 200 20 ms
+  [autonomiq-panel s19492 #24] undo                            -> 200 694 ms
+  [autonomiq-panel s19492 #25] add            hole             -> 200 17 ms
+  [autonomiq-panel s19492 #26] remove-plan                     -> 200 13 ms
+  [autonomiq-panel s19492 #27] remove                          -> 200 74 ms
+  [autonomiq-panel s19492 #28] edit                            -> 200 7632 ms
+  [autonomiq-panel s19492 #29] undo                            -> 200 736 ms
+  [autonomiq-panel s19492 #30] redo                            -> 200 701 ms
+  [autonomiq-panel s19492 #31] add            scale            -> 200 1023 ms
+  [autonomiq-panel s19492 #32] add            fillet           -> 200 77945 ms
+  [autonomiq-panel s19492 #33] add            ball             -> 200 20 ms
+  [autonomiq-panel s19492 #34] strike                          -> 200 18 ms
+  [autonomiq-panel s19492 #35] restore                         -> 200 20 ms
+  [autonomiq-panel s19492 #36] add            move             -> 200 21 ms
+  [autonomiq-panel s19492 #37] plan           revolve          -> 200 7 ms  Revolve needs a sketch profile or a picked flat face
+  [autonomiq-panel s19492 #38] edit                            -> 200 18 ms
+  [autonomiq-panel s19492 #39] undo                            -> 200 22 ms
+  [autonomiq-panel s19492 #40] redo                            -> 200 20 ms
+  [autonomiq-panel s19492 #41] add            disc             -> 200 22 ms
+  [autonomiq-panel s19492 #42] undo                            -> 200 25 ms
+  [autonomiq-panel s19492 #43] add            rotate           -> 200 21 ms
+  [autonomiq-panel s19492 #44] remove-plan                     -> 400 14 ms  cannot remove 'tier1_fuse': used by ['tier2_fuse']
+  [autonomiq-panel s19492 #45] remove                          -> 400 14 ms  cannot remove 'tier1_fuse': used by ['tier2_fuse']
+  [autonomiq-panel s19492 #46] rollback                        -> 200 17 ms
+  [autonomiq-panel s19492 #47] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [autonomiq-panel s19492 #48] rollback                        -> 200 17 ms
+  [autonomiq-panel s19492 #49] add            chamfer          -> 200 90 ms
+  [autonomiq-panel s19492 #50] add            linear_pattern   -> 200 36 ms
+  [autonomiq-panel s19492 #51] add            fillet           -> 200 49 ms
+   clean
+-- journey 5: autonomiq-sat-panel-v1 seed 19493
+  [autonomiq-sat-panel-v1 s19493 #0] opened: 46 features, 1 bodies
+  [autonomiq-sat-panel-v1 s19493 #1] add            hex_plate        -> 200 1193 ms
+  [autonomiq-sat-panel-v1 s19493 #2] rollback                        -> 200 20 ms
+  [autonomiq-sat-panel-v1 s19493 #3] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [autonomiq-sat-panel-v1 s19493 #4] rollback                        -> 200 20 ms
+  [autonomiq-sat-panel-v1 s19493 #5] add            sketch_on_face   -> 200 32 ms
+  [autonomiq-sat-panel-v1 s19493 #6] add            extrude          -> 200 1211 ms
+  [autonomiq-sat-panel-v1 s19493 #7] add            tube             -> 200 1120 ms
+  [autonomiq-sat-panel-v1 s19493 #8] undo                            -> 200 1438 ms
+  [autonomiq-sat-panel-v1 s19493 #9] plan           rotate           -> 200 8 ms
+  [autonomiq-sat-panel-v1 s19493 #10] plan           pattern          -> 200 7 ms  no plan for tool 'pattern' — known: ['chamfer', 'extrude', 'fillet', 'hole', 
+  [autonomiq-sat-panel-v1 s19493 #11] plan           sketch           -> 200 7 ms
+  [autonomiq-sat-panel-v1 s19493 #12] add            intersect        -> 200 253 ms
+  [autonomiq-sat-panel-v1 s19493 #13] plan           fillet           -> 200 15 ms
+  [autonomiq-sat-panel-v1 s19493 #14] add            polar_pattern    -> 200 23 ms
+  [autonomiq-sat-panel-v1 s19493 #15] add            mirror           -> 200 30 ms
+  [autonomiq-sat-panel-v1 s19493 #16] add            linear_pattern   -> 200 107 ms
+  [autonomiq-sat-panel-v1 s19493 #17] undo                            -> 200 24 ms
+  [autonomiq-sat-panel-v1 s19493 #18] edit                            -> 200 27 ms
+  [autonomiq-sat-panel-v1 s19493 #19] undo                            -> 200 35 ms
+  [autonomiq-sat-panel-v1 s19493 #20] redo                            -> 200 27 ms
+  [autonomiq-sat-panel-v1 s19493 #21] strike                          -> 200 26 ms
+  [autonomiq-sat-panel-v1 s19493 #22] restore                         -> 200 22 ms
+  [autonomiq-sat-panel-v1 s19493 #23] rollback                        -> 200 21 ms
+  [autonomiq-sat-panel-v1 s19493 #24] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [autonomiq-sat-panel-v1 s19493 #25] rollback                        -> 200 22 ms
+  [autonomiq-sat-panel-v1 s19493 #26] add            tube             -> 200 39 ms
+  [autonomiq-sat-panel-v1 s19493 #27] edit                            -> 200 1289 ms
+  [autonomiq-sat-panel-v1 s19493 #28] undo                            -> 200 30 ms
+  [autonomiq-sat-panel-v1 s19493 #29] redo                            -> 200 28 ms
+  [autonomiq-sat-panel-v1 s19493 #30] add            chamfer          -> 200 7141 ms
+  [autonomiq-sat-panel-v1 s19493 #31] undo                            -> 200 29 ms
+  [autonomiq-sat-panel-v1 s19493 #32] add            fillet           -> 200 151 ms
+  [autonomiq-sat-panel-v1 s19493 #33] add            ball             -> 200 28 ms
+  [autonomiq-sat-panel-v1 s19493 #34] edit                            -> 200 1397 ms
+  [autonomiq-sat-panel-v1 s19493 #35] undo                            -> 200 31 ms
+  [autonomiq-sat-panel-v1 s19493 #36] redo                            -> 200 36 ms
+  [autonomiq-sat-panel-v1 s19493 #37] edit                            -> 200 2663 ms
+  [autonomiq-sat-panel-v1 s19493 #38] undo                            -> 200 30 ms
+  [autonomiq-sat-panel-v1 s19493 #39] redo                            -> 200 30 ms
+  [autonomiq-sat-panel-v1 s19493 #40] edit                            -> 200 2912 ms
+  [autonomiq-sat-panel-v1 s19493 #41] undo                            -> 200 29 ms
+  [autonomiq-sat-panel-v1 s19493 #42] redo                            -> 200 29 ms
+  [autonomiq-sat-panel-v1 s19493 #43] plan           revolve          -> 200 8 ms  Revolve needs a sketch profile or a picked flat face
+  [autonomiq-sat-panel-v1 s19493 #44] add            scale            -> 200 28 ms
+  [autonomiq-sat-panel-v1 s19493 #45] rename                          -> 200 19 ms
+  [autonomiq-sat-panel-v1 s19493 #46] rename                          -> 200 20 ms
+  [autonomiq-sat-panel-v1 s19493 #47] doc                             -> 200 16 ms
+  [autonomiq-sat-panel-v1 s19493 #48] edit                            -> 200 1861 ms
+  [autonomiq-sat-panel-v1 s19493 #49] undo                            -> 200 29 ms
+  [autonomiq-sat-panel-v1 s19493 #50] redo                            -> 200 34 ms
+  [autonomiq-sat-panel-v1 s19493 #51] strike                          -> 200 148 ms
+  [autonomiq-sat-panel-v1 s19493 #52] restore                         -> 200 26 ms
+  [autonomiq-sat-panel-v1 s19493 #53] edit                            -> 200 28 ms
+  [autonomiq-sat-panel-v1 s19493 #54] undo                            -> 200 29 ms
+  [autonomiq-sat-panel-v1 s19493 #55] redo                            -> 200 29 ms
+   clean
+-- journey 6: autonomiq-sat-panel seed 19494
+  [autonomiq-sat-panel s19494 #0] opened: 97 features, 1 bodies
+  [autonomiq-sat-panel s19494 #1] add            plate            -> 200 2911 ms
+  [autonomiq-sat-panel s19494 #2] undo                            -> 200 3909 ms
+  [autonomiq-sat-panel s19494 #3] tab-new                         -> 200 9 ms
+  [autonomiq-sat-panel s19494 #4] add            ball             -> 200 10 ms
+  [autonomiq-sat-panel s19494 #5] tab-switch                      -> 200 23 ms
+  [autonomiq-sat-panel s19494 #6] tab-close                       -> 200 23 ms
+  [autonomiq-sat-panel s19494 #7] tab-switch                      -> 200 22 ms
+  [autonomiq-sat-panel s19494 #8] plan           mirror           -> 200 1032 ms
+  [autonomiq-sat-panel s19494 #9] edit                            -> 200 20903 ms
+  [autonomiq-sat-panel s19494 #10] undo                            -> 200 3680 ms
+  [autonomiq-sat-panel s19494 #11] redo                            -> 200 4581 ms
+  [autonomiq-sat-panel s19494 #12] plan           hole             -> 200 8 ms  Hole needs a flat face — click a face of a body
+  [autonomiq-sat-panel s19494 #13] add            tube             -> 200 2935 ms
+  [autonomiq-sat-panel s19494 #14] remove-plan                     -> 200 25 ms
+  [autonomiq-sat-panel s19494 #15] remove                          -> 200 7991 ms
+  [autonomiq-sat-panel s19494 #16] add            disc             -> 200 3142 ms
+  [autonomiq-sat-panel s19494 #17] undo                            -> 200 3606 ms
+  [autonomiq-sat-panel s19494 #18] edit                            -> 200 9895 ms
+  [autonomiq-sat-panel s19494 #19] undo                            -> 200 3296 ms
+  [autonomiq-sat-panel s19494 #20] redo                            -> 200 3277 ms
+  [autonomiq-sat-panel s19494 #21] strike                          -> 200 17186 ms
+  [autonomiq-sat-panel s19494 #22] restore                         -> 200 2679 ms
+  [autonomiq-sat-panel s19494 #23] add            with_center_hole -> 200 4382 ms
+  [autonomiq-sat-panel s19494 #24] add            cut              -> 200 4260 ms
+  [autonomiq-sat-panel s19494 #25] add            scale            -> 200 5041 ms
+  [autonomiq-sat-panel s19494 #26] add            hex_plate        -> 200 3529 ms
+  [autonomiq-sat-panel s19494 #27] strike                          -> 200 19473 ms
+  [autonomiq-sat-panel s19494 #28] restore                         -> 200 3537 ms
+  [autonomiq-sat-panel s19494 #29] add            plate            -> 200 3558 ms
+  [autonomiq-sat-panel s19494 #30] plan           extrude          -> 200 12 ms
+  [autonomiq-sat-panel s19494 #31] strike                          -> 200 37 ms
+  [autonomiq-sat-panel s19494 #32] restore                         -> 200 38 ms
+  [autonomiq-sat-panel s19494 #33] rollback                        -> 200 34 ms
+  [autonomiq-sat-panel s19494 #34] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [autonomiq-sat-panel s19494 #35] rollback                        -> 200 34 ms
+  [autonomiq-sat-panel s19494 #36] plan           sketch           -> 200 8 ms
+  [autonomiq-sat-panel s19494 #37] add            move             -> 200 3540 ms
+  [autonomiq-sat-panel s19494 #38] add            mirror           -> 200 4706 ms
+  [autonomiq-sat-panel s19494 #39] add            move             -> 200 5869 ms
+  [autonomiq-sat-panel s19494 #40] plan           mirror           -> 200 8 ms  Mirror needs a feature or a body to mirror — click a hole, a boss or a body, or 
+  [autonomiq-sat-panel s19494 #41] rollback                        -> 200 33 ms
+  [autonomiq-sat-panel s19494 #42] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [autonomiq-sat-panel s19494 #43] rollback                        -> 200 34 ms
+  [autonomiq-sat-panel s19494 #44] add            mirror           -> 200 4211 ms
+  [autonomiq-sat-panel s19494 #45] plan           sketch           -> 200 8 ms
+  [autonomiq-sat-panel s19494 #46] add            linear_pattern   -> 200 38053 ms
+   clean
+-- journey 7: bit-tray seed 19495
+  [bit-tray s19495 #0] opened: 47 features, 1 bodies
+  [bit-tray s19495 #1] plan           pattern          -> 200 9 ms  no plan for tool 'pattern' — known: ['chamfer', 'extrude', 'fillet', 'hole', 'linear_pattern
+  [bit-tray s19495 #2] add            sketch_on_face   -> 200 42 ms
+  [bit-tray s19495 #3] add            extrude          -> 200 995 ms
+  [bit-tray s19495 #4] add            sketch_on_face   -> 200 16 ms
+  [bit-tray s19495 #5] add            extrude          -> 200 794 ms
+  [bit-tray s19495 #6] add            sketch           -> 200 16 ms
+  [bit-tray s19495 #7] add            extrude          -> 200 798 ms
+  [bit-tray s19495 #8] add            disc             -> 200 791 ms
+  [bit-tray s19495 #9] undo                            -> 200 817 ms
+  [bit-tray s19495 #10] add            scale            -> 200 809 ms
+  [bit-tray s19495 #11] undo                            -> 200 809 ms
+  [bit-tray s19495 #12] add            move             -> 200 914 ms
+  [bit-tray s19495 #13] add            fuse             -> 200 947 ms
+  [bit-tray s19495 #14] edit                            -> 200 2740 ms
+  [bit-tray s19495 #15] undo                            -> 200 880 ms
+  [bit-tray s19495 #16] redo                            -> 200 907 ms
+  [bit-tray s19495 #17] add            scale            -> 200 881 ms
+  [bit-tray s19495 #18] strike                          -> 200 2532 ms
+  [bit-tray s19495 #19] restore                         -> 200 1167 ms
+  [bit-tray s19495 #20] rollback                        -> 200 11 ms
+  [bit-tray s19495 #21] plan           extrude          -> 200 7 ms  Extrude needs a sketch profile or a picked flat face
+  [bit-tray s19495 #22] rollback                        -> 200 12 ms
+  [bit-tray s19495 #23] add            tube             -> 200 818 ms
+  [bit-tray s19495 #24] undo                            -> 200 868 ms
+  [bit-tray s19495 #25] suppress                        -> 200 15 ms
+  [bit-tray s19495 #26] suppress                        -> 200 13 ms
+  [bit-tray s19495 #27] doc                             -> 200 9 ms
+  [bit-tray s19495 #28] edit                            -> 200 12 ms
+  [bit-tray s19495 #29] add            extrude_face     -> 200 977 ms
+  [bit-tray s19495 #30] spec                            -> 200 889 ms
+  [bit-tray s19495 #31] doc                             -> 200 10 ms
+  [bit-tray s19495 #32] add            sketch_on_face   -> 200 18 ms
+  [bit-tray s19495 #33] add            extrude          -> 200 880 ms
+  [bit-tray s19495 #34] plan           mirror           -> 200 8 ms  Mirror needs a feature or a body to mirror — click a hole, a boss or a body, or select a ro
+  [bit-tray s19495 #35] add            linear_pattern   -> 200 912 ms
+  [bit-tray s19495 #36] add            tube             -> 200 902 ms
+  [bit-tray s19495 #37] add            sketch           -> 200 15 ms
+  [bit-tray s19495 #38] add            extrude          -> 200 886 ms
+  [bit-tray s19495 #39] add            rotate           -> 200 920 ms
+  [bit-tray s19495 #40] add            linear_pattern   -> 200 1009 ms
+  [bit-tray s19495 #41] add            fillet           -> 200 1139 ms
+  [bit-tray s19495 #42] add            linear_pattern   -> 200 999 ms
+  [bit-tray s19495 #43] edit                            -> 200 3001 ms
+  [bit-tray s19495 #44] undo                            -> 200 1040 ms
+  [bit-tray s19495 #45] redo                            -> 200 903 ms
+  [bit-tray s19495 #46] add            sketch           -> 200 15 ms
+  [bit-tray s19495 #47] add            extrude          -> 200 864 ms
+  [bit-tray s19495 #48] add            sketch           -> 200 16 ms
+  [bit-tray s19495 #49] add            extrude          -> 200 880 ms
+  [bit-tray s19495 #50] strike                          -> 200 3075 ms
+  [bit-tray s19495 #51] restore                         -> 200 860 ms
+   clean
+-- journey 8: bottle_cap_28mm seed 19496
+  [bottle_cap_28mm s19496 #0] opened: 5 features, 1 bodies
+  [bottle_cap_28mm s19496 #1] edit                            -> 200 1387 ms
+  [bottle_cap_28mm s19496 #2] undo                            -> 200 857 ms
+  [bottle_cap_28mm s19496 #3] redo                            -> 200 778 ms
+  [bottle_cap_28mm s19496 #4] add            with_bolt_circle -> 200 895 ms
+  [bottle_cap_28mm s19496 #5] undo                            -> 200 822 ms
+  [bottle_cap_28mm s19496 #6] plan           mirror           -> 200 60 ms
+  [bottle_cap_28mm s19496 #7] edit                            -> 200 1207 ms
+  [bottle_cap_28mm s19496 #8] undo                            -> 200 783 ms
+  [bottle_cap_28mm s19496 #9] redo                            -> 200 775 ms
+  [bottle_cap_28mm s19496 #10] plan           revolve          -> 200 73 ms
+  [bottle_cap_28mm s19496 #11] edit                            -> 200 1430 ms
+  [bottle_cap_28mm s19496 #12] undo                            -> 200 853 ms
+  [bottle_cap_28mm s19496 #13] redo                            -> 200 855 ms
+  [bottle_cap_28mm s19496 #14] add            plate            -> 200 246 ms
+  [bottle_cap_28mm s19496 #15] undo                            -> 200 754 ms
+  [bottle_cap_28mm s19496 #16] add            sketch_on_face   -> 200 40 ms
+  [bottle_cap_28mm s19496 #17] add            extrude          -> 200 410 ms
+  [bottle_cap_28mm s19496 #18] add            sketch           -> 200 11 ms
+  [bottle_cap_28mm s19496 #19] add            extrude          -> 200 397 ms
+  [bottle_cap_28mm s19496 #20] add            mirror           -> 200 400 ms
+  [bottle_cap_28mm s19496 #21] plan           fillet           -> 200 120 ms
+  [bottle_cap_28mm s19496 #22] add            rotate           -> 200 427 ms
+  [bottle_cap_28mm s19496 #23] add            sketch_on_face   -> 200 12 ms
+  [bottle_cap_28mm s19496 #24] add            extrude          -> 200 666 ms
+  [bottle_cap_28mm s19496 #25] strike                          -> 200 363 ms
+  [bottle_cap_28mm s19496 #26] restore                         -> 200 399 ms
+  [bottle_cap_28mm s19496 #27] add            cut              -> 200 414 ms
+  [bottle_cap_28mm s19496 #28] strike                          -> 200 422 ms
+  [bottle_cap_28mm s19496 #29] restore                         -> 200 386 ms
+  [bottle_cap_28mm s19496 #30] add            shell            -> 200 10 ms
+  [bottle_cap_28mm s19496 #31] edit                            -> 200 13 ms
+  [bottle_cap_28mm s19496 #32] undo                            -> 200 56 ms
+  [bottle_cap_28mm s19496 #33] redo                            -> 200 54 ms
+  [bottle_cap_28mm s19496 #34] edit                            -> 200 35 ms
+  [bottle_cap_28mm s19496 #35] undo                            -> 200 64 ms
+  [bottle_cap_28mm s19496 #36] redo                            -> 200 55 ms
+  [bottle_cap_28mm s19496 #37] add            with_center_hole -> 200 120 ms
+  [bottle_cap_28mm s19496 #38] add            mirror           -> 200 255 ms
+  [bottle_cap_28mm s19496 #39] add            rotate           -> 200 241 ms
+  [bottle_cap_28mm s19496 #40] edit                            -> 200 9 ms
+  [bottle_cap_28mm s19496 #41] add            hex_plate        -> 200 25 ms
+  [bottle_cap_28mm s19496 #42] undo                            -> 200 178 ms
+  [bottle_cap_28mm s19496 #43] rollback                        -> 200 11 ms
+  [bottle_cap_28mm s19496 #44] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [bottle_cap_28mm s19496 #45] rollback                        -> 200 11 ms
+  [bottle_cap_28mm s19496 #46] add            sketch_on_face   -> 200 76 ms
+  [bottle_cap_28mm s19496 #47] add            extrude          -> 200 16 ms
+  [bottle_cap_28mm s19496 #48] add            mirror           -> 200 25 ms
+  [bottle_cap_28mm s19496 #49] add            linear_pattern   -> 200 953 ms
+  [bottle_cap_28mm s19496 #50] edit                            -> 200 32 ms
+  [bottle_cap_28mm s19496 #51] undo                            -> 200 426 ms
+  [bottle_cap_28mm s19496 #52] redo                            -> 200 449 ms
+  [bottle_cap_28mm s19496 #53] edit                            -> 200 1263 ms
+  [bottle_cap_28mm s19496 #54] undo                            -> 200 413 ms
+  [bottle_cap_28mm s19496 #55] redo                            -> 200 392 ms
+   clean
+-- journey 9: cam-cover-lower seed 19497
+  [cam-cover-lower s19497 #0] opened: 29 features, 1 bodies
+  [cam-cover-lower s19497 #1] add            move             -> 200 841 ms
+  [cam-cover-lower s19497 #2] undo                            -> 200 412 ms
+  [cam-cover-lower s19497 #3] add            sketch_on_face   -> 200 69 ms
+  [cam-cover-lower s19497 #4] add            extrude          -> 200 377 ms
+  [cam-cover-lower s19497 #5] add            hex_plate        -> 200 373 ms
+  [cam-cover-lower s19497 #6] add            shell            -> 200 7325 ms
+  [cam-cover-lower s19497 #7] plan           shell            -> 200 171 ms
+  [cam-cover-lower s19497 #8] add            ball             -> 200 645 ms
+  [cam-cover-lower s19497 #9] undo                            -> 200 456 ms
+  [cam-cover-lower s19497 #10] add            mirror           -> 200 556 ms
+  [cam-cover-lower s19497 #11] remove-plan                     -> 200 13 ms
+  [cam-cover-lower s19497 #12] remove                          -> 200 829 ms
+  [cam-cover-lower s19497 #13] strike                          -> 200 255 ms
+  [cam-cover-lower s19497 #14] restore                         -> 200 16 ms
+  [cam-cover-lower s19497 #15] add            tube             -> 200 433 ms
+  [cam-cover-lower s19497 #16] add            sketch           -> 200 21 ms
+  [cam-cover-lower s19497 #17] add            extrude          -> 200 414 ms
+  [cam-cover-lower s19497 #18] add            chamfer          -> 200 660 ms
+  [cam-cover-lower s19497 #19] add            mirror           -> 200 439 ms
+  [cam-cover-lower s19497 #20] add            mirror           -> 200 503 ms
+  [cam-cover-lower s19497 #21] add            cut              -> 200 103 ms
+  [cam-cover-lower s19497 #22] plan           hole             -> 200 8 ms  Hole needs a flat face — click a face of a body
+  [cam-cover-lower s19497 #23] add            sketch_on_face   -> 200 21 ms
+  [cam-cover-lower s19497 #24] add            extrude          -> 200 59 ms
+  [cam-cover-lower s19497 #25] add            intersect        -> 200 19 ms
+  [cam-cover-lower s19497 #26] tab-new                         -> 200 8 ms
+  [cam-cover-lower s19497 #27] add            plate            -> 200 12 ms
+  [cam-cover-lower s19497 #28] tab-switch                      -> 200 13 ms
+  [cam-cover-lower s19497 #29] tab-close                       -> 200 13 ms
+  [cam-cover-lower s19497 #30] tab-switch                      -> 200 12 ms
+  [cam-cover-lower s19497 #31] strike                          -> 200 18 ms
+  [cam-cover-lower s19497 #32] restore                         -> 200 17 ms
+  [cam-cover-lower s19497 #33] add            hex_plate        -> 200 30 ms
+  [cam-cover-lower s19497 #34] add            disc             -> 200 20 ms
+  [cam-cover-lower s19497 #35] add            chamfer          -> 200 73 ms
+  [cam-cover-lower s19497 #36] add            shell            -> 200 62 ms
+  [cam-cover-lower s19497 #37] add            chamfer          -> 200 18 ms
+  [cam-cover-lower s19497 #38] edit                            -> 200 670 ms
+  [cam-cover-lower s19497 #39] undo                            -> 200 23 ms
+  [cam-cover-lower s19497 #40] redo                            -> 200 22 ms
+  [cam-cover-lower s19497 #41] suppress                        -> 200 18 ms
+  [cam-cover-lower s19497 #42] suppress                        -> 200 17 ms
+  [cam-cover-lower s19497 #43] doc                             -> 200 12 ms
+  [cam-cover-lower s19497 #44] plan           mirror           -> 200 8 ms  Mirror needs a feature or a body to mirror — click a hole, a boss or a body, or sele
+  [cam-cover-lower s19497 #45] add            sketch_on_face   -> 200 24 ms
+  [cam-cover-lower s19497 #46] add            extrude          -> 200 174 ms
+  [cam-cover-lower s19497 #47] add            move             -> 200 25 ms
+   clean
+-- journey 10: cam-cover-plaque seed 19498
+  [cam-cover-plaque s19498 #0] opened: 82 features, 1 bodies
+  [cam-cover-plaque s19498 #1] add            sketch           -> 200 48 ms
+  [cam-cover-plaque s19498 #2] add            extrude          -> 200 2658 ms
+  [cam-cover-plaque s19498 #3] plan           revolve          -> 200 9 ms  Revolve needs a sketch profile or a picked flat face
+  [cam-cover-plaque s19498 #4] edit                            -> 200 7867 ms
+  [cam-cover-plaque s19498 #5] undo                            -> 200 4482 ms
+  [cam-cover-plaque s19498 #6] redo                            -> 200 3222 ms
+  [cam-cover-plaque s19498 #7] add            cut              -> 200 562 ms
+  [cam-cover-plaque s19498 #8] suppress                        -> 200 38 ms
+  [cam-cover-plaque s19498 #9] suppress                        -> 200 43 ms
+  [cam-cover-plaque s19498 #10] doc                             -> 200 21 ms
+  [cam-cover-plaque s19498 #11] edit                            -> 200 6392 ms
+  [cam-cover-plaque s19498 #12] undo                            -> 200 44 ms
+  [cam-cover-plaque s19498 #13] redo                            -> 200 43 ms
+  [cam-cover-plaque s19498 #14] add            sketch_on_face   -> 200 40 ms
+  [cam-cover-plaque s19498 #15] add            extrude          -> 200 49 ms
+  [cam-cover-plaque s19498 #16] strike                          -> 200 8199 ms
+  [cam-cover-plaque s19498 #17] restore                         -> 200 48 ms
+  [cam-cover-plaque s19498 #18] suppress                        -> 200 39 ms
+  [cam-cover-plaque s19498 #19] suppress                        -> 200 38 ms
+  [cam-cover-plaque s19498 #20] doc                             -> 200 22 ms
+  [cam-cover-plaque s19498 #21] remove-plan                     -> 200 24 ms
+  [cam-cover-plaque s19498 #22] remove                          -> 200 8905 ms
+  [cam-cover-plaque s19498 #23] add            sketch_on_face   -> 200 41 ms
+  [cam-cover-plaque s19498 #24] add            extrude          -> 200 71 ms
+  [cam-cover-plaque s19498 #25] plan           rotate           -> 200 8 ms
+  [cam-cover-plaque s19498 #26] add            plate            -> 200 59 ms
+  [cam-cover-plaque s19498 #27] add            fuse             -> 200 62 ms
+  [cam-cover-plaque s19498 #28] add            fillet           -> 200 6886 ms
+  [cam-cover-plaque s19498 #29] strike                          -> 200 130 ms
+  [cam-cover-plaque s19498 #30] restore                         -> 200 186 ms
+  [cam-cover-plaque s19498 #31] add            rotate           -> 200 105 ms
+  [cam-cover-plaque s19498 #32] undo                            -> 200 141 ms
+  [cam-cover-plaque s19498 #33] suppress                        -> 200 5265 ms
+  [cam-cover-plaque s19498 #34] suppress                        -> 200 133 ms
+  [cam-cover-plaque s19498 #35] doc                             -> 200 22 ms
+  [cam-cover-plaque s19498 #36] rollback                        -> 200 35 ms
+  [cam-cover-plaque s19498 #37] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [cam-cover-plaque s19498 #38] rollback                        -> 200 34 ms
+  [cam-cover-plaque s19498 #39] add            sketch_on_face   -> 200 45 ms
+  [cam-cover-plaque s19498 #40] add            extrude          -> 200 140 ms
+  [cam-cover-plaque s19498 #41] add            fuse             -> 200 191 ms
+  [cam-cover-plaque s19498 #42] plan           rotate           -> 200 226 ms
+  [cam-cover-plaque s19498 #43] add            linear_pattern   -> 200 174 ms
+  [cam-cover-plaque s19498 #44] add            sketch_on_face   -> 200 48 ms
+  [cam-cover-plaque s19498 #45] add            extrude          -> 200 157 ms
+  [cam-cover-plaque s19498 #46] spec                            -> 200 157 ms
+  [cam-cover-plaque s19498 #47] doc                             -> 200 23 ms
+  [cam-cover-plaque s19498 #48] strike                          -> 200 8163 ms
+  [cam-cover-plaque s19498 #49] restore                         -> 200 160 ms
+  [cam-cover-plaque s19498 #50] plan           pattern          -> 200 9 ms  no plan for tool 'pattern' — known: ['chamfer', 'extrude', 'fillet', 'hole', 'linea
+  [cam-cover-plaque s19498 #51] edit                            -> 200 6018 ms
+  [cam-cover-plaque s19498 #52] undo                            -> 200 161 ms
+  [cam-cover-plaque s19498 #53] redo                            -> 200 162 ms
+  [cam-cover-plaque s19498 #54] add            mirror           -> 200 158 ms
+  [cam-cover-plaque s19498 #55] undo                            -> 200 162 ms
+  [cam-cover-plaque s19498 #56] plan           revolve          -> 200 8 ms  Revolve needs a sketch profile or a picked flat face
+   clean
+-- journey 11: cam-cover-upper seed 19499
+  [cam-cover-upper s19499 #0] opened: 30 features, 1 bodies
+  [cam-cover-upper s19499 #1] tab-new                         -> 200 18 ms
+  [cam-cover-upper s19499 #2] add            tube             -> 200 21 ms
+  [cam-cover-upper s19499 #3] tab-switch                      -> 200 16 ms
+  [cam-cover-upper s19499 #4] tab-close                       -> 200 15 ms
+  [cam-cover-upper s19499 #5] tab-switch                      -> 200 15 ms
+  [cam-cover-upper s19499 #6] edit                            -> 200 3740 ms
+  [cam-cover-upper s19499 #7] undo                            -> 200 1005 ms
+  [cam-cover-upper s19499 #8] redo                            -> 200 926 ms
+  [cam-cover-upper s19499 #9] rename                          -> 200 17 ms
+  [cam-cover-upper s19499 #10] rename                          -> 200 15 ms
+  [cam-cover-upper s19499 #11] doc                             -> 200 13 ms
+  [cam-cover-upper s19499 #12] add            mirror           -> 200 6311 ms
+  [cam-cover-upper s19499 #13] edit                            -> 200 4001 ms
+  [cam-cover-upper s19499 #14] undo                            -> 200 1418 ms
+  [cam-cover-upper s19499 #15] redo                            -> 200 1774 ms
+  [cam-cover-upper s19499 #16] add            polar_pattern    -> 200 30 ms
+  [cam-cover-upper s19499 #17] edit                            -> 200 4311 ms
+  [cam-cover-upper s19499 #18] undo                            -> 200 25 ms
+  [cam-cover-upper s19499 #19] redo                            -> 200 22 ms
+  [cam-cover-upper s19499 #20] add            sketch           -> 200 25 ms
+  [cam-cover-upper s19499 #21] add            extrude          -> 200 28 ms
+  [cam-cover-upper s19499 #22] spec                            -> 200 25 ms
+  [cam-cover-upper s19499 #23] doc                             -> 200 16 ms
+  [cam-cover-upper s19499 #24] plan           rotate           -> 200 9 ms
+  [cam-cover-upper s19499 #25] plan           sketch           -> 200 9 ms
+  [cam-cover-upper s19499 #26] suppress                        -> 200 24 ms
+  [cam-cover-upper s19499 #27] suppress                        -> 200 23 ms
+  [cam-cover-upper s19499 #28] doc                             -> 200 16 ms
+  [cam-cover-upper s19499 #29] add            hole             -> 200 27 ms
+  [cam-cover-upper s19499 #30] edit                            -> 200 2249 ms
+  [cam-cover-upper s19499 #31] undo                            -> 200 175 ms
+  [cam-cover-upper s19499 #32] redo                            -> 200 22 ms
+  [cam-cover-upper s19499 #33] plan           sketch           -> 200 9 ms
+  [cam-cover-upper s19499 #34] add            disc             -> 200 26 ms
+  [cam-cover-upper s19499 #35] add            polygon_plate    -> 200 38 ms
+  [cam-cover-upper s19499 #36] add            tube             -> 200 39 ms
+  [cam-cover-upper s19499 #37] strike                          -> 200 24 ms
+  [cam-cover-upper s19499 #38] restore                         -> 200 26 ms
+  [cam-cover-upper s19499 #39] add            tube             -> 200 35 ms
+  [cam-cover-upper s19499 #40] undo                            -> 200 27 ms
+  [cam-cover-upper s19499 #41] edit                            -> 200 3894 ms
+  [cam-cover-upper s19499 #42] undo                            -> 200 29 ms
+  [cam-cover-upper s19499 #43] redo                            -> 200 30 ms
+  [cam-cover-upper s19499 #44] add            polygon_plate    -> 200 45 ms
+  [cam-cover-upper s19499 #45] add            tube             -> 200 42 ms
+  [cam-cover-upper s19499 #46] undo                            -> 200 32 ms
+  [cam-cover-upper s19499 #47] plan           revolve          -> 200 43 ms
+  [cam-cover-upper s19499 #48] add            polygon_plate    -> 200 36 ms
+  [cam-cover-upper s19499 #49] undo                            -> 200 31 ms
+  [cam-cover-upper s19499 #50] edit                            -> 200 23 ms
+  [cam-cover-upper s19499 #51] undo                            -> 200 32 ms
+  [cam-cover-upper s19499 #52] redo                            -> 200 32 ms
+  [cam-cover-upper s19499 #53] edit                            -> 200 2227 ms
+  [cam-cover-upper s19499 #54] undo                            -> 200 34 ms
+  [cam-cover-upper s19499 #55] redo                            -> 200 33 ms
+  [cam-cover-upper s19499 #56] add            sketch           -> 200 27 ms
+  [cam-cover-upper s19499 #57] add            extrude          -> 200 31 ms
+  [cam-cover-upper s19499 #58] plan           rotate           -> 200 9 ms
+  [cam-cover-upper s19499 #59] add            hex_plate        -> 200 40 ms
+   clean
+-- journey 12: esp32-remote-live-t2 seed 19500
+  [esp32-remote-live-t2 s19500 #0] opened: 73 features, 1 bodies
+  [esp32-remote-live-t2 s19500 #1] add            tube             -> 200 441 ms
+  [esp32-remote-live-t2 s19500 #2] add            scale            -> 200 750 ms
+  [esp32-remote-live-t2 s19500 #3] add            ball             -> 200 514 ms
+  [esp32-remote-live-t2 s19500 #4] edit                            -> 200 2748 ms
+  [esp32-remote-live-t2 s19500 #5] undo                            -> 200 720 ms
+  [esp32-remote-live-t2 s19500 #6] redo                            -> 200 677 ms
+  [esp32-remote-live-t2 s19500 #7] add            cone             -> 200 525 ms
+  [esp32-remote-live-t2 s19500 #8] add            with_center_hole -> 200 566 ms
+  [esp32-remote-live-t2 s19500 #9] add            sketch           -> 200 23 ms
+  [esp32-remote-live-t2 s19500 #10] add            extrude          -> 200 547 ms
+  [esp32-remote-live-t2 s19500 #11] plan           hole             -> 200 8 ms  Hole needs a flat face — click a face of a body
+  [esp32-remote-live-t2 s19500 #12] add            linear_pattern   -> 200 578 ms
+  [esp32-remote-live-t2 s19500 #13] tab-new                         -> 200 9 ms
+  [esp32-remote-live-t2 s19500 #14] add            polygon_plate    -> 200 24 ms
+  [esp32-remote-live-t2 s19500 #15] tab-switch                      -> 200 16 ms
+  [esp32-remote-live-t2 s19500 #16] tab-close                       -> 200 15 ms
+  [esp32-remote-live-t2 s19500 #17] tab-switch                      -> 200 15 ms
+  [esp32-remote-live-t2 s19500 #18] tab-new                         -> 200 8 ms
+  [esp32-remote-live-t2 s19500 #19] add            cone             -> 200 11 ms
+  [esp32-remote-live-t2 s19500 #20] tab-switch                      -> 200 16 ms
+  [esp32-remote-live-t2 s19500 #21] tab-close                       -> 200 15 ms
+  [esp32-remote-live-t2 s19500 #22] tab-switch                      -> 200 15 ms
+  [esp32-remote-live-t2 s19500 #23] tab-new                         -> 200 8 ms
+  [esp32-remote-live-t2 s19500 #24] add            disc             -> 200 11 ms
+  [esp32-remote-live-t2 s19500 #25] tab-switch                      -> 200 16 ms
+  [esp32-remote-live-t2 s19500 #26] tab-close                       -> 200 15 ms
+  [esp32-remote-live-t2 s19500 #27] tab-switch                      -> 200 15 ms
+  [esp32-remote-live-t2 s19500 #28] add            mirror           -> 200 711 ms
+  [esp32-remote-live-t2 s19500 #29] plan           revolve          -> 200 40 ms
+  [esp32-remote-live-t2 s19500 #30] edit                            -> 200 32 ms
+  [esp32-remote-live-t2 s19500 #31] undo                            -> 200 202 ms
+  [esp32-remote-live-t2 s19500 #32] redo                            -> 200 29 ms
+  [esp32-remote-live-t2 s19500 #33] add            sketch_on_face   -> 200 27 ms
+  [esp32-remote-live-t2 s19500 #34] add            extrude          -> 200 29 ms
+  [esp32-remote-live-t2 s19500 #35] add            ball             -> 200 26 ms
+  [esp32-remote-live-t2 s19500 #36] undo                            -> 200 33 ms
+  [esp32-remote-live-t2 s19500 #37] add            sketch           -> 200 26 ms
+  [esp32-remote-live-t2 s19500 #38] add            extrude          -> 200 28 ms
+  [esp32-remote-live-t2 s19500 #39] strike                          -> 200 177 ms
+  [esp32-remote-live-t2 s19500 #40] restore                         -> 200 22 ms
+  [esp32-remote-live-t2 s19500 #41] remove-plan                     -> 200 17 ms
+  [esp32-remote-live-t2 s19500 #42] remove                          -> 200 21 ms
+  [esp32-remote-live-t2 s19500 #43] add            extrude_face     -> 200 26 ms
+  [esp32-remote-live-t2 s19500 #44] plan           move             -> 200 9 ms
+  [esp32-remote-live-t2 s19500 #45] add            chamfer          -> 200 6722 ms
+  [esp32-remote-live-t2 s19500 #46] add            sketch           -> 200 24 ms
+  [esp32-remote-live-t2 s19500 #47] add            extrude          -> 200 28 ms
+  [esp32-remote-live-t2 s19500 #48] tab-new                         -> 200 9 ms
+  [esp32-remote-live-t2 s19500 #49] add            ball             -> 200 11 ms
+  [esp32-remote-live-t2 s19500 #50] tab-switch                      -> 200 16 ms
+  [esp32-remote-live-t2 s19500 #51] tab-close                       -> 200 15 ms
+  [esp32-remote-live-t2 s19500 #52] tab-switch                      -> 200 17 ms
+  [esp32-remote-live-t2 s19500 #53] edit                            -> 200 30 ms
+  [esp32-remote-live-t2 s19500 #54] undo                            -> 200 33 ms
+  [esp32-remote-live-t2 s19500 #55] redo                            -> 200 43 ms
+  [esp32-remote-live-t2 s19500 #56] rollback                        -> 200 20 ms
+  [esp32-remote-live-t2 s19500 #57] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [esp32-remote-live-t2 s19500 #58] rollback                        -> 200 20 ms
+  [esp32-remote-live-t2 s19500 #59] edit                            -> 200 24 ms
+  [esp32-remote-live-t2 s19500 #60] undo                            -> 200 34 ms
+  [esp32-remote-live-t2 s19500 #61] redo                            -> 200 45 ms
+  [esp32-remote-live-t2 s19500 #62] add            mirror           -> 200 40 ms
+  [esp32-remote-live-t2 s19500 #63] plan           fillet           -> 200 10 ms
+   clean
+-- journey 13: esp32-remote-live-t3 seed 19501
+  [esp32-remote-live-t3 s19501 #0] opened: 73 features, 1 bodies
+  [esp32-remote-live-t3 s19501 #1] remove-plan                     -> 200 30 ms
+  [esp32-remote-live-t3 s19501 #2] remove                          -> 200 2358 ms
+  [esp32-remote-live-t3 s19501 #3] add            hole             -> 200 108 ms
+  [esp32-remote-live-t3 s19501 #4] add            hex_plate        -> 200 35 ms
+  [esp32-remote-live-t3 s19501 #5] undo                            -> 200 20 ms
+  [esp32-remote-live-t3 s19501 #6] suppress                        -> 200 20 ms
+  [esp32-remote-live-t3 s19501 #7] suppress                        -> 200 21 ms
+  [esp32-remote-live-t3 s19501 #8] doc                             -> 200 14 ms
+  [esp32-remote-live-t3 s19501 #9] plan           move             -> 200 9 ms  'esp32_remote' is not a body on its own — 'j1_hole' is built from it. Click a fa
+  [esp32-remote-live-t3 s19501 #10] edit                            -> 200 1688 ms
+  [esp32-remote-live-t3 s19501 #11] undo                            -> 200 22 ms
+  [esp32-remote-live-t3 s19501 #12] redo                            -> 200 21 ms
+  [esp32-remote-live-t3 s19501 #13] plan           hole             -> 200 8 ms  'keypad_recess' is a cut, not hole
+  [esp32-remote-live-t3 s19501 #14] edit                            -> 200 1256 ms
+  [esp32-remote-live-t3 s19501 #15] undo                            -> 200 20 ms
+  [esp32-remote-live-t3 s19501 #16] redo                            -> 200 20 ms
+  [esp32-remote-live-t3 s19501 #17] add            tube             -> 200 34 ms
+  [esp32-remote-live-t3 s19501 #18] add            linear_pattern   -> 200 49 ms
+  [esp32-remote-live-t3 s19501 #19] add            sketch           -> 200 22 ms
+  [esp32-remote-live-t3 s19501 #20] add            extrude          -> 200 27 ms
+  [esp32-remote-live-t3 s19501 #21] edit                            -> 200 2538 ms
+  [esp32-remote-live-t3 s19501 #22] undo                            -> 200 25 ms
+  [esp32-remote-live-t3 s19501 #23] redo                            -> 200 375 ms
+  [esp32-remote-live-t3 s19501 #24] plan           sketch           -> 200 9 ms
+  [esp32-remote-live-t3 s19501 #25] strike                          -> 200 1938 ms
+  [esp32-remote-live-t3 s19501 #26] restore                         -> 200 25 ms
+  [esp32-remote-live-t3 s19501 #27] edit                            -> 200 1099 ms
+  [esp32-remote-live-t3 s19501 #28] undo                            -> 200 363 ms
+  [esp32-remote-live-t3 s19501 #29] redo                            -> 200 448 ms
+  [esp32-remote-live-t3 s19501 #30] strike                          -> 200 1496 ms
+  [esp32-remote-live-t3 s19501 #31] restore                         -> 200 23 ms
+  [esp32-remote-live-t3 s19501 #32] add            polar_pattern    -> 200 22 ms
+  [esp32-remote-live-t3 s19501 #33] add            move             -> 200 30 ms
+  [esp32-remote-live-t3 s19501 #34] add            extrude_face     -> 200 33 ms
+  [esp32-remote-live-t3 s19501 #35] edit                            -> 200 23 ms
+  [esp32-remote-live-t3 s19501 #36] undo                            -> 200 400 ms
+  [esp32-remote-live-t3 s19501 #37] redo                            -> 200 477 ms
+  [esp32-remote-live-t3 s19501 #38] remove-plan                     -> 200 18 ms
+  [esp32-remote-live-t3 s19501 #39] remove                          -> 200 167 ms
+  [esp32-remote-live-t3 s19501 #40] edit                            -> 200 28 ms
+  [esp32-remote-live-t3 s19501 #41] undo                            -> 200 244 ms
+  [esp32-remote-live-t3 s19501 #42] redo                            -> 200 245 ms
+  [esp32-remote-live-t3 s19501 #43] add            hole             -> 200 29 ms
+  [esp32-remote-live-t3 s19501 #44] add            scale            -> 200 26 ms
+  [esp32-remote-live-t3 s19501 #45] edit                            -> 200 132 ms
+  [esp32-remote-live-t3 s19501 #46] undo                            -> 200 254 ms
+  [esp32-remote-live-t3 s19501 #47] redo                            -> 200 261 ms
+  [esp32-remote-live-t3 s19501 #48] add            sketch           -> 200 24 ms
+  [esp32-remote-live-t3 s19501 #49] add            extrude          -> 200 23 ms
+  [esp32-remote-live-t3 s19501 #50] add            chamfer          -> 200 11444 ms
+  [esp32-remote-live-t3 s19501 #51] add            fillet           -> 200 443 ms
+  [esp32-remote-live-t3 s19501 #52] undo                            -> 200 740 ms
+  [esp32-remote-live-t3 s19501 #53] edit                            -> 200 93 ms
+  [esp32-remote-live-t3 s19501 #54] undo                            -> 200 472 ms
+  [esp32-remote-live-t3 s19501 #55] redo                            -> 200 401 ms
+   clean
+-- journey 14: esp32-remote seed 19502
+  [esp32-remote s19502 #0] opened: 81 features, 2 bodies
+  [esp32-remote s19502 #1] strike                          -> 200 11767 ms
+  [esp32-remote s19502 #2] restore                         -> 200 4888 ms
+  [esp32-remote s19502 #3] add            shell            -> 200 1164 ms
+  [esp32-remote s19502 #4] strike                          -> 200 6844 ms
+  [esp32-remote s19502 #5] restore                         -> 200 42 ms
+  [esp32-remote s19502 #6] add            disc             -> 200 52 ms
+  [esp32-remote s19502 #7] plan           mirror           -> 200 12 ms  Mirror needs a feature or a body to mirror — click a hole, a boss or a body, or select 
+  [esp32-remote s19502 #8] add            polar_pattern    -> 200 40 ms
+  [esp32-remote s19502 #9] plan           shell            -> 200 11 ms
+  [esp32-remote s19502 #10] add            mirror           -> 200 1138 ms
+  [esp32-remote s19502 #11] undo                            -> 200 131 ms
+  [esp32-remote s19502 #12] add            with_center_hole -> 200 490 ms
+  [esp32-remote s19502 #13] remove-plan                     -> 400 25 ms  cannot remove 'cav_tool': used by ['cav_neg']
+  [esp32-remote s19502 #14] remove                          -> 400 27 ms  cannot remove 'cav_tool': used by ['cav_neg']
+  [esp32-remote s19502 #15] strike                          -> 200 7722 ms
+  [esp32-remote s19502 #16] restore                         -> 200 40 ms
+  [esp32-remote s19502 #17] rename                          -> 200 37 ms
+  [esp32-remote s19502 #18] rename                          -> 200 27 ms
+  [esp32-remote s19502 #19] doc                             -> 200 24 ms
+  [esp32-remote s19502 #20] add            mirror           -> 200 672 ms
+  [esp32-remote s19502 #21] edit                            -> 200 7539 ms
+  [esp32-remote s19502 #22] undo                            -> 200 213 ms
+  [esp32-remote s19502 #23] redo                            -> 200 217 ms
+  [esp32-remote s19502 #24] edit                            -> 200 5707 ms
+  [esp32-remote s19502 #25] undo                            -> 200 383 ms
+  [esp32-remote s19502 #26] redo                            -> 200 233 ms
+  [esp32-remote s19502 #27] add            plate            -> 200 46 ms
+  [esp32-remote s19502 #28] undo                            -> 200 224 ms
+  [esp32-remote s19502 #29] plan           revolve          -> 200 151 ms
+  [esp32-remote s19502 #30] add            tube             -> 200 54 ms
+  [esp32-remote s19502 #31] add            fillet           -> 200 7269 ms
+  [esp32-remote s19502 #32] tab-new                         -> 200 9 ms
+  [esp32-remote s19502 #33] add            hex_plate        -> 200 22 ms
+  [esp32-remote s19502 #34] tab-switch                      -> 200 26 ms
+  [esp32-remote s19502 #35] tab-close                       -> 200 25 ms
+  [esp32-remote s19502 #36] tab-switch                      -> 200 25 ms
+  [esp32-remote s19502 #37] add            chamfer          -> 200 58 ms
+  [esp32-remote s19502 #38] add            tube             -> 200 54 ms
+  [esp32-remote s19502 #39] add            move             -> 200 46 ms
+  [esp32-remote s19502 #40] edit                            -> 200 4914 ms
+  [esp32-remote s19502 #41] undo                            -> 200 241 ms
+  [esp32-remote s19502 #42] redo                            -> 200 235 ms
+  [esp32-remote s19502 #43] edit                            -> 200 7109 ms
+  [esp32-remote s19502 #44] undo                            -> 200 230 ms
+  [esp32-remote s19502 #45] redo                            -> 200 272 ms
+  [esp32-remote s19502 #46] edit                            -> 200 6442 ms
+  [esp32-remote s19502 #47] undo                            -> 200 254 ms
+  [esp32-remote s19502 #48] redo                            -> 200 282 ms
+  [esp32-remote s19502 #49] add            with_center_hole -> 200 202 ms
+  [esp32-remote s19502 #50] edit                            -> 200 5986 ms
+  [esp32-remote s19502 #51] undo                            -> 200 237 ms
+  [esp32-remote s19502 #52] redo                            -> 200 207 ms
+  [esp32-remote s19502 #53] add            fuse             -> 200 680 ms
+  [esp32-remote s19502 #54] rollback                        -> 200 43 ms
+  [esp32-remote s19502 #55] plan           extrude          -> 200 9 ms  Extrude needs a sketch profile or a picked flat face
+  [esp32-remote s19502 #56] rollback                        -> 200 48 ms
+   clean
+-- journey 15: fan-disk seed 19503
+  [fan-disk s19503 #0] opened: 7 features, 1 bodies
+  [fan-disk s19503 #1] add            sketch_on_face   -> 200 41 ms
+  [fan-disk s19503 #2] add            extrude          -> 200 501 ms
+  [fan-disk s19503 #3] plan           mirror           -> 200 8 ms  Mirror needs a feature or a body to mirror — click a hole, a boss or a body, or select a row
+  [fan-disk s19503 #4] add            move             -> 200 420 ms
+  [fan-disk s19503 #5] plan           mirror           -> 200 8 ms  Mirror needs a feature or a body to mirror — click a hole, a boss or a body, or select a row
+  [fan-disk s19503 #6] add            sketch_on_face   -> 200 15 ms
+  [fan-disk s19503 #7] add            extrude          -> 200 387 ms
+  [fan-disk s19503 #8] edit                            -> 200 10 ms
+  [fan-disk s19503 #9] rollback                        -> 200 10 ms
+  [fan-disk s19503 #10] plan           extrude          -> 200 7 ms  Extrude needs a sketch profile or a picked flat face
+  [fan-disk s19503 #11] rollback                        -> 200 8 ms
+  [fan-disk s19503 #12] add            fuse             -> 200 437 ms
+  [fan-disk s19503 #13] plan           pattern          -> 200 8 ms  no plan for tool 'pattern' — known: ['chamfer', 'extrude', 'fillet', 'hole', 'linear_patter
+  [fan-disk s19503 #14] plan           rotate           -> 200 11 ms
+  [fan-disk s19503 #15] add            rotate           -> 200 505 ms
+  [fan-disk s19503 #16] edit                            -> 200 1505 ms
+  [fan-disk s19503 #17] undo                            -> 200 344 ms
+  [fan-disk s19503 #18] redo                            -> 200 381 ms
+  [fan-disk s19503 #19] add            shell            -> 200 42 ms
+  [fan-disk s19503 #20] add            mirror           -> 200 13 ms
+  [fan-disk s19503 #21] undo                            -> 200 11 ms
+  [fan-disk s19503 #22] remove-plan                     -> 200 10 ms
+  [fan-disk s19503 #23] remove                          -> 200 619 ms
+  [fan-disk s19503 #24] add            sketch           -> 200 11 ms
+  [fan-disk s19503 #25] add            extrude          -> 200 16 ms
+  [fan-disk s19503 #26] rollback                        -> 200 10 ms
+  [fan-disk s19503 #27] plan           extrude          -> 200 9 ms  Extrude needs a sketch profile or a picked flat face
+  [fan-disk s19503 #28] rollback                        -> 200 10 ms
+  [fan-disk s19503 #29] add            chamfer          -> 200 6891 ms
+  [fan-disk s19503 #30] add            scale            -> 200 13 ms
+  [fan-disk s19503 #31] undo                            -> 200 13 ms
+  [fan-disk s19503 #32] add            move             -> 200 17 ms
+  [fan-disk s19503 #33] add            ball             -> 200 17 ms
+  [fan-disk s19503 #34] undo                            -> 200 14 ms
+  [fan-disk s19503 #35] remove-plan                     -> 200 9 ms
+  [fan-disk s19503 #36] remove                          -> 200 95 ms
+  [fan-disk s19503 #37] add            fillet           -> 200 115 ms
+  [fan-disk s19503 #38] plan           move             -> 200 9 ms
+  [fan-disk s19503 #39] add            ball             -> 200 13 ms
+  [fan-disk s19503 #40] add            disc             -> 200 14 ms
+  [fan-disk s19503 #41] undo                            -> 200 17 ms
+  [fan-disk s19503 #42] add            polar_pattern    -> 200 10 ms
+  [fan-disk s19503 #43] add            sketch           -> 200 12 ms
+  [fan-disk s19503 #44] add            extrude          -> 200 17 ms
+  [fan-disk s19503 #45] edit                            -> 200 167 ms
+  [fan-disk s19503 #46] undo                            -> 200 14 ms
+  [fan-disk s19503 #47] redo                            -> 200 13 ms
+  [fan-disk s19503 #48] add            sketch_on_face   -> 200 19 ms
+  [fan-disk s19503 #49] add            extrude          -> 200 16 ms
+   clean
+-- journey 16: flange-100 seed 19504
+  [flange-100 s19504 #0] opened: 3 features, 1 bodies
+  [flange-100 s19504 #1] suppress                        -> 200 44 ms
+  [flange-100 s19504 #2] suppress                        -> 200 75 ms
+  [flange-100 s19504 #3] doc                             -> 200 8 ms
+  [flange-100 s19504 #4] edit                            -> 200 131 ms
+  [flange-100 s19504 #5] undo                            -> 200 13 ms
+  [flange-100 s19504 #6] redo                            -> 200 8 ms
+  [flange-100 s19504 #7] add            sketch_on_face   -> 200 19 ms
+  [flange-100 s19504 #8] add            extrude          -> 200 14 ms
+  [flange-100 s19504 #9] add            extrude_face     -> 200 16 ms
+  [flange-100 s19504 #10] undo                            -> 200 8 ms
+  [flange-100 s19504 #11] add            scale            -> 200 21 ms
+  [flange-100 s19504 #12] spec                            -> 200 9 ms
+  [flange-100 s19504 #13] doc                             -> 200 8 ms
+  [flange-100 s19504 #14] add            shell            -> 200 7064 ms
+  [flange-100 s19504 #15] add            with_bolt_circle -> 200 81 ms
+  [flange-100 s19504 #16] add            disc             -> 200 11 ms
+  [flange-100 s19504 #17] undo                            -> 200 12 ms
+  [flange-100 s19504 #18] add            disc             -> 200 12 ms
+  [flange-100 s19504 #19] plan           revolve          -> 200 15 ms  this profile cannot be revolved: it crosses v (-33.6 to 33.6 mm) and it crosses u (-33.6
+  [flange-100 s19504 #20] add            cut              -> 200 41 ms
+  [flange-100 s19504 #21] add            extrude_face     -> 200 25 ms
+  [flange-100 s19504 #22] add            scale            -> 200 28 ms
+  [flange-100 s19504 #23] remove-plan                     -> 200 10 ms
+  [flange-100 s19504 #24] remove                          -> 200 9 ms
+  [flange-100 s19504 #25] edit                            -> 200 9 ms
+  [flange-100 s19504 #26] undo                            -> 200 8 ms
+  [flange-100 s19504 #27] redo                            -> 200 8 ms
+  [flange-100 s19504 #28] add            polygon_plate    -> 200 19 ms
+  [flange-100 s19504 #29] strike                          -> 200 10 ms
+  [flange-100 s19504 #30] restore                         -> 200 10 ms
+  [flange-100 s19504 #31] add            sketch_on_face   -> 200 15 ms
+  [flange-100 s19504 #32] add            extrude          -> 200 13 ms
+  [flange-100 s19504 #33] edit                            -> 200 9 ms
+  [flange-100 s19504 #34] add            cut              -> 200 28 ms
+  [flange-100 s19504 #35] plan           hole             -> 200 8 ms  Hole needs a flat face — click a face of a body
+  [flange-100 s19504 #36] plan           pattern          -> 200 8 ms  no plan for tool 'pattern' — known: ['chamfer', 'extrude', 'fillet', 'hole', 'linear_patt
+  [flange-100 s19504 #37] add            sketch_on_face   -> 200 16 ms
+  [flange-100 s19504 #38] add            extrude          -> 200 14 ms
+  [flange-100 s19504 #39] add            cut              -> 200 27 ms
+  [flange-100 s19504 #40] add            sketch           -> 200 11 ms
+  [flange-100 s19504 #41] add            extrude          -> 200 17 ms
+  [flange-100 s19504 #42] tab-new                         -> 200 9 ms
+  [flange-100 s19504 #43] add            cone             -> 200 11 ms
+  [flange-100 s19504 #44] tab-switch                      -> 200 10 ms
+  [flange-100 s19504 #45] tab-close                       -> 200 9 ms
+  [flange-100 s19504 #46] tab-switch                      -> 200 10 ms
+  [flange-100 s19504 #47] plan           sketch           -> 200 9 ms
+  [flange-100 s19504 #48] plan           mirror           -> 200 12 ms
+  [flange-100 s19504 #49] add            fillet           -> 200 147 ms
+   clean
+-- journey 17: gear-case seed 19505
+  [gear-case s19505 #0] opened: 14 features, 1 bodies
+  [gear-case s19505 #1] add            sketch_on_face   -> 200 33 ms
+  [gear-case s19505 #2] add            extrude          -> 200 90 ms
+  [gear-case s19505 #3] add            sketch           -> 200 13 ms
+  [gear-case s19505 #4] add            extrude          -> 200 117 ms
+  [gear-case s19505 #5] plan           move             -> 200 9 ms
+  [gear-case s19505 #6] tab-new                         -> 200 8 ms
+  [gear-case s19505 #7] add            ball             -> 200 12 ms
+  [gear-case s19505 #8] tab-switch                      -> 200 9 ms
+  [gear-case s19505 #9] tab-close                       -> 200 9 ms
+  [gear-case s19505 #10] tab-switch                      -> 200 9 ms
+  [gear-case s19505 #11] rollback                        -> 200 11 ms
+  [gear-case s19505 #12] plan           extrude          -> 200 7 ms  Extrude needs a sketch profile or a picked flat face
+  [gear-case s19505 #13] rollback                        -> 200 11 ms
+  [gear-case s19505 #14] rollback                        -> 200 10 ms
+  [gear-case s19505 #15] plan           extrude          -> 200 7 ms  Extrude needs a sketch profile or a picked flat face
+  [gear-case s19505 #16] rollback                        -> 200 11 ms
+  [gear-case s19505 #17] suppress                        -> 200 11 ms
+  [gear-case s19505 #18] suppress                        -> 200 10 ms
+  [gear-case s19505 #19] doc                             -> 200 8 ms
+  [gear-case s19505 #20] strike                          -> 200 256 ms
+  [gear-case s19505 #21] restore                         -> 200 92 ms
+  [gear-case s19505 #22] edit                            -> 200 489 ms
+  [gear-case s19505 #23] undo                            -> 200 106 ms
+  [gear-case s19505 #24] redo                            -> 200 181 ms
+  [gear-case s19505 #25] edit                            -> 200 117 ms
+  [gear-case s19505 #26] undo                            -> 200 133 ms
+  [gear-case s19505 #27] redo                            -> 200 128 ms
+  [gear-case s19505 #28] edit                            -> 200 475 ms
+  [gear-case s19505 #29] undo                            -> 200 143 ms
+  [gear-case s19505 #30] redo                            -> 200 156 ms
+  [gear-case s19505 #31] add            hole             -> 200 30 ms
+  [gear-case s19505 #32] add            cut              -> 200 36 ms
+  [gear-case s19505 #33] add            tube             -> 200 25 ms
+  [gear-case s19505 #34] tab-new                         -> 200 8 ms
+  [gear-case s19505 #35] add            polygon_plate    -> 200 20 ms
+  [gear-case s19505 #36] tab-switch                      -> 200 67 ms
+  [gear-case s19505 #37] tab-close                       -> 200 13 ms
+  [gear-case s19505 #38] tab-switch                      -> 200 10 ms
+  [gear-case s19505 #39] add            chamfer          -> 200 13 ms
+  [gear-case s19505 #40] strike                          -> 200 92 ms
+  [gear-case s19505 #41] restore                         -> 200 13 ms
+  [gear-case s19505 #42] add            sketch           -> 200 13 ms
+  [gear-case s19505 #43] add            extrude          -> 200 17 ms
+  [gear-case s19505 #44] rollback                        -> 200 11 ms
+  [gear-case s19505 #45] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [gear-case s19505 #46] rollback                        -> 200 11 ms
+  [gear-case s19505 #47] add            move             -> 200 15 ms
+  [gear-case s19505 #48] add            ball             -> 200 15 ms
+  [gear-case s19505 #49] edit                            -> 200 311 ms
+  [gear-case s19505 #50] undo                            -> 200 15 ms
+  [gear-case s19505 #51] redo                            -> 200 15 ms
+  [gear-case s19505 #52] add            fuse             -> 200 55 ms
+  [gear-case s19505 #53] plan           hole             -> 200 8 ms  Hole needs a flat face — click a face of a body
+  [gear-case s19505 #54] add            with_center_hole -> 200 19 ms
+  [gear-case s19505 #55] add            sketch           -> 200 14 ms
+  [gear-case s19505 #56] add            extrude          -> 200 16 ms
+  [gear-case s19505 #57] add            sketch           -> 200 14 ms
+  [gear-case s19505 #58] add            extrude          -> 200 18 ms
+  [gear-case s19505 #59] suppress                        -> 200 282 ms
+  [gear-case s19505 #60] suppress                        -> 200 13 ms
+  [gear-case s19505 #61] doc                             -> 200 9 ms
+  [gear-case s19505 #62] plan           revolve          -> 200 13 ms  this profile cannot be revolved: it crosses v (-12.8 to 12.8 mm) and it crosses u (-12.8 
+   clean
+-- journey 18: hex-nut-M16 seed 19506
+  [hex-nut-M16 s19506 #0] opened: 2 features, 1 bodies
+  [hex-nut-M16 s19506 #1] add            linear_pattern   -> 200 70 ms
+  [hex-nut-M16 s19506 #2] edit                            -> 200 104 ms
+  [hex-nut-M16 s19506 #3] undo                            -> 200 67 ms
+  [hex-nut-M16 s19506 #4] redo                            -> 200 53 ms
+  [hex-nut-M16 s19506 #5] add            sketch_on_face   -> 200 17 ms
+  [hex-nut-M16 s19506 #6] add            extrude          -> 200 50 ms
+  [hex-nut-M16 s19506 #7] edit                            -> 200 8 ms
+  [hex-nut-M16 s19506 #8] add            polygon_plate    -> 200 61 ms
+  [hex-nut-M16 s19506 #9] undo                            -> 200 54 ms
+  [hex-nut-M16 s19506 #10] add            extrude_face     -> 200 52 ms
+  [hex-nut-M16 s19506 #11] add            with_center_hole -> 200 60 ms
+  [hex-nut-M16 s19506 #12] add            hole             -> 200 19 ms
+  [hex-nut-M16 s19506 #13] undo                            -> 200 19 ms
+  [hex-nut-M16 s19506 #14] add            linear_pattern   -> 200 67 ms
+  [hex-nut-M16 s19506 #15] plan           extrude          -> 200 9 ms  Extrude needs a sketch profile or a picked flat face
+  [hex-nut-M16 s19506 #16] plan           rotate           -> 200 9 ms
+  [hex-nut-M16 s19506 #17] add            polar_pattern    -> 200 11 ms
+  [hex-nut-M16 s19506 #18] edit                            -> 200 10 ms
+  [hex-nut-M16 s19506 #19] plan           move             -> 200 8 ms
+  [hex-nut-M16 s19506 #20] edit                            -> 200 8 ms
+  [hex-nut-M16 s19506 #21] undo                            -> 200 11 ms
+  [hex-nut-M16 s19506 #22] redo                            -> 200 15 ms
+  [hex-nut-M16 s19506 #23] add            sketch           -> 200 11 ms
+  [hex-nut-M16 s19506 #24] add            extrude          -> 200 12 ms
+  [hex-nut-M16 s19506 #25] edit                            -> 200 87 ms
+  [hex-nut-M16 s19506 #26] undo                            -> 200 15 ms
+  [hex-nut-M16 s19506 #27] redo                            -> 200 13 ms
+  [hex-nut-M16 s19506 #28] add            sketch_on_face   -> 200 14 ms
+  [hex-nut-M16 s19506 #29] add            extrude          -> 200 14 ms
+  [hex-nut-M16 s19506 #30] add            sketch_on_face   -> 200 13 ms
+  [hex-nut-M16 s19506 #31] add            extrude          -> 200 15 ms
+  [hex-nut-M16 s19506 #32] edit                            -> 200 10 ms
+  [hex-nut-M16 s19506 #33] add            with_center_hole -> 200 56 ms
+  [hex-nut-M16 s19506 #34] add            ball             -> 200 12 ms
+  [hex-nut-M16 s19506 #35] edit                            -> 200 21 ms
+  [hex-nut-M16 s19506 #36] undo                            -> 200 17 ms
+  [hex-nut-M16 s19506 #37] redo                            -> 200 26 ms
+  [hex-nut-M16 s19506 #38] add            rotate           -> 200 17 ms
+  [hex-nut-M16 s19506 #39] add            shell            -> 200 7030 ms
+  [hex-nut-M16 s19506 #40] plan           hole             -> 200 8 ms  Hole needs a flat face — click a face of a body
+  [hex-nut-M16 s19506 #41] plan           move             -> 200 9 ms
+  [hex-nut-M16 s19506 #42] add            polygon_plate    -> 200 31 ms
+  [hex-nut-M16 s19506 #43] add            mirror           -> 200 36 ms
+  [hex-nut-M16 s19506 #44] tab-new                         -> 200 9 ms
+  [hex-nut-M16 s19506 #45] add            ball             -> 200 11 ms
+  [hex-nut-M16 s19506 #46] tab-switch                      -> 200 11 ms
+  [hex-nut-M16 s19506 #47] tab-close                       -> 200 10 ms
+  [hex-nut-M16 s19506 #48] tab-switch                      -> 200 10 ms
+   clean
+-- journey 19: hole-box seed 19507
+  [hole-box s19507 #0] opened: 12 features, 1 bodies
+  [hole-box s19507 #1] plan           pattern          -> 200 20 ms  no plan for tool 'pattern' — known: ['chamfer', 'extrude', 'fillet', 'hole', 'linear_patter
+  [hole-box s19507 #2] add            sketch_on_face   -> 200 27 ms
+  [hole-box s19507 #3] add            extrude          -> 200 259 ms
+  [hole-box s19507 #4] rollback                        -> 200 11 ms
+  [hole-box s19507 #5] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [hole-box s19507 #6] rollback                        -> 200 9 ms
+  [hole-box s19507 #7] plan           shell            -> 200 13 ms
+  [hole-box s19507 #8] add            chamfer          -> 200 601 ms
+  [hole-box s19507 #9] add            hole             -> 200 14 ms
+  [hole-box s19507 #10] rollback                        -> 200 11 ms
+  [hole-box s19507 #11] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [hole-box s19507 #12] rollback                        -> 200 10 ms
+  [hole-box s19507 #13] add            sketch_on_face   -> 200 28 ms
+  [hole-box s19507 #14] add            extrude          -> 200 16 ms
+  [hole-box s19507 #15] add            rotate           -> 200 169 ms
+  [hole-box s19507 #16] undo                            -> 200 31 ms
+  [hole-box s19507 #17] plan           mirror           -> 200 8 ms  Mirror needs a feature or a body to mirror — click a hole, a boss or a body, or select a ro
+  [hole-box s19507 #18] add            with_center_hole -> 200 77 ms
+  [hole-box s19507 #19] add            intersect        -> 200 21 ms
+  [hole-box s19507 #20] strike                          -> 200 440 ms
+  [hole-box s19507 #21] restore                         -> 200 11 ms
+  [hole-box s19507 #22] strike                          -> 200 305 ms
+  [hole-box s19507 #23] restore                         -> 200 11 ms
+  [hole-box s19507 #24] add            shell            -> 200 12 ms
+  [hole-box s19507 #25] edit                            -> 200 553 ms
+  [hole-box s19507 #26] undo                            -> 200 9 ms
+  [hole-box s19507 #27] redo                            -> 200 11 ms
+  [hole-box s19507 #28] edit                            -> 200 14 ms
+  [hole-box s19507 #29] undo                            -> 200 9 ms
+  [hole-box s19507 #30] redo                            -> 200 10 ms
+  [hole-box s19507 #31] add            plate            -> 200 15 ms
+  [hole-box s19507 #32] edit                            -> 200 909 ms
+  [hole-box s19507 #33] undo                            -> 200 13 ms
+  [hole-box s19507 #34] redo                            -> 200 13 ms
+  [hole-box s19507 #35] add            sketch_on_face   -> 200 22 ms
+  [hole-box s19507 #36] add            extrude          -> 200 18 ms
+  [hole-box s19507 #37] add            cone             -> 200 14 ms
+  [hole-box s19507 #38] undo                            -> 200 13 ms
+  [hole-box s19507 #39] add            sketch_on_face   -> 200 16 ms
+  [hole-box s19507 #40] add            extrude          -> 200 21 ms
+  [hole-box s19507 #41] add            with_bolt_circle -> 200 48 ms
+  [hole-box s19507 #42] add            fillet           -> 200 68 ms
+  [hole-box s19507 #43] add            chamfer          -> 200 40 ms
+  [hole-box s19507 #44] tab-new                         -> 200 9 ms
+  [hole-box s19507 #45] add            plate            -> 200 12 ms
+  [hole-box s19507 #46] tab-switch                      -> 200 10 ms
+  [hole-box s19507 #47] tab-close                       -> 200 11 ms
+  [hole-box s19507 #48] tab-switch                      -> 200 10 ms
+  [hole-box s19507 #49] rollback                        -> 200 11 ms
+  [hole-box s19507 #50] plan           extrude          -> 200 9 ms  Extrude needs a sketch profile or a picked flat face
+  [hole-box s19507 #51] rollback                        -> 200 12 ms
+  [hole-box s19507 #52] edit                            -> 200 886 ms
+  [hole-box s19507 #53] undo                            -> 200 13 ms
+  [hole-box s19507 #54] redo                            -> 200 11 ms
+  [hole-box s19507 #55] add            scale            -> 200 14 ms
+  [hole-box s19507 #56] add            polygon_plate    -> 200 26 ms
+   clean
+-- journey 20: isogrid-panel seed 19508
+  [isogrid-panel s19508 #0] opened: 37 features, 1 bodies
+  [isogrid-panel s19508 #1] add            chamfer          -> 200 9031 ms
+  [isogrid-panel s19508 #2] suppress                        -> 200 15 ms
+  [isogrid-panel s19508 #3] suppress                        -> 200 17 ms
+  [isogrid-panel s19508 #4] doc                             -> 200 10 ms
+  [isogrid-panel s19508 #5] tab-new                         -> 200 8 ms
+  [isogrid-panel s19508 #6] add            tube             -> 200 19 ms
+  [isogrid-panel s19508 #7] tab-switch                      -> 200 12 ms
+  [isogrid-panel s19508 #8] tab-close                       -> 200 12 ms
+  [isogrid-panel s19508 #9] tab-switch                      -> 200 11 ms
+  [isogrid-panel s19508 #10] suppress                        -> 200 14 ms
+  [isogrid-panel s19508 #11] suppress                        -> 200 14 ms
+  [isogrid-panel s19508 #12] doc                             -> 200 10 ms
+  [isogrid-panel s19508 #13] add            hex_plate        -> 200 623 ms
+  [isogrid-panel s19508 #14] edit                            -> 200 2834 ms
+  [isogrid-panel s19508 #15] undo                            -> 200 726 ms
+  [isogrid-panel s19508 #16] redo                            -> 200 745 ms
+  [isogrid-panel s19508 #17] add            plate            -> 200 641 ms
+  [isogrid-panel s19508 #18] add            plate            -> 200 616 ms
+  [isogrid-panel s19508 #19] edit                            -> 200 18 ms
+  [isogrid-panel s19508 #20] undo                            -> 200 162 ms
+  [isogrid-panel s19508 #21] redo                            -> 200 20 ms
+  [isogrid-panel s19508 #22] plan           sketch           -> 200 8 ms
+  [isogrid-panel s19508 #23] plan           extrude          -> 200 25 ms
+  [isogrid-panel s19508 #24] add            hex_plate        -> 200 28 ms
+  [isogrid-panel s19508 #25] add            intersect        -> 200 37 ms
+  [isogrid-panel s19508 #26] plan           hole             -> 200 7 ms  Hole needs a flat face — click a face of a body
+  [isogrid-panel s19508 #27] tab-new                         -> 200 8 ms
+  [isogrid-panel s19508 #28] add            polygon_plate    -> 200 26 ms
+  [isogrid-panel s19508 #29] tab-switch                      -> 200 15 ms
+  [isogrid-panel s19508 #30] tab-close                       -> 200 13 ms
+  [isogrid-panel s19508 #31] tab-switch                      -> 200 12 ms
+  [isogrid-panel s19508 #32] plan           rotate           -> 200 9 ms
+  [isogrid-panel s19508 #33] add            hex_plate        -> 200 33 ms
+  [isogrid-panel s19508 #34] edit                            -> 200 140 ms
+  [isogrid-panel s19508 #35] undo                            -> 200 26 ms
+  [isogrid-panel s19508 #36] redo                            -> 200 22 ms
+  [isogrid-panel s19508 #37] add            plate            -> 200 19 ms
+  [isogrid-panel s19508 #38] undo                            -> 200 22 ms
+  [isogrid-panel s19508 #39] add            with_bolt_circle -> 200 110 ms
+  [isogrid-panel s19508 #40] add            sketch           -> 200 28 ms
+  [isogrid-panel s19508 #41] add            extrude          -> 200 39 ms
+  [isogrid-panel s19508 #42] edit                            -> 200 270 ms
+  [isogrid-panel s19508 #43] undo                            -> 200 39 ms
+  [isogrid-panel s19508 #44] redo                            -> 200 38 ms
+  [isogrid-panel s19508 #45] add            plate            -> 200 23 ms
+  [isogrid-panel s19508 #46] plan           move             -> 200 10 ms
+  [isogrid-panel s19508 #47] add            hole             -> 200 41 ms
+  [isogrid-panel s19508 #48] add            rotate           -> 200 36 ms
+  [isogrid-panel s19508 #49] add            sketch           -> 200 21 ms
+  [isogrid-panel s19508 #50] add            extrude          -> 200 42 ms
+  [isogrid-panel s19508 #51] plan           pattern          -> 200 13 ms  no plan for tool 'pattern' — known: ['chamfer', 'extrude', 'fillet', 'hole', 'linear_
+  [isogrid-panel s19508 #52] add            scale            -> 200 34 ms
+  [isogrid-panel s19508 #53] add            hex_plate        -> 200 40 ms
+  [isogrid-panel s19508 #54] undo                            -> 200 51 ms
+   clean
+-- journey 21: mcp-flange seed 19509
+  [mcp-flange s19509 #0] opened: 3 features, 1 bodies
+  [mcp-flange s19509 #1] add            sketch           -> 200 22 ms
+  [mcp-flange s19509 #2] add            extrude          -> 200 59 ms
+  [mcp-flange s19509 #3] edit                            -> 200 173 ms
+  [mcp-flange s19509 #4] undo                            -> 200 52 ms
+  [mcp-flange s19509 #5] redo                            -> 200 113 ms
+  [mcp-flange s19509 #6] add            shell            -> 200 7121 ms
+  [mcp-flange s19509 #7] edit                            -> 200 227 ms
+  [mcp-flange s19509 #8] undo                            -> 200 103 ms
+  [mcp-flange s19509 #9] redo                            -> 200 69 ms
+  [mcp-flange s19509 #10] plan           revolve          -> 200 13 ms  this profile cannot be revolved: it crosses v (-2.5 to 2.5 mm) and it crosses u (-2.5 to
+  [mcp-flange s19509 #11] add            scale            -> 200 337 ms
+  [mcp-flange s19509 #12] undo                            -> 200 76 ms
+  [mcp-flange s19509 #13] add            disc             -> 200 65 ms
+  [mcp-flange s19509 #14] tab-new                         -> 200 12 ms
+  [mcp-flange s19509 #15] add            plate            -> 200 12 ms
+  [mcp-flange s19509 #16] tab-switch                      -> 200 9 ms
+  [mcp-flange s19509 #17] tab-close                       -> 200 9 ms
+  [mcp-flange s19509 #18] tab-switch                      -> 200 8 ms
+  [mcp-flange s19509 #19] add            sketch_on_face   -> 200 15 ms
+  [mcp-flange s19509 #20] add            extrude          -> 200 72 ms
+  [mcp-flange s19509 #21] add            polar_pattern    -> 200 12 ms
+  [mcp-flange s19509 #22] add            fillet           -> 200 30 ms
+  [mcp-flange s19509 #23] undo                            -> 200 21 ms
+  [mcp-flange s19509 #24] add            cut              -> 200 53 ms
+  [mcp-flange s19509 #25] add            move             -> 200 18 ms
+  [mcp-flange s19509 #26] add            sketch_on_face   -> 200 14 ms
+  [mcp-flange s19509 #27] add            extrude          -> 200 15 ms
+  [mcp-flange s19509 #28] add            with_center_hole -> 200 19 ms
+  [mcp-flange s19509 #29] add            polygon_plate    -> 200 21 ms
+  [mcp-flange s19509 #30] plan           fillet           -> 200 27 ms
+  [mcp-flange s19509 #31] plan           revolve          -> 200 8 ms  Revolve needs a sketch profile or a picked flat face
+  [mcp-flange s19509 #32] edit                            -> 200 9 ms
+  [mcp-flange s19509 #33] strike                          -> 200 27 ms
+  [mcp-flange s19509 #34] restore                         -> 200 11 ms
+  [mcp-flange s19509 #35] add            move             -> 200 16 ms
+  [mcp-flange s19509 #36] add            polygon_plate    -> 200 19 ms
+  [mcp-flange s19509 #37] add            disc             -> 200 12 ms
+  [mcp-flange s19509 #38] add            plate            -> 200 16 ms
+  [mcp-flange s19509 #39] undo                            -> 200 31 ms
+  [mcp-flange s19509 #40] add            scale            -> 200 20 ms
+  [mcp-flange s19509 #41] add            sketch_on_face   -> 200 15 ms
+  [mcp-flange s19509 #42] add            extrude          -> 200 13 ms
+  [mcp-flange s19509 #43] add            ball             -> 200 12 ms
+  [mcp-flange s19509 #44] add            sketch           -> 200 13 ms
+  [mcp-flange s19509 #45] add            extrude          -> 200 15 ms
+  [mcp-flange s19509 #46] add            hole             -> 200 16 ms
+   clean
+-- journey 22: mcp-live-washer seed 19510
+  [mcp-live-washer s19510 #0] opened: 2 features, 1 bodies
+  [mcp-live-washer s19510 #1] add            tube             -> 200 41 ms
+  [mcp-live-washer s19510 #2] add            scale            -> 200 23 ms
+  [mcp-live-washer s19510 #3] add            fuse             -> 200 33 ms
+  [mcp-live-washer s19510 #4] add            sketch_on_face   -> 200 15 ms
+  [mcp-live-washer s19510 #5] add            extrude          -> 200 39 ms
+  [mcp-live-washer s19510 #6] rename                          -> 200 10 ms
+  [mcp-live-washer s19510 #7] rename                          -> 200 10 ms
+  [mcp-live-washer s19510 #8] doc                             -> 200 8 ms
+  [mcp-live-washer s19510 #9] add            sketch_on_face   -> 200 14 ms
+  [mcp-live-washer s19510 #10] add            extrude          -> 200 42 ms
+  [mcp-live-washer s19510 #11] edit                            -> 200 70 ms
+  [mcp-live-washer s19510 #12] undo                            -> 200 35 ms
+  [mcp-live-washer s19510 #13] redo                            -> 200 40 ms
+  [mcp-live-washer s19510 #14] add            polar_pattern    -> 200 9 ms
+  [mcp-live-washer s19510 #15] edit                            -> 200 23 ms
+  [mcp-live-washer s19510 #16] undo                            -> 200 10 ms
+  [mcp-live-washer s19510 #17] redo                            -> 200 18 ms
+  [mcp-live-washer s19510 #18] tab-new                         -> 200 9 ms
+  [mcp-live-washer s19510 #19] add            disc             -> 200 11 ms
+  [mcp-live-washer s19510 #20] tab-switch                      -> 200 9 ms
+  [mcp-live-washer s19510 #21] tab-close                       -> 200 10 ms
+  [mcp-live-washer s19510 #22] tab-switch                      -> 200 9 ms
+  [mcp-live-washer s19510 #23] add            with_center_hole -> 200 34 ms
+  [mcp-live-washer s19510 #24] strike                          -> 200 54 ms
+  [mcp-live-washer s19510 #25] restore                         -> 200 12 ms
+  [mcp-live-washer s19510 #26] strike                          -> 200 9 ms
+  [mcp-live-washer s19510 #27] restore                         -> 200 12 ms
+  [mcp-live-washer s19510 #28] edit                            -> 200 48 ms
+  [mcp-live-washer s19510 #29] undo                            -> 200 19 ms
+  [mcp-live-washer s19510 #30] redo                            -> 200 13 ms
+  [mcp-live-washer s19510 #31] tab-new                         -> 200 8 ms
+  [mcp-live-washer s19510 #32] add            disc             -> 200 12 ms
+  [mcp-live-washer s19510 #33] tab-switch                      -> 200 9 ms
+  [mcp-live-washer s19510 #34] tab-close                       -> 200 10 ms
+  [mcp-live-washer s19510 #35] tab-switch                      -> 200 11 ms
+  [mcp-live-washer s19510 #36] plan           extrude          -> 200 14 ms
+  [mcp-live-washer s19510 #37] add            fuse             -> 200 70 ms
+  [mcp-live-washer s19510 #38] add            mirror           -> 200 26 ms
+  [mcp-live-washer s19510 #39] plan           rotate           -> 200 12 ms
+  [mcp-live-washer s19510 #40] plan           sketch           -> 200 8 ms
+  [mcp-live-washer s19510 #41] add            ball             -> 200 14 ms
+  [mcp-live-washer s19510 #42] spec                            -> 200 10 ms
+  [mcp-live-washer s19510 #43] doc                             -> 200 8 ms
+  [mcp-live-washer s19510 #44] edit                            -> 200 126 ms
+  [mcp-live-washer s19510 #45] undo                            -> 200 16 ms
+  [mcp-live-washer s19510 #46] redo                            -> 200 16 ms
+  [mcp-live-washer s19510 #47] add            plate            -> 200 13 ms
+  [mcp-live-washer s19510 #48] undo                            -> 200 16 ms
+  [mcp-live-washer s19510 #49] rollback                        -> 200 9 ms
+  [mcp-live-washer s19510 #50] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [mcp-live-washer s19510 #51] rollback                        -> 200 10 ms
+  [mcp-live-washer s19510 #52] add            chamfer          -> 200 6825 ms
+  [mcp-live-washer s19510 #53] add            plate            -> 200 14 ms
+  [mcp-live-washer s19510 #54] add            with_center_hole -> 200 26 ms
+  [mcp-live-washer s19510 #55] tab-new                         -> 200 9 ms
+  [mcp-live-washer s19510 #56] add            tube             -> 200 20 ms
+  [mcp-live-washer s19510 #57] tab-switch                      -> 200 10 ms
+  [mcp-live-washer s19510 #58] tab-close                       -> 200 9 ms
+  [mcp-live-washer s19510 #59] tab-switch                      -> 200 9 ms
+  [mcp-live-washer s19510 #60] edit                            -> 200 10 ms
+   clean
+-- journey 23: my-part-2 seed 19511
+  [my-part-2 s19511 #0] opened: 5 features, 2 bodies
+  [my-part-2 s19511 #1] remove-plan                     -> 200 18 ms
+  [my-part-2 s19511 #2] remove                          -> 200 9 ms
+  [my-part-2 s19511 #3] add            ball             -> 200 13 ms
+  [my-part-2 s19511 #4] add            polygon_plate    -> 200 25 ms
+  [my-part-2 s19511 #5] add            move             -> 200 17 ms
+  [my-part-2 s19511 #6] add            plate            -> 200 13 ms
+  [my-part-2 s19511 #7] undo                            -> 200 20 ms
+  [my-part-2 s19511 #8] add            tube             -> 200 21 ms
+  [my-part-2 s19511 #9] undo                            -> 200 20 ms
+  [my-part-2 s19511 #10] add            hex_plate        -> 200 21 ms
+  [my-part-2 s19511 #11] edit                            -> 200 12 ms
+  [my-part-2 s19511 #12] undo                            -> 200 28 ms
+  [my-part-2 s19511 #13] redo                            -> 200 24 ms
+  [my-part-2 s19511 #14] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [my-part-2 s19511 #15] add            sketch_on_face   -> 200 15 ms
+  [my-part-2 s19511 #16] add            extrude          -> 200 13 ms
+  [my-part-2 s19511 #17] add            sketch           -> 200 28 ms
+  [my-part-2 s19511 #18] add            extrude          -> 200 16 ms
+  [my-part-2 s19511 #19] add            hex_plate        -> 200 30 ms
+  [my-part-2 s19511 #20] undo                            -> 200 29 ms
+  [my-part-2 s19511 #21] add            polygon_plate    -> 200 20 ms
+  [my-part-2 s19511 #22] edit                            -> 200 10 ms
+  [my-part-2 s19511 #23] edit                            -> 200 28 ms
+  [my-part-2 s19511 #24] undo                            -> 200 24 ms
+  [my-part-2 s19511 #25] redo                            -> 200 31 ms
+  [my-part-2 s19511 #26] remove-plan                     -> 200 8 ms
+  [my-part-2 s19511 #27] remove                          -> 200 9 ms
+  [my-part-2 s19511 #28] edit                            -> 200 72 ms
+  [my-part-2 s19511 #29] undo                            -> 200 34 ms
+  [my-part-2 s19511 #30] redo                            -> 200 32 ms
+  [my-part-2 s19511 #31] remove-plan                     -> 200 8 ms
+  [my-part-2 s19511 #32] remove                          -> 200 9 ms
+  [my-part-2 s19511 #33] add            with_center_hole -> 200 34 ms
+  [my-part-2 s19511 #34] add            fillet           -> 200 6978 ms
+  [my-part-2 s19511 #35] edit                            -> 200 31 ms
+  [my-part-2 s19511 #36] undo                            -> 200 30 ms
+  [my-part-2 s19511 #37] redo                            -> 200 32 ms
+  [my-part-2 s19511 #38] add            cone             -> 200 12 ms
+  [my-part-2 s19511 #39] add            fillet           -> 200 86 ms
+  [my-part-2 s19511 #40] tab-new                         -> 200 8 ms
+  [my-part-2 s19511 #41] add            hex_plate        -> 200 21 ms
+  [my-part-2 s19511 #42] tab-switch                      -> 200 8 ms
+  [my-part-2 s19511 #43] tab-close                       -> 200 9 ms
+  [my-part-2 s19511 #44] tab-switch                      -> 200 9 ms
+  [my-part-2 s19511 #45] add            cut              -> 200 23 ms
+  [my-part-2 s19511 #46] tab-new                         -> 200 8 ms
+  [my-part-2 s19511 #47] add            disc             -> 200 10 ms
+  [my-part-2 s19511 #48] tab-switch                      -> 200 9 ms
+  [my-part-2 s19511 #49] tab-close                       -> 200 9 ms
+  [my-part-2 s19511 #50] tab-switch                      -> 200 10 ms
+  [my-part-2 s19511 #51] edit                            -> 200 20 ms
+  [my-part-2 s19511 #52] undo                            -> 200 19 ms
+  [my-part-2 s19511 #53] redo                            -> 200 17 ms
+  [my-part-2 s19511 #54] add            with_center_hole -> 200 26 ms
+  [my-part-2 s19511 #55] add            with_bolt_circle -> 200 39 ms
+   clean
+-- journey 24: my-part-3 seed 19512
+  [my-part-3 s19512 #0] opened: 10 features, 1 bodies
+  [my-part-3 s19512 #1] add            sketch           -> 200 21 ms
+  [my-part-3 s19512 #2] add            extrude          -> 200 17 ms
+  [my-part-3 s19512 #3] add            fillet           -> 200 7072 ms
+  [my-part-3 s19512 #4] add            rotate           -> 200 17 ms
+  [my-part-3 s19512 #5] add            sketch_on_face   -> 200 20 ms
+  [my-part-3 s19512 #6] add            extrude          -> 200 17 ms
+  [my-part-3 s19512 #7] add            fuse             -> 200 30 ms
+  [my-part-3 s19512 #8] edit                            -> 200 267 ms
+  [my-part-3 s19512 #9] undo                            -> 200 12 ms
+  [my-part-3 s19512 #10] redo                            -> 200 13 ms
+  [my-part-3 s19512 #11] plan           revolve          -> 200 8 ms  Revolve needs a sketch profile or a picked flat face
+  [my-part-3 s19512 #12] plan           rotate           -> 200 9 ms
+  [my-part-3 s19512 #13] edit                            -> 200 16 ms
+  [my-part-3 s19512 #14] add            sketch           -> 200 13 ms
+  [my-part-3 s19512 #15] add            extrude          -> 200 23 ms
+  [my-part-3 s19512 #16] edit                            -> 200 40 ms
+  [my-part-3 s19512 #17] undo                            -> 200 19 ms
+  [my-part-3 s19512 #18] redo                            -> 200 19 ms
+  [my-part-3 s19512 #19] add            fillet           -> 200 84 ms
+  [my-part-3 s19512 #20] add            mirror           -> 200 14 ms
+  [my-part-3 s19512 #21] remove-plan                     -> 200 11 ms
+  [my-part-3 s19512 #22] remove                          -> 200 11 ms
+  [my-part-3 s19512 #23] strike                          -> 200 11 ms
+  [my-part-3 s19512 #24] restore                         -> 200 10 ms
+  [my-part-3 s19512 #25] plan           pattern          -> 200 10 ms  no plan for tool 'pattern' — known: ['chamfer', 'extrude', 'fillet', 'hole', 'linear_patt
+  [my-part-3 s19512 #26] add            sketch_on_face   -> 200 20 ms
+  [my-part-3 s19512 #27] add            extrude          -> 200 21 ms
+  [my-part-3 s19512 #28] add            ball             -> 200 21 ms
+  [my-part-3 s19512 #29] undo                            -> 200 13 ms
+  [my-part-3 s19512 #30] edit                            -> 200 12 ms
+  [my-part-3 s19512 #31] add            move             -> 200 14 ms
+  [my-part-3 s19512 #32] edit                            -> 200 418 ms
+  [my-part-3 s19512 #33] undo                            -> 200 12 ms
+  [my-part-3 s19512 #34] redo                            -> 200 11 ms
+  [my-part-3 s19512 #35] add            polar_pattern    -> 200 11 ms
+  [my-part-3 s19512 #36] add            plate            -> 200 15 ms
+  [my-part-3 s19512 #37] suppress                        -> 200 26 ms
+  [my-part-3 s19512 #38] suppress                        -> 200 10 ms
+  [my-part-3 s19512 #39] doc                             -> 200 9 ms
+  [my-part-3 s19512 #40] add            cut              -> 200 28 ms
+  [my-part-3 s19512 #41] edit                            -> 200 243 ms
+  [my-part-3 s19512 #42] undo                            -> 200 12 ms
+  [my-part-3 s19512 #43] redo                            -> 200 10 ms
+  [my-part-3 s19512 #44] remove-plan                     -> 400 10 ms  cannot remove 'j12_sketch_on_face': used by ['j13_extrude']
+  [my-part-3 s19512 #45] remove                          -> 400 10 ms  cannot remove 'j12_sketch_on_face': used by ['j13_extrude']
+  [my-part-3 s19512 #46] rename                          -> 200 10 ms
+  [my-part-3 s19512 #47] rename                          -> 200 10 ms
+  [my-part-3 s19512 #48] doc                             -> 200 8 ms
+  [my-part-3 s19512 #49] strike                          -> 200 400 ms
+  [my-part-3 s19512 #50] restore                         -> 200 11 ms
+  [my-part-3 s19512 #51] edit                            -> 200 249 ms
+  [my-part-3 s19512 #52] undo                            -> 200 12 ms
+  [my-part-3 s19512 #53] redo                            -> 200 12 ms
+   clean
+-- journey 25: my-part-4 seed 19513
+  [my-part-4 s19513 #0] opened: 1 features, 0 bodies
+  [my-part-4 s19513 #1] add            polygon_plate    -> 200 32 ms
+  [my-part-4 s19513 #2] add            with_center_hole -> 200 31 ms
+  [my-part-4 s19513 #3] tab-new                         -> 200 9 ms
+  [my-part-4 s19513 #4] add            plate            -> 200 12 ms
+  [my-part-4 s19513 #5] tab-switch                      -> 200 9 ms
+  [my-part-4 s19513 #6] tab-close                       -> 200 9 ms
+  [my-part-4 s19513 #7] tab-switch                      -> 200 9 ms
+  [my-part-4 s19513 #8] tab-new                         -> 200 8 ms
+  [my-part-4 s19513 #9] add            cone             -> 200 11 ms
+  [my-part-4 s19513 #10] tab-switch                      -> 200 8 ms
+  [my-part-4 s19513 #11] tab-close                       -> 200 8 ms
+  [my-part-4 s19513 #12] tab-switch                      -> 200 12 ms
+  [my-part-4 s19513 #13] add            scale            -> 200 16 ms
+  [my-part-4 s19513 #14] plan           hole             -> 200 9 ms  Hole needs a flat face — click a face of a body
+  [my-part-4 s19513 #15] add            sketch           -> 200 11 ms
+  [my-part-4 s19513 #16] add            extrude          -> 200 25 ms
+  [my-part-4 s19513 #17] add            with_center_hole -> 200 22 ms
+  [my-part-4 s19513 #18] add            cone             -> 200 12 ms
+  [my-part-4 s19513 #19] undo                            -> 200 12 ms
+  [my-part-4 s19513 #20] add            move             -> 200 19 ms
+  [my-part-4 s19513 #21] add            with_bolt_circle -> 200 93 ms
+  [my-part-4 s19513 #22] undo                            -> 200 13 ms
+  [my-part-4 s19513 #23] add            sketch_on_face   -> 200 15 ms
+  [my-part-4 s19513 #24] add            extrude          -> 200 12 ms
+  [my-part-4 s19513 #25] add            shell            -> 200 7034 ms
+  [my-part-4 s19513 #26] add            intersect        -> 200 13 ms
+  [my-part-4 s19513 #27] add            with_bolt_circle -> 200 12 ms
+  [my-part-4 s19513 #28] undo                            -> 200 9 ms
+  [my-part-4 s19513 #29] add            hex_plate        -> 200 22 ms
+  [my-part-4 s19513 #30] add            polar_pattern    -> 200 10 ms
+  [my-part-4 s19513 #31] add            ball             -> 200 14 ms
+  [my-part-4 s19513 #32] add            sketch           -> 200 12 ms
+  [my-part-4 s19513 #33] add            extrude          -> 200 16 ms
+  [my-part-4 s19513 #34] add            polar_pattern    -> 200 11 ms
+  [my-part-4 s19513 #35] add            move             -> 200 11 ms
+  [my-part-4 s19513 #36] undo                            -> 200 10 ms
+  [my-part-4 s19513 #37] add            ball             -> 200 12 ms
+  [my-part-4 s19513 #38] undo                            -> 200 10 ms
+  [my-part-4 s19513 #39] add            disc             -> 200 13 ms
+  [my-part-4 s19513 #40] add            fillet           -> 200 26 ms
+  [my-part-4 s19513 #41] strike                          -> 200 13 ms
+  [my-part-4 s19513 #42] restore                         -> 200 11 ms
+  [my-part-4 s19513 #43] strike                          -> 200 10 ms
+  [my-part-4 s19513 #44] restore                         -> 200 11 ms
+  [my-part-4 s19513 #45] add            hole             -> 200 25 ms
+  [my-part-4 s19513 #46] plan           shell            -> 200 14 ms
+  [my-part-4 s19513 #47] add            chamfer          -> 200 10 ms
+  [my-part-4 s19513 #48] add            hex_plate        -> 200 27 ms
+   clean
+-- journey 26: my-part-5 seed 19514
+  [my-part-5 s19514 #0] opened: 24 features, 3 bodies
+  [my-part-5 s19514 #1] add            tube             -> 200 35 ms
+  [my-part-5 s19514 #2] add            polygon_plate    -> 200 35 ms
+  [my-part-5 s19514 #3] strike                          -> 200 61 ms
+  [my-part-5 s19514 #4] restore                         -> 200 10 ms
+  [my-part-5 s19514 #5] add            intersect        -> 200 18 ms
+  [my-part-5 s19514 #6] add            intersect        -> 200 10 ms
+  [my-part-5 s19514 #7] strike                          -> 200 10 ms
+  [my-part-5 s19514 #8] restore                         -> 200 11 ms
+  [my-part-5 s19514 #9] remove-plan                     -> 200 9 ms
+  [my-part-5 s19514 #10] remove                          -> 200 10 ms
+  [my-part-5 s19514 #11] add            chamfer          -> 200 6747 ms
+  [my-part-5 s19514 #12] undo                            -> 200 25 ms
+  [my-part-5 s19514 #13] add            cone             -> 200 13 ms
+  [my-part-5 s19514 #14] undo                            -> 200 24 ms
+  [my-part-5 s19514 #15] add            fillet           -> 200 11 ms
+  [my-part-5 s19514 #16] edit                            -> 200 11 ms
+  [my-part-5 s19514 #17] add            with_bolt_circle -> 200 28 ms
+  [my-part-5 s19514 #18] add            mirror           -> 200 340 ms
+  [my-part-5 s19514 #19] spec                            -> 200 14 ms
+  [my-part-5 s19514 #20] doc                             -> 200 9 ms
+  [my-part-5 s19514 #21] add            shell            -> 200 718 ms
+  [my-part-5 s19514 #22] add            sketch           -> 200 15 ms
+  [my-part-5 s19514 #23] add            extrude          -> 200 20 ms
+  [my-part-5 s19514 #24] add            sketch_on_face   -> 200 18 ms
+  [my-part-5 s19514 #25] add            extrude          -> 200 17 ms
+  [my-part-5 s19514 #26] add            cut              -> 200 22 ms
+  [my-part-5 s19514 #27] add            disc             -> 200 17 ms
+  [my-part-5 s19514 #28] undo                            -> 200 13 ms
+  [my-part-5 s19514 #29] strike                          -> 200 13 ms
+  [my-part-5 s19514 #30] restore                         -> 200 14 ms
+  [my-part-5 s19514 #31] add            disc             -> 200 19 ms
+  [my-part-5 s19514 #32] add            fuse             -> 200 36 ms
+  [my-part-5 s19514 #33] plan           fillet           -> 200 17 ms
+  [my-part-5 s19514 #34] add            sketch           -> 200 14 ms
+  [my-part-5 s19514 #35] add            extrude          -> 200 31 ms
+  [my-part-5 s19514 #36] add            sketch           -> 200 16 ms
+  [my-part-5 s19514 #37] add            extrude          -> 200 42 ms
+  [my-part-5 s19514 #38] add            move             -> 200 19 ms
+  [my-part-5 s19514 #39] add            chamfer          -> 200 104 ms
+  [my-part-5 s19514 #40] undo                            -> 200 26 ms
+  [my-part-5 s19514 #41] add            fillet           -> 200 89 ms
+  [my-part-5 s19514 #42] undo                            -> 200 30 ms
+  [my-part-5 s19514 #43] add            rotate           -> 200 20 ms
+   clean
+-- journey 27: my-part-8 seed 19515
+  [my-part-8 s19515 #0] opened: 27 features, 2 bodies
+  [my-part-8 s19515 #1] add            polar_pattern    -> 200 25 ms
+  [my-part-8 s19515 #2] plan           extrude          -> 200 9 ms  Extrude needs a sketch profile or a picked flat face
+  [my-part-8 s19515 #3] add            shell            -> 200 8603 ms
+  [my-part-8 s19515 #4] plan           extrude          -> 200 11 ms
+  [my-part-8 s19515 #5] plan           extrude          -> 200 11 ms
+  [my-part-8 s19515 #6] add            sketch           -> 200 15 ms
+  [my-part-8 s19515 #7] add            extrude          -> 200 33 ms
+  [my-part-8 s19515 #8] add            move             -> 200 23 ms
+  [my-part-8 s19515 #9] edit                            -> 200 14 ms
+  [my-part-8 s19515 #10] undo                            -> 200 20 ms
+  [my-part-8 s19515 #11] redo                            -> 200 21 ms
+  [my-part-8 s19515 #12] add            sketch           -> 200 14 ms
+  [my-part-8 s19515 #13] add            extrude          -> 200 18 ms
+  [my-part-8 s19515 #14] plan           hole             -> 200 8 ms  Hole needs a flat face — click a face of a body
+  [my-part-8 s19515 #15] plan           revolve          -> 200 32 ms
+  [my-part-8 s19515 #16] add            polygon_plate    -> 200 36 ms
+  [my-part-8 s19515 #17] add            with_bolt_circle -> 200 91 ms
+  [my-part-8 s19515 #18] add            mirror           -> 200 26 ms
+  [my-part-8 s19515 #19] add            intersect        -> 200 37 ms
+  [my-part-8 s19515 #20] strike                          -> 200 16 ms
+  [my-part-8 s19515 #21] restore                         -> 200 18 ms
+  [my-part-8 s19515 #22] plan           hole             -> 200 8 ms  Hole needs a flat face — click a face of a body
+  [my-part-8 s19515 #23] add            shell            -> 200 132 ms
+  [my-part-8 s19515 #24] add            polar_pattern    -> 200 14 ms
+  [my-part-8 s19515 #25] undo                            -> 200 31 ms
+  [my-part-8 s19515 #26] add            fillet           -> 200 144 ms
+  [my-part-8 s19515 #27] add            sketch_on_face   -> 200 30 ms
+  [my-part-8 s19515 #28] add            extrude          -> 200 21 ms
+  [my-part-8 s19515 #29] add            polygon_plate    -> 200 30 ms
+  [my-part-8 s19515 #30] add            sketch_on_face   -> 200 22 ms
+  [my-part-8 s19515 #31] add            extrude          -> 200 18 ms
+  [my-part-8 s19515 #32] plan           fillet           -> 200 16 ms
+  [my-part-8 s19515 #33] add            ball             -> 200 19 ms
+  [my-part-8 s19515 #34] add            sketch           -> 200 17 ms
+  [my-part-8 s19515 #35] add            extrude          -> 200 20 ms
+  [my-part-8 s19515 #36] edit                            -> 200 956 ms
+  [my-part-8 s19515 #37] undo                            -> 200 33 ms
+  [my-part-8 s19515 #38] redo                            -> 200 30 ms
+  [my-part-8 s19515 #39] add            sketch           -> 200 16 ms
+  [my-part-8 s19515 #40] add            extrude          -> 200 18 ms
+  [my-part-8 s19515 #41] remove-plan                     -> 400 12 ms  cannot remove 'revolve6_join1': used by ['hole1']
+  [my-part-8 s19515 #42] remove                          -> 400 12 ms  cannot remove 'revolve6_join1': used by ['hole1']
+   clean
+-- journey 28: my-part-9 seed 19516
+  [my-part-9 s19516 #0] opened: 30 features, 1 bodies
+  [my-part-9 s19516 #1] edit                            -> 200 405 ms
+  [my-part-9 s19516 #2] undo                            -> 200 32 ms
+  [my-part-9 s19516 #3] redo                            -> 200 23 ms
+  [my-part-9 s19516 #4] edit                            -> 200 187 ms
+  [my-part-9 s19516 #5] undo                            -> 200 36 ms
+  [my-part-9 s19516 #6] redo                            -> 200 30 ms
+  [my-part-9 s19516 #7] plan           shell            -> 200 47 ms
+  [my-part-9 s19516 #8] add            sketch_on_face   -> 200 28 ms
+  [my-part-9 s19516 #9] add            extrude          -> 200 19 ms
+  [my-part-9 s19516 #10] add            sketch           -> 200 15 ms
+  [my-part-9 s19516 #11] add            extrude          -> 200 16 ms
+  [my-part-9 s19516 #12] edit                            -> 200 11 ms
+  [my-part-9 s19516 #13] tab-new                         -> 200 9 ms
+  [my-part-9 s19516 #14] add            ball             -> 200 10 ms
+  [my-part-9 s19516 #15] tab-switch                      -> 200 10 ms
+  [my-part-9 s19516 #16] tab-close                       -> 200 10 ms
+  [my-part-9 s19516 #17] tab-switch                      -> 200 11 ms
+  [my-part-9 s19516 #18] add            chamfer          -> 200 172 ms
+  [my-part-9 s19516 #19] add            shell            -> 200 91 ms
+  [my-part-9 s19516 #20] strike                          -> 200 772 ms
+  [my-part-9 s19516 #21] restore                         -> 200 12 ms
+  [my-part-9 s19516 #22] add            cut              -> 200 35 ms
+  [my-part-9 s19516 #23] strike                          -> 200 460 ms
+  [my-part-9 s19516 #24] restore                         -> 200 12 ms
+  [my-part-9 s19516 #25] add            hole             -> 200 20 ms
+  [my-part-9 s19516 #26] rollback                        -> 200 12 ms
+  [my-part-9 s19516 #27] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [my-part-9 s19516 #28] rollback                        -> 200 11 ms
+  [my-part-9 s19516 #29] add            chamfer          -> 200 31 ms
+  [my-part-9 s19516 #30] add            sketch           -> 200 16 ms
+  [my-part-9 s19516 #31] add            extrude          -> 200 16 ms
+  [my-part-9 s19516 #32] add            polygon_plate    -> 200 28 ms
+  [my-part-9 s19516 #33] undo                            -> 200 12 ms
+  [my-part-9 s19516 #34] add            sketch           -> 200 15 ms
+  [my-part-9 s19516 #35] add            extrude          -> 200 19 ms
+  [my-part-9 s19516 #36] edit                            -> 200 20 ms
+  [my-part-9 s19516 #37] undo                            -> 200 19 ms
+  [my-part-9 s19516 #38] redo                            -> 200 15 ms
+  [my-part-9 s19516 #39] add            sketch_on_face   -> 200 18 ms
+  [my-part-9 s19516 #40] add            extrude          -> 200 17 ms
+  [my-part-9 s19516 #41] strike                          -> 200 144 ms
+  [my-part-9 s19516 #42] restore                         -> 200 14 ms
+  [my-part-9 s19516 #43] add            polar_pattern    -> 200 13 ms
+  [my-part-9 s19516 #44] rename                          -> 200 13 ms
+  [my-part-9 s19516 #45] rename                          -> 200 12 ms
+  [my-part-9 s19516 #46] doc                             -> 200 9 ms
+  [my-part-9 s19516 #47] add            with_center_hole -> 200 34 ms
+  [my-part-9 s19516 #48] rename                          -> 200 12 ms
+  [my-part-9 s19516 #49] rename                          -> 200 13 ms
+  [my-part-9 s19516 #50] doc                             -> 200 9 ms
+  [my-part-9 s19516 #51] add            shell            -> 200 63 ms
+  [my-part-9 s19516 #52] rollback                        -> 200 12 ms
+  [my-part-9 s19516 #53] plan           extrude          -> 200 7 ms  Extrude needs a sketch profile or a picked flat face
+  [my-part-9 s19516 #54] rollback                        -> 200 13 ms
+  [my-part-9 s19516 #55] edit                            -> 200 85 ms
+  [my-part-9 s19516 #56] undo                            -> 200 14 ms
+  [my-part-9 s19516 #57] redo                            -> 200 20 ms
+  [my-part-9 s19516 #58] plan           fillet           -> 200 10 ms
+  [my-part-9 s19516 #59] edit                            -> 200 22 ms
+  [my-part-9 s19516 #60] undo                            -> 200 17 ms
+  [my-part-9 s19516 #61] redo                            -> 200 18 ms
+   clean
+-- journey 29: my-part seed 19517
+  [my-part s19517 #0] opened: 2 features, 1 bodies
+  [my-part s19517 #1] plan           fillet           -> 200 18 ms  Fillet needs the edges of a body — click an edge, a face, or a row of the tree
+  [my-part s19517 #2] add            rotate           -> 200 76 ms
+  [my-part s19517 #3] add            sketch_on_face   -> 200 30 ms
+  [my-part s19517 #4] add            extrude          -> 200 13 ms
+  [my-part s19517 #5] strike                          -> 200 32 ms
+  [my-part s19517 #6] restore                         -> 200 9 ms
+  [my-part s19517 #7] add            hex_plate        -> 200 21 ms
+  [my-part s19517 #8] undo                            -> 200 48 ms
+  [my-part s19517 #9] add            scale            -> 200 65 ms
+  [my-part s19517 #10] undo                            -> 200 48 ms
+  [my-part s19517 #11] plan           mirror           -> 200 8 ms  Mirror needs a feature or a body to mirror — click a hole, a boss or a body, or select a row
+  [my-part s19517 #12] plan           move             -> 200 9 ms
+  [my-part s19517 #13] plan           shell            -> 200 38 ms
+  [my-part s19517 #14] add            shell            -> 200 11 ms
+  [my-part s19517 #15] strike                          -> 200 9 ms
+  [my-part s19517 #16] restore                         -> 200 9 ms
+  [my-part s19517 #17] add            shell            -> 200 6999 ms
+  [my-part s19517 #18] undo                            -> 200 44 ms
+  [my-part s19517 #19] add            scale            -> 200 63 ms
+  [my-part s19517 #20] add            sketch_on_face   -> 200 32 ms
+  [my-part s19517 #21] add            extrude          -> 200 15 ms
+  [my-part s19517 #22] add            move             -> 200 63 ms
+  [my-part s19517 #23] add            shell            -> 200 14 ms
+  [my-part s19517 #24] undo                            -> 200 48 ms
+  [my-part s19517 #25] plan           extrude          -> 200 32 ms
+  [my-part s19517 #26] add            chamfer          -> 200 248 ms
+  [my-part s19517 #27] add            sketch           -> 200 12 ms
+  [my-part s19517 #28] add            extrude          -> 200 13 ms
+  [my-part s19517 #29] add            tube             -> 200 23 ms
+  [my-part s19517 #30] undo                            -> 200 54 ms
+  [my-part s19517 #31] add            with_center_hole -> 200 34 ms
+  [my-part s19517 #32] add            fillet           -> 200 97 ms
+  [my-part s19517 #33] add            cone             -> 200 12 ms
+  [my-part s19517 #34] add            chamfer          -> 200 1060 ms
+  [my-part s19517 #35] add            mirror           -> 200 19 ms
+  [my-part s19517 #36] add            cone             -> 200 12 ms
+  [my-part s19517 #37] plan           hole             -> 200 8 ms  Hole needs a flat face — click a face of a body
+  [my-part s19517 #38] edit                            -> 200 1082 ms
+  [my-part s19517 #39] undo                            -> 200 19 ms
+  [my-part s19517 #40] redo                            -> 200 20 ms
+  [my-part s19517 #41] edit                            -> 200 10 ms
+  [my-part s19517 #42] add            sketch_on_face   -> 200 14 ms
+  [my-part s19517 #43] add            extrude          -> 200 20 ms
+   clean
+-- journey 30: oneplus_7_pro_case seed 19518
+  [oneplus_7_pro_case s19518 #0] opened: 22 features, 1 bodies
+  [oneplus_7_pro_case s19518 #1] add            fillet           -> 200 7477 ms
+  [oneplus_7_pro_case s19518 #2] add            sketch           -> 200 13 ms
+  [oneplus_7_pro_case s19518 #3] add            extrude          -> 200 14 ms
+  [oneplus_7_pro_case s19518 #4] tab-new                         -> 200 9 ms
+  [oneplus_7_pro_case s19518 #5] add            hex_plate        -> 200 23 ms
+  [oneplus_7_pro_case s19518 #6] tab-switch                      -> 200 10 ms
+  [oneplus_7_pro_case s19518 #7] tab-close                       -> 200 10 ms
+  [oneplus_7_pro_case s19518 #8] tab-switch                      -> 200 9 ms
+  [oneplus_7_pro_case s19518 #9] tab-new                         -> 200 9 ms
+  [oneplus_7_pro_case s19518 #10] add            ball             -> 200 11 ms
+  [oneplus_7_pro_case s19518 #11] tab-switch                      -> 200 9 ms
+  [oneplus_7_pro_case s19518 #12] tab-close                       -> 200 10 ms
+  [oneplus_7_pro_case s19518 #13] tab-switch                      -> 200 10 ms
+  [oneplus_7_pro_case s19518 #14] plan           rotate           -> 200 10 ms
+  [oneplus_7_pro_case s19518 #15] rollback                        -> 200 11 ms
+  [oneplus_7_pro_case s19518 #16] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [oneplus_7_pro_case s19518 #17] rollback                        -> 200 11 ms
+  [oneplus_7_pro_case s19518 #18] add            sketch_on_face   -> 200 15 ms
+  [oneplus_7_pro_case s19518 #19] add            extrude          -> 200 15 ms
+  [oneplus_7_pro_case s19518 #20] tab-new                         -> 200 8 ms
+  [oneplus_7_pro_case s19518 #21] add            cone             -> 200 12 ms
+  [oneplus_7_pro_case s19518 #22] tab-switch                      -> 200 9 ms
+  [oneplus_7_pro_case s19518 #23] tab-close                       -> 200 9 ms
+  [oneplus_7_pro_case s19518 #24] tab-switch                      -> 200 9 ms
+  [oneplus_7_pro_case s19518 #25] plan           mirror           -> 200 8 ms  Mirror needs a feature or a body to mirror — click a hole, a boss or a body, or s
+  [oneplus_7_pro_case s19518 #26] plan           sketch           -> 200 9 ms
+  [oneplus_7_pro_case s19518 #27] add            sketch_on_face   -> 200 16 ms
+  [oneplus_7_pro_case s19518 #28] add            extrude          -> 200 14 ms
+  [oneplus_7_pro_case s19518 #29] edit                            -> 200 880 ms
+  [oneplus_7_pro_case s19518 #30] undo                            -> 200 17 ms
+  [oneplus_7_pro_case s19518 #31] redo                            -> 200 15 ms
+  [oneplus_7_pro_case s19518 #32] add            sketch_on_face   -> 200 14 ms
+  [oneplus_7_pro_case s19518 #33] add            extrude          -> 200 15 ms
+  [oneplus_7_pro_case s19518 #34] add            polygon_plate    -> 200 21 ms
+  [oneplus_7_pro_case s19518 #35] add            polar_pattern    -> 200 11 ms
+  [oneplus_7_pro_case s19518 #36] add            mirror           -> 200 30 ms
+  [oneplus_7_pro_case s19518 #37] edit                            -> 200 13 ms
+  [oneplus_7_pro_case s19518 #38] strike                          -> 200 11 ms
+  [oneplus_7_pro_case s19518 #39] restore                         -> 200 12 ms
+  [oneplus_7_pro_case s19518 #40] tab-new                         -> 200 10 ms
+  [oneplus_7_pro_case s19518 #41] add            cone             -> 200 12 ms
+  [oneplus_7_pro_case s19518 #42] tab-switch                      -> 200 10 ms
+  [oneplus_7_pro_case s19518 #43] tab-close                       -> 200 12 ms
+  [oneplus_7_pro_case s19518 #44] tab-switch                      -> 200 9 ms
+  [oneplus_7_pro_case s19518 #45] edit                            -> 200 10 ms
+  [oneplus_7_pro_case s19518 #46] undo                            -> 200 14 ms
+  [oneplus_7_pro_case s19518 #47] redo                            -> 200 18 ms
+  [oneplus_7_pro_case s19518 #48] edit                            -> 200 791 ms
+  [oneplus_7_pro_case s19518 #49] undo                            -> 200 15 ms
+  [oneplus_7_pro_case s19518 #50] redo                            -> 200 14 ms
+  [oneplus_7_pro_case s19518 #51] add            hex_plate        -> 200 26 ms
+  [oneplus_7_pro_case s19518 #52] undo                            -> 200 21 ms
+  [oneplus_7_pro_case s19518 #53] rename                          -> 200 13 ms
+  [oneplus_7_pro_case s19518 #54] rename                          -> 200 11 ms
+  [oneplus_7_pro_case s19518 #55] doc                             -> 200 9 ms
+  [oneplus_7_pro_case s19518 #56] add            chamfer          -> 200 58 ms
+  [oneplus_7_pro_case s19518 #57] add            mirror           -> 200 18 ms
+  [oneplus_7_pro_case s19518 #58] strike                          -> 200 852 ms
+  [oneplus_7_pro_case s19518 #59] restore                         -> 200 11 ms
+  [oneplus_7_pro_case s19518 #60] tab-new                         -> 200 8 ms
+  [oneplus_7_pro_case s19518 #61] add            cone             -> 200 12 ms
+  [oneplus_7_pro_case s19518 #62] tab-switch                      -> 200 9 ms
+  [oneplus_7_pro_case s19518 #63] tab-close                       -> 200 10 ms
+  [oneplus_7_pro_case s19518 #64] tab-switch                      -> 200 10 ms
+  [oneplus_7_pro_case s19518 #65] add            sketch           -> 200 15 ms
+  [oneplus_7_pro_case s19518 #66] add            extrude          -> 200 16 ms
+  [oneplus_7_pro_case s19518 #67] add            hole             -> 200 16 ms
+  [oneplus_7_pro_case s19518 #68] add            sketch           -> 200 13 ms
+  [oneplus_7_pro_case s19518 #69] add            extrude          -> 200 18 ms
+   clean
+-- journey 31: planetary-assembly seed 19519
+  [planetary-assembly s19519 #0] opened: 64 features, 1 bodies
+  [planetary-assembly s19519 #1] edit                            -> 200 6769 ms
+  [planetary-assembly s19519 #2] undo                            -> 200 1366 ms
+  [planetary-assembly s19519 #3] redo                            -> 200 1489 ms
+  [planetary-assembly s19519 #4] add            mirror           -> 200 10336 ms
+  [planetary-assembly s19519 #5] add            polygon_plate    -> 200 1404 ms
+  [planetary-assembly s19519 #6] plan           extrude          -> 200 12 ms
+  [planetary-assembly s19519 #7] add            sketch_on_face   -> 200 14 ms
+  [planetary-assembly s19519 #8] add            extrude          -> 200 1428 ms
+  [planetary-assembly s19519 #9] rollback                        -> 200 13 ms
+  [planetary-assembly s19519 #10] plan           extrude          -> 200 7 ms  Extrude needs a sketch profile or a picked flat face
+  [planetary-assembly s19519 #11] rollback                        -> 200 13 ms
+  [planetary-assembly s19519 #12] edit                            -> 200 14495 ms
+  [planetary-assembly s19519 #13] undo                            -> 200 1801 ms
+  [planetary-assembly s19519 #14] redo                            -> 200 1777 ms
+  [planetary-assembly s19519 #15] add            shell            -> 200 12005 ms
+  [planetary-assembly s19519 #16] add            chamfer          -> 200 25230 ms
+  [planetary-assembly s19519 #17] add            intersect        -> 200 25 ms
+  [planetary-assembly s19519 #18] add            scale            -> 200 15 ms
+  [planetary-assembly s19519 #19] edit                            -> 200 18 ms
+  [planetary-assembly s19519 #20] undo                            -> 200 14 ms
+  [planetary-assembly s19519 #21] redo                            -> 200 14 ms
+  [planetary-assembly s19519 #22] add            hex_plate        -> 200 31 ms
+  [planetary-assembly s19519 #23] add            plate            -> 200 18 ms
+  [planetary-assembly s19519 #24] undo                            -> 200 18 ms
+  [planetary-assembly s19519 #25] add            sketch_on_face   -> 200 20 ms
+  [planetary-assembly s19519 #26] add            extrude          -> 200 19 ms
+  [planetary-assembly s19519 #27] edit                            -> 200 15 ms
+  [planetary-assembly s19519 #28] edit                            -> 200 870 ms
+  [planetary-assembly s19519 #29] undo                            -> 200 21 ms
+  [planetary-assembly s19519 #30] redo                            -> 200 21 ms
+  [planetary-assembly s19519 #31] add            plate            -> 200 20 ms
+  [planetary-assembly s19519 #32] undo                            -> 200 21 ms
+  [planetary-assembly s19519 #33] add            polar_pattern    -> 200 15 ms
+  [planetary-assembly s19519 #34] plan           move             -> 200 9 ms
+  [planetary-assembly s19519 #35] edit                            -> 200 86 ms
+  [planetary-assembly s19519 #36] undo                            -> 200 18 ms
+  [planetary-assembly s19519 #37] redo                            -> 200 17 ms
+  [planetary-assembly s19519 #38] tab-new                         -> 200 9 ms
+  [planetary-assembly s19519 #39] add            ball             -> 200 11 ms
+  [planetary-assembly s19519 #40] tab-switch                      -> 200 14 ms
+  [planetary-assembly s19519 #41] tab-close                       -> 200 12 ms
+  [planetary-assembly s19519 #42] tab-switch                      -> 200 12 ms
+  [planetary-assembly s19519 #43] strike                          -> 200 18 ms
+  [planetary-assembly s19519 #44] restore                         -> 200 16 ms
+  [planetary-assembly s19519 #45] plan           mirror           -> 200 8 ms  Mirror needs a feature or a body to mirror — click a hole, a boss or a body, or s
+  [planetary-assembly s19519 #46] add            sketch_on_face   -> 200 22 ms
+  [planetary-assembly s19519 #47] add            extrude          -> 200 19 ms
+  [planetary-assembly s19519 #48] plan           revolve          -> 200 16 ms  this profile cannot be revolved: it crosses v (-1.1 to 1.1 mm) and it crosses u 
+  [planetary-assembly s19519 #49] plan           pattern          -> 200 8 ms  no plan for tool 'pattern' — known: ['chamfer', 'extrude', 'fillet', 'hole', 'lin
+  [planetary-assembly s19519 #50] add            scale            -> 200 21 ms
+  [planetary-assembly s19519 #51] add            sketch           -> 200 18 ms
+  [planetary-assembly s19519 #52] add            extrude          -> 200 31 ms
+  [planetary-assembly s19519 #53] add            fillet           -> 200 20 ms
+   clean
+-- journey 32: planetary-base seed 19520
+  [planetary-base s19520 #0] opened: 7 features, 1 bodies
+  [planetary-base s19520 #1] add            sketch_on_face   -> 200 27 ms
+  [planetary-base s19520 #2] add            extrude          -> 200 49 ms
+  [planetary-base s19520 #3] add            polygon_plate    -> 200 77 ms
+  [planetary-base s19520 #4] edit                            -> 200 77 ms
+  [planetary-base s19520 #5] undo                            -> 200 60 ms
+  [planetary-base s19520 #6] redo                            -> 200 70 ms
+  [planetary-base s19520 #7] rollback                        -> 200 9 ms
+  [planetary-base s19520 #8] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [planetary-base s19520 #9] rollback                        -> 200 16 ms
+  [planetary-base s19520 #10] add            scale            -> 200 72 ms
+  [planetary-base s19520 #11] rollback                        -> 200 9 ms
+  [planetary-base s19520 #12] plan           extrude          -> 200 7 ms  Extrude needs a sketch profile or a picked flat face
+  [planetary-base s19520 #13] rollback                        -> 200 9 ms
+  [planetary-base s19520 #14] add            scale            -> 200 73 ms
+  [planetary-base s19520 #15] plan           sketch           -> 200 8 ms
+  [planetary-base s19520 #16] strike                          -> 200 120 ms
+  [planetary-base s19520 #17] restore                         -> 200 68 ms
+  [planetary-base s19520 #18] add            fillet           -> 200 7049 ms
+  [planetary-base s19520 #19] plan           sketch           -> 200 9 ms
+  [planetary-base s19520 #20] rename                          -> 200 11 ms
+  [planetary-base s19520 #21] rename                          -> 200 9 ms
+  [planetary-base s19520 #22] doc                             -> 200 9 ms
+  [planetary-base s19520 #23] remove-plan                     -> 200 11 ms
+  [planetary-base s19520 #24] remove                          -> 200 67 ms
+  [planetary-base s19520 #25] plan           shell            -> 200 16 ms
+  [planetary-base s19520 #26] edit                            -> 200 187 ms
+  [planetary-base s19520 #27] undo                            -> 200 68 ms
+  [planetary-base s19520 #28] redo                            -> 200 61 ms
+  [planetary-base s19520 #29] strike                          -> 200 24 ms
+  [planetary-base s19520 #30] restore                         -> 200 53 ms
+  [planetary-base s19520 #31] add            sketch_on_face   -> 200 18 ms
+  [planetary-base s19520 #32] add            extrude          -> 200 71 ms
+  [planetary-base s19520 #33] add            disc             -> 200 60 ms
+  [planetary-base s19520 #34] edit                            -> 200 86 ms
+  [planetary-base s19520 #35] undo                            -> 200 71 ms
+  [planetary-base s19520 #36] redo                            -> 200 64 ms
+  [planetary-base s19520 #37] suppress                        -> 200 198 ms
+  [planetary-base s19520 #38] suppress                        -> 200 57 ms
+  [planetary-base s19520 #39] doc                             -> 200 8 ms
+  [planetary-base s19520 #40] strike                          -> 200 54 ms
+  [planetary-base s19520 #41] restore                         -> 200 61 ms
+  [planetary-base s19520 #42] add            polar_pattern    -> 200 10 ms
+  [planetary-base s19520 #43] edit                            -> 200 10 ms
+  [planetary-base s19520 #44] add            fillet           -> 200 85 ms
+  [planetary-base s19520 #45] add            sketch           -> 200 12 ms
+  [planetary-base s19520 #46] add            extrude          -> 200 17 ms
+  [planetary-base s19520 #47] add            hole             -> 200 44 ms
+  [planetary-base s19520 #48] edit                            -> 200 147 ms
+  [planetary-base s19520 #49] undo                            -> 200 20 ms
+  [planetary-base s19520 #50] redo                            -> 200 23 ms
+  [planetary-base s19520 #51] add            sketch_on_face   -> 200 19 ms
+  [planetary-base s19520 #52] add            extrude          -> 200 14 ms
+  [planetary-base s19520 #53] add            tube             -> 200 21 ms
+  [planetary-base s19520 #54] spec                            -> 200 11 ms
+  [planetary-base s19520 #55] doc                             -> 200 8 ms
+   clean
+-- journey 33: planetary-carrier seed 19521
+  [planetary-carrier s19521 #0] opened: 8 features, 1 bodies
+  [planetary-carrier s19521 #1] plan           shell            -> 200 17 ms
+  [planetary-carrier s19521 #2] rollback                        -> 200 9 ms
+  [planetary-carrier s19521 #3] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [planetary-carrier s19521 #4] rollback                        -> 200 8 ms
+  [planetary-carrier s19521 #5] add            sketch_on_face   -> 200 13 ms
+  [planetary-carrier s19521 #6] add            extrude          -> 200 62 ms
+  [planetary-carrier s19521 #7] remove-plan                     -> 200 11 ms
+  [planetary-carrier s19521 #8] remove                          -> 200 67 ms
+  [planetary-carrier s19521 #9] add            plate            -> 200 14 ms
+  [planetary-carrier s19521 #10] add            disc             -> 200 12 ms
+  [planetary-carrier s19521 #11] add            move             -> 200 16 ms
+  [planetary-carrier s19521 #12] undo                            -> 200 63 ms
+  [planetary-carrier s19521 #13] tab-new                         -> 200 9 ms
+  [planetary-carrier s19521 #14] add            hex_plate        -> 200 25 ms
+  [planetary-carrier s19521 #15] tab-switch                      -> 200 9 ms
+  [planetary-carrier s19521 #16] tab-close                       -> 200 10 ms
+  [planetary-carrier s19521 #17] tab-switch                      -> 200 10 ms
+  [planetary-carrier s19521 #18] add            plate            -> 200 16 ms
+  [planetary-carrier s19521 #19] add            polygon_plate    -> 200 30 ms
+  [planetary-carrier s19521 #20] rollback                        -> 200 10 ms
+  [planetary-carrier s19521 #21] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [planetary-carrier s19521 #22] rollback                        -> 200 10 ms
+  [planetary-carrier s19521 #23] rollback                        -> 200 10 ms
+  [planetary-carrier s19521 #24] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [planetary-carrier s19521 #25] rollback                        -> 200 10 ms
+  [planetary-carrier s19521 #26] add            with_bolt_circle -> 200 115 ms
+  [planetary-carrier s19521 #27] add            chamfer          -> 200 6724 ms
+  [planetary-carrier s19521 #28] rollback                        -> 200 9 ms
+  [planetary-carrier s19521 #29] plan           extrude          -> 200 9 ms  Extrude needs a sketch profile or a picked flat face
+  [planetary-carrier s19521 #30] rollback                        -> 200 9 ms
+  [planetary-carrier s19521 #31] plan           sketch           -> 200 9 ms
+  [planetary-carrier s19521 #32] edit                            -> 200 73 ms
+  [planetary-carrier s19521 #33] undo                            -> 200 33 ms
+  [planetary-carrier s19521 #34] redo                            -> 200 22 ms
+  [planetary-carrier s19521 #35] add            with_center_hole -> 200 29 ms
+  [planetary-carrier s19521 #36] plan           rotate           -> 200 9 ms
+  [planetary-carrier s19521 #37] tab-new                         -> 200 8 ms
+  [planetary-carrier s19521 #38] add            cone             -> 200 11 ms
+  [planetary-carrier s19521 #39] tab-switch                      -> 200 9 ms
+  [planetary-carrier s19521 #40] tab-close                       -> 200 10 ms
+  [planetary-carrier s19521 #41] tab-switch                      -> 200 9 ms
+  [planetary-carrier s19521 #42] plan           pattern          -> 200 9 ms  no plan for tool 'pattern' — known: ['chamfer', 'extrude', 'fillet', 'hole', 'line
+  [planetary-carrier s19521 #43] edit                            -> 200 56 ms
+  [planetary-carrier s19521 #44] undo                            -> 200 36 ms
+  [planetary-carrier s19521 #45] redo                            -> 200 38 ms
+  [planetary-carrier s19521 #46] add            rotate           -> 200 23 ms
+  [planetary-carrier s19521 #47] add            sketch_on_face   -> 200 16 ms
+  [planetary-carrier s19521 #48] add            extrude          -> 200 16 ms
+  [planetary-carrier s19521 #49] rename                          -> 200 10 ms
+  [planetary-carrier s19521 #50] rename                          -> 200 10 ms
+  [planetary-carrier s19521 #51] doc                             -> 200 9 ms
+  [planetary-carrier s19521 #52] edit                            -> 200 10 ms
+  [planetary-carrier s19521 #53] undo                            -> 200 29 ms
+  [planetary-carrier s19521 #54] redo                            -> 200 31 ms
+  [planetary-carrier s19521 #55] edit                            -> 200 10 ms
+  [planetary-carrier s19521 #56] edit                            -> 200 28 ms
+  [planetary-carrier s19521 #57] undo                            -> 200 20 ms
+  [planetary-carrier s19521 #58] redo                            -> 200 20 ms
+  [planetary-carrier s19521 #59] add            plate            -> 200 14 ms
+  [planetary-carrier s19521 #60] add            fuse             -> 200 36 ms
+   clean
+-- journey 34: planetary-gear seed 19522
+  [planetary-gear s19522 #0] opened: 7 features, 1 bodies
+  [planetary-gear s19522 #1] add            sketch_on_face   -> 200 27 ms
+  [planetary-gear s19522 #2] add            extrude          -> 200 288 ms
+  [planetary-gear s19522 #3] add            disc             -> 200 1118 ms
+  [planetary-gear s19522 #4] undo                            -> 200 330 ms
+  [planetary-gear s19522 #5] add            move             -> 200 293 ms
+  [planetary-gear s19522 #6] add            mirror           -> 200 243 ms
+  [planetary-gear s19522 #7] add            intersect        -> 200 72 ms
+  [planetary-gear s19522 #8] edit                            -> 200 613 ms
+  [planetary-gear s19522 #9] undo                            -> 200 25 ms
+  [planetary-gear s19522 #10] redo                            -> 200 28 ms
+  [planetary-gear s19522 #11] add            sketch_on_face   -> 200 16 ms
+  [planetary-gear s19522 #12] add            extrude          -> 200 41 ms
+  [planetary-gear s19522 #13] edit                            -> 200 733 ms
+  [planetary-gear s19522 #14] undo                            -> 200 32 ms
+  [planetary-gear s19522 #15] redo                            -> 200 35 ms
+  [planetary-gear s19522 #16] tab-new                         -> 200 9 ms
+  [planetary-gear s19522 #17] add            disc             -> 200 12 ms
+  [planetary-gear s19522 #18] tab-switch                      -> 200 10 ms
+  [planetary-gear s19522 #19] tab-close                       -> 200 9 ms
+  [planetary-gear s19522 #20] tab-switch                      -> 200 10 ms
+  [planetary-gear s19522 #21] add            hex_plate        -> 200 63 ms
+  [planetary-gear s19522 #22] undo                            -> 200 32 ms
+  [planetary-gear s19522 #23] add            sketch_on_face   -> 200 15 ms
+  [planetary-gear s19522 #24] add            extrude          -> 200 44 ms
+  [planetary-gear s19522 #25] add            with_bolt_circle -> 200 48 ms
+  [planetary-gear s19522 #26] add            chamfer          -> 200 6822 ms
+  [planetary-gear s19522 #27] add            plate            -> 200 24 ms
+  [planetary-gear s19522 #28] strike                          -> 200 397 ms
+  [planetary-gear s19522 #29] restore                         -> 200 12 ms
+  [planetary-gear s19522 #30] add            intersect        -> 200 17 ms
+  [planetary-gear s19522 #31] edit                            -> 200 14 ms
+  [planetary-gear s19522 #32] undo                            -> 200 12 ms
+  [planetary-gear s19522 #33] redo                            -> 200 11 ms
+  [planetary-gear s19522 #34] add            sketch           -> 200 17 ms
+  [planetary-gear s19522 #35] add            extrude          -> 200 17 ms
+  [planetary-gear s19522 #36] add            shell            -> 200 76 ms
+  [planetary-gear s19522 #37] strike                          -> 200 11 ms
+  [planetary-gear s19522 #38] restore                         -> 200 11 ms
+  [planetary-gear s19522 #39] plan           revolve          -> 200 8 ms  sketch 'j7_sketch_on_face' has not been built (input 'j6_intersect' is unavailable (f
+  [planetary-gear s19522 #40] edit                            -> 200 10 ms
+  [planetary-gear s19522 #41] undo                            -> 200 13 ms
+  [planetary-gear s19522 #42] redo                            -> 200 11 ms
+  [planetary-gear s19522 #43] strike                          -> 200 11 ms
+  [planetary-gear s19522 #44] restore                         -> 200 11 ms
+  [planetary-gear s19522 #45] suppress                        -> 200 12 ms
+  [planetary-gear s19522 #46] suppress                        -> 200 10 ms
+  [planetary-gear s19522 #47] doc                             -> 200 8 ms
+  [planetary-gear s19522 #48] add            polar_pattern    -> 200 11 ms
+  [planetary-gear s19522 #49] undo                            -> 200 12 ms
+  [planetary-gear s19522 #50] plan           extrude          -> 200 9 ms  sketch 'j7_sketch_on_face' has not been built (input 'j6_intersect' is unavailable (f
+  [planetary-gear s19522 #51] strike                          -> 200 27 ms
+  [planetary-gear s19522 #52] restore                         -> 200 12 ms
+  [planetary-gear s19522 #53] edit                            -> 200 12 ms
+  [planetary-gear s19522 #54] edit                            -> 200 15 ms
+  [planetary-gear s19522 #55] undo                            -> 200 17 ms
+  [planetary-gear s19522 #56] redo                            -> 200 16 ms
+   clean
+-- journey 35: planetary-ring seed 19523
+  [planetary-ring s19523 #0] opened: 10 features, 1 bodies
+  [planetary-ring s19523 #1] add            extrude_face     -> 200 747 ms
+  [planetary-ring s19523 #2] add            extrude_face     -> 200 606 ms
+  [planetary-ring s19523 #3] add            fuse             -> 200 691 ms
+  [planetary-ring s19523 #4] add            sketch_on_face   -> 200 60 ms
+  [planetary-ring s19523 #5] add            extrude          -> 200 620 ms
+  [planetary-ring s19523 #6] remove-plan                     -> 200 10 ms
+  [planetary-ring s19523 #7] remove                          -> 200 2209 ms
+  [planetary-ring s19523 #8] suppress                        -> 200 11 ms
+  [planetary-ring s19523 #9] suppress                        -> 200 12 ms
+  [planetary-ring s19523 #10] doc                             -> 200 9 ms
+  [planetary-ring s19523 #11] strike                          -> 200 1752 ms
+  [planetary-ring s19523 #12] restore                         -> 200 2096 ms
+  [planetary-ring s19523 #13] plan           revolve          -> 200 21 ms
+  [planetary-ring s19523 #14] strike                          -> 200 274 ms
+  [planetary-ring s19523 #15] restore                         -> 200 2091 ms
+  [planetary-ring s19523 #16] add            intersect        -> 200 1889 ms
+  [planetary-ring s19523 #17] add            scale            -> 200 1312 ms
+  [planetary-ring s19523 #18] add            polar_pattern    -> 200 9 ms
+  [planetary-ring s19523 #19] add            sketch           -> 200 11 ms
+  [planetary-ring s19523 #20] add            extrude          -> 200 26 ms
+  [planetary-ring s19523 #21] add            linear_pattern   -> 200 45 ms
+  [planetary-ring s19523 #22] edit                            -> 200 9 ms
+  [planetary-ring s19523 #23] add            mirror           -> 200 177 ms
+  [planetary-ring s19523 #24] plan           sketch           -> 200 9 ms
+  [planetary-ring s19523 #25] add            sketch           -> 200 11 ms
+  [planetary-ring s19523 #26] add            extrude          -> 200 15 ms
+  [planetary-ring s19523 #27] edit                            -> 200 54 ms
+  [planetary-ring s19523 #28] undo                            -> 200 100 ms
+  [planetary-ring s19523 #29] redo                            -> 200 96 ms
+  [planetary-ring s19523 #30] add            sketch           -> 200 11 ms
+  [planetary-ring s19523 #31] add            extrude          -> 200 15 ms
+  [planetary-ring s19523 #32] edit                            -> 200 9 ms
+  [planetary-ring s19523 #33] undo                            -> 200 105 ms
+  [planetary-ring s19523 #34] redo                            -> 200 93 ms
+  [planetary-ring s19523 #35] add            scale            -> 200 14 ms
+  [planetary-ring s19523 #36] rollback                        -> 200 10 ms
+  [planetary-ring s19523 #37] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [planetary-ring s19523 #38] rollback                        -> 200 10 ms
+  [planetary-ring s19523 #39] add            sketch           -> 200 12 ms
+  [planetary-ring s19523 #40] add            extrude          -> 200 13 ms
+  [planetary-ring s19523 #41] edit                            -> 200 10 ms
+  [planetary-ring s19523 #42] undo                            -> 200 101 ms
+  [planetary-ring s19523 #43] redo                            -> 200 99 ms
+  [planetary-ring s19523 #44] edit                            -> 200 10 ms
+  [planetary-ring s19523 #45] add            rotate           -> 200 16 ms
+  [planetary-ring s19523 #46] strike                          -> 200 10 ms
+  [planetary-ring s19523 #47] restore                         -> 200 13 ms
+  [planetary-ring s19523 #48] add            cone             -> 200 13 ms
+  [planetary-ring s19523 #49] add            with_bolt_circle -> 200 65 ms
+   clean
+-- journey 36: planetary-spacer seed 19524
+  [planetary-spacer s19524 #0] opened: 3 features, 1 bodies
+  [planetary-spacer s19524 #1] add            polygon_plate    -> 200 59 ms
+  [planetary-spacer s19524 #2] undo                            -> 200 18 ms
+  [planetary-spacer s19524 #3] add            sketch           -> 200 11 ms
+  [planetary-spacer s19524 #4] add            extrude          -> 200 22 ms
+  [planetary-spacer s19524 #5] add            intersect        -> 200 33 ms
+  [planetary-spacer s19524 #6] add            with_center_hole -> 200 27 ms
+  [planetary-spacer s19524 #7] strike                          -> 200 57 ms
+  [planetary-spacer s19524 #8] restore                         -> 200 16 ms
+  [planetary-spacer s19524 #9] edit                            -> 200 47 ms
+  [planetary-spacer s19524 #10] undo                            -> 200 16 ms
+  [planetary-spacer s19524 #11] redo                            -> 200 17 ms
+  [planetary-spacer s19524 #12] rename                          -> 200 9 ms
+  [planetary-spacer s19524 #13] rename                          -> 200 10 ms
+  [planetary-spacer s19524 #14] doc                             -> 200 8 ms
+  [planetary-spacer s19524 #15] edit                            -> 200 47 ms
+  [planetary-spacer s19524 #16] undo                            -> 200 16 ms
+  [planetary-spacer s19524 #17] redo                            -> 200 15 ms
+  [planetary-spacer s19524 #18] edit                            -> 200 45 ms
+  [planetary-spacer s19524 #19] undo                            -> 200 19 ms
+  [planetary-spacer s19524 #20] redo                            -> 200 16 ms
+  [planetary-spacer s19524 #21] add            linear_pattern   -> 200 36 ms
+  [planetary-spacer s19524 #22] add            sketch           -> 200 11 ms
+  [planetary-spacer s19524 #23] add            extrude          -> 200 39 ms
+  [planetary-spacer s19524 #24] remove-plan                     -> 400 10 ms  cannot remove 'j5_with_center_hole': used by ['j6_linear_pattern']
+  [planetary-spacer s19524 #25] remove                          -> 400 8 ms  cannot remove 'j5_with_center_hole': used by ['j6_linear_pattern']
+  [planetary-spacer s19524 #26] add            rotate           -> 200 43 ms
+  [planetary-spacer s19524 #27] suppress                        -> 200 10 ms
+  [planetary-spacer s19524 #28] suppress                        -> 200 9 ms
+  [planetary-spacer s19524 #29] doc                             -> 200 8 ms
+  [planetary-spacer s19524 #30] add            fillet           -> 200 12 ms
+  [planetary-spacer s19524 #31] add            extrude_face     -> 200 22 ms
+  [planetary-spacer s19524 #32] add            shell            -> 200 6897 ms
+  [planetary-spacer s19524 #33] add            fillet           -> 200 127 ms
+  [planetary-spacer s19524 #34] add            with_center_hole -> 200 19 ms
+  [planetary-spacer s19524 #35] strike                          -> 200 43 ms
+  [planetary-spacer s19524 #36] restore                         -> 200 10 ms
+  [planetary-spacer s19524 #37] plan           pattern          -> 200 9 ms  no plan for tool 'pattern' — known: ['chamfer', 'extrude', 'fillet', 'hole', 'linea
+  [planetary-spacer s19524 #38] plan           sketch           -> 200 10 ms
+  [planetary-spacer s19524 #39] add            sketch           -> 200 13 ms
+  [planetary-spacer s19524 #40] add            extrude          -> 200 13 ms
+  [planetary-spacer s19524 #41] add            ball             -> 200 12 ms
+  [planetary-spacer s19524 #42] add            move             -> 200 13 ms
+  [planetary-spacer s19524 #43] undo                            -> 200 11 ms
+  [planetary-spacer s19524 #44] edit                            -> 200 10 ms
+  [planetary-spacer s19524 #45] add            disc             -> 200 13 ms
+  [planetary-spacer s19524 #46] add            hole             -> 200 12 ms
+  [planetary-spacer s19524 #47] add            sketch_on_face   -> 200 15 ms
+  [planetary-spacer s19524 #48] add            extrude          -> 200 15 ms
+  [planetary-spacer s19524 #49] edit                            -> 200 23 ms
+  [planetary-spacer s19524 #50] undo                            -> 200 14 ms
+  [planetary-spacer s19524 #51] redo                            -> 200 13 ms
+   clean
+-- journey 37: popup-test-washer seed 19525
+  [popup-test-washer s19525 #0] opened: 2 features, 1 bodies
+  [popup-test-washer s19525 #1] edit                            -> 200 19 ms
+  [popup-test-washer s19525 #2] undo                            -> 200 9 ms
+  [popup-test-washer s19525 #3] redo                            -> 200 7 ms
+  [popup-test-washer s19525 #4] plan           extrude          -> 200 7 ms  'hole' is a with_center_hole, not extrude / extrude_face
+  [popup-test-washer s19525 #5] add            plate            -> 200 15 ms
+  [popup-test-washer s19525 #6] plan           fillet           -> 200 13 ms
+  [popup-test-washer s19525 #7] add            linear_pattern   -> 200 28 ms
+  [popup-test-washer s19525 #8] add            with_center_hole -> 200 39 ms
+  [popup-test-washer s19525 #9] edit                            -> 200 63 ms
+  [popup-test-washer s19525 #10] undo                            -> 200 18 ms
+  [popup-test-washer s19525 #11] redo                            -> 200 15 ms
+  [popup-test-washer s19525 #12] add            shell            -> 200 24 ms
+  [popup-test-washer s19525 #13] add            tube             -> 200 24 ms
+  [popup-test-washer s19525 #14] undo                            -> 200 7 ms
+  [popup-test-washer s19525 #15] add            sketch           -> 200 10 ms
+  [popup-test-washer s19525 #16] add            extrude          -> 200 13 ms
+  [popup-test-washer s19525 #17] add            scale            -> 200 14 ms
+  [popup-test-washer s19525 #18] edit                            -> 200 62 ms
+  [popup-test-washer s19525 #19] undo                            -> 200 11 ms
+  [popup-test-washer s19525 #20] redo                            -> 200 10 ms
+  [popup-test-washer s19525 #21] spec                            -> 200 9 ms
+  [popup-test-washer s19525 #22] doc                             -> 200 8 ms
+  [popup-test-washer s19525 #23] add            mirror           -> 200 21 ms
+  [popup-test-washer s19525 #24] undo                            -> 200 10 ms
+  [popup-test-washer s19525 #25] edit                            -> 200 55 ms
+  [popup-test-washer s19525 #26] undo                            -> 200 10 ms
+  [popup-test-washer s19525 #27] redo                            -> 200 9 ms
+  [popup-test-washer s19525 #28] edit                            -> 200 9 ms
+  [popup-test-washer s19525 #29] plan           extrude          -> 200 9 ms  Extrude needs a sketch profile or a picked flat face
+  [popup-test-washer s19525 #30] add            sketch_on_face   -> 200 16 ms
+  [popup-test-washer s19525 #31] add            extrude          -> 200 13 ms
+  [popup-test-washer s19525 #32] add            sketch           -> 200 12 ms
+  [popup-test-washer s19525 #33] add            extrude          -> 200 15 ms
+  [popup-test-washer s19525 #34] add            disc             -> 200 13 ms
+  [popup-test-washer s19525 #35] add            sketch_on_face   -> 200 13 ms
+  [popup-test-washer s19525 #36] add            extrude          -> 200 17 ms
+  [popup-test-washer s19525 #37] add            with_center_hole -> 200 24 ms
+  [popup-test-washer s19525 #38] rename                          -> 200 10 ms
+  [popup-test-washer s19525 #39] rename                          -> 200 9 ms
+  [popup-test-washer s19525 #40] doc                             -> 200 8 ms
+  [popup-test-washer s19525 #41] add            chamfer          -> 200 6809 ms
+  [popup-test-washer s19525 #42] add            polar_pattern    -> 200 10 ms
+  [popup-test-washer s19525 #43] add            mirror           -> 200 14 ms
+  [popup-test-washer s19525 #44] add            with_bolt_circle -> 200 23 ms
+  [popup-test-washer s19525 #45] edit                            -> 200 21 ms
+  [popup-test-washer s19525 #46] undo                            -> 200 14 ms
+  [popup-test-washer s19525 #47] redo                            -> 200 14 ms
+  [popup-test-washer s19525 #48] suppress                        -> 200 12 ms
+  [popup-test-washer s19525 #49] suppress                        -> 200 10 ms
+  [popup-test-washer s19525 #50] doc                             -> 200 8 ms
+  [popup-test-washer s19525 #51] add            sketch           -> 200 14 ms
+  [popup-test-washer s19525 #52] add            extrude          -> 200 15 ms
+   clean
+-- journey 38: pump-cover seed 19526
+  [pump-cover s19526 #0] opened: 14 features, 1 bodies
+  [pump-cover s19526 #1] edit                            -> 200 22 ms
+  [pump-cover s19526 #2] undo                            -> 200 15 ms
+  [pump-cover s19526 #3] redo                            -> 200 10 ms
+  [pump-cover s19526 #4] plan           revolve          -> 200 9 ms  'cover' is a cut, not revolve / revolve_face
+  [pump-cover s19526 #5] add            sketch           -> 200 12 ms
+  [pump-cover s19526 #6] add            extrude          -> 200 14 ms
+  [pump-cover s19526 #7] add            cone             -> 200 14 ms
+  [pump-cover s19526 #8] plan           revolve          -> 200 12 ms  this profile cannot be revolved: it crosses v (-8.3 to 8.3 mm) and it crosses u (-8.3 to 
+  [pump-cover s19526 #9] edit                            -> 200 14 ms
+  [pump-cover s19526 #10] undo                            -> 200 11 ms
+  [pump-cover s19526 #11] redo                            -> 200 15 ms
+  [pump-cover s19526 #12] add            move             -> 200 14 ms
+  [pump-cover s19526 #13] add            sketch           -> 200 14 ms
+  [pump-cover s19526 #14] add            extrude          -> 200 15 ms
+  [pump-cover s19526 #15] add            mirror           -> 200 28 ms
+  [pump-cover s19526 #16] tab-new                         -> 200 9 ms
+  [pump-cover s19526 #17] add            polygon_plate    -> 200 23 ms
+  [pump-cover s19526 #18] tab-switch                      -> 200 11 ms
+  [pump-cover s19526 #19] tab-close                       -> 200 10 ms
+  [pump-cover s19526 #20] tab-switch                      -> 200 9 ms
+  [pump-cover s19526 #21] add            sketch           -> 200 12 ms
+  [pump-cover s19526 #22] add            extrude          -> 200 17 ms
+  [pump-cover s19526 #23] add            linear_pattern   -> 200 71 ms
+  [pump-cover s19526 #24] add            polygon_plate    -> 200 27 ms
+  [pump-cover s19526 #25] add            sketch_on_face   -> 200 18 ms
+  [pump-cover s19526 #26] add            extrude          -> 200 14 ms
+  [pump-cover s19526 #27] edit                            -> 200 38 ms
+  [pump-cover s19526 #28] undo                            -> 200 26 ms
+  [pump-cover s19526 #29] redo                            -> 200 26 ms
+  [pump-cover s19526 #30] strike                          -> 200 12 ms
+  [pump-cover s19526 #31] restore                         -> 200 12 ms
+  [pump-cover s19526 #32] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [pump-cover s19526 #33] add            sketch_on_face   -> 200 14 ms
+  [pump-cover s19526 #34] add            extrude          -> 200 19 ms
+  [pump-cover s19526 #35] add            polar_pattern    -> 200 10 ms
+  [pump-cover s19526 #36] add            polar_pattern    -> 200 11 ms
+  [pump-cover s19526 #37] add            fillet           -> 200 6871 ms
+  [pump-cover s19526 #38] spec                            -> 200 11 ms
+  [pump-cover s19526 #39] doc                             -> 200 9 ms
+  [pump-cover s19526 #40] add            with_bolt_circle -> 200 44 ms
+  [pump-cover s19526 #41] add            cut              -> 200 63 ms
+  [pump-cover s19526 #42] remove-plan                     -> 400 11 ms  cannot remove 'outlet_boss': used by ['outlet_boss_seat']
+  [pump-cover s19526 #43] remove                          -> 400 11 ms  cannot remove 'outlet_boss': used by ['outlet_boss_seat']
+  [pump-cover s19526 #44] plan           mirror           -> 200 8 ms  Mirror needs a feature or a body to mirror — click a hole, a boss or a body, or select a 
+  [pump-cover s19526 #45] plan           move             -> 200 9 ms
+  [pump-cover s19526 #46] remove-plan                     -> 400 10 ms  cannot remove 'inlet_bore': used by ['outlet_cut']
+  [pump-cover s19526 #47] remove                          -> 400 11 ms  cannot remove 'inlet_bore': used by ['outlet_cut']
+  [pump-cover s19526 #48] add            sketch           -> 200 13 ms
+  [pump-cover s19526 #49] add            extrude          -> 200 17 ms
+  [pump-cover s19526 #50] add            scale            -> 200 19 ms
+   clean
+-- journey 39: pump-gasket seed 19527
+  [pump-gasket s19527 #0] opened: 8 features, 1 bodies
+  [pump-gasket s19527 #1] tab-new                         -> 200 25 ms
+  [pump-gasket s19527 #2] add            cone             -> 200 13 ms
+  [pump-gasket s19527 #3] tab-switch                      -> 200 12 ms
+  [pump-gasket s19527 #4] tab-close                       -> 200 13 ms
+  [pump-gasket s19527 #5] tab-switch                      -> 200 12 ms
+  [pump-gasket s19527 #6] add            disc             -> 200 50 ms
+  [pump-gasket s19527 #7] add            sketch           -> 200 13 ms
+  [pump-gasket s19527 #8] add            extrude          -> 200 52 ms
+  [pump-gasket s19527 #9] suppress                        -> 200 11 ms
+  [pump-gasket s19527 #10] suppress                        -> 200 10 ms
+  [pump-gasket s19527 #11] doc                             -> 200 9 ms
+  [pump-gasket s19527 #12] tab-new                         -> 200 13 ms
+  [pump-gasket s19527 #13] add            hex_plate        -> 200 34 ms
+  [pump-gasket s19527 #14] tab-switch                      -> 200 9 ms
+  [pump-gasket s19527 #15] tab-close                       -> 200 9 ms
+  [pump-gasket s19527 #16] tab-switch                      -> 200 10 ms
+  [pump-gasket s19527 #17] strike                          -> 200 111 ms
+  [pump-gasket s19527 #18] restore                         -> 200 96 ms
+  [pump-gasket s19527 #19] add            tube             -> 200 65 ms
+  [pump-gasket s19527 #20] add            fuse             -> 200 64 ms
+  [pump-gasket s19527 #21] add            with_center_hole -> 200 24 ms
+  [pump-gasket s19527 #22] strike                          -> 200 22 ms
+  [pump-gasket s19527 #23] restore                         -> 200 11 ms
+  [pump-gasket s19527 #24] add            sketch           -> 200 13 ms
+  [pump-gasket s19527 #25] add            extrude          -> 200 28 ms
+  [pump-gasket s19527 #26] add            sketch           -> 200 12 ms
+  [pump-gasket s19527 #27] add            extrude          -> 200 34 ms
+  [pump-gasket s19527 #28] add            fillet           -> 200 6678 ms
+  [pump-gasket s19527 #29] edit                            -> 200 75 ms
+  [pump-gasket s19527 #30] undo                            -> 200 26 ms
+  [pump-gasket s19527 #31] redo                            -> 200 25 ms
+  [pump-gasket s19527 #32] add            cone             -> 200 13 ms
+  [pump-gasket s19527 #33] plan           move             -> 200 10 ms
+  [pump-gasket s19527 #34] edit                            -> 200 34 ms
+  [pump-gasket s19527 #35] undo                            -> 200 18 ms
+  [pump-gasket s19527 #36] redo                            -> 200 17 ms
+  [pump-gasket s19527 #37] rollback                        -> 200 11 ms
+  [pump-gasket s19527 #38] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [pump-gasket s19527 #39] rollback                        -> 200 10 ms
+  [pump-gasket s19527 #40] add            with_bolt_circle -> 200 461 ms
+  [pump-gasket s19527 #41] add            move             -> 200 15 ms
+  [pump-gasket s19527 #42] add            polar_pattern    -> 200 12 ms
+  [pump-gasket s19527 #43] undo                            -> 200 50 ms
+  [pump-gasket s19527 #44] remove-plan                     -> 200 10 ms
+  [pump-gasket s19527 #45] remove                          -> 200 22 ms
+  [pump-gasket s19527 #46] tab-new                         -> 200 8 ms
+  [pump-gasket s19527 #47] add            tube             -> 200 20 ms
+  [pump-gasket s19527 #48] tab-switch                      -> 200 9 ms
+  [pump-gasket s19527 #49] tab-close                       -> 200 9 ms
+  [pump-gasket s19527 #50] tab-switch                      -> 200 9 ms
+  [pump-gasket s19527 #51] add            hex_plate        -> 200 23 ms
+  [pump-gasket s19527 #52] undo                            -> 200 49 ms
+  [pump-gasket s19527 #53] add            with_center_hole -> 200 97 ms
+  [pump-gasket s19527 #54] add            linear_pattern   -> 200 320 ms
+  [pump-gasket s19527 #55] undo                            -> 200 41 ms
+  [pump-gasket s19527 #56] edit                            -> 200 9 ms
+  [pump-gasket s19527 #57] undo                            -> 200 48 ms
+  [pump-gasket s19527 #58] redo                            -> 200 46 ms
+  [pump-gasket s19527 #59] remove-plan                     -> 200 10 ms
+  [pump-gasket s19527 #60] remove                          -> 200 197 ms
+  [pump-gasket s19527 #61] add            sketch           -> 200 13 ms
+  [pump-gasket s19527 #62] add            extrude          -> 200 189 ms
+   clean
+-- journey 40: pump-housing seed 19528
+  [pump-housing s19528 #0] opened: 21 features, 1 bodies
+  [pump-housing s19528 #1] add            disc             -> 200 94 ms
+  [pump-housing s19528 #2] add            shell            -> 200 7231 ms
+  [pump-housing s19528 #3] undo                            -> 200 23 ms
+  [pump-housing s19528 #4] add            fillet           -> 200 283 ms
+  [pump-housing s19528 #5] add            with_center_hole -> 200 26 ms
+  [pump-housing s19528 #6] edit                            -> 200 320 ms
+  [pump-housing s19528 #7] undo                            -> 200 14 ms
+  [pump-housing s19528 #8] redo                            -> 200 13 ms
+  [pump-housing s19528 #9] rollback                        -> 200 13 ms
+  [pump-housing s19528 #10] plan           extrude          -> 200 11 ms  Extrude needs a sketch profile or a picked flat face
+  [pump-housing s19528 #11] rollback                        -> 200 18 ms
+  [pump-housing s19528 #12] remove-plan                     -> 200 12 ms
+  [pump-housing s19528 #13] remove                          -> 200 92 ms
+  [pump-housing s19528 #14] edit                            -> 200 222 ms
+  [pump-housing s19528 #15] undo                            -> 200 82 ms
+  [pump-housing s19528 #16] redo                            -> 200 84 ms
+  [pump-housing s19528 #17] add            polygon_plate    -> 200 87 ms
+  [pump-housing s19528 #18] undo                            -> 200 76 ms
+  [pump-housing s19528 #19] add            shell            -> 200 200 ms
+  [pump-housing s19528 #20] plan           revolve          -> 200 15 ms  this profile cannot be revolved: it crosses v (-30 to 30 mm) and it crosses u (-30 to 
+  [pump-housing s19528 #21] remove-plan                     -> 200 9 ms
+  [pump-housing s19528 #22] remove                          -> 200 304 ms
+  [pump-housing s19528 #23] add            sketch_on_face   -> 200 14 ms
+  [pump-housing s19528 #24] add            extrude          -> 200 15 ms
+  [pump-housing s19528 #25] add            intersect        -> 200 18 ms
+  [pump-housing s19528 #26] add            cone             -> 200 14 ms
+  [pump-housing s19528 #27] edit                            -> 200 37 ms
+  [pump-housing s19528 #28] undo                            -> 200 11 ms
+  [pump-housing s19528 #29] redo                            -> 200 11 ms
+  [pump-housing s19528 #30] add            fillet           -> 200 73 ms
+  [pump-housing s19528 #31] undo                            -> 200 10 ms
+  [pump-housing s19528 #32] edit                            -> 200 299 ms
+  [pump-housing s19528 #33] undo                            -> 200 11 ms
+  [pump-housing s19528 #34] redo                            -> 200 10 ms
+  [pump-housing s19528 #35] add            tube             -> 200 23 ms
+  [pump-housing s19528 #36] add            cut              -> 200 12 ms
+  [pump-housing s19528 #37] add            hole             -> 200 15 ms
+  [pump-housing s19528 #38] undo                            -> 200 12 ms
+  [pump-housing s19528 #39] plan           fillet           -> 200 8 ms  Fillet needs the edges of a body — click an edge, a face, or a row of the tree
+  [pump-housing s19528 #40] edit                            -> 200 11 ms
+  [pump-housing s19528 #41] undo                            -> 200 12 ms
+  [pump-housing s19528 #42] redo                            -> 200 12 ms
+  [pump-housing s19528 #43] add            fillet           -> 200 12 ms
+  [pump-housing s19528 #44] strike                          -> 200 25 ms
+  [pump-housing s19528 #45] restore                         -> 200 11 ms
+  [pump-housing s19528 #46] add            polygon_plate    -> 200 28 ms
+  [pump-housing s19528 #47] add            linear_pattern   -> 200 86 ms
+  [pump-housing s19528 #48] add            scale            -> 200 26 ms
+  [pump-housing s19528 #49] edit                            -> 200 308 ms
+  [pump-housing s19528 #50] undo                            -> 200 20 ms
+  [pump-housing s19528 #51] redo                            -> 200 19 ms
+  [pump-housing s19528 #52] add            fuse             -> 200 48 ms
+   clean
+-- journey 41: pump-impeller seed 19529
+  [pump-impeller s19529 #0] opened: 10 features, 1 bodies
+  [pump-impeller s19529 #1] edit                            -> 200 265 ms
+  [pump-impeller s19529 #2] undo                            -> 200 168 ms
+  [pump-impeller s19529 #3] redo                            -> 200 213 ms
+  [pump-impeller s19529 #4] spec                            -> 200 146 ms
+  [pump-impeller s19529 #5] doc                             -> 200 10 ms
+  [pump-impeller s19529 #6] edit                            -> 200 431 ms
+  [pump-impeller s19529 #7] undo                            -> 200 179 ms
+  [pump-impeller s19529 #8] redo                            -> 200 180 ms
+  [pump-impeller s19529 #9] add            sketch_on_face   -> 200 29 ms
+  [pump-impeller s19529 #10] add            extrude          -> 200 177 ms
+  [pump-impeller s19529 #11] add            polygon_plate    -> 200 193 ms
+  [pump-impeller s19529 #12] plan           pattern          -> 200 9 ms  no plan for tool 'pattern' — known: ['chamfer', 'extrude', 'fillet', 'hole', 'linear_p
+  [pump-impeller s19529 #13] remove-plan                     -> 400 10 ms  cannot remove 'impeller': used by ['j1_sketch_on_face']
+  [pump-impeller s19529 #14] remove                          -> 400 10 ms  cannot remove 'impeller': used by ['j1_sketch_on_face']
+  [pump-impeller s19529 #15] add            scale            -> 200 169 ms
+  [pump-impeller s19529 #16] add            scale            -> 200 316 ms
+  [pump-impeller s19529 #17] tab-new                         -> 200 8 ms
+  [pump-impeller s19529 #18] add            ball             -> 200 11 ms
+  [pump-impeller s19529 #19] tab-switch                      -> 200 10 ms
+  [pump-impeller s19529 #20] tab-close                       -> 200 10 ms
+  [pump-impeller s19529 #21] tab-switch                      -> 200 10 ms
+  [pump-impeller s19529 #22] add            sketch_on_face   -> 200 37 ms
+  [pump-impeller s19529 #23] add            extrude          -> 200 195 ms
+  [pump-impeller s19529 #24] tab-new                         -> 200 8 ms
+  [pump-impeller s19529 #25] add            cone             -> 200 12 ms
+  [pump-impeller s19529 #26] tab-switch                      -> 200 9 ms
+  [pump-impeller s19529 #27] tab-close                       -> 200 9 ms
+  [pump-impeller s19529 #28] tab-switch                      -> 200 9 ms
+  [pump-impeller s19529 #29] remove-plan                     -> 400 10 ms  cannot remove 'blade_seat': used by ['blade_ring']
+  [pump-impeller s19529 #30] remove                          -> 400 9 ms  cannot remove 'blade_seat': used by ['blade_ring']
+  [pump-impeller s19529 #31] add            disc             -> 200 216 ms
+  [pump-impeller s19529 #32] edit                            -> 200 191 ms
+  [pump-impeller s19529 #33] undo                            -> 200 228 ms
+  [pump-impeller s19529 #34] redo                            -> 200 247 ms
+  [pump-impeller s19529 #35] add            sketch           -> 200 12 ms
+  [pump-impeller s19529 #36] add            extrude          -> 200 197 ms
+  [pump-impeller s19529 #37] strike                          -> 200 12 ms
+  [pump-impeller s19529 #38] restore                         -> 200 10 ms
+  [pump-impeller s19529 #39] suppress                        -> 200 244 ms
+  [pump-impeller s19529 #40] suppress                        -> 200 183 ms
+  [pump-impeller s19529 #41] doc                             -> 200 8 ms
+  [pump-impeller s19529 #42] tab-new                         -> 200 8 ms
+  [pump-impeller s19529 #43] add            hex_plate        -> 200 26 ms
+  [pump-impeller s19529 #44] tab-switch                      -> 200 9 ms
+  [pump-impeller s19529 #45] tab-close                       -> 200 9 ms
+  [pump-impeller s19529 #46] tab-switch                      -> 200 9 ms
+  [pump-impeller s19529 #47] spec                            -> 200 181 ms
+  [pump-impeller s19529 #48] doc                             -> 200 8 ms
+  [pump-impeller s19529 #49] add            polar_pattern    -> 200 11 ms
+  [pump-impeller s19529 #50] rename                          -> 200 10 ms
+  [pump-impeller s19529 #51] rename                          -> 200 10 ms
+  [pump-impeller s19529 #52] doc                             -> 200 8 ms
+  [pump-impeller s19529 #53] plan           hole             -> 200 8 ms  Hole needs a flat face — click a face of a body
+  [pump-impeller s19529 #54] add            cut              -> 200 27 ms
+  [pump-impeller s19529 #55] edit                            -> 200 373 ms
+  [pump-impeller s19529 #56] undo                            -> 200 48 ms
+  [pump-impeller s19529 #57] redo                            -> 200 45 ms
+  [pump-impeller s19529 #58] plan           hole             -> 200 8 ms  Hole needs a flat face — click a face of a body
+  [pump-impeller s19529 #59] tab-new                         -> 200 8 ms
+  [pump-impeller s19529 #60] add            disc             -> 200 10 ms
+  [pump-impeller s19529 #61] tab-switch                      -> 200 10 ms
+  [pump-impeller s19529 #62] tab-close                       -> 200 9 ms
+  [pump-impeller s19529 #63] tab-switch                      -> 200 9 ms
+  [pump-impeller s19529 #64] edit                            -> 200 30 ms
+  [pump-impeller s19529 #65] undo                            -> 200 47 ms
+  [pump-impeller s19529 #66] redo                            -> 200 45 ms
+  [pump-impeller s19529 #67] edit                            -> 200 13 ms
+  [pump-impeller s19529 #68] undo                            -> 200 53 ms
+  [pump-impeller s19529 #69] redo                            -> 200 12 ms
+   clean
+-- journey 42: rocky-balboa seed 19530
+  [rocky-balboa s19530 #0] opened: 5 features, 1 bodies
+  [rocky-balboa s19530 #1] add            sketch           -> 200 48 ms
+  [rocky-balboa s19530 #2] add            extrude          -> 200 4746 ms
+  [rocky-balboa s19530 #3] add            sketch_on_face   -> 200 36 ms
+  [rocky-balboa s19530 #4] add            extrude          -> 200 4907 ms
+  [rocky-balboa s19530 #5] add            linear_pattern   -> 200 49723 ms
+  [rocky-balboa s19530 #6] plan           shell            -> 200 2177 ms
+  [rocky-balboa s19530 #7] add            scale            -> 200 12157 ms
+  [rocky-balboa s19530 #8] undo                            -> 200 17110 ms
+  [rocky-balboa s19530 #9] add            with_bolt_circle -> 200 60 ms
+  [rocky-balboa s19530 #10] add            shell            -> 200 10966 ms
+  [rocky-balboa s19530 #11] undo                            -> 200 4485 ms
+  [rocky-balboa s19530 #12] add            ball             -> 200 31 ms
+  [rocky-balboa s19530 #13] add            disc             -> 200 32 ms
+  [rocky-balboa s19530 #14] add            rotate           -> 200 32 ms
+  [rocky-balboa s19530 #15] add            mirror           -> 200 41 ms
+  [rocky-balboa s19530 #16] edit                            -> 200 38553 ms
+  [rocky-balboa s19530 #17] undo                            -> 200 4607 ms
+  [rocky-balboa s19530 #18] redo                            -> 200 4598 ms
+  [rocky-balboa s19530 #19] rollback                        -> 200 29 ms
+  [rocky-balboa s19530 #20] plan           extrude          -> 200 8 ms  Extrude needs a sketch profile or a picked flat face
+  [rocky-balboa s19530 #21] rollback                        -> 200 29 ms
+  [rocky-balboa s19530 #22] add            ball             -> 200 34 ms
+  [rocky-balboa s19530 #23] remove-plan                     -> 200 19 ms
+  [rocky-balboa s19530 #24] remove                          -> 200 12628 ms

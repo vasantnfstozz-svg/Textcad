@@ -1,0 +1,417 @@
+{
+ "signature": "kernel-stalled|shell|'j#_shell' (shell): shell: walls of # mm was stopped after # minutes and nothing",
+ "kind": "kernel-stalled",
+ "detail": "'j7_shell' (shell): shell: walls of 2.5 mm was stopped after 15 minutes and nothing was changed. Hollowing a body with hundreds of faces can take that long. Try a thinner wall, or shell the body before the features that added those faces.",
+ "design": "my-part-9",
+ "file": "C:\\Users\\VasanSeenivasan\\Desktop\\textcad\\designs\\my-part-9.tcad.json",
+ "seed": 96223,
+ "failing_step": 19,
+ "request": {
+  "n": 19,
+  "kind": "add",
+  "method": "POST",
+  "url": "/api/feature/add",
+  "body": {
+   "id": "j7_shell",
+   "op": "shell",
+   "params": {
+    "thickness": 2.5,
+    "open_face": "top"
+   },
+   "inputs": [
+    "j1_chamfer"
+   ]
+  },
+  "op": "shell",
+  "ms": 900098,
+  "peak_mb": 451,
+  "grew_mb": 0,
+  "status": 200,
+  "error": null
+ },
+ "replay": [
+  {
+   "n": 19,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j7_shell",
+    "op": "shell",
+    "params": {
+     "thickness": 2.5,
+     "open_face": "top"
+    },
+    "inputs": [
+     "j1_chamfer"
+    ]
+   },
+   "op": "shell",
+   "ms": 900098,
+   "peak_mb": 451,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  }
+ ],
+ "identity": false,
+ "response_error": null,
+ "steps": [
+  {
+   "n": 1,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j1_chamfer",
+    "op": "chamfer",
+    "params": {
+     "length": 0.6,
+     "edges": "bottom"
+    },
+    "inputs": [
+     "extrude7_join1"
+    ]
+   },
+   "op": "chamfer",
+   "ms": 159,
+   "peak_mb": 439,
+   "grew_mb": 2,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 2,
+   "kind": "rollback",
+   "method": "POST",
+   "url": "/api/rollback",
+   "body": {
+    "feature_id": "extrude3_join1"
+   },
+   "op": null,
+   "ms": 8,
+   "peak_mb": 439,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 3,
+   "kind": "plan",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": {
+    "tool": "extrude",
+    "body_id": "extrude3_join1"
+   },
+   "op": "extrude",
+   "ms": 6,
+   "peak_mb": 439,
+   "grew_mb": 0,
+   "status": 200,
+   "error": "Extrude needs a sketch profile or a picked flat face"
+  },
+  {
+   "n": 4,
+   "kind": "rollback",
+   "method": "POST",
+   "url": "/api/rollback",
+   "body": {
+    "feature_id": null
+   },
+   "op": null,
+   "ms": 10,
+   "peak_mb": 440,
+   "grew_mb": 1,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 5,
+   "kind": "strike",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": {
+    "feature_id": "extrude6"
+   },
+   "op": null,
+   "ms": 55,
+   "peak_mb": 440,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 6,
+   "kind": "restore",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": {
+    "feature_id": "extrude6",
+    "restore": true
+   },
+   "op": null,
+   "ms": 8,
+   "peak_mb": 440,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 7,
+   "kind": "rename",
+   "method": "POST",
+   "url": "/api/feature/rename",
+   "body": {
+    "feature_id": "revolve1_join1",
+    "name": "revolve1_join1_r"
+   },
+   "op": null,
+   "ms": 8,
+   "peak_mb": 440,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 8,
+   "kind": "rename",
+   "method": "POST",
+   "url": "/api/feature/rename",
+   "body": {
+    "feature_id": "revolve1_join1_r",
+    "name": "revolve1_join1_r"
+   },
+   "op": null,
+   "ms": 7,
+   "peak_mb": 440,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 9,
+   "kind": "doc",
+   "method": "GET",
+   "url": "/api/doc",
+   "body": null,
+   "op": null,
+   "ms": 6,
+   "peak_mb": 440,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 10,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j2_linear_pattern",
+    "op": "linear_pattern",
+    "params": {
+     "count": 4,
+     "dx": 12.7,
+     "dy": 38.0,
+     "dz": 0
+    },
+    "inputs": [
+     "j1_chamfer"
+    ]
+   },
+   "op": "linear_pattern",
+   "ms": 568,
+   "peak_mb": 449,
+   "grew_mb": 9,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 11,
+   "kind": "undo",
+   "method": "POST",
+   "url": "/api/undo",
+   "body": null,
+   "op": null,
+   "ms": 28,
+   "peak_mb": 450,
+   "grew_mb": 1,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 12,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j3_sketch",
+    "op": "sketch",
+    "params": {
+     "plane": "XZ",
+     "offset": 0,
+     "entities": [
+      {
+       "kind": "circle",
+       "mode": "add",
+       "x": 0,
+       "y": 0,
+       "r": 11.4
+      }
+     ]
+    },
+    "inputs": []
+   },
+   "op": "sketch",
+   "ms": 11,
+   "peak_mb": 450,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 13,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j4_extrude",
+    "op": "extrude",
+    "params": {
+     "amount": 8.1,
+     "both": false
+    },
+    "inputs": [
+     "j3_sketch"
+    ]
+   },
+   "op": "extrude",
+   "ms": 10,
+   "peak_mb": 450,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 14,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j5_tube",
+    "op": "tube",
+    "params": {
+     "outer_radius": 17.6,
+     "inner_radius": 4.0,
+     "height": 19.9
+    },
+    "inputs": []
+   },
+   "op": "tube",
+   "ms": 16,
+   "peak_mb": 450,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 15,
+   "kind": "rollback",
+   "method": "POST",
+   "url": "/api/rollback",
+   "body": {
+    "feature_id": "extrude7_join1"
+   },
+   "op": null,
+   "ms": 9,
+   "peak_mb": 450,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 16,
+   "kind": "plan",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": {
+    "tool": "extrude",
+    "body_id": "extrude7_join1"
+   },
+   "op": "extrude",
+   "ms": 6,
+   "peak_mb": 450,
+   "grew_mb": 0,
+   "status": 200,
+   "error": "Extrude needs a sketch profile or a picked flat face"
+  },
+  {
+   "n": 17,
+   "kind": "rollback",
+   "method": "POST",
+   "url": "/api/rollback",
+   "body": {
+    "feature_id": null
+   },
+   "op": null,
+   "ms": 8,
+   "peak_mb": 450,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 18,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j6_mirror",
+    "op": "mirror",
+    "params": {
+     "plane": {
+      "mid": "X"
+     },
+     "join": true
+    },
+    "inputs": [
+     "j5_tube"
+    ]
+   },
+   "op": "mirror",
+   "ms": 22,
+   "peak_mb": 450,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  },
+  {
+   "n": 19,
+   "kind": "add",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": {
+    "id": "j7_shell",
+    "op": "shell",
+    "params": {
+     "thickness": 2.5,
+     "open_face": "top"
+    },
+    "inputs": [
+     "j1_chamfer"
+    ]
+   },
+   "op": "shell",
+   "ms": 900098,
+   "peak_mb": 451,
+   "grew_mb": 0,
+   "status": 200,
+   "error": null
+  }
+ ],
+ "notes": [
+  "step 19 (add shell) took 900098 ms"
+ ],
+ "found": "2026-09-16 01:19:19"
+}
