@@ -42,3 +42,10 @@ bugs/kernel-crashes.log
 
 # probe scratch: bodies and timings written by probes/sidecar_*.py
 probes/_sidecar_tmp/
+
+# Claude's own scratch, and the trap that caught a `git add -A` on 2026-09-16:
+# a worktree is an embedded git repo, so it commits as a gitlink and takes a
+# peer session's in-progress tree with it. probes/_*.brep is NOT here on
+# purpose — a crash body kept as a repro is meant to be committed.
+.claude/worktrees/
+.playwright-mcp/
