@@ -115,6 +115,44 @@ def test_the_doorbell_names_the_file_that_was_actually_written(out):
     assert out.exists()
 
 
+def test_design_part_says_the_right_reason_for_the_name_it_landed_on(out,
+                                                                    monkeypatch):
+    """ROUND THREE. Round two gave `design_part` a "renamed" line of its own,
+    with no test and one reason hard-coded: "a design in this library that is
+    not mine to overwrite". It has the SAME two reasons `build_design` has, and
+    the one it could not say is the one round two's own fix created — the AI
+    wrote that file and the USER has changed it since."""
+    import studio
+
+    monkeypatch.setattr(studio, "_make_model", lambda: object())
+
+    def _stub(name):
+        d = author._to_document(dict(PLATE_TREE, name=name))
+        d.rebuild()
+        monkeypatch.setattr(author, "author_design", lambda p, m: (d, ["ok"]))
+
+    _stub("test-plate")                        # a free name: ours to iterate in
+    first = mcp_server.design_part("a plate")
+    assert first["design_name"] == "test-plate" and "renamed" not in first
+    again = mcp_server.design_part("a plate")
+    assert again["design_name"] == "test-plate" and "renamed" not in again
+
+    recipe = out / "test-plate.tcad.json"      # ...now the USER edits and saves
+    edited = json.loads(recipe.read_text(encoding="utf-8"))
+    edited["features"][0]["params"]["thickness"] = 9
+    recipe.write_text(json.dumps(edited), encoding="utf-8")
+    after = mcp_server.design_part("a plate")
+    assert after["design_name"] == "test-plate-2"
+    assert "changed since I wrote it" in after["renamed"], after["renamed"]
+    assert json.loads(recipe.read_text(encoding="utf-8")) == edited
+
+    _stub("esp32-remote")                      # never ours: the other sentence
+    _user_design(out, "esp32-remote")
+    theirs = mcp_server.design_part("a remote")
+    assert theirs["design_name"] == "esp32-remote-2"
+    assert "already a design in this library" in theirs["renamed"]
+
+
 def test_design_names_cannot_escape_the_designs_folder(out):
     rep = mcp_server.build_design(dict(PLATE_TREE),
                                   export_name="../../etc/passwd")

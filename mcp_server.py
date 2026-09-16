@@ -80,6 +80,18 @@ def _wrote(name: str) -> None:
     _MINE[name] = _digest(name)
 
 
+def _renamed(asked: str, name: str, mine_before: bool) -> str:
+    """Why the file is not the name that was asked for — the SAME sentence at
+    both doors. `design_part` had one reason hard-coded ("not mine to
+    overwrite"), so the one case round two's own fix created — the AI wrote
+    that file and the USER has changed it since — was reported to them as
+    somebody else's design (section 13 round three, 2026-09-17)."""
+    why = (f"'{asked}' has been changed since I wrote it, so it is the "
+           f"user's now" if mine_before else
+           f"'{asked}' is already a design in this library")
+    return f"{why} and was left untouched; this one is saved as '{name}'"
+
+
 def _taken(name: str) -> bool:
     return any((OUT / f"{name}{ext}").exists()
                for ext in (".tcad.json", ".step", ".history"))
@@ -205,11 +217,7 @@ def build_design(tree: dict, export_name: str = "") -> dict:
             rep["step_path"] = str(step)
             rep["recipe_path"] = str(recipe)
             if name != asked:
-                rep["renamed"] = (
-                    f"'{asked}' has been changed since I wrote it, so it is "
-                    f"the user's now" if mine_before else
-                    f"'{asked}' is already a design in this library"
-                ) + (f" and was left untouched; this one is saved as '{name}'")
+                rep["renamed"] = _renamed(asked, name, mine_before)
             _notify_studio(name)
         return rep
 
@@ -232,6 +240,7 @@ def design_part(description: str) -> dict:
             return {"verified": False, "transcript": transcript}
         rep = _report(doc, True)
         asked = _safe_name(doc.name)
+        mine_before = asked in _MINE
         name = _free_name(doc.name)        # never over a design of the user's
         step = OUT / f"{name}.step"
         doc.to_step(str(step))
@@ -242,9 +251,7 @@ def design_part(description: str) -> dict:
         rep["step_path"] = str(step)
         rep["recipe_path"] = str(recipe)
         if name != asked:                  # the report must name the FILE
-            rep["renamed"] = (f"'{asked}' is a design in this library that is "
-                              f"not mine to overwrite; it was left untouched "
-                              f"and this one is saved as '{name}'")
+            rep["renamed"] = _renamed(asked, name, mine_before)
         rep["transcript"] = transcript
         _notify_studio(name)
         return rep
