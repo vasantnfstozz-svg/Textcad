@@ -573,6 +573,19 @@ def _extrude_behind(doc, fid, depth=0):
     return None
 
 
+def _area_matches(face, area) -> bool:
+    """Is this face still the size the pick recorded? True when the pick
+    carried no size (nothing to check), or when the kernel will not measure the
+    face — the size may only ever confirm an answer, never veto every one."""
+    if area is None:
+        return True
+    try:
+        a0 = float(area)
+        return abs(face.area - a0) <= max(0.5, 0.01 * a0)
+    except Exception:
+        return True
+
+
 def attribute_face(doc, body_id=None, face_index=None, point=None,
                    center=None, area=None) -> dict:
     """Which feature created the picked face?
@@ -597,31 +610,47 @@ def attribute_face(doc, body_id=None, face_index=None, point=None,
         return {"feature": None,
                 "reason": "nothing is built — rebuild the design first"}
 
+    # A NEGATIVE INDEX IS THE IMPORTED-MESH PSEUDO-FACE (studio.MESH_FACE_ID).
+    # A body whose faces are all single triangles is drawn as ONE untagged
+    # mesh, so every click on it arrives as face -1 with no centre — and the
+    # "could not resolve" sentence below told the user to click again, for
+    # ever. Say what is actually true, the way Measure was made to (3ce97a3).
+    if face_index is not None and face_index < 0:
+        return {"feature": None, "body": resolved_body,
+                "reason": "this body is drawn as one mesh (an imported STL has "
+                          "no named faces), so there is no face to trace — open "
+                          "its row in the tree instead"}
+
     # -- resolve the picked face --------------------------------------------
     faces = picked_faces(doc, resolved_body, part)   # tagged-mesh order
     face = None
-    if face_index is not None and 0 <= face_index < len(faces):
+    if face_index is not None and face_index < len(faces):
         cand = faces[face_index]
-        face = cand
-        if area is not None:        # index may be stale after a rebuild
-            try:
-                if abs(cand.area - float(area)) > max(0.5, 0.01 * float(area)):
-                    face = None
-            except Exception:
-                pass
+        # the index may be stale after a rebuild; the area says so
+        face = cand if _area_matches(cand, area) else None
     if face is None and center is not None:     # fall back to geometry
         cx, cy, cz = [float(v) for v in center]
-        best, bestd = None, None
+        near = []
         for f in faces:
             try:
                 c = f.center()
             except Exception:
                 continue
             d = (c.X - cx) ** 2 + (c.Y - cy) ** 2 + (c.Z - cz) ** 2
-            if bestd is None or d < bestd:
-                best, bestd = f, d
-        if best is not None and bestd <= 1.0:
-            face = best
+            if d <= 1.0:
+                near.append((d, f))
+        # NEAREST IS NOT AN IDENTITY when two faces sit in the same place: a
+        # round pocket with a flush pad in it has an outer top of 2343.36 mm2
+        # and a pad top of 113.10 whose centroids are BOTH (0, 0, 10) — and a
+        # centre arrives rounded to 2 decimals, so they tie exactly and the
+        # kernel's own order decided. The pick already says which it was; the
+        # area is the same fact blocks.resolve_face separates them by. It
+        # narrows only when something matches, so a face the design has since
+        # resized still gets the nearest-centre answer it got before.
+        sized = [r for r in near if _area_matches(r[1], area)]
+        near = sized or near
+        if near:
+            face = min(near, key=lambda r: r[0])[1]
     if face is None:
         return {"feature": None, "body": resolved_body,
                 "reason": "could not resolve which face was picked "

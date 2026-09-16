@@ -851,6 +851,21 @@ def _edge_under(part: Part, points, gtype: str | None = None):
     return best
 
 
+def _shared_edges(part: Part, faces: list, sized: bool) -> list:
+    """The edges the two stored host faces of an edge still have in common.
+
+    resolve_face is a NEAREST match — it always returns something. When one of
+    the two stored faces is gone, both can land on the SAME face, whose edges
+    all "share" it: [] says so, so the caller's refusal is not skipped and the
+    feature cannot quietly round a different edge."""
+    fa, fb = (resolve_face(part, f["center"], f.get("normal"),
+                           f.get("area") if sized else None) for f in faces)
+    if _shape_key(fa) == _shape_key(fb):
+        return []
+    kb = {_shape_key(e) for e in _face_edges(part, fb)}
+    return [e for e in _face_edges(part, fa) if _shape_key(e) in kb]
+
+
 def resolve_edge(part: Part, ref: dict):
     """The edge of `part` a stored pick means — by the two faces it separates
     when the pick recorded them, else by the nearest midpoint (+ direction).
@@ -873,23 +888,30 @@ def resolve_edge(part: Part, ref: dict):
         return e
     faces = ref.get("faces") or []
     if len(faces) == 2:
-        fa, fb = (resolve_face(part, f["center"], f.get("normal"), f.get("area"))
-                  for f in faces)
-        # resolve_face is a NEAREST match — it always returns something. When
-        # one of the two stored faces is gone, both can land on the SAME face,
-        # whose edges all "share" it: without this check the refusal below is
-        # skipped and the feature quietly rounds a different edge.
-        shared = []
-        if _shape_key(fa) != _shape_key(fb):
-            kb = {_shape_key(e) for e in _face_edges(part, fb)}
-            shared = [e for e in _face_edges(part, fa) if _shape_key(e) in kb]
-        if not shared:
-            x, y, z = ref.get("mid", [0, 0, 0])
-            raise ValueError(
-                f"the picked edge at ({x:g}, {y:g}, {z:g}) is no longer on the "
-                f"body — an upstream change removed it (the two faces it sat "
-                f"between no longer meet). Re-pick the edges of this feature.")
-        return shared[0] if len(shared) == 1 else _nearest_edge(shared, ref)
+        # THE STORED SIZES GET THE FIRST SAY AND THE LAST WORD IS SIZELESS.
+        # resolve_face narrows to the faces that are still the size the pick
+        # recorded, which is what keeps a stored edge off a same-facing
+        # neighbour — but when a host face is ITSELF resized the narrowing can
+        # answer with a same-sized face somewhere else, and two faces that do
+        # not meet make the refusal below fire on an edge that is sitting right
+        # there. Measured 2026-09-16 (probes/section10_pick_probe2.py §4): a
+        # plate with two pads whose tops are both 200 mm2, a chamfer on one
+        # pad's top rim, and widening THAT pad 20 -> 24 mm turned the edge at
+        # (-15, 0, 11) — alive at (-13, 0, 11) — into "an upstream change
+        # removed it", a red feature. So a refusal has to be earned by BOTH
+        # rules; the fall-back can only ever turn a refusal back into the
+        # answer the resolver gave before the sizes existed.
+        for sized in (True, False):
+            shared = _shared_edges(part, faces, sized)
+            if shared:
+                return shared[0] if len(shared) == 1 else _nearest_edge(shared, ref)
+            if not sized or not any(f.get("area") is not None for f in faces):
+                break                    # no sizes: the second pass IS the first
+        x, y, z = ref.get("mid", [0, 0, 0])
+        raise ValueError(
+            f"the picked edge at ({x:g}, {y:g}, {z:g}) is no longer on the "
+            f"body — an upstream change removed it (the two faces it sat "
+            f"between no longer meet). Re-pick the edges of this feature.")
     if len(faces) == 1:                         # a SEAM of a round face touches one face
         fa = resolve_face(part, faces[0]["center"], faces[0].get("normal"),
                           faces[0].get("area"))
