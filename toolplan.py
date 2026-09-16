@@ -90,29 +90,59 @@ def _loops(faces, pl: Plane) -> list[dict]:
     return loops
 
 
+def _poly_centroid(pts: list[list[float]]) -> tuple[float, float, float]:
+    """(signed area, cx, cy) of a closed polygon — the shoelace centroid.
+    `_project_wire` walks a wire edge by edge, so its points are in order and
+    this is the polygon's real centre (measured against `Face.area`: exact on
+    straight-edged profiles, 1.1-1.5 per cent low on 24-segment curves, whose
+    centroid is a RATIO and so unaffected)."""
+    a = mx = my = 0.0
+    n = len(pts)
+    for i in range(n):
+        x0, y0 = pts[i]
+        x1, y1 = pts[(i + 1) % n]
+        cr = x0 * y1 - x1 * y0
+        a += cr
+        mx += (x0 + x1) * cr
+        my += (y0 + y1) * cr
+    if abs(a) < 1e-12:
+        return 0.0, 0.0, 0.0
+    return a / 2.0, mx / (3.0 * a), my / (3.0 * a)
+
+
 def _limits(loops: list[dict]) -> tuple[dict, tuple[float, float] | None]:
-    """The gizmo sizes and the centre of all outer points: outer_radius = the
-    farthest boundary point from the common centre (the taper ring's size),
-    has_holes, plus the two taper constants the UI must not own itself
-    (LAUNCH-PLAN.md R1): max_taper (a wall cannot lean past flat) and
-    apex_fraction (the kernel refuses the exact tip). Where the walls MEET is
-    a kernel measurement — see _collapse(), asked for lazily."""
-    cx = cy = 0.0
-    n = 0
-    for L in loops:
-        pts = L["outer"]
-        if len(pts) < 3:
-            continue
-        for p in pts:
-            cx += p[0]
-            cy += p[1]
-            n += 1
+    """The gizmo sizes and the profile's CENTRE: outer_radius = the farthest
+    boundary point from that centre (the taper ring's size), has_holes, plus the
+    two taper constants the UI must not own itself (LAUNCH-PLAN.md R1):
+    max_taper (a wall cannot lean past flat) and apex_fraction (the kernel
+    refuses the exact tip). Where the walls MEET is a kernel measurement — see
+    _collapse(), asked for lazily.
+
+    The centre is the AREA centroid, holes subtracted — the same thing face mode
+    already uses (`picked.center()`, the kernel's own centre of mass). It used
+    to be the plain average of the sampled boundary POINTS, and `_project_wire`
+    samples a line twice and a curve 24 times, so the average was pulled towards
+    whichever part of the outline happened to be curved, and towards the busier
+    of two islands. Measured 2026-09-16 (probes/tool_limits_centre_probe.py):
+    exact on every symmetric profile, but 3.727 mm off on a plain L-shaped
+    polygon and 12.404 mm off on a circle-plus-square sketch — so the extrude
+    arrow and the taper ring sat off the profile they belong to."""
     base = {"has_holes": any(L["holes"] for L in loops),
             "max_taper": sk.MAX_TAPER_DEG, "apex_fraction": sk.APEX_FRACTION}
-    if not n:
+    tot = sx = sy = 0.0
+    for L in loops:
+        for pts, sign in [(L["outer"], 1.0), *((h, -1.0) for h in L["holes"])]:
+            if len(pts) < 3:
+                continue
+            a, px, py = _poly_centroid(pts)
+            w = sign * abs(a)
+            tot += w
+            sx += w * px
+            sy += w * py
+    if abs(tot) < 1e-9:
         return ({**base, "outer_radius": 0.0}, None)
-    cx /= n
-    cy /= n
+    cx = sx / tot
+    cy = sy / tot
     outer_r = max(math.hypot(p[0] - cx, p[1] - cy) for L in loops for p in L["outer"])
     return ({**base, "outer_radius": round(outer_r, 4)}, (cx, cy))
 
