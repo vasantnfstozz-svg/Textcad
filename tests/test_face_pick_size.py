@@ -18,6 +18,8 @@ halves: it finds the boss top again (§1), it does not disturb an answer that
 was already right (§2, §3), and a pick with no size behaves exactly as it did
 before it existed (§4). Measured in probes/face_pick_size_gate_probe.py.
 """
+import pytest
+
 import blocks
 import toolplan
 from document import Document, op_params
@@ -253,3 +255,76 @@ def test_every_face_of_the_corpus_still_names_itself():
                 assert blocks._shape_key(got) == blocks._shape_key(bare), name
             checked += 1
     assert checked > 40, f"only {checked} faces exercised"
+
+
+# --------------------------------------------------------------------------
+# §7 the gate must not make the EDGE resolver refuse an edge that is there
+#
+# resolve_face itself never refuses (§2) — it hands the whole list back. But
+# resolve_edge asks it TWICE, once per host face of a stored edge, and then
+# demands that the two answers still meet. So the narrowing CAN refuse, one
+# level up: narrow one host face onto a same-sized face somewhere else and the
+# two no longer share an edge, which reads as "an upstream change removed it".
+# Measured 2026-09-16 (probes/section10_pick_probe2.py §4).
+# --------------------------------------------------------------------------
+
+def two_pads(pad_w=20.0):
+    """A plate with TWO pads on top whose top faces are the same 200 mm2 —
+    20 x 10 and 25 x 8. Everyday geometry, not a contrivance: two pads a
+    design happens to give the same area."""
+    doc = Document(name="t-pads")
+    doc.add("plate", "plate", {"width": 90, "depth": 40, "thickness": 10})
+    doc.add("skP", "sketch", {"plane": "XY", "offset": 5, "entities": [
+        {"kind": "rectangle", "w": pad_w, "h": 10, "x": -25, "y": 0}]})
+    doc.add("padP", "extrude", {"amount": 6}, inputs=["skP"])
+    doc.add("joinP", "fuse", {}, inputs=["plate", "padP"])
+    doc.add("skQ", "sketch", {"plane": "XY", "offset": 5, "entities": [
+        {"kind": "rectangle", "w": 25, "h": 8, "x": 25, "y": 0}]})
+    doc.add("padQ", "extrude", {"amount": 6}, inputs=["skQ"])
+    doc.add("joinQ", "fuse", {}, inputs=["joinP", "padQ"])
+    assert doc.rebuild(), doc.tree()
+    return doc._parts["joinQ"]
+
+
+def _pad_p_top_rim(part):
+    """the +X rim of pad P's top face — the edge a chamfer would be put on"""
+    top = next(f for f in part.faces()
+               if abs(f.normal_at(f.center()).Z - 1) < 1e-6
+               and abs(f.center().Z - 11) < 1e-6 and f.center().X < 0)
+    return max(blocks._face_edges(part, top), key=lambda e: (e @ 0.5).X)
+
+
+def test_a_wider_pad_does_not_lose_the_rim_it_was_chamfered_on():
+    """Pad P is widened 20 -> 24 mm, so its top grows 200 -> 240 mm2 and no
+    longer matches the size the pick recorded. The gate then fell through to
+    pad Q's top — 50 mm away, still 200 mm2 — and the two faces it had to
+    share an edge did not meet: the feature went RED, blaming an upstream
+    change for removing an edge that is sitting at (-13, 0, 11)."""
+    ref = blocks.edge_ref(two_pads(20.0), _pad_p_top_rim(two_pads(20.0)))
+    assert ref["mid"][0] == -15.0, ref["mid"]
+    assert sorted(f["area"] for f in ref["faces"]) == [60.0, 200.0], ref["faces"]
+    got = blocks.resolve_edge(two_pads(24.0), ref)      # RED before the fix
+    assert round((got @ 0.5).X, 3) == -13.0, (got @ 0.5)
+
+
+def test_the_sizeless_rule_is_what_answers_when_the_sized_one_cannot():
+    """...and the answer is exactly the one yesterday's rule gave, because the
+    fix is a fall-back and not a new rule."""
+    wide = two_pads(24.0)
+    ref = blocks.edge_ref(two_pads(20.0), _pad_p_top_rim(two_pads(20.0)))
+    bare = {**ref, "faces": [{k: v for k, v in f.items() if k != "area"}
+                             for f in ref["faces"]]}
+    assert blocks._shape_key(blocks.resolve_edge(wide, ref)) \
+        == blocks._shape_key(blocks.resolve_edge(wide, bare))
+
+
+def test_an_edge_whose_two_faces_do_not_meet_is_still_refused():
+    """The fall-back must not cost the refusal its job. Neither pass can make
+    the top of pad P and the bottom of the plate share an edge, so the
+    sentence still comes — a failed feature beats a rounded wrong edge."""
+    ref = {"mid": [0.0, 0.0, 0.0], "dir": [1.0, 0.0, 0.0], "type": "LINE",
+           "faces": [{"center": [-25.0, 0.0, 11.0], "normal": UP, "area": 200.0},
+                     {"center": [0.0, 0.0, -5.0], "normal": [0.0, 0.0, -1.0],
+                      "area": 3600.0}]}
+    with pytest.raises(ValueError, match="no longer on the body"):
+        blocks.resolve_edge(two_pads(20.0), ref)

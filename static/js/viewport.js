@@ -647,7 +647,7 @@ function profilePickAt(e) {
     const entry = bodyObjs.find(b => b.mesh === fHit.object);
     const fid = entry && entry.data.faceId[fHit.face.a];
     const info = entry && entry.data.faces.find(f => f.id === fid);
-    const flat = info && (info.planar ?? (info.type === 'PLANE'));
+    const flat = isFlatFace(info);
     if (info && !profilePickOpts.faces) {          // this tool takes profiles only
       bus.emit('msg', 'bot', `⚠ ${profilePickOpts.name} works on a sketch profile — ` +
         'click a sketch, not a face. Keep picking, or Esc.');
@@ -935,6 +935,16 @@ function ndcFrom(e) {
     -((e.clientY - rect.top) / rect.height) * 2 + 1);
 }
 
+/* IS THIS FACE FLAT? The server's own geometric answer (`planar`), never the
+   surface TYPE. A taper, loft or sweep wall is dead flat and OCCT stores it as
+   BSPLINE / BEZIER / EXTRUSION, and sketch_on_face takes those happily — all
+   four walls of a 12-degree tapered box are BSPLINE, `planar: true`, and
+   outline in 56 points (probes/section10_pick_probe.py §1). The plane picker
+   read the type instead and refused them with "that face is bspline, not
+   flat", while the pick panel's own "✎ Sketch on this face" button on the SAME
+   face worked — so ONE rule, in one place, for every picker. */
+const isFlatFace = info => !!info && (info.planar ?? (info.type === 'PLANE'));
+
 /* the face of a body mesh under a raycast hit, or null */
 function faceInfoAt(hit) {
   const entry = bodyObjs.find(b => b.mesh === hit.object);
@@ -953,8 +963,7 @@ function planePickHover(e) {
     // crosshair only over a face that WILL pick; a curved face (fillet band,
     // cylinder wall) shows not-allowed instead of promising a pick
     renderer.domElement.style.cursor =
-      info && info.type === 'PLANE' && info.center ? 'crosshair'
-                                                   : 'not-allowed';
+      isFlatFace(info) && info.center ? 'crosshair' : 'not-allowed';
     return;
   }
   const hit = raycaster.intersectObjects(quads, false)[0];
@@ -976,7 +985,7 @@ function planePickAt(e) {
   // OUTSIDE the model's silhouette (they are sized past fitRadius).
   if (fHit) {
     const info = faceInfoAt(fHit);
-    if (info && info.type === 'PLANE' && info.center) {
+    if (isFlatFace(info) && info.center) {
       endPlanePick(); cb('face', info); return;
     }
     // Clicked ON the body but NOT a flat face (a fillet band, a cylinder
@@ -1948,7 +1957,18 @@ function fitToObjects(objs) {
 
 /* ---------------- feature overlay (tree row click) ---------------- */
 
+/* ONE overlay at a time, newest wins. The freshness guard used to be the
+   TREE's selection (`S.selected !== fid`), which only the tree ever sets — so
+   the provenance panel's "Created by" links, which reveal a row without
+   selecting it, fetched their highlight and threw it away: clicking a link in
+   the chain marked the row in the tree and lit nothing in the viewport
+   (2026-09-16). A sequence bumped by clearHighlight() keeps exactly what the
+   old guard was for — a deselect, a rebuild or a newer overlay still wins —
+   without asking the tree who is selected. */
+let overlaySeq = 0;
+
 export function clearHighlight() {
+  overlaySeq++;
   if (!hlMesh) return;
   scene.remove(hlMesh);
   for (const o of (hlMesh.isGroup ? hlMesh.children : [hlMesh]))
@@ -1958,6 +1978,7 @@ export function clearHighlight() {
 
 export async function showFeatureOverlay(fid) {
   clearHighlight();
+  const mine = overlaySeq;
   const f = ((S.lastDoc && S.lastDoc.features) || []).find(x => x.id === fid);
   try {
     if (f && (f.op === 'sketch' || f.op === 'sketch_on_face')) {
@@ -1966,7 +1987,7 @@ export async function showFeatureOverlay(fid) {
       // overlay must ignore depth to glow through the body
       const m = await (await fetch('/api/sketch-mesh/' + fid
                                    + '?t=' + Date.now())).json();
-      if (m.error || S.selected !== fid) return;
+      if (m.error || mine !== overlaySeq) return;
       const grp = new THREE.Group();
       if (m.positions.length) {
         const g = new THREE.BufferGeometry();
@@ -1992,7 +2013,7 @@ export async function showFeatureOverlay(fid) {
     const geo = await new STLLoader()
       .loadAsync('/api/feature-mesh/' + fid + '.stl?t=' + Date.now());
     geo.computeVertexNormals();
-    if (S.selected !== fid) return;        // selection moved on while loading
+    if (mine !== overlaySeq) return;       // the highlight moved on while loading
     hlMesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
       color: 0xffb85c, emissive: 0x8a5a1a, transparent: true, opacity: 0.6,
       depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
@@ -2433,10 +2454,10 @@ function selectFace(fid, entry = null, hitPoint = null) {
     scene.add(pickHl);
   }
   const info = m.faces.find(f => f.id === fid) || {};
-  // FLAT is decided geometrically (info.planar), NOT by surface type — a taper/
+  // FLAT is decided geometrically (isFlatFace), NOT by surface type — a taper/
   // loft wall can be dead flat yet typed BSPLINE, and must still be sketchable.
   // a genuinely CURVED pick is remembered separately so tools can explain it.
-  const isFlat = info.planar ?? (info.type === 'PLANE');
+  const isFlat = isFlatFace(info);
   const point = hitPoint ? [hitPoint.x, hitPoint.y, hitPoint.z] : null;
   // the pick carries WHERE the face was clicked — Hole's centre; the tool's
   // plan turns it into the face's own coordinates, nothing is computed here

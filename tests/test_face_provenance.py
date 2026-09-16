@@ -297,6 +297,71 @@ def test_stale_face_index_falls_back_to_geometry():
     assert r["origin"] == "pocket_tool"        # resolved by geometry instead
 
 
+def viewport_centre(face):
+    """A face centre AS THE BROWSER SENDS IT — studio._tagged_mesh rounds it to
+    2 decimals, which is what makes two faces in one place an exact tie."""
+    c = face.center()
+    return [round(c.X, 2), round(c.Y, 2), round(c.Z, 2)]
+
+
+def pocket_with_a_flush_pad():
+    """A round pocket with a flush round pad standing in it: the pocket's own
+    top and the pad's top BOTH have their centroid at (0, 0, 10) and both
+    point +Z. One place, two faces, two different features."""
+    doc = Document(name="t-prov-tie")
+    doc.add("plate", "plate", {"width": 60, "depth": 60, "thickness": 20})
+    doc.add("pk", "sketch", {"plane": "XY", "offset": 10, "entities": [
+        {"kind": "circle", "r": 20, "x": 0, "y": 0}]})
+    doc.add("pk_tool", "extrude", {"amount": -6}, inputs=["pk"])
+    doc.add("pocket", "cut", {}, inputs=["plate", "pk_tool"])
+    doc.add("pad", "sketch", {"plane": "XY", "offset": 4, "entities": [
+        {"kind": "circle", "r": 6, "x": 0, "y": 0}]})
+    doc.add("pad_tool", "extrude", {"amount": 6}, inputs=["pad"])
+    doc.add("boss", "fuse", {}, inputs=["pocket", "pad_tool"])
+    assert doc.rebuild(), doc.tree()
+    return doc
+
+
+def test_the_stale_fallback_uses_the_size_it_was_handed():
+    """The fall-back above picks the face NEAREST the stored centre, and two
+    faces can share a centre exactly. The pick already says which — its area —
+    and ignoring it named the plate as the maker of a 113 mm2 pad top, with
+    confidence 'high' and no caveat (probes/section10_pick_probe.py §2)."""
+    doc = pocket_with_a_flush_pad()
+    faces = doc.result().faces()
+    pad_top = next(f for f in faces
+                   if abs(f.center().Z - 10) < 1e-6 and f.area < 200)
+    r = P.attribute_face(doc, body_id="boss", face_index=len(faces) + 5,
+                         center=viewport_centre(pad_top), area=pad_top.area)
+    assert r["face"]["area"] == round(pad_top.area, 2), r["face"]
+    assert r["origin"] == "pad_tool", r
+
+
+def test_the_stale_fallback_still_answers_when_no_size_matches():
+    """...and it must not become a refusal: a size nothing matches leaves the
+    nearest-centre answer exactly as it was."""
+    doc = pocket_with_a_flush_pad()
+    faces = doc.result().faces()
+    pad_top = next(f for f in faces
+                   if abs(f.center().Z - 10) < 1e-6 and f.area < 200)
+    r = P.attribute_face(doc, body_id="boss", face_index=len(faces) + 5,
+                         center=viewport_centre(pad_top), area=123456.0)
+    assert r["feature"], r
+
+
+def test_an_imported_mesh_body_is_told_it_has_no_faces_to_trace():
+    """An imported STL is drawn as ONE pseudo-face (studio.MESH_FACE_ID, no
+    centre), so every click on it asks about face -1. The panel answered "the
+    design changed — click it again", which is false and never stops being
+    false — the same lie the Measure tool was cured of in 3ce97a3."""
+    doc = pocket_doc()
+    r = P.attribute_face(doc, body_id="pocket", face_index=studio.MESH_FACE_ID,
+                         center=None, area=1234.5)
+    assert r["feature"] is None
+    assert "mesh" in r["reason"], r["reason"]
+    assert "click it again" not in r["reason"], r["reason"]
+
+
 def test_unknown_body_and_empty_doc_answer_honestly():
     empty = Document(name="t-empty")
     assert P.attribute_face(empty, body_id=None, face_index=0)["feature"] is None
