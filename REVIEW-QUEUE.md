@@ -106,7 +106,7 @@ Then two closing sections:
 | 9 | Trace image | medium | TODO - was scoped to share a chat with 8 and did not |
 | 10 | Viewport, picking and face provenance | high | **reviewed and fixed `8aa30a2`**, ONE reviewer: 5 findings, **all 5 fixed**, 0 rejected, 9 new tests. The P1 was in the face-pick SIZE GATE committed hours earlier (`1a8d28f`): a pick whose face GROWS past its recorded area falls through to a same-sized face elsewhere, and when the two host faces of an edge no longer share one the feature goes RED - measured on a plate with two 200 mm2 pads, widening one 20 -> 24 mm killed its own chamfer though the rim had moved 2 mm. `resolve_edge` tries stored sizes first and sizeless second, so a refusal is earned by both rules. Plus: the Sketch tool's plane picker decided FLAT from the surface TYPE, so no tapered, lofted or swept wall could be sketched on though `sketch_on_face` and the pick panel's own button accept it (all four walls of a 12-degree tapered box are BSPLINE and planar); `attribute_face`'s stale-index fall-back never consulted the area it was handed, so a flush pad in a pocket was attributed to the plate with 'high' confidence; a 'Created by' link revealed the tree row and lit nothing; an imported mesh body's face click blamed a document change that never happened. **Round two re-read the fix commit: `9f1b421`, 0 findings** - round one's work was put to the kernel, not to a reading (the sizeless fall-back is DORMANT over the 9 gauntlet bodies' 135 edges, RIGHT at all twelve widths when it does run, and newly answers in 1 of 752 cross-body resolutions; 6 of round one's 9 tests go red on revert, the 3 that do not are documented guard tests). Round two's own extra measurement found a defect in `toolplan._face_of` instead - see the done log. **Section 10 is CLOSED** |
 | 11 | Tool framework core | medium | **reviewed and fixed `a3d6b03`**, ONE reviewer: 6 findings, **all 6 fixed**, 0 rejected, 18 tests. **P0: a tool panel open on design A wrote its edit into design B** - the document tab bar was the one control not behind `modalGuard` (every ribbon button already is) and `uid()` hands out the same feature names in every design, so B's `extrude1` went 9 mm -> 30 mm / 1017.88 -> 3392.92 mm3 from a panel opened on A. Plus a mistyped holes box deleting a requirement and calling it a pass; a selected sketch row outranking a curved-face pick so Extrude silently extruded the sketch; a missing bracket adding nothing and saying nothing; any non-200 plan answering 'cannot start: undefined'; and the extrude arrow sitting on the average of the SAMPLED boundary points (3.727 mm off on an L profile, 12.404 mm on two islands). **Round two `217d289`: 3 more, the P0 STILL OPEN through the door round one's own commit message named** - a panel does not need a tab CLICK to lose its design; a design ARRIVING from outside (MCP, the doorbell, a second window) takes the active tab, measured 9 -> 30 mm again; and the spec dialog deleted a requirement through the six boxes round one did not look at (typing `two` into n_solids made a red spec a GREEN `{}`). Cleared by measurement, not reading: the tab guard does NOT lock the user in, and the centroid change really is gizmo-only (the whole plan dict byte-identical over ten profiles but `origin`/`outer_radius`). **Round three `931f747`: round two holds (0 findings, the shipped tool.js run in node - a rename does NOT fire the let-go), and the P0 section 10 handed over is CLOSED** - while Fillet is open the click carries the PREVIEW's area, so a face the preview TRIMMED resolved on the input body by its trimmed area and `plan_fillet` rounded every edge of a pad 50 mm away, silently. Section 10's proposed `OnFace` gate was evaluated and REJECTED by measurement (an annulus's centroid lies in its hole), so stored-size-then-sizeless is used with `OnFace` only as the chooser: **284 clicks on real preview bodies, 0 moved, 0 newly refused**. **Section 11 is CLOSED** (three rounds, 10 findings, 39 tests) |
-| 12 | Server layer | medium | TODO |
+| 12 | Server layer | medium | **SEVEN rounds** (`b88d870`, `29bc967`, `8feb30f`, `4a6c667`, `66d80c1`, `8f242c6`, round seven empty): 19 findings, **17 fixed, 1 rejected, 1 carried**, 60 new tests. The spine of it was ONE defect found four times over: **a request read "which tab am I about?" more than once, and the MCP doorbell moves the active tab from another thread between the reads.** Round three measured `/api/export` writing design A's 2000 mm3 solid into design B's `.step` (B is 3600 mm3), status 200, "Exported". Round four found that repair covered two endpoints while **25 others had the same seam** - measured with a real race and nothing patched: `/api/trace-png` put a traced logo into a saved design the user never opened, whose undo depth was 0, so Ctrl+Z there does nothing; `/api/chat` read the active tab **25 times in one request**. Round five found the per-request pin protected one request while the ANSWER gave the next away (`_doc_json` labelled a reply about tab A with the tab a doorbell had just made active, and the browser hands that label back) and that **nine `fetch(` sites bypass `api.js`** - File > Export wrote the arriving design's solid. Round six found the new fetch door was string-only while three.js sends `Request` objects, so the viewport could be drawn another design's mesh. Round seven: **0 findings** - 26 URL shapes, 46 tab-sensitive endpoints in three header states (140 asks, all correct), the one-writer guard right in all 16 cells, `designs/` byte-identical over 397 files. Earlier rounds also closed: a restart throwing away the tab you were LOOKING at (`[:MAX_TABS]` keeps the oldest), `/api/export` overwriting another design's `.step` and refusing two of the user's own designs, `/api/spec` poisoning a document with one wrong value, the fast tier writing `t-washer` into the user's library and ringing their live app, and five refusals answering 200. **Section 12 is CLOSED** |
 | 13 | AI author, MCP and chat | medium | **reviewed and fixed `6b7198d`**, ONE reviewer: 10 findings, **8 fixed, 0 rejected, 2 deferred**, 20 tests (the section had NO MCP test at all). **P0: the MCP doors overwrite a design in the user's library and graft the AI's part onto its version tree** - `build_design` with no name is called `untitled`, which is a real design with a real `.history/`, and `Document.save` is a plain overwrite; measured, the user's design DESTROYED. **P1: the AI's first CORRECT step was refused on 27 of the 50 saved designs**, for a rule about features the USER drew - three refusals, give-up, snapshot restored, 'I did NOT change your design'. Plus `done` judged on the whole tree; the catalogue advertising three `polar_pattern` axis values the op refuses by name; `list_operations` handing a calling AI the step-loop prompt as `build_design`'s conventions; **`verify_step` answering `matches_spec: true` for requirements it never checked** (an unknown key dropped silently, `size: [40, 30]` never comparing Z) while its docstring calls an empty mismatch list a proof; `design_compressor` answering a degenerate duty with a ZeroDivisionError. **Round two `0cc2faa`: round one opened the ADD door and left the EDIT door shut** - an AI edit to a user's feature was still refused for that feature's own pre-existing problem, 27 of 50 again; `lint_tree(only=)` is deleted and replaced by a BASELINE (what the tree already broke at job start; only what is new or worse is reported), 27 -> 0. Also `_MINE` was a promise made once and never re-checked, so the AI overwrote the user's edits to its own design. **Round three `d369595`: the replaced mechanism was put to the kernel rule by rule, and the ONE rule whose key could not carry its question was wrong** - the blob rule lost its owner test, so the AI refused to extrude a sketch the USER drew by hand (5+ shapes), gave up, and said 'I did NOT change your design' a third time. Verified: the baseline cannot MASK a fault the AI introduces (every other key carries the feature id, `Document.add` refuses duplicates, the baseline is the first statement of the job; every masking attempt refused), `AUTHOR_PROMPT` is byte-identical to before the split, 0 of 50 designs carry a spec key the new `checked_spec` refuses. **Section 13 is CLOSED** (three rounds, 16 findings, 32 tests) |
 
 Skipped on purpose: **Shell** (rebuilt on the framework next; reviewed then),
@@ -2005,3 +2005,86 @@ geometrically impossible duties (rpm 1 gives a 4,221,135 mm tip radius; a
 negative radius reaches OCCT).
 
 **Section 13 is CLOSED.**
+
+### Section 12 - Server layer (reviewed 2026-09-16/17; seven rounds, `b88d870` -> round seven empty)
+
+19 findings, 17 fixed, 1 rejected, 1 carried, 60 new tests. **Four P0s, and
+three of them were the same defect found again after it had been "fixed".**
+
+**The spine: a request that asks twice which tab it is about.** `_doc()`,
+`_entry()`, `_slug_of_active()` and their helpers each went to
+`STATE["active"]` independently, and the MCP doorbell
+(`/api/open/<slug>?external=1`) moves that from its own thread - both
+endpoints are sync `def`s, so FastAPI runs them side by side in the threadpool.
+
+- **Round three** measured `/api/export` writing design A's **2000 mm3** solid
+  into design B's `.step` (B is 3600 mm3), status 200, "Exported", no warning;
+  `/api/save` had the same seam and worse, because the mis-binding PERSISTS.
+- **Round four** found that was a point repair: **25 other routes had the same
+  seam.** Measured with a real race, nothing patched - `/api/trace-png` put a
+  traced logo into a saved library design the user never opened, and that
+  design's undo depth was **0**, so Ctrl+Z on it does nothing (104 ms window).
+  `/api/chat` read the active tab **25 times in one request**, so the AI could
+  build in a design the user never asked about with "one Undo takes it all
+  back" false. Fixed with ONE mechanism - a request resolves its tab once,
+  carried in a context var armed by a middleware - not 25 repairs.
+- **Round five** found the pin protected exactly one request and the ANSWER
+  gave the next away: `_doc_json` labels every reply with the LIVE active tab,
+  so a poll carrying tab A's tree came back labelled the arriving tab and the
+  browser handed that label back as its next header - the next edit set the
+  ARRIVING design's `base.thickness` to 41 while the design on screen kept 5.
+  It also found **nine `fetch(` sites bypass `api.js`**, so File > Export wrote
+  the arriving design's solid and reported it as the export just asked for.
+- **Round six** found the page-wide fetch door was STRING-ONLY while three.js
+  r160's `FileLoader` calls `fetch(new Request(...))`: `/api/feature-mesh` went
+  out bare and the viewport could be drawn another design's mesh (bbox
+  [20,20,5] with the header, [60,60,30] without). Wrong picture, not wrong
+  edit, so P1.
+- **Round seven found nothing**, and proved it: 26 URL shapes through a real
+  loopback server, 46 tab-sensitive endpoints x 3 header states = 140 asks all
+  correct, the one-writer guard right in all 16 cells (including failing OPEN
+  when the guard itself raises), no fast-tier test ringing port 8123, and
+  `designs/` byte-identical over 397 files.
+
+**Also closed, from the earlier rounds:**
+
+- **A restart threw away the tab you were looking at.** The session checkpoint
+  slices `[:MAX_TABS]`, which keeps the OLDEST twelve; measured with 13 open,
+  the 13th - active, holding unsaved work - did not come back and nothing said
+  so. Every tab is restored now (40 heavy tabs in 176 ms, only the active one
+  rebuilt).
+- **`/api/export` overwrote another design's `.step`** under a name neither the
+  save nor the MCP uses - then round one's cure **refused Export outright on
+  `esp32-remote-live-t2` and `-t3`** (both carry the NAME `esp32-remote`) and
+  moved two more designs off their own file. Round one had claimed all 50
+  designs have `name == slug`; four do not. Export takes the stem of the FILE
+  the tab is bound to now: 0 of 50 refused, 0 of 50 moved.
+- **`/api/spec` stored a value of any type and poisoned the document**: 200
+  carrying a `TypeError`, the value KEPT, every later `/api/edit` repeating it,
+  and `/api/save` writing it into the `.tcad.json`. Round two found the same
+  failure still reachable through `10**400` (`OverflowError`).
+- **The fast tier designed a washer into the user's library and rang their live
+  app** - `designs/t-washer.*` plus `POST /api/open/t-washer?external=1` to
+  port 8123, which takes the active tab and puts a banner over their work. A
+  library-wide `DESIGNS` fixture is NOT safe (the `-m library` tier and two
+  gallery tests read the real folder on purpose), so the guards are
+  file-scoped.
+- **Five refusals answered 200**, and `/api/export` made four OCCT calls under
+  no kernel lock. The deadlock question the lock raised was settled by
+  measurement: `_KERNEL_LOCK` is an `RLock`, pinned by a test that goes red if
+  anyone makes it a plain `Lock`.
+
+**Rejected:** `n_solids`/`symmetry` accepting any int - measured not to poison
+anything (`/api/edit` stays 200, the document stays saveable, `verify` answers
+with a failed requirement, and `symmetry=10**9` is bounded at 0.02 s).
+
+**Carried:** `doc = e["doc"]` can still go stale if `/api/open` reloads that
+same tab mid-request (needs a per-tab lock) - a lost update between the user's
+own two actions, no cross-design loss.
+
+**A product change the user should know about:** two browser windows now hold
+INDEPENDENT tabs - window one no longer follows window two's switch. That is
+what addressing a request to a tab means, and save, export and the viewport all
+follow the window's own tab now.
+
+**Section 12 is CLOSED.**
