@@ -22,6 +22,7 @@ at 180,000 rpm to a 50 kg/s industrial machine at 3,000 rpm) and
 import math
 
 import pytest
+from build123d import Cylinder
 
 import blocks
 import meanline
@@ -96,7 +97,11 @@ IMPOSSIBLE = [
     # name, duty, a word the sentence must contain
     ("1 rpm: an 8.4 metre wheel", dict(rpm=1), "metres"),
     ("10 rpm", dict(rpm=10), "metres"),
-    ("1000 rpm", dict(rpm=1000), "metres"),
+    # this row was "1000 rpm" until the review round of 2026-09-17 measured
+    # that wheel: 4221.14 mm, and the kernel builds it as ONE watertight solid,
+    # health [], 13-fold symmetric, in 86.2 s. Refusing it was refusing
+    # geometry OpenCASCADE gets right. 100 rpm is 84 metres across and stays.
+    ("100 rpm", dict(rpm=100), "metres"),
     ("1e9 rpm: a wheel of nothing", dict(rpm=1e9), "small"),
     ("PR 1.001: a 7217 mm blade on a 2.6 mm wheel",
      dict(pressure_ratio=1.001), "rim"),
@@ -133,8 +138,10 @@ def test_the_rpm_1_refusal_says_the_size_and_the_speed_to_reach():
     msg = str(e.value)
     assert "at 1 rpm" in msg and "8.4 kilometres" in msg, msg
     assert "raise the speed" in msg, msg
-    # the speed it names is arithmetic, not advice: r2 = U2 / omega
-    assert "2,111 rpm" in msg, msg
+    # the speed it names is arithmetic, not advice: r2 = U2 / omega — so it
+    # moved with the bound (2,111 rpm when the bound was 2000 mm, 422 now
+    # that it is the measured 10,000 mm)
+    assert "422 rpm" in msg, msg
 
 
 def test_the_pressure_ratio_1_001_refusal_quotes_both_numbers():
@@ -143,6 +150,24 @@ def test_the_pressure_ratio_1_001_refusal_quotes_both_numbers():
     msg = str(e.value)
     assert "7,217.26 mm" in msg and "2.61 mm" in msg, msg
     assert "at 0.5 kg/s and pressure ratio 1.001" in msg, msg
+
+
+def test_the_two_flow_refusals_name_the_speed_as_well():
+    """The exit-width and inlet-eye sentences named the pressure ratio and the
+    mass flow — the DUTY, the thing the user is not free to change — and never
+    the speed, which is free and always works: the rim is r2 = U2 / omega.
+    Measured (probes/meanline_gate_boundary_probe.py): 0.5 kg/s at pressure
+    ratio 1.2 is refused at 45,000 rpm with an inlet eye of 50.86 mm against a
+    35.72 mm rim, and at 10,000 rpm the same duty gives eye 53.45 against a
+    160.74 mm rim and passes every rule."""
+    for kw in (dict(pressure_ratio=1.001), dict(pressure_ratio=1.2)):
+        with pytest.raises(ValueError) as e:
+            meanline.design(duty(**kw))
+        assert "lower the speed" in str(e.value), str(e.value)
+    # ...and the duty it names as refusable at speed really does design
+    d = meanline.design(duty(pressure_ratio=1.2, rpm=10000))
+    assert d.inducer_shroud_radius < d.tip_radius
+    assert d.exit_width < d.tip_radius
 
 
 def test_a_refusal_names_the_dial_that_is_actually_wrong():
@@ -242,6 +267,131 @@ def test_the_shipped_compressor_example_is_pinned_feature_by_feature():
         [108.8, 5.359999999999999], [108.8, 85.64], [5.39, 85.64]]
     assert doc.spec == {"symmetry": 13, "n_solids": 1, "tip_radius": 93.8,
                         "tol": 1.0}
+
+
+# ------------------------------ the shaft bore is a hole, not a promise ------
+
+# Every duty whose wheel is under about 35 mm of tip radius. The blades are
+# fused on AFTER `with_center_hole` drills the hub, so blade material that
+# reaches inside the bore fills the hole back in — and nothing measures it:
+# `to_spec` checks symmetry, solid count and tip radius, all of which a wheel
+# with a plugged bore still passes. Measured at HEAD 2026-09-17
+# (probes/meanline_review_kernel.py, probes/meanline_bore_reach.py):
+#
+#   a micro turbo  r2 16.51  bore 2.00   blade reaches in to 0.556  67.27 mm3
+#   a small turbo  r2 27.11  bore 2.00   blade reaches in to 1.392   5.63 mm3
+#
+# and the micro turbo came back ok=True, ONE watertight solid, health [],
+# 13-fold symmetric, max_radius 16.51 — a "verified" impeller no shaft fits.
+BORE_BLOCKED = [
+    ("a small turbo", dict(mass_flow=0.1, pressure_ratio=2.0, rpm=120000)),
+    ("a micro turbo", dict(mass_flow=0.05, pressure_ratio=1.8, rpm=180000)),
+    ("a blower",      dict(mass_flow=0.5, pressure_ratio=1.5, rpm=45000)),
+]
+
+
+def _bore_plug(d):
+    return Cylinder(radius=d.bore_radius, height=8.0 * d.axial_length)
+
+
+@pytest.mark.parametrize("name,kw", BORE_BLOCKED,
+                         ids=[s[0].replace(" ", "_") for s in BORE_BLOCKED])
+def test_the_blades_leave_the_shaft_bore_open(name, kw):
+    """THE SECOND FIXED 2 mm. `bore_radius` is `max(0.5 * r1h, 2.0)` and the
+    blade root is `0.75 * r1h`, so without the 2 mm floor the root is always
+    outside the bore by construction — the floor is what breaks it, exactly as
+    the fixed 2 mm shroud offset broke the cutter one function away.
+
+    The blade's inner end is NOT at its `inner_radius`: `blocks.curved_blade`
+    traces a ribbon and the cap overshoots inwards by an amount that follows
+    the blade ANGLE, not just the thickness — 0.74 mm on the micro turbo and
+    1.66 mm on a PR 1.3 blower, both 1.5 mm thick (bisected with real
+    booleans, probes/meanline_bore_reach.py). So the bore cannot be predicted
+    clear; it is cut out of the blade the pattern copies."""
+    d = meanline.design(duty(**kw))
+    blade = meanline.one_blade(d)
+    assert blade.volume > 0, "the bore cut may not eat the blade"
+    left = blade & _bore_plug(d)
+    vol = left.volume if left is not None else 0.0
+    assert vol < 1e-9, f"{name}: {vol:.3f} mm3 of blade inside the shaft bore"
+
+
+def test_a_wheel_whose_blades_already_clear_the_bore_is_untouched():
+    """The shipped duty's blade reaches in to 6.5578 mm against a 4.92 mm bore
+    (probes/meanline_bore_reach.py), so the cut must remove nothing at all —
+    not a micron, not a face."""
+    d = meanline.design(duty())
+    raw = blocks.curved_blade(
+        inner_radius=0.75 * d.inducer_hub_radius, outer_radius=d.tip_radius,
+        inlet_angle_deg=d.beta1_deg, exit_angle_deg=d.beta2_deg,
+        height=d.axial_length, thickness=max(0.02 * d.tip_radius, 1.5))
+    assert meanline.one_blade(d).volume == pytest.approx(raw.volume, rel=1e-12)
+    left = raw & _bore_plug(d)
+    assert (left.volume if left is not None else 0.0) < 1e-9
+
+
+def test_a_bore_wider_than_the_wheel_is_refused_in_words():
+    """The cut must never be able to eat the whole blade. A hand-built design
+    (an editor, a repair loop) can say so; the gate answers in a sentence, not
+    with an empty component."""
+    d = meanline.design(duty())
+    d.bore_radius = d.tip_radius + 1.0
+    rep = meanline.build_from_design(d)
+    assert rep.ok is False and rep.part is None
+    problems = " ".join(rep.all_problems())
+    assert "shaft bore" in problems and "crashed" not in problems, problems
+
+
+# ------------------------------- the big end of the gate is not a kernel limit
+
+# Every one of these was REFUSED by `_R2_MAX_MM = 2000.0` and every one builds
+# a sound solid — measured one at a time, 6 GB capped
+# (probes/meanline_review_kernel.py, 2026-09-17):
+#
+#   50 kg/s PR 2.0 @ 1500 rpm    r2 2168.78   ok in 78.9 s, 1 solid, health []
+#   0.5 kg/s PR 3.0 @ 1000 rpm   r2 4221.14   ok in 86.2 s, 1 solid, health []
+#   50 kg/s PR 2.0 @  325 rpm    r2 9998.67   ok in 69.6 s, 1 solid, health []
+#
+# all watertight, all 13-fold symmetric, all with max_radius equal to the
+# design's to the last digit and peak memory under 1.3 GB. The kernel is
+# nowhere near its limit at 2000 mm, so a bound there is a size opinion, and
+# the first row is the author's OWN largest duty at half its speed.
+BIG_BUT_SOUND = [
+    ("half the speed of the largest duty",
+     dict(mass_flow=50.0, pressure_ratio=2.0, rpm=1500), 2168.78),
+    ("a 1000 rpm wheel", dict(pressure_ratio=3.0, rpm=1000), 4221.14),
+    ("a 20 metre wheel",
+     dict(mass_flow=50.0, pressure_ratio=2.0, rpm=325.3597), 9998.67),
+]
+
+
+@pytest.mark.parametrize("name,kw,r2", BIG_BUT_SOUND,
+                         ids=[s[0].replace(" ", "_") for s in BIG_BUT_SOUND])
+def test_a_wheel_the_kernel_builds_sound_is_not_refused_for_being_big(name, kw,
+                                                                      r2):
+    d = meanline.design(duty(**kw))
+    assert d.tip_radius == pytest.approx(r2, rel=1e-4), name
+
+
+def test_the_bound_still_refuses_the_answers_that_are_not_machines():
+    """...and it has to still catch the ones that are. 100 rpm is a 84 metre
+    wheel and 1 rpm is 8.4 kilometres — the one the kernel actually failed on,
+    110 s to an open shell."""
+    for rpm in (100, 10, 1):
+        with pytest.raises(ValueError) as e:
+            meanline.design(duty(rpm=rpm))
+        assert "across" in str(e.value), (rpm, str(e.value))
+
+
+def test_the_lower_bound_refuses_nothing_that_could_be_machined():
+    """Attacked and cleared, by arithmetic over 1080 duties
+    (probes/meanline_gate_min_scan.py): the smallest wheel that survives the
+    other two rules is 1.08 mm, and it needs 3,000,000 rpm at a microgram per
+    second. Its blade would be 1.5 mm thick — THICKER than the whole wheel is
+    round — which is the real reason nothing lives down there."""
+    d = meanline.design(duty(mass_flow=1e-4, pressure_ratio=1.5, rpm=500000))
+    assert d.tip_radius == pytest.approx(4.87, abs=0.01)   # 5x the bound
+    assert max(0.02 * d.tip_radius, 1.5) > meanline._R2_MIN_MM
 
 
 def test_the_gate_reads_the_geometry_it_will_actually_build():

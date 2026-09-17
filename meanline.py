@@ -28,7 +28,7 @@ import math
 import blocks
 import inspector
 import assembly
-from build123d import Pos
+from build123d import Cylinder, Pos
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +139,20 @@ def _check(duty: Duty, flow_coeff: float = 0.28) -> None:
 #     inducer r1s / r2     0.319 ..    0.722
 # so every gate sits far outside all of them.
 _R2_MIN_MM = 1.0        # 16x below the smallest sound wheel measured
-_R2_MAX_MM = 2000.0     # a wheel 4 metres across; 1.8x the largest measured
+# The upper bound was 2000 mm ("1.8x the largest duty I happened to test") and
+# that refused wheels OpenCASCADE builds perfectly. Each of these was put to
+# the kernel on its own, 6 GB capped (probes/meanline_review_kernel.py,
+# review round 2026-09-17), and every one came back a single watertight solid,
+# health [], 13-fold symmetric, max_radius equal to the design's:
+#     50 kg/s PR 2.0 @ 1500 rpm   r2 2168.78 mm   78.9 s   1.21 GB
+#     0.5 kg/s PR 3.0 @ 1000 rpm  r2 4221.14 mm   86.2 s   1.20 GB
+#     50 kg/s PR 2.0 @  325 rpm   r2 9998.67 mm   69.6 s   1.27 GB
+# The first is the corpus's OWN largest duty at half its speed — a 1500 rpm
+# machine is a 4-pole motor — so the old bound refused a real one. The kernel
+# is not the constraint anywhere near here; the bound is a sanity bound, and
+# it is set where it was MEASURED sound. The answer that actually failed (rpm
+# 1: 4,221,135 mm, 110 s to an open shell) is still 422x outside it.
+_R2_MAX_MM = 10000.0    # a wheel 20 metres across, measured sound at 9998.67
 
 
 def _across(radius_mm: float) -> str:
@@ -194,7 +207,16 @@ def _check_wheel(d: CompressorDesign, duty: Duty | None = None) -> None:
     # dial that was not the problem.
     lead = (f"at {duty.mass_flow:g} kg/s and pressure ratio "
             f"{duty.pressure_ratio:g}, " if duty is not None else "")
-    fix = "raise the pressure ratio, or lower the mass flow"
+    # The SPEED belongs in this list and was missing from it. Both of these
+    # rules compare something flow-driven against the rim, and the rim is
+    # r2 = U2 / omega — so a slower wheel always has a bigger one, while the
+    # exit width and the inlet eye grow more slowly or not at all. Measured
+    # (probes/meanline_gate_boundary_probe.py): 0.5 kg/s at pressure ratio 1.2
+    # is refused at 45,000 rpm (eye 50.86 against a 35.72 mm rim) and is a
+    # well-proportioned wheel at 10,000 rpm (eye 53.45, rim 160.74) — with the
+    # duty, the one thing the sentence told them to change, untouched.
+    fix = ("raise the pressure ratio, lower the mass flow, or lower the "
+           "speed — the rim grows as the wheel turns slower")
     if duty is not None and not 25.0 <= duty.backsweep_deg <= 45.0:
         fix += (f"; a backsweep of {duty.backsweep_deg:g} degrees is outside "
                 f"the usual 25 to 45 and is part of why the wheel comes out "
@@ -219,6 +241,14 @@ def _check_wheel(d: CompressorDesign, duty: Duty | None = None) -> None:
             f"{lead}the inlet eye would come out beyond the rim of the wheel "
             f"itself ({r1s:,.2f} mm against a tip radius of {r2:,.2f} mm), so "
             f"the air would have nowhere to turn; {fix}")
+    # `bore_radius` has a 2 mm floor, and the blade is cut back to clear the
+    # bore (see `one_blade`); a bore at or past the rim would cut the blade
+    # away entirely and leave an empty component instead of a sentence
+    if d.bore_radius >= r2:
+        raise ValueError(
+            f"{lead}the shaft bore would come out {d.bore_radius:,.2f} mm, at "
+            f"or past the rim of a wheel only {r2:,.2f} mm in radius — there "
+            f"would be no impeller left around it; {fix}")
 
 
 def shroud_root_radius(blade_root_radius: float) -> float:
@@ -237,6 +267,38 @@ def shroud_root_radius(blade_root_radius: float) -> float:
     the old expression keeps the cutter it had, to the micron.
     """
     return max(blade_root_radius - 2.0, 0.0)
+
+
+def one_blade(d: CompressorDesign):
+    """The single blade `build_from_design` patterns around the hub.
+
+    THE SHAFT BORE IS TAKEN OUT OF IT HERE. `build_from_design` drills the
+    bore into the hub with `blocks.with_center_hole` and fuses the blades on
+    afterwards, so any blade material reaching inside the bore fills the hole
+    back in — and nothing notices: `to_spec` measures symmetry, solid count
+    and tip radius, all of which a wheel with a plugged bore still passes.
+    Measured 2026-09-17 (probes/meanline_review_kernel.py): the 0.05 kg/s
+    micro-turbo duty came back ok=True, ONE watertight solid, health [],
+    13-fold symmetric — with 67.27 mm3 of blade sitting in its 2 mm bore.
+
+    It is the SECOND fixed 2 mm on a small wheel, one function from the first:
+    `bore_radius` is `max(0.5 * r1h, 2.0)` and the blade root is `0.75 * r1h`,
+    so without that floor the root clears the bore by construction.
+
+    The cut is not conditional, because the blade's inner end cannot be
+    predicted: `blocks.curved_blade` traces a ribbon and the cap overshoots
+    `inner_radius` by an amount that follows the blade ANGLE, not just the
+    thickness — 0.74 mm on the micro turbo against 1.66 mm on a PR 1.3 blower,
+    both 1.5 mm thick (bisected with real booleans,
+    probes/meanline_bore_reach.py). On a wheel whose blades already clear the
+    bore the cut removes nothing and the volume is identical to the last digit.
+    """
+    blade = blocks.curved_blade(
+        inner_radius=0.75 * d.inducer_hub_radius, outer_radius=d.tip_radius,
+        inlet_angle_deg=d.beta1_deg, exit_angle_deg=d.beta2_deg,
+        height=d.axial_length, thickness=max(0.02 * d.tip_radius, 1.5))
+    return blade - Cylinder(radius=d.bore_radius,
+                            height=8.0 * d.axial_length)
 
 
 def design(duty: Duty, flow_coeff: float = 0.28,
@@ -337,10 +399,7 @@ def build_from_design(d: CompressorDesign) -> assembly.AssemblyReport:
                                        d.bore_radius)
 
     def bladeset():
-        one = blocks.curved_blade(
-            inner_radius=r_in, outer_radius=d.tip_radius,
-            inlet_angle_deg=d.beta1_deg, exit_angle_deg=d.beta2_deg,
-            height=L, thickness=max(0.02 * d.tip_radius, 1.5))
+        one = one_blade(d)      # the shaft bore already taken out of it
         allb = blocks.polar_pattern(Pos(0, 0, t) * one, d.blade_count)
         # shroud cut: full height at the inducer, tapering to b2 at the tip
         big = t + L + 50.0
