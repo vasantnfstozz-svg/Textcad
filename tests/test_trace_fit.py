@@ -276,3 +276,95 @@ def test_a_rectangular_face_still_fits_its_whole_self():
     d = client.post("/api/face-outline", json={
         "face_center": [0, 0, 5], "face_normal": [0, 0, 1]}).json()
     assert d["fit_box"] == [120.0, 80.0, 0.0, 0.0]
+
+
+def _tall_bar_and_hairline(tail=620, thick=1):
+    """A tall 200 x 400 px bar (drawn aspect 0.5) and a loose 1 px horizontal
+    hairline beside it — a scan streak, a stray rule, the tail of a signature.
+
+    `_traceable` keeps the hairline: it is 620 PIXELS, far over the speckle
+    floor. `image_to_entities` then drops it, because the outline of a 1 px
+    line ENCLOSES nothing and fails the `min_area` gate — which is why the
+    traced box holds only the bar."""
+    img = np.zeros((520, 980, 4), np.uint8)
+    cv2.rectangle(img, (40, 60), (239, 459), (0, 0, 0, 255), -1)
+    if tail:
+        img[259:259 + thick, 280:280 + tail] = (0, 0, 0, 255)
+    return _png(img)
+
+
+def test_the_fit_measures_the_art_that_is_actually_drawn():
+    """`artwork_aspect` picks BOTH the fit height and the 90-degree rotate,
+    and it promises to measure the artwork `image_to_entities` traces. It
+    measured the speckle mask instead, which still holds the hairline.
+
+    Measured 2026-09-17 on a 20 x 60 mm face (probes/imgtrace_r5_aspect_gate.py):
+    the bar alone lands 17.91 x 35.91 mm standing up; add the hairline and the
+    fit reads aspect 2.15 instead of 0.50, ROTATES the art and lays it down at
+    17.95 x 8.96 mm — a quarter of the area, on art the hairline is not even
+    part of."""
+    clean = imgtrace.artwork_aspect(_tall_bar_and_hairline(tail=0), 40.0)
+    assert clean == pytest.approx(0.5, rel=0.02)
+    for tail in (200, 400, 620):
+        data = _tall_bar_and_hairline(tail)
+        assert imgtrace.artwork_aspect(data, 40.0) == pytest.approx(
+            clean, rel=0.02), f"a loose {tail} px hairline moved the fit"
+    client = _client()
+    info, w, h = _fit(client, _tall_bar_and_hairline(620), (20.0, 60.0, 0, 0))
+    assert info["rotated"] is False, "art drawn tall came in lying down"
+    assert h > 30.0, f"art fitted only {h:.2f} mm tall on a 60 mm face"
+
+
+def _crescent(r=60.0, thick=2.0, n=200):
+    """A thin arc band, as a face outline in its own 2D — the shape of a
+    curved rib top or a thin flange. Its BOUNDING box is 39 x 112 mm and its
+    material is 2 mm wide."""
+    a = np.linspace(-1.2, 1.2, n)
+    return ([(r * np.cos(t), r * np.sin(t)) for t in a]
+            + [((r - thick) * np.cos(t), (r - thick) * np.sin(t))
+               for t in a[::-1]])
+
+
+def _diag_strip(length=80.0, width=2.0):
+    """a thin strip at 45 degrees: its bbox is 80 times its own width"""
+    d = width / np.sqrt(2)
+    return [(-length, -length), (-length + d, -length - d),
+            (length + d, length - d), (length, length)]
+
+
+def _corners_on(outer, box):
+    poly = np.array(outer, np.float32)
+    w, h, cx, cy = box
+    return all(cv2.pointPolygonTest(poly, (float(cx + sx * w / 2),
+                                           float(cy + sy * h / 2)),
+                                    False) >= 0
+               for sx in (-1, 1) for sy in (-1, 1))
+
+
+@pytest.mark.parametrize("outline,name", [
+    (_crescent(thick=2.0), "crescent 2 mm"),
+    (_crescent(thick=6.0), "crescent 6 mm"),
+    (_crescent(thick=12.0), "crescent 12 mm"),
+    (_diag_strip(width=2.0), "45-degree strip 2 mm"),
+    (_diag_strip(width=8.0), "45-degree strip 8 mm"),
+])
+def test_the_fit_box_stays_on_a_thin_face_too(outline, name):
+    """A face too thin for the fit grid fell back to its BOUNDING box — the
+    very thing the inscribed box was written to stop.
+
+    Measured 2026-09-17: a 2 mm crescent of radius 60 handed back its whole
+    38.98 x 111.84 mm bbox, of which 7.3% is on the face, and a 2 mm strip at
+    45 degrees handed back 161.41 x 161.41 mm, of which 2.0%."""
+    import studio
+    box = studio._inscribed_box(outline)
+    assert box[0] > 0 and box[1] > 0, f"{name}: no box at all"
+    assert _corners_on(outline, box), f"{name}: the box is off the face"
+
+
+def test_a_face_far_too_thin_for_art_says_so_instead():
+    """Below any usable size the honest answer is a refusal, not a box: the
+    caller's guard turns a non-positive box into "that face is too thin to
+    fit artwork onto"."""
+    import studio
+    box = studio._inscribed_box(_crescent(thick=0.05))
+    assert box[0] <= 0 or box[1] <= 0

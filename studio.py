@@ -2103,7 +2103,21 @@ def _inscribed_box(outer) -> list[float]:
 
     HOLES are deliberately ignored: art crossing a bolt hole is ordinary
     (the extrude simply has nothing to cut there), while art off the face
-    edge is the bug."""
+    edge is the bug. Round five measured the alternatives on seven faces
+    (probes/imgtrace_r5_fitbox_holes.py): punching the holes out costs a
+    120x80 plate with a 90x55 pocket 4156 -> 1244 mm2 of drawable material
+    and a 100x100 cover with a d30 bore 8949 -> 3271 mm2, and the rule with
+    no threshold to calibrate — the rectangle holding the most MATERIAL —
+    picks this same box on every one of the seven, washer included.
+
+    A face THINNER than the grid used to fall back to the bounding box, which
+    is the bug this function exists to stop: measured 2026-09-17, a 2 mm
+    crescent of radius 60 handed back its whole 38.98 x 111.84 mm bbox, 7.3%
+    of it on the face, and a 2 mm strip at 45 degrees handed back
+    161.41 x 161.41 mm, 2.0% of it on the face. So the grid is retried finer,
+    and a face that holds no box at all gets a ZERO one — `_trace_face_fit`
+    turns that into "that face is too thin to fit artwork onto", which is the
+    honest answer."""
     xs = [float(p[0]) for p in outer]
     ys = [float(p[1]) for p in outer]
     x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
@@ -2111,24 +2125,25 @@ def _inscribed_box(outer) -> list[float]:
     box = [bw, bh, (x0 + x1) / 2, (y0 + y1) / 2]
     if bw <= 0 or bh <= 0:
         return box
-    cell = max(bw, bh) / float(_FIT_CELLS)
-    pts = np.array([[[round((x - x0) / cell), round((y - y0) / cell)]
-                     for x, y in zip(xs, ys)]], np.int32)
-    grid = np.zeros((max(1, round(bh / cell)) + 1,
-                     max(1, round(bw / cell)) + 1), np.uint8)
-    cv2.fillPoly(grid, pts, 1)
-    if int(grid.sum()) == grid.size:
-        return box                          # the face IS its bounding box
-    inside = cv2.erode(grid, np.ones((3, 3), np.uint8),
-                       borderType=cv2.BORDER_CONSTANT, borderValue=0)
-    area, i0, i1, j0, j1 = _biggest_all_true_block(inside.astype(bool))
-    if area <= 0:
-        return box                          # slivers: the caller's own guard
-    ax0, ax1 = x0 + i0 * cell, x0 + i1 * cell
-    ay0, ay1 = y0 + j0 * cell, y0 + j1 * cell
-    if ax1 <= ax0 or ay1 <= ay0:
-        return box
-    return [ax1 - ax0, ay1 - ay0, (ax0 + ax1) / 2, (ay0 + ay1) / 2]
+    for cells in (_FIT_CELLS, 4 * _FIT_CELLS):
+        cell = max(bw, bh) / float(cells)
+        pts = np.array([[[round((x - x0) / cell), round((y - y0) / cell)]
+                         for x, y in zip(xs, ys)]], np.int32)
+        grid = np.zeros((max(1, round(bh / cell)) + 1,
+                         max(1, round(bw / cell)) + 1), np.uint8)
+        cv2.fillPoly(grid, pts, 1)
+        if int(grid.sum()) == grid.size:
+            return box                      # the face IS its bounding box
+        inside = cv2.erode(grid, np.ones((3, 3), np.uint8),
+                           borderType=cv2.BORDER_CONSTANT, borderValue=0)
+        area, i0, i1, j0, j1 = _biggest_all_true_block(inside.astype(bool))
+        if area <= 0:
+            continue                        # too thin for THIS grid
+        ax0, ax1 = x0 + i0 * cell, x0 + i1 * cell
+        ay0, ay1 = y0 + j0 * cell, y0 + j1 * cell
+        if ax1 > ax0 and ay1 > ay0:
+            return [ax1 - ax0, ay1 - ay0, (ax0 + ax1) / 2, (ay0 + ay1) / 2]
+    return [0.0, 0.0, (x0 + x1) / 2, (y0 + y1) / 2]
 
 
 @app.post("/api/face-outline")

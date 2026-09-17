@@ -165,7 +165,19 @@ def _pull_apart(loops, gap=_HAIR_MM):
     (`_hair_cluster`): below that length the points are one point at any
     scale the picture carries, the nudge is rigid so their shape is exact,
     and the edges either side of the cluster are still four times the move —
-    which is the inside-out guard, kept."""
+    which is the inside-out guard, kept.
+
+    It measured ONE direction — the smaller loop's vertices against the bigger
+    loop's outline — and the closest approach of two outlines sits on a vertex
+    of either one, so a vertex of the BIGGER loop on the middle of a smaller
+    loop's edge walked straight through it. Measured 2026-09-17 (round five,
+    probes/imgtrace_r5_mirror.py): 1 of 16 800 ring traces — radius 131,
+    spokes at 5.825232830 (1 px) and 4.621843815 (2 px), traced 9.5 mm tall —
+    handed sketch.py two hole loops at 0.000000000 mm while this test read
+    0.025739602 mm of clearance, and built 47.933 mm3 that `is_valid` calls
+    True and `health` calls an open shell. `_split_at_feet` now asks the
+    mirror question first and splits the smaller loop's edge at the contact,
+    so the push below has a vertex to move."""
     if len(loops) < 2:
         return loops
     arr = [np.asarray(p, dtype=float) for p in loops]
@@ -185,6 +197,19 @@ def _pull_apart(loops, gap=_HAIR_MM):
         moved = False
         for i, j in pairs:
             d, foot = _nearest_on_ring(arr[i], arr[j])
+            # ...and the mirror question, when it can possibly matter. If a
+            # vertex B of the bigger loop sits within `gap` of an edge (P, Q)
+            # of this one, then P is within |PQ| + gap of the bigger loop, so
+            # a one-way reading further than the longest edge plus the hair
+            # proves there is nothing to find — and the second pass over the
+            # points, which costs what the first one does, is not made.
+            reach = float(np.hypot(*(np.roll(arr[i], -1, axis=0)
+                                     - arr[i]).T).max())
+            if float(d.min()) - reach <= gap:
+                grown = _split_at_feet(arr[i], arr[j], gap)
+                if len(grown) != len(arr[i]):
+                    arr[i] = grown
+                    d, foot = _nearest_on_ring(arr[i], arr[j])
             near = np.where(d < gap)[0]
             if not len(near):
                 continue
@@ -209,6 +234,56 @@ def _pull_apart(loops, gap=_HAIR_MM):
         if not moved:
             break
     return [[(float(x), float(y)) for x, y in a] for a in arr]
+
+
+def _split_at_feet(pts, ring, gap):
+    """`pts` with a vertex inserted wherever a vertex of `ring` comes within
+    `gap` of it — at the point OF `pts` nearest that vertex, which lies on
+    the edge it splits, so not one shape changes. It only gives the push
+    something to move.
+
+    The push walks the pairs (small, big) and asks `_nearest_on_ring(small,
+    big)`: how far is every VERTEX of the smaller loop from the bigger loop's
+    outline. That is half the question. The closest approach of two polylines
+    sits on a vertex of ONE OR OF THE OTHER, and a vertex of the bigger loop
+    landing on the MIDDLE of a long edge of the smaller one is invisible to
+    it: measured 2026-09-17 (round five), a 20 mm bar under a plate with a
+    needle whose tip touches the middle of its top edge reads 4.000 mm of
+    clearance where the truth is 0.000 mm, and as two holes of one sketch it
+    builds 3516.800 mm3 that `is_valid` calls True and `inspector.health`
+    calls an open shell — the same banned failure round four fixed through
+    the other door. Round four measured 49 of 50 residual pairs within
+    0.002 mm to be invisible this way and left the direction open.
+
+    Splitting rather than pushing the edge's ENDS: an endpoint of a long edge
+    is metres from the contact, so moving it would swing the whole edge for a
+    contact at one point of it. The inserted vertex is exactly on the edge,
+    and the existing push then opens the hair at the place that is actually
+    close."""
+    d, foot = _nearest_on_ring(ring, pts)
+    near = np.flatnonzero(d < gap)
+    if not len(near):
+        return pts
+    ab = np.roll(pts, -1, axis=0) - pts
+    den = (ab * ab).sum(axis=1)
+    safe = np.where(den > 1e-18, den, 1.0)
+    add: dict = {}
+    for v in near:
+        f = foot[v]
+        t = np.clip(((f - pts) * ab).sum(axis=1) / safe, 0.0, 1.0)
+        proj = pts + t[:, None] * ab
+        k = int(np.hypot(proj[:, 0] - f[0], proj[:, 1] - f[1]).argmin())
+        run = float(np.sqrt(den[k]))
+        if min(float(t[k]), 1.0 - float(t[k])) * run <= 1e-9:
+            continue              # the foot IS an end of the edge — already
+        add.setdefault(k, []).append((float(t[k]), proj[k]))   # measured
+    if not add:
+        return pts
+    out = []
+    for k in range(len(pts)):
+        out.append(pts[k])
+        out += [p for _t, p in sorted(add.get(k, []), key=lambda z: z[0])]
+    return np.array(out, dtype=float)
 
 
 def _hair_cluster(pts, v, span):
@@ -450,12 +525,23 @@ def artwork_aspect(data: bytes, height_mm: float = 50.0) -> float:
     a 1200px picture — specks image_to_entities then threw away, tracing
     identical art — moved it from 0.20 to 1.00, and the logo landed on a
     120x40 face at 7.2 x 36.0 mm standing up instead of 107.9 x 21.6 mm lying
-    along it (REVIEW-QUEUE section 9)."""
+    along it (REVIEW-QUEUE section 9).
+
+    The speckle floor is not the last gate either, and reading the mask alone
+    left this promise half kept. `image_to_entities` drops a CONTOUR whose
+    outline encloses less than `min_area`, which is a different question from
+    the pixel count: a 1 px hairline is hundreds of pixels and encloses
+    nothing, so it survives the mask and is never drawn. Measured 2026-09-17
+    (probes/imgtrace_r5_aspect_gate.py): a tall bar with a loose 620 px
+    hairline beside it read aspect 2.15 for art really drawn at 0.50, and on
+    a 20 x 60 mm face the fit ROTATED that art and laid it down at
+    17.95 x 8.96 mm instead of standing it up at 17.91 x 35.91 — a quarter of
+    the area, over a hairline that is not in the sketch at all."""
     img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
-    solid, _ = _traceable(_mask_from_image(img), height_mm)
-    ys, xs = np.where(solid)
-    w = int(xs.max()) - int(xs.min()) + 1
-    h = int(ys.max()) - int(ys.min()) + 1
+    solid, min_area = _traceable(_mask_from_image(img), height_mm)
+    cnts, _h = cv2.findContours(solid, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    keep = [c for c in cnts if cv2.contourArea(c) >= min_area]
+    _x, _y, w, h = cv2.boundingRect(np.vstack(keep or list(cnts)))
     return w / h
 
 
