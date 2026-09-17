@@ -89,6 +89,51 @@ def test_more_pinched_rings_build_a_watertight_solid(radius, angles,
     assert inspector.health(solid) == []
 
 
+def _square_and_hairline(tail=0, thick=1, detached=True):
+    """A 400 x 400 px square and, beside it, a `thick` px hairline.
+
+    A hairline is a big connected COMPONENT (hundreds of pixels), so
+    `_traceable`'s pixel floor keeps it, and it ENCLOSES nothing, so the
+    contour gate drops it. It used to stay in the box every surviving piece
+    was scaled and centred on."""
+    m = np.zeros((500, 700), np.uint8)
+    cv2.rectangle(m, (40, 40), (439, 439), 1, -1)
+    if tail:
+        x0 = 440 + (20 if detached else 0)
+        m[239:239 + thick, x0:x0 + tail] = 1
+    return m
+
+
+def _extent(ents):
+    xs = [e["x"] + p[0] for e in ents for p in e["points"]]
+    ys = [e["y"] + p[1] for e in ents for p in e["points"]]
+    return (max(xs) - min(xs), max(ys) - min(ys),
+            (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2)
+
+
+@pytest.mark.parametrize("tail,thick,detached", [(200, 1, True),
+                                                 (140, 2, True),
+                                                 (260, 1, False)])
+def test_the_traced_box_holds_only_what_was_drawn(tail, thick, detached):
+    """Measured 2026-09-17 (probes/imgtrace_bbox_gate_probe.py): a 40 mm
+    square beside a loose 200 px hairline reported `width_mm` 62.00 for
+    39.90 mm of drawn art, and put that art 11.05 mm off the sketch origin —
+    scaled and centred on a box holding a piece that was never drawn."""
+    plain, p_info = imgtrace.image_to_entities(
+        _png(_square_and_hairline()), height_mm=40.0)
+    ents, info = imgtrace.image_to_entities(
+        _png(_square_and_hairline(tail, thick, detached)), height_mm=40.0)
+    w, h, cx, cy = _extent(ents)
+    assert info["width_mm"] == pytest.approx(w, abs=0.01), \
+        "width_mm counts a piece that was never drawn"
+    assert info["height_mm"] == pytest.approx(h, abs=0.01)
+    assert abs(cx) < 0.05 and abs(cy) < 0.05, \
+        f"the sketch sits {cx:.2f}, {cy:.2f} mm off the origin"
+    # and the square itself is traced the same size with or without the tail
+    assert w == pytest.approx(_extent(plain)[0], abs=0.5)
+    assert info["width_mm"] == pytest.approx(p_info["width_mm"], abs=0.5)
+
+
 def test_pulling_loops_apart_leaves_art_that_is_already_clear_alone():
     """A picture whose pieces are properly separated must come out of the
     tracer unchanged, to the last decimal."""

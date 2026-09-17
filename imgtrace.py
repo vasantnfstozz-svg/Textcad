@@ -494,7 +494,20 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
     # PIXELS with hard caps — the sketch must look like the artwork at any
     # target size (resize later with the sketch Scale tool if needed).
     cnts, hier = cv2.findContours(solid, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-    x, y, w, h = cv2.boundingRect(np.vstack([c for c in cnts]))
+    hier = hier[0] if hier is not None else []
+    order = sorted(range(len(cnts)),
+                   key=lambda i: cv2.contourArea(cnts[i]), reverse=True)
+    # The box the art is scaled and centred on holds only what will BE drawn.
+    # `_traceable` drops components by PIXEL COUNT and the loop below drops
+    # contours by the area they ENCLOSE, which are different questions: a 1 px
+    # hairline is hundreds of pixels and encloses nothing, so it passed the
+    # first gate, failed the second, and still stretched the box every
+    # surviving piece was measured against. Measured 2026-09-17: a 40 mm
+    # square beside a loose 140 px hairline reported width_mm 56.00 for
+    # 39.90 mm of drawn art and put that art 8.05 mm off the sketch origin
+    # (probes/imgtrace_bbox_gate_probe.py).
+    keep = [i for i in order if cv2.contourArea(cnts[i]) >= min_area]
+    x, y, w, h = cv2.boundingRect(np.vstack([cnts[i] for i in keep or order]))
     mm_px = float(height_mm) / h
     cx_px, cy_px = x + w / 2.0, y + h / 2.0
     eps = max(1.0, min(3.0, tol_mm / mm_px))
@@ -519,15 +532,21 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
         floor = 2.0 * min_area * mm_px * mm_px
         return loops[:1] + [p for p in loops[1:] if abs(_area2(p)) >= floor]
 
-    hier = hier[0] if hier is not None else []
-    order = sorted(range(len(cnts)),
-                   key=lambda i: cv2.contourArea(cnts[i]), reverse=True)
     drawn = []
-    for i in order:
-        if cv2.contourArea(cnts[i]) < min_area:
-            continue
+    for i in keep:
         outer = hier[i][3] < 0            # no parent -> outer ring
         drawn += [(outer, pts) for pts in to_mm(cnts[i])]
+    # …and the sketch is centred on what was drawn, for the same reason: the
+    # contour gate is not the last word, `_uncross` and the sliver floor also
+    # drop loops, and a dropped loop used to pull the whole sketch off the
+    # origin by up to 12.90 mm of a 40 mm piece. A translation only — the
+    # fidelity knobs ran at `mm_px` and must not be re-scaled under them.
+    if drawn:
+        ax = [p[0] for _o, pts in drawn for p in pts]
+        ay = [p[1] for _o, pts in drawn for p in pts]
+        dx, dy = (max(ax) + min(ax)) / 2.0, (max(ay) + min(ay)) / 2.0
+        drawn = [(o, [(px - dx, py - dy) for px, py in pts])
+                 for o, pts in drawn]
     # no two loops of ONE sketch may meet: a pair that does pinches the face
     # into an open shell, valid and the right volume (REVIEW-QUEUE section 9)
     apart = _pull_apart([pts for _outer, pts in drawn])
@@ -544,7 +563,13 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
     if not ents or ents[0]["mode"] != "add":
         raise ValueError("tracing produced no usable outline")
 
-    info = {"width_mm": round(w * mm_px, 2), "height_mm": round(h * mm_px, 2),
+    # the size reported is the size of what was DRAWN, read back off the
+    # entities themselves — a loop `_uncross` or the sliver floor dropped is
+    # no more part of the artwork than a contour the min_area gate dropped
+    xs = [e["x"] + p[0] for e in ents for p in e["points"]]
+    ys = [e["y"] + p[1] for e in ents for p in e["points"]]
+    info = {"width_mm": round(max(xs) - min(xs), 2),
+            "height_mm": round(max(ys) - min(ys), 2),
             "contours": len(ents) - n_holes, "holes": n_holes,
             "points": sum(len(e["points"]) for e in ents)}
     return ents, info
