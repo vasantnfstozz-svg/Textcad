@@ -2293,10 +2293,31 @@ def _trace_fit_height(data: bytes, m_w: float, m_h: float, rounds: int = 5):
                 True if h <= m_w * tol and h * aspect <= m_h * tol else None)
         if fits is not None and (best is None or h > best[0]):
             best = (h, fits)
-    if best is None:                  # nothing tried fits; the smallest is
-        h, aspect = min(tried)        # the least bad, and the residual
-        best = (h, min(m_w, m_h / aspect)        # rescale below shrinks it
-                > min(m_h, m_w / aspect) * 1.001)
+    if best is None:
+        # Nothing tried fits: for this box the picture has no height at which
+        # it measures itself the same, so one of them has to be traced and
+        # then SHRUNK by `_trace_fitted`'s residual rescale. The least bad is
+        # the one that needs the least shrinking — its fidelity floors ran
+        # closest to the size the art ends up at.
+        #
+        # It used to take the SMALLEST tried height, which is the worst of
+        # them: that is the size at which the most of the artwork has already
+        # been thrown away, so its aspect is the most extreme and the rescale
+        # bites hardest. Measured 2026-09-17: a bar with a ladder of ornaments
+        # above it, on a 12 x 14 mm face, traced at 2.530 mm where only the
+        # bar survives (aspect 24.41) and came back 0.50 x 12.60 mm — a
+        # hairline, against 7.27 x 12.60 for this rule and 10.80 x 6.22 for
+        # the one-shot rule it replaced (probes/imgtrace_fit_height_attack.py).
+        pick = None
+        for h, aspect in sorted(tried):          # ties keep the smaller trace
+            for rot in (False, True):            # ... and the unrotated one
+                w, hh = (h, h * aspect) if rot else (h * aspect, h)
+                if w <= 0 or hh <= 0:
+                    continue
+                s = min(m_w / w, m_h / hh)
+                if pick is None or s > pick[0] * 1.001:
+                    pick = (s, h, rot)
+        best = (pick[1], pick[2]) if pick else (min(tried)[0], False)
     return best
 
 

@@ -78,6 +78,13 @@ def test_two_traced_holes_never_meet():
     (135, (1.924258, 5.229948, 3.893119, 1.17526), 1),
     (121, (0.789657, 1.157217, 5.021092, 4.047596), 1),
     (108, (0.865485, 4.775144, 6.235719), 1),
+    # the pinch `_pull_apart`'s "no room" guard used to REFUSE to open: the
+    # vertex the two hole loops share sits on a sub-hair edge, so the push
+    # was larger than a quarter of it and the vertex was left as traced.
+    # Measured 2026-09-17 (probes/imgtrace_pull_apart_audit.py, 1 of 700
+    # ring traces): two subtract loops at 0.000000000 mm, 84.472 mm3,
+    # is_valid True, health "not manifold/watertight (open shell)"
+    (130, (3.034032, 0.032646, 3.425228), 1),
 ])
 def test_more_pinched_rings_build_a_watertight_solid(radius, angles,
                                                      thickness):

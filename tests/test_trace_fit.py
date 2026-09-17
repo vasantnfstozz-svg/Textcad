@@ -120,6 +120,45 @@ def test_the_fit_height_terminates_and_the_art_it_picks_fits():
         studio.imgtrace.artwork_aspect = real
 
 
+def _ladder(radii=(30, 24, 20, 17, 14, 12, 10, 8, 7, 6), gap=130,
+            bar_w=1000, bar_t=40):
+    """A wide bar with a ladder of dots above it, each smaller than the one
+    below — so EVERY drop in the trace height loses the topmost dot, shortens
+    the artwork and raises its aspect, and the fit's iteration walks downhill
+    without ever repeating. Measured aspects: 0.7431 at 50 mm, 1.7318 at
+    12.6 mm, 4.9801 at 7.28 mm, 24.4146 at 2.53 mm."""
+    h = bar_t + gap * (len(radii) + 1) + 80
+    img = np.zeros((h, bar_w + 200, 4), np.uint8)
+    y0 = h - 60
+    cv2.rectangle(img, (100, y0 - bar_t), (100 + bar_w, y0), (0, 0, 0, 255), -1)
+    for k, r in enumerate(radii):
+        cv2.circle(img, (600, y0 - bar_t - gap * (k + 1)), int(r),
+                   (0, 0, 0, 255), -1)
+    return _png(img)
+
+
+@pytest.mark.parametrize("fw,fh", [(12.0, 14.0), (12.0, 10.0), (12.0, 18.0)])
+def test_art_whose_aspect_never_settles_is_not_shrunk_to_a_hairline(fw, fh):
+    """When NO tried height fits, the fallback used to take the SMALLEST one
+    — the height at which the most of the artwork has already been thrown
+    away, so its aspect is the most extreme and `_trace_fitted`'s residual
+    rescale shrinks it hardest.
+
+    Measured 2026-09-17 (probes/imgtrace_fit_height_attack.py): this picture
+    on a 12 x 14 mm face traced at 2.530 mm, where only the bar survives at
+    aspect 24.41, and came back 0.50 x 12.60 mm — a hairline, 6 mm2 of art on
+    a 151 mm2 face, where even the one-shot rule this replaced gave
+    10.80 x 6.22 mm. The least bad height is the one whose OWN artwork comes
+    closest to fitting already, not the smallest."""
+    client = _client()
+    info, w, h = _fit(client, _ladder(), (fw, fh, 0, 0))
+    assert min(w, h) >= 0.25 * min(fw, fh), \
+        f"art came back {w:.2f} x {h:.2f} mm on a {fw} x {fh} mm face"
+    assert w * h >= 0.25 * (0.9 * fw) * (0.9 * fh), \
+        f"art fills {w * h:.1f} mm2 of a {0.81 * fw * fh:.1f} mm2 fit box"
+    assert w <= 0.9 * fw + 0.01 and h <= 0.9 * fh + 0.01, "art overflows"
+
+
 def test_plain_art_on_a_big_face_is_unchanged_by_the_measured_fit():
     """The fit must still fill the face for ordinary art, where the aspect
     does not move with the size: a disc on a 60 x 30 mm face fills 27 mm."""

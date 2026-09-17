@@ -151,7 +151,21 @@ def _pull_apart(loops, gap=_HAIR_MM):
     probes/imgtrace_touching_loops_probe.py, and a quarter of the thinnest
     wall the corpus really carries (f122's next-closest pair, 0.0373 mm). A
     vertex is left alone if the push is more than a quarter of its own
-    shorter edge, so a loop cannot be turned inside out to save a sliver."""
+    shorter edge, so a loop cannot be turned inside out to save a sliver.
+
+    That last guard used to REFUSE instead of moving, and refusing is how a
+    pinch got through it: the shared vertex `_uncross` inserts at a crossing
+    sits on a sub-hair edge, so the push was always bigger than a quarter of
+    it. Measured 2026-09-17 (probes/imgtrace_pull_apart_audit.py): 1 of 700
+    ring traces — radius 130, spokes at 3.034032, 0.032646, 3.425228, traced
+    12 mm tall — still handed sketch.py two hole loops at 0.000000000 mm and
+    built 84.472 mm3 that `is_valid` calls True and `health` calls an open
+    shell. So a vertex with no room of its own now moves TOGETHER WITH the
+    neighbours joined to it by edges too short to absorb the push
+    (`_hair_cluster`): below that length the points are one point at any
+    scale the picture carries, the nudge is rigid so their shape is exact,
+    and the edges either side of the cluster are still four times the move —
+    which is the inside-out guard, kept."""
     if len(loops) < 2:
         return loops
     arr = [np.asarray(p, dtype=float) for p in loops]
@@ -176,24 +190,56 @@ def _pull_apart(loops, gap=_HAIR_MM):
                 continue
             cij = arr[i].mean(axis=0) - arr[j].mean(axis=0)
             for v in near:
-                home = arr[i][v]
-                nxt = arr[i][(v + 1) % len(arr[i])]
-                room = min(float(np.hypot(*(home - arr[i][v - 1]))),
-                           float(np.hypot(*(home - nxt)))) / 4.0
+                home = arr[i][v].copy()
                 away = home - foot[v]
                 n = float(np.hypot(*away))
                 if n < 1e-9:                  # exactly on the other outline
                     away, n = cij, float(np.hypot(*cij))
                     if n < 1e-9:
                         continue
-                step = foot[v] + away / n * gap
-                if float(np.hypot(*(step - home))) > max(room, 1e-9):
-                    continue                  # no room: leave it as traced
-                arr[i][v] = step
+                delta = foot[v] + away / n * gap - home
+                span = 4.0 * float(np.hypot(*delta))   # the old room test,
+                if span < 1e-12:                       # read the other way
+                    continue
+                block = _hair_cluster(arr[i], int(v), span)
+                if block is None:             # the whole loop is sub-hair
+                    continue                  # — leave it as traced
+                arr[i][block] += delta
                 moved = True
         if not moved:
             break
     return [[(float(x), float(y)) for x, y in a] for a in arr]
+
+
+def _hair_cluster(pts, v, span):
+    """`v` plus every neighbour reachable from it along edges SHORTER than
+    `span` — the run of points that is one point at that scale, and so the
+    smallest piece of the outline that can be nudged rigidly without changing
+    any shape the picture carries.
+
+    `None` when the run is the whole loop: a ring with no edge long enough to
+    absorb the push is a sliver, and the caller leaves it as traced rather
+    than turn it inside out."""
+    m = len(pts)
+    lo = hi = int(v)
+    for _ in range(m):
+        prev = (lo - 1) % m
+        if float(np.hypot(*(pts[lo] - pts[prev]))) >= span:
+            break
+        lo = prev
+    else:
+        return None
+    for _ in range(m):
+        nxt = (hi + 1) % m
+        if float(np.hypot(*(pts[hi] - pts[nxt]))) >= span:
+            break
+        hi = nxt
+    else:
+        return None
+    n = (hi - lo) % m + 1
+    if n >= m:
+        return None
+    return [(lo + k) % m for k in range(n)]
 
 
 def _nearest_on_ring(pts, ring, chunk=128):
