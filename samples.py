@@ -49,6 +49,7 @@ def sample_compressor() -> Document:
     r_in = round(0.75 * d.inducer_hub_radius, 2)
     thk = round(max(0.02 * d.tip_radius, 1.5), 2)
     big = t + L + 50.0
+    root = meanline.shroud_root_radius(r_in)   # never negative; see there
     doc = Document(name=f"compressor-PR3-{d.blade_count}blades")
     doc.add("hub_body", "revolve_profile",
             {"points": [[0, 0], [d.tip_radius, 0], [d.tip_radius, t],
@@ -63,10 +64,10 @@ def sample_compressor() -> Document:
     doc.add("blades_raw", "polar_pattern", {"count": d.blade_count},
             inputs=["blade_up"])
     doc.add("shroud_cutter", "revolve_profile",
-            {"points": [[r_in - 2, t + L], [d.inducer_shroud_radius, t + L],
+            {"points": [[root, t + L], [d.inducer_shroud_radius, t + L],
                         [d.tip_radius, t + d.exit_width],
                         [d.tip_radius + 15, t + d.exit_width],
-                        [d.tip_radius + 15, big], [r_in - 2, big]]})
+                        [d.tip_radius + 15, big], [root, big]]})
     doc.add("blades", "cut", inputs=["blades_raw", "shroud_cutter"])
     doc.add("impeller", "fuse", inputs=["hub", "blades"])
     doc.spec = {"symmetry": d.blade_count, "n_solids": 1,

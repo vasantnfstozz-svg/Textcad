@@ -130,6 +130,115 @@ def _check(duty: Duty, flow_coeff: float = 0.28) -> None:
         raise ValueError("efficiency and inlet temperature must be above 0")
 
 
+# The bounds below are MEASURED, not chosen by taste
+# (probes/meanline_size_probe.py, probes/meanline_backsweep_sweep.py,
+# 2026-09-17). Eight sound duties spanning a 0.05 kg/s micro-turbo at 180,000
+# rpm to a 50 kg/s industrial machine at 3,000 rpm answered:
+#     tip radius r2       16.51 .. 1084.39 mm
+#     exit width / r2      0.018 ..    0.180
+#     inducer r1s / r2     0.319 ..    0.722
+# so every gate sits far outside all of them.
+_R2_MIN_MM = 1.0        # 16x below the smallest sound wheel measured
+_R2_MAX_MM = 2000.0     # a wheel 4 metres across; 1.8x the largest measured
+
+
+def _across(radius_mm: float) -> str:
+    """A wheel's diameter in the units a person would say it in.
+
+    The rpm-1 answer is 4,221,135.81 mm of RADIUS, so "mm" stops meaning
+    anything: it is 8.4 kilometres across.
+    """
+    dia = 2.0 * radius_mm
+    if dia >= 1e6:
+        return f"{dia / 1e6:,.1f} kilometres"
+    if dia >= 1000.0:
+        return f"{dia / 1000.0:,.1f} metres"
+    return f"{dia:,.2f} mm"
+
+
+def _rpm_for(d: CompressorDesign, radius_mm: float) -> float:
+    """The speed that would put THIS duty's tip radius at `radius_mm`.
+
+    r2 = U2 / omega and omega = 2*pi*rpm/60, and the tip speed does not depend
+    on the speed at all — so this is arithmetic, not advice.
+    """
+    return d.tip_speed * 60.0 / (2.0 * math.pi * radius_mm / 1000.0)
+
+
+def _check_wheel(d: CompressorDesign, duty: Duty | None = None) -> None:
+    """The equations answered; is the ANSWER a wheel? Refused in words.
+
+    `_check` above guards the equations' own DOMAIN — whether the meanline
+    relations have an answer at all. Whether that answer is a machinable object
+    is a different question, and until 2026-09-17 nothing asked it: rpm 1
+    answered a tip radius of 4,221,135 mm (a wheel 8.4 metres across) whose
+    inducer shroud equalled its hub, a pressure ratio of 1.001 answered blades
+    7,217 mm tall at the rim of a 2.61 mm wheel, and `build_from_design` handed
+    every one of them to OpenCASCADE, which spent two minutes on the 8.4 metre
+    one and came back with an open shell.
+
+    The sentence names the duty to change, because an AI or a user reads it out
+    of the MCP `design_compressor` tool.
+    """
+    r2, b2 = d.tip_radius, d.exit_width
+    r1s = d.inducer_shroud_radius
+    if not all(math.isfinite(v) for v in (r2, b2, r1s, d.tip_speed)):
+        raise ValueError("this duty has no finite answer — check the mass "
+                         "flow, the pressure ratio and the speed")
+    speed = f"at {duty.rpm:,.0f} rpm " if duty is not None else ""
+    # The exit width and the inlet eye are driven by the FLOW and the pressure
+    # ratio together (b2 ~ mdot / (rho2 * Cm2 * r2), and the eye's annulus area
+    # is mdot / (rho01 * Cx)) — and by the backsweep through the tip speed. The
+    # first draft of these two opened with "a pressure ratio of 3" for a
+    # 10,000 kg/s duty and for a -80 degree forward sweep, which named the one
+    # dial that was not the problem.
+    lead = (f"at {duty.mass_flow:g} kg/s and pressure ratio "
+            f"{duty.pressure_ratio:g}, " if duty is not None else "")
+    fix = "raise the pressure ratio, or lower the mass flow"
+    if duty is not None and not 25.0 <= duty.backsweep_deg <= 45.0:
+        fix += (f"; a backsweep of {duty.backsweep_deg:g} degrees is outside "
+                f"the usual 25 to 45 and is part of why the wheel comes out "
+                f"this shape")
+    if r2 > _R2_MAX_MM:
+        raise ValueError(
+            f"{speed}the wheel would come out {_across(r2)} across — raise "
+            f"the speed to at least about {_rpm_for(d, _R2_MAX_MM):,.0f} rpm; "
+            f"less pressure or less backsweep would shrink it too")
+    if r2 < _R2_MIN_MM:
+        raise ValueError(
+            f"{speed}the wheel would come out {_across(r2)} across, too small "
+            f"to machine — lower the speed to at most about "
+            f"{_rpm_for(d, _R2_MIN_MM):,.0f} rpm")
+    if b2 >= r2:
+        raise ValueError(
+            f"{lead}the blades would come out {b2:,.2f} mm tall at the rim of "
+            f"a wheel only {r2:,.2f} mm in radius — that is a drum, not an "
+            f"impeller; {fix}")
+    if r1s >= r2:
+        raise ValueError(
+            f"{lead}the inlet eye would come out beyond the rim of the wheel "
+            f"itself ({r1s:,.2f} mm against a tip radius of {r2:,.2f} mm), so "
+            f"the air would have nowhere to turn; {fix}")
+
+
+def shroud_root_radius(blade_root_radius: float) -> float:
+    """Where the shroud cutter's inner wall stands, given the blade root.
+
+    It used to be `blade_root - 2.0` in two places, and that fixed 2 mm is more
+    than the WHOLE hub nose on any wheel under about 25 mm radius. So a sound
+    micro-turbo duty (0.05 kg/s, PR 1.8, 180,000 rpm — a 16.51 mm wheel) handed
+    `blocks.revolve_profile` a radius of -0.7025 and the user read
+    `builder crashed: ValueError('revolve_profile: point 1 has radius
+    -0.7025 ...')`, an internal function's name for a duty nothing was wrong
+    with (measured 2026-09-17, probes/meanline_kernel_repro.py).
+
+    The cutter only ever meets the blades, and they start at the root, so the
+    axis is a perfectly good inner wall: clamp at 0. Every wheel big enough for
+    the old expression keeps the cutter it had, to the micron.
+    """
+    return max(blade_root_radius - 2.0, 0.0)
+
+
 def design(duty: Duty, flow_coeff: float = 0.28,
            inlet_flow_coeff: float = 0.30) -> CompressorDesign:
     """First-order centrifugal compressor meanline design."""
@@ -171,7 +280,7 @@ def design(duty: Duty, flow_coeff: float = 0.28,
     # 6) axial length (Jansen-style rule of thumb) and mechanical bits
     L = 0.35 * r2
     mm = 1000.0
-    return CompressorDesign(
+    out = CompressorDesign(
         work_input=dh0, tip_speed=U2, slip_factor=sigma,
         power_kw=duty.mass_flow * dh0 / 1000.0,
         tip_radius=round(r2 * mm, 2),
@@ -185,6 +294,10 @@ def design(duty: Duty, flow_coeff: float = 0.28,
         backplate_thk=round(max(0.03 * r2 * mm, 2.0), 2),
         bore_radius=round(max(0.5 * r1h * mm, 2.0), 2),
     )
+    # the answer is arithmetic; this asks whether it is a WHEEL, on the
+    # ROUNDED numbers, because those are the ones the geometry is built from
+    _check_wheel(out, duty)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +317,16 @@ def to_spec(d: CompressorDesign) -> inspector.Spec:
 
 def build_from_design(d: CompressorDesign) -> assembly.AssemblyReport:
     """Build the impeller geometry the design describes, fully verified."""
+    # `design()` gates its own answer, but a CompressorDesign can also be built
+    # by hand (an editor, a repair loop, a saved file), and NOTHING that is not
+    # a wheel may reach OpenCASCADE: the rpm-1 answer took 110 s in the kernel
+    # and came back an open shell. A failed report, never a raise —
+    # `mcp_server._design_compressor` calls this outside its try.
+    try:
+        _check_wheel(d)
+    except ValueError as e:
+        return assembly.AssemblyReport(ok=False, mode="fuse", components=[],
+                                       assembly_problems=[str(e)])
     t, L = d.backplate_thk, d.axial_length
     r_in = 0.75 * d.inducer_hub_radius     # blade root buried in the hub nose
 
@@ -221,13 +344,14 @@ def build_from_design(d: CompressorDesign) -> assembly.AssemblyReport:
         allb = blocks.polar_pattern(Pos(0, 0, t) * one, d.blade_count)
         # shroud cut: full height at the inducer, tapering to b2 at the tip
         big = t + L + 50.0
+        root = shroud_root_radius(r_in)
         cutter = blocks.revolve_profile([
-            (r_in - 2.0, t + L),
+            (root, t + L),
             (d.inducer_shroud_radius, t + L),
             (d.tip_radius, t + d.exit_width),
             (d.tip_radius + 15.0, t + d.exit_width),
             (d.tip_radius + 15.0, big),
-            (r_in - 2.0, big),
+            (root, big),
         ])
         return allb - cutter
 
