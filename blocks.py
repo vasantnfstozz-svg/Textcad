@@ -999,6 +999,48 @@ _KERNEL_WORDS = ("TopoDS", "NCollection", "Standard_", "BRep", "StdFail",
                  "Geom_", "gp_", "TColStd", "BOPAlgo")
 
 
+# Python's own two ways of saying "the parameters do not match the op". Both
+# reach a feature row: a REQUIRED parameter left out (the AI could not tell it
+# apart from an optional one — document.REQUIRED exists so the catalogue now
+# can), and a parameter this build no longer has (a design written by another
+# build opens on purpose, `Document.add` strict=False, and says so at the next
+# rebuild). Both used to say it in Python.
+_MISSING_ARGS = re.compile(
+    r"^\w+\(\) missing \d+ required (?:positional|keyword-only) "
+    r"arguments?: (?P<names>.+)$")
+_UNKNOWN_ARG = re.compile(
+    r"^\w+\(\) got an unexpected keyword argument '(?P<name>[^']+)'$")
+
+
+def _name_and(names) -> str:
+    """'a', 'a and b', 'a, b and c' — the joining document._name_list uses."""
+    names = list(names)
+    if len(names) == 1:
+        return names[0]
+    return ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _missing_or_unknown_params(msg: str) -> str | None:
+    """A TypeError about PARAMETERS turned into a sentence naming them.
+
+    Only these two exact shapes; any other TypeError is our own bug and keeps
+    saying so. The names come out of the message because this module cannot
+    import `document` (document imports blocks), and because the same sentence
+    has to serve a script and the kernel worker as well as a feature row."""
+    m = _MISSING_ARGS.match(msg)
+    if m:
+        names = re.findall(r"'([^']+)'", m.group("names"))
+        if names:
+            return (f"{_name_and(names)} is required — set a value for it"
+                    if len(names) == 1 else
+                    f"{_name_and(names)} are required — set a value for each")
+    m = _UNKNOWN_ARG.match(msg)
+    if m:
+        return (f"{m.group('name')} is not a parameter of this feature — "
+                f"remove it")
+    return None
+
+
 def plain_cause(e: Exception) -> str:
     """The REAL reason a build failed, in words a user can act on.
 
@@ -1017,6 +1059,10 @@ def plain_cause(e: Exception) -> str:
         return "the kernel could not build it there"
     if not msg or any(w in msg or w in type(e).__name__ for w in _KERNEL_WORDS):
         return "the geometry kernel rejected the shape it would produce"
+    if isinstance(e, TypeError):
+        named = _missing_or_unknown_params(msg)
+        if named:
+            return named
     if isinstance(e, ValueError):
         return msg
     # our own bug, or a binding complaining about an argument. Either way the

@@ -23,7 +23,7 @@ import json
 import re
 import time
 
-from document import Document, CREATORS, MODIFIERS, op_params
+from document import Document, CREATORS, MODIFIERS, REQUIRED, op_params
 
 
 # ---------------------------------------------------------------------------
@@ -167,9 +167,17 @@ def op_catalog() -> list[dict]:
 
     The parameters come from `document.op_params` — the SAME source the edit
     guard refuses unknown keys against, so what this shows the AI and what the
-    document will accept from it cannot drift apart."""
+    document will accept from it cannot drift apart.
+
+    A parameter with no default carries `"required": True` and a `"default"`
+    of None, so the Add Feature dialog's `p.default ?? ''` keeps behaving
+    exactly as it did while the fact itself is on the response (R1: a field,
+    never re-derived). The sentinel itself never leaves this function — this
+    list is JSON, served by /api/ops and by the MCP doorbell."""
     def entry(name, kind, inputs):
-        params = [{"name": n, "default": d} for n, d in op_params(name)]
+        params = [{"name": n, "default": None if d is REQUIRED else d,
+                   **({"required": True} if d is REQUIRED else {})}
+                  for n, d in op_params(name)]
         return {"op": name, "kind": kind, "inputs": inputs,
                 "params": _annotate(name, params), "note": OP_NOTES.get(name)}
 
@@ -182,10 +190,25 @@ def op_catalog() -> list[dict]:
 
 
 def _catalog_text() -> str:
-    lines = []
+    """The signature list in the prompt, with REQUIRED said out loud.
+
+    It used to render a parameter with no default and one whose default is
+    None the same way — both bare — so `hole(face_center, face_normal, face,
+    face_area, at=(0.0, 0.0), ...)` read as four required parameters the
+    prompt then forbids the model to compute, while `extrude(amount, ...)`
+    read the same and really did need one. Now a bare `*` means required and
+    every other parameter shows the value it takes when left out, so nothing
+    in the line is a guess (LAUNCH-PLAN §10, 2026-09-17)."""
+    def shown(p):
+        if p.get("required"):
+            return p["name"] + "*"
+        return p["name"] + "=" + ("null" if p["default"] is None
+                                  else str(p["default"]))
+
+    lines = ["  (* = REQUIRED; every other parameter may be left out and takes "
+             "the value shown)"]
     for c in op_catalog():
-        ps = ", ".join(p["name"] + (f"={p['default']}" if p["default"] is not None
-                                    else "") for p in c["params"])
+        ps = ", ".join(shown(p) for p in c["params"])
         need = {"creator": "no inputs", "modifier": "1 input",
                 "combiner": "2+ inputs"}[c["kind"]]
         lines.append(f"  {c['op']}({ps})  [{c['kind']}, {need}]")

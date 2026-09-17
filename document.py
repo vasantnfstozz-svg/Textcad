@@ -182,6 +182,17 @@ def _check_combiner_inputs(op: str, ids: list, parts: list) -> None:
 # a sketch and never a body (`loft` is a combiner and gated above)
 SKETCH_CONSUMING_MODIFIERS = {"extrude", "revolve", "sweep"}
 
+# ...and the same rule the other way round: the ops that repeat a SOLID and
+# cannot mean anything without one. MEASURED 2026-09-11 and again on
+# 2026-09-17 (probes/s10_pattern_kind_probe.py): `linear_pattern` count 3,
+# dx 20 on a plain circle sketch answered "the pattern leaves a broken solid
+# (non-positive volume (0) — empty solid) — a copy touches the body along an
+# edge only; a smaller count, a shorter distance, or another direction", a
+# diagnosis about a shape the user never asked for. Only these two: `mirror`
+# is the third member of pattern.SEEDED_OPS and it mirrors a SKETCH correctly
+# (status ok), as do `move`, `rotate` and `scale`, so none of them is gated.
+SOLID_REPEATING_MODIFIERS = set(pattern.PATTERN_OPS)
+
 
 def _check_modifier_input(op: str, fid: str, part) -> None:
     """Refuse a profile op fed a solid BODY — BEFORE the kernel.
@@ -202,15 +213,51 @@ def _check_modifier_input(op: str, fid: str, part) -> None:
         raise ValueError(
             f"{op} pulls a SKETCH profile, and '{fid}' is a solid body — "
             f"sketch on one of its faces, then {op} that sketch")
+    # The mirror image. NO solids AND some area: a 2D thing, whether it is a
+    # Sketch instance or the Compound disjoint islands compose into — the same
+    # pair of tests, so the two gates agree about what a sketch is. The area
+    # half matters: a feature that built an EMPTY solid also has no solids, and
+    # "it is a sketch" would be a lie about it — that one keeps the pattern's
+    # own broken-solid sentence, which is true of it. `_try`, not `getattr`: a
+    # default only covers AttributeError, and `area` can RAISE (see _loft).
+    if (op in SOLID_REPEATING_MODIFIERS and (n_solids(part) or 0) == 0
+            and (inspector._try(lambda: part.area) or 0) > 0):
+        raise ValueError(
+            f"{op} repeats a SOLID body, and '{fid}' is a sketch — "
+            f"extrude or revolve it first, then {op} the body")
 
 
 KNOWN_OPS = set(CREATORS) | set(MODIFIERS) | set(COMBINERS) | {"move"}
 
 
+class _RequiredParam:
+    """The default of a parameter that HAS no default. Test it with `is`."""
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "REQUIRED"
+
+
+REQUIRED = _RequiredParam()
+"""`op_params`' stand-in for "this parameter must be given".
+
+Before it, a parameter with NO default and one whose default IS None came back
+identically (both as None), so nothing downstream could tell them apart: the
+catalogue the AI reads rendered `hole(face_center, face_normal, face,
+face_area, at=(0.0, 0.0), ...)` — four OPTIONAL parameters that look required
+and that the prompt forbids it to compute — beside `extrude(amount, both=False,
+...)`, where `amount` really is required. 22 of the 29 ops have at least one
+(probes/s10_required_census.py). Left out, it reached the feature row as raw
+Python: `TypeError: extrude_sketch() missing 1 required positional argument:
+'amount'` — which is what `blocks.plain_cause` now translates."""
+
+
 @lru_cache(maxsize=None)
 def op_params(op: str) -> tuple:
     """Every parameter `op` accepts, in signature order, as (name, default)
-    pairs — read from the function the rebuild unpacks the params into.
+    pairs — read from the function the rebuild unpacks the params into. A
+    parameter with no default pairs with `REQUIRED`, never with None: those
+    are two different facts and this is the only place that knows which.
 
     ONE source, because there were two: the edit guard and the catalogue the
     AI reads (`author.op_catalog`) each walked the registries with their own
@@ -228,10 +275,16 @@ def op_params(op: str) -> tuple:
         sig = sig[1:]                    # the upstream part
     # an underscored parameter is the document's, not the user's: the pattern
     # ops take the seed's before / after bodies that way (Document._eval)
-    return tuple((p.name, None if p.default is inspect._empty else p.default)
+    return tuple((p.name, REQUIRED if p.default is inspect._empty else p.default)
                  for p in sig
                  if p.kind not in (p.VAR_KEYWORD, p.VAR_POSITIONAL)
                  and not p.name.startswith("_"))
+
+
+def required_params(op: str) -> tuple:
+    """The names of `op`'s parameters that have no default — the truth
+    `op_params` carries, for anyone who only wants the names."""
+    return tuple(n for n, d in op_params(op) if d is REQUIRED)
 
 # how many inputs an op NEEDS to still mean something (used when a delete
 # takes one of its inputs away: a modifier with none left cannot survive)
