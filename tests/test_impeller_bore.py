@@ -66,3 +66,27 @@ def test_the_shipped_impeller_is_untouched_to_the_last_digit():
     assert (left.volume if left is not None else 0.0) < 1e-9, \
         "the shipped blade already clears its bore; this test proves nothing"
     assert blade.volume == pytest.approx(1488.0, rel=1e-9)
+
+
+# ROUND FOUR: the other half of that cut — it may not SEVER a blade either.
+# A bore that leaves two pieces would make the wheel 14 solids instead of one,
+# and `impeller.build`'s spec (n_solids=1) would call it a failure with no
+# sentence saying why. It cannot happen, and this is why: the cylinder is
+# centred on the axis and the whole blade lies outside it, so what it takes is
+# always the blade's inner END. Measured at every radius below
+# (probes/impeller_round4_sever.py), with the volume left of a 1,488 mm3 blade.
+BORES = [(2.0, 1488.000), (6.0, 1488.000), (9.0, 1488.000), (12.0, 1303.132),
+         (20.0, 836.270), (30.0, 360.151), (39.0, 31.782), (39.9, 4.1404),
+         (40.05, 0.29173)]
+
+
+@pytest.mark.parametrize("bore,left", BORES, ids=[str(b[0]) for b in BORES])
+def test_no_shaft_bore_can_sever_a_blade(bore, left):
+    p = impeller.ImpellerParams(bore_radius=bore)
+    blade = impeller._one_blade(p)
+    assert len(blade.solids()) == 1, f"bore {bore} severed the blade"
+    assert blade.volume == pytest.approx(left, rel=1e-4), bore
+    # and past the tip radius there is simply nothing left — the hub is an
+    # empty solid long before that (bore 22.0), and the build says so
+    gone = impeller._one_blade(impeller.ImpellerParams(bore_radius=41.0))
+    assert not gone.solids()
