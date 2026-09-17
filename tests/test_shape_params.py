@@ -67,7 +67,8 @@ def test_geometry_list_kinds_are_flagged_not_dimensioned():
 
 def test_schema_is_json_safe_and_complete():
     sch = sk.entity_schema()
-    assert set(sch) == {"fields", "common", "diameter", "geometry", "modes"}
+    assert set(sch) == {"fields", "common", "diameter", "geometry", "modes",
+                        "strings", "server_outline"}      # text: a word, glyphs from the server
     assert sch["modes"] == ["add", "subtract"]
     assert {f["key"] for f in sch["fields"]["rectangle"]} == {"w", "h"}
     assert sch["diameter"]["circle"] == "r"        # Ø offered for round shapes

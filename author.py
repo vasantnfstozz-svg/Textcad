@@ -420,7 +420,10 @@ rectangle w/h, circle r, ellipse rx/ry, slot length/height (length = OVERALL
 end-to-end, must exceed height), regular_polygon
 radius/sides, polygon points[[x,y]...], path {{"start":[x,y],"segments":[
 {{"type":"line","to":[x,y]}} or {{"type":"arc","via":[x,y],"to":[x,y]}}...]}}
-(auto-closes; use path for profiles mixing straight edges and arcs);
+(auto-closes; use path for profiles mixing straight edges and arcs),
+text {{"text":"WORD","size":mm}} (a word as glyph faces centred on x/y, font
+optional, default Arial — a name or logo lettering; mode "subtract" inside a
+plate's face sketch, extruded as a cut, is an engraving);
 mode "add" or "subtract"; first must be add).
 A sketch_on_face has ONE input (the body) and params
 {{"face":"top|bottom|+x|-x|+y|-y","offset":mm,"entities":[...]}} — same

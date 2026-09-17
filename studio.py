@@ -2135,6 +2135,26 @@ def sketch_snap_points(req: SnapReq):
         return {"points": [], "edges": [], "error": str(e)}
 
 
+@app.post("/api/sketch/outline")
+def sketch_outline(req: TrimReq):
+    """The loops of each entity the browser cannot draw itself (a text
+    entity's glyphs — a font lives in the kernel, not in JS; R1). Stateless:
+    the entity list the open sketch editor sends, one list of loops per
+    entity, in the sketch's local 2D. A kind the browser draws itself gets
+    []; an entity that will not build gets its sentence in `errors`."""
+    out, errors = [], {}
+    for i, e in enumerate(req.entities or []):
+        if not isinstance(e, dict) or e.get("kind") not in ("text",):
+            out.append([])
+            continue
+        try:
+            out.append(sketchlib.entity_outlines(e))
+        except (KeyError, ValueError, TypeError) as ex:
+            out.append([])
+            errors[str(i)] = str(ex)
+    return {"outlines": out, "errors": errors}
+
+
 @app.post("/api/sketch/trim/pieces")
 def sketch_trim_pieces(req: TrimReq):
     """Split every entity outline at its crossings with the others — the

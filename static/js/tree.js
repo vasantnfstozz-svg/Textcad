@@ -671,6 +671,10 @@ function shapeList(feat, entities) {
     card.appendChild(head);
 
     const known = cat.ok && cat.fields[kind];
+    // a WORD first (a text entity's `text`): edited as text, not as a number
+    for (const f of (known && cat.strings && cat.strings[kind]) || [])
+      if (ent[f.key] !== undefined)
+        card.appendChild(entTextRow(feat, entities, i, f.key, f.label));
     const dims = known ? cat.fields[kind] : genericFields(ent);
     for (const f of dims)
       if (ent[f.key] !== undefined)
@@ -892,6 +896,43 @@ function entRow(feat, entities, i, key, label, unit, factor = 1) {
     if (modalGuard()) return;
     beginEditWith(val, shown, v => applyEntity(feat, entities, i, key,
                                                factor === 1 ? v : v / factor));
+  };
+  pr.appendChild(val);
+  return pr;
+}
+
+/* a STRING field of a shape (a text entity's word): the same inline edit as
+   the numbers, but the value is kept as typed — beginEditWith would refuse
+   anything that is not a number */
+function entTextRow(feat, entities, i, key, label) {
+  const pr = document.createElement('div');
+  pr.className = 'prow';
+  pr.innerHTML = `<span class="pname">${label}</span>`;
+  const val = document.createElement('span');
+  val.className = 'pval';
+  val.textContent = entities[i][key];
+  val.title = 'click to edit';
+  val.onclick = e => {
+    e.stopPropagation();
+    if (modalGuard()) return;
+    const old = String(entities[i][key]);
+    const input = document.createElement('input');
+    input.value = old;
+    val.replaceChildren(input); input.focus(); input.select();
+    let done = false;
+    const finish = async ok => {
+      if (done) return; done = true;
+      const raw = input.value.trim();
+      if (!ok || raw === '' || raw === old) { val.textContent = old; return; }
+      await applyEntity(feat, entities, i, key, raw);
+    };
+    input.onclick = ev => ev.stopPropagation();
+    input.onkeydown = ev => {
+      ev.stopPropagation();
+      if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
+      if (ev.key === 'Escape') finish(false);
+    };
+    input.onblur = () => finish(false);
   };
   pr.appendChild(val);
   return pr;

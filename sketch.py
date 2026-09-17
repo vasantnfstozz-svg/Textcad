@@ -76,7 +76,13 @@ ENTITY_FIELDS = {
     # summary and sends the user to the sketch editor rather than 40 numbers
     "polygon":         [],
     "path":            [],
+    # a word as sketch faces (build123d Text, centred on x / y): the height is
+    # the only dimension; the WORD is a string field (ENTITY_STRINGS)
+    "text":            [("size", "height", "mm")],
 }
+
+# entities that carry a STRING the tree edits as text, not a number
+ENTITY_STRINGS = {"text": [("text", "word"), ("font", "font")]}
 
 # every entity can be placed and turned
 ENTITY_COMMON = [("x", "x", "mm"), ("y", "y", "mm"),
@@ -100,6 +106,11 @@ def entity_schema() -> dict:
                    ENTITY_COMMON],
         "diameter": ENTITY_DIAMETER,
         "geometry": ENTITY_GEOMETRY,
+        "strings": {k: [{"key": a, "label": b} for a, b in v]
+                    for k, v in ENTITY_STRINGS.items()},
+        # kinds whose outline the browser cannot draw itself (a font's glyphs):
+        # it asks POST /api/sketch/outline for the loops (R1)
+        "server_outline": ["text"],
         "modes": ["add", "subtract"],
     }
 
@@ -187,6 +198,8 @@ def _entity(e: dict):
         s = Polygon(*pts)
     elif k == "path":
         s = _path_face(e)
+    elif k == "text":
+        s = _text_faces(e)
     else:
         raise ValueError(f"unknown sketch entity kind '{k}'")
     # Rotate FIRST (about the shape's own centre — every primitive above is
@@ -201,6 +214,62 @@ def _entity(e: dict):
         s = s.rotate(Axis.Z, rot)
     s = Pos(x, y) * s
     return s
+
+
+TEXT_FONT = "Arial"          # the font a text entity uses when none is named
+
+
+def _text_faces(e: dict):
+    """A WORD as sketch faces — build123d `Text`, centred on the entity origin
+    (x / y place the word's centre, like every other entity's). Measured
+    (probes/text_api_probe.py): each glyph piece is a finished face with its
+    holes as inner wires (O has 1, B has 2), so it composes with + / − like any
+    shape — `plate − text` IS the engraving; an unknown font falls back to
+    Arial with a kernel warning on stderr; the font manager finds Arial,
+    Times New Roman, Courier New and Consolas on this box; letters stay valid
+    faces down to 0.1 mm, so the only floor is the positive-size rule."""
+    txt = e.get("text")
+    if not isinstance(txt, str) or not txt.strip():
+        raise ValueError("text entity needs a word — its `text` is empty; type the "
+                         "word to write, or remove the entity")
+    size = float(e.get("size") or 0.0)
+    if size <= 0:
+        raise ValueError(f"text height must be greater than 0, got {size:g}")
+    font = e.get("font") or TEXT_FONT
+    if not isinstance(font, str):
+        raise ValueError(f"text font must be a name such as {TEXT_FONT!r}, got {font!r}")
+    try:
+        with BuildSketch() as bs:
+            b3d.Text(txt, size, font=font, align=(b3d.Align.CENTER, b3d.Align.CENTER))
+        s = bs.sketch
+    except Exception as exc:                        # noqa: BLE001
+        raise ValueError(
+            f"text entity: the font could not shape {txt!r} — try plain letters and "
+            f"digits, or another font") from exc
+    if s is None or not s.faces():
+        raise ValueError(f"text entity: {txt!r} has no printable letters — spaces and "
+                         f"punctuation alone make no shape")
+    return s
+
+
+def entity_outlines(e: dict) -> list[list[list[float]]]:
+    """The loops of ONE entity in the sketch's local 2D — every face's outer
+    wire and holes, sampled — for a kind the browser cannot draw itself
+    (text). Placement and rotation are applied exactly as `_entity` applies
+    them, so the sketcher draws what the kernel builds."""
+    shape = _entity(e)
+    loops = []
+    for f in shape.faces():
+        for w in f.wires():
+            pts = []
+            for ed in w.edges():
+                n = 2 if ed.geom_type == b3d.GeomType.LINE else 12
+                for i in range(n):
+                    p = ed @ (i / n)
+                    pts.append([round(float(p.X), 4), round(float(p.Y), 4)])
+            if len(pts) >= 3:
+                loops.append(pts)
+    return loops
 
 
 def _box_within(inner, outer, tol: float = 1e-7) -> bool:

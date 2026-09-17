@@ -35,10 +35,11 @@ const SKETCH_TOOLS = {
   regular_polygon: { icon: '⬡', name: 'Polygon' },
   slot: { icon: '⬭', name: 'Slot' },
   ellipse: { icon: '⬯', name: 'Ellipse' },
+  text: { icon: 'T', name: 'Text' },        // a word as glyph faces (specs/text-entity.md)
   trim: { icon: '✂', name: 'Trim' },        // modify, not create (see groups)
 };
 const SKETCH_CREATE = ['path', 'openpath', 'rectangle', 'circle', 'regular_polygon',
-                       'slot', 'ellipse'];
+                       'slot', 'ellipse', 'text'];
 let curSketchTool = null;      // which draw tool is active (for ribbon highlight)
 
 // Create Sketch (Fusion): pick a plane or a planar face IN THE VIEWPORT, then

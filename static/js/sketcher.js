@@ -1322,6 +1322,11 @@ function pathOutline(e) {
 
 function placeClick(p) {
   if (isPathTool()) { pathClick(p); return; }
+  if (tool === 'text') {           // ONE click: the word's centre; the box takes the word
+    clicks = [p]; ghost = null;
+    updateHint(); draw();
+    return;
+  }
   clicks.push(p);
 
   if (tool === 'polygon') {
@@ -1452,6 +1457,10 @@ function hitTest(p) {
         && Math.abs(ry) <= e.height / 2) return i;
     if (e.kind === 'polygon' && e.points
         && pointInPolygon(rx, ry, e.points)) return i;   // rx/ry: un-rotated
+    if (e.kind === 'text') {                             // the word's box, un-rotated
+      const b = textBox(e);
+      if (b && rx >= b.x0 && rx <= b.x1 && ry >= b.y0 && ry <= b.y1) return i;
+    }
     if (e.kind === 'path' && e.start) {
       const pts = pathOutline(e).map(q => [q.x, q.y]);
       // an OPEN path encloses nothing: it is hit along its line
@@ -1568,6 +1577,9 @@ function updateHint() {
   else if (tool === 'polygon') el.textContent = clicks.length
     ? 'Click the next corner · double-click (or click the first point) to close'
     : 'Polygon: click each corner, double-click to close';
+  else if (tool === 'text') el.textContent = clicks.length
+    ? 'Type the word and its height in the box · Enter places it · click again to move the point'
+    : 'Text: click where the word\'s CENTRE goes';
   else el.textContent = clicks.length
     ? 'Now click to set the size'
     : ({ circle: 'Circle: click the CENTER point',
@@ -1645,7 +1657,50 @@ function outlinePts(e) {
   if (e.kind === 'path' && e.start)
     return { closed: !e.ghostOpen && e.closed !== false,     // an open path stays open
              pts: pathOutline(e).map(q => [q.x, q.y]) };
+  if (e.kind === 'text') {          // the word's box: for the even-odd rule and the gizmos
+    const b = textBox(e);
+    if (!b) return null;
+    return { closed: true, pts: rot([[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]]) };
+  }
   return null;
+}
+
+/* ---------------- text entities: the glyphs are the SERVER's (R1) ----------
+   A font lives in the kernel, so the loops of a word come from
+   POST /api/sketch/outline, asked once per (word, height, font) with the
+   entity at the origin and unrotated, and placed / turned here exactly as
+   `entToSketch` places every other entity. Until the answer lands the word
+   draws nothing; when it lands the sketch redraws and the even-odd modes are
+   assigned again (a word inside a plate is a cut). */
+const textCache = new Map();                    // key -> loops in the entity's frame | 'pending'
+const textKey = e => `${e.text}|${e.size}|${e.font || ''}`;
+function textLoops(e) {
+  const k = textKey(e), got = textCache.get(k);
+  if (got === undefined) { textCache.set(k, 'pending'); fetchTextLoops(e, k); return []; }
+  if (!Array.isArray(got)) return [];
+  return got.map(L => L.map(([px, py]) => { const q = entToSketch(e, px, py); return [q.x, q.y]; }));
+}
+async function fetchTextLoops(e, k) {
+  try {
+    const r = await fetch('/api/sketch/outline', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entities: [{ ...e, x: 0, y: 0, rotation: 0 }] }) });
+    const res = await r.json();
+    const err = res.errors && res.errors['0'];
+    if (err) bus.emit('msg', 'bot', '⚠ ' + err);
+    textCache.set(k, (res.outlines && res.outlines[0]) || []);
+  } catch { textCache.set(k, []); }
+  if (sketchActive) { assignModes(); draw(); }
+}
+/* the word's bounding box in its own frame, once its loops are known */
+function textBox(e) {
+  const got = textCache.get(textKey(e));
+  if (!Array.isArray(got) || !got.length) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const L of got) for (const [px, py] of L) {
+    x0 = Math.min(x0, px); y0 = Math.min(y0, py); x1 = Math.max(x1, px); y1 = Math.max(y1, py);
+  }
+  return { x0, y0, x1, y1 };
 }
 
 function draw3D() {
@@ -1664,6 +1719,12 @@ function draw3D() {
         shapes.push({ pts: ring, closed: true, color: 0x8a97a8, dashed: true });
   }
   const push = (e, i, isGhost) => {
+    if (e.kind === 'text') {          // the kernel's glyph loops, outlines only
+      const col = !isGhost && i === selEnt ? SEL : (e.mode === 'subtract' ? CUT : ADD);
+      for (const L of textLoops(e))
+        shapes.push({ pts: L, closed: true, color: col, fill: null, dashed: false });
+      return;
+    }
     const o = outlinePts(e);
     if (!o || o.pts.length < 2) return;
     const col = e.mode === 'subtract' ? CUT : ADD;
@@ -1878,7 +1939,9 @@ const DRAW_DIMS = {
   ellipse: [['rx', 'Rx'], ['ry', 'Ry']],
   slot: [['length', 'L'], ['height', 'H']],
   regular_polygon: [['radius', 'R'], ['sides', 'N']],
+  text: [['text', 'Text'], ['size', 'H']],     // the word itself is a field (specs/text-entity.md)
 };
+let lastText = 'TEXT', lastTextSize = 10;       // the Text tool remembers its last word and height
 let lastMove = null;         // latest snapped cursor point (plane coords)
 let drawDimKey = '';         // state signature — rebuild fields on change
 let drawLocked = {};         // field key -> user typed (stop live overwrite)
@@ -1893,6 +1956,7 @@ function drawDimFields() {
 
 /* live value of one field from the current ghost / cursor */
 function drawDimValue(key) {
+  if (tool === 'text') return key === 'text' ? lastText : lastTextSize;
   if (key === 'len') {
     const cur = pathCursor();
     return (cur && lastMove) ? Math.hypot(lastMove.x - cur.x,
@@ -1919,7 +1983,9 @@ function updateDrawDimBox() {
       const w = document.createElement('label');
       w.innerHTML = `<span>${label}</span>`;
       const inp = document.createElement('input');
-      inp.type = 'number'; inp.step = 'any'; inp.dataset.dim = key;
+      if (key === 'text') { inp.type = 'text'; inp.size = 12; }        // the word
+      else { inp.type = 'number'; inp.step = 'any'; }
+      inp.dataset.dim = key;
       inp.oninput = () => { drawLocked[key] = true; };
       inp.onkeydown = ev => {
         ev.stopPropagation();
@@ -1929,7 +1995,7 @@ function updateDrawDimBox() {
         }
       };
       w.appendChild(inp);
-      if (key !== 'sides') {                // "12.5" alone feels off — say mm
+      if (key !== 'sides' && key !== 'text') {   // "12.5" alone feels off — say mm
         const u = document.createElement('span');
         u.className = 'dimunit'; u.textContent = unitLabel();
         w.appendChild(u);
@@ -1941,7 +2007,7 @@ function updateDrawDimBox() {
     const key = inp.dataset.dim;
     if (drawLocked[key] || document.activeElement === inp) continue;
     const v = drawDimValue(key);
-    inp.value = key === 'sides' ? (v || 6) : fmtLen(v, false);
+    inp.value = key === 'text' ? v : key === 'sides' ? (v || 6) : fmtLen(v, false);
   }
   const at = lastMove || clicks[0] || pathStart;
   const scr = at ? planeToScreen(at.x, at.y) : null;
@@ -1954,6 +2020,13 @@ function updateDrawDimBox() {
   el.style.left = (scr.x - pane.left + 18) + 'px';
   el.style.top = (scr.y - pane.top + 18) + 'px';
   el.style.display = 'flex';
+  // the Text tool: the word is what the user types next, so the word field
+  // takes the keys as soon as the box is up (never stealing from a field
+  // the user has already tabbed into)
+  if (tool === 'text' && !el.contains(document.activeElement)) {
+    const t = el.querySelector('input[data-dim="text"]');
+    if (t) { t.focus(); t.select(); }
+  }
 }
 
 /* first digit typed anywhere in sketch mode lands in the box (Fusion) */
@@ -1979,6 +2052,7 @@ function commitDrawDims() {
   const val = {};
   for (const inp of el.querySelectorAll('input')) {
     const key = inp.dataset.dim;
+    if (key === 'text') { val.text = inp.value; continue; }      // a word, not a number
     const n = Number(inp.value);
     val[key] = (!isNaN(n) && inp.value.trim() !== '')
       ? (key === 'sides' ? Math.max(3, Math.round(n)) : Math.max(toMm(n), 0.1))
@@ -2000,6 +2074,17 @@ function commitDrawDims() {
 
   const a = clicks[0];
   if (!a) return;
+  if (tool === 'text') {                       // the word, centred on the click
+    const word = (val.text || '').trim();
+    if (!word) { bus.emit('msg', 'bot', '⚠ Text: type the word first, then Enter.'); return; }
+    lastText = word; lastTextSize = Math.max(val.size || lastTextSize, 0.1);
+    skEnts.push({ kind: 'text', mode: 'add', x: a.x, y: a.y, rotation: 0,
+                  text: word, size: lastTextSize });
+    selEnt = skEnts.length - 1;
+    clicks = []; ghost = null;
+    assignModes(); renderEnts(); updateHint();
+    return;
+  }
   const to = lastMove || a;
   const sx = to.x >= a.x ? 1 : -1, sy = to.y >= a.y ? 1 : -1;
   let ent = null;
