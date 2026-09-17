@@ -292,6 +292,7 @@ export function initViewport() {
                      arrows: moreArrows.length, moveGhost: !!(moveGhost && moveGhost.mesh.visible),
                      axis: !!axisLine, lathe: !!rvGhost, glow: edgeGlow.length,
                      path: !!pathLine, sweep: !!(swGhost && swGhost.mesh.visible),
+                     loft: !!(lfGhost && lfGhost.mesh.visible),
                      edgePick: !!edgePickCb, hole: !!holeMarker, plane: !!planeQuad,
                      facePick: !!profilePickCb }),
     /* the mirror plane as drawn: where it sits and which way it faces */
@@ -1549,6 +1550,53 @@ export function sweepGhostInfo() {
   const E = stationAt(swGhost.lastD || 0);
   return { end: E.p, distance: swGhost.lastD,
            triangles: swGhost.mesh.geometry.attributes.position.count / 3 };
+}
+
+/* ---------------- loft GHOST (the sections skinned) ----------------
+   Loft has no drag handle (Fusion's is a selection tool): the ghost shows the
+   picked sections' outlines — the plan's rings, N world points each, in the
+   order the loft will use — skinned between neighbours. One ring: just the
+   outline, the hint that a second profile is wanted. */
+let lfGhost = null;
+
+export function beginLoftGhost(rings) {
+  endLoftGhost();
+  const R = (rings || []).filter(r => r && r.length >= 3);
+  if (!R.length) return;
+  const pos = [], edge = [];
+  for (const ring of R) {
+    const n = ring.length;
+    for (let j = 0; j < n; j++) edge.push(...ring[j], ...ring[(j + 1) % n]);
+  }
+  for (let k = 0; k + 1 < R.length; k++) {
+    const A = R[k], B = R[k + 1], n = Math.min(A.length, B.length);
+    for (let j = 0; j < n; j++) {
+      const a0 = A[j], a1 = A[(j + 1) % n], b0 = B[j], b1 = B[(j + 1) % n];
+      pos.push(...a0, ...b0, ...b1, ...a0, ...b1, ...a1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  if (pos.length) {
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.computeVertexNormals();
+  }
+  const edgeGeo = new THREE.BufferGeometry()
+    .setAttribute('position', new THREE.Float32BufferAttribute(edge, 3));
+  const { mesh, edges } = ghostPart(geo, edgeGeo);
+  mesh.matrixAutoUpdate = true; edges.matrixAutoUpdate = true;
+  lfGhost = { mesh, edges, parts: [{ mesh, edges }], rings: R.length };
+}
+export function hideLoftGhost() { if (lfGhost) setPartsVisible(lfGhost.parts, false); }
+export function endLoftGhost() {
+  if (!lfGhost) return;
+  disposeParts(lfGhost.parts);
+  lfGhost = null;
+}
+/* test hook: how many sections the ghost skins, and whether it is shown */
+export function loftGhostInfo() {
+  return lfGhost ? { rings: lfGhost.rings, visible: lfGhost.mesh.visible,
+                     triangles: (lfGhost.mesh.geometry.attributes.position
+                                 ? lfGhost.mesh.geometry.attributes.position.count : 0) / 3 } : null;
 }
 
 /* ---------------- a tool's PLANE (Mirror: the mirror plane, a gold square) ----

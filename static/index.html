@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=44">
+<link rel="stylesheet" href="/static/css/studio.css?v=45">
 </head>
 <body>
 
@@ -195,6 +195,28 @@
     <div class="exfoot">
       <button id="swCancel">Cancel</button>
       <button class="primary" id="swOk">OK</button>
+    </div>
+  </div>
+
+  <!-- ============ Loft panel (two or more profiles blended; specs/loft.md) ============ -->
+  <div id="loftDialog" class="toolpanel" style="display:none">
+    <div class="exhead">⏢ Loft</div>
+    <label>Profile <select id="lfProfile"></select></label>
+    <div id="lfList" title="the profiles the loft blends, in the order they lie along it"></div>
+    <div id="lfHint" class="exhint"></div>
+    <label id="lfAddRow">Add <select id="lfAdd"></select></label>
+    <label title="straight walls between the profiles instead of a smooth blend"><input id="lfRuled" type="checkbox"> Ruled</label>
+    <label>Operation
+      <select id="lfOp">
+        <option value="new">New body</option>
+        <option value="join">Join</option>
+        <option value="cut">Cut</option>
+        <option value="intersect" disabled>Intersect — coming soon</option>
+      </select></label>
+    <label id="lfTargetRow" style="display:none">Combine with <select id="lfTarget"></select></label>
+    <div class="exfoot">
+      <button id="lfCancel">Cancel</button>
+      <button class="primary" id="lfOk">OK</button>
     </div>
   </div>
 
@@ -561,6 +583,6 @@
     "three/addons/": "/static/vendor/three/0.160.0/addons/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=215"></script>
+<script type="module" src="/static/js/main.js?v=216"></script>
 </body>
 </html>

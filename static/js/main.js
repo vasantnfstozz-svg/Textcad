@@ -17,6 +17,7 @@ import { initSettings } from './settings.js';
 import { initExtrude } from './extrude.js';
 import { initRevolve } from './revolve.js';
 import { initSweep } from './sweep.js';
+import { initLoft } from './loft.js';
 import { initFillet } from './fillet.js';
 import { initHole } from './hole.js';
 import { initShell } from './shell.js';
@@ -36,6 +37,7 @@ initSketcher();
 initExtrude();
 initRevolve();
 initSweep();      // Sweep: a profile along a path sketch (Tier 2, specs/sweep.md)
+initLoft();       // Loft: two or more profiles blended (Tier 2, specs/loft.md)
 initFillet();     // Fillet + Chamfer on picked edges
 initHole();       // Hole at the point clicked on a flat face
 initShell();      // Shell: walls of one thickness, the clicked faces open

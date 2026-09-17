@@ -3086,12 +3086,93 @@ def shell_after_guards(solid, t: float, d: str, openings: list, walls: str):
     return out
 
 
-def loft_sketches(sketches: list):
-    """Blend between two or more sketches (usually on parallel, offset planes)
-    to make a smoothly-transitioning solid."""
-    if len(sketches) < 2:
-        raise ValueError("loft needs at least 2 sketches")
-    return _loft(list(sketches))
+# ---------------------------------------------------------------------------
+# Loft (Tier 2, specs/loft.md). Measured first (probes/loft_api_probe.py):
+#   two sections of any shapes: exact (cylinder, cone, circle->square, twist)
+#   three sections: `ruled` is exact piecewise; smooth bulges (0.75 of ruled
+#     on r5-r2-r5) — a real spline, not a defect
+#   coplanar sections: a 0-volume "solid" (health says empty)
+#   sections OUT OF ORDER along the axis (z 0, 20, 10): a self-intersecting
+#     solid at 1.98x the honest volume, is_valid True, health [] — only the
+#     ORDER catches it, so the sections must run one way along the loft
+#   the same sketch twice: StdFail_NotDone (gated by id in the document)
+# ---------------------------------------------------------------------------
+LOFT_STEP_TOL = 1e-3         # two sections closer than this along the loft are one plane
+
+
+def loft_geometry(sections: list, ids: list | None = None) -> dict:
+    """Everything the op AND the planner must agree on about a set of
+    sections — ONE home. Each section: one face; the loft's axis is the mean
+    of the section normals; the sections must step one way along it. Returns
+    the centroids, normals, areas, the axis, each section's station along it
+    and the order the sections would need to be in; raises a sentence for
+    what cannot be lofted."""
+    names = list(ids) if ids else [f"section {i + 1}" for i in range(len(sections))]
+    if len(sections) < 2:
+        raise ValueError("loft needs at least 2 profiles — pick a second sketch")
+    faces = []
+    for name, s in zip(names, sections):
+        fs = s.faces()
+        if len(fs) != 1:
+            raise ValueError(
+                f"loft blends ONE closed profile per sketch, and '{name}' holds "
+                f"{len(fs)} — " + ("draw a closed shape in it" if not fs else
+                                    "draw each profile in its own sketch"))
+        faces.append(fs[0])
+    centroids = [f.center() for f in faces]
+    normals = [f.normal_at(f.center()) for f in faces]
+    axis = b3d.Vector(0, 0, 0)
+    for n in normals:                            # normals may point either way
+        axis = axis + (n if n.dot(normals[0]) >= 0 else -n)
+    if axis.length < 1e-9:
+        raise ValueError("loft: the profiles face opposite ways with no common direction "
+                         "— turn one of the sketch planes")
+    axis = axis.normalized()
+    stations = [float((c - centroids[0]).dot(axis)) for c in centroids]
+    for i, (a, b) in enumerate(zip(stations, stations[1:]), start=1):
+        if abs(b - a) < LOFT_STEP_TOL:
+            raise ValueError(
+                f"loft produced no solid — '{names[i - 1]}' and '{names[i]}' are on the same "
+                f"plane; a loft needs them on DIFFERENT planes")
+    steps = [b - a for a, b in zip(stations, stations[1:])]
+    if any(s > 0 for s in steps) and any(s < 0 for s in steps):
+        order = [names[i] for i in sorted(range(len(names)), key=lambda i: stations[i])]
+        if order[0] != names[0]:
+            order.reverse()
+        raise ValueError(
+            "loft: the profiles do not run one way along the loft — "
+            + ", ".join(names) + " would fold the solid back through itself (the kernel "
+            "builds that and calls it sound). Loft them in the order they lie: "
+            + ", ".join(order))
+    return {"faces": faces, "centroids": centroids, "normals": normals,
+            "areas": [float(f.area) for f in faces], "axis": axis, "stations": stations,
+            "length": abs(stations[-1] - stations[0])}
+
+
+def loft_sketches(sketches: list, ruled: bool = False, ids: list | None = None):
+    """Blend two or more single-profile sketches on different planes into one
+    solid, in the order given (they must step one way along the loft);
+    `ruled` joins them with straight walls, otherwise a smooth spline."""
+    sections = list(sketches)
+    loft_geometry(sections, ids)                 # the sentences, before the kernel
+    try:
+        out = _loft(sections, ruled=_to_bool(ruled, "ruled"))
+    except Exception as e:      # OCP errors derive from Exception, not RuntimeError
+        raise ValueError(
+            "loft could not blend these profiles — they must be on DIFFERENT "
+            "planes, each one a single closed area") from e
+    import inspector                                 # local: avoids an import cycle
+    vol = inspector._try(lambda: out.volume) or 0
+    if not vol > 0:
+        raise ValueError(
+            "loft produced no solid — the profiles are on the same plane; a "
+            "loft needs them on DIFFERENT planes")
+    problems = inspector.health(out, check_valid=False)
+    if problems:
+        raise ValueError(
+            f"loft: the blended solid came back broken ({problems[0]}) — move a profile, "
+            f"or loft fewer of them at once")
+    return out
 
 
 # ---------------------------------------------------------------------------

@@ -1124,6 +1124,7 @@ class ToolPlanReq(BaseModel):
                                         #   list (even []) IS the selection, face_center only opens
     direction: str | None = None        #   "inside" / "outside" — which side the arrow points
     path_id: str | None = None          # tool "sweep": the PATH sketch to follow (default: the newest one)
+    sketch_ids: list | None = None      # tool "loft": the profile sketches, in the order picked
     seed_id: str | None = None          # tools "polar_pattern" / "linear_pattern" / "mirror": the tree row to repeat
     own_id: str | None = None           #   the feature THIS session built: a replan is about it (P4 review)
     axis_pick: dict | None = None       #   circular: a face clicked while the panel is open — its axis

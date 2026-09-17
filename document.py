@@ -99,33 +99,22 @@ def _intersect(parts):
         out = out & p
     return out
 
-def _loft(parts):      # blend 2+ sketches into a solid
+def _loft(parts, ids=None, ruled=False):      # blend 2+ sketches into a solid
+    """`sk.loft_sketches` speaks every sentence itself now (the order, the
+    coplanar plane, the kernel, the health — specs/loft.md); this wrapper
+    only keeps the rule that NOTHING but a ValueError leaves here. Two holes
+    in an earlier version (follow-up read of c9b2e92, both measured): OCP
+    errors derive from Exception, and build123d raises its OWN bare
+    ValueErrors with kernel wording — so the op wraps the kernel call and
+    anything else is translated here."""
     try:
-        out = sk.loft_sketches(parts)
+        return sk.loft_sketches(parts, ruled=ruled, ids=ids)
+    except ValueError:
+        raise
     except Exception:
-        # EVERYTHING is translated, ValueError included. Two holes in the
-        # first version of this guard, both found by the follow-up read of
-        # c9b2e92 and both measured: OCP errors derive from Exception
-        # (StdFail_NotDone('BRep_API: command not done'),
-        # Standard_NoSuchObject('NCollection_DataMap::Find')), and build123d
-        # raises its OWN bare ValueErrors with kernel wording
-        # ("More than one wire is required"), so re-raising a ValueError as
-        # "already a sentence" let that straight out. Nothing above this line
-        # produces a sentence worth keeping: the count check is in _eval and
-        # the kind check in _check_combiner_inputs, both of which run first.
         raise ValueError(
             "loft could not blend these profiles — they must be on DIFFERENT "
             "planes, each one a single closed area") from None
-    # inspector._try, not getattr: a default only covers AttributeError, so a
-    # volume property that RAISES went straight past `getattr(out, "volume", 0)`
-    # and out of this function as kernel text (measured).
-    if not (inspector._try(lambda: out.volume) or 0) > 0:
-        # coplanar profiles build a zero-volume "solid" (measured): health
-        # catches it, but "empty solid" does not say what to change.
-        raise ValueError(
-            "loft produced no solid — the profiles are on the same plane; a "
-            "loft needs them on DIFFERENT planes")
-    return out
 
 COMBINERS = {"fuse": _fuse, "cut": _cut, "intersect": _intersect,
              "loft": _loft}
@@ -352,6 +341,8 @@ def op_params(op: str) -> tuple:
     raising — loading such a file must still work."""
     if op == "move":
         return (("x", 0), ("y", 0), ("z", 0))
+    if op == "loft":                     # the one combiner with a parameter (specs/loft.md)
+        return (("ruled", False),)
     fn = CREATORS.get(op) or MODIFIERS.get(op)
     if fn is None:
         return ()
@@ -1670,6 +1661,8 @@ class Document:
             if len(ins) < 2:
                 raise ValueError(f"'{f.op}' needs 2+ inputs")
             _check_combiner_inputs(f.op, f.inputs, ins)
+            if f.op == "loft":                   # the one combiner with parameters
+                return _loft(ins, ids=list(f.inputs), **self._clean(f.params))
             return COMBINERS[f.op](ins)
         raise ValueError(f"unknown op '{f.op}'")
 

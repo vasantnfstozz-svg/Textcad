@@ -298,6 +298,8 @@ async function releaseIso() {
                                 tool whose second input is a row (Sweep's path)
      planExtra(st)              fields of the tool's own to send with every plan
                                 request (Sweep: which path sketch)
+     inputs(st)                 a MULTI-INPUT tool's input list for the feature it
+                                creates (Loft's sections), instead of the one input
      eats                       the face op returns its body CHANGED (Hole): no
                                 Join / Cut row, no target
      repick                     face tools: while the panel is open a click on a
@@ -746,7 +748,8 @@ export function tool(spec) {
     // plan is the one that describes them, for the revert sentence
     if (st.lastGood && !st.lastGoodPlan) st.lastGoodPlan = plan;
     spec.gizmos.begin(st, plan);
-    if (spec.repick && (st.input.kind === 'face' || st.input.kind === 'feature')) armRepick();
+    if (spec.repick && (st.input.kind === 'face' || st.input.kind === 'feature'
+                        || (st.input.kind === 'profile' && spec.onRepick))) armRepick();
     // ...and a value that was already in the boxes when the plan landed builds
     // NOW (R2): typed while the request was in flight, carried over from the
     // last session (Hole remembers a diameter), or brought by the plan itself
@@ -767,6 +770,13 @@ export function tool(spec) {
   function armRepick() {
     if (profilePickArmed()) return;   // ONE pick, until something cancels it
     beginProfilePick((kind, data) => {
+      // a PROFILE tool that takes more profiles while open (Loft's sections):
+      // a sketch click is the tool's to read, anything else is said no to
+      if (st && st.input.kind === 'profile' && spec.onRepick) {
+        if (kind === 'profile') spec.onRepick(st, { profile: data }, replan);
+        else say(`⚠ ${spec.name} takes sketch profiles — click a sketch, or Cancel.`);
+        return;
+      }
       if (!st || (st.input.kind !== 'face' && st.input.kind !== 'feature')) return;
       // an origin plane (a tool with `planePick`: Mirror's plane) — the tool says what it means
       if (kind === 'plane' && spec.onRepick) { spec.onRepick(st, { world: data }, replan); return; }
@@ -781,8 +791,8 @@ export function tool(spec) {
       st.input = { ...st.input, center: data.center, normal: data.normal || null,
                    point: data.point || null };
       replan();
-    }, { name: spec.name, faces: true, profiles: false, hint: spec.repick, sticky: true,
-         anyFace: !!spec.anyFace, planes: !!spec.planePick });
+    }, { name: spec.name, faces: st.input.kind !== 'profile', profiles: st.input.kind === 'profile',
+         hint: spec.repick, sticky: true, anyFace: !!spec.anyFace, planes: !!spec.planePick });
   }
 
   /* opening builds NOTHING — the boxes start at the honest zero, the gizmos
@@ -927,12 +937,15 @@ export function tool(spec) {
   async function create(pr) {           // the first real user action creates it
     st.featureId = uid(spec.tool);
     const i = st.input;
+    // a feature tool's body is the plan's: the seed body's current state;
+    // a MULTI-INPUT tool (Loft's sections) names its own list
+    const inputs = spec.inputs ? spec.inputs(st)
+      : [i.kind === 'profile' ? i.id
+         : i.kind === 'feature' ? (st.plan && st.plan.input) || i.body : i.body];
+    st.inputsPushed = JSON.stringify(inputs);
     return await post('/api/feature/add', {
       id: st.featureId, op: spec.ops[i.kind === 'profile' ? 'profile' : i.kind],
-      params: pr,
-      // a feature tool's body is the plan's: the seed body's current state
-      inputs: [i.kind === 'profile' ? i.id
-               : i.kind === 'feature' ? (st.plan && st.plan.input) || i.body : i.body] });
+      params: pr, inputs });
   }
   async function push(pr) {             // one param set → the feature's health
     st.touched = true;                  // the ONLY writer in edit mode (see cancelSession)
@@ -1056,6 +1069,12 @@ export function tool(spec) {
       return;
     }
     st.heldWhy = null;
+    // a MULTI-INPUT tool whose input LIST changed (Loft: a section added or
+    // taken out): inputs are not a parameter, so the preview is made again
+    // from the new list — its combiner goes and comes back with it (applyOp),
+    // all inside the one document change the caller holds
+    if (st.featureId && !st.editing && spec.inputs
+        && JSON.stringify(spec.inputs(st)) !== st.inputsPushed) await unbuild();
     let doc = st.featureId ? (await push(pr)).doc : await create(pr);
     let f = featOf(doc);
     // lastGood is what the kernel VERIFIED, never a re-read: `pr` for a plain

@@ -741,6 +741,120 @@ def plan_sweep(doc, req: dict) -> dict:
     }
 
 
+LOFT_RING = 64          # points per section outline in the ghost
+
+
+def _ring(wire, n: int = LOFT_RING) -> list[list[float]]:
+    """A closed wire as n world points evenly spaced along its length."""
+    return [_vec(wire @ (i / n)) for i in range(n)]
+
+
+def _loft_candidates(doc, taken: list) -> list:
+    """Sketches a Loft could still add: unconsumed, single-profile, not a
+    path sketch, not already a section — newest first."""
+    consumed = {d for f in doc.features if not f.suppressed for d in (f.inputs or [])}
+    out = []
+    for f in reversed(doc.features):
+        if (f.op not in sk.SKETCH_PRODUCERS or f.suppressed or f.id in taken
+                or f.id in consumed):
+            continue
+        if sk.is_path_sketch((f.params or {}).get("entities")):
+            continue
+        part = doc._parts.get(f.id)
+        if part is None or len(part.faces()) != 1:
+            continue
+        out.append({"id": f.id, "label": f.id})
+    return out
+
+
+def plan_loft(doc, req: dict) -> dict:
+    """The Loft tool's plan (specs/loft.md). Input: `sketch_ids` — the profile
+    sketches in the order picked (one is enough to open; two build) — or
+    `feature_id`, an existing loft (edit: its inputs are the sections).
+
+    The geometry is `sk.loft_geometry`'s — the op's own verdict — so the tool
+    can only build a loft the op accepts. The plan sorts the sections along
+    the loft's axis when the pick order does not run one way (`reordered`
+    says so; the feature stores the sorted order), lists what could still be
+    added (`candidates`), and hands back one outline ring per section for the
+    ghost."""
+    ids = [str(s) for s in (req.get("sketch_ids") or []) if s]
+    if not ids and req.get("sketch_id"):
+        ids = [str(req["sketch_id"])]
+    fid = req.get("feature_id")
+    stored: dict = {}
+    if fid:
+        f = _edit_input(doc, fid, ("loft",))
+        stored = f.params or {}
+        ids = list(f.inputs or [])
+    if not ids:
+        raise ValueError("Loft needs a sketch profile to start from — click one")
+    seen: list = []
+    for i in ids:
+        if i not in seen:
+            seen.append(i)
+    ids = seen
+    parts = []
+    for i in ids:
+        _prof, part = _sketch_part(doc, i)
+        if not part.faces():
+            raise ValueError(f"'{i}' is a path sketch (open lines, no closed shape) — a loft "
+                             f"blends closed profiles")
+        if len(part.faces()) > 1:
+            raise ValueError(f"loft blends ONE closed profile per sketch, and '{i}' holds "
+                             f"{len(part.faces())} — draw each profile in its own sketch")
+        parts.append(part)
+    reordered = False
+    note = None
+    if len(ids) >= 2:
+        try:
+            geo = sk.loft_geometry(parts, ids)
+        except ValueError as e:
+            if "do not run one way" not in str(e):
+                raise
+            # the pick order folds the loft: sort the sections along the axis
+            # (from the FIRST pick outward), the sentence stays for the AI path
+            faces = [p.faces()[0] for p in parts]
+            normals = [fc.normal_at(fc.center()) for fc in faces]
+            axis = b3d.Vector(0, 0, 0)
+            for n in normals:
+                axis = axis + (n if n.dot(normals[0]) >= 0 else -n)
+            axis = axis.normalized()
+            c0 = faces[0].center()
+            order = sorted(range(len(ids)), key=lambda k: (faces[k].center() - c0).dot(axis))
+            if order[0] != 0:
+                order.reverse()
+            ids = [ids[k] for k in order]
+            parts = [parts[k] for k in order]
+            reordered = True
+            note = ("the profiles were put in the order they lie along the loft: "
+                    + ", ".join(ids) + " — picked out of order they would fold the solid "
+                    "back through itself")
+            geo = sk.loft_geometry(parts, ids)
+        sections = [{"id": i, "centroid": _vec(c), "area": round(a, 4),
+                     "station": round(s, 4), "ring": _ring(fc.outer_wire())}
+                    for i, c, a, s, fc in zip(ids, geo["centroids"], geo["areas"],
+                                              geo["stations"], geo["faces"])]
+        axis_v = _vec(geo["axis"])
+        length = round(geo["length"], 4)
+    else:
+        fc = parts[0].faces()[0]
+        sections = [{"id": ids[0], "centroid": _vec(fc.center()), "area": round(float(fc.area), 4),
+                     "station": 0.0, "ring": _ring(fc.outer_wire())}]
+        axis_v = _vec(fc.normal_at(fc.center()))
+        length = 0.0
+    return {
+        "ok": True, "tool": "loft", "mode": "sketch", "op": "loft", "input": ids[0],
+        "sections": sections, "order": ids, "reordered": reordered, "note": note,
+        "axis": axis_v, "limits": {"sections": len(ids), "length": length},
+        "candidates": _loft_candidates(doc, ids),
+        "stored": {"ruled": stored.get("ruled")},
+        "target_body": _default_target(doc, ids[0]),
+        "will_build": (f"loft of {', '.join(ids)}" if len(ids) >= 2
+                       else f"loft from {ids[0]} — pick a second profile"),
+    }
+
+
 def plan_sketch(doc, req: dict) -> dict:
     """The frame a NEW plane sketch is drawn in: {plane, offset} -> the very
     plane make_sketch() will build the profile on (sketch.sketch_plane), as
@@ -1766,7 +1880,7 @@ def plan_rotate(doc, req: dict) -> dict:
 
 
 _PLANNERS = {"extrude": plan_extrude, "revolve": plan_revolve, "sketch": plan_sketch,
-             "sweep": plan_sweep,
+             "sweep": plan_sweep, "loft": plan_loft,
              "fillet": plan_fillet, "chamfer": plan_fillet, "hole": plan_hole,
              "polar_pattern": plan_pattern, "linear_pattern": plan_pattern,
              "mirror": plan_mirror, "shell": plan_shell,

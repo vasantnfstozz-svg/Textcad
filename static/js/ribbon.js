@@ -20,6 +20,7 @@ import { openShell } from './shell.js';
 import { openCircularPattern, openRectangularPattern } from './pattern.js';
 import { openMirror } from './mirror.js';
 import { openSweep } from './sweep.js';
+import { openLoft } from './loft.js';
 import { openMove, openRotate } from './move.js';
 import { cancelTool } from './tool.js';
 import { openMeasure, cancelMeasure } from './measure.js';
@@ -52,7 +53,8 @@ function startSketch() {
 }
 
 // the drag-handle tools (born on tool.js): pressed with the current selection
-const TOOLS = { extrude: openExtrude, revolve: openRevolve, sweep: openSweep, press_pull: openPressPull,
+const TOOLS = { extrude: openExtrude, revolve: openRevolve, sweep: openSweep, loft: openLoft,
+                press_pull: openPressPull,
                 fillet: openFillet, chamfer: openChamfer, hole: openHole, shell: openShell,
                 polar_pattern: openCircularPattern, linear_pattern: openRectangularPattern,
                 mirror: openMirror, move: openMove, rotate: openRotate };

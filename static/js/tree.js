@@ -12,6 +12,7 @@ import { modalGuard } from './dialogs.js';
 import { openExtrude } from './extrude.js';
 import { openRevolve } from './revolve.js';
 import { openSweep } from './sweep.js';
+import { openLoft } from './loft.js';
 import { activeToolFeature, canEdit, editFeature, humanProblem } from './tool.js';
 import { fmtVol } from './settings.js';
 
@@ -371,6 +372,8 @@ function buildRow(doc, f, chip = null) {
         () => openRevolve(f.id));
       addAct(acts, '〜', 'sweep this sketch along a path sketch',
         () => openSweep(f.id));
+      addAct(acts, '⏢', 'loft this sketch with other profiles',
+        () => openLoft(f.id));
     }
     if (canEdit(f.op)) {
       // Edit Feature (Fusion parity): reopen the tool that CREATED the feature

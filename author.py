@@ -96,6 +96,12 @@ OP_NOTES = {
                "The profile must lie entirely to one side. angle is signed; angle2 adds "
                "a second side the other way; both=true sweeps angle to EACH side "
                "(Fusion's Symmetric, the same key as extrude's).",
+    "loft": "A COMBINER of 2+ single-profile sketches on DIFFERENT planes, blended "
+            "in the order given — they must step one way along the loft (a middle "
+            "section listed last folds the solid back through itself and is "
+            "refused). `ruled=true` joins them with straight walls, otherwise a "
+            "smooth spline (three sections r5-r2-r5 smooth is 25 per cent slimmer "
+            "than ruled — a real spline, not a defect).",
     "sweep": "Drags the sketch profile along a PATH SKETCH: `path` is the id of a "
              "sketch whose entities are OPEN paths — {\"kind\": \"path\", \"closed\": "
              "false, \"start\": [u, v], \"segments\": [{\"type\": \"line\", \"to\": [u, v]}, "
