@@ -149,6 +149,28 @@ def test_plain_cause_still_names_our_own_bugs_as_bugs():
     assert blocks.plain_cause(ValueError("pick a face first")) == "pick a face first"
 
 
+def test_only_a_BARE_function_name_is_translated():
+    """What keeps the translation off OUR bugs, measured rather than assumed
+    (review of 15eff19, probes/s10_required_review_probe.py §4).
+
+    Every constructor and method inside the kernel stack says its name with a
+    DOT — `Box.__init__() missing 1 required positional argument: 'height'`,
+    `Shape.cut() got an unexpected keyword argument ...` — and `^\\w+\\(\\)`
+    does not match a dot, so those keep saying they are a bug of ours. Only a
+    bare name is translated, and the op the document unpacks the params into
+    is the one bare name in that call. A helper of ours renamed into that
+    shape would start lying, which is what this test is here to catch."""
+    for msg in ("Box.__init__() missing 1 required positional argument: 'height'",
+                "Shape.cut() got an unexpected keyword argument 'tol'",
+                "<lambda>() missing 1 required positional argument: 'x'",
+                "round() missing required argument 'number' (pos 1)"):
+        assert blocks.plain_cause(TypeError(msg)) == f"TypeError: {msg}", msg
+    # and the shapes that ARE translated, for the boundary's other side
+    assert blocks.plain_cause(TypeError(
+        "extrude_sketch() missing 1 required keyword-only argument: 'amount'")
+    ) == "amount is required — set a value for it"
+
+
 def test_a_feature_that_has_its_required_parameter_still_builds():
     d = _sketch_doc()
     d.add("e1", "extrude", {"amount": 4}, ["s1"])

@@ -750,3 +750,52 @@ def test_the_gate_does_not_widen_to_the_ops_that_move_a_sketch(op, params):
     pattern.SEEDED_OPS."""
     f = _sketch_then(op, params)
     assert f.status == "ok", f.problems
+
+
+# --- review of eed6a33: the gate stopped one op short -------------------------
+# `mirror` was left out because it "mirrors a SKETCH correctly (status ok)".
+# That is true of the mirror that RETURNS THE COPY. With join=true mirror fuses
+# the body with its reflection through pattern._body_pattern — the very
+# function the two pattern ops use — so a sketch there answered with the same
+# diagnosis about a solid the user never asked for (measured 2026-09-17,
+# probes/s10_pattern_gate_review_probe.py §1):
+#   "mirror: the mirror image leaves a broken solid (non-positive volume (0)
+#    — empty solid) — it touches the body along an edge only; pick another
+#    plane"
+
+def test_mirror_with_join_fed_a_sketch_is_refused_by_name_too():
+    f = _sketch_then("mirror", {"plane": "YZ", "join": True})
+    assert f.status == "failed"
+    msg = " ".join(f.problems)
+    assert msg == ("mirror with join fuses a SOLID body with its reflection, "
+                   "and 's1' is a sketch — extrude or revolve it first, then "
+                   "mirror the body (without join it returns the reflected "
+                   "sketch)")
+    assert not any(w in msg for w in KIND_KERNEL_WORDS), msg
+
+
+def test_mirror_with_join_of_a_solid_still_joins():
+    """The other direction of the same flag: join on a BODY is untouched."""
+    d = Document(name="j")
+    d.add("b1", "plate", {"width": 20, "depth": 20, "thickness": 5}, [])
+    d.add("m1", "move", {"x": 30}, ["b1"])
+    d.add("j1", "mirror", {"plane": "YZ", "join": True}, ["m1"])
+    assert d.rebuild() is True, d.get("j1").problems
+    assert d.get("j1").volume == pytest.approx(4000.0, abs=0.01)
+
+
+def test_a_seeded_mirror_keeps_its_own_sentence():
+    """join is ignored when a seed is named (pattern.mirror branches on the
+    seed first), so the gate must not step in front of the seed's own,
+    accurate refusal."""
+    f = _sketch_then("mirror", {"plane": "YZ", "join": True, "seed": "s1"})
+    assert f.status == "failed"
+    assert "is not a feature to repeat" in " ".join(f.problems), f.problems
+
+
+def test_a_falsey_join_still_mirrors_a_sketch():
+    """The gate asks the same question `pattern.mirror` asks (`if not join`),
+    so the two can never disagree about what join means."""
+    for falsey in (False, 0, None, ""):
+        f = _sketch_then("mirror", {"plane": "YZ", "join": falsey})
+        assert f.status == "ok", (falsey, f.problems)
