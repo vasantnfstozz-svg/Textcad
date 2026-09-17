@@ -41,11 +41,46 @@ SLIVER = 0.01   # mm^2 — boolean leftovers below this are noise
 # ---------------------------------------------------------------------------
 
 def _entity_face(e: dict, idx: int):
+    """The ONE closed face an entity stands for.
+
+    Everything below is built on "an entity is one face, and that face is its
+    outer wire": `_outline` samples `outer_wire()`, `_inside` is an even-odd
+    test on that single loop, and `_material_at` / `_cluster` / the cell
+    refinement in `trim_apply` all ask `_inside`. That held for the seven
+    kinds the user's designs contain — censused 2026-09-18 by
+    `probes/trim_corpus_census.py`: of 1374 entities in 324 sketches, ZERO
+    build more than one face and ZERO have a hole.
+
+    The Text entity (d3c8c85) breaks both halves — a word is one face per
+    glyph piece, and O/A/B/8 carry holes — and `faces()[0]` used to swallow
+    that silently. Measured on `plate + text 'AB' (subtract)` by
+    `probes/trim_text_material_lie.py`: `_material_at` reported MATERIAL
+    inside the engraved A at (-7.57, -2.51) where the builder leaves a hole,
+    and NO material inside the hole of the B where the builder leaves some;
+    `trim_pieces` offered one piece covering 1 of the 5 loops the canvas
+    draws; a circle laid across the A came back "whole" and clicking it said
+    "removed the circle (it crossed nothing)". Those are the inputs the
+    dissolve-vs-fill choice is made from, so the cluster `trim_apply` writes
+    back can be wrong without saying so. Refuse instead: a failed feature
+    beats a corrupt body, and a word that really is ONE closed outline
+    (an L, an X) still trims.
+    """
     try:
-        return sk._entity(e).faces()[0]
+        faces = sk._entity(e).faces()
+        if not faces:
+            raise IndexError("no face")
     except Exception as ex:
         raise ValueError(f"trim: entity {idx} ({e.get('kind')}) does not "
                          f"build: {ex}") from ex
+    holes = sum(len(f.wires()) - 1 for f in faces)
+    if len(faces) > 1 or holes:
+        raise ValueError(
+            f"trim: the {e.get('kind')} (entity {idx}) is {len(faces)} "
+            f"separate shape(s) with {holes} hole(s) in them, and Trim reads "
+            f"one closed outline per entity — it would work on the first and "
+            f"quietly ignore the rest. Take it out of the sketch, trim, then "
+            f"put it back.")
+    return faces[0]
 
 
 def _sample_wire(wire, n: int) -> np.ndarray:
@@ -358,8 +393,39 @@ def _straightish(edge) -> bool:
     return ((pm - p0).cross(p1 - p0)).length / chord < 1e-4
 
 
+def _ordered_edges(wire):
+    """The wire's edges in traversal order — what `_wire_entity` walks.
+
+    This asked `wire.order_edges()` until the review of 916a731. That is
+    `self.edges().sort_by(self)` plus a flip pass, and BOTH halves were
+    already done for it:
+
+      * build123d DEFINES a wire's parameter by walking
+        `BRepTools_WireExplorer` and summing edge lengths
+        (`Wire.param_at_point`), and `Wire.edges()` walks that same
+        explorer — so sorting by that parameter cannot reorder the list;
+      * `_wire_entity` flips each edge itself (`flipped = (cur - p0).length >
+        (cur - p1).length`), so the flip pass is redundant too.
+
+    The sort cost one `closest_points` plus one O(edges) `param_at_point`
+    per edge — quadratic in the edge count, on exactly the traced polygons
+    Trim is slow on. Measured 2026-09-18 (`probes/trim_order_edges_lead.py`):
+    3464 ms against 7.1 ms on a 240-edge polygon, 2706 ms against 14.2 ms on
+    the 206-edge wire a circle cut leaves, same order and same edge
+    directions both ways. The entity dict is unchanged on 20 wire shapes
+    including REVERSED wires and Text glyphs
+    (`probes/trim_wire_entity_identity.py`), and locked in by
+    `tests/test_trim_speed.py`.
+
+    It is also the more robust of the two: `sort_by` keys each edge by the
+    wire parameter of the point CLOSEST to that edge's centre, which a wire
+    that touches itself can answer with the wrong edge.
+    """
+    return wire.edges()
+
+
 def _wire_entity(wire, mode: str) -> dict:
-    edges = wire.order_edges()
+    edges = _ordered_edges(wire)
     if len(edges) == 1 and edges[0].geom_type == b3d.GeomType.CIRCLE \
             and edges[0].is_closed:
         c = edges[0].arc_center                   # an untouched circle survives

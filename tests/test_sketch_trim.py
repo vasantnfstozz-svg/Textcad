@@ -179,3 +179,65 @@ def test_trim_endpoints_are_stateless_and_speak_errors():
     empty = client.post("/api/sketch/trim/pieces",
                         json={"entities": []}).json()
     assert empty["pieces"] == [] and "error" in empty
+
+
+# ----------------------------------------- shapes Trim cannot see WHOLE --
+
+# The Text entity (d3c8c85) is the first kind whose `sk._entity()` returns
+# more than one face — one per glyph piece — and whose faces have HOLES.
+# Trim's model is "one entity = one face = its outer wire": `_entity_face`
+# keeps `faces()[0]` and `_outline` keeps that face's outer wire.
+#
+# Measured on `plate + text 'AB' (subtract)` by
+# `probes/trim_text_material_lie.py` BEFORE the guard below:
+#   * `_material_at` said MATERIAL at (-7.57, -2.51), inside the engraved
+#     letter A, where the builder leaves a hole;
+#   * it said NO MATERIAL inside the hole of the B, where the builder leaves
+#     material — 2 of 2 probe points classified wrongly;
+#   * `trim_pieces` offered ONE piece covering 1 of the 5 loops the sketcher
+#     canvas draws for that word;
+#   * a circle laid across the A was reported "whole" and a click answered
+#     "removed the circle (it crossed nothing)".
+# Those are the inputs `trim_apply` picks dissolve-vs-fill from, so the
+# rebuilt cluster it writes back can be wrong without saying so.
+# `probes/trim_corpus_census.py`: 0 of the 1374 entities in the user's 40
+# designs build more than one face or a holed face, so refusing costs nothing
+# that works today.
+
+WORD = {"kind": "text", "mode": "subtract", "x": 0, "y": 0, "text": "AB",
+        "size": 14}
+PLATE = {"kind": "rectangle", "mode": "add", "x": 0, "y": 0, "w": 60, "h": 30}
+
+
+def test_a_word_is_refused_not_quietly_reduced_to_one_letter():
+    assert len(sk._entity(WORD).faces()) == 2          # the fact behind it
+    with pytest.raises(ValueError, match="separate"):
+        tr.trim_pieces([dict(PLATE), dict(WORD)])
+
+
+def test_a_letter_with_a_hole_is_refused_too():
+    one = dict(WORD, text="O")
+    assert len(sk._entity(one).faces()) == 1           # one face, one hole
+    with pytest.raises(ValueError, match="hole"):
+        tr.trim_pieces([dict(PLATE), one])
+
+
+def test_a_hole_free_single_letter_still_trims():
+    """The guard is the smallest one that works: a word that really IS one
+    closed outline is left alone."""
+    one = dict(WORD, text="L", mode="add", x=0, y=0, size=14)
+    faces = sk._entity(one).faces()
+    ow = faces[0].outer_wire()
+    assert len(faces) == 1 and not [w for w in faces[0].wires()
+                                    if not w.is_same(ow)]
+    assert tr.trim_pieces([one])                       # no refusal
+
+
+def test_the_refusal_reaches_the_user_as_a_message_not_a_500():
+    from fastapi.testclient import TestClient
+    import studio
+    client = TestClient(studio.app)
+    out = client.post("/api/sketch/trim/pieces",
+                      json={"entities": [dict(PLATE), dict(WORD)]}).json()
+    assert out["pieces"] == []
+    assert "separate" in out["error"]
