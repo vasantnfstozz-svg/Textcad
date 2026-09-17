@@ -22,15 +22,19 @@ exit code.
 """
 import json
 import os
+import queue
 import subprocess
 import sys
 import textwrap
+import threading
+import time
 from pathlib import Path
 
 import pytest
 from build123d import Box, Part, import_brep
 
 import blocks
+import inspector
 import kernelguard
 import sketch
 
@@ -330,3 +334,96 @@ def test_the_budget_reads_in_words_a_person_can_act_on():
     assert kernelguard._minutes(60) == "60 seconds"
     assert kernelguard._minutes(0.25) == "0.25 seconds"
     assert kernelguard._minutes(120) == "2 minutes"
+
+
+# ---------------------------------------------------------------------------
+# 4b. …and the clock does not count the time the machine slept
+# ---------------------------------------------------------------------------
+
+class _Lines:
+    """just the queue half of a worker — `_Worker.answer` reads nothing else,
+    so the clock can be tested without paying 10-30 s for `import build123d`"""
+
+    def __init__(self) -> None:
+        self.lines: queue.Queue = queue.Queue()
+
+    def say(self, msg: dict, after: float) -> None:
+        t = threading.Timer(after, self.lines.put, [json.dumps(msg) + "\n"])
+        t.daemon = True
+        t.start()
+
+
+def test_the_budget_is_not_spent_on_the_time_the_laptop_slept():
+    """Shutting the lid mid-fillet must not refuse correct geometry.
+
+    `answer` measured its budget on `time.monotonic()`, and on Windows that
+    clock keeps ticking through a suspend — this box read 102.40 hours of
+    uptime against 80.06 hours awake, a gap of 22.34 hours
+    (probes/kernel_budget_awake_probe.py). A suspend longer than the budget
+    therefore killed the warm worker and told the user their three-second
+    feature "was stopped after 15 minutes".
+
+    The suspend is FAKED, not performed: the awake clock stands still (the
+    machine is asleep) while real time — and the real `queue.get` — runs on.
+    That is also what makes this cover the TRAP: `queue.get(timeout=)` waits
+    on the OS's own biased timer, so it really does return `Empty` here, and a
+    version that turned that into a TimeoutError would fail even with the
+    clock swapped."""
+    stub = _Lines()
+    stub.say({"seq": 9, "ok": True}, after=0.6)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(kernelguard, "_awake_s", lambda: 1000.0)   # asleep: no time passes
+        got = kernelguard._Worker.answer(stub, 9, 0.15)
+    assert got == {"seq": 9, "ok": True}
+
+
+def test_a_budget_measured_in_awake_seconds_still_runs_out():
+    """The other half: letting `queue.Empty` go round the loop must not make
+    the ceiling unreachable. With the awake clock running at real speed, a
+    budget nothing answers ends — and ends near the budget, not minutes
+    later."""
+    stub = _Lines()
+    t0 = time.perf_counter()
+    with pytest.raises(TimeoutError):
+        kernelguard._Worker.answer(stub, 9, 0.3)
+    assert 0.3 <= time.perf_counter() - t0 < 3.0
+
+
+def test_the_awake_clock_is_the_one_windows_stops_at_suspend():
+    """`_awake_s` must really reach QueryUnbiasedInterruptTime, not quietly
+    fall back to `time.monotonic` — the fallback is right on Linux and macOS
+    (their monotonic clocks already stop at suspend) and useless on Windows,
+    which is the box this ships on."""
+    before = kernelguard._awake_s()
+    time.sleep(0.2)
+    after = kernelguard._awake_s()
+    assert 0.05 < after - before < 1.0
+    if sys.platform == "win32":
+        assert getattr(kernelguard._awake_s, "_fn", None) is not None
+        # uptime counts the sleep, awake does not, so awake can never be ahead
+        assert after <= time.monotonic() + 1.0
+
+
+def test_a_kernel_call_whose_machine_slept_comes_back_with_the_geometry():
+    """End to end, through the real worker: the user shells a box, the laptop
+    sleeps for most of it, and the feature is GREEN rather than red.
+
+    The lid is shut for the whole call: the fake awake clock runs at a
+    thousandth of real speed. The shell is the oneplus case at 0.2 mm, the one
+    the test above stops at a 0.2 s budget — the kernel really spends 0.51 s
+    on it (measured). Here the budget is 0.1 AWAKE seconds, so the call
+    outlives it fivefold in wall-clock seconds and comes back with the
+    geometry anyway, while a genuinely stuck worker would still be stopped at
+    100 real seconds. 0.1 s is also far above Windows' 15.6 ms wait
+    granularity, below which a `queue.get` timeout is not a timeout at all.
+    The worker is warmed BEFORE the clock is slowed, so the startup wait is
+    not slowed with it."""
+    blocks.fillet_edges(box(), 1.0, "top")                    # warm the worker
+    budget, t1 = 0.1, time.perf_counter()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(kernelguard, "DEFAULT_BUDGET", budget)
+        mp.setattr(kernelguard, "_awake_s", lambda: (time.perf_counter() - t1) * 1e-3)
+        out = sketch.shell(body("oneplus_case_shell_body"), 0.2, None, "inside", "bottom")
+    assert time.perf_counter() - t1 > 3 * budget              # it really outlived it
+    assert inspector.closed_shell(out)
+    assert out.volume == pytest.approx(9383.42, rel=1e-4)

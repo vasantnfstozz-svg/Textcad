@@ -117,6 +117,43 @@ def _on() -> bool:
         not in ("0", "no", "off", "false", "")
 
 
+def _awake_s() -> float:
+    """Seconds since boot NOT counting the time the machine spent asleep.
+
+    Windows' monotonic clock is QueryPerformanceCounter and it keeps ticking
+    through a suspend, so a budget measured on it spends itself on sleep: shut
+    the lid in the middle of a guarded fillet and on resume the 15 minutes are
+    "gone", the warm worker is killed, and a feature that took three seconds
+    goes red with "was stopped after 15 minutes". Measured on this box
+    2026-09-17 (probes/kernel_budget_awake_probe.py): 102.40 hours of uptime
+    against 80.06 hours awake — 22.34 hours of budget a suspended call would
+    have lost. QueryUnbiasedInterruptTime is the clock that stops at suspend;
+    it ticks 0.05-15.8 ms at a time and agreed with `monotonic` to 3.5 ms over
+    2 s of real waiting, which is nothing against a 900 s ceiling.
+
+    Where it cannot be read, and on Linux and macOS (whose monotonic clocks
+    already stop at suspend), `time.monotonic` is the answer. The journey
+    runner carries the same function for the same reason (tests/journeys.py);
+    a test module is not something the product may import, so the technique is
+    here too until one of them can own it."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            import ctypes.wintypes as wt
+            fn = getattr(_awake_s, "_fn", None)
+            if fn is None:
+                fn = ctypes.WinDLL("kernel32").QueryUnbiasedInterruptTime
+                fn.argtypes = [ctypes.POINTER(wt.ULARGE_INTEGER)]
+                fn.restype = wt.BOOL
+                _awake_s._fn = fn
+            v = wt.ULARGE_INTEGER()
+            if fn(ctypes.byref(v)):
+                return v.value / 1e7          # 100-ns units -> seconds
+    except Exception:                        # noqa: BLE001 — a clock is never worth a crash
+        pass
+    return time.monotonic()
+
+
 # ---------------------------------------------------------------------------
 # Fingerprints — what a picked shape must still measure on the other side
 # ---------------------------------------------------------------------------
@@ -338,7 +375,6 @@ class _Worker:
         self.errors: deque = deque(maxlen=60)
         threading.Thread(target=self._read_out, daemon=True).start()
         threading.Thread(target=self._read_err, daemon=True).start()
-        self.started = time.monotonic()
         self.ready = False
 
     def _read_out(self) -> None:
@@ -359,16 +395,24 @@ class _Worker:
     def answer(self, want: int, budget: float) -> dict:
         """The next JSON line carrying `want`, or a raised KernelGone. Lines
         that are not ours (a library printing to stdout) are skipped without
-        spending the whole budget on one of them."""
-        end = time.monotonic() + budget
+        spending the whole budget on one of them.
+
+        The budget is spent on the AWAKE clock (`_awake_s`), never on the one
+        that counts a suspend as work — and the `queue.Empty` goes back round
+        the loop instead of ending the call, because `queue.get(timeout=)`
+        waits on the OS's own BIASED timer and so returns early on resume with
+        the awake budget untouched. Both halves are needed: the clock alone
+        still hands the user "was stopped after 15 minutes" the moment the lid
+        opens (probes/kernel_budget_awake_probe.py §3)."""
+        end = _awake_s() + budget
         while True:
-            left = end - time.monotonic()
+            left = end - _awake_s()
             if left <= 0:
                 raise TimeoutError
             try:
                 line = self.lines.get(timeout=left)
             except queue.Empty:
-                raise TimeoutError from None
+                continue                  # the OS timer slept; the awake one decides
             if line is None:
                 raise EOFError
             line = line.strip()
