@@ -81,8 +81,8 @@ function sync() {
   g('hoDepth').disabled = through();      // Through all: the depth is the body's
 }
 /* honest zero: no plan yet (its arrival applies), no point, no size, no depth */
-const isEmpty = (pr, st) =>
-  !st.plan || !pr.at || !(pr.diameter > 0) || (!pr.through && !(pr.depth > 0));
+const isEmpty = pr =>
+  !pr.at || !(pr.diameter > 0) || (!pr.through && !(pr.depth > 0));
 
 /* Choosing a seat KIND fills sensible sizes at once (Fusion shows a seat the
    moment you pick one) — into boxes still at 0 only, so a typed value is never
@@ -166,8 +166,6 @@ const gizmos = {
     beginHoleMarker(plan.frame, mm('hoDia') / 2);
     if (!through()) arrow(st);            // through: nothing to drag, it runs out the far side
     ghost(st);
-    // a depth typed or Through ticked before the plan arrived waits for it
-    if (!st.featureId && (through() || mm('hoDepth') > 0)) ho.apply();
   },
   end() { endHoleMarker(); endExtrudeArrow(); endExtrudeGhost(); },
 };

@@ -64,7 +64,6 @@ function edgeTool(o) {                 // o = {name, icon, op, ids, param, unit,
           v => setLen(box, v, 1),                  // dragging: the box follows
           async v => { setLen(box, v, 1); await ctl.apply(); },   // release: ONE verified rebuild
           v => Math.max(0, v));                    // a radius has no sign
-        if (!st.featureId && mm(box) > 0) ctl.apply();   // a value typed before the plan arrived
       },
       end() { endEdgeGlow(); endExtrudeArrow(); },
     },

@@ -45,8 +45,8 @@ function snapshot(f) {
 }
 const openCount = p => Array.isArray(p.faces) ? p.faces.length
   : (p.open_face && p.open_face !== 'none' ? 1 : 0);
-/* honest zero: no plan yet (its arrival applies), no thickness */
-const isEmpty = (pr, st) => !st.plan || !(pr.thickness > 0);
+/* honest zero: no thickness */
+const isEmpty = pr => !(pr.thickness > 0);
 
 const gizmos = {
   begin(st, plan) {
@@ -56,8 +56,6 @@ const gizmos = {
       async v => { setLen('shThickness', v, 1); await sh.apply(); },   // release: ONE verified rebuild
       v => Math.max(0, v));                          // a thickness has no sign
     if (plan.click_words) say(plan.click_words);     // what the click did (rule 7)
-    // a thickness typed before the plan arrived waits for it
-    if (!st.featureId && mm('shThickness') > 0) sh.apply();
   },
   end() { endEdgeGlow(); endExtrudeArrow(); },
 };

@@ -53,7 +53,7 @@ function mirrorTool() {
       const p = f.params || {};
       return { seed: p.seed ?? null, plane: p.plane ?? null, join: !!p.join };
     },
-    isEmpty: (pr, st) => !st.plan || !pr.plane,    // honest zero: no plane, nothing built
+    isEmpty: pr => !pr.plane,     // honest zero: no plane, nothing built
     nothing: 'Nothing mirrored — no plane was chosen. Open Mirror again and click a flat face ' +
              'or an origin plane before OK.',
     /* the words are the plan's that built those values (tool.js lastGoodPlan),
@@ -75,7 +75,6 @@ function mirrorTool() {
           plan.alternatives.map(a => `<option value="${a.name}">${a.label}</option>`).join('');
         sel.value = plan.plane_name || '';
         if (plan.frame) beginPlaneQuad(plan.frame, plan.half);
-        if (!st.featureId && plan.plane) ctl.apply();     // the first plane builds the mirror
       },
       end() { endPlaneQuad(); },
     },

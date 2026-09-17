@@ -61,7 +61,7 @@ function circular() {
       return { seed: p.seed ?? null, axis: p.axis ?? null, count: Number(p.count) || 1,
                angle: p.angle == null ? FULL : Number(p.angle) };
     },
-    isEmpty: (pr, st) => !st.plan || !(pr.count > 1),
+    isEmpty: pr => !(pr.count > 1),
     nothing: 'Nothing patterned — the count was 1. Open Circular Pattern again and type how ' +
              'many copies before OK.',
     describe: p => `${p.count} copies over ${p.angle}°`,
@@ -75,7 +75,6 @@ function circular() {
           t => setBox('cpAngle', t),                              // dragging: the box follows
           async t => { setBox('cpAngle', t); await ctl.apply(); },   // release: ONE verified rebuild
           clampAngle);
-        if (!st.featureId && num('cpCount') > 1) ctl.apply();    // a count typed before the plan arrived
       },
       end() { endAxisLine(); endTaperRing(); },
     },
@@ -119,8 +118,7 @@ function rectangular() {
     /* honest zero: nothing is built until ONE of the two rows has both a count
        above 1 and a distance — Direction 2 alone is a pattern too (it used to be
        refused silently, and OK then blamed "the distance", P4 review) */
-    isEmpty: (pr, st) => !st.plan
-      || !((pr.count > 1 && pr.distance) || (pr.count2 > 1 && pr.distance2)),
+    isEmpty: pr => !((pr.count > 1 && pr.distance) || (pr.count2 > 1 && pr.distance2)),
     /* half-made: a second row asked for without its distance, or the distance
        taken away — the op would refuse and the revert would undo the choice */
     hold(pr) {
@@ -158,7 +156,6 @@ function rectangular() {
             if (num('rpCount2') < 2 && Math.abs(v) > 1e-9) setBox('rpCount2', 2, 0);
             await ctl.apply();
           });
-        if (!st.featureId && mm('rpDist') && num('rpCount') > 1) ctl.apply();
       },
       end() { endExtrudeArrow(); endSecondArrow(); },
     },

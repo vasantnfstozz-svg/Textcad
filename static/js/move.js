@@ -71,14 +71,13 @@ const mv = tool({
     const p = f.params || {};
     return { x: Number(p.x) || 0, y: Number(p.y) || 0, z: Number(p.z) || 0 };
   },
-  isEmpty: (pr, st) => !st.plan || !(pr.x || pr.y || pr.z),   // honest zero: 0 / 0 / 0 moves nothing
+  isEmpty: pr => !(pr.x || pr.y || pr.z),      // honest zero: 0 / 0 / 0 moves nothing
   gizmos: {
     begin(st, plan) {
       // what the visible body HAS: the boxes at open (an edit's stored offsets,
       // a new session's zeros) — the ghost's delta is measured from here
       if (!st.shown) st.shown = mvParams();
       placeArrows(st, plan);
-      if (!st.featureId && (mm('mvX') || mm('mvY') || mm('mvZ'))) mv.apply();   // typed before the plan
     },
     end() { endArrows(); endMoveGhost(); },
   },
@@ -128,7 +127,7 @@ const rt = tool({
     if (p.pivot !== undefined) s.pivot = p.pivot;
     return s;
   },
-  isEmpty: (pr, st) => !st.plan || !pr.angle_deg,   // honest zero: 0° turns nothing
+  isEmpty: pr => !pr.angle_deg,                // honest zero: 0° turns nothing
   gizmos: {
     begin(st, plan) {
       if (!st.shown) {                             // the FIRST plan of this session
@@ -153,7 +152,6 @@ const rt = tool({
       beginTaperRing(plan.origin, plan.frame, plan.radius, num('rtAngle'),
         v => { setBox('rtAngle', v); ghostTurn(st, plan); },
         async v => { setBox('rtAngle', v); endMoveGhost(); await rt.apply(); });
-      if (!st.featureId && num('rtAngle')) rt.apply();   // an angle typed before the plan arrived
     },
     end() { endAxisLine(); endTaperRing(); endMoveGhost(); },
   },

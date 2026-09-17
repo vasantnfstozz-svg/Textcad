@@ -341,6 +341,10 @@ export function tool(spec) {
   let st = null;                    // the open session
   let closing = false;              // a Cancel / OK is already tearing it down
   let timer = null;                 // a typed value waiting for its apply
+  /* the session's FIRST plan, while it is in flight: OK waits for it, so a
+     value typed in the moment between pressing the tool and the plan landing
+     still builds instead of "nothing was extruded" (R2) */
+  let setupWait = null;
   const debounce = fn => {
     clearTimeout(timer);
     timer = setTimeout(() => { timer = null; fn(); }, 200);
@@ -371,6 +375,7 @@ export function tool(spec) {
     cancelProfilePick();              // a re-pick armed for the session goes with it
     dropRowWait();
     st = null;
+    setupWait = null;                 // its plan belongs to a session that is gone
     panel().style.display = 'none';
     if (active === ctl) active = null;
   }
@@ -729,6 +734,15 @@ export function tool(spec) {
     if (st.lastGood && !st.lastGoodPlan) st.lastGoodPlan = plan;
     spec.gizmos.begin(st, plan);
     if (spec.repick && (st.input.kind === 'face' || st.input.kind === 'feature')) armRepick();
+    // ...and a value that was already in the boxes when the plan landed builds
+    // NOW (R2): typed while the request was in flight, carried over from the
+    // last session (Hole remembers a diameter), or brought by the plan itself
+    // (Mirror's first plane). applyOnce is the one judge of whether there is
+    // anything to build, so this needs no condition of its own — it used to be
+    // a hand-typed `if (!st.featureId && <this tool's boxes>) apply()` in seven
+    // gizmos.begin. With a feature already built it is replan's call, which
+    // makes it after speaking (see replanNow).
+    if (!st.featureId) apply();
   }
   /* -------- a tool whose input POINT can move (Hole) --------
      While the session is open, a click on a flat face of the body puts the
@@ -778,7 +792,7 @@ export function tool(spec) {
     // fb0b8c8). The first values a new profile refuses leave a red row that
     // says why, which is what a session with nothing good to revert to does.
     st.lastGood = null; st.lastGoodPlan = null;
-    setupTool(closeOnRefusal);
+    beginSetup(closeOnRefusal);
   }
 
   /* -------- EDIT FEATURE (Fusion parity): reopen in the tool that made it --
@@ -836,7 +850,7 @@ export function tool(spec) {
     setHeader(`✎ Edit ${f.id}`);
     sync();
     showPanel();
-    setupTool();
+    beginSetup();
     isolateFor(f.id);                 // downstream waits for OK/Cancel
   }
 
@@ -859,6 +873,10 @@ export function tool(spec) {
     if (plan.ok) return plan;
     if (!quiet) say(`⚠ ${spec.name} cannot start: ${plan.error}.`);     // rule 7
     return null;
+  }
+  function beginSetup(closeOnRefusal) {
+    setupWait = setupTool(closeOnRefusal).catch(() => {});
+    return setupWait;
   }
   async function setupTool(closeOnRefusal = true) {
     const mine = st;
@@ -979,6 +997,16 @@ export function tool(spec) {
   }
 
   async function applyOnce() {
+    // NOTHING IS BUILT BEFORE THE PLAN LANDS (R2). Every geometric fact a new
+    // feature needs is the plan's — Hole's point on the face, Fillet's stored
+    // edges, Mirror's plane, Pattern's seed and axis — so creating one without
+    // it asks the op to build from nulls. The values already in the boxes are
+    // not lost: adoptPlan applies them the moment the plan arrives, and OK
+    // waits for one that is still in flight. Seven tools each typed this rule
+    // into their own isEmpty as `!st.plan ||`, and each re-applied by hand in
+    // their gizmos.begin; it belongs here, once, for every tool. An EDIT
+    // already HAS its feature and its stored params, so it goes on writing.
+    if (!st.featureId && !st.plan) return;
     if (spec.beforeApply) spec.beforeApply(st);
     const pr = spec.params(st);
     const plan = st.plan;               // the plan these values came from (see lastGoodPlan)
@@ -1125,6 +1153,11 @@ export function tool(spec) {
     // rebuild was still running — in edit mode too. The commit and the one
     // full rebuild (rollback bar released) are ONE change for the viewport.
     await holdViewport(async () => {
+      // THE PLAN MAY STILL BE IN FLIGHT. Press the tool, type a value, press
+      // OK: nothing can be built until the plan lands (see applyOnce), so OK
+      // waits for it — and for the apply its arrival starts — instead of
+      // saying "nothing was built" about a value the user did type (R2).
+      if (setupWait) await setupWait;
       if (st && (editing || !st.featureId || typed || applyRun)) await apply();
       if (!st) { gone = true; return; }   // the server crashed under us, and
       created = !!st.featureId;           // recover() already said so
