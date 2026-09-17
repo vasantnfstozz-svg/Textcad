@@ -134,6 +134,44 @@ def test_the_traced_box_holds_only_what_was_drawn(tail, thick, detached):
     assert info["width_mm"] == pytest.approx(p_info["width_mm"], abs=0.5)
 
 
+def _dot_grid(n, size=600):
+    m = np.zeros((size, size), np.uint8)
+    step = size // n
+    for i in range(n):
+        for j in range(n):
+            cv2.circle(m, (step // 2 + i * step, step // 2 + j * step),
+                       step // 4, 1, -1)
+    return m
+
+
+def test_connect_pieces_says_so_when_it_gives_up():
+    """`connect_pieces` welds disjoint art with straight bridges and stops
+    after 16 of them. It used to hand back multi-piece art as if it had been
+    welded into one, and say nothing (LAUNCH-PLAN section 10 P3)."""
+    ents, info = imgtrace.image_to_entities(
+        _png(_dot_grid(5)), height_mm=60.0, connect_pieces=True)
+    assert ents
+    assert info["contours"] > 1, "25 dots cannot be welded in 16 bridges"
+    assert info["welded"] is False
+    assert "separate pieces" in info["note"]
+
+
+def test_connect_pieces_that_succeeds_says_that_too():
+    ents, info = imgtrace.image_to_entities(
+        _png(_dot_grid(2)), height_mm=60.0, connect_pieces=True)
+    assert ents
+    assert info["contours"] == 1
+    assert info["welded"] is True
+    assert "note" not in info
+
+
+def test_a_plain_trace_is_not_asked_about_welding():
+    _ents, info = imgtrace.image_to_entities(_png(_dot_grid(5)),
+                                             height_mm=60.0)
+    assert info["contours"] == 25
+    assert "welded" not in info and "note" not in info
+
+
 def test_pulling_loops_apart_leaves_art_that_is_already_clear_alone():
     """A picture whose pieces are properly separated must come out of the
     tracer unchanged, to the last decimal."""

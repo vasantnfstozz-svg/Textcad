@@ -413,14 +413,19 @@ def artwork_aspect(data: bytes, height_mm: float = 50.0) -> float:
     return w / h
 
 
-def _bridge_pieces(solid: np.ndarray, thickness: int) -> np.ndarray:
+def _bridge_pieces(solid: np.ndarray, thickness: int, rounds: int = 16):
     """Connect disjoint art pieces (highlight-streak splits) by drawing a
-    thick line between the globally closest pair until one piece remains."""
-    for _ in range(16):
+    thick line between the globally closest pair until one piece remains.
+    -> (mask, welded)
+
+    `welded` is False when the rounds ran out with the art still in pieces.
+    It used to return quietly, so a caller that asked for ONE piece was handed
+    seventeen and told nothing (LAUNCH-PLAN section 10)."""
+    for _ in range(rounds):
         pieces, _h = cv2.findContours(solid, cv2.RETR_EXTERNAL,
                                       cv2.CHAIN_APPROX_NONE)
         if len(pieces) <= 1:
-            break
+            return solid, True
         best = None
         for a in range(len(pieces)):
             for b in range(a + 1, len(pieces)):
@@ -432,7 +437,9 @@ def _bridge_pieces(solid: np.ndarray, thickness: int) -> np.ndarray:
                     best = (d[i, j], tuple(int(v) for v in pa[i]),
                             tuple(int(v) for v in pb[j]))
         cv2.line(solid, best[1], best[2], 1, thickness)
-    return solid
+    left, _h = cv2.findContours(solid, cv2.RETR_EXTERNAL,
+                                cv2.CHAIN_APPROX_NONE)
+    return solid, len(left) <= 1
 
 
 def _chaikin(pts: np.ndarray, cut_px: float) -> np.ndarray:
@@ -479,8 +486,9 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
     x, y = int(xs.min()), int(ys.min())
     w, h = int(xs.max()) - x + 1, int(ys.max()) - y + 1
     mm_px = float(height_mm) / h
+    welded = None
     if connect_pieces:
-        solid = _bridge_pieces(solid, max(3, int(0.6 / mm_px)))
+        solid, welded = _bridge_pieces(solid, max(3, int(0.6 / mm_px)))
 
     if min_channel_mm and min_channel_mm > 0:
         k = int(min_channel_mm / mm_px) | 1
@@ -572,4 +580,13 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
             "height_mm": round(max(ys) - min(ys), 2),
             "contours": len(ents) - n_holes, "holes": n_holes,
             "points": sum(len(e["points"]) for e in ents)}
+    if welded is not None:
+        # asked to weld the art into one piece, and it did not: say so rather
+        # than hand back several pieces as if it had (LAUNCH-PLAN section 10)
+        info["welded"] = bool(welded and info["contours"] == 1)
+        if not info["welded"]:
+            info["note"] = (
+                f"the artwork is still {info['contours']} separate pieces — "
+                f"16 bridges were not enough to join it. Extrude it as it is, "
+                f"or close the gaps in the picture and trace it again.")
     return ents, info
