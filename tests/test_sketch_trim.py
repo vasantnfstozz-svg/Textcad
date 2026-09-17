@@ -237,13 +237,13 @@ def test_a_word_is_read_as_every_loop_the_canvas_draws():
 
 
 def test_material_under_an_engraved_word_is_the_builders_answer():
-    """The measurement round one made with two probe points, made with 1800.
+    """The measurement round one made with two probe points, made with 1711.
 
     `_material_at` replays the add/subtract list; the oracle is the face
     `sketch.py` actually composes. They must agree everywhere.
     """
     ents = [dict(PLATE), dict(WORD)]
-    pieces, loops, crossing = tr._pieces_raw(ents)
+    _, loops, crossing = tr._pieces_raw(ents)
     order = tr._cluster(ents, loops, crossing, 0)
     oracle = loops_of(sk.compose(ents, note=False))
     wrong = []
@@ -348,6 +348,84 @@ def test_every_click_on_a_word_cluster_is_a_message_or_a_sketch(name):
             shape = sk.compose(out["entities"], note=False)
             assert shape.is_valid, f"{piece['id']} built an invalid face set"
     assert applied, f"{name}: not one piece of this sketch did anything"
+
+
+def test_the_loop_parity_rule_holds_three_deep_and_on_a_tangency():
+    """`_in_entity` is even-odd across an entity's loops. Right for a glyph
+    with a counter and for concentric rings — and these are the two shapes
+    the user's 324 sketches cannot produce, so they are put to the kernel
+    instead of assumed. (`probes/trim_loops_edge_cases.py` adds a fourth
+    level of nesting and 1445 grid points over the glyphs 8 % B g Q.)
+    """
+    import build123d as b3d
+
+    def check(shape, pts):
+        loops = [tr._loop(w) for f in shape.faces() for w in f.wires()]
+        for x, y in pts:
+            truth = any(tr._face_contains(f, x, y) for f in shape.faces())
+            assert tr._in_entity(loops, x, y) is truth, \
+                f"({x}, {y}): parity says {not truth}, the kernel says {truth}"
+        return len(loops)
+
+    # a disc inside the hole of a ring — three loops, nested three deep
+    nested = (b3d.Circle(20) - b3d.Circle(14)) + b3d.Circle(6)
+    assert check(nested, [(r, 0.0) for r in
+                          (0.0, 5.9, 6.1, 13.9, 14.1, 19.9, 20.1, 25.0)]) == 3
+    # two loops that TOUCH at a point rather than crossing
+    tangent_in = (b3d.Circle(20) - b3d.Circle(14)) + \
+        b3d.Pos(7.0, 0) * b3d.Circle(7.0)
+    check(tangent_in, [(x, 0.0) for x in (-16, -13.9, 0.1, 13.9, 14.1, 21)])
+    tangent_out = b3d.Pos(-9, 0) * b3d.Circle(9) + \
+        b3d.Pos(9, 0) * b3d.Circle(9)
+    check(tangent_out, [(x, 0.0) for x in (-12, -0.2, 0.2, 12, 19.5)])
+
+
+def test_a_click_on_a_word_cluster_keeps_BOTH_letters_engraved():
+    """The sin the removed refusal existed to stop was reading a word as its
+    FIRST letter. Measured through a real `trim_apply`, not through
+    `trim_pieces`: a point inside each glyph's stroke (found with the kernel,
+    because a glyph's centroid is not on the glyph) must stay empty through
+    every click that is not the delete gesture — and the delete gesture must
+    take the WHOLE word, never half of it."""
+    plate = dict(PLATE)
+    word = dict(WORD)
+    bar = {"kind": "rectangle", "mode": "add", "x": 0, "y": 13.2,
+           "w": 70, "h": 3}
+    ents = [plate, word, bar]
+    glyph = sk._entity(dict(WORD, mode="add"))
+    strokes = []
+    for f in sorted(glyph.faces(), key=lambda g: g.center().X):
+        bb = f.bounding_box()
+        strokes.append(next(
+            (bb.min.X + (bb.max.X - bb.min.X) * i / 30,
+             bb.min.Y + (bb.max.Y - bb.min.Y) * j / 30)
+            for i in range(1, 30) for j in range(1, 30)
+            if tr._face_contains(f, bb.min.X + (bb.max.X - bb.min.X) * i / 30,
+                                 bb.min.Y + (bb.max.Y - bb.min.Y) * j / 30)))
+    assert len(strokes) == 2
+
+    def material(shape, at):
+        return any(tr._face_contains(f, *at) for f in shape.faces())
+
+    before = sk.compose([dict(e) for e in ents], note=False)
+    assert not any(material(before, s) for s in strokes)   # both engraved
+    deletes = kept = 0
+    for p in tr.trim_pieces(ents):
+        try:
+            out = tr.trim_apply([dict(e) for e in ents], p["id"])
+        except ValueError:
+            continue
+        after = sk.compose(out["entities"], note=False)
+        if p["whole"] and p["ent"] == 1:
+            deletes += 1
+            assert len(out["entities"]) == 2, "half a word was deleted"
+            assert all(material(after, s) for s in strokes), \
+                "deleting the word left one letter engraved"
+            continue
+        kept += 1
+        assert not any(material(after, s) for s in strokes), \
+            f"{p['id']} filled a letter in: {out['message']}"
+    assert deletes == 5 and kept, f"{deletes} deletes, {kept} other clicks"
 
 
 def test_the_endpoint_answers_pieces_for_a_word():
