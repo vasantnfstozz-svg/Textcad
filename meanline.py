@@ -219,6 +219,35 @@ _EXIT_WIDTH_FLOOR_MM = 1.0
 # (probes/compressor_bore_order_probe.py, probes/meanline_bore_check_cost.py).
 _BORE_PLUG_FRACTION = 0.005
 
+# How much of the inlet annulus has to be left OPEN once the blades stand in
+# it. The eye is the other end of the wheel from the exit width: it is what the
+# machine takes IN, `mcp_server` hands it to an AI as `inducer_shroud_radius_mm`
+# beside `exit_width_mm`, and until 2026-09-17 nothing measured it against the
+# metal. The blades are `max(0.02 * r2, 1.5)` mm thick — the third fixed
+# millimetre on a small wheel, one file from the bore's 2 mm and the shroud
+# offset's — and on a small wheel that floor fills the eye solid.
+#
+# MEASURED on nine built wheels (probes/meanline_eye_sweep2.py): the passage
+# across the inlet plane, as a fraction of the annulus there to be blocked —
+#
+#     0.005 kg/s PR 1.8  250,000 rpm  60 deg   r2  14.87    3.21%
+#     0.005 kg/s PR 1.1  100,000 rpm  35 deg   r2  11.55    3.36%
+#     0.005 kg/s PR 1.8   90,000 rpm -20 deg   r2  28.25    6.55%
+#     ------------------------------------------------- the rule cuts here ---
+#     0.02  kg/s PR 2.5  150,000 rpm  35 deg   r2  25.35   16.06%
+#     0.005 kg/s PR 4.0   90,000 rpm   0 deg   r2  48.28   26.50%
+#     0.05  kg/s PR 1.8  180,000 rpm  35 deg   r2  16.51   31.37%  (micro turbo)
+#     0.1   kg/s PR 4.0  250,000 rpm  25 deg   r2  18.64   37.43%
+#     20    kg/s PR 2.5    5,000 rpm  35 deg   r2 760.55   68.96%
+#     0.5   kg/s PR 3.0   45,000 rpm  35 deg   r2  93.80   70.71%  (the sample)
+#
+# so the line sits in a 2.5x gap with every wheel the corpus calls sound above
+# it — the shipped sample at 70.71% and the module's own micro turbo at 31.37%
+# — and the dead ones below. Below a tenth the wheel's own inlet velocity is
+# supersonic several times over (3.51 mm2 for 5 g/s of air is 1,163 m/s), which
+# is what "not an inlet" means in numbers.
+_EYE_OPEN_FRACTION = 0.10
+
 
 def _across(radius_mm: float) -> str:
     """A wheel's diameter in the units a person would say it in.
@@ -306,6 +335,25 @@ def _check_wheel(d: CompressorDesign, duty: Duty | None = None) -> None:
             f"{lead}the inlet eye would come out beyond the rim of the wheel "
             f"itself ({r1s:,.2f} mm against a tip radius of {r2:,.2f} mm), so "
             f"the air would have nowhere to turn; {fix}")
+    # THE INLET EYE IS A RING, AND A RING NEEDS TWO RADII. `r1s` is
+    # sqrt(area/pi + r1h**2), so a duty whose continuity area vanishes beside
+    # the hub answers r1s == r1h: an eye of ZERO area, published to an AI as
+    # `inducer_shroud_radius_mm` and built by the kernel as a wheel with no
+    # inlet at all. 289 of 4,424 designs in a 7,040-duty grid land there
+    # (probes/meanline_round3_gaps.py) — 0.0001 kg/s at 200 rpm answers a
+    # 3.5 metre wheel whose eye and hub are both 187.23 mm. The shaft bore is
+    # the other floor: on a wheel under about 6 mm of tip radius the 2 mm bore
+    # swallows the eye whole. Both say the same thing — there is no ring.
+    inner = max(d.inducer_hub_radius, d.bore_radius)
+    if r1s <= inner:
+        what = ("the shaft bore" if d.bore_radius >= d.inducer_hub_radius
+                else "the hub nose it sits on")
+        raise ValueError(
+            f"{lead}the inlet eye would come out {r1s:,.2f} mm, no wider than "
+            f"{what} ({inner:,.2f} mm) — the air has no ring to come in "
+            f"through, so this is a disc, not an impeller; raise the mass flow "
+            f"or raise the speed, which shrinks the hub without shrinking the "
+            f"eye")
     # `bore_radius` has a 2 mm floor, and the blade is cut back to clear the
     # bore (see `one_blade`); a bore at or past the rim would cut the blade
     # away entirely and leave an empty component instead of a sentence
@@ -491,6 +539,75 @@ def bore_problem(part, d: CompressorDesign) -> str | None:
             f"would go through it")
 
 
+def eye_passage(part, d: CompressorDesign) -> tuple[float, float]:
+    """(open mm2, available mm2) across the wheel's INLET, both measured.
+
+    The station is the top of the wheel, z = t + L, where the hub is exactly
+    `inducer_hub_radius` and the shroud cut has not started coming down yet.
+    A slab there, inside the published eye radius, holds the whole inlet; what
+    is not wheel in it is passage. The shaft bore is open too and is taken off
+    both sides, because no air goes down the shaft.
+
+    The denominator is measured at the same station rather than taken from
+    `pi*(r1s**2 - r1h**2)`, so the hub's own growth across the slab cancels
+    instead of counting as blockage: the first version of this read a slab 2%
+    of the wheel's depth lower and called a sound 26.50% wheel 0.00%, because
+    on a 0.86 mm annulus the cone had already closed it
+    (probes/meanline_eye_sweep.py, then meanline_eye_sweep2.py).
+
+    Cost, measured on the same nine wheels: 0.56 s to 3.47 s, against builds of
+    14 s to 168 s.
+    """
+    t, L = d.backplate_thk, d.axial_length
+    r1s = d.inducer_shroud_radius
+    if L <= 0 or r1s <= 0:
+        return 0.0, 0.0
+    h = min(0.02, L / 500.0)
+    z_mid = t + L - h / 2.0
+    hub_r = d.tip_radius - (d.tip_radius - d.inducer_hub_radius) \
+        * ((z_mid - t) / L)
+    inner = max(hub_r, d.bore_radius)
+    available = math.pi * (r1s ** 2 - inner ** 2)
+    if available <= 0.0:
+        return 0.0, 0.0
+    try:
+        free = (Pos(0, 0, z_mid) * Cylinder(radius=r1s, height=h)) - part
+    except Exception:
+        # build123d raises when the difference is EMPTY — which here means the
+        # wheel fills the whole eye, the very thing this measures
+        return 0.0, available
+    if free is None:
+        return 0.0, available
+    open_mm2 = float(free.volume) / h - math.pi * d.bore_radius ** 2
+    return max(open_mm2, 0.0), available
+
+
+def eye_problem(part, d: CompressorDesign) -> str | None:
+    """The sentence a wheel whose inlet is solid blade metal earns, or None.
+
+    Round two proved a wheel can publish an exit width 39% larger than the one
+    it has. This is the same question at the inlet, and the answer was worse:
+    0.005 kg/s at pressure ratio 1.1 and 100,000 rpm publishes an eye radius of
+    6.10 mm — a 112.30 mm2 ring — and builds a wheel with 3.51 mm2 of passage
+    in it, 3% of what it says. ok=True, ONE watertight solid, health [],
+    13-fold symmetric, the right tip radius, the right overall height, and the
+    STEP file exported as `verified: true` (probes/meanline_eye_kernel.py).
+    """
+    open_mm2, available = eye_passage(part, d)
+    thk = max(0.02 * d.tip_radius, 1.5)
+    if available <= 0.0:
+        return ("the inlet eye is not an opening: there is no ring between "
+                "the hub and the shroud for the air to come in through")
+    if open_mm2 >= _EYE_OPEN_FRACTION * available:
+        return None
+    return (f"the inlet eye is not an opening: the {d.blade_count} blades at "
+            f"{thk:,.2f} mm thick leave {open_mm2:,.2f} mm2 of the "
+            f"{available:,.2f} mm2 ring the design asked for, so almost none "
+            f"of the air it is sized for can get in — lower the speed or raise "
+            f"the mass flow, which makes the wheel bigger while the blades "
+            f"stay as thick as a cutter can make them")
+
+
 def to_spec(d: CompressorDesign) -> inspector.Spec:
     """The Spec IS the calculation — ground truth the build must hit."""
     return inspector.Spec(
@@ -543,15 +660,17 @@ def build_from_design(d: CompressorDesign) -> assembly.AssemblyReport:
         [assembly.Component("hub", hub),
          assembly.Component("blades", bladeset)],
         mode="fuse", assembly_spec=to_spec(d))
-    # ...and then the question the Spec cannot ask, MEASURED. Round one's P0
+    # ...and then the questions the Spec cannot ask, MEASURED. Round one's P0
     # was a wheel that passed every line of `to_spec` with its bore filled in;
     # `one_blade` is why it cannot happen now, and this is the proof rather
-    # than the promise. 0.14 s on the shipped wheel's 73 s build.
+    # than the promise. Round three's was the same wheel's INLET, filled with
+    # blade metal by the 1.5 mm thickness floor. 0.14 s and 0.5-3.5 s against
+    # builds of 14 to 168 s.
     if rep.part is not None:
-        problem = bore_problem(rep.part, d)
-        if problem:
-            rep.assembly_problems.append(problem)
-            rep.ok = False
+        for problem in (bore_problem(rep.part, d), eye_problem(rep.part, d)):
+            if problem:
+                rep.assembly_problems.append(problem)
+                rep.ok = False
     return rep
 
 

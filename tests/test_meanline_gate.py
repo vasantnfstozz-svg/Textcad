@@ -22,8 +22,9 @@ at 180,000 rpm to a 50 kg/s industrial machine at 3,000 rpm) and
 import math
 
 import pytest
-from build123d import Cylinder
+from build123d import Box, Cylinder, Pos
 
+import assembly
 import blocks
 import inspector
 import meanline
@@ -372,7 +373,10 @@ BLADE_SHAPES = [
                       backsweep_deg=60.0)),
     ("the last blessed 74", dict(mass_flow=0.05, pressure_ratio=1.8,
                                  rpm=180000, backsweep_deg=74.0)),
-    ("the smallest wheel", dict(mass_flow=1e-6, pressure_ratio=1.5,
+    # was 1e-6 kg/s at 500,000 rpm until the eye rule (round three) refused it:
+    # that wheel's inlet eye is 0.51 mm inside a 2.00 mm shaft bore. This is
+    # the smallest wheel left — r2 3.21 mm (probes/meanline_eye_rule_blast.py)
+    ("the smallest wheel", dict(mass_flow=1e-3, pressure_ratio=1.2,
                                 rpm=500000)),
     ("a thick blade", dict(mass_flow=20.0, pressure_ratio=3.5, rpm=8000)),
 ]
@@ -472,16 +476,30 @@ def test_the_lower_bound_refuses_nothing_that_could_be_machined():
     (probes/meanline_gate_min_scan.py): the smallest wheel that survives the
     other two rules is 1.08 mm, and it needs 3,000,000 rpm at a microgram per
     second. Its blade would be 1.5 mm thick — THICKER than the whole wheel is
-    round — which is the real reason nothing lives down there."""
-    d = meanline.design(duty(mass_flow=1e-4, pressure_ratio=1.5, rpm=500000))
-    assert d.tip_radius == pytest.approx(4.87, abs=0.01)   # 5x the bound
+    round — which is the real reason nothing lives down there.
+
+    ROUND THREE moved the floor up without touching `_R2_MIN_MM`: the wheels
+    that small have their inlet eye INSIDE the shaft bore, and the eye rule
+    refuses them first. The smallest wheel any duty still designs is 3.21 mm
+    of tip radius, and a search 100x finer bottoms out at 2.90 mm — nearly 3x
+    the bound (probes/meanline_eye_rule_blast.py). The 4.87 mm wheel this test
+    used to name is one of the refused ones: its eye is 0.78 mm, the bore
+    2.00."""
+    d = meanline.design(duty(mass_flow=1e-3, pressure_ratio=1.2, rpm=500000))
+    assert d.tip_radius == pytest.approx(3.21, abs=0.01)   # 3x the bound
+    assert d.tip_radius > 2.9 > meanline._R2_MIN_MM
     assert max(0.02 * d.tip_radius, 1.5) > meanline._R2_MIN_MM
+    with pytest.raises(ValueError, match="inlet eye"):
+        meanline.design(duty(mass_flow=1e-4, pressure_ratio=1.5, rpm=500000))
 
 
 def test_the_gate_reads_the_geometry_it_will_actually_build():
     """`exit_width` is CLAMPED to a machinable 1.0 mm minimum, so the gate has
-    to judge the clamped number — that is the blade the kernel will cut."""
-    d = meanline.design(duty(mass_flow=1e-6))
+    to judge the clamped number — that is the blade the kernel will cut.
+
+    (The 1e-6 kg/s duty this used to ask is refused by the eye rule now: its
+    eye and its hub nose are both 9.85 mm, a ring of nothing.)"""
+    d = meanline.design(duty(mass_flow=1e-5, pressure_ratio=2.0, rpm=60000))
     assert d.exit_width == 1.0                      # the clamp bit
     assert d.exit_width < d.tip_radius              # and it is still a wheel
     assert all(math.isfinite(v) for v in
@@ -492,11 +510,19 @@ def test_the_gate_reads_the_geometry_it_will_actually_build():
 
 # name, duty, the width continuity ASKED for (mm), and the overstatement
 # (probes/meanline_exit_width_clamp.py, 2026-09-17)
+# The second and third rows named 1e-6 kg/s and 1e-4 kg/s at 500,000 rpm until
+# round three's eye rule refused both (an eye of zero area, and an eye inside
+# the shaft bore). These two clamp just as hard, keep a real ring, and exercise
+# the same two branches of the sentence — "under a micrometre" with "thousands
+# of times", and "N micrometres" with a count
+# (probes/meanline_eye_rule_replacements.py).
 CLAMPED = [
     ("PR 3 at 1,000 rpm", dict(pressure_ratio=3.0, rpm=1000), 0.056719, 17.6),
-    ("1e-6 kg/s", dict(mass_flow=1e-6), 0.0000051, 195897.8),
-    ("1e-4 kg/s at 500,000 rpm",
-     dict(mass_flow=1e-4, pressure_ratio=1.5, rpm=500000), 0.027937, 35.8),
+    ("1e-5 kg/s at PR 5",
+     dict(mass_flow=1e-5, pressure_ratio=5.0, rpm=20000), 0.0000099486,
+     100516.2),
+    ("1e-4 kg/s at 50,000 rpm",
+     dict(mass_flow=1e-4, pressure_ratio=1.5, rpm=50000), 0.0027937, 357.9),
 ]
 
 
@@ -577,6 +603,27 @@ def test_the_bore_check_does_not_fire_on_a_hair_of_boolean_noise():
                     height=0.25 * (d.backplate_thk + d.axial_length))
     assert meanline.bore_problem(drilled + plug, d) is not None
     assert room > 0
+
+
+def test_a_blade_that_crosses_the_bore_without_filling_it_is_still_caught():
+    """ROUND THREE attacking round two's own fix: the measurement is an
+    INTERSECTION with the bore cylinder, so a blade that enters the bore and
+    leaves it on the other side — never filling the cylinder — has to be
+    counted just the same. Measured on the shipped wheel
+    (probes/meanline_round3_attacks.py): a bar straight across the 9.84 mm
+    bore is refused down to 0.10 mm thick (35.07 mm3, 1.29% of the bore). The
+    only bar it misses is 0.02 mm — a twentieth of a millimetre, where
+    `one_blade`'s own thickness floor is 1.5 mm."""
+    d = meanline.design(duty())
+    t, L = d.backplate_thk, d.axial_length
+    drilled = blocks.with_center_hole(
+        Cylinder(radius=d.tip_radius, height=t + L), d.bore_radius)
+    for thk, caught in ((1.88, True), (0.5, True), (0.1, True)):
+        bar = Box(4.0 * d.tip_radius, thk, t + L)
+        crossing = bar & Cylinder(radius=d.tip_radius, height=8.0 * (t + L))
+        problem = meanline.bore_problem(drilled + crossing, d)
+        assert (problem is not None) is caught, (thk, problem)
+        assert meanline.bore_material(drilled + crossing, d) > 30.0, thk
 
 
 # --------------- the exit width has to fit in the wheel, or it is not built ---
@@ -664,3 +711,157 @@ def test_the_corpus_is_nowhere_near_the_new_rule():
         d = meanline.design(duty(**kw))
         worst = max(worst, d.exit_width / d.axial_length)
     assert worst == pytest.approx(0.514, abs=0.01), worst
+
+
+# ---------------- the inlet eye has to BE an opening, and that is measured ---
+
+# ROUND THREE. `exit_width_mm` is what the machine flows; `inducer_shroud_
+# radius_mm` is what it takes IN, and it leaves through the same MCP door.
+# Nothing measured it against the metal. The blades are `max(0.02*r2, 1.5)` mm
+# thick — the THIRD fixed millimetre on a small wheel, after the bore's 2 mm
+# and the shroud offset's — and on a small wheel that floor fills the eye
+# solid.
+#
+# MEASURED at 967963d (probes/meanline_eye_kernel.py, meanline_eye_sweep2.py):
+#
+#   0.005 kg/s PR 1.1 @ 100,000 rpm, 35 deg   r2 11.55, Z 13, eye r1s 6.10
+#       published inlet ring   112.30 mm2
+#       passage in the metal     3.51 mm2  = 3.4% of the 104.33 mm2 there to
+#                                            be blocked
+#       and ok=True, ONE watertight solid, health [], 13-fold symmetric, the
+#       right tip radius, the right overall height, STEP exported "verified".
+#
+# A duty whose eye is no wider than the hub nose or the shaft bore never gets
+# that far: 289 of 4,424 designs in a 7,040-duty grid answer r1s == r1h, an
+# eye of ZERO area (probes/meanline_round3_gaps.py).
+
+EYE_IS_NOT_A_RING = [
+    ("no ring at all", dict(mass_flow=1e-4, pressure_ratio=1.01, rpm=200,
+                            backsweep_deg=35.0), (194.73, 194.73)),
+    ("the hub swallows it", dict(mass_flow=1e-4, pressure_ratio=1.05, rpm=200,
+                                 backsweep_deg=0.0), (387.68, 387.68)),
+]
+
+
+@pytest.mark.parametrize("name,kw,expect", EYE_IS_NOT_A_RING,
+                         ids=[s[0].replace(" ", "_")
+                              for s in EYE_IS_NOT_A_RING])
+def test_an_eye_no_wider_than_the_hub_is_refused_before_the_kernel(name, kw,
+                                                                   expect):
+    """`r1s` is sqrt(area/pi + r1h**2): a duty whose continuity area vanishes
+    beside the hub answers an eye EQUAL to the hub — published to an AI as
+    `inducer_shroud_radius_mm` and built as a wheel with no inlet. The old gate
+    asked only whether the eye was inside the RIM."""
+    r1s, r1h = expect
+    with pytest.raises(ValueError) as e:
+        meanline.design(duty(**kw))
+    msg = str(e.value)
+    assert "inlet eye" in msg, (name, msg)
+    assert f"{r1s:,.2f} mm" in msg and f"{r1h:,.2f} mm" in msg, (name, msg)
+    assert "raise the mass flow" in msg, (name, msg)
+    assert "Traceback" not in msg and "Error" not in msg, msg
+
+
+def test_the_sound_corpus_keeps_a_real_ring():
+    """A guard that refuses correct geometry is the worse sin. The tightest
+    sound wheel's eye is still more than 3x the radius it has to clear."""
+    worst = None
+    for _name, kw, _e in SOUND:
+        d = meanline.design(duty(**kw))
+        inner = max(d.inducer_hub_radius, d.bore_radius)
+        ratio = d.inducer_shroud_radius / inner
+        worst = ratio if worst is None else min(worst, ratio)
+    assert worst is not None and worst > 3.0, worst
+
+
+def _wheel_with_eye_blocked_to(d, fraction_left):
+    """A hub with a ring standing in its inlet, leaving `fraction_left` of the
+    published annulus open. Cheap: no blades, no pattern, no fuse."""
+    t, L = d.backplate_thk, d.axial_length
+    r1s, r1h = d.inducer_shroud_radius, d.inducer_hub_radius
+    hub = blocks.with_center_hole(
+        blocks.revolve_profile([(0, 0), (d.tip_radius, 0), (d.tip_radius, t),
+                                (r1h, t + L), (0, t + L)]), d.bore_radius)
+    if fraction_left >= 1.0:
+        return hub
+    cover = math.sqrt(r1s ** 2 - fraction_left * (r1s ** 2 - r1h ** 2))
+    ring = Pos(0, 0, t + L / 2.0) * Cylinder(radius=cover, height=L)
+    return hub + (ring - Cylinder(radius=d.bore_radius, height=8.0 * (t + L)))
+
+
+def test_an_eye_the_blades_have_filled_is_measured_and_refused_in_words():
+    """The wheel measured at 967963d, in the shape a test can afford: a ring
+    standing where the blades stand. Nothing else in the module can see it —
+    `to_spec` pins symmetry, solid count, tip radius and overall height, and
+    the real wheel passed all four."""
+    d = meanline.design(duty())
+    wide_open = _wheel_with_eye_blocked_to(d, 1.0)
+    open_mm2, available = meanline.eye_passage(wide_open, d)
+    assert available > 3000.0, available          # the shipped wheel's ring
+    assert open_mm2 == pytest.approx(available, rel=0.01)
+    assert meanline.eye_problem(wide_open, d) is None
+
+    sealed = _wheel_with_eye_blocked_to(d, 0.0)
+    open_mm2, available = meanline.eye_passage(sealed, d)
+    assert open_mm2 < 1e-6, open_mm2
+    problem = meanline.eye_problem(sealed, d)
+    assert problem and "inlet eye is not an opening" in problem, problem
+    assert "13 blades" in problem, problem        # the count, in words
+    assert "1.88 mm thick" in problem, problem    # and the thickness
+    assert "lower the speed or raise the mass flow" in problem, problem
+
+
+def test_the_eye_rule_cuts_where_the_measurements_put_it():
+    """BOTH sides, on the same wheel. The line is a tenth of the ring, and the
+    nine wheels it was set from (probes/meanline_eye_sweep2.py) read 3.21,
+    3.36 and 6.55 percent below it and 16.06, 26.50, 31.37, 37.43, 68.96 and
+    70.71 above — a 2.5x gap, with the shipped sample and the module's own
+    micro turbo on the open side."""
+    d = meanline.design(duty())
+    dead = _wheel_with_eye_blocked_to(d, 0.08)
+    open_mm2, available = meanline.eye_passage(dead, d)
+    assert 0.07 < open_mm2 / available < 0.09, open_mm2 / available
+    assert meanline.eye_problem(dead, d) is not None
+
+    alive = _wheel_with_eye_blocked_to(d, 0.12)
+    open_mm2, available = meanline.eye_passage(alive, d)
+    assert 0.11 < open_mm2 / available < 0.13, open_mm2 / available
+    assert meanline.eye_problem(alive, d) is None
+
+
+def test_the_eye_is_read_at_the_top_of_the_wheel_not_below_it():
+    """The first version of this measurement read a slab 2% of the wheel's
+    depth below the top and called a SOUND 26.50% wheel 0.00% open: on a
+    0.86 mm annulus the hub cone had already closed it (0.005 kg/s, PR 4,
+    90,000 rpm — probes/meanline_eye_sweep.py against meanline_eye_sweep2.py).
+    The station is the inlet plane, and the denominator is measured there too,
+    so the cone's own growth cancels instead of counting as blockage."""
+    d = meanline.design(duty(mass_flow=0.005, pressure_ratio=4.0, rpm=90000,
+                             backsweep_deg=0.0))
+    assert d.inducer_shroud_radius - d.inducer_hub_radius < 1.0, d
+    hub_only = _wheel_with_eye_blocked_to(d, 1.0)
+    open_mm2, available = meanline.eye_passage(hub_only, d)
+    assert available > 20.0, available
+    assert open_mm2 / available > 0.95, (open_mm2, available)
+    assert meanline.eye_problem(hub_only, d) is None
+
+
+def test_both_measured_questions_reach_the_report(monkeypatch):
+    """The bore and the eye are asked of the BUILT wheel, and either one turns
+    `ok` off — `mcp_server._design_compressor` reads `build.ok` and
+    `build.all_problems()`. A 13-blade build is 14 to 168 s, so the wheel the
+    kernel would hand back is handed back here instead."""
+    d = meanline.design(duty())
+    sealed = _wheel_with_eye_blocked_to(d, 0.0)
+
+    def fake(components, mode="fuse", assembly_spec=None, clash_tol=1e-3):
+        return assembly.AssemblyReport(ok=True, mode=mode, components=[],
+                                       assembly_problems=[], part=sealed)
+
+    monkeypatch.setattr(meanline.assembly, "build_and_verify", fake)
+    rep = meanline.build_from_design(d)
+    assert rep.ok is False
+    joined = " ".join(rep.all_problems())
+    assert "inlet eye is not an opening" in joined, joined
+    # and the bore, which this wheel does have, is not falsely reported
+    assert "shaft bore is not a hole" not in joined, joined
