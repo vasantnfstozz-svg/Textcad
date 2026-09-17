@@ -75,7 +75,8 @@ MODIFIERS = {
     "revolve": sk.revolve_sketch,       # sketch -> solid
     "revolve_face": sk.revolve_face,    # solid's picked face -> solid of revolution (P3b)
     "hole": sk.hole,                    # solid + a point on a flat face -> the body WITH the hole (P4)
-    "sweep": sk.sweep_sketch,           # sketch + path -> solid
+    "sweep": sk.sweep_sketch,           # sketch profile + a PATH sketch (`path`, a reference) -> solid
+    "sweep_face": sk.sweep_face,        # solid's picked flat face + a path sketch -> solid (Tier 2)
     "sketch_on_face": sk.sketch_on_face,  # solid -> sketch (on a picked face)
 }
 
@@ -236,6 +237,15 @@ def _check_modifier_input(op: str, fid: str, part, params: dict | None = None) -
         raise ValueError(
             f"{op} pulls a SKETCH profile, and '{fid}' is a solid body — "
             f"sketch on one of its faces, then {op} that sketch")
+    # ...and a PATH sketch is not a profile either: its open lines enclose no
+    # area, so there is nothing to pull. Said before the kernel meets a sketch
+    # with no face (specs/sweep.md).
+    if (op in SKETCH_CONSUMING_MODIFIERS and sk.is_sketch(part)
+            and not part.faces() and sk.sketch_paths(part)):
+        raise ValueError(
+            f"'{fid}' is a path sketch (open lines drawn with the Path tool, no "
+            f"closed shape) — {op} needs a closed profile; a path sketch is "
+            f"what Sweep FOLLOWS, named in its `path`")
     # The mirror image. NO solids AND some area: a 2D thing, whether it is a
     # Sketch instance or the Compound disjoint islands compose into — the same
     # pair of tests, so the two gates agree about what a sketch is. The area
@@ -527,6 +537,11 @@ DELETE_MODES = ("auto", "cascade", "strict")
 # tree") and deleting the seed left a pattern repeating a ghost, because both
 # only ever looked at `inputs` (found by the P4 code review).
 REF_PARAMS = {op: ("seed",) for op in pattern.SEEDED_OPS}
+# ...and a sweep's PATH: the sketch it follows is named, never consumed (one
+# path can serve several sweeps), so rename follows it and deleting the path
+# sketch takes the sweep along — exactly a pattern's seed (specs/sweep.md)
+REF_PARAMS.update({"sweep": ("path",), "sweep_face": ("path",)})
+SWEEP_OPS = ("sweep", "sweep_face")
 
 # ---------------------------------------------------------------------------
 # Rebuild cache: a feature's output is a pure function of (op, params, inputs)
@@ -751,7 +766,8 @@ class Document:
         return self
 
     # -- the pattern's seed (specs/pattern.md) --------------------------------
-    PULLED = ("extrude", "revolve", "loft", "sweep", "extrude_face", "revolve_face")
+    PULLED = ("extrude", "revolve", "loft", "sweep", "extrude_face", "revolve_face",
+              "sweep_face")
     # ops that RE-PLACE the whole body instead of adding to it or taking from
     # it, so they have no delta at all (`mirror` only in its legacy copy-only
     # form — with a seed it repeats a feature's delta, with `join` it ADDS its
@@ -836,6 +852,31 @@ class Document:
         if before is None or after is None:
             raise ValueError(f"{f.op}: the seed '{seed}' is not built (failed upstream?)")
         return {"_before": before, "_after": after}
+
+    def _path_part(self, f: Feature, path_id: str):
+        """The built PATH sketch a sweep names in `path` (specs/sweep.md): a
+        sketch feature that holds at least one open path, with a sentence for
+        each way it can fail to be one."""
+        pf = next((x for x in self.features if x.id == path_id), None)
+        if pf is None:
+            raise ValueError(f"{f.op}: there is no sketch named '{path_id}' to follow — "
+                             f"pick a path sketch (one drawn with the Path tool)")
+        if pf.op not in sk.SKETCH_PRODUCERS:
+            raise ValueError(f"{f.op}: '{path_id}' is a {pf.op}, not a sketch — the path "
+                             f"is a sketch holding an open line-and-arc chain drawn with "
+                             f"the Path tool")
+        if pf.suppressed:
+            raise ValueError(f"{f.op}: the path sketch '{path_id}' is struck out — restore "
+                             f"it (↩) or pick another path")
+        part = self._parts.get(path_id)
+        if part is None:
+            raise ValueError(f"{f.op}: the path sketch '{path_id}' is not built (failed "
+                             f"upstream?) — fix it first")
+        if not sk.sketch_paths(part):
+            raise ValueError(f"{f.op}: '{path_id}' holds no open path — its shapes are all "
+                             f"closed; draw the path with the sketch ribbon's Path tool "
+                             f"(it stays open where you double-click)")
+        return part
 
     # -- editing (THE point of the tree) -------------------------------------
     def edit(self, feature_id: str, param: str, value) -> None:
@@ -1431,7 +1472,10 @@ class Document:
                 # produced false "empty solid" failures on correct designs.
                 if f.op in sk.SKETCH_PRODUCERS or sk.is_sketch(part):
                     area = getattr(part, "area", 0.0)
-                    f.problems = [] if area > 0 else ["sketch is empty"]
+                    # a PATH sketch (open lines for Sweep) has no area and is
+                    # not empty: it carries its wires (specs/sweep.md)
+                    f.problems = ([] if area > 0 or sk.sketch_paths(part)
+                                  else ["sketch is empty"])
                     f.volume = None
                     f.pieces = None
                     f.status = "ok" if not f.problems else "failed"
@@ -1615,6 +1659,8 @@ class Document:
             kw = self._clean(f.params)
             if f.op in pattern.SEEDED_OPS and kw.get("seed"):
                 kw.update(self._seed_parts(f, kw["seed"]))   # the seed's before / after bodies
+            if f.op in SWEEP_OPS and kw.get("path"):
+                kw["_path_sketch"] = self._path_part(f, str(kw["path"]))   # the path sketch's wires
             return MODIFIERS[f.op](ins[0], **kw)
         if f.op == "move":
             if len(ins) != 1:
@@ -1819,7 +1865,7 @@ class Document:
             if f.op not in COMBINERS and f.op not in MODIFIERS:
                 continue
             if f.op in sk.SKETCH_PRODUCERS or f.op in ("extrude", "revolve",
-                                                       "loft", "sweep"):
+                                                       "loft", "sweep", "sweep_face"):
                 continue
             # A pattern's COPY form (no `seed`) exists to produce `count`
             # SEPARATE bodies, so N pieces is the number the user typed, not

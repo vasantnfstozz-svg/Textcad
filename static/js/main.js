@@ -16,6 +16,7 @@ import { initSplitters } from './splitters.js';
 import { initSettings } from './settings.js';
 import { initExtrude } from './extrude.js';
 import { initRevolve } from './revolve.js';
+import { initSweep } from './sweep.js';
 import { initFillet } from './fillet.js';
 import { initHole } from './hole.js';
 import { initShell } from './shell.js';
@@ -34,6 +35,7 @@ initDialogs();
 initSketcher();
 initExtrude();
 initRevolve();
+initSweep();      // Sweep: a profile along a path sketch (Tier 2, specs/sweep.md)
 initFillet();     // Fillet + Chamfer on picked edges
 initHole();       // Hole at the point clicked on a flat face
 initShell();      // Shell: walls of one thickness, the clicked faces open

@@ -24,7 +24,7 @@ from blocks import resolve_face   # noqa: F401 — one face resolver (faces, and
 from build123d import (
     Rectangle, Circle, Ellipse, Polygon, SlotOverall, RegularPolygon,
     Pos, Axis, Plane, BuildLine, BuildSketch, Spline, Polyline, Line,
-    ThreePointArc, make_face,
+    ThreePointArc, make_face, Transition,
     extrude as _extrude, revolve as _revolve, loft as _loft, sweep as _sweep,
 )
 
@@ -517,8 +517,17 @@ def compose(entities: list, note: bool = True):
     (`_compose_order`). Containment is measured only when something actually
     subtracts, so the ordinary all-add sketch pays nothing.
     """
-    if not entities:
+    # An OPEN path (`closed: false`, the Sweep tool's path) encloses nothing,
+    # so it takes no part in the arithmetic; `_place_sketch` carries it on the
+    # sketch as a wire instead.
+    closed = [e for e in (entities or []) if not is_open_path(e)]
+    if not closed:
+        if entities:
+            raise ValueError(
+                "this sketch holds only open paths (drawn for Sweep) and no "
+                "closed shape — there is no area to fill")
         raise ValueError("sketch has no entities")
+    entities = closed
     shapes = [_entity(e) for e in entities]
     modes = [e.get("mode", "add") for e in entities]
     knotted: list = []
@@ -663,6 +672,112 @@ def _path_face(e: dict):
     return sk.sketch
 
 
+def is_open_path(e: dict) -> bool:
+    """A `path` entity drawn OPEN (`closed: false`) — the sketch ribbon's Path
+    tool, for Sweep. It builds no face; `_place_sketch` carries it as a wire."""
+    return isinstance(e, dict) and e.get("kind") == "path" and e.get("closed") is False
+
+
+def is_path_sketch(entities) -> bool:
+    """Every entity is an open path: a PATH sketch (area 0), the kind Sweep
+    follows and Extrude / Revolve refuse with a sentence."""
+    ents = entities or []
+    return bool(ents) and all(is_open_path(e) for e in ents)
+
+
+def sketch_paths(sketch) -> list:
+    """The open-path wires a built sketch carries (world coordinates, in the
+    order they were drawn) — [] for a sketch of closed shapes only."""
+    return list(getattr(sketch, "_tc_paths", None) or [])
+
+
+def _path_wire(e: dict, pl: Plane):
+    """An OPEN path entity as ONE wire lying on `pl` — the same line / arc
+    grammar as `_path_face`, without the auto-close and without a face. The
+    entity's own x / y / rotation apply exactly as `_entity` applies them to
+    a closed one (rotate about the entity origin, then place)."""
+    segs = e.get("segments") or []
+    if not segs:
+        raise ValueError("path entity needs at least 1 segment")
+    if not e.get("start"):
+        raise ValueError(
+            "path entity has no start point — the editor shows no profile "
+            "for it at all; redraw it")
+    x = float(e.get("x") or 0.0)
+    y = float(e.get("y") or 0.0)
+    rot = math.radians(float(e.get("rotation") or 0.0))
+    c, s = math.cos(rot), math.sin(rot)
+
+    def place(p):
+        px, py = float(p[0]), float(p[1])
+        return (px * c - py * s + x, px * s + py * c + y)
+
+    def world(p):
+        return pl.from_local_coords((p[0], p[1], 0))
+
+    cur = place(_xy("the path entity's start point", e["start"]))
+    edges = []
+    for n, seg in enumerate(segs, start=1):
+        to = place(_seg_point("end", n, seg.get("to")))
+        if abs(to[0] - cur[0]) < 1e-6 and abs(to[1] - cur[1]) < 1e-6:
+            raise ValueError(
+                f"path segment {n} starts and ends at the same point — "
+                f"two clicks landed in one snap cell; move one of them")
+        is_arc = seg.get("type") == "arc"
+        via = (place(_seg_point("middle", n, seg.get("via")))
+               if is_arc else None)
+        try:
+            edges.append(ThreePointArc(world(cur), world(via), world(to))
+                         if is_arc else Line(world(cur), world(to)))
+        except Exception as exc:            # noqa: BLE001
+            what = ("arc {0}: no curve passes through its three points — "
+                    "the middle point lies on the straight line between "
+                    "its ends, or sits on top of one of them; move it off "
+                    "that line" if is_arc else
+                    "segment {0} could not be drawn — its two ends are "
+                    "the same point")
+            raise ValueError("path entity, " + what.format(n)) from exc
+        cur = to
+    # Edge by edge, never through BuildLine: a segment that doubles back over
+    # the one before it is DROPPED there without a word (measured
+    # 2026-09-17, probes/sweep_hairpin_probe.py — up 20 and back 19.5 came
+    # out as one 20 mm edge, and the sweep along it was a green straight
+    # tube). What the kernel kept must be what the user drew.
+    wire = b3d.Wire(edges)
+    drawn = sum(ed.length for ed in edges)
+    if len(wire.edges()) != len(edges) or abs(wire.length - drawn) > 1e-6 * max(1.0, drawn):
+        raise ValueError(
+            "path entity: a segment runs back over the one before it, so the "
+            "kernel would drop part of the path — give the path a corner or a "
+            "bend instead of a hairpin")
+    return wire
+
+
+def _place_sketch(pl: Plane, entities: list | None):
+    """Compose the closed entities on `pl` and carry the open paths as wires.
+
+    ONE home for `make_sketch` and `sketch_on_face`. A sketch of open paths
+    only is a Sketch of EDGES (area 0, `is_sketch` True): the viewport draws
+    its edges as outlines like any other, a move carries it, and Sweep reads
+    the wires back off `_tc_paths` (probes/sweep_api_probe6.py). An empty
+    Sketch cannot be placed on a plane at all (probe 5), which is why the
+    paths are built ON the plane rather than composed in 2D and moved."""
+    ents = entities or []
+    paths = [_path_wire(e, pl) for e in ents if is_open_path(e)]
+    closed = [e for e in ents if not is_open_path(e)]
+    if closed:
+        sketch = _as_sketch(pl * compose(closed))
+        if paths:
+            sketch = b3d.Sketch(children=[*sketch.faces(),
+                                          *(ed for w in paths for ed in w.edges())])
+    elif paths:
+        sketch = b3d.Sketch(children=[ed for w in paths for ed in w.edges()])
+    else:
+        sketch = _as_sketch(pl * compose(ents))    # says "sketch has no entities"
+    sketch._tc_paths = paths
+    return _on_plane(sketch, pl)
+
+
 def _xy(label: str, value) -> tuple:
     """One [x, y] out of sketch data, or a sentence naming what is wrong.
 
@@ -792,7 +907,7 @@ def make_sketch(plane: str = "XY", offset: float = 0.0,
     entities: list of {"kind":..., ...params, "mode":"add"|"subtract"}.
     The first entity must be additive."""
     pl = sketch_plane(plane, offset)
-    return _on_plane(_as_sketch(pl * compose(entities or [])), pl)
+    return _place_sketch(pl, entities)
 
 
 def _on_plane(sketch, pl: Plane):
@@ -1137,7 +1252,7 @@ def sketch_on_face(solid, face_center: list | None = None,
     off = float(offset or 0.0)
     if off:
         pl = pl.offset(off)
-    return _on_plane(_as_sketch(pl * compose(entities or [])), pl)
+    return _place_sketch(pl, entities)
 
 
 # ---------------------------------------------------------------------------
@@ -2979,19 +3094,251 @@ def loft_sketches(sketches: list):
     return _loft(list(sketches))
 
 
-def sweep_sketch(sketch, path_points: list, smooth: bool = False):
-    """Drag a profile sketch along a path defined by 3D points [[x,y,z],...].
-    smooth=True fits a spline through the points; otherwise straight segments."""
-    smooth = _to_bool(smooth, "smooth")
-    pts = [(float(p[0]), float(p[1]), float(p[2])) for p in path_points]
-    if len(pts) < 2:
-        raise ValueError("sweep path needs >= 2 points")
-    with BuildLine() as bl:
-        if smooth and len(pts) >= 3:
-            Spline(*pts)
-        else:
-            Polyline(*pts)
-    return _sweep(sketch, path=bl.line)
+# ---------------------------------------------------------------------------
+# Sweep (Tier 2, specs/sweep.md): a profile dragged along a PATH sketch.
+# Every number below was measured first (probes/sweep_api_probe*.py):
+#   the kernel moves the path so its START sits at the profile's CENTRE and
+#     the profile follows the path's SHAPE; a path that neither starts nor ends
+#     on the profile's plane lands the solid where nobody asked (probe 3, 4)
+#   a path leaving IN the profile's plane is a 0-volume "valid" solid (probe 1)
+#   a slanted start thins the section by cos(angle): 45° = exactly A·L·cos45
+#   a bend tighter than the profile reaches folds the inside over itself —
+#     volume A·L, is_valid True, health [] (probe 2): only a number catches it
+#   a corner with a leg shorter than the mitre folds too, and there the kernel
+#     does say invalid (probe 7) — the sentence is still ours
+#   TRANSFORMED swept ONE leg of a sharp corner (half the volume, status ok);
+#     RIGHT mitres and gives A·L exactly on tangent and sharp paths alike
+#   Wire.trim(0, f) trims by LENGTH fraction — a partial sweep is A·L exactly
+# ---------------------------------------------------------------------------
+SWEEP_INPLANE_DEG = 80.0     # a path leaving within this of the profile's plane makes no solid
+SWEEP_SLANT_DEG = 2.0        # steeper than this: the section thins by cos(angle) — a note
+#                              (8° already costs 1 % of the volume, measured on the
+#                              gauntlet's tapered wall; 2° costs 0.06 %)
+SWEEP_VOLUME_TOL = 0.02      # a perpendicular sweep of one face along a planar path is A·L
+
+
+def _reverse_wire(wire):
+    return b3d.Wire([e.reversed() for e in reversed(wire.edges())])
+
+
+def _profile_reach(faces, centre) -> float:
+    """How far the profile extends from its centre (its outline sampled — a
+    circle has one vertex, so vertices alone would say 0)."""
+    reach = 0.0
+    for f in faces:
+        for e in f.edges():
+            n = 2 if e.geom_type == b3d.GeomType.LINE else 16
+            for i in range(n + 1):
+                reach = max(reach, (e @ (i / n) - centre).length)
+    return reach
+
+
+def sweep_geometry(faces: list, wire) -> dict:
+    """Everything the op AND the planner must agree on about a profile and a
+    path — ONE home, so the handles and the solid come from the same verdict.
+
+    Returns the wire as it will be swept (reversed when only its far end
+    touches the profile's plane), the profile's centre and normal, the start,
+    the angle the path leaves at, the profile's reach, the path's length, the
+    tightest bend and the notes to say; raises a sentence for each measured
+    way the sweep cannot be right (see the module comment above)."""
+    if not faces:
+        raise ValueError("sweep: the profile has no closed shape to sweep — a path "
+                         "sketch (open lines) is what Sweep FOLLOWS, not what it sweeps")
+    prof = b3d.Sketch(children=list(faces))
+    centre = prof.center()
+    normal = faces[0].normal_at(faces[0].center())
+    length = wire.length
+    if length <= 1e-9:
+        raise ValueError("sweep: the path has no length")
+    tol = max(0.1, 1e-3 * length)
+    d_start = abs((wire.start_point() - centre).dot(normal))
+    d_end = abs((wire.end_point() - centre).dot(normal))
+    was_reversed = False
+    if d_start > tol:
+        if d_end > tol:
+            raise ValueError(
+                f"sweep: the path starts {d_start:.3g} mm off the profile's plane (its far "
+                f"end {d_end:.3g} mm) — start it ON the profile: draw the path from the "
+                f"profile's centre, snapping to the profile's plane")
+        wire = _reverse_wire(wire)
+        was_reversed = True
+    start = wire.start_point()
+    t0 = wire.tangent_at(0)
+    angle = math.degrees(math.acos(max(-1.0, min(1.0, abs(t0.dot(normal))))))
+    if angle >= SWEEP_INPLANE_DEG:
+        raise ValueError(
+            f"sweep: the path runs along the profile instead of away from it (it leaves "
+            f"at {angle:.0f}° to the profile's normal) — draw the path on a plane "
+            f"perpendicular to the profile, leaving the profile face-on")
+    notes = []
+    if was_reversed:
+        notes.append("the path was read from its far end — the end that touches the "
+                     "profile's plane")
+    if angle > SWEEP_SLANT_DEG:
+        notes.append(f"the path leaves the profile at {angle:.0f}° — the section is "
+                     f"thinner by that angle; a path perpendicular to the profile keeps "
+                     f"the profile's true shape")
+    reach = _profile_reach(faces, centre)
+    off = (start - centre).length
+    if off > reach + tol:
+        notes.append(f"the path starts {off:.3g} mm from the profile's centre — the sweep "
+                     f"runs from the centre, following the path's shape")
+    # bends: an arc tighter than the reach folds the inside of the bend
+    min_bend = None
+    for e in wire.edges():
+        if e.geom_type == b3d.GeomType.CIRCLE:
+            r = float(e.radius)
+            min_bend = r if min_bend is None else min(min_bend, r)
+            if r <= reach + 1e-6:
+                raise ValueError(
+                    f"sweep: the bend of radius {r:.3g} mm is tighter than the profile "
+                    f"reaches ({reach:.3g} mm) — the inside of the bend folds over itself; "
+                    f"widen the bend or shrink the profile")
+    # corners: a mitre needs reach·tan(turn/2) of straight path on each side
+    edges = wire.edges()
+    s = 0.0
+    for i, (a, b) in enumerate(zip(edges, edges[1:]), start=1):
+        s += a.length
+        ta = wire.tangent_at(max(0.0, (s - 1e-4) / length))
+        tb = wire.tangent_at(min(1.0, (s + 1e-4) / length))
+        turn = math.degrees(math.acos(max(-1.0, min(1.0, ta.dot(tb)))))
+        if turn < 1.0:
+            continue
+        if turn > 179.0:
+            raise ValueError(
+                f"sweep: the path turns straight back on itself at corner {i} — a "
+                f"profile cannot be swept through a hairpin; round the corner")
+        mitre = reach * math.tan(math.radians(turn / 2))
+        for leg, word in ((a.length, "before"), (b.length, "after")):
+            if leg < mitre - 1e-6:
+                raise ValueError(
+                    f"sweep: the {leg:.3g} mm leg {word} the {turn:.0f}° corner is shorter "
+                    f"than the {mitre:.3g} mm the profile needs to turn there — the corner "
+                    f"folds over itself; lengthen the leg, round the corner, or shrink "
+                    f"the profile")
+    return {"wire": wire, "reversed": was_reversed, "centre": centre, "normal": normal,
+            "start": start, "angle_deg": angle, "reach": reach, "length": length,
+            "min_bend": min_bend, "notes": notes}
+
+
+def sweep_length(distance, full, length: float, label: str = "sweep") -> float:
+    """How far along the path a sweep goes — the op's and the planner's ONE
+    reading of `distance` / `full`: the whole path for `full`, else a distance
+    in (0, length]; 0 is nothing to sweep and beyond the end is refused."""
+    if _to_bool(full, "full"):
+        return length
+    d = float(distance or 0.0)
+    if d <= 0:
+        raise ValueError(f"{label}: nothing to sweep — the distance is 0; give a distance "
+                         f"along the path, or full=true for the whole path")
+    if d > length + 1e-6:
+        raise ValueError(f"{label}: the distance {d:g} mm is longer than the path "
+                         f"({length:.4g} mm) — use full=true for the whole path")
+    return min(d, length)
+
+
+def _sweep_solid(faces: list, wire, distance, full, label: str = "sweep"):
+    geo = sweep_geometry(faces, wire)
+    length = geo["length"]
+    used_len = sweep_length(distance, full, length, label)
+    w = geo["wire"]
+    used = w if used_len >= length - 1e-6 else w.trim(0, used_len / length)
+    try:
+        out = _sweep(b3d.Sketch(children=list(faces)), path=used,
+                     transition=Transition.RIGHT)
+    except Exception as e:      # OCP errors derive from Exception, not RuntimeError
+        raise ValueError(
+            f"{label}: the kernel could not sweep this profile along the path — a bend "
+            f"or a corner is too tight for the profile, or the path crosses itself; "
+            f"round the corners or shrink the profile") from e
+    import inspector                                 # local: avoids an import cycle
+    problems = inspector.health(out)
+    if problems:                                     # a failed feature beats a corrupt body
+        raise ValueError(
+            f"{label}: the swept solid came back broken ({problems[0]}) — a bend or a "
+            f"corner of the path is too tight for this profile")
+    vol = float(out.volume)
+    if vol <= 1e-9:
+        raise ValueError(f"{label}: the sweep produced no material — the path leaves "
+                         f"within the profile's plane; draw it on a perpendicular plane")
+    # Pappus: a section carried perpendicularly along a planar path sweeps
+    # exactly area × length. Off by more, it folded over itself somewhere the
+    # bend and corner checks could not see (one face only: a second face off
+    # the path follows a longer or shorter trajectory of its own).
+    if len(faces) == 1 and geo["angle_deg"] <= SWEEP_SLANT_DEG:
+        expected = float(faces[0].area) * used.length
+        if abs(vol - expected) > SWEEP_VOLUME_TOL * expected:
+            raise ValueError(
+                f"{label}: the swept solid folded over itself (its volume is "
+                f"{100 * vol / expected:.0f} % of what the path's length allows) — a bend "
+                f"or a corner is tighter than the profile; widen it or shrink the profile")
+    for n in geo["notes"]:
+        _note(n)
+    return out
+
+
+def _sweep_path(path, path_points, smooth, _path_sketch, label: str = "sweep"):
+    """The wire a sweep follows: the path sketch the document handed over
+    (`path`, a reference the document resolves — see Document._path_part), or
+    the legacy `path_points` polyline / spline of AI-authored trees."""
+    if _path_sketch is not None:
+        wires = sketch_paths(_path_sketch)
+        if not wires:
+            raise ValueError(f"{label}: '{path}' holds no open path — draw one in it with "
+                             f"the sketch ribbon's Path tool (an open line-and-arc chain)")
+        if len(wires) > 1:
+            _note(f"'{path}' holds {len(wires)} paths — the first one drawn is the "
+                  f"sweep's path")
+        return wires[0]
+    if path:
+        raise ValueError(f"{label}: the path sketch '{path}' was not resolved — sweep "
+                         f"through the document, which hands the path sketch over")
+    if path_points:
+        smooth = _to_bool(smooth, "smooth")
+        pts = [(float(p[0]), float(p[1]), float(p[2])) for p in path_points]
+        if len(pts) < 2:
+            raise ValueError(f"{label}: path_points needs at least 2 points")
+        with BuildLine() as bl:
+            if smooth and len(pts) >= 3:
+                Spline(*pts)
+            else:
+                Polyline(*pts)
+        return bl.wire()
+    raise ValueError(f"{label} needs a path: `path` = the id of a sketch holding an open "
+                     f"path drawn with the Path tool")
+
+
+def sweep_sketch(sketch, path: str | None = None, distance: float = 0.0,
+                 full: bool = False, path_points: list | None = None,
+                 smooth: bool = False, _path_sketch=None):
+    """Drag a profile sketch along a PATH: `path` names a path sketch (an open
+    line-and-arc chain drawn with the Path tool on a plane perpendicular to the
+    profile, starting on it); `distance` in mm along it, or `full` for the
+    whole path. Legacy: `path_points` [[x,y,z],…] (straight, or `smooth`).
+    The kernel sweeps from the profile's CENTRE along the path's shape."""
+    if isinstance(path, (list, tuple)):          # the legacy positional point list
+        path, path_points = None, list(path)
+    faces = sketch.faces()
+    if not faces:
+        raise ValueError("sweep: the profile sketch holds only a path (open lines, no "
+                         "closed shape) — a profile needs a closed shape; the path "
+                         "sketch goes in `path`")
+    wire = _sweep_path(path, path_points, smooth, _path_sketch)
+    if path_points and _path_sketch is None and not full and not distance:
+        full = True                              # a legacy tree swept the whole polyline
+    return _sweep_solid(faces, wire, distance, full)
+
+
+def sweep_face(solid, face_center: list, face_normal: list | None = None,
+               face_area: float | None = None, path: str | None = None,
+               distance: float = 0.0, full: bool = False, _path_sketch=None):
+    """Sweep a flat face of the input body along a path sketch (a FACE-REFERENCE
+    op like extrude_face: the body lives on; fuse / cut the result with it).
+    The face is resolved by geometry at every rebuild (extrude_face's rule)."""
+    face, _pl, _prof = face_profile(solid, face_center, face_normal, "swept", face_area)
+    wire = _sweep_path(path, None, False, _path_sketch, "sweep_face")
+    return _sweep_solid([face], wire, distance, full, "sweep_face")
 
 
 # ops that produce a 2D sketch (not a solid) — the document engine checks these
@@ -3005,7 +3352,7 @@ SKETCH_PRODUCERS = {"sketch", "sketch_on_face"}
 # referenced body vanishes from the viewport the moment the sketch is used
 # (reported: "after finishing the sketch and extruding, the main body
 # vanishes").
-FACE_REFERENCE_OPS = {"sketch_on_face", "extrude_face", "revolve_face"}
+FACE_REFERENCE_OPS = {"sketch_on_face", "extrude_face", "revolve_face", "sweep_face"}
 
 
 def is_sketch(obj) -> bool:

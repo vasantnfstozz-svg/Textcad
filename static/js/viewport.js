@@ -291,6 +291,7 @@ export function initViewport() {
     gizmos: () => ({ arrow: !!exArrow, arrow2: !!exArrow2, ghost: !!exGhost, ring: !!taperRing,
                      arrows: moreArrows.length, moveGhost: !!(moveGhost && moveGhost.mesh.visible),
                      axis: !!axisLine, lathe: !!rvGhost, glow: edgeGlow.length,
+                     path: !!pathLine, sweep: !!(swGhost && swGhost.mesh.visible),
                      edgePick: !!edgePickCb, hole: !!holeMarker, plane: !!planeQuad,
                      facePick: !!profilePickCb }),
     /* the mirror plane as drawn: where it sits and which way it faces */
@@ -1448,6 +1449,106 @@ export function beginAxisLine(originArr, dirArr, half) {
 export function endAxisLine() {
   if (!axisLine) return;
   scene.remove(axisLine); axisLine.geometry.dispose(); axisLine = null;
+}
+
+/* ---------------- a tool's PATH (Sweep: the gold line the profile follows) ----
+   The plan's own points, as the path will be swept (specs/sweep.md) — drawn,
+   never computed here (R1). */
+let pathLine = null;
+
+export function beginPathLine(points) {
+  endPathLine();
+  if (!points || points.length < 2) return;
+  const geo = new THREE.BufferGeometry().setFromPoints(
+    points.map(p => new THREE.Vector3(p[0], p[1], p[2])));
+  pathLine = new THREE.Line(geo, new THREE.LineBasicMaterial({
+    color: 0xffc400, transparent: true, opacity: 0.95, depthTest: false }));
+  pathLine.renderOrder = 1000;
+  scene.add(pathLine);
+}
+export function endPathLine() {
+  if (!pathLine) return;
+  scene.remove(pathLine); pathLine.geometry.dispose(); pathLine = null;
+}
+
+/* ---------------- sweep GHOST (instant drag preview) ----------------
+   The profile's outline loops (plane-local, about the profile's centre) placed
+   at every station of the plan — {s, p, x, y}: arc length, world point, the
+   profile frame carried there — and skinned between neighbours, as far along
+   the path as the distance in the user's hand. The last station is
+   interpolated so the ghost ends where the arrow is. White, translucent, the
+   real solid replaces it on release. */
+let swGhost = null;
+
+export function beginSweepGhost(loops, stations) {
+  endSweepGhost();
+  const rings = [];
+  for (const L of loops || []) {
+    if (L.outer && L.outer.length >= 3) rings.push(L.outer);
+    for (const h of L.holes || []) if (h.length >= 3) rings.push(h);
+  }
+  if (!rings.length || !stations || stations.length < 2) return;
+  const geo = new THREE.BufferGeometry();
+  const { mesh, edges } = ghostPart(geo, new THREE.BufferGeometry());
+  mesh.matrixAutoUpdate = true; edges.matrixAutoUpdate = true;
+  swGhost = { mesh, edges, rings, stations, parts: [{ mesh, edges }], lastD: null };
+  setPartsVisible(swGhost.parts, false);
+}
+/* a station at arc length d: the plan's, or one interpolated between two */
+function stationAt(d) {
+  const S = swGhost.stations;
+  const k = S.findIndex(s => s.s > d);
+  if (k <= 0) return k === 0 ? S[0] : S[S.length - 1];
+  const a = S[k - 1], b = S[k], f = (d - a.s) / (b.s - a.s || 1);
+  const lerp = (u, v) => u.map((c, i) => c + (v[i] - c) * f);
+  return { s: d, p: lerp(a.p, b.p), x: lerp(a.x, b.x), y: lerp(a.y, b.y) };
+}
+export function setSweepGhost(distance) {
+  if (!swGhost) return;
+  const S = swGhost.stations, total = S[S.length - 1].s;
+  const d = Math.max(0.01, Math.min(Math.abs(distance || 0), total));
+  setPartsVisible(swGhost.parts, true);
+  if (d === swGhost.lastD) return;
+  swGhost.lastD = d;
+  const stations = [...S.filter(s => s.s < d), stationAt(d)];
+  const pos = [], edge = [];
+  const world = (st, q) => [st.p[0] + st.x[0] * q[0] + st.y[0] * q[1],
+                            st.p[1] + st.x[1] * q[0] + st.y[1] * q[1],
+                            st.p[2] + st.x[2] * q[0] + st.y[2] * q[1]];
+  for (const ring of swGhost.rings) {
+    const n = ring.length;
+    for (let k = 0; k + 1 < stations.length; k++) {
+      const A = stations[k], B = stations[k + 1];
+      for (let j = 0; j < n; j++) {
+        const a0 = world(A, ring[j]), a1 = world(A, ring[(j + 1) % n]);
+        const b0 = world(B, ring[j]), b1 = world(B, ring[(j + 1) % n]);
+        pos.push(...a0, ...b0, ...b1, ...a0, ...b1, ...a1);
+      }
+    }
+    const E = stations[stations.length - 1];        // the outline at the arrow's end
+    for (let j = 0; j < n; j++)
+      edge.push(...world(E, ring[j]), ...world(E, ring[(j + 1) % n]));
+  }
+  swGhost.mesh.geometry.dispose();
+  swGhost.mesh.geometry = new THREE.BufferGeometry()
+    .setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  swGhost.mesh.geometry.computeVertexNormals();
+  swGhost.edges.geometry.dispose();
+  swGhost.edges.geometry = new THREE.BufferGeometry()
+    .setAttribute('position', new THREE.Float32BufferAttribute(edge, 3));
+}
+export function hideSweepGhost() { if (swGhost) setPartsVisible(swGhost.parts, false); }
+export function endSweepGhost() {
+  if (!swGhost) return;
+  disposeParts(swGhost.parts);
+  swGhost = null;
+}
+/* test hook: how far the ghost reaches (its last ring's centre) and its size */
+export function sweepGhostInfo() {
+  if (!swGhost || !swGhost.mesh.visible) return null;
+  const E = stationAt(swGhost.lastD || 0);
+  return { end: E.p, distance: swGhost.lastD,
+           triangles: swGhost.mesh.geometry.attributes.position.count / 3 };
 }
 
 /* ---------------- a tool's PLANE (Mirror: the mirror plane, a gold square) ----

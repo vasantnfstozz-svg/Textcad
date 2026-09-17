@@ -11,6 +11,7 @@ import { showFeatureOverlay, clearHighlight, clearPick }
 import { modalGuard } from './dialogs.js';
 import { openExtrude } from './extrude.js';
 import { openRevolve } from './revolve.js';
+import { openSweep } from './sweep.js';
 import { activeToolFeature, canEdit, editFeature, humanProblem } from './tool.js';
 import { fmtVol } from './settings.js';
 
@@ -361,11 +362,15 @@ function buildRow(doc, f, chip = null) {
       addAct(acts, '✎', 'edit this sketch (reopens on its plane in the viewport)',
         () => bus.emit('edit-sketch', f));
     }
-    if (f.op === 'sketch' || f.op === 'sketch_on_face') {
+    // a PATH sketch (open lines, area 0 — the server says so: `path_sketch`)
+    // is what Sweep FOLLOWS, never a profile: no pull buttons on its row
+    if ((f.op === 'sketch' || f.op === 'sketch_on_face') && !f.path_sketch) {
       addAct(acts, '⬆', 'extrude this sketch into a solid',
         () => openExtrude(f.id));
       addAct(acts, '↻', 'revolve this sketch into a solid',
         () => openRevolve(f.id));
+      addAct(acts, '〜', 'sweep this sketch along a path sketch',
+        () => openSweep(f.id));
     }
     if (canEdit(f.op)) {
       // Edit Feature (Fusion parity): reopen the tool that CREATED the feature

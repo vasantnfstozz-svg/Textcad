@@ -174,6 +174,30 @@
   </div>
 
 
+  <!-- ============ Sweep panel (a profile along a PATH sketch; specs/sweep.md) ============ -->
+  <div id="sweepDialog" class="toolpanel" style="display:none">
+    <div class="exhead">〜 Sweep</div>
+    <label>Profile <select id="swProfile"></select></label>
+    <label>Path
+      <select id="swPath" title="a sketch holding an open line-and-arc chain drawn with the sketch ribbon's Path tool, starting on the profile — clicking such a sketch's row in the tree chooses it too"></select></label>
+    <div class="exrow">
+      <label>Distance <span class="unitlabel">(mm)</span> <input id="swDist" type="number" step="any" value="0"></label>
+      <label title="sweep the whole path — a path edited longer stays fully swept"><input id="swFull" type="checkbox"> Whole path</label>
+    </div>
+    <label>Operation
+      <select id="swOp">
+        <option value="new">New body</option>
+        <option value="join">Join</option>
+        <option value="cut">Cut</option>
+        <option value="intersect" disabled>Intersect — coming soon</option>
+      </select></label>
+    <label id="swTargetRow" style="display:none">Combine with <select id="swTarget"></select></label>
+    <div class="exfoot">
+      <button id="swCancel">Cancel</button>
+      <button class="primary" id="swOk">OK</button>
+    </div>
+  </div>
+
   <!-- ============ Fillet panel (edges picked in the viewport; specs/fillet-chamfer.md) ============ -->
   <div id="flDialog" class="toolpanel" style="display:none">
     <div class="exhead">◠ Fillet</div>
@@ -537,6 +561,6 @@
     "three/addons/": "/static/vendor/three/0.160.0/addons/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=214"></script>
+<script type="module" src="/static/js/main.js?v=215"></script>
 </body>
 </html>

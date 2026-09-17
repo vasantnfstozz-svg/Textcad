@@ -599,6 +599,148 @@ def plan_revolve(doc, req: dict) -> dict:
     }
 
 
+SWEEP_STATIONS = 96      # sampled points along the path the ghost and the arrow ride
+
+
+def _path_sketches(doc, but: str | None = None) -> list:
+    """Every PATH sketch of the design (open lines drawn with the Path tool),
+    newest first — the candidates a Sweep's Path list offers; never the
+    profile itself."""
+    return [f for f in reversed(doc.features)
+            if f.op in sk.SKETCH_PRODUCERS and not f.suppressed and f.id != but
+            and sk.is_path_sketch((f.params or {}).get("entities"))]
+
+
+def _path_label(f) -> str:
+    segs = sum(len(e.get("segments") or []) for e in (f.params or {}).get("entities") or [])
+    return f"{f.id} — {segs} segment{'' if segs == 1 else 's'}"
+
+
+def _sweep_stations(geo: dict, frame_pl: Plane, n: int = SWEEP_STATIONS) -> list[dict]:
+    """Points along the path AS IT WILL BE SWEPT — moved so it starts at the
+    profile's centre, the kernel's own placement (probes/sweep_api_probe4.py)
+    — each with its arc length `s`, tangent `t` and the profile frame carried
+    there: the frame turns with the tangent, step by step, about the axis the
+    two neighbouring tangents span (a planar path turns about its plane's
+    normal; the incremental form survives a turn past 180°). Even fractions
+    plus the end of every edge, so a corner is a station of its own."""
+    w, length = geo["wire"], geo["length"]
+    shift = geo["centre"] - geo["start"]
+    fr = {i / n for i in range(n + 1)}
+    s = 0.0
+    for e in w.edges()[:-1]:
+        s += e.length
+        fr.add(min(1.0, s / length))
+    x, y = frame_pl.x_dir, frame_pl.y_dir
+    prev_t = w.tangent_at(0)
+    out = []
+    for f in sorted(fr):
+        t = w.tangent_at(f)
+        cross = prev_t.cross(t)
+        dot = max(-1.0, min(1.0, prev_t.dot(t)))
+        if cross.length > 1e-9 and dot < 1.0 - 1e-12:
+            ax = b3d.Axis((0, 0, 0), cross.normalized())
+            ang = math.degrees(math.acos(dot))
+            x, y = x.rotate(ax, ang), y.rotate(ax, ang)
+        prev_t = t
+        out.append({"s": round(f * length, 4), "p": _vec(w.position_at(f) + shift),
+                    "t": _vec(t), "x": _vec(x), "y": _vec(y)})
+    return out
+
+
+def plan_sweep(doc, req: dict) -> dict:
+    """The Sweep tool's plan (specs/sweep.md). Input is ONE of:
+        sketch_id                      — a sketch / sketch_on_face profile
+        body_id + face_center[+normal] — a picked flat face of that body
+        feature_id                     — an existing sweep / sweep_face (edit)
+    plus an optional `path_id`: the PATH sketch to follow (default: the stored
+    one, else the newest path sketch of the design).
+
+    The geometry is `sk.sweep_geometry`'s — the op's own verdict on this
+    profile and this path, so the tool can only open on a sweep that builds,
+    and every refusal is the same sentence the AI path gets. What comes back:
+    the path sketches to offer (`paths`), the one chosen, the profile's frame
+    at its centre with its outline `loops`, the `stations` the ghost and the
+    arrow ride, the path as it will be swept, the limits (the path's length,
+    the profile's reach, the tightest bend) and the notes the op would say."""
+    sketch_id = req.get("sketch_id")
+    body_id = req.get("body_id")
+    face_center = req.get("face_center")
+    face_normal = req.get("face_normal")
+    face_area = req.get("face_area")
+    path_id = req.get("path_id")
+    fid = req.get("feature_id")
+    stored: dict = {}
+    if fid:
+        f = _edit_input(doc, fid, ("sweep", "sweep_face"))
+        stored = f.params or {}
+        if f.op == "sweep_face":
+            body_id = (f.inputs or [None])[0]
+            face_center, face_normal = stored.get("face_center"), stored.get("face_normal")
+            face_area = stored.get("face_area")
+        else:
+            sketch_id = (f.inputs or [None])[0]
+        path_id = path_id or stored.get("path")
+    if sketch_id is None and face_center is None:
+        raise ValueError("Sweep needs a sketch profile or a picked flat face")
+
+    if sketch_id is None:                       # ---- face mode ----
+        part, body_id = _pick_body(doc, body_id, "sweep a face of")
+        face, pl, _profile_sk = sk.face_profile(part, face_center, face_normal, "swept",
+                                                face_area)
+        faces = [face]
+        input_id, mode, op, target = body_id, "face", "sweep_face", body_id
+    else:                                       # ---- sketch mode ----
+        profile, pl, _into = _profile(doc, sketch_id)
+        faces = profile.faces()
+        if not faces:
+            raise ValueError(f"'{sketch_id}' is a path sketch (open lines, no closed shape) "
+                             f"— Sweep follows it; press Sweep on the PROFILE, then pick "
+                             f"this sketch as the path")
+        input_id, mode, op = sketch_id, "sketch", "sweep"
+        target = _default_target(doc, sketch_id)
+
+    paths = _path_sketches(doc, but=input_id)
+    if not paths:
+        raise ValueError("Sweep needs a path: open a sketch on a plane perpendicular to the "
+                         "profile and draw one with the sketch ribbon's Path tool, starting "
+                         "on the profile — this design has no path sketch yet")
+    chosen = next((x for x in paths if x.id == path_id), None) if path_id else None
+    fallback = None
+    if chosen is None:
+        if path_id:
+            asked = _feature(doc, path_id)
+            why = ("it is not in this design" if asked is None
+                   else "it is struck out" if asked.suppressed
+                   else "it is the profile itself" if asked.id == input_id
+                   else "it holds no open path now")
+            fallback = {"from": path_id, "why": why}
+        chosen = paths[0]
+    path_part = doc._parts.get(chosen.id)
+    wires = sk.sketch_paths(path_part) if path_part is not None else []
+    if not wires:
+        raise ValueError(f"the path sketch '{chosen.id}' has not been built — fix it first")
+    geo = sk.sweep_geometry(faces, wires[0])    # the op's own verdict, or its sentence
+    frame_pl = Plane(origin=geo["centre"], x_dir=pl.x_dir, z_dir=pl.z_dir)
+    stations = _sweep_stations(geo, frame_pl)
+    length = geo["length"]
+    return {
+        "ok": True, "tool": "sweep", "mode": mode, "op": op, "input": input_id,
+        "path_id": chosen.id,
+        "paths": [{"id": x.id, "label": _path_label(x)} for x in paths],
+        "fallback": fallback,
+        "frame": _frame(frame_pl), "loops": _loops(faces, frame_pl),
+        "stations": stations, "path": [st["p"] for st in stations],
+        "limits": {"length": round(length, 4), "reach": round(geo["reach"], 4),
+                   "min_bend": None if geo["min_bend"] is None else round(geo["min_bend"], 4),
+                   "angle_deg": round(geo["angle_deg"], 2)},
+        "notes": geo["notes"], "reversed": geo["reversed"],
+        "stored": {"distance": stored.get("distance"), "full": stored.get("full")},
+        "target_body": target,
+        "will_build": f"{op} on {input_id} along {chosen.id} ({length:.4g} mm)",
+    }
+
+
 def plan_sketch(doc, req: dict) -> dict:
     """The frame a NEW plane sketch is drawn in: {plane, offset} -> the very
     plane make_sketch() will build the profile on (sketch.sketch_plane), as
@@ -1624,6 +1766,7 @@ def plan_rotate(doc, req: dict) -> dict:
 
 
 _PLANNERS = {"extrude": plan_extrude, "revolve": plan_revolve, "sketch": plan_sketch,
+             "sweep": plan_sweep,
              "fillet": plan_fillet, "chamfer": plan_fillet, "hole": plan_hole,
              "polar_pattern": plan_pattern, "linear_pattern": plan_pattern,
              "mirror": plan_mirror, "shell": plan_shell,

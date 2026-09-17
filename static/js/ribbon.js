@@ -19,6 +19,7 @@ import { openHole } from './hole.js';
 import { openShell } from './shell.js';
 import { openCircularPattern, openRectangularPattern } from './pattern.js';
 import { openMirror } from './mirror.js';
+import { openSweep } from './sweep.js';
 import { openMove, openRotate } from './move.js';
 import { cancelTool } from './tool.js';
 import { openMeasure, cancelMeasure } from './measure.js';
@@ -26,6 +27,8 @@ import { openMeasure, cancelMeasure } from './measure.js';
 // sketch draw tools shown in the contextual SKETCH tab's CREATE group (top)
 const SKETCH_TOOLS = {
   path: { icon: '⌇', name: 'Line/Arc' },
+  // an OPEN chain (`closed: false`): the path a Sweep follows, no profile
+  openpath: { icon: '⤳', name: 'Path' },
   rectangle: { icon: '▭', name: 'Rectangle' },
   circle: { icon: '●', name: 'Circle' },
   regular_polygon: { icon: '⬡', name: 'Polygon' },
@@ -33,7 +36,7 @@ const SKETCH_TOOLS = {
   ellipse: { icon: '⬯', name: 'Ellipse' },
   trim: { icon: '✂', name: 'Trim' },        // modify, not create (see groups)
 };
-const SKETCH_CREATE = ['path', 'rectangle', 'circle', 'regular_polygon',
+const SKETCH_CREATE = ['path', 'openpath', 'rectangle', 'circle', 'regular_polygon',
                        'slot', 'ellipse'];
 let curSketchTool = null;      // which draw tool is active (for ribbon highlight)
 
@@ -49,7 +52,7 @@ function startSketch() {
 }
 
 // the drag-handle tools (born on tool.js): pressed with the current selection
-const TOOLS = { extrude: openExtrude, revolve: openRevolve, press_pull: openPressPull,
+const TOOLS = { extrude: openExtrude, revolve: openRevolve, sweep: openSweep, press_pull: openPressPull,
                 fillet: openFillet, chamfer: openChamfer, hole: openHole, shell: openShell,
                 polar_pattern: openCircularPattern, linear_pattern: openRectangularPattern,
                 mirror: openMirror, move: openMove, rotate: openRotate };

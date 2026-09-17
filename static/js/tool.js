@@ -294,6 +294,10 @@ async function releaseIso() {
                                 of a feature tool always does, flag or not
      onRepick(st, data, replan) what a click during the session means when it
                                 is not "move the input" (Pattern: the axis)
+     onRow(st, fid, replan)     a TREE ROW clicked while the panel is open, for a
+                                tool whose second input is a row (Sweep's path)
+     planExtra(st)              fields of the tool's own to send with every plan
+                                request (Sweep: which path sketch)
      eats                       the face op returns its body CHANGED (Hole): no
                                 Join / Cut row, no target
      repick                     face tools: while the panel is open a click on a
@@ -468,7 +472,16 @@ export function tool(spec) {
     // silently become the profile again; an explicit pick is honoured even if
     // consumed; a SUPPRESSED (struck-out) consumer frees its sketch
     const consumed = new Set(feats().filter(f => !f.suppressed).flatMap(f => f.inputs));
-    const sks = feats().filter(isSketch).filter(s => !consumed.has(s.id) || s.id === want);
+    // ...and never a PATH sketch (open lines for Sweep, area 0 — the server's
+    // `path_sketch` flag): it is what Sweep follows, not a profile
+    const pathSk = feats().find(f => f.id === want && f.path_sketch);
+    if (pathSk) {
+      say(`⚠ '${want}' is a path sketch — open lines drawn for Sweep, no closed shape. ` +
+        `${spec.name} needs a closed profile: press it on the profile sketch instead.`);
+      return;
+    }
+    const sks = feats().filter(isSketch).filter(s => !s.path_sketch)
+      .filter(s => !consumed.has(s.id) || s.id === want);
     if (!sks.length && !(canFace && bods.length)) {   // bodies only help a tool with face mode
       say(`⚠ Draw a sketch first (Create → Create Sketch), then ${spec.name} it.`);
       return;
@@ -778,6 +791,7 @@ export function tool(spec) {
     spec.show(st, {});
     sync();
     showPanel();
+    if (spec.onRow) waitForRow(fid => { if (st && fid) spec.onRow(st, fid, replan); });
     startPreview();
   }
   function startPreview(closeOnRefusal = true) {
@@ -823,6 +837,8 @@ export function tool(spec) {
     st.original = spec.snapshot(f);
     st.lastGood = st.original;
     if (edges) { clearPick(); beginEdgePick(onEdgePick, { name: spec.name }); waitForRow(onRow); }
+    // a tool whose SECOND input is a tree row (Sweep's path) listens in an edit too
+    if (!edges && spec.onRow) waitForRow(fid => { if (st && fid) spec.onRow(st, fid, replan); });
     const label = feature ? `${p.seed || 'the body'} on ${f.inputs[0]}`
       : face ? `(face of ${f.inputs[0]})`
         : edges ? `edges of ${f.inputs[0]}` : f.inputs[0];

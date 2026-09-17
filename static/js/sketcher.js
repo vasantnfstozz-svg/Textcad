@@ -40,6 +40,10 @@ let selEnt = -1;          // selected entity index
 // path tool (chained lines + arcs)
 let pathStart = null;     // first point of the profile
 let pathSegs = [];        // committed segments
+/* 'path' draws a closed profile (auto-closes); 'openpath' the same chain left
+   OPEN (`closed: false`) — the path a Sweep follows (specs/sweep.md). One set
+   of drawing code, one flag at the end. */
+const isPathTool = () => tool === 'path' || tool === 'openpath';
 let segMode = 'line';     // what the next segment is: 'line' | 'arc'
 let pendingVia = null;    // arc: the middle (via) point, waiting for the end
 
@@ -625,7 +629,7 @@ function collectSnapPoints() {
 
 /* The reference point of the segment being drawn (for axis inference). */
 function refPoint() {
-  if (tool === 'path' && pathStart) return pendingVia || pathCursor();
+  if (isPathTool() && pathStart) return pendingVia || pathCursor();
   if (tool && clicks.length) return clicks[clicks.length - 1];
   return null;
 }
@@ -765,7 +769,7 @@ function pointerMove(p) {
     const s = smartSnap(p);
     lastMove = s;                 // the draw-time dimension box follows this
     setCoordsReadout(s);
-    if (tool === 'path' && pathStart) ghost = pathGhost(s);
+    if (isPathTool() && pathStart) ghost = pathGhost(s);
     else if (clicks.length) ghost = buildGhost(s);
     draw();
     return;
@@ -914,7 +918,7 @@ function setCoordsReadout(p) {
 
 function onDblClick() {
   if (tool === 'polygon' && clicks.length >= 3) finishPolygon();
-  if (tool === 'path' && pathSegs.length >= 1) finishPath();
+  if (isPathTool() && pathSegs.length >= 1) finishPath(false);
 }
 
 function pathGhost(p) {
@@ -1317,7 +1321,7 @@ function pathOutline(e) {
 /* ---------------- click-to-place ---------------- */
 
 function placeClick(p) {
-  if (tool === 'path') { pathClick(p); return; }
+  if (isPathTool()) { pathClick(p); return; }
   clicks.push(p);
 
   if (tool === 'polygon') {
@@ -1375,7 +1379,7 @@ function pathClick(p) {
   // clicking near the start closes the profile
   const closeR = snapTolWorld() * 1.4;
   if (pathSegs.length >= 1 && !pendingVia
-      && dist(p, pathStart) < closeR) { finishPath(); return; }
+      && dist(p, pathStart) < closeR) { finishPath(true); return; }
 
   if (segMode === 'arc') {
     if (!pendingVia) { pendingVia = p; updateHint(); draw(); return; }
@@ -1388,9 +1392,15 @@ function pathClick(p) {
   updateHint(); draw();
 }
 
-function finishPath() {
+/* `viaStart`: the click landed on the start point — that closes even the open
+   Path tool's chain into an ordinary profile. A double-click ends the Path
+   tool's chain OPEN (`closed: false`, no face, Sweep's path); the Line/Arc
+   tool auto-closes either way, exactly as before. */
+function finishPath(viaStart = true) {
   if (!pathStart || pathSegs.length < 1) return;
+  const open = tool === 'openpath' && !viaStart;
   skEnts.push({ kind: 'path', mode: 'add', x: 0, y: 0,
+                ...(open ? { closed: false } : {}),
                 start: [pathStart.x, pathStart.y], segments: pathSegs });
   selEnt = skEnts.length - 1;
   pathStart = null; pathSegs = []; pendingVia = null;
@@ -1444,10 +1454,24 @@ function hitTest(p) {
         && pointInPolygon(rx, ry, e.points)) return i;   // rx/ry: un-rotated
     if (e.kind === 'path' && e.start) {
       const pts = pathOutline(e).map(q => [q.x, q.y]);
-      if (pointInPolygon(p.x, p.y, pts)) return i;
+      // an OPEN path encloses nothing: it is hit along its line
+      if (e.closed === false) {
+        if (distToPolyline(p.x, p.y, pts) <= snapTolWorld() * 1.2) return i;
+      } else if (pointInPolygon(p.x, p.y, pts)) return i;
     }
   }
   return -1;
+}
+
+function distToPolyline(x, y, pts) {
+  let best = Infinity;
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
+    const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1e-12;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / L2));
+    best = Math.min(best, Math.hypot(x - (ax + t * dx), y - (ay + t * dy)));
+  }
+  return best;
 }
 
 function pointInPolygon(x, y, pts) {
@@ -1504,10 +1528,14 @@ function updateHint() {
       + 'or press Look At, to keep drawing';
     return;
   }
-  if (tool === 'path') {
-    const msg = !pathStart ? 'Click the START point of your profile'
+  if (isPathTool()) {
+    const openTool = tool === 'openpath';
+    const msg = !pathStart
+      ? (openTool ? 'Path: click the START point — on the profile you will sweep'
+                  : 'Click the START point of your profile')
       : pendingVia ? 'Arc: now click the END point'
       : segMode === 'arc' ? 'Arc: click a point the arc passes THROUGH'
+      : openTool ? 'Click the next point · double-click to END the open path'
       : 'Click the next point · click the start (or double-click) to close';
     el.innerHTML = '';
     const mk = (label, mode) => {
@@ -1615,7 +1643,7 @@ function outlinePts(e) {
                return [q.x, q.y];
              }) };
   if (e.kind === 'path' && e.start)
-    return { closed: !e.ghostOpen,
+    return { closed: !e.ghostOpen && e.closed !== false,     // an open path stays open
              pts: pathOutline(e).map(q => [q.x, q.y]) };
   return null;
 }
@@ -1689,7 +1717,7 @@ function draw3D() {
                 color: 0xff3333 });
     dots.push({ x: end[0], y: end[1], r: dR * 0.9, color: 0xff3333 });
   }
-  if (tool === 'path' && pathStart) {
+  if (isPathTool() && pathStart) {
     dots.push({ x: pathStart.x, y: pathStart.y, r: dR * 1.7,
                 color: 0x4da3ff, ring: true });          // the close target
     for (const s of pathSegs)
@@ -1857,7 +1885,7 @@ let drawLocked = {};         // field key -> user typed (stop live overwrite)
 
 function drawDimFields() {
   if (!sketchActive || !tool || edgeOnView) return null;
-  if (tool === 'path')
+  if (isPathTool())
     return (pathStart && !pendingVia && segMode === 'line')
       ? [['len', 'L']] : null;
   return (DRAW_DIMS[tool] && clicks.length === 1) ? DRAW_DIMS[tool] : null;
@@ -1958,7 +1986,7 @@ function commitDrawDims() {
   }
   el.style.display = 'none'; drawDimKey = ''; drawLocked = {};
 
-  if (tool === 'path') {                      // typed segment LENGTH along the
+  if (isPathTool()) {                      // typed segment LENGTH along the
     const cur = pathCursor();                 // current cursor direction
     if (!cur || !lastMove) return;
     const d = Math.hypot(lastMove.x - cur.x, lastMove.y - cur.y);

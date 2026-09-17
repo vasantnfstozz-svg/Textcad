@@ -10,7 +10,7 @@ export const OP_ICONS = {
   fillet: '◠', chamfer: '◣', shell: '▢', hole: '◎',
   fuse: '∪', cut: '−', intersect: '∩',
   sketch: '✎', extrude: '⬆', revolve: '↻', loft: '⏢', sweep: '〜',
-  sketch_on_face: '✎', extrude_face: '⬆', revolve_face: '↻', import_stl: '▲',
+  sketch_on_face: '✎', extrude_face: '⬆', revolve_face: '↻', sweep_face: '〜', import_stl: '▲',
   import_step: '◈',
   // not an op: the Modify tab's router button (Fusion's Press Pull) — the
   // feature it makes is Extrude's or Fillet's, so no tree row ever carries it
@@ -20,6 +20,7 @@ export const OP_ICONS = {
 export const TOOL_NAMES = {
   sketch: 'Sketch', extrude: 'Extrude', revolve: 'Revolve', loft: 'Loft',
   sweep: 'Sweep', extrude_face: 'Extrude face', revolve_face: 'Revolve face',
+  sweep_face: 'Sweep face',
   // Fusion-style primitive names (op ids unchanged underneath: plate=box, etc.)
   plate: 'Box', disc: 'Cylinder', ball: 'Sphere', cone: 'Cone', tube: 'Pipe',
   hex_plate: 'Hex', polygon_plate: 'Polygon', revolve_profile: 'Turn profile',

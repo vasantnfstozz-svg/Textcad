@@ -40,7 +40,7 @@ _ENUMS = {
     "kind": ["simple", "counterbore", "countersink"],     # hole
 }
 _MM = {"radius", "bolt_radius", "thickness", "height", "width", "depth",
-       "length", "amount", "offset", "dx", "dy", "dz", "x", "y", "z",
+       "length", "amount", "offset", "dx", "dy", "dz", "x", "y", "z", "distance",
        "pitch_circle_dia", "rx", "ry", "inner_r", "outer_r", "tip_radius",
        "diameter", "cbore_diameter", "cbore_depth", "csink_diameter"}
 _DEG = {"angle", "angle2", "angle_deg", "rotation", "inlet_angle", "exit_angle",
@@ -96,6 +96,19 @@ OP_NOTES = {
                "The profile must lie entirely to one side. angle is signed; angle2 adds "
                "a second side the other way; both=true sweeps angle to EACH side "
                "(Fusion's Symmetric, the same key as extrude's).",
+    "sweep": "Drags the sketch profile along a PATH SKETCH: `path` is the id of a "
+             "sketch whose entities are OPEN paths — {\"kind\": \"path\", \"closed\": "
+             "false, \"start\": [u, v], \"segments\": [{\"type\": \"line\", \"to\": [u, v]}, "
+             "{\"type\": \"arc\", \"via\": [u, v], \"to\": [u, v]}]} — drawn on a plane "
+             "PERPENDICULAR to the profile and STARTING on the profile (the kernel "
+             "sweeps from the profile's centre along the path's shape). `distance` in "
+             "mm along the path, or full=true for the whole path. Bends tighter than "
+             "the profile reaches and paths leaving in the profile's plane are "
+             "refused. The path sketch is referenced, not consumed. (`path_points` "
+             "[[x,y,z],…] is the legacy form.)",
+    "sweep_face": "Sweeps a flat face of the input body (face_center + face_normal from "
+                  "a real pick) along a path sketch named in `path`, like sweep. "
+                  "Returns only the new solid; fuse/cut it with the body.",
     "revolve_face": "Revolves a flat face of the input body (face_center + face_normal "
                     "from a real pick) about a line in the face's plane, normally one of "
                     "its straight edges: axis=[[u1, v1], [u2, v2]]. Returns only the new "

@@ -968,6 +968,10 @@ def _doc_json() -> dict:
             "status": f.status, "problems": f.problems, "volume": f.volume,
             "suppressed": f.suppressed, "pieces": f.pieces,
             "notes": getattr(f, "notes", []),
+            # a PATH sketch (open lines for Sweep, area 0): the tools offer it
+            # as a path and never as a profile — a fact the server states (R1)
+            "path_sketch": (f.op in sketchlib.SKETCH_PRODUCERS
+                            and sketchlib.is_path_sketch((f.params or {}).get("entities"))),
         } for f in doc.features],
     }
 
@@ -1119,6 +1123,7 @@ class ToolPlanReq(BaseModel):
     faces: list | None = None           # tool "shell": the openings as the last plan stored them; a
                                         #   list (even []) IS the selection, face_center only opens
     direction: str | None = None        #   "inside" / "outside" — which side the arrow points
+    path_id: str | None = None          # tool "sweep": the PATH sketch to follow (default: the newest one)
     seed_id: str | None = None          # tools "polar_pattern" / "linear_pattern" / "mirror": the tree row to repeat
     own_id: str | None = None           #   the feature THIS session built: a replan is about it (P4 review)
     axis_pick: dict | None = None       #   circular: a face clicked while the panel is open — its axis

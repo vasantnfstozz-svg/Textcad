@@ -231,8 +231,9 @@ def test_an_existing_extrude_derives_its_input_from_the_feature():
 def test_failures_are_sentences_never_exceptions():
     empty = Document(name="t")
     empty.rebuild()
-    r = toolplan.plan(empty, {"tool": "sweep", "sketch_id": "s"})   # no planner yet
-    assert r["ok"] is False and "sweep" in r["error"] and "revolve" in r["error"]
+    r = toolplan.plan(empty, {"tool": "nonesuch", "sketch_id": "s"})   # no such planner
+    assert r["ok"] is False and "nonesuch" in r["error"] and "revolve" in r["error"]
+    assert "sweep" in r["error"], "the known list names every planner, Sweep since Tier 2"
     r = toolplan.plan(empty, {"tool": "extrude", "sketch_id": "nope"})
     assert r["ok"] is False and "nope" in r["error"]
     r = toolplan.plan(empty, {"tool": "extrude", "face_center": [0, 0, 0]})
