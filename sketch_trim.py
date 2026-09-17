@@ -6,7 +6,10 @@ with other curves highlights red, click deletes it. Adapted to TextCAD's
 closed-entity sketch model:
 
   * Every entity outline is split at its intersections with the OTHER
-    entities' outlines into PIECES.
+    entities' outlines into PIECES. An entity is ALL of its closed loops —
+    one for the seven parametric kinds, one per glyph piece plus one per
+    counter for a Text entity — and a point is inside it when it is inside
+    an odd number of them.
   * A piece of an entity that intersects nothing is the WHOLE outline —
     clicking it deletes the entity (Fusion deletes crossing-free curves too).
   * Clicking a real piece merges the two regions it separates. Material
@@ -40,47 +43,24 @@ SLIVER = 0.01   # mm^2 — boolean leftovers below this are noise
 # entity outlines (sampled, exact enough for picking & point classification)
 # ---------------------------------------------------------------------------
 
-def _entity_face(e: dict, idx: int):
-    """The ONE closed face an entity stands for.
+def _entity_shape(e: dict, idx: int):
+    """Every face an entity stands for — a word is one face per glyph piece.
 
-    Everything below is built on "an entity is one face, and that face is its
-    outer wire": `_outline` samples `outer_wire()`, `_inside` is an even-odd
-    test on that single loop, and `_material_at` / `_cluster` / the cell
-    refinement in `trim_apply` all ask `_inside`. That held for the seven
-    kinds the user's designs contain — censused 2026-09-18 by
+    This module used to ask `sk._entity(e).faces()[0]`, which is the whole of
+    "an entity is one face and that face is its outer wire". That held for the
+    seven kinds the user's designs contain — censused 2026-09-18 by
     `probes/trim_corpus_census.py`: of 1374 entities in 324 sketches, ZERO
-    build more than one face and ZERO have a hole.
-
-    The Text entity (d3c8c85) breaks both halves — a word is one face per
-    glyph piece, and O/A/B/8 carry holes — and `faces()[0]` used to swallow
-    that silently. Measured on `plate + text 'AB' (subtract)` by
-    `probes/trim_text_material_lie.py`: `_material_at` reported MATERIAL
-    inside the engraved A at (-7.57, -2.51) where the builder leaves a hole,
-    and NO material inside the hole of the B where the builder leaves some;
-    `trim_pieces` offered one piece covering 1 of the 5 loops the canvas
-    draws; a circle laid across the A came back "whole" and clicking it said
-    "removed the circle (it crossed nothing)". Those are the inputs the
-    dissolve-vs-fill choice is made from, so the cluster `trim_apply` writes
-    back can be wrong without saying so. Refuse instead: a failed feature
-    beats a corrupt body, and a word that really is ONE closed outline
-    (an L, an X) still trims.
+    build more than one face and ZERO have a hole — and the Text entity
+    (d3c8c85) broke both halves at once.
     """
     try:
-        faces = sk._entity(e).faces()
-        if not faces:
+        shape = sk._entity(e)
+        if not shape.faces():
             raise IndexError("no face")
     except Exception as ex:
         raise ValueError(f"trim: entity {idx} ({e.get('kind')}) does not "
                          f"build: {ex}") from ex
-    holes = sum(len(f.wires()) - 1 for f in faces)
-    if len(faces) > 1 or holes:
-        raise ValueError(
-            f"trim: the {e.get('kind')} (entity {idx}) is {len(faces)} "
-            f"separate shape(s) with {holes} hole(s) in them, and Trim reads "
-            f"one closed outline per entity — it would work on the first and "
-            f"quietly ignore the rest. Take it out of the sketch, trim, then "
-            f"put it back.")
-    return faces[0]
+    return shape
 
 
 def _sample_wire(wire, n: int) -> np.ndarray:
@@ -135,11 +115,10 @@ def _sample_wire(wire, n: int) -> np.ndarray:
     return pts
 
 
-def _outline(e: dict, idx: int) -> dict:
-    """Sample an entity's outer boundary into a closed polyline.
+def _loop(wire) -> dict:
+    """Sample one closed wire into a polyline.
     Returns {pts (n,2), seglen (n,), cum (n+1,), L} — cum[k] is the
     arc-length at sample k, the loop closes from pts[-1] back to pts[0]."""
-    wire = _entity_face(e, idx).outer_wire()
     n = int(min(max(wire.length / 0.8, 96), 384))
     pts = _sample_wire(wire, n)              # fraction of perimeter, per point
     seg = np.roll(pts, -1, axis=0) - pts
@@ -148,14 +127,52 @@ def _outline(e: dict, idx: int) -> dict:
     return {"pts": pts, "seglen": seglen, "cum": cum, "L": float(cum[-1])}
 
 
+def _entity_loops(e: dict, idx: int) -> list:
+    """EVERY closed loop of an entity — each face's outer wire AND its holes.
+
+    The same loops `sketch.entity_outlines` hands the canvas to draw, which is
+    why the canvas has always drawn all five loops of the word "AB" while Trim
+    read only the first. One loop for the seven parametric kinds, so their
+    arithmetic below is byte-for-byte what it was; several for a Text entity.
+
+    The review of 916a731 REFUSED a multi-face or holed entity instead, which
+    stopped the wrong answer but cost far more than the defect:
+    `probes/trim_refusal_cost.py` measured 32 of the 90 printable characters
+    refused on their own and EVERY word of two or more letters (two glyph
+    pieces is already "more than one face" — LX, 12, v1), and the refusal came
+    out of this function, which runs for every entity in the sketch — so one
+    'O' 200 mm away, touching nothing, stopped Trim on two overlapping
+    rectangles it had nothing to do with, on hover AND on click.
+    """
+    loops = []
+    for f in _entity_shape(e, idx).faces():
+        loops.extend(_loop(w) for w in f.wires())
+    if not loops:
+        raise ValueError(f"trim: entity {idx} ({e.get('kind')}) has no closed "
+                         f"outline")
+    return loops
+
+
 def _inside(outline: dict, x: float, y: float) -> bool:
-    """Even-odd point-in-polygon on the sampled outline."""
+    """Even-odd point-in-polygon on ONE sampled loop."""
     pts = outline["pts"]
     xi, yi = pts[:, 0], pts[:, 1]
     xj, yj = np.roll(xi, 1), np.roll(yi, 1)
     crossing = ((yi > y) != (yj > y)) & \
                (x < (xj - xi) * (y - yi) / np.where(yj != yi, yj - yi, 1e-30) + xi)
     return bool(np.count_nonzero(crossing) % 2)
+
+
+def _in_entity(loops: list, x: float, y: float) -> bool:
+    """Is the point in the REGION an entity covers?
+
+    Even-odd across every loop of it, which is exactly the face the builder
+    makes: a point inside the O's ring and inside its counter crosses two
+    loops, so it is out — the hole is a hole. The loops of one entity never
+    overlap (they are the wires of a valid face set), so the parity is the
+    nesting depth.
+    """
+    return sum(_inside(o, x, y) for o in loops) % 2 == 1
 
 
 def _material_at(entities: list, outlines: list, idxs: list, x, y) -> bool:
@@ -169,7 +186,7 @@ def _material_at(entities: list, outlines: list, idxs: list, x, y) -> bool:
     """
     m = False
     for i in idxs:
-        if _inside(outlines[i], x, y):
+        if _in_entity(outlines[i], x, y):
             m = entities[i].get("mode", "add") != "subtract"
     return m
 
@@ -245,35 +262,50 @@ def _slice_pts(o: dict, p0: float, p1: float) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 def _pieces_raw(entities: list):
+    """Pieces, the loops of every entity, and which entity PAIRS cross.
+
+    An entity contributes one series of pieces over ALL of its loops, numbered
+    `{entity}:{k}` in loop order — identical to what it was for the seven
+    one-loop kinds, and five loops' worth for the word "AB".
+    """
     if not entities:
         raise ValueError("trim: the sketch has no entities")
-    outlines = [_outline(e, i) for i, e in enumerate(entities)]
-    params = [[] for _ in entities]
+    outlines = [_entity_loops(e, i) for i, e in enumerate(entities)]
+    params = [[[] for _ in ls] for ls in outlines]
     crossing = set()                              # {(i,j)} outline intersections
     for i in range(len(entities)):
         for j in range(i + 1, len(entities)):
-            a, b = outlines[i], outlines[j]
-            if (a["pts"].min(0) > b["pts"].max(0) + TOL).any() or \
-               (b["pts"].min(0) > a["pts"].max(0) + TOL).any():
-                continue                          # bounding boxes don't touch
-            pa, pb = _poly_intersections(a, b)
-            if pa:
-                crossing.add((i, j))
-                params[i] += pa
-                params[j] += pb
+            for li, a in enumerate(outlines[i]):
+                for lj, b in enumerate(outlines[j]):
+                    if (a["pts"].min(0) > b["pts"].max(0) + TOL).any() or \
+                       (b["pts"].min(0) > a["pts"].max(0) + TOL).any():
+                        continue                  # bounding boxes don't touch
+                    pa, pb = _poly_intersections(a, b)
+                    if pa:
+                        crossing.add((i, j))
+                        params[i][li] += pa
+                        params[j][lj] += pb
     pieces = []
-    for i, o in enumerate(outlines):
-        ps = _merge_params(params[i], o["L"])
-        if not ps:
-            pieces.append({"id": f"{i}:0", "ent": i, "whole": True,
-                           "_pts": np.vstack([o["pts"], o["pts"][:1]])})
-            continue
-        for k in range(len(ps)):
-            p0, p1 = ps[k], ps[(k + 1) % len(ps)]
-            if len(ps) == 1:
-                p1 = p0 + o["L"]                  # single tangency: one big piece
-            pieces.append({"id": f"{i}:{k}", "ent": i, "whole": False,
-                           "_pts": _slice_pts(o, p0, p1)})
+    for i, loops in enumerate(outlines):
+        # WHOLE is a property of the entity, not of one of its loops: an
+        # entity nothing crosses is deleted by a click (Fusion parity), and
+        # an entity is one row of the tree, so half of it cannot be deleted.
+        free = not any(params[i])
+        k = 0
+        for li, o in enumerate(loops):
+            ps = _merge_params(params[i][li], o["L"])
+            if not ps:
+                pieces.append({"id": f"{i}:{k}", "ent": i, "whole": free,
+                               "_pts": np.vstack([o["pts"], o["pts"][:1]])})
+                k += 1
+                continue
+            for m in range(len(ps)):
+                p0, p1 = ps[m], ps[(m + 1) % len(ps)]
+                if len(ps) == 1:
+                    p1 = p0 + o["L"]              # single tangency: one big piece
+                pieces.append({"id": f"{i}:{k}", "ent": i, "whole": False,
+                               "_pts": _slice_pts(o, p0, p1)})
+                k += 1
     return pieces, outlines, crossing
 
 
@@ -308,9 +340,13 @@ def _cluster(entities, outlines, crossing, seed: int) -> list:
     def overlaps(i, j):
         if (i, j) in crossing or (j, i) in crossing:
             return True
-        # containment without boundary crossing (a hole fully inside a plate)
-        return _inside(outlines[j], *outlines[i]["pts"][0]) or \
-               _inside(outlines[i], *outlines[j]["pts"][0])
+        # containment without boundary crossing (a hole fully inside a plate);
+        # a point on ANY loop of one against the region of the other, so a
+        # word sitting inside a plate joins the plate's cluster
+        return any(_in_entity(outlines[j], *o["pts"][0])
+                   for o in outlines[i]) or \
+               any(_in_entity(outlines[i], *o["pts"][0])
+                   for o in outlines[j])
     seen, todo = {seed}, [seed]
     while todo:
         i = todo.pop()
@@ -346,7 +382,7 @@ def _compose_faces(entities, idxs):
 def _union_faces(entities, idxs):
     u = None
     for i in idxs:
-        f = _entity_face(entities[i], i)
+        f = _entity_shape(entities[i], i)
         u = f if u is None else u + f
     return u
 
@@ -565,7 +601,7 @@ def trim_apply(entities: list, piece_id: str) -> dict:
         note = "dissolved the seam"
     else:
         q = q1 if not m1 else q2                  # the empty side gets filled
-        if not any(_inside(outlines[j], *q) for j in cl):
+        if not any(_in_entity(outlines[j], *q) for j in cl):
             raise ValueError(
                 "trim: that is the outer boundary — removing it would leave "
                 "the profile open. Select the shape and press Delete to "
@@ -578,8 +614,9 @@ def trim_apply(entities: list, piece_id: str) -> dict:
         # U-M, but only its inside-the-rect half may be filled) — clip by
         # every cluster entity until only q's cell remains
         for j in cl:
-            fj = _entity_face(entities[j], j)
-            clipped = (cell & fj) if _inside(outlines[j], *q) else (cell - fj)
+            fj = _entity_shape(entities[j], j)
+            clipped = (cell & fj) if _in_entity(outlines[j], *q) \
+                else (cell - fj)
             cell = _pick_face(clipped, q)
         result = material + cell
         note = "filled the enclosed region"

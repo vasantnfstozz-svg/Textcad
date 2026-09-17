@@ -26,6 +26,7 @@ from contextlib import contextmanager
 import build123d as b3d
 import numpy as np
 import pytest
+from OCP.TopoDS import TopoDS_Iterator
 
 import sketch_trim as tr
 
@@ -149,8 +150,8 @@ def test_an_outline_walks_its_wire_once_not_once_per_sample():
     """
     ent = traced(240, 20.0)
     with counting_wire_walks() as seen:
-        outline = tr._outline(ent, 0)
-    assert len(outline["pts"]) == 166          # unchanged sample budget
+        loops = tr._entity_loops(ent, 0)
+    assert len(loops) == 1 and len(loops[0]["pts"]) == 166          # unchanged sample budget
     assert seen["n"] <= 4, (
         f"the wire was walked {seen['n']} times for 166 sample points — the "
         f"edge table is supposed to be built once per wire")
@@ -159,7 +160,7 @@ def test_an_outline_walks_its_wire_once_not_once_per_sample():
 def test_the_walk_count_does_not_grow_with_the_sample_count():
     """The invariant behind the count above: the table is per WIRE, not per
     point. Ten points and four hundred must cost the same walk."""
-    wire = tr._entity_face(traced(240, 20.0), 0).outer_wire()
+    wire = tr._entity_shape(traced(240, 20.0), 0).faces()[0].outer_wire()
     with counting_wire_walks() as few:
         tr._sample_wire(wire, 10)
     with counting_wire_walks() as many:
@@ -264,9 +265,47 @@ def test_pieces_are_bit_for_bit_the_stock_sampler(name):
 # a 240-edge traced polygon and 2706 ms against 14.2 ms on the 206-edge wire
 # a circle cut leaves — the same order and the same edge directions both ways.
 
+# Round two of the review attacked that argument instead of the timing,
+# looking for a wire where `edges()` and `order_edges()` differ
+# (`probes/trim_order_edges_attack.py`): boolean results, wires assembled from
+# edges added out of order, REVERSED wires, full-circle wires, self-touching
+# and 0.05 mm-necked outlines, Text glyphs, a sweep, an offset, a STEP
+# round-trip. 60-odd wires, same order, same edge directions, the same
+# `_wire_entity` dict, and the largest joint gap walking `edges()` was
+# 3.35e-13 mm. The fact underneath is the one below: the edges of a wire are
+# NOT stored in traversal order and `Wire.edges()` does not return them that
+# way — `BRepTools_WireExplorer` re-derives the connection order, so there is
+# no order left for `sort_by` to fix.
+
+def test_a_wire_does_not_store_its_edges_in_order_and_edges_re_derives_it():
+    sq = [b3d.Edge.make_line((0, 0, 0), (10, 0, 0)),
+          b3d.Edge.make_line((10, 0, 0), (10, 10, 0)),
+          b3d.Edge.make_line((10, 10, 0), (0, 10, 0)),
+          b3d.Edge.make_line((0, 10, 0), (0, 0, 0))]
+    wire = b3d.Wire([sq[2], sq[0], sq[3], sq[1]])       # scrambled on purpose
+
+    def mids(edges):
+        return [(round(float((e @ 0.5).X), 1), round(float((e @ 0.5).Y), 1))
+                for e in edges]
+
+    stored = []
+    it = TopoDS_Iterator(wire.wrapped)
+    while it.More():
+        stored.append(b3d.Edge(it.Value()))
+        it.Next()
+    assert mids(stored) == [(5.0, 10.0), (10.0, 5.0), (0.0, 5.0), (5.0, 0.0)]
+    walk = [(5.0, 10.0), (0.0, 5.0), (5.0, 0.0), (10.0, 5.0)]
+    assert mids(wire.edges()) == walk                  # re-derived, not stored
+    assert mids(wire.order_edges()) == walk            # nothing left to sort
+    # and the chain really is a chain: each edge ends where the next begins
+    edges = wire.edges()
+    for k in range(len(edges) - 1):
+        assert (edges[k] @ 1 - edges[k + 1] @ 0).length < 1e-9
+
+
 def test_rebuilding_an_outline_does_not_re_sort_the_wire():
     """The fix, stated as a count: no `param_at_point` at all."""
-    wire = tr._entity_face(traced(240, 20.0), 0).outer_wire()
+    wire = tr._entity_shape(traced(240, 20.0), 0).faces()[0].outer_wire()
     with counting_wire_param_at_point() as seen:
         ent = tr._wire_entity(wire, "add")
     assert ent["kind"] == "path" and len(ent["segments"]) == 240
