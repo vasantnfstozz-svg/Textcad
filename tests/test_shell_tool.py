@@ -963,25 +963,69 @@ def test_a_uniform_plateau_does_not_outrank_the_taper_it_is_fused_to():
     body = wedge_in_slab()
     assert len(body.solids()) == 1, "the repro is ONE solid, not two lumps"
     assert body.volume == pytest.approx(155657.143, rel=1e-6)
-    assert sk.deepest_material(body, 1e9)[0] == pytest.approx(12.4156, abs=0.03)
-    for t, cavity in ((12.0416, 22.110), (12.1662, 10.524), (12.2909, 3.270)):
+    assert sk.deepest_material(body, 1e9)[0] == pytest.approx(12.4444, abs=0.01)
+    for t, cavity in ((12.0416, 22.110), (12.1662, 10.524), (12.2909, 3.270),
+                      (12.4222, 0.103)):
         out = healthy(sk.shell(body, t))
         assert bool(out.is_valid) and inspector.closed_shell(out)
-        assert body.volume - out.volume == pytest.approx(cavity, rel=0.08)
+        assert body.volume - out.volume == pytest.approx(cavity, rel=0.08, abs=0.03)
     # and past the answer it is still refused, with the right number in it
     with pytest.raises(ValueError, match=r"more than 12\.4\d* mm from the faces"):
         sk.shell(body, 13.0)
 
 
-def test_the_climb_never_spends_more_than_the_three_seeds_used_to():
-    """The seeding draws from three rankings now, so without a budget it would
-    climb nine hills where it climbed three — measured at 47.3 s against 17.9 s
-    on a 330-face body's refusal path, for exactly the same answer
-    (probes/shell_depth_seed_cost_probe.py). The budget is the whole climb's,
-    in distance measurements, and it is what three seeds of forty steps could
-    already spend: the worst case is unchanged and only the ordering is better.
-    Counted, not timed — wall-clock on this box is noise."""
-    assert sk._DEPTH_CLIMB_CALLS == sk._DEPTH_CLIMB_SEEDS * sk._DEPTH_CLIMB_STEPS
+def plateau_pair():
+    """a uniform 20 mm slab with a fat 34 x 34 x 24 post on it: the slab's
+    plateau reads 10.0 everywhere and the deepest material is in the post"""
+    return b3d.Part() + (b3d.Pos(0, 0, 10) * b3d.Box(120, 80, 20)
+                         + b3d.Pos(40, 0, 32) * b3d.Box(34, 34, 24))
+
+
+def test_the_third_ranking_gets_enough_budget_to_reach_the_post():
+    """The body the THIRD ranking ("deepest, and with room") exists for, and
+    the one that showed the climb's shared budget starving the rankings that
+    were added beside it.
+
+    A slab carrying a fat post: the slab's mid-plane is a 10.0 plateau, the
+    post is deeper, and the winning station sits ON the plateau and climbs up
+    into the post. `_seeds_for_the_climb`'s own docstring records 17.0000 ->
+    17.2160 against a grid oracle of 17.2047 — and at a budget of 120 the
+    shipped code answered 17.0000, because the three DEEPEST seeds are spent
+    first, can take 41 measurements each, and leave nothing for the seed the
+    answer is on (probes/shell_depth_seed_starvation_probe.py). Re-ordering
+    does not help; the budget is the whole of it."""
+    body = plateau_pair()
+    assert body.volume == pytest.approx(219744.0, rel=1e-9)
+    assert sk.deepest_material(body, 1e9)[0] == pytest.approx(17.2160, abs=0.01)
+    # the guard now steps out of the way over the whole band it used to refuse,
+    # and the kernel's own refusal is a sentence, not a corrupt body
+    for t in (17.0216, 17.1512, 17.2052):
+        with pytest.raises(ValueError, match="could not offset its faces"):
+            sk.shell(body, t)
+    with pytest.raises(ValueError, match=r"more than 17\.2\d* mm from the faces"):
+        sk.shell(body, 18.0768)
+
+
+def test_the_climb_spends_what_it_measurably_needs_and_no_more():
+    """Nine seeds of forty steps could spend 369 distance measurements, and one
+    costs about 0.12 s on a 330-face body, so the whole climb shares one
+    budget.
+
+    That budget was 120 — "no more than the three seeds it used to take" — and
+    it was measured starving the two rankings the same commit added: the slab
+    with a post answered 17.0000 where the seeding really reaches 17.2160, and
+    the wedge in the slab 12.4156 where it reaches 12.4444. So the number comes
+    from what the climb actually SPENDS when nothing stops it, which is a
+    measurement and not a theoretical worst case: over the plateau bodies, the
+    gauntlet corpus, the four committed crash fixtures and drilled plates up to
+    330 faces, the unstopped spend is 3 to 172 and never approaches 369, since
+    seeds terminate early when the step halves out
+    (probes/shell_depth_seed_starvation_probe.py). On the 330-face body the
+    climb stops itself at 106 whichever budget it is given, so the rise costs
+    nothing there. Counted, not timed — wall-clock on this box swings 3x."""
+    assert sk._DEPTH_CLIMB_CALLS == 200
+    assert sk._DEPTH_CLIMB_CALLS < sk._DEPTH_CLIMB_SEEDS * 3 * (sk._DEPTH_CLIMB_STEPS + 1), \
+        "a budget that nine seeds could not reach is not a budget"
     spent, real = [0], sk._climb_to_the_deepest
 
     def counting(solid, measure, seen, best, tol):
@@ -992,7 +1036,8 @@ def test_the_climb_never_spends_more_than_the_three_seeds_used_to():
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(sk, "_climb_to_the_deepest", counting)
-        for solid in (wedge_in_slab(), box(), b3d.Cylinder(20, 40), draft_wedge()):
+        for solid in (wedge_in_slab(), plateau_pair(), box(),
+                      b3d.Cylinder(20, 40), draft_wedge()):
             spent[0] = 0
             sk.deepest_material(solid, 1e9)            # t = infinity: always climbs
             assert 0 < spent[0] <= sk._DEPTH_CLIMB_CALLS, spent[0]

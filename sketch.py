@@ -2750,13 +2750,33 @@ _DEPTH_STATIONS_TO_OPENING = (1.0, 0.9)
 # rankings in `_seeds_for_the_climb` walks uphill, and how many steps each gets.
 _DEPTH_CLIMB_SEEDS = 3
 _DEPTH_CLIMB_STEPS = 40
-# ... and the whole climb's budget in distance measurements: no more than the
-# three seeds it used to take could already spend, however many it now draws.
-# Measured 2026-09-17 (probes/shell_depth_seed_cost_probe.py): a measurement
-# costs about 0.12 s on a 330-face body, so nine unbudgeted seeds took its
-# refusal path from 17.9 s to 47.3 s and answered exactly the same number. The
-# budget is what makes a better-ORDERED seeding free.
-_DEPTH_CLIMB_CALLS = _DEPTH_CLIMB_SEEDS * _DEPTH_CLIMB_STEPS
+# ... and the whole climb's budget in distance measurements, shared by every
+# seed, because nine seeds of forty steps could in theory spend 369 and a
+# measurement costs about 0.12 s on a 330-face body.
+#
+# It was `_DEPTH_CLIMB_SEEDS * _DEPTH_CLIMB_STEPS` — 120, "no more than the
+# three seeds it used to take" — and 2026-09-17's review measured that number
+# STARVING the two rankings the same commit added. The three DEEPEST seeds are
+# spent first and can take 41 each, so on a body whose deep seeds run their
+# full forty steps there is nothing left for the rankings added beside them,
+# and the seeding is the old one wearing a new coat. Measured
+# (probes/shell_depth_seed_starvation_probe.py): the slab with a fat post —
+# the body the THIRD ranking exists for, and whose 17.0000 -> 17.2160 the
+# docstring below records — answers 17.0000 at a budget of 120 and 17.2160 as
+# soon as the budget lets the seeds run; the wedge in the slab answers 12.4156
+# against 12.4444. Re-ordering does not help (measured, all nine orders of the
+# three rankings: probes/shell_depth_seed_order_probe.py); the answer sits on a
+# seed that the first three exhaust the budget before reaching.
+#
+# So the budget is set from what the climb actually SPENDS when nothing stops
+# it, not from what nine seeds could spend in theory. Measured over the four
+# plateau bodies, the gauntlet corpus, the four committed crash fixtures and
+# drilled plates of 6x6, 12x12 and 18x18 holes (up to 330 faces), the unstopped
+# spend is 3 to 172 and never once approaches 369 — seeds terminate early
+# because the step halves out. 200 covers every one of them with margin, and
+# measured on the 330-face body it costs nothing at all: its climb stops itself
+# at 106 either way.
+_DEPTH_CLIMB_CALLS = 200
 
 
 def _barycentres(k: int) -> tuple:
@@ -2976,10 +2996,23 @@ def _seeds_for_the_climb(seen: list, deepest: float, tol: float) -> list:
         ranked #13 by depth and #132 by room) and climbs up into the post.
 
     Measured over the four bodies, against a grid oracle: the wedge in a slab
-    12.0000 -> 12.4461 (oracle 12.4300), the slab with a post 17.0000 ->
+    12.0000 -> 12.4444 (oracle 12.4300), the slab with a post 17.0000 ->
     17.2160 (17.2047), the 180 mm draft prism unchanged at 15.3405, the ramped
     plate unchanged at 12.2987 — that last one is the climb's own limit and not
-    the seeding's: climbing all 160 of its stations reaches 12.2987 too."""
+    the seeding's: climbing all 160 of its stations reaches 12.2987 too. Those
+    numbers are what the SHIPPED code answers; they were first written down
+    from a run with no budget on the climb, and until 2026-09-17's review the
+    budget of 120 meant the shipped code answered 12.4156 and 17.0000 instead
+    (see `_DEPTH_CLIMB_CALLS`).
+
+    The ramped plate is worth one more line, because it is the one live cost of
+    the residual: the kernel builds walls of 12.36, 12.43, 12.49, 12.56 and
+    12.62 mm on it SOUND — cavities of 42.9 down to 2.7 mm3, valid, watertight,
+    health clean — and this guard refuses all five, saying "walls must be under
+    12.2987 mm" (probes/shell_depth_residual_band_probe.py). Fixing it is not a
+    seeding change: the climb steps away from the ONE nearest point, which
+    stalls where the inscribed sphere touches on two sides at once, and that is
+    a different piece of work."""
     deep, room = [], []
     for d0, q0, bound in seen:
         deep.append((d0, d0, q0))
