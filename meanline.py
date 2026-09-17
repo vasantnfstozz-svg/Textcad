@@ -86,6 +86,13 @@ class CompressorDesign:
     # what continuity actually asked for, BEFORE the machinable floor below
     # clamped it. 0.0 on a design built by hand, which knows no ideal.
     exit_width_ideal: float = 0.0
+    # the duty's own flow and the most any opening can pass in this gas state
+    # (kg/s per mm2, the isentropic choked mass flux). `eye_problem` asks with
+    # them whether the passage the blades leave can pass THIS duty, which a
+    # fraction of the ring cannot answer. 0.0 on a hand-built design: the
+    # question is then not asked, exactly as `exit_width_ideal` is not read.
+    mass_flow: float = 0.0
+    inlet_choke_flux: float = 0.0
 
     @property
     def notes(self) -> tuple[str, ...]:
@@ -107,8 +114,14 @@ class CompressorDesign:
         ideal = self.exit_width_ideal
         if ideal > 0.0 and self.exit_width > 1.01 * ideal:
             ratio = self.exit_width / ideal
+            # "1 times wider than this flow needs" is what a 0.01 kg/s blower
+            # at 90,000 rpm read (0.88 mm wanted, 1.00 mm floor) until round
+            # four: every ratio from 1.01 to 1.49 rounded to "1 times", which
+            # is not a sentence. Under half again, a percentage is the way a
+            # person says it (measured, probes/meanline_round4_kernel.py).
             times = ("thousands of times" if ratio >= 1000.0
-                     else f"{ratio:,.0f} times")
+                     else f"{ratio:,.0f} times" if ratio >= 1.5
+                     else f"{(ratio - 1.0) * 100:.0f}%")
             out.append(
                 f"the exit blade width works out at {_width(ideal)}, thinner "
                 f"than a cutter can make, so the wheel is built with the "
@@ -116,6 +129,28 @@ class CompressorDesign:
                 f"this flow needs. It builds, but it is not the wheel the duty "
                 f"describes: raise the speed or the mass flow, or lower the "
                 f"pressure ratio, and the width becomes a real one")
+        # ...and the same question for the INDUCER ANGLE, round four's. See
+        # `built_blade_angle` for what was measured and how.
+        eye_r = self.inducer_shroud_radius
+        # a hand-built design with no hub nose has no camber to predict: the
+        # blade root is 0.75 * r1h and the law starts there
+        root = 0.75 * self.inducer_hub_radius
+        if root > 0.0 and eye_r > root:
+            built = built_blade_angle(self, eye_r)
+            off = built - self.beta1_deg
+            if abs(off) > _ANGLE_NOTE_DEG:
+                out.append(
+                    f"the inducer angle above, {self.beta1_deg:.1f} degrees, "
+                    f"is not the angle the blade is cut with where the air "
+                    f"meets it. The blade is drawn as one flat camber line "
+                    f"from its root, buried in the hub, out to the rim, and at "
+                    f"the {eye_r:,.2f} mm inlet eye the metal stands at "
+                    f"{built:.1f} degrees — {abs(off):.1f} out. The wheel "
+                    f"builds and is the right size; its inducer is not the one "
+                    f"this angle describes, so the air meets the blade at the "
+                    f"wrong angle. Lower the speed: the wheel grows, its eye "
+                    f"is a smaller part of it, and the gap closes (measured, "
+                    f"probes/meanline_round4_advice.py)")
         return tuple(out)
 
     def report(self) -> str:
@@ -247,6 +282,70 @@ _BORE_PLUG_FRACTION = 0.005
 # supersonic several times over (3.51 mm2 for 5 g/s of air is 1,163 m/s), which
 # is what "not an inlet" means in numbers.
 _EYE_OPEN_FRACTION = 0.10
+
+# THE BLADE ANGLES ARE PUBLISHED AND NOTHING MEASURED THEM. `mcp_server` hands
+# an AI `beta1_deg` and `beta2_deg` beside the radii, and round four measured
+# the blade the kernel actually cuts (probes/meanline_blade_angle_spline.py,
+# and with real booleans on the metal, probes/meanline_blade_angle_metal.py):
+#
+#   * at the RIM the metal is 1.1 to 3.1 degrees steeper than `beta2_deg`;
+#   * at the blade's ROOT it is 6.4 to 28.2 degrees steeper than `beta1_deg`,
+#     on every wheel, the shipped sample included (49.4 published, 64.1 built);
+#   * and at the INLET EYE — the station `beta1_deg` is defined at, "inducer
+#     blade angle at shroud" — the metal is 0.1 to 77.7 degrees AWAY from it:
+#         the shipped sample   49.4 published   47.99 built    -1.4
+#         a big turbo          46.8             46.68          -0.1
+#         a small turbo        63.3             49.60         -13.7
+#         a micro turbo        67.4             46.89         -20.5
+#         backsweep -60        65.9            -11.80         -77.7  (the
+#             blade leans the OTHER WAY from the angle published)
+#
+# Two causes compound, and neither is in this file: `blocks.curved_blade`
+# integrates the camber law in 16 forward-Euler steps, and the first step
+# advances the radius by 73% of itself, which over-wraps the blade by 18-23%;
+# and the law runs beta1 at the blade ROOT (0.75 * r1h, deep inside the hub)
+# and ramps it linearly in radius, so an inlet eye at 0.72 of the tip radius
+# is nowhere near its own published angle. A wheel is not refused for this —
+# the geometry is sound and the kernel builds it — but the design SAYS so now.
+_ANGLE_NOTE_DEG = 2.0            # the prediction is good to 0.07 degrees
+
+# `blocks.curved_blade` walks the camber law in this many forward-Euler steps.
+# It is read here to say what the blade will BE, and
+# tests/test_meanline_gate.py::test_the_predicted_blade_angle_is_the_one_in_the_metal
+# measures a real blade with booleans, so this goes red if that ever changes.
+_CAMBER_STEPS = 16
+
+# How far past its own choking limit a wheel's measured inlet may be before the
+# build is refused. `_EYE_OPEN_FRACTION` above asks what FRACTION of the ring
+# the blades leave open; it cannot ask whether the air FITS, because that
+# depends on the duty and not on the wheel alone. The same tenth is an easy
+# inlet on a 5,000 rpm industrial stage and an impossible one on a 250,000 rpm
+# micro turbo. Measured over a 6,273-design grid (probes/meanline_eye_choke.py,
+# probes/meanline_choke_bands.py): the tenth passes 3,178 wheels whose passage
+# cannot pass their own mass flow even at the speed of sound — up to 9.4x over
+# — and refuses NOT ONE that could.
+#
+# ROUND THREE's own nine kernel-measured wheels, each one's passage against the
+# flow its duty asks for (probes/meanline_round4_numbers.py):
+#     3.21%    21.54x     6.55%     6.19x    31.37%   1.52x
+#     3.36%     5.91x    16.06%     3.78x    37.43%   1.99x
+#     26.50%    2.63x     68.96%    0.88x    70.71%   0.95x  (the sample)
+#
+# THE LINE IS NOT WHERE SOUNDNESS BEGINS. Everything past 1.0x is a wheel that
+# cannot pass its duty's flow, and the module's own inlet sizing puts it there:
+# `design()` sizes the eye ring for Cx = 0.30 * U2 with NO allowance for the
+# blades that then stand in it, so its whole corpus lands between 0.75x and
+# 2.0x (the shipped sample at 0.95x) and a rule at 1.0 would refuse the module
+# rather than the wheel. That is named for the plan, not fixed here: it moves
+# every eye radius, including the user's shipped sample. What this line does
+# refuse is the wheels that cannot pass HALF their own flow — 2.6x on a
+# perfectly ordinary 0.01 kg/s blower at 90,000 rpm that the tenth passed at
+# 11.91% open (built, probes/meanline_round4_kernel.py) — while the most
+# blocked wheel the corpus calls sound (the micro turbo, 1.52x measured on a
+# real 16.0 s build) keeps building. The nearest wheel on the allowed side is
+# 1.99x and it cannot pass its own flow either; it is 0.1 kg/s at pressure
+# ratio 4 and 250,000 rpm, and it is the plan's problem, not this rule's.
+_EYE_CHOKE_MARGIN = 2.0
 
 
 def _across(radius_mm: float) -> str:
@@ -404,6 +503,51 @@ def shroud_root_radius(blade_root_radius: float) -> float:
     return max(blade_root_radius - 2.0, 0.0)
 
 
+def built_blade_angle(d: CompressorDesign, radius: float) -> float:
+    """The angle from radial the blade is ACTUALLY CUT with at `radius`.
+
+    Not the design's camber law — the curve `blocks.curved_blade` draws. It
+    integrates d(theta) = tan(beta)/r * dr in `_CAMBER_STEPS` forward-Euler
+    steps and splines the points, and the steps are coarse where it matters
+    most: the blade root is 0.75 * 0.105 * r2 by construction, so the FIRST
+    step advances the radius by 73% of itself on every wheel ever designed
+    here, whatever its size.
+
+    Each step is the arc of a logarithmic spiral — the curve of constant blade
+    angle — so the angle that joins two nodes is atan(dtheta / ln(r2/r1)); the
+    curve's angle AT a node is the average of the two either side, which is
+    what the spline's tangent does, and in between it runs linearly in radius.
+
+    This is arithmetic because `design()` has no geometry. It was checked
+    against the OCCT curve's own tangent on twelve duties — worst 0.07 degrees
+    at the inlet eye (probes/meanline_camber_predict.py) — and against the
+    METAL with real booleans: the shipped sample's blade reads 48.3 degrees at
+    its eye radius against the 48.03 predicted here
+    (probes/meanline_blade_angle_metal.py).
+    """
+    ri, ro = 0.75 * d.inducer_hub_radius, d.tip_radius
+    n = _CAMBER_STEPS
+    if not (ro > ri > 0) or n < 2:
+        return d.beta2_deg
+    rs, ths, theta = [], [], 0.0
+    for i in range(n + 1):
+        t = i / n
+        rs.append(ri + (ro - ri) * t)
+        ths.append(theta)
+        if i < n:
+            beta = math.radians(d.beta1_deg
+                                + (d.beta2_deg - d.beta1_deg) * t)
+            theta += math.tan(beta) / rs[-1] * ((ro - ri) / n)
+    seg = [math.degrees(math.atan2(ths[i + 1] - ths[i],
+                                   math.log(rs[i + 1] / rs[i])))
+           for i in range(n)]
+    node = ([seg[0]] + [0.5 * (seg[i - 1] + seg[i]) for i in range(1, n)]
+            + [seg[-1]])
+    x = min(max((radius - ri) / ((ro - ri) / n), 0.0), float(n))
+    i = min(int(x), n - 1)
+    return node[i] + (node[i + 1] - node[i]) * (x - i)
+
+
 def one_blade(d: CompressorDesign):
     """The single blade `build_from_design` patterns around the hub.
 
@@ -434,6 +578,22 @@ def one_blade(d: CompressorDesign):
         height=d.axial_length, thickness=max(0.02 * d.tip_radius, 1.5))
     return blade - Cylinder(radius=d.bore_radius,
                             height=8.0 * d.axial_length)
+
+
+def _choke_flux(duty: Duty) -> float:
+    """kg/s per mm2: the most any opening can pass in this gas state.
+
+    The isentropic choked mass flux, P0/sqrt(T0) * sqrt(g/R) * (2/(g+1)) **
+    ((g+1)/(2(g-1))) — 241.3 kg/s per m2 for air at 288.15 K and 101,325 Pa,
+    the textbook figure. It is a hard ceiling: no casing, no speed and no
+    amount of suction moves more air than that through a given area, so a
+    passage narrower than mdot / this cannot pass the duty at all.
+    """
+    g, R = duty.gamma, duty.R
+    if duty.T01 <= 0 or R <= 0 or g <= 1.0:
+        return 0.0
+    return (duty.P01 / math.sqrt(duty.T01) * math.sqrt(g / R)
+            * (2.0 / (g + 1.0)) ** ((g + 1.0) / (2.0 * (g - 1.0)))) * 1e-6
 
 
 def design(duty: Duty, flow_coeff: float = 0.28,
@@ -494,6 +654,8 @@ def design(duty: Duty, flow_coeff: float = 0.28,
         axial_length=round(L * mm, 2),
         backplate_thk=round(max(0.03 * r2 * mm, 2.0), 2),
         bore_radius=round(max(0.5 * r1h * mm, 2.0), 2),
+        mass_flow=duty.mass_flow,
+        inlet_choke_flux=_choke_flux(duty),
     )
     # the answer is arithmetic; this asks whether it is a WHEEL, on the
     # ROUNDED numbers, because those are the ones the geometry is built from
@@ -592,20 +754,48 @@ def eye_problem(part, d: CompressorDesign) -> str | None:
     in it, 3% of what it says. ok=True, ONE watertight solid, health [],
     13-fold symmetric, the right tip radius, the right overall height, and the
     STEP file exported as `verified: true` (probes/meanline_eye_kernel.py).
+
+    TWO questions, because a fraction of the ring cannot answer the second.
+    Round three asked whether enough of the ring is open; round four asks
+    whether the air FITS THROUGH WHAT IS OPEN, which depends on the duty and
+    not on the wheel alone. The same 10% is an easy inlet on a 5,000 rpm
+    industrial stage and an impossible one on a 250,000 rpm micro turbo. See
+    `_EYE_CHOKE_MARGIN`: the tenth passes 3,178 wheels in a 6,273-design grid
+    that cannot pass their own mass flow at the speed of sound.
     """
     open_mm2, available = eye_passage(part, d)
     thk = max(0.02 * d.tip_radius, 1.5)
     if available <= 0.0:
         return ("the inlet eye is not an opening: there is no ring between "
                 "the hub and the shroud for the air to come in through")
-    if open_mm2 >= _EYE_OPEN_FRACTION * available:
-        return None
-    return (f"the inlet eye is not an opening: the {d.blade_count} blades at "
-            f"{thk:,.2f} mm thick leave {open_mm2:,.2f} mm2 of the "
-            f"{available:,.2f} mm2 ring the design asked for, so almost none "
-            f"of the air it is sized for can get in — lower the speed or raise "
-            f"the mass flow, which makes the wheel bigger while the blades "
-            f"stay as thick as a cutter can make them")
+    # "raise the mass flow, which makes the wheel bigger" was half wrong and
+    # measured so in round four: r2 is U2/omega and U2 has no mass flow in it,
+    # so at 0.005 -> 0.01 kg/s (PR 1.1, 100,000 rpm) the wheel stays 11.55 mm
+    # and it is the EYE that grows — one step, and the next is refused by the
+    # eye-beyond-rim rule. Lowering the speed is the dial that grows the wheel,
+    # and it was measured over five speeds on three duties
+    # (probes/meanline_round4_advice.py).
+    fix = ("lower the speed: the wheel grows while the blades stay as thick "
+           "as a cutter can make them, so they take up less of its inlet")
+    if open_mm2 < _EYE_OPEN_FRACTION * available:
+        return (f"the inlet eye is not an opening: the {d.blade_count} blades "
+                f"at {thk:,.2f} mm thick leave {open_mm2:,.2f} mm2 of the "
+                f"{available:,.2f} mm2 ring the design asked for, so almost "
+                f"none of the air it is sized for can get in — {fix}")
+    # ...and the fraction cannot ask whether the air FITS. That depends on the
+    # duty, and this is the ceiling physics puts on it. See `_EYE_CHOKE_MARGIN`.
+    most = d.inlet_choke_flux * open_mm2
+    if d.mass_flow > 0.0 and most > 0.0 \
+            and d.mass_flow > _EYE_CHOKE_MARGIN * most:
+        return (f"the inlet the blades leave cannot pass this flow: "
+                f"{open_mm2:,.2f} mm2 of passage takes {most:.4g} kg/s at the "
+                f"very most — that is air moving through it at the speed of "
+                f"sound — and the duty asks for {d.mass_flow:g} kg/s, "
+                f"{d.mass_flow / most:,.1f} times what fits. The "
+                f"{d.blade_count} blades at {thk:,.2f} mm thick are what is "
+                f"standing in it — {fix}; or lower the pressure ratio, which "
+                f"slows the air the eye has to swallow")
+    return None
 
 
 def to_spec(d: CompressorDesign) -> inspector.Spec:

@@ -66,10 +66,19 @@ def _one_blade(p: ImpellerParams):
     (`symmetry`, `n_solids`, `require_manifold`) still passes every line. The
     shipped defaults clear it — the blade starts at `hub_top_radius` 9.0
     against a 6.0 bore — so today the cut removes nothing and the impeller is
-    identical to the last digit (measured 2026-09-17,
-    probes/impeller_bore_order_probe.py: 89,143.229 mm3, 37 faces, 7-fold,
-    both ways). One edit is all it takes: a nose narrower than the bore, or a
-    wider bore, and the wheel comes back "verified" with no hole in it.
+    identical to the last digit: 30,902.254 mm3, 39 faces, ONE solid, 7-fold,
+    nothing inside the bore, both ways. (That figure was written here as
+    "89,143.229 mm3, 37 faces" and the probe it cites has never printed it;
+    re-measured round four, probes/impeller_round4_sever.py.) One edit is all
+    it takes: a nose narrower than the bore, or a wider bore, and the wheel
+    comes back "verified" with no hole in it.
+
+    THE CUT CANNOT SEVER A BLADE. The cylinder is centred on the axis and the
+    blade lies wholly outside it, so what it takes is always the inner end,
+    never a middle: measured at ten bore radii from 2.0 to 41.0 (the same
+    probe) the blade is ONE solid every time until the bore passes the tip and
+    there is nothing left — and long before that, at 22.0, the hub itself
+    comes back empty and the build says so in four sentences.
     """
     with BuildSketch(Plane.XZ) as sk:
         with BuildLine():
