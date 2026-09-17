@@ -194,6 +194,28 @@ SKETCH_CONSUMING_MODIFIERS = {"extrude", "revolve", "sweep"}
 # `_check_modifier_input` adds to this set for itself (see there).
 SOLID_REPEATING_MODIFIERS = set(pattern.PATTERN_OPS)
 
+# ...and the rest of that family: the ops that CHANGE a solid and have nothing
+# to say about a flat profile. Each one MEASURED on a sketch before it was put
+# in this set (probes/s10_solid_only_census.py, 2026-09-17) — and measured
+# again on a RECTANGLE sketch with four real corners and a generous small
+# radius (probes/s10_solid_only_corners.py), because "radius 1 mm does not fit
+# on 1 edge" proves nothing on a circle that has no corner to round:
+#   fillet           radius 1 mm does not fit on 1 edge / on 4 edges
+#   chamfer          distance 1 mm does not fit on 1 edge / on 4 edges
+#   shell            walls of 1 mm do not fit this body
+#   hole             nothing was cut — the hole at (0, 0) finds no material
+#   with_center_hole nothing was drilled — the hole falls outside this body
+#   with_bolt_circle nothing was drilled — a pitch circle diameter of 14 mm
+#                    puts all 4 holes outside this body
+# Six diagnoses about a body that was never there. What is NOT here is as
+# measured as what is: `extrude_face` builds a 235.62 mm3 prism from a sketch
+# face and `revolve_face` a 616.85 mm3 solid about a line in the sketch plane,
+# `sketch_on_face` answers a sketch with a sketch, and `move`, `rotate`,
+# `scale` and a joinless `mirror` all move a sketch and hand back a sketch —
+# gating any of those would take away work that is correct today.
+SOLID_ONLY_MODIFIERS = {"fillet", "chamfer", "shell", "hole",
+                        "with_center_hole", "with_bolt_circle"}
+
 
 def _check_modifier_input(op: str, fid: str, part, params: dict | None = None) -> None:
     """Refuse a profile op fed a solid BODY — BEFORE the kernel.
@@ -236,15 +258,48 @@ def _check_modifier_input(op: str, fid: str, part, params: dict | None = None) -
     # ("a sketch is not a feature to repeat") — so the two cannot disagree.
     _p = params or {}
     joins = op == "mirror" and not _p.get("seed") and _p.get("join")
-    if ((op in SOLID_REPEATING_MODIFIERS or joins)
+    if ((op in SOLID_REPEATING_MODIFIERS or op in SOLID_ONLY_MODIFIERS or joins)
             and (n_solids(part) or 0) == 0
             and (inspector._try(lambda: part.area) or 0) > 0):
         does = ("with join fuses a SOLID body with its reflection" if joins
-                else "repeats a SOLID body")
+                else "repeats a SOLID body" if op in SOLID_REPEATING_MODIFIERS
+                else "works on a SOLID body")
         extra = " (without join it returns the reflected sketch)" if joins else ""
         raise ValueError(
             f"{op} {does}, and '{fid}' is a sketch — "
             f"extrude or revolve it first, then {op} the body{extra}")
+
+
+def _check_numeric_params(op: str, params: dict, feature_id: str) -> None:
+    """A NUMBER that is not a number, named — at BOTH doors, in ONE sentence.
+
+    "8mm" is what a CAD user types, and the tree's text edit passes any
+    non-numeric text through on purpose (edges="all", open_face="top" need
+    it). It used to reach the kernel: BRepPrimAPI_MakeBox answered with twelve
+    lines of C++ overloads in the feature row (measured 2026-09-10, section 5
+    review), so `check_params` started refusing it while AUTHORING.
+
+    A file does not come through that door — `Document.from_data` must always
+    open, whoever wrote it — so the same three forms went on reaching the
+    kernel at REBUILD and came back as raw Python: `extrude {"amount": null}`
+    said "TypeError: float() argument must be a string or a real number, not
+    'NoneType'" and `{"amount": ""}` said "could not convert string to float:
+    ''". Measured 2026-09-17 over every numeric parameter of every op
+    (probes/s10_numeric_null_door.py): 14 such messages across 7 ops, all
+    modifiers. No numeric parameter in the whole registry defaults to None,
+    so None is never a value one of them means — the signature says so
+    itself, which is what makes refusing it safe.
+
+    Unit-neutral on purpose: this also covers angles (degrees) and counts, and
+    naming the wrong unit is its own bug."""
+    numeric = Document.numeric_params(op)
+    for k, v in (params or {}).items():
+        if k not in numeric:
+            continue
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            raise ValueError(
+                f"'{feature_id}' ({op}): {k} must be a number (got "
+                f"{v!r}) — type just the number, without units")
 
 
 KNOWN_OPS = set(CREATORS) | set(MODIFIERS) | set(COMBINERS) | {"move"}
@@ -930,21 +985,7 @@ class Document:
                 f"'{feature_id}' ({op}) has no parameter "
                 + ", ".join(repr(k) for k in bad)
                 + f" -- it takes {sorted(allowed)}")
-        # A NUMBER that is not a number. "8mm" is what a CAD user types, and
-        # the tree's text edit passes any non-numeric text through on purpose
-        # (edges="all", open_face="top" need it). It used to reach the kernel:
-        # BRepPrimAPI_MakeBox answered with twelve lines of C++ overloads in
-        # the feature row (measured 2026-09-10, section 5 review).
-        numeric = Document.numeric_params(op)
-        for k, v in (params or {}).items():
-            if k not in numeric:
-                continue
-            if isinstance(v, bool) or not isinstance(v, (int, float)):
-                # unit-neutral on purpose: this also covers angles (degrees)
-                # and counts, and naming the wrong unit is its own bug
-                raise ValueError(
-                    f"'{feature_id}' ({op}): {k} must be a number (got "
-                    f"{v!r}) — type just the number, without units")
+        _check_numeric_params(op, params, feature_id)
 
     def get(self, feature_id: str) -> Feature:
         for f in self.features:
@@ -1565,6 +1606,12 @@ class Document:
             if len(ins) != 1:
                 raise ValueError(f"'{f.op}' needs exactly 1 input")
             _check_modifier_input(f.op, f.inputs[0], ins[0], f.params)
+            # AFTER the kind check: the kind of the input is the more basic
+            # fact, and a sketch fed to fillet is not fixed by typing a radius.
+            # Modifiers only — every creator already names the parameter AND
+            # its unit ("plate: width must be a number in mm (got None)"), and
+            # `move` reads a missing offset as 0 on purpose (_move_offsets).
+            _check_numeric_params(f.op, f.params, f.id)
             kw = self._clean(f.params)
             if f.op in pattern.SEEDED_OPS and kw.get("seed"):
                 kw.update(self._seed_parts(f, kw["seed"]))   # the seed's before / after bodies
