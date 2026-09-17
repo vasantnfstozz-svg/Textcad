@@ -24,6 +24,7 @@ import { openLoft } from './loft.js';
 import { openMove, openRotate } from './move.js';
 import { cancelTool } from './tool.js';
 import { openMeasure, cancelMeasure } from './measure.js';
+import { toggleSection } from './section.js';
 
 // sketch draw tools shown in the contextual SKETCH tab's CREATE group (top)
 const SKETCH_TOOLS = {
@@ -70,6 +71,7 @@ const ACTIONS = {
   redo:    { icon: '↷', name: 'Redo',        fn: actionRedo },
   spec:    { icon: '✓', name: 'Spec',        fn: actionSpec },
   measure: { icon: '⟺', name: 'Measure',     fn: () => openMeasure() },
+  section: { icon: '◫', name: 'Section',     fn: () => toggleSection() },   // cut the model open on screen
   select:  { icon: '◉', name: 'Select',
              fn: () => document.getElementById('vSelect').click() },
   settings: { icon: '⚙', name: 'Settings', fn: openSettings },
@@ -124,6 +126,7 @@ const TABS = {
   Inspect: [
     ['Select', [{ a: 'select' }]],
     ['Measure', [{ a: 'measure' }]],
+    ['Section', [{ a: 'section' }]],
     ['Verify', [{ a: 'spec' }]],
     ['History', [{ a: 'undo' }, { a: 'redo' }, { a: 'versions' }]],
   ],

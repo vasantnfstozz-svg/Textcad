@@ -220,6 +220,25 @@
     </div>
   </div>
 
+  <!-- ============ Section view panel (a clipping plane, display only; specs/section-view.md) ============ -->
+  <div id="sectionDialog" class="toolpanel" style="display:none">
+    <div class="exhead">◫ Section view</div>
+    <label>Axis
+      <select id="scAxis" title="the plane is perpendicular to this axis">
+        <option value="X">X</option>
+        <option value="Y">Y</option>
+        <option value="Z" selected>Z</option>
+      </select></label>
+    <div class="exrow">
+      <label>Offset <span class="unitlabel">(mm)</span> <input id="scOffset" type="number" step="any" value="0"></label>
+      <label title="hide the other side of the plane"><input id="scFlip" type="checkbox"> Flip</label>
+    </div>
+    <div id="scStatus" class="exhint"></div>
+    <div class="exfoot">
+      <button class="primary" id="scClose" title="put the model back whole">Close</button>
+    </div>
+  </div>
+
   <!-- ============ Fillet panel (edges picked in the viewport; specs/fillet-chamfer.md) ============ -->
   <div id="flDialog" class="toolpanel" style="display:none">
     <div class="exhead">◠ Fillet</div>
@@ -583,6 +602,6 @@
     "three/addons/": "/static/vendor/three/0.160.0/addons/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=217"></script>
+<script type="module" src="/static/js/main.js?v=218"></script>
 </body>
 </html>

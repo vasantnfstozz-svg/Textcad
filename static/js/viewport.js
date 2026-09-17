@@ -292,7 +292,7 @@ export function initViewport() {
                      arrows: moreArrows.length, moveGhost: !!(moveGhost && moveGhost.mesh.visible),
                      axis: !!axisLine, lathe: !!rvGhost, glow: edgeGlow.length,
                      path: !!pathLine, sweep: !!(swGhost && swGhost.mesh.visible),
-                     loft: !!(lfGhost && lfGhost.mesh.visible),
+                     loft: !!(lfGhost && lfGhost.mesh.visible), section: !!section,
                      edgePick: !!edgePickCb, hole: !!holeMarker, plane: !!planeQuad,
                      facePick: !!profilePickCb }),
     /* the mirror plane as drawn: where it sits and which way it faces */
@@ -1599,6 +1599,83 @@ export function loftGhostInfo() {
                                  ? lfGhost.mesh.geometry.attributes.position.count : 0) / 3 } : null;
 }
 
+/* ---------------- SECTION VIEW (specs/section-view.md) ----------------
+   A clipping plane on every BODY material (meshes and their topology edges),
+   never on sketches, ghosts or handles: the model is cut open on screen and
+   nothing about the design changes. The plane is three numbers the user
+   chose — an axis, an offset along it, which side hides — so there is no plan
+   request. The gold quad and the arrow are the shared gizmos (Mirror's quad,
+   Extrude's arrow); a tool that opens takes them for its session, the
+   clipping stays on the materials. Bodies loaded while the section is on are
+   clipped in addBodies. */
+let section = null;                     // { plane, axis, flip, offset, idx }
+const SECTION_AXES = { X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] };
+
+function sectionMaterials() {
+  return [...bodyObjs.map(b => b.mesh.material), ...edgeLines.map(l => l.material)];
+}
+function applySectionTo(mat) {
+  mat.clippingPlanes = section ? [section.plane] : null;
+  // two-sided while cut: the inside of the body shows as the body's own colour
+  mat.side = section ? THREE.DoubleSide : THREE.FrontSide;
+  mat.needsUpdate = true;
+}
+/* three.js keeps a point where normal·p + constant >= 0: hide p_axis > offset
+   with normal = -axis and constant = offset; Flip hides the other side */
+function sectionConstant(o) {
+  return -section.plane.normal.getComponent(section.idx) * o;
+}
+export function beginSection(axis, offset, flip, onDrag, onCommit) {
+  endSection();
+  const a = SECTION_AXES[axis] ? axis : 'Z';
+  const idx = { X: 0, Y: 1, Z: 2 }[a];
+  const o = offset == null ? fitCenter.getComponent(idx) : Number(offset) || 0;
+  const n = new THREE.Vector3(...SECTION_AXES[a]).multiplyScalar(flip ? 1 : -1);
+  section = { plane: new THREE.Plane(n, 0), axis: a, flip: !!flip, offset: o, idx };
+  section.plane.constant = sectionConstant(o);
+  renderer.localClippingEnabled = true;
+  for (const m of sectionMaterials()) applySectionTo(m);
+  const x = a === 'X' ? [0, 1, 0] : [1, 0, 0];
+  const y = a === 'Z' ? [0, 1, 0] : [0, 0, 1];
+  const origin = fitCenter.toArray(); origin[idx] = o;
+  beginPlaneQuad({ origin, x_dir: x, y_dir: y, z_dir: SECTION_AXES[a] },
+    Math.max(fitRadius * 1.2, 20));
+  const O = fitCenter.toArray(); O[idx] = 0;       // the arrow rides: base = O + axis·offset
+  beginExtrudeArrow(O, SECTION_AXES[a], o,
+    v => { setSectionOffset(v); if (onDrag) onDrag(v); },
+    v => { setSectionOffset(v); if (onCommit) onCommit(v); },
+    v => v);
+  return { offset: o };
+}
+/* the plane and the quad follow a new offset; the arrow rides by itself */
+export function setSectionOffset(o) {
+  if (!section) return;
+  section.offset = Number(o) || 0;
+  section.plane.constant = sectionConstant(section.offset);
+  if (planeQuad) {
+    const pos = new THREE.Vector3().setFromMatrixPosition(planeQuad.mesh.matrix);
+    pos.setComponent(section.idx, section.offset);
+    for (const ob of [planeQuad.mesh, planeQuad.edge]) ob.matrix.setPosition(pos);
+  }
+}
+export function endSection() {
+  if (!section) return;
+  section = null;
+  for (const m of sectionMaterials()) applySectionTo(m);
+  endPlaneQuad(); endExtrudeArrow();
+}
+/* test hook: the plane as applied, and how many body materials carry it */
+export function sectionInfo() {
+  if (!section) return { on: false, clipped: sectionMaterials().filter(
+    m => m.clippingPlanes && m.clippingPlanes.length).length };
+  const mats = sectionMaterials();
+  return { on: true, axis: section.axis, flip: section.flip, offset: section.offset,
+           constant: section.plane.constant, normal: section.plane.normal.toArray(),
+           materials: mats.length,
+           clipped: mats.filter(m => m.clippingPlanes && m.clippingPlanes.length).length,
+           quad: !!planeQuad, arrow: !!exArrow };
+}
+
 /* ---------------- a tool's PLANE (Mirror: the mirror plane, a gold square) ----
    Placed by the plan's frame {origin, x_dir, y_dir, z_dir} and sized by its
    `half` — where it is and which way it faces are the server's (R1). */
@@ -1927,6 +2004,7 @@ function addBodies(bodies) {
       color: 0xc4cad3, metalness: 0.30, roughness: 0.44,
       flatShading: false }));
     m.userData.body = b.id;
+    if (section) applySectionTo(m.material);       // a body loaded while cut open is cut too
     scene.add(m);
     const entry = { id: b.id, result: !!b.result, mesh: m,
                     data: { positions: b.positions, indices: b.indices,
@@ -1944,6 +2022,7 @@ function addBodies(bodies) {
       line.userData.edgeId = e.id;
       line.userData.body = b.id;
       line.userData.faces = e.faces || [];       // the faces it bounds (edgeHitAt)
+      if (section) applySectionTo(line.material);
       scene.add(line); edgeLines.push(line);
     }
   }
