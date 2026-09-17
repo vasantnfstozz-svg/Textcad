@@ -320,6 +320,11 @@ def _design_compressor(mass_flow_kg_s, pressure_ratio, rpm, backsweep_deg):
         "inducer_shroud_radius_mm": d.inducer_shroud_radius,
         "axial_length_mm": d.axial_length, "power_kw": round(d.power_kw, 1),
         "slip_factor": round(d.slip_factor, 3),
+        # The design's own plain sentences - the machinable exit-width floor
+        # and the inducer angle the metal does not carry.  Built by hand here,
+        # so a note added to CompressorDesign reached every OTHER door and not
+        # this one: the AI read numbers it had no way to know were qualified.
+        "notes": list(d.notes),
     }
     build = meanline.build_from_design(d)
     if not build.ok or build.part is None:
