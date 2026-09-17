@@ -2454,10 +2454,17 @@ _DEPTH_RAY_BUDGET = 200_000
 _DEPTH_STATIONS = (0.5, 0.25, 0.75)
 _DEPTH_STATIONS_TO_OPENING = (1.0, 0.9)
 # ... and the climb that turns the best SAMPLE into the real maximum before a
-# refusal is allowed to stand: how many of the measured points are walked
-# uphill, and how many steps each is given.
+# refusal is allowed to stand: how many of the measured points EACH of the three
+# rankings in `_seeds_for_the_climb` walks uphill, and how many steps each gets.
 _DEPTH_CLIMB_SEEDS = 3
 _DEPTH_CLIMB_STEPS = 40
+# ... and the whole climb's budget in distance measurements: no more than the
+# three seeds it used to take could already spend, however many it now draws.
+# Measured 2026-09-17 (probes/shell_depth_seed_cost_probe.py): a measurement
+# costs about 0.12 s on a 330-face body, so nine unbudgeted seeds took its
+# refusal path from 17.9 s to 47.3 s and answered exactly the same number. The
+# budget is what makes a better-ORDERED seeding free.
+_DEPTH_CLIMB_CALLS = _DEPTH_CLIMB_SEEDS * _DEPTH_CLIMB_STEPS
 
 
 def _barycentres(k: int) -> tuple:
@@ -2618,7 +2625,7 @@ def deepest_material(solid, t: float, openings=()) -> tuple | None:
         d, _near = measure(q)
         if d is None:
             continue
-        seen.append((d, q))
+        seen.append((d, q, bound))        # the bound travels: the climb ranks on it
         if d > best[0]:
             best = (d, q)
         if d >= t - tol:
@@ -2626,6 +2633,82 @@ def deepest_material(solid, t: float, openings=()) -> tuple | None:
     if best[0] < t - tol:
         best = _climb_to_the_deepest(solid, measure, seen, best, tol)
     return best[0], (best[1].X, best[1].Y, best[1].Z), tol
+
+
+def _spread_out(ranked: list, tol: float, k: int) -> list:
+    """The first `k` of an already-ranked list, each further than its own radius
+    from the ones taken.
+
+    The top three of any ranking are usually three stations on ONE ray, which
+    climb the same hill three times; a seed that must clear its own radius
+    lands on another branch of the medial axis instead."""
+    seeds, taken = [], []
+    for _score, d0, q0 in ranked:
+        if len(seeds) >= k:
+            break
+        if all((q0 - p).length > max(d0, tol) for p in taken):
+            seeds.append((d0, q0))
+            taken.append(q0)
+    return seeds
+
+
+def _seeds_for_the_climb(seen: list, deepest: float, tol: float) -> list:
+    """Which measured stations are worth walking uphill — three questions, three
+    seeds each.
+
+    Ranking them by DEPTH alone is what a PLATEAU exploits, and that was the
+    other half of the 2026-09-16 finding (LAUNCH-PLAN section 10). A uniform
+    region measures exactly what its chord allows, so an 80 x 80 x 24 slab's
+    mid-plane reads 12.0000 at a dozen points more than 12 mm apart and takes
+    every seed, while the 2-to-30 mm draft wedge fused into it — whose real
+    maximum is 12.4300 — never gets one. Raising the seed count does not help
+    (the plateau has dozens more), and neither do more steps (a plateau has no
+    gradient). Measured on the repro (probes/shell_depth_plateau_seeds_probe.py):
+    climbing ALL 177 stations does find 12.4464, and the station it finds it
+    from is ranked #159 of 177 BY DEPTH. It started 2.4271 mm from a face.
+
+    What that station has is ROOM: its own ray passed through 40 mm of material
+    while the station itself measured 2.43, so `bound / depth` is 8.2 where
+    every plateau station scores exactly 1.0 — the lowest score there is, since
+    a station can never measure more than its own chord allows. That ranking
+    puts it #31, and its top three find the wedge.
+
+    So three rankings, because one is not enough for both shapes of plateau:
+
+      * the DEEPEST stations — today's rule, and the right one whenever the
+        thickest material happens to sit on a ray (a box, a plate, a cylinder);
+      * the stations with the most ROOM, wherever they are — the wedge fused
+        into a slab, where the answer sits beside a face and not near one;
+      * the deepest stations that ALSO have room — a slab carrying a fat post,
+        where the winner is on the plateau itself (depth 10.0 of a 17.0 best,
+        ranked #13 by depth and #132 by room) and climbs up into the post.
+
+    Measured over the four bodies, against a grid oracle: the wedge in a slab
+    12.0000 -> 12.4461 (oracle 12.4300), the slab with a post 17.0000 ->
+    17.2160 (17.2047), the 180 mm draft prism unchanged at 15.3405, the ramped
+    plate unchanged at 12.2987 — that last one is the climb's own limit and not
+    the seeding's: climbing all 160 of its stations reaches 12.2987 too."""
+    deep, room = [], []
+    for d0, q0, bound in seen:
+        deep.append((d0, d0, q0))
+        # an opening sample has no chord to bound it, and a station that is
+        # already ON a face has nothing but room — it would crawl through the
+        # whole budget a fraction of a millimetre at a time
+        if bound != float("inf") and d0 >= 0.1 * deepest:
+            room.append((bound / max(d0, 1e-9), d0, q0))
+    both = [r for r in room if r[1] >= 0.5 * deepest]
+    picked = [_spread_out(sorted(r, key=lambda x: -x[0]), tol, _DEPTH_CLIMB_SEEDS)
+              for r in (deep, room, both)]
+    # the deepest first, so a body the old rule already answered is answered the
+    # same way and the budget below only ever pays for what is left over
+    order = picked[0] + [s for pair in zip(picked[1], picked[2]) for s in pair] \
+        + picked[1][len(picked[2]):] + picked[2][len(picked[1]):]
+    seeds, at = [], []
+    for d0, q0 in order:
+        if all((q0 - p).length > tol for p in at):
+            seeds.append((d0, q0))
+            at.append(q0)
+    return seeds
 
 
 def _climb_to_the_deepest(solid, measure, seen: list, best: tuple, tol: float) -> tuple:
@@ -2648,7 +2731,8 @@ def _climb_to_the_deepest(solid, measure, seen: list, best: tuple, tol: float) -
     so each seed is stepped along that direction while the distance keeps
     rising, the step halving whenever it does not, and a candidate outside the
     body is never taken. Several seeds because the field has one maximum per
-    medial branch and the best sample need not sit on the right one.
+    medial branch and the best sample need not sit on the right one —
+    `_seeds_for_the_climb` says which, and why depth alone is not the question.
 
     This can only ever RAISE the answer — it accepts a point only when that
     point measures deeper, by the same exact `BRepExtrema` the stations use —
@@ -2667,24 +2751,27 @@ def _climb_to_the_deepest(solid, measure, seen: list, best: tuple, tol: float) -
         cls.Perform(gp_Pnt(q.X, q.Y, q.Z), 1e-7)
         return cls.State() == TopAbs_State.TopAbs_OUT
 
-    # the deepest measured points, SPREAD OUT: the top three by depth are
-    # usually three stations on one ray, which climb the same hill three
-    # times. A seed must sit further than its own radius from the ones already
-    # taken, which is what puts it on another branch of the medial axis.
-    seeds, taken = [], []
-    for d0, q0 in sorted(seen, key=lambda r: -r[0]):
-        if len(seeds) >= _DEPTH_CLIMB_SEEDS:
-            break
-        if all((q0 - p).length > max(d0, tol) for p in taken):
-            seeds.append((d0, q0))
-            taken.append(q0)
-    seeds = seeds or [best]
+    left = [_DEPTH_CLIMB_CALLS]
+
+    def spend(q):
+        """`measure`, against the climb's shared budget. Out of budget reads the
+        same as "nothing could be measured", which already ends a climb."""
+        if left[0] <= 0:
+            return None, None
+        left[0] -= 1
+        return measure(q)
+
+    seeds = _seeds_for_the_climb(seen, best[0], tol) or [best]
     for d0, q0 in seeds:
+        if left[0] <= 0:
+            break
         q, d = q0, d0
         step, near = max(d0, tol), None
         for _ in range(_DEPTH_CLIMB_STEPS):
+            if left[0] <= 0:
+                break                     # the budget, not the step count
             if near is None:
-                got = measure(q)
+                got = spend(q)
                 if got[0] is None:
                     break                 # keep the seed's own depth, not None
                 d, near = got
@@ -2693,7 +2780,7 @@ def _climb_to_the_deepest(solid, measure, seen: list, best: tuple, tol: float) -
             if reach <= 1e-9:
                 break                     # the point is ON a face: no way uphill
             cand = q + away * (step / reach)
-            got = (None, None) if outside(cand) else measure(cand)
+            got = (None, None) if outside(cand) else spend(cand)
             if got[0] is not None and got[0] > d:
                 q, d, near = cand, got[0], got[1]
             else:

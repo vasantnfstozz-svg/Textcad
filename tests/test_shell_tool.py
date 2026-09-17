@@ -768,6 +768,88 @@ def test_a_flat_face_is_sampled_to_its_budget_not_to_its_triangle_count():
         assert plate.volume - out.volume == pytest.approx(cavity, rel=0.05)
 
 
+def wedge_in_slab():
+    """LAUNCH-PLAN section 10's plateau repro: the same 2-to-30 mm draft wedge,
+    fused into an 80 x 80 x 24 slab. ONE solid, 155,657.143 mm3."""
+    return b3d.Part() + (draft_wedge() + b3d.Pos(0, -30.0, 12.0) * b3d.Box(80, 80, 24))
+
+
+def test_a_uniform_plateau_does_not_outrank_the_taper_it_is_fused_to():
+    """The other half of the 2026-09-16 finding, and the harder half.
+
+    A uniform region measures exactly what its chord allows, so this slab's
+    mid-plane reads 12.0000 at a dozen points more than 12 mm apart — and the
+    climb's seeds were ranked by DEPTH, so the plateau took all three and the
+    wedge fused into it, whose real maximum is 12.4300 by an independent grid,
+    never got one. The guard then refused 12.05, 12.2 and 12.4 mm in a sentence
+    that told the user "walls must be under 12 mm", while the kernel builds all
+    three sound. More seeds do not help (the plateau has dozens more) and
+    neither do more steps (a plateau has no gradient to climb): measured, the
+    station the answer is really found from is ranked #159 of 177 by depth and
+    starts 2.4271 mm from a face. What it has is ROOM — its own chord passed
+    through 40 mm of material — and `bound / depth` is exactly 1.0 on every
+    plateau station, the lowest score there is.
+
+    THE RULE this test exists for: a corpus behind a refusing guard only ever
+    tests its refusals, so raising its number proves nothing until the walls it
+    newly ALLOWS are put to the kernel. All four of them are, below."""
+    body = wedge_in_slab()
+    assert len(body.solids()) == 1, "the repro is ONE solid, not two lumps"
+    assert body.volume == pytest.approx(155657.143, rel=1e-6)
+    assert sk.deepest_material(body, 1e9)[0] == pytest.approx(12.4156, abs=0.03)
+    for t, cavity in ((12.0416, 22.110), (12.1662, 10.524), (12.2909, 3.270)):
+        out = healthy(sk.shell(body, t))
+        assert bool(out.is_valid) and inspector.closed_shell(out)
+        assert body.volume - out.volume == pytest.approx(cavity, rel=0.08)
+    # and past the answer it is still refused, with the right number in it
+    with pytest.raises(ValueError, match=r"more than 12\.4\d* mm from the faces"):
+        sk.shell(body, 13.0)
+
+
+def test_the_climb_never_spends_more_than_the_three_seeds_used_to():
+    """The seeding draws from three rankings now, so without a budget it would
+    climb nine hills where it climbed three — measured at 47.3 s against 17.9 s
+    on a 330-face body's refusal path, for exactly the same answer
+    (probes/shell_depth_seed_cost_probe.py). The budget is the whole climb's,
+    in distance measurements, and it is what three seeds of forty steps could
+    already spend: the worst case is unchanged and only the ordering is better.
+    Counted, not timed — wall-clock on this box is noise."""
+    assert sk._DEPTH_CLIMB_CALLS == sk._DEPTH_CLIMB_SEEDS * sk._DEPTH_CLIMB_STEPS
+    spent, real = [0], sk._climb_to_the_deepest
+
+    def counting(solid, measure, seen, best, tol):
+        def counted(q):
+            spent[0] += 1
+            return measure(q)
+        return real(solid, counted, seen, best, tol)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(sk, "_climb_to_the_deepest", counting)
+        for solid in (wedge_in_slab(), box(), b3d.Cylinder(20, 40), draft_wedge()):
+            spent[0] = 0
+            sk.deepest_material(solid, 1e9)            # t = infinity: always climbs
+            assert 0 < spent[0] <= sk._DEPTH_CLIMB_CALLS, spent[0]
+
+
+def test_a_plateau_station_scores_the_lowest_room_there_is():
+    """The seeding rule on its own, with no kernel in it: a station can never
+    measure more than its own chord allows, so `bound / depth` is 1.0 on a
+    plateau and above 1 everywhere else. Here the plateau holds every one of
+    the three deepest places and the taper's station is last by depth — and it
+    is still seeded."""
+    from build123d import Vector
+    flat = [(12.0, Vector(20 * i, 0, 12), 12.0) for i in range(6)]
+    taper = (2.4, Vector(0, 200, 25), 20.0)
+    seeds = sk._seeds_for_the_climb(flat + [taper], 12.0, 1e-3)
+    assert taper[1] in [q for _d, q in seeds], "the station with room was not seeded"
+    assert seeds[0][0] == 12.0, "the deepest is still seeded first"
+    # a station on a face is all room and no use: it would crawl through the
+    # whole budget a fraction of a millimetre at a time
+    onface = [(0.001, Vector(0, -200, 0), 30.0)]
+    assert onface[0][1] not in [q for _d, q in
+                                sk._seeds_for_the_climb(flat + onface, 12.0, 1e-3)]
+
+
 def test_the_extra_samples_cost_a_body_with_hundreds_of_faces_nothing():
     """The budget is `200_000 // faces**2` rays per face, so a body of 130+ faces
     already gets ONE, and one sample is the centroid and nothing else — the same
