@@ -128,3 +128,112 @@ def test_plain_art_on_a_big_face_is_unchanged_by_the_measured_fit():
     assert info["rotated"] is False
     assert h == pytest.approx(27.0, abs=0.6)
     assert w == pytest.approx(27.0, abs=0.6)
+
+
+# --- P2: the fit box is the face's BBOX, so art overflows a round face -----
+
+def _traced_points(client, data, centre, normal=(0, 0, 1), fid="art"):
+    """Trace onto a picked face and read the entity points back out of the
+    feature the server actually stored, in the face's own 2D."""
+    import studio
+    d = client.post("/api/trace-png", json={
+        "png_base64": base64.b64encode(data).decode(),
+        "face_center": list(centre), "face_normal": list(normal),
+        "feature_id": fid}).json()
+    assert not d.get("error"), d.get("error")
+    feat = [f for f in studio._doc().features
+            if f.id == d["trace_info"]["feature_id"]][0]
+    pts = [(e["x"] + p[0], e["y"] + p[1])
+           for e in feat.params["entities"] for p in e["points"]]
+    return d["trace_info"], pts
+
+
+def _square_png(size=400, pad=30):
+    img = np.zeros((size, size, 4), np.uint8)
+    cv2.rectangle(img, (pad, pad), (size - pad, size - pad),
+                  (10, 10, 10, 255), -1)
+    return _png(img)
+
+
+def _tab(doc):
+    from fastapi.testclient import TestClient
+    import studio
+    studio.STATE["docs"].clear()
+    studio.STATE["active"] = None
+    studio.STATE["seq"] = 0
+    studio._new_tab(doc)
+    studio._rebuild_and_mesh()
+    return TestClient(studio.app)
+
+
+def _disc_tab(radius=30.0, thick=10.0):
+    import document as dm
+    doc = dm.Document("disc")
+    doc.add("base", "disc", {"radius": radius, "thickness": thick}, [])
+    return _tab(doc)
+
+
+def _ell_tab(a=60.0, b=60.0, bite=30.0, thick=10.0):
+    import document as dm
+    doc = dm.Document("ell")
+    doc.add("base", "plate", {"width": a, "depth": b, "thickness": thick}, [])
+    doc.add("bite", "plate",
+            {"width": bite, "depth": bite, "thickness": thick * 3}, [])
+    doc.add("bite_at", "move",
+            {"x": (a - bite) / 2, "y": (b - bite) / 2, "z": 0}, ["bite"])
+    doc.add("ell", "cut", {}, ["base", "bite_at"])
+    return _tab(doc)
+
+
+def test_traced_art_stays_on_a_round_face():
+    """The fit box was the face's BOUNDING box, so square art auto-fitted to
+    "the 60x60mm face" of a 30 mm disc put all 8 of its points off the disc,
+    the furthest 37.96 mm from a 30.00 mm edge — green, with nothing said
+    (measured 2026-09-17, probes/imgtrace_inscribed_box_probe.py)."""
+    client = _disc_tab(radius=30.0, thick=10.0)
+    info, pts = _traced_points(client, _square_png(), (0, 0, 5))
+    worst = max((x * x + y * y) ** 0.5 for x, y in pts)
+    n_off = sum(1 for x, y in pts if (x * x + y * y) ** 0.5 > 30.0)
+    assert worst <= 30.0, (f"{n_off} of {len(pts)} traced points are off the "
+                           f"disc, the furthest {worst:.2f} mm from a "
+                           f"30.00 mm edge")
+    assert info["width_mm"] > 20.0, "and the art must still be worth seeing"
+
+
+def test_traced_art_stays_on_an_l_shaped_face():
+    """Same box, an inside corner instead of a curve: 2 of 8 points sat up to
+    11.68 mm off the material."""
+    client = _ell_tab()
+    _info, pts = _traced_points(client, _square_png(), (0, 0, 5))
+    ell = np.array([[-30, -30], [30, -30], [30, 0], [0, 0], [0, 30],
+                    [-30, 30]], np.float32)      # 30x30 bite at +x +y
+    off = [cv2.pointPolygonTest(ell, (float(x), float(y)), True)
+           for x, y in pts]
+    assert min(off) >= -0.01, (f"{sum(1 for d in off if d < 0)} of {len(pts)} "
+                               f"traced points are off the face, the furthest "
+                               f"{-min(off):.2f} mm out")
+
+
+def test_face_outline_hands_back_the_box_to_fit_into():
+    """R1: the inscribed box is a server fact. The sketcher takes min/max of
+    `outer` itself, which is the face only when the face is a rectangle."""
+    client = _disc_tab(radius=30.0, thick=10.0)
+    d = client.post("/api/face-outline", json={
+        "face_center": [0, 0, 5], "face_normal": [0, 0, 1]}).json()
+    assert d["planar"] and d.get("fit_box"), d.get("error")
+    w, h, cx, cy = d["fit_box"]
+    # a circle of radius r holds a square of side r*sqrt(2) = 42.43 mm
+    assert w == pytest.approx(42.43, abs=0.6)
+    assert h == pytest.approx(42.43, abs=0.6)
+    assert (cx * cx + cy * cy) ** 0.5 < 0.5
+    # and the box really is inside: its own corners are within the disc
+    assert ((w / 2) ** 2 + (h / 2) ** 2) ** 0.5 <= 30.0
+
+
+def test_a_rectangular_face_still_fits_its_whole_self():
+    """Every flat plate face must behave exactly as it always did — the
+    inscribed box of a rectangle IS its bounding box, by an early exit."""
+    client = _client()          # the 120 x 80 x 10 plate
+    d = client.post("/api/face-outline", json={
+        "face_center": [0, 0, 5], "face_normal": [0, 0, 1]}).json()
+    assert d["fit_box"] == [120.0, 80.0, 0.0, 0.0]
