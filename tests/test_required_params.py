@@ -274,15 +274,27 @@ def test_move_still_reads_a_missing_offset_as_zero():
     assert d.get("m1").volume == pytest.approx(2000.0, abs=0.01)
 
 
-def test_a_creator_keeps_its_own_wording():
-    """The leak was in the modifiers; every creator already named the
-    parameter AND its unit (measured), and that sentence is not replaced."""
+def test_a_creator_says_what_the_authoring_door_says_too():
+    """Round two left the creators out on the premise that every one of them
+    already named the parameter AND its unit. Round three measured the premise
+    and found it false for two of the twelve (`sketch.offset` built silently at
+    Z = 0, `curved_blade` answered in Python), so the creators go through the
+    same door now — and typing the value and loading it read the same for
+    every op, which is the rule this check exists for.
+
+    The unit-bearing sentence is not lost: `blocks._positive` still speaks for
+    every DIRECT caller (scripts, samples, the MCP doorbell), and inside the
+    document it still speaks for a number that is out of range — see
+    tests/test_foreign_value_door.py."""
     d = Document(name="c")
     d.add("c1", "plate", {"width": None, "depth": 20, "thickness": 5}, [])
     d.rebuild()
     assert d.get("c1").problems == [
-        "plate: width must be a number in mm (got None) — type just the "
-        "number, no units"]
+        "'c1' (plate): width must be a number (got None) — type just the "
+        "number, without units"]
+    with pytest.raises(ValueError) as e:
+        Document.check_params("plate", {"width": None}, "c1")
+    assert str(e.value) == " ".join(d.get("c1").problems)
 
 
 def test_the_kind_of_the_input_is_still_the_more_basic_fact():

@@ -24,6 +24,7 @@ centred, which put every hex body it placed half a thickness out.
 """
 
 from __future__ import annotations
+import dis
 import functools
 import math
 import os
@@ -66,6 +67,23 @@ _AXES = {"X": Axis.X, "Y": Axis.Y, "Z": Axis.Z}
 # volume 0. Both are banned (CLAUDE.md: a kernel exception reaching the user,
 # and a "successful" empty solid), and neither told the user which number to
 # change. `_positive` is the one place that sentence is written.
+
+def _numbers(op: str, unit: str, **vals) -> None:
+    """Refuse a value that is not a number AT ALL, naming it and its unit.
+
+    The half of `_positive` that has nothing to do with being positive, for the
+    values where ZERO and NEGATIVE are real answers — a blade angle of 0 is a
+    straight radial blade and a negative one is forward-swept, so `_positive`
+    cannot speak for them, and until 2026-09-17 nothing did: `curved_blade`
+    compared them straight to a number and a file holding a null angle read
+    `TypeError: unsupported operand type(s) for -: 'int' and 'NoneType'` in
+    the feature row (probes/s10_r3_creator_door.py, 24 such messages over its
+    six parameters, plus six values that BUILT a different blade)."""
+    for name, v in vals.items():
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            raise ValueError(f"{op}: {name} must be a number in {unit} (got "
+                             f"{v!r}) — type just the number, no units")
+
 
 def _positive(op: str, **dims) -> None:
     """Refuse any dimension that is not a positive number, naming it."""
@@ -172,6 +190,19 @@ def revolve_profile(points: list[tuple[float, float]]) -> Part:
     solid (hub, pulley, shaft, shroud). `points` are (radius, z) pairs in the XZ
     plane; the profile is auto-closed. All radii must be >= 0. This is the
     workhorse for turned/turbomachinery-style parts."""
+    # `len(points)` and the unpacking below ran on whatever the file held:
+    # `TypeError: object of type 'NoneType' has no len()` and `not enough
+    # values to unpack (expected 2, got 1)` reached the feature row (measured
+    # 2026-09-17, probes/s10_r3_valueerror_census.py). As WIDE as what works
+    # today — any sequence of two-number pairs, lists or tuples alike.
+    if isinstance(points, (str, bytes, dict)) or not isinstance(points, (list, tuple)):
+        raise ValueError(f"revolve_profile: points is a list of [radius, z] "
+                         f"points (got {points!r})")
+    for i, p in enumerate(points):
+        if (isinstance(p, (str, bytes, dict))
+                or not isinstance(p, (list, tuple)) or len(p) != 2):
+            raise ValueError(f"revolve_profile: point {i + 1} is not a "
+                             f"[radius, z] pair (got {p!r})")
     if len(points) < 3:
         raise ValueError("revolve_profile: need at least 3 points")
     # the docstring has promised radii >= 0 since this function existed and
@@ -211,10 +242,20 @@ def curved_blade(inner_radius: float, outer_radius: float,
     make that SMALLER than the hub's local radius so the blade overlaps into
     the hub and fuses (touching is not enough).
     """
+    # BEFORE the comparisons below: they are arithmetic, and arithmetic on a
+    # value a file holds as null, as a list or as true answers in Python, not
+    # in words — this was the ONE creator that still did (measured 2026-09-17,
+    # probes/s10_r3_creator_door.py). `_positive` for the four that must be
+    # positive (an inner_radius of 0 divides by zero in the camber integral
+    # below — `ZeroDivisionError: division by zero` in the row), `_numbers` for
+    # the two angles, where 0 is a straight radial blade and a negative one is
+    # forward-swept and neither may be refused.
+    _positive("curved_blade", inner_radius=inner_radius,
+              outer_radius=outer_radius, height=height, thickness=thickness)
+    _numbers("curved_blade", "degrees", inlet_angle_deg=inlet_angle_deg,
+             exit_angle_deg=exit_angle_deg)
     if inner_radius >= outer_radius:
         raise ValueError("curved_blade: inner_radius must be < outer_radius")
-    if thickness <= 0 or height <= 0:
-        raise ValueError("curved_blade: height and thickness must be positive")
 
     # camber line: beta(r) linear, theta integrated with tan(beta)/r
     n = 16
@@ -351,7 +392,11 @@ def rotate(part: Part, axis: str = "Z", angle_deg: float = 90.0, pivot=None) -> 
     (what the Rotate tool sends, Fusion's default pivot); [x, y, z] is an
     explicit point. The sign is the right-hand rule about the axis (probed:
     +90 about Z takes +X to +Y)."""
-    if axis not in _AXES:
+    # `axis not in _AXES` alone HASHES what it is given, so a file holding a
+    # list or a dict there answered `TypeError: cannot use 'list' as a dict
+    # key (unhashable type: 'list')` — the refusal's OWN lookup was the leak
+    # (measured 2026-09-17, probes/s10_r3_valueerror_census.py).
+    if not isinstance(axis, str) or axis not in _AXES:
         raise ValueError(f'rotate: axis must be "X", "Y" or "Z" (got {axis!r})')
     try:
         deg = float(angle_deg)
@@ -387,8 +432,15 @@ def scale_uniform(part: Part, factor: float) -> Part:
     Rotate tool sends "center"), so a script's two Transform calls do NOT share
     a pivot by default -- stated here and in author.OP_NOTES because a wrong
     pivot is not visible in a signature."""
+    # `factor <= 0` alone compared whatever it was given: a script passing
+    # "2" answered `TypeError: '<=' not supported between instances of 'str'
+    # and 'int'`, and True scaled by 1 without a word. The sentence also says
+    # WHAT it got now — every other refusal in this file does.
+    _numbers("scale", "times (2 = double size)", factor=factor)
     if factor <= 0:
-        raise ValueError("scale: factor must be positive")
+        raise ValueError(f"scale: factor must be more than 0 (got "
+                         f"{format(factor, 'g')}) — 2 is double size, 0.5 is "
+                         f"half")
     return _b3d_scale(part, by=factor)
 
 
@@ -417,6 +469,38 @@ def linear_pattern(feature: Part, count: int, dx: float = 0.0,
 # health-checked before it is returned.
 
 _EDGE_RULES = ("all", "top", "bottom", "vertical", "horizontal")
+
+
+def _pick_point(v, name: str) -> tuple:
+    """The three numbers a face click left behind, or a sentence naming them.
+
+    `cx, cy, cz = (float(v) for v in face_center)` was the whole of it, so a
+    file that holds something else for a pick answered in Python: measured
+    2026-09-17 over every parameter of every op
+    (probes/s10_r3_valueerror_census.py), `face_center: "abc"` reached the
+    feature row as `could not convert string to float: 'a'` and `[1, 2]` as
+    `not enough values to unpack (expected 3, got 2)` — 36 rows of the census,
+    not one of them naming the thing to change.
+
+    As WIDE as what works today, on purpose: any sequence of three values
+    `float()` accepts, so a list, a tuple and even ["0", "0", "5"] resolve
+    exactly as they did. Only a word, a mapping, a flag and anything that is
+    not three numbers are new refusals, and none of those builds anything
+    today — a 3-letter string is the one that would have quietly become a
+    point if `float()` were simply let loose on it."""
+    if isinstance(v, (str, bytes, bytearray, dict, bool)):
+        vals = None
+    else:
+        try:
+            vals = [float(x) for x in v]
+        except (TypeError, ValueError):
+            vals = None
+    if vals is None or len(vals) != 3:
+        raise ValueError(
+            f"{name} must be three numbers [x, y, z] from a face click (got "
+            f"{v!r}) — click the face again, or name the face instead with "
+            f'face="top" / "bottom" / "+x" …')
+    return tuple(vals)
 
 
 def resolve_face(solid, face_center: list, face_normal: list | None = None,
@@ -494,10 +578,10 @@ def resolve_face(solid, face_center: list, face_normal: list | None = None,
     rows = _face_rows(solid)
     if not rows:
         raise ValueError("solid has no faces")
-    cx, cy, cz = (float(v) for v in face_center)
+    cx, cy, cz = _pick_point(face_center, "face_center")
     nrm = None
     if face_normal:
-        nx, ny, nz = (float(v) for v in face_normal)
+        nx, ny, nz = _pick_point(face_normal, "face_normal")
         if math.sqrt(nx * nx + ny * ny + nz * nz) > 1e-6:
             nrm = (nx, ny, nz)
 
@@ -984,7 +1068,20 @@ def edges_for(part: Part, edges) -> list:
             raise ValueError("no edges picked — click at least one edge of the body")
         out, seen = [], set()
         for r in edges:
-            e = resolve_edge(part, r if isinstance(r, dict) else {"mid": list(r)})
+            if not isinstance(r, dict):
+                # `{"mid": list(r)}` on its own answered `TypeError: 'int'
+                # object is not iterable` for a list of bare numbers, and
+                # `not enough values to unpack (expected 3, got 2)` for a
+                # two-number point (measured 2026-09-17,
+                # probes/s10_r3_valueerror_census.py).
+                try:
+                    r = {"mid": list(_pick_point(r, "a picked edge"))}
+                except ValueError:
+                    raise ValueError(
+                        f"a picked edge is a point [x, y, z] on that edge "
+                        f"(got {r!r}) — click the edge again, or name a "
+                        f'group: {", ".join(_EDGE_RULES)}') from None
+            e = resolve_edge(part, r)
             if _shape_key(e) not in seen:
                 seen.add(_shape_key(e))
                 out.append(e)
@@ -1041,6 +1138,65 @@ def _missing_or_unknown_params(msg: str) -> str | None:
     return None
 
 
+# Where this file lives. Every module of the product is flat beside it
+# (blocks, sketch, document, pattern, paramexpr, inspector, kernelguard …), so
+# "our own code" is a directory test and no list has to be kept up to date.
+_OUR_DIR = os.path.dirname(os.path.abspath(__file__))
+_RAISE_OPS = ("RAISE_VARARGS", "RERAISE")
+
+# What a failure says when it is NOT one of our sentences and not the kernel
+# either: Python's own words name a Python fact, never the thing to change.
+NOT_A_SENTENCE = ("one of this feature's values is not one it can use — open "
+                  "the feature and check what is in each box")
+
+
+def _python_raised_it(e: Exception) -> bool:
+    """Did PYTHON raise this ValueError from inside one of OUR OWN files?
+
+    `plain_cause` passes every `ValueError` through unchanged, on the
+    assumption that a ValueError came from our code and is therefore already a
+    sentence. It is not: `float("")`, `int("x")` and unpacking all raise
+    ValueError from inside the lines we wrote. Measured 2026-09-17
+    (probes/s10_r3_entity_value_door.py): a sketch entity whose `x` is a word
+    read `could not convert string to float: 'abc'` in the feature row, and an
+    empty one `could not convert string to float: ''` — the very message the
+    §10 row was opened for.
+
+    Two facts separate the two, and NEITHER of them reads the text (guessing a
+    sentence from its wording is how the old assumption went wrong):
+
+      * the innermost frame's FILE — build123d and OCP live elsewhere, and
+        build123d's own refusals are plain, so they keep passing through;
+      * the BYTECODE at that frame's last instruction — a `raise` we wrote is
+        `RAISE_VARARGS` (or `RERAISE`), while Python raising on its own account
+        inside one of our lines is a `CALL`, an `UNPACK_SEQUENCE`, a
+        `BINARY_OP`… Measured over 24 of our own refusals across five modules
+        and Python's own from three call sites: 24 RAISE_VARARGS, 0 misread
+        (probes/s10_r3_raise_marker.py).
+
+    SAFE IN ONE DIRECTION: anything this cannot read counts as OURS, so a
+    refusal is never swallowed — the worst it can do is let a Python message
+    through, which is what happens today anyway.
+
+    A refusal handed across the kernel-worker boundary is still ours: it is
+    re-raised by a `raise` statement in `kernelguard`, in this directory."""
+    tb = e.__traceback__
+    if tb is None:
+        return False
+    while tb.tb_next is not None:
+        tb = tb.tb_next
+    try:
+        code = tb.tb_frame.f_code
+        if os.path.dirname(os.path.abspath(code.co_filename)) != _OUR_DIR:
+            return False                  # a library's ValueError: left alone
+        for ins in dis.get_instructions(code):
+            if ins.offset == tb.tb_lasti:
+                return ins.opname not in _RAISE_OPS
+    except Exception:
+        return False                      # any doubt: it is one of ours
+    return False
+
+
 def plain_cause(e: Exception) -> str:
     """The REAL reason a build failed, in words a user can act on.
 
@@ -1064,7 +1220,11 @@ def plain_cause(e: Exception) -> str:
         if named:
             return named
     if isinstance(e, ValueError):
-        return msg
+        # OUR ValueError is the refusal we wrote and already names what to
+        # change. Python's own — `float("")`, `int("x")`, unpacking a pair
+        # into three names — names a Python fact instead, and used to be
+        # handed to the user word for word (see _python_raised_it).
+        return NOT_A_SENTENCE if _python_raised_it(e) else msg
     # our own bug, or a binding complaining about an argument. Either way the
     # user gets ONE line: a pybind11 overload dump is not a sentence, and
     # anything multi-line came from a library, not from us.
