@@ -251,3 +251,34 @@ def test_every_enum_the_catalogue_offers_is_a_value_the_op_accepts():
     for v in axis["enum"]:
         assert v.strip().lower() in sk.FACE_DIRS, \
             f"polar_pattern refuses axis {v!r}"
+
+
+def test_the_design_notes_reach_the_ai_door(monkeypatch):
+    """`rep_design` is built BY HAND, so a note added to CompressorDesign
+    reached every other door and not this one.
+
+    Two notes exist today - the machinable exit-width floor (a 59 micrometre
+    width built at the 1.00 mm floor, 17x what the flow needs) and the
+    inducer angle the metal does not carry.  Both say the wheel BUILDS and is
+    the right size, so nothing refuses and nothing else warns: without this
+    the AI reads `exit_width_mm` and `beta1_deg` with no way to know they are
+    qualified.  The build is stubbed because the door's WIRING is what is
+    under test, and a real 13-blade build costs 14-168 s.
+    """
+    import mcp_server, meanline
+
+    class _Refused:
+        ok = False
+        part = None
+        def all_problems(self):
+            return ["stubbed: the kernel is not the subject of this test"]
+
+    monkeypatch.setattr(meanline, "build_from_design", lambda d: _Refused())
+    duty = meanline.Duty(mass_flow=0.5, pressure_ratio=3.0, rpm=1000,
+                         backsweep_deg=30)
+    want = list(meanline.design(duty).notes)
+    assert want, "this duty is meant to carry notes; pick another if it stops"
+
+    out = mcp_server._design_compressor(0.5, 3.0, 1000, 30)
+    assert out["design"]["notes"] == want
+    assert any("floor" in n for n in out["design"]["notes"])

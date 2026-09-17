@@ -192,3 +192,84 @@ def test_pulling_loops_apart_leaves_art_that_is_already_clear_alone():
     assert info["contours"] == 2
     for before, after in zip(loops, same):
         assert before == pytest.approx(np.array(after), abs=1e-12)
+
+
+def _true_gap(loops):
+    """The honest closest approach of two outlines: every vertex of each
+    against the OTHER's edges. The minimum distance between two polylines
+    sits on a vertex of one or of the other, and `_pull_apart` asks only one
+    of those two questions."""
+    arr = [np.asarray(p, float) for p in loops]
+    best = float("inf")
+    for i in range(len(arr)):
+        for j in range(i + 1, len(arr)):
+            d1, _f = imgtrace._nearest_on_ring(arr[i], arr[j])
+            d2, _f = imgtrace._nearest_on_ring(arr[j], arr[i])
+            best = min(best, float(d1.min()), float(d2.min()))
+    return best
+
+
+# The smaller loop is a BAR with a long straight top edge; the bigger loop
+# is a plate with a needle whose tip lands on the middle of that edge. Every
+# vertex of the bar is 4 mm from the plate's outline, so the guard's own
+# one-way test reads 4.000 mm of clearance where the truth is 0.000 mm.
+_BAR = [(-10.0, -1.0), (10.0, -1.0), (10.0, 1.0), (-10.0, 1.0)]
+_NEEDLE = [(-20.0, 5.0), (-0.4, 5.0), (0.0, 1.0), (0.4, 5.0),
+           (20.0, 5.0), (20.0, 20.0), (-20.0, 20.0)]
+
+
+def test_a_vertex_on_the_OTHER_loops_edge_is_pulled_apart_too():
+    """Measured 2026-09-17: the guard's one-way test reads 4.000 mm here and
+    the two loops touch at exactly 0.000000000 mm."""
+    assert _true_gap([_BAR, _NEEDLE]) == 0.0
+    out = imgtrace._pull_apart([list(_BAR), list(_NEEDLE)])
+    assert _true_gap(out) >= imgtrace._HAIR_MM * 0.99
+
+
+def test_two_holes_that_touch_edge_to_vertex_build_a_watertight_solid():
+    """The banned failure, through the direction the guard did not measure:
+    two subtract loops meeting at a point built 3516.800 mm3 that
+    OpenCASCADE calls valid and inspector.health calls an open shell."""
+    out = imgtrace._pull_apart([list(_BAR), list(_NEEDLE)])
+    plate = [(-30.0, -10.0), (30.0, -10.0), (30.0, 30.0), (-30.0, 30.0)]
+    ents = [imgtrace._poly_entity(plate, "add")]
+    ents += [imgtrace._poly_entity(imgtrace._round_pts(p), "subtract")
+             for p in out]
+    solid = sk.extrude_sketch(sk.make_sketch("XY", 0, ents), 2.0)
+    assert inspector.health(solid) == []
+
+
+def test_the_mirror_pass_leaves_art_that_is_already_clear_alone():
+    """Nothing within a hair -> not one point inserted, not one moved."""
+    a = [(0.0, 0.0), (10.0, 0.0), (10.0, 6.0), (0.0, 6.0)]
+    b = [(0.0, 9.0), (10.0, 9.0), (10.0, 15.0), (0.0, 15.0)]
+    out = imgtrace._pull_apart([list(a), list(b)])
+    assert out == [a, b]
+
+
+def _ring_with_mixed_spokes(radius, spokes):
+    """the same ring, with a thickness PER spoke"""
+    m = np.zeros((320, 420), np.uint8)
+    cv2.circle(m, (210, 160), radius, 1, 30)
+    for a, t in spokes:
+        cv2.line(m, (210, 160),
+                 (int(210 + 300 * np.cos(a)), int(160 + 300 * np.sin(a))),
+                 1, int(t))
+    return m
+
+
+# The PICTURE that reaches the blind spot, found 2026-09-17 in 16 800 traces
+# (probes/imgtrace_r5_mirror.py, seed 31337, "ring563"). Traced 9.5 mm tall it
+# handed sketch.py two hole loops touching at exactly 0.000000000 mm while
+# `_pull_apart`'s own one-way test read 0.025739602 mm of clearance, and built
+# 47.933 mm3 that OpenCASCADE calls valid and inspector.health calls an open
+# shell.
+def test_the_ring_whose_holes_touch_through_the_blind_spot():
+    m = _ring_with_mixed_spokes(131, [(5.825232830329833, 1),
+                                      (4.6218438148683765, 2)])
+    ents, info = imgtrace.image_to_entities(_png(m), height_mm=9.5)
+    assert info["holes"] == 2
+    assert _true_gap([[(e["x"] + x, e["y"] + y) for x, y in e["points"]]
+                      for e in ents]) >= imgtrace._HAIR_MM * 0.99
+    solid = sk.extrude_sketch(sk.make_sketch("XY", 0, ents), 2.0)
+    assert inspector.health(solid) == []

@@ -295,7 +295,14 @@ def polar_angles(count: int, angle: float) -> list[float]:
     return [step * i for i in range(1, count)]
 
 
-def polar_pattern(feature, count, axis=None, angle: float = 360.0,
+# `count: int` is not decoration: `Document.numeric_params` reads these
+# annotations, and that set is what may hold a FORMULA. Without it the AI's
+# prompt ("any NUMERIC feature param may be a formula string naming them") and
+# the catalogue's own `unit: "count"` were both untrue here — `{"count":
+# "ribs"}` was refused as "count must be a whole number >= 1 (got 'ribs')" and
+# the Parameters panel could not drive a pattern (measured 2026-09-17).
+# `_count` below still owns whole-ness and the >= 1 floor.
+def polar_pattern(feature, count: int, axis=None, angle: float = 360.0,
                   seed: str | None = None, _before=None, _after=None):
     """Circular Pattern: `count` copies of the seed (a feature of `feature`'s
     history, or the body itself when `seed` is None) about `axis` — None =
@@ -335,7 +342,7 @@ def linear_steps(count: int, distance: float, distance_type: str) -> list[float]
     return [step * i for i in range(1, count)]
 
 
-def linear_pattern(feature, count, dx: float = 0.0, dy: float = 0.0, dz: float = 0.0,
+def linear_pattern(feature, count: int, dx: float = 0.0, dy: float = 0.0, dz: float = 0.0,
                    direction=None, distance: float = 0.0, distance_type: str = "spacing",
                    count2: int = 1, direction2=None, distance2: float = 0.0,
                    seed: str | None = None, _before=None, _after=None):

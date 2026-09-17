@@ -19,6 +19,7 @@ from `probes/meanline_size_probe.py` (ten duties from a 0.05 kg/s micro-turbo
 at 180,000 rpm to a 50 kg/s industrial machine at 3,000 rpm) and
 `probes/meanline_backsweep_sweep.py`, never from taste.
 """
+import dataclasses
 import math
 
 import pytest
@@ -555,12 +556,17 @@ def test_the_exit_width_floor_says_so_when_it_fires(name, kw, ideal, ratio):
 def test_a_wheel_whose_width_is_real_says_nothing(name, kw, expect):
     """The note may not cry wolf on the eight duties the corpus calls sound —
     every one of them has a true b2 between 2.55 and 38.27 mm, well clear of
-    the floor (probes/meanline_exit_width_clamp.py)."""
+    the floor (probes/meanline_exit_width_clamp.py).
+
+    ROUND FOUR: this used to assert `d.notes == ()`, which quietly made it the
+    test of EVERY note rather than of the width one. Four of these eight wheels
+    now carry the inducer-angle note — measured, and true of them — so the
+    guard is written as what it always meant: the WIDTH says nothing."""
     d = meanline.design(duty(**kw))
     assert d.exit_width_ideal > 1.0, name
     assert d.exit_width == pytest.approx(d.exit_width_ideal, abs=0.005)
-    assert d.notes == (), (name, d.notes)
-    assert "NOTE:" not in d.report()
+    assert "exit blade width" not in " ".join(d.notes), (name, d.notes)
+    assert "floor instead" not in d.report(), name
 
 
 # ---------------------------- the bore is MEASURED now, not taken on trust ---
@@ -808,25 +814,47 @@ def test_an_eye_the_blades_have_filled_is_measured_and_refused_in_words():
     assert problem and "inlet eye is not an opening" in problem, problem
     assert "13 blades" in problem, problem        # the count, in words
     assert "1.88 mm thick" in problem, problem    # and the thickness
-    assert "lower the speed or raise the mass flow" in problem, problem
+    # ROUND FOUR corrected the second half of this advice: "raise the mass
+    # flow, which makes the wheel bigger" does not make the wheel bigger —
+    # r2 is U2/omega and U2 has no mass flow in it (measured over four flows
+    # at PR 1.1 / 100,000 rpm, probes/meanline_round4_advice.py: r2 stays
+    # 11.55 mm and the next step up is refused by the eye-beyond-rim rule).
+    assert "lower the speed" in problem, problem
+    assert "the wheel grows" in problem, problem
 
 
 def test_the_eye_rule_cuts_where_the_measurements_put_it():
-    """BOTH sides, on the same wheel. The line is a tenth of the ring, and the
-    nine wheels it was set from (probes/meanline_eye_sweep2.py) read 3.21,
-    3.36 and 6.55 percent below it and 16.06, 26.50, 31.37, 37.43, 68.96 and
-    70.71 above — a 2.5x gap, with the shipped sample and the module's own
-    micro turbo on the open side."""
-    d = meanline.design(duty())
+    """BOTH sides of the TENTH, on one wheel. The line is a tenth of the ring,
+    and the nine wheels it was set from (probes/meanline_eye_sweep2.py) read
+    3.21, 3.36 and 6.55 percent below it and 16.06, 26.50, 31.37, 37.43, 68.96
+    and 70.71 above.
+
+    ROUND FOUR re-pointed the duty and says why. On the shipped sample's duty
+    the 12% wheel is no longer "alive": 369.25 mm2 of passage can pass 0.089
+    kg/s of air at the speed of sound and that duty asks for 0.5, so the FLOW
+    rule refuses it — and this test would have been pinning the wrong rule
+    while reading as if it pinned the tenth. At pressure ratio 1.1 the air the
+    eye has to swallow is slow enough that the tenth is the rule that bites
+    (12% open is 1.5x under the choking limit, 8% is 2.3x over it —
+    probes/meanline_round4_testduty.py), so the tenth keeps a test of its own
+    and the old duty is kept below with the answer it now earns."""
+    d = meanline.design(duty(mass_flow=0.5, pressure_ratio=1.1, rpm=12000))
     dead = _wheel_with_eye_blocked_to(d, 0.08)
     open_mm2, available = meanline.eye_passage(dead, d)
     assert 0.07 < open_mm2 / available < 0.09, open_mm2 / available
-    assert meanline.eye_problem(dead, d) is not None
+    problem = meanline.eye_problem(dead, d)
+    assert problem and "inlet eye is not an opening" in problem, problem
 
     alive = _wheel_with_eye_blocked_to(d, 0.12)
     open_mm2, available = meanline.eye_passage(alive, d)
     assert 0.11 < open_mm2 / available < 0.13, open_mm2 / available
     assert meanline.eye_problem(alive, d) is None
+
+    # the duty this test used to ask, with what it earns now
+    sample = meanline.design(duty())
+    still_choked = _wheel_with_eye_blocked_to(sample, 0.12)
+    problem = meanline.eye_problem(still_choked, sample)
+    assert problem and "cannot pass this flow" in problem, problem
 
 
 def test_the_eye_is_read_at_the_top_of_the_wheel_not_below_it():
@@ -865,3 +893,233 @@ def test_both_measured_questions_reach_the_report(monkeypatch):
     assert "inlet eye is not an opening" in joined, joined
     # and the bore, which this wheel does have, is not falsely reported
     assert "shaft bore is not a hole" not in joined, joined
+
+
+# ------ ROUND FOUR: the blade ANGLES are published, so they are measured ----
+
+# `mcp_server._design_compressor` hands an AI `beta1_deg` and `beta2_deg` beside
+# the radii, and until round four nothing compared them to the blade the kernel
+# cuts. Measured three ways, all agreeing (probes/meanline_blade_angle_spline.py
+# reads the OCCT curve's own tangent; probes/meanline_blade_angle_metal.py cuts
+# thin annular shells out of the BUILT blade with real booleans and takes the
+# centre of mass of each; probes/meanline_camber_predict.py checks the
+# arithmetic `meanline.built_blade_angle` uses against both):
+#
+#   at the RIM the metal is 1.1 to 3.1 degrees steeper than `beta2_deg`;
+#   at the blade ROOT it is 6.4 to 28.2 steeper than `beta1_deg` — the
+#       shipped sample's blade leaves its root at 64.1 where 49.4 is published,
+#       and two duties leave it past 90, which is a blade turning INWARD;
+#   at the INLET EYE, the station `beta1_deg` is named for ("inducer blade
+#       angle at shroud"), the metal is 0.05 to 77.6 degrees away from it.
+#
+# name, duty, r1s/r2, the angle IN THE METAL at the inlet eye
+INDUCER_ANGLE = [
+    ("the shipped sample", dict(), 0.350, 48.03),
+    ("the MCP test duty", dict(mass_flow=1.0, rpm=40000), 0.432, 50.00),
+    ("a small turbo", dict(mass_flow=0.1, pressure_ratio=2.0, rpm=120000),
+     0.598, 49.63),
+    ("a micro turbo", dict(mass_flow=0.05, pressure_ratio=1.8, rpm=180000),
+     0.722, 46.94),
+    ("a big turbo", dict(mass_flow=2.0, pressure_ratio=4.0, rpm=25000),
+     0.319, 46.75),
+    ("the largest measured", dict(mass_flow=50.0, pressure_ratio=2.0,
+                                  rpm=3000), 0.345, 47.85),
+    ("backsweep 0", dict(mass_flow=1.0, rpm=40000, backsweep_deg=0.0),
+     0.505, 35.26),
+    ("backsweep -60", dict(mass_flow=1.0, rpm=40000, backsweep_deg=-60.0),
+     0.672, -11.69),
+]
+
+
+@pytest.mark.parametrize("name,kw,ratio,built", INDUCER_ANGLE,
+                         ids=[s[0].replace(" ", "_") for s in INDUCER_ANGLE])
+def test_the_inducer_angle_in_the_metal_is_not_the_one_published(name, kw,
+                                                                 ratio, built):
+    """THE ANGLE THE AIR MEETS, pinned wheel by wheel.
+
+    This test pins a DEFECT, deliberately: the gap is not meanline's to close
+    (`blocks.curved_blade` integrates the camber law in 16 forward-Euler steps
+    and the first one advances the radius by 73% of itself), and the day it is
+    closed this file must be read again rather than quietly kept green.
+
+    The worst of these is a backsweep of -60: the design publishes an inducer
+    angle of +65.9 degrees and the metal at the eye leans -11.7 — the other
+    way. tests/test_mcp_server.py blesses that backsweep."""
+    d = meanline.design(duty(**kw))
+    assert d.inducer_shroud_radius / d.tip_radius == pytest.approx(ratio,
+                                                                   abs=0.001)
+    got = meanline.built_blade_angle(d, d.inducer_shroud_radius)
+    assert got == pytest.approx(built, abs=0.05), name
+    # the wheels whose eye sits far out have no chance of carrying beta1: the
+    # camber runs beta1 at the ROOT and ramps it linearly in radius
+    assert (abs(got - d.beta1_deg) > 4.0) == (ratio > 0.40), (name, got,
+                                                              d.beta1_deg)
+
+
+def test_the_predicted_blade_angle_is_the_one_in_the_metal():
+    """The arithmetic above says what `blocks.curved_blade` WILL draw, so it
+    has to be checked against what it DID draw — with booleans, on the built
+    blade, not against itself. Thin annular shells at three radii; the centre
+    of mass of each chunk is the camber there, and the angle between two of
+    them is the blade angle.
+
+    This is also the guard on `_CAMBER_STEPS`: change the integration in
+    `blocks` and this test goes red instead of the design quietly publishing a
+    sentence about a blade that no longer exists."""
+    d = meanline.design(duty())
+    blade = meanline.one_blade(d)
+    ri, ro = 0.75 * d.inducer_hub_radius, d.tip_radius
+    thk = max(0.02 * ro, 1.5)
+    band, step = (ro - ri) / 200.0, 0.01 * (ro - ri)
+
+    def theta_at(r):
+        shell = (Cylinder(radius=r + band / 2.0, height=d.axial_length)
+                 - Cylinder(radius=r - band / 2.0, height=d.axial_length))
+        chunk = blade & (Pos(0, 0, d.axial_length / 2.0) * shell)
+        c = chunk.center()
+        return math.atan2(c.Y, c.X)
+
+    for r in (d.inducer_shroud_radius, 0.5 * (ri + ro), ro - 2.0 * thk):
+        dth = theta_at(r + step / 2.0) - theta_at(r - step / 2.0)
+        measured = math.degrees(math.atan2(r * dth, step))
+        predicted = meanline.built_blade_angle(d, r)
+        assert measured == pytest.approx(predicted, abs=1.5), (r, measured,
+                                                               predicted)
+        # ...and the metal is steeper than the design's own camber law says
+        law = (d.beta1_deg + (d.beta2_deg - d.beta1_deg)
+               * (r - ri) / (ro - ri))
+        assert measured > law, (r, measured, law)
+
+
+def test_the_design_says_where_its_inducer_angle_is_not_the_one_it_builds():
+    """A note, not a refusal: the geometry is sound and the kernel builds it —
+    what is wrong is the SENTENCE, so the sentence is what changes. Same shape
+    as the exit-width clamp round two closed."""
+    d = meanline.design(duty(mass_flow=0.05, pressure_ratio=1.8, rpm=180000))
+    note = " ".join(d.notes)
+    assert "inducer angle" in note, note
+    assert "67.4 degrees" in note, note        # what it publishes
+    assert "46.9 degrees" in note, note        # what it cuts
+    assert "20.5 out" in note, note            # and the gap, in words
+    assert "Lower the speed" in note, note     # the dial that closes it
+    assert "NOTE:" in d.report(), d.report()
+    # ...and it stays quiet where the metal does carry the published angle
+    for kw in (dict(), dict(mass_flow=2.0, pressure_ratio=4.0, rpm=25000),
+               dict(mass_flow=50.0, pressure_ratio=2.0, rpm=3000)):
+        quiet = meanline.design(duty(**kw))
+        assert "inducer angle" not in " ".join(quiet.notes), kw
+
+
+def test_the_width_note_does_not_say_one_times():
+    """`{ratio:,.0f} times` rounded every overstatement from 1.01 to 1.49 to
+    "1 times wider than this flow needs", which is not a sentence. Measured on
+    a 0.01 kg/s blower at 90,000 rpm: 0.88 mm wanted, the 1.00 mm floor built
+    (probes/meanline_round4_kernel.py)."""
+    d = meanline.design(duty(mass_flow=0.01, pressure_ratio=1.3, rpm=90000))
+    note = " ".join(d.notes)
+    assert "exit blade width" in note, note
+    assert "1 times wider" not in note, note
+    assert "14% wider" in note, note
+    # the big overstatements still read as multiples
+    big = meanline.design(duty(pressure_ratio=3.0, rpm=1000))
+    assert "18 times wider" in " ".join(big.notes), big.notes
+
+
+# ------------- and the inlet has to pass the flow the duty asks for ---------
+
+# The tenth of a ring `_EYE_OPEN_FRACTION` asks for cannot ask whether the air
+# fits: that depends on the duty. See `_EYE_CHOKE_MARGIN` for the measurements
+# — 3,178 of 6,273 designs in a grid pass the tenth with a passage that cannot
+# take their own mass flow at the speed of sound, up to 9.4x over.
+
+
+def test_the_choke_flux_is_the_textbook_one():
+    """241.3 kg/s per square metre for air at 288.15 K and 101,325 Pa. The
+    whole rule rests on this number, so it is pinned against the figure any
+    gas-dynamics table prints, not against itself."""
+    flux = meanline._choke_flux(meanline.Duty(mass_flow=1.0,
+                                              pressure_ratio=2.0, rpm=10000))
+    assert flux * 1e6 == pytest.approx(241.3, abs=0.1)
+    # a design carries it, and a hand-built one does not
+    d = meanline.design(duty())
+    assert d.inlet_choke_flux == pytest.approx(flux, rel=1e-9)
+    assert d.mass_flow == 0.5
+
+
+def test_an_inlet_that_cannot_pass_its_own_flow_is_refused():
+    """The wheel the tenth passes and the air cannot get into. A ring standing
+    in the eye, in the shape a test can afford; a quarter of the shipped
+    sample's ring can take about 0.19 kg/s at the speed of sound, and the duty
+    asks for 0.5."""
+    d = meanline.design(duty())
+    blocked = _wheel_with_eye_blocked_to(d, 0.25)
+    open_mm2, available = meanline.eye_passage(blocked, d)
+    assert open_mm2 / available > meanline._EYE_OPEN_FRACTION   # the tenth
+    problem = meanline.eye_problem(blocked, d)                  # passes it
+    assert problem and "cannot pass this flow" in problem, problem
+    assert "0.5 kg/s" in problem, problem            # what was asked
+    assert "speed of sound" in problem, problem      # why that is the ceiling
+    assert "13 blades" in problem, problem           # what is standing in it
+    assert "lower the speed" in problem, problem
+    assert "lower the pressure ratio" in problem, problem
+
+
+def test_a_hand_built_design_is_not_asked_a_question_it_cannot_answer():
+    """`mass_flow` and `inlet_choke_flux` are 0.0 on a CompressorDesign built
+    by an editor, a repair loop or a saved file, exactly as `exit_width_ideal`
+    is. The flow rule then says nothing rather than refusing everything."""
+    d = meanline.design(duty())
+    blocked = _wheel_with_eye_blocked_to(d, 0.25)
+    assert meanline.eye_problem(blocked, d) is not None
+    hand_built = dataclasses.replace(d, mass_flow=0.0, inlet_choke_flux=0.0)
+    assert meanline.eye_problem(blocked, hand_built) is None
+
+
+# name, duty, the percentage the KERNEL measured at 967963d, the choke ratio
+# that passage earns (probes/meanline_round4_numbers.py)
+KERNEL_MEASURED = [
+    ("3.21", dict(mass_flow=0.005, pressure_ratio=1.8, rpm=250000,
+                  backsweep_deg=60.0), 3.21, 21.54),
+    ("3.36", dict(mass_flow=0.005, pressure_ratio=1.1, rpm=100000), 3.36,
+     5.91),
+    ("6.55", dict(mass_flow=0.005, pressure_ratio=1.8, rpm=90000,
+                  backsweep_deg=-20.0), 6.55, 6.19),
+    ("16.06", dict(mass_flow=0.02, pressure_ratio=2.5, rpm=150000), 16.06,
+     3.78),
+    ("26.50", dict(mass_flow=0.005, pressure_ratio=4.0, rpm=90000,
+                   backsweep_deg=0.0), 26.50, 2.63),
+    ("31.37", dict(mass_flow=0.05, pressure_ratio=1.8, rpm=180000), 31.37,
+     1.52),
+    ("37.43", dict(mass_flow=0.1, pressure_ratio=4.0, rpm=250000,
+                   backsweep_deg=25.0), 37.43, 1.99),
+    ("68.96", dict(mass_flow=20.0, pressure_ratio=2.5, rpm=5000), 68.96, 0.88),
+    ("70.71", dict(mass_flow=0.5, pressure_ratio=3.0, rpm=45000), 70.71, 0.95),
+]
+
+
+@pytest.mark.parametrize("name,kw,pct,ratio", KERNEL_MEASURED,
+                         ids=[s[0] for s in KERNEL_MEASURED])
+def test_both_sides_of_the_flow_rule_on_the_wheels_the_kernel_measured(
+        name, kw, pct, ratio):
+    """BOTH SIDES, on nine wheels OpenCASCADE actually built (round three's
+    own calibration set), with no model anywhere in it: the passage is the
+    percentage the kernel read, and the question is what that passage can pass.
+
+    The micro turbo at 1.52x keeps building — measured end to end, 16.0 s,
+    ok=True, one watertight 13-fold solid (probes/meanline_round4_kernel.py) —
+    and the 0.01 kg/s blower at 11.91% open, which the tenth passed, is
+    refused at 2.6x. Two of round three's nine are refused with it, at 3.78x
+    and 2.63x; both were called sound by a fraction that never asked what the
+    duty was."""
+    d = meanline.design(duty(**kw))
+    inner = max(d.inducer_hub_radius, d.bore_radius)
+    available = math.pi * (d.inducer_shroud_radius ** 2 - inner ** 2)
+    open_mm2 = pct / 100.0 * available
+    most = d.inlet_choke_flux * open_mm2
+    assert d.mass_flow / most == pytest.approx(ratio, abs=0.01), name
+    refused_by_tenth = pct / 100.0 < meanline._EYE_OPEN_FRACTION
+    refused_by_flow = d.mass_flow > meanline._EYE_CHOKE_MARGIN * most
+    # every wheel the old rule refused is refused by the new one too
+    assert not refused_by_tenth or refused_by_flow, name
+    # and the corpus's own wheels still build
+    assert (ratio < 2.0) == (not refused_by_flow), name

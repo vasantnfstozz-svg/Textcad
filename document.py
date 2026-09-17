@@ -270,6 +270,41 @@ def _check_modifier_input(op: str, fid: str, part, params: dict | None = None) -
             f"extrude or revolve it first, then {op} the body{extra}")
 
 
+def _params_dict(op: str, params, feature_id: str) -> dict:
+    """A feature's parameters as a dict, or a sentence saying the file's are
+    not one.
+
+    `Document.add` opens a design written by another build without looking
+    (`strict=False`), so `params` is whatever the JSON held. `dict(f.params)`
+    and `params.items()` then ran on it: a LIST there took the WHOLE rebuild
+    down with `TypeError: object is not iterable` (via `_signature`, which
+    runs outside rebuild's per-feature try and catches ValueError only) and a
+    string read `dictionary update sequence element #0 has length 1; 2 is
+    required` in the row (measured 2026-09-17)."""
+    if params is None:
+        return {}
+    if not isinstance(params, dict):
+        raise ValueError(
+            f"'{feature_id}' ({op}): its settings are damaged in the file "
+            f"(they read {params!r}, not a list of name = value) — delete "
+            f"this feature and add it again")
+    return params
+
+
+def _param_items(f):
+    """A feature's parameters to WALK — the Parameters panel, a rename, the
+    tree's `wall*2 = 6` readout.
+
+    The same foreign-file shape as `_params_dict`, but these three only LOOK:
+    a feature whose settings are not a name = value list simply has none to
+    show, and the rebuild is where it is said out loud. Measured 2026-09-17:
+    `params: [1, 2]` made `parameters_json`, `resolved_json` and
+    `rename_parameter` raise `AttributeError: 'list' object has no attribute
+    'items'` — and the first two are on `/api/doc`, so the design could not be
+    opened at all."""
+    return f.params.items() if isinstance(f.params, dict) else ()
+
+
 def _check_numeric_params(op: str, params: dict, feature_id: str,
                           values: dict | None = None) -> None:
     """A NUMBER that is not a number, named — at BOTH doors, in ONE sentence.
@@ -294,7 +329,7 @@ def _check_numeric_params(op: str, params: dict, feature_id: str,
     Unit-neutral on purpose: this also covers angles (degrees) and counts, and
     naming the wrong unit is its own bug."""
     numeric = Document.numeric_params(op)
-    for k, v in (params or {}).items():
+    for k, v in _params_dict(op, params, feature_id).items():
         if k not in numeric:
             continue
         # a FORMULA is accepted where a number is, when it works out today
@@ -633,6 +668,23 @@ FILE_BACKED_OPS = {"import_stl", "import_step"}
 # geometry that has already been built. Documents can still opt out (tests do)
 # by assigning their own dict to `_cache`.
 _SHARED_CACHE: dict = {}
+
+
+def _fail_key(sig: str, f) -> str:
+    """The cache key a REFUSAL is kept under: the signature AND the names the
+    refusal is allowed to say out loud.
+
+    A signature deliberately leaves feature NAMES out — inputs go in by
+    signature, so a rename costs nothing. That is right for geometry, which is
+    the same whatever the feature is called, and wrong for a SENTENCE: since
+    the refusals started naming the feature, a second design's failing row read
+    the FIRST one's name. Measured 2026-09-17: two designs, one with a feature
+    called `boss_height` and one with `rib_depth`, both `extrude {"amount":
+    null}` — the second row said "'boss_height' (extrude): amount must be a
+    number", a feature that is not in that design at all, and the cache is
+    shared by every tab in the process. Geometry stays shared; a refusal is
+    kept per name."""
+    return f"{sig}!{f.id}<{','.join(f.inputs)}"
 
 
 def _name_list(ids, cap: int = 6) -> str:
@@ -1477,6 +1529,8 @@ class Document:
                     self._parts[f.id] = self._parts.get(f.inputs[0])
                 continue
             hit = self._cache_get(sigs[f.id])
+            if hit is None:                  # a REFUSAL is kept per name
+                hit = self._cache_get(_fail_key(sigs[f.id], f))
             if hit is not None:
                 # identical inputs -> identical geometry: skip the build AND
                 # the health check, which together are most of a rebuild
@@ -1538,7 +1592,11 @@ class Document:
                 # who presses the same button again must get a real attempt
                 # instead of yesterday's crash read back to them.
                 if not getattr(e, "transient", False):
-                    self._cache_put(sigs[f.id], None, f.problems, None, None)
+                    # under the FAIL key: the sentence names this feature
+                    # (and sometimes its input), so it may not be read back
+                    # for a feature with another name — see _fail_key.
+                    self._cache_put(_fail_key(sigs[f.id], f), None,
+                                    f.problems, None, None)
             if f.status == "failed":
                 ok = False
 
@@ -1670,6 +1728,17 @@ class Document:
             ins.append(p)
 
         if f.op in CREATORS:
+            # Creators too, since 2026-09-17. Round two left them out because
+            # "every creator already names the parameter AND its unit" — true
+            # of every creator whose numbers must all be POSITIVE
+            # (`blocks._positive` speaks for those), and measurably NOT true of
+            # `sketch`, whose `offset` may legitimately be 0 or negative:
+            # `{"offset": null}` built silently at Z = 0 and `{"offset": true}`
+            # at Z = 1, both green, and a list there read `TypeError: float()
+            # argument must be …` (probes/s10_r3_creator_door.py). A silent
+            # wrong PLACEMENT is the worst class there is, so the file door
+            # now says what the authoring door has always said.
+            _check_numeric_params(f.op, f.params, f.id, self.param_values)
             return CREATORS[f.op](**self._clean(self._resolved(f)))
         if f.op in MODIFIERS:
             if len(ins) != 1:
@@ -1677,9 +1746,8 @@ class Document:
             _check_modifier_input(f.op, f.inputs[0], ins[0], f.params)
             # AFTER the kind check: the kind of the input is the more basic
             # fact, and a sketch fed to fillet is not fixed by typing a radius.
-            # Modifiers only — every creator already names the parameter AND
-            # its unit ("plate: width must be a number in mm (got None)"), and
-            # `move` reads a missing offset as 0 on purpose (_move_offsets).
+            # (`move` is the one op left out: it reads a missing offset as 0 on
+            # purpose — _move_offsets.)
             _check_numeric_params(f.op, f.params, f.id, self.param_values)
             kw = self._clean(self._resolved(f))
             if f.op in pattern.SEEDED_OPS and kw.get("seed"):
@@ -1706,8 +1774,9 @@ class Document:
         a string. A formula that does not work out is a sentence naming the
         feature and the parameter."""
         numeric = Document.numeric_params(f.op)
-        out = dict(f.params)
-        for k, v in f.params.items():
+        params = _params_dict(f.op, f.params, f.id)
+        out = dict(params)
+        for k, v in params.items():
             if k in numeric and isinstance(v, str) and not isinstance(v, bool):
                 try:
                     out[k] = paramexpr.evaluate(v, self.param_values)
@@ -1756,7 +1825,7 @@ class Document:
         feats = []
         for f in self.features:
             numeric = Document.numeric_params(f.op)
-            for k, v in f.params.items():
+            for k, v in _param_items(f):
                 if k in numeric and isinstance(v, str) and not isinstance(v, bool):
                     try:
                         if name in paramexpr.names_in(v):
@@ -1839,7 +1908,7 @@ class Document:
                            for k, v in self.parameters.items()}
         for f in self.features:
             numeric = Document.numeric_params(f.op)
-            for k, v in list(f.params.items()):
+            for k, v in list(_param_items(f)):
                 if k in numeric and isinstance(v, str) and not isinstance(v, bool):
                     f.params[k] = paramexpr.rename_in(v, old, new)
         self._eval_parameters()
@@ -1862,7 +1931,7 @@ class Document:
         to show `wall*2 = 6`; a formula that does not work out maps to None."""
         numeric = Document.numeric_params(f.op)
         out = {}
-        for k, v in f.params.items():
+        for k, v in _param_items(f):
             if k in numeric and isinstance(v, str) and not isinstance(v, bool):
                 try:
                     out[k] = paramexpr.evaluate(v, self.param_values)
@@ -2332,7 +2401,7 @@ class Document:
             badge = {"ok": "[OK]", "failed": "[FAIL]", "stale": "[ ? ]"}[f.status]
             sup = " (suppressed)" if f.suppressed else ""
             src = f" <- {','.join(f.inputs)}" if f.inputs else ""
-            ps = ", ".join(f"{k}={v}" for k, v in f.params.items()
+            ps = ", ".join(f"{k}={v}" for k, v in _param_items(f)
                            if not isinstance(v, list))
             lines.append(f"  {badge} {f.id}: {f.op}({ps}){src}{sup}")
             for p in f.problems:

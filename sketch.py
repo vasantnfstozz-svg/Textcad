@@ -2570,7 +2570,58 @@ def assert_every_lump_hollowed(solid, out, direction: str, walls: str) -> None:
 # of it: a body whose surface is MOSTLY small holes has correct walls of
 # `1 + t/2r`, so the two sides really are converging, and anything tighter
 # would start refusing the user's drilled plates.
+#
+# 2026-09-17, the review of that re-calibration: the two sides do not converge,
+# they OVERLAP, and no constant here can ever separate them. The sweep behind
+# the numbers above drilled its holes into a 60 x 60 x **10** plate and never
+# varied the thickness, which is the one dimension that decides the answer —
+# a drilled plate's ratio is `1 + (hole area / area) * t/2r`, so the same
+# drilling in a THICKER plate has more hole wall per flat face and climbs
+# towards the hole's own `1 + t/2r` without becoming any harder to shell.
+# Measured exactly, with no sampling error at all, against the closed form for
+# a drilled box (probes/shell_skin_thick_plate_probe.py):
+#
+#   50 x 50 x 60, 81 holes of r 0.4 at 5 mm pitch, t = 1.8:
+#       95,594.085 mm3 of walls against a closed-form 95,594.085 — EXACT to
+#       every digit, valid, watertight, health clean — and it reads 1.8229,
+#       ABOVE the 1.6569 that the comment above calls the lowest wrong result
+#       on record. The same body reads 1.6935 at t = 1.5 and 1.4709 at t = 1.
+#   60 x 60 x 40, 49 holes of r 0.5 at 8 mm pitch (3 mm webs), t = 2:
+#       64,200.679 against a closed-form 64,200.679, and it reads 1.4030.
+#
+# So a ceiling of 1.35 refuses a shell the kernel builds perfectly, and there
+# is no number that both allows 1.8229 and refuses 1.6569. The ratio is kept —
+# it is the cheap first question and every wrong result on record clears it —
+# but a refusal now needs a SECOND, independent answer as well.
 _SHELL_SKIN_FACTOR = 1.35
+
+# That second question is the one the direction corpus of this range already
+# wrote down and did not act on: the walls over the MEAN of the two surfaces
+# they lie between, `out.area / 2 * t`. That is the coarea formula, so it is
+# pinned near 1.0 by geometry rather than by calibration — the trapezoid is
+# exact when the offset surface's area moves linearly with depth, and a hole,
+# whose area does move linearly, is exactly the feature that sends the other
+# ratio up. Measured on every result on record (probes/shell_skin_thick_plate_-
+# probe.py, probes/shell_skin_direction_corpus.py):
+#
+#   SOUND, and reaching the first gate: 1.0054 / 1.0059 / 1.0114 / 1.0116 /
+#       1.0155 / 1.0190 / 1.0283 — the drilled plates above, whose `area * t`
+#       ratios run 1.21 to 1.82.
+#   SOUND, everything else: 0.96 to 1.0018 over the gauntlet corpus at nine
+#       thicknesses in BOTH directions, and one outlier at 1.3725 (the oneplus
+#       case at t = 0.5, where the walls nearly meet and the inner surface
+#       collapses) — which never reaches this question, its first ratio being
+#       1.0559.
+#   WRONG: 1.9183 and 5.4354 (the user's own designs), 2.7116 and 3.3129 (the
+#       100-hole plate at t = 1.0 and 1.3, the two this range was built on),
+#       4.1249 (the 49-hole plate at t = 3, where the kernel hands the body
+#       back).
+#
+# 1.5 sits 1.46x above the highest SOUND result that can reach it and 1.28x
+# below the lowest WRONG one — and because the gate is an AND, this can only
+# ever ALLOW more than the ratio alone did: no shell that builds today is
+# refused by adding it.
+_SHELL_COAREA_FACTOR = 1.5
 
 
 def assert_walls_could_be_a_skin(solid, out, t: float, direction: str, walls: str) -> None:
@@ -2593,10 +2644,15 @@ def assert_walls_could_be_a_skin(solid, out, t: float, direction: str, walls: st
     the corpus. Dividing by `area * t` normalises that away: the same plate
     reads 0.72 while the wrong result reads 2.72.
 
-    The factor and the three corpora behind it are above `_SHELL_SKIN_FACTOR`.
-    It is a ceiling, not a theorem: a body whose surface is mostly CONCAVE
-    detail has inner parallel surfaces larger than its outer one, which is
-    exactly why the margin is not tighter.
+    TWO questions, both of which must say "this is the body" before a refusal
+    stands, and the corpora behind both numbers are above `_SHELL_SKIN_FACTOR`
+    and `_SHELL_COAREA_FACTOR`. Neither is a theorem: a body whose surface is
+    mostly CONCAVE detail has inner parallel surfaces larger than its outer
+    one, which is why the first ratio alone cannot decide — measured, a
+    perfectly correct shell of a deeply drilled plate reaches 1.8229 of
+    `area * t`, past the lowest WRONG result on record, while its walls over
+    the mean of the two surfaces read 1.0155 where every wrong result reads
+    1.9183 or more.
 
     OUTSIDE shells are not judged here, and since 2026-09-17 that is a
     measurement and not an omission. The same corpus at the same nine
@@ -2610,13 +2666,12 @@ def assert_walls_could_be_a_skin(solid, out, t: float, direction: str, walls: st
     right). No constant can mean the same thing outward, so none is invented;
     an outside shell keeps every other check and not this one.
 
-    One number from that run is worth passing on rather than acting on: the
-    walls over the MEAN of the two surfaces they lie between, `out.area / 2 * t`,
-    sat at 1.0000 +/- 0.02 on every sound outward result and read 1.9183 and
-    5.4354 on the two wrong inward ones. A normaliser that means the same thing
-    in both directions would be a better guard than this one — and it is a new
-    bound, which wants its own calibration and its own corpus of wrong results
-    before it decides anything."""
+    That outward run also wrote down the second question this now asks — the
+    walls over the MEAN of the two surfaces they lie between — as something
+    worth passing on rather than acting on. It is acted on now, INWARD only and
+    only as the second half of an AND, so it can allow and never refuse; the
+    numbers are above `_SHELL_COAREA_FACTOR`. Outward it still decides nothing,
+    for the reason in the paragraph above."""
     if direction != "inside":
         return
     import inspector                                 # local: avoids an import cycle
@@ -2626,6 +2681,13 @@ def assert_walls_could_be_a_skin(solid, out, t: float, direction: str, walls: st
         return                                       # nothing to judge against
     skin = area * t
     if v_out <= _SHELL_SKIN_FACTOR * skin:
+        return
+    # the second question: are these walls also too heavy for the two surfaces
+    # they actually lie between? A drilled plate says no — that is the whole
+    # point of asking twice — and a body handed back as its own hollow has no
+    # inner surface at all, so it says yes twice as loudly
+    mean = inspector._try(lambda: float(out.area))
+    if mean and v_out <= _SHELL_COAREA_FACTOR * (mean / 2.0) * t:
         return
     raise ValueError(
         f"shell: {walls} came back as the body itself, not as walls — the kernel "
@@ -2688,13 +2750,35 @@ _DEPTH_STATIONS_TO_OPENING = (1.0, 0.9)
 # rankings in `_seeds_for_the_climb` walks uphill, and how many steps each gets.
 _DEPTH_CLIMB_SEEDS = 3
 _DEPTH_CLIMB_STEPS = 40
-# ... and the whole climb's budget in distance measurements: no more than the
-# three seeds it used to take could already spend, however many it now draws.
-# Measured 2026-09-17 (probes/shell_depth_seed_cost_probe.py): a measurement
-# costs about 0.12 s on a 330-face body, so nine unbudgeted seeds took its
-# refusal path from 17.9 s to 47.3 s and answered exactly the same number. The
-# budget is what makes a better-ORDERED seeding free.
-_DEPTH_CLIMB_CALLS = _DEPTH_CLIMB_SEEDS * _DEPTH_CLIMB_STEPS
+# ... and the whole climb's budget in distance measurements, shared by every
+# seed, because nine seeds of forty steps could in theory spend 369 and a
+# measurement costs about 0.12 s on a 330-face body.
+#
+# It was `_DEPTH_CLIMB_SEEDS * _DEPTH_CLIMB_STEPS` — 120, "no more than the
+# three seeds it used to take" — and 2026-09-17's review measured that number
+# STARVING the two rankings the same commit added. The three DEEPEST seeds are
+# spent first and can take 41 each, so on a body whose deep seeds run their
+# full forty steps there is nothing left for the rankings added beside them,
+# and the seeding is the old one wearing a new coat. Measured
+# (probes/shell_depth_seed_starvation_probe.py): the slab with a fat post —
+# the body the THIRD ranking exists for, and whose 17.0000 -> 17.2160 the
+# docstring below records — answers 17.0000 at a budget of 120 and 17.2160 as
+# soon as the budget lets the seeds run; the wedge in the slab answers 12.4156
+# against 12.4444. Re-ordering does not help: spending the budget round-robin
+# across the three rankings instead of deepest-first answers IDENTICALLY on all
+# 17 bodies (probes/shell_depth_seed_order_probe.py), because the answer sits
+# on a seed that the first three exhaust the budget before reaching, whichever
+# three they are.
+#
+# So the budget is set from what the climb actually SPENDS when nothing stops
+# it, not from what nine seeds could spend in theory. Measured over the four
+# plateau bodies, the gauntlet corpus, the four committed crash fixtures and
+# drilled plates of 6x6, 12x12 and 18x18 holes (up to 330 faces), the unstopped
+# spend is 3 to 172 and never once approaches 369 — seeds terminate early
+# because the step halves out. 200 covers every one of them with margin, and
+# measured on the 330-face body it costs nothing at all: its climb stops itself
+# at 106 either way.
+_DEPTH_CLIMB_CALLS = 200
 
 
 def _barycentres(k: int) -> tuple:
@@ -2914,10 +2998,23 @@ def _seeds_for_the_climb(seen: list, deepest: float, tol: float) -> list:
         ranked #13 by depth and #132 by room) and climbs up into the post.
 
     Measured over the four bodies, against a grid oracle: the wedge in a slab
-    12.0000 -> 12.4461 (oracle 12.4300), the slab with a post 17.0000 ->
+    12.0000 -> 12.4444 (oracle 12.4300), the slab with a post 17.0000 ->
     17.2160 (17.2047), the 180 mm draft prism unchanged at 15.3405, the ramped
     plate unchanged at 12.2987 — that last one is the climb's own limit and not
-    the seeding's: climbing all 160 of its stations reaches 12.2987 too."""
+    the seeding's: climbing all 160 of its stations reaches 12.2987 too. Those
+    numbers are what the SHIPPED code answers; they were first written down
+    from a run with no budget on the climb, and until 2026-09-17's review the
+    budget of 120 meant the shipped code answered 12.4156 and 17.0000 instead
+    (see `_DEPTH_CLIMB_CALLS`).
+
+    The ramped plate is worth one more line, because it is the one live cost of
+    the residual: the kernel builds walls of 12.36, 12.43, 12.49, 12.56 and
+    12.62 mm on it SOUND — cavities of 42.9 down to 2.7 mm3, valid, watertight,
+    health clean — and this guard refuses all five, saying "walls must be under
+    12.2987 mm" (probes/shell_depth_residual_band_probe.py). Fixing it is not a
+    seeding change: the climb steps away from the ONE nearest point, which
+    stalls where the inscribed sphere touches on two sides at once, and that is
+    a different piece of work."""
     deep, room = [], []
     for d0, q0, bound in seen:
         deep.append((d0, d0, q0))
