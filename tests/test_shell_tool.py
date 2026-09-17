@@ -633,14 +633,63 @@ def test_a_correct_shell_that_is_almost_a_block_still_builds():
 
 
 def test_the_skin_ceiling_sits_above_every_sound_result_ever_measured():
-    """Calibrated, not guessed (probes/shell_wall_bound_corpus.py, 2026-09-14):
-    over the gauntlet corpus and the committed crash bodies at nine thicknesses
-    from 0.2 to 8 mm, a sound CLOSED hollow measured 0.61-1.056 of `area * t`
-    and a sound OPEN one 0.61-0.955. Above 1 is real and expected — a surface
-    that is mostly CONCAVE has inner parallel faces larger than its outer ones
-    — so the ceiling has to clear it with room."""
-    assert sk._SHELL_SKIN_FACTOR >= 1.056 * 1.5, "no margin over the measured ceiling"
-    assert sk._SHELL_SKIN_FACTOR <= 2.72 / 1.25, "no margin under the result it must catch"
+    """Calibrated over THREE corpora, not guessed, and moved down from 2.0 on
+    2026-09-17 because 2.0 was measured letting a wrong result through.
+
+      * the gauntlet corpus and the committed crash bodies, nine thicknesses
+        from 0.2 to 8 mm (probes/shell_wall_bound_corpus.py): the highest a
+        sound closed hollow reaches is 1.0559;
+      * the user's own 50 designs at t = 1/2/3, this check patched off
+        (probes/shell_skin_library_probe.py): 38 sound results, highest 1.0377,
+        and the wrong ones at 2.0524 and 2.7189;
+      * concave-heavy plates, every result over 1.0 put to a Monte Carlo oracle
+        (probes/shell_skin_concave_sweep.py) — the one that moved the number:
+        a plate with 196 holes of r 0.8 reads 1.1309 at t = 1.0 and is CORRECT
+        (21,107.5 mm3 against an oracle of 20,908 +/- 187, 1.1 sigma), and the
+        same plate with 100 holes of r 1.0 reads 1.7981 at t = 1.0 and is
+        WRONG by 59 SIGMA (27,429.7 against 16,212 +/- 189).
+
+    So the lowest WRONG result on record is 1.6569, not 2.72 — under the old
+    ceiling — and the highest CORRECT one is 1.1309, not 1.056. The band is
+    narrower than the old numbers suggested and both margins are pinned here so
+    the next person cannot drift it without measuring again."""
+    assert sk._SHELL_SKIN_FACTOR >= 1.1309 * 1.15, "no margin over the highest CORRECT result"
+    assert sk._SHELL_SKIN_FACTOR <= 1.6569 / 1.20, "no margin under the lowest WRONG one"
+
+
+def drilled_plate(r: float, pitch: float):
+    """a 60 x 60 x 10 plate drilled with a square grid of holes — the shape
+    where `1 + t/2r` makes a CORRECT shell read high"""
+    n = int((60.0 - 2 * (r + 1.5)) // pitch)
+    span = n * pitch
+    cut = b3d.Part()
+    for i in range(n + 1):
+        for j in range(n + 1):
+            cut += b3d.Pos(-span / 2 + i * pitch, -span / 2 + j * pitch, 0) * \
+                b3d.Cylinder(r, 30)
+    return (b3d.Part() + b3d.Box(60.0, 60.0, 10.0)) - cut
+
+
+def test_a_wrong_hollow_the_old_ceiling_of_2_let_through():
+    """100 holes of radius 1 at 6 mm pitch. At t = 0.8 the kernel is right, at
+    t = 1.0 it is 59 sigma wrong — and the old ceiling of 2.0 passed the wrong
+    one, because it reads 1.7981.
+
+    The oracle is Monte Carlo over the interior, the walls being exactly the
+    material within t of the boundary (probes/shell_skin_oracle_probe.py,
+    probes/shell_skin_concave_sweep.py): 12,768 +/- 182 at t = 0.8 against the
+    kernel's 12,759.9, and 16,212 +/- 189 at t = 1.0 against its 27,429.7 —
+    11,218 mm3 of walls that are not there. At t = 1.3 it hands the whole body
+    back and that reads 1.6569, which is the lowest wrong result on record and
+    what sets the ceiling's upper margin."""
+    plate = drilled_plate(1.0, 6.0)
+    assert plate.volume == pytest.approx(32858.407, rel=1e-6)
+    out = healthy(sk.shell(plate, 0.8))
+    assert out.volume == pytest.approx(12759.862, rel=1e-5)
+    assert out.volume / (plate.area * 0.8) == pytest.approx(1.0456, abs=1e-3)
+    with pytest.raises(ValueError, match="came back as the body itself") as ei:
+        sk.shell(plate, 1.0)
+    assert "27,429.7" in str(ei.value), "the sentence names what the kernel returned"
 
 
 def test_the_skin_ceiling_leaves_outside_shells_alone():

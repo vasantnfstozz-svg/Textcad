@@ -2352,12 +2352,41 @@ def assert_every_lump_hollowed(solid, out, direction: str, walls: str) -> None:
 
 
 # How many times `area * t` the walls of an inward shell may measure before the
-# result is refused as the body itself. Calibrated 2026-09-14, not guessed
-# (probes/shell_wall_bound_corpus.py): across the gauntlet corpus and the
-# committed crash bodies, nine thicknesses from 0.2 to 8 mm, every SOUND closed
-# hollow landed between 0.61 and 1.056, and every sound OPEN one between 0.61
-# and 0.955. The silent wrong result this exists for reads 2.72.
-_SHELL_SKIN_FACTOR = 2.0
+# result is refused as the body itself. Re-calibrated 2026-09-17 over THREE
+# corpora and moved down from 2.0, because 2.0 was measured to let a wrong
+# result through:
+#
+#   * the gauntlet corpus and the committed crash bodies, nine thicknesses from
+#     0.2 to 8 mm (probes/shell_wall_bound_corpus.py): the highest a SOUND
+#     closed hollow reached is 1.0559 (the oneplus case at t = 0.5);
+#   * the user's own 50 designs at t = 1/2/3, the check patched off so a result
+#     it would refuse is still measured (probes/shell_skin_library_probe.py):
+#     38 sound results, the highest 1.0377, and four wrong ones at 2.0524 and
+#     2.7189;
+#   * concave-heavy plates whose `t/2r` is dialled straight through the danger
+#     zone, every result over 1.0 put to an independent Monte Carlo oracle
+#     (probes/shell_skin_concave_sweep.py). This is the one that moved the
+#     number. A hole of radius r shelled at t leaves an annulus, so its own
+#     ratio is `1 + t/2r` and rises with t — and the sweep found BOTH edges of
+#     the real band there:
+#         a 60 x 60 x 10 plate, 196 holes of r 0.8 at 4 mm pitch, t = 1.0:
+#             21,107.5 mm3 of walls against an oracle of 20,908 +/- 187 (1.1
+#             sigma) — CORRECT, and the highest correct result on record at
+#             1.1309;
+#         the same plate with 100 holes of r 1.0 at 6 mm pitch, t = 1.0:
+#             27,429.7 mm3 against an oracle of 16,212 +/- 189 — 59 SIGMA out,
+#             11,218 mm3 of "walls" that are not there, and it reads 1.7981;
+#             at t = 1.3 the kernel hands the whole body back (32,858.3 against
+#             20,464 +/- 188) and that reads 1.6569.
+#
+# So the lowest WRONG result on record is 1.6569, not 2.72, and the old ceiling
+# of 2.0 passed both of those silently. 1.35 sits 1.19x above every correct
+# result ever measured and 1.23x below the nearest wrong one. That is a
+# narrower band than it looks from the old numbers, and it is the honest state
+# of it: a body whose surface is MOSTLY small holes has correct walls of
+# `1 + t/2r`, so the two sides really are converging, and anything tighter
+# would start refusing the user's drilled plates.
+_SHELL_SKIN_FACTOR = 1.35
 
 
 def assert_walls_could_be_a_skin(solid, out, t: float, direction: str, walls: str) -> None:
@@ -2380,13 +2409,13 @@ def assert_walls_could_be_a_skin(solid, out, t: float, direction: str, walls: st
     the corpus. Dividing by `area * t` normalises that away: the same plate
     reads 0.72 while the wrong result reads 2.72.
 
-    The factor is 2.0 against a measured ceiling of 1.056, so it sits 1.9x
-    above every sound result on record and 1.36x under the one it exists to
-    catch. It is a ceiling, not a theorem: a body whose surface is mostly
-    CONCAVE detail has inner parallel surfaces larger than its outer one (the
-    oneplus case at t = 0.5 is the 1.056), which is exactly why the margin is
-    not tighter. OUTSIDE shells are not judged here — their walls sit outside
-    the old surface and were not measured."""
+    The factor and the three corpora behind it are above `_SHELL_SKIN_FACTOR`.
+    It is a ceiling, not a theorem: a body whose surface is mostly CONCAVE
+    detail has inner parallel surfaces larger than its outer one, which is
+    exactly why the margin is not tighter.
+
+    OUTSIDE shells are not judged here — their walls sit outside the old
+    surface and were not measured."""
     if direction != "inside":
         return
     import inspector                                 # local: avoids an import cycle
