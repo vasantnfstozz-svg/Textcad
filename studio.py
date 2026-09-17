@@ -2153,6 +2153,60 @@ def _trace_face_fit(req: TracePngReq):
             (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2)
 
 
+def _trace_fit_height(data: bytes, m_w: float, m_h: float, rounds: int = 5):
+    """The trace height and the 90° rotate for art fitted into an
+    `m_w` × `m_h` box — from the artwork's aspect measured AT the height the
+    art will actually be traced at. -> (height_mm, rotated).
+
+    The aspect is not a constant of the picture. `imgtrace`'s speckle floor is
+    a physical 0.25 mm at the FINAL scale, so a smaller target drops more
+    pieces and the artwork's own bounding box changes shape with it. Asking
+    once at the default 50 mm and then tracing at the fitted height is the
+    out-of-step bug the shared `_traceable()` was written to close, through
+    the fit door: measured 2026-09-17, one picture reads aspect 1.3467 with
+    3 pieces at 50 mm and 0.3333 with 1 piece at 13.4 mm, and that number
+    sets BOTH the height and the rotate.
+
+    Re-deriving ONCE is not enough — it oscillates. That same picture on a
+    12 × 14 mm face runs 50 → 9.356 → 12.600 → 9.356 for ever, because the
+    ornaments come back at one size and go away again at the other
+    (`probes/imgtrace_fit_height_probe.py`). So every height that is tried is
+    measured at its OWN size, and the winner is the biggest tried height
+    whose own measured artwork really fits the box — a choice over a finite
+    set, which terminates whether or not the iteration settles. Measured on
+    that 12 × 14 face: the shipped rule lays the art down at 9.36 × 3.12 mm,
+    this one stands it up at 4.20 × 12.60 mm."""
+    tried: list[tuple[float, float]] = []
+    height = 50.0                     # imgtrace's own default: the bootstrap
+    for _ in range(max(1, rounds)):
+        if tried:
+            try:
+                aspect = imgtrace.artwork_aspect(data, height)
+            except ValueError:
+                break                 # too small at THIS size — keep what we
+        else:                         # have; the trace re-raises if it must
+            aspect = imgtrace.artwork_aspect(data, height)
+        tried.append((height, aspect))
+        h0 = min(m_h, m_w / aspect)                    # as-is
+        h90 = min(m_w, m_h / aspect)                   # long side along Y
+        nxt = max(1.0, min(1000.0, h90 if h90 > h0 * 1.001 else h0))
+        if any(abs(nxt - h) <= 1e-6 * h for h, _ in tried):
+            break                     # settled, or a cycle we cannot settle
+        height = nxt
+    best = None
+    for h, aspect in tried:
+        tol = 1.0 + 1e-9
+        fits = (False if h <= m_h * tol and h * aspect <= m_w * tol else
+                True if h <= m_w * tol and h * aspect <= m_h * tol else None)
+        if fits is not None and (best is None or h > best[0]):
+            best = (h, fits)
+    if best is None:                  # nothing tried fits; the smallest is
+        h, aspect = min(tried)        # the least bad, and the residual
+        best = (h, min(m_w, m_h / aspect)        # rescale below shrinks it
+                > min(m_h, m_w / aspect) * 1.001)
+    return best
+
+
 def _trace_fitted(data: bytes, req: TracePngReq,
                   box: tuple[float, float, float, float] | None):
     """Trace `data`; with a fit box (w, h, cx, cy in the sketch plane's own
@@ -2171,13 +2225,11 @@ def _trace_fitted(data: bytes, req: TracePngReq,
         fw, fh, fcx, fcy = (float(v) for v in box)
         if fw <= 0 or fh <= 0:
             raise ValueError("the fit box needs a positive width and height")
-        # pick the trace height so the art fits the box both ways —
-        # image_to_entities' fidelity floors then run at the REAL scale
-        aspect = imgtrace.artwork_aspect(data)
-        h0 = req.fit_margin * min(fh, fw / aspect)     # as-is
-        h90 = req.fit_margin * min(fw, fh / aspect)    # long side along Y
-        rotated = h90 > h0 * 1.001     # rotate only when it clearly wins
-        height = max(1.0, min(1000.0, h90 if rotated else h0))
+        # pick the trace height so the art fits the box both ways — measured
+        # at the height it will BE traced at, because imgtrace's fidelity
+        # floors run at the real scale and change which pieces exist
+        height, rotated = _trace_fit_height(data, req.fit_margin * fw,
+                                            req.fit_margin * fh)
     ents, info = imgtrace.image_to_entities(
         data, height, req.tol_mm, req.min_channel_mm,
         connect_pieces=req.connect_pieces)
