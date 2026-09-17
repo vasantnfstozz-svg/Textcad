@@ -27,7 +27,14 @@ import { SETTINGS, unitLabel, fmtLen, toMm } from './settings.js';
 let skEnts = [];          // the sketch's entities
 let skOnFace = null;      // {center, normal, area, inputId, frame} on a face
 let skEditId = null;      // feature id when EDITING an existing committed sketch
-let faceRef = null;       // {outer:[[x,y]..], holes:[[[x,y]..]..]} reference outline
+// {outer:[[x,y]..], holes:[[[x,y]..]..], fit_box:[w,h,cx,cy]} reference outline.
+// fit_box is the SERVER's inscribed box — the biggest rectangle that fits
+// INSIDE this face — and it is carried here because it is the only place
+// anything auto-fitted onto the face can read it (R1: the browser took the
+// outline's min/max instead, which is the face only when the face is a
+// rectangle; on a 30 mm disc that fitted a square 60x60 and put every traced
+// point off the material, the furthest 37.85 mm out).
+let faceRef = null;
 let sketchActive = false; // true while in sketch MODE (in-viewport, non-modal)
 let skName = 'sketch1';   // feature id the sketch will be created/saved as
 let skPlaneName = 'XY';   // origin plane for plane sketches (unused on a face)
@@ -301,7 +308,8 @@ export async function editSketch(feature) {
   skName = feature.id;
   skPlaneName = feature.params.plane || 'XY';
   skPlaneOffset = Number(feature.params.offset) || 0;
-  if (onFace) faceRef = { outer: outline.outer, holes: outline.holes || [] };
+  if (onFace) faceRef = { outer: outline.outer, holes: outline.holes || [],
+                          fit_box: outline.fit_box || null };
   // frame the existing geometry (fall back to the face outline, then origin).
   // entSamplePts, not [e.x, e.y]: a hand-drawn polygon or path stores x:0,y:0
   // with ABSOLUTE points, so a profile drawn around (150, 200) framed the
@@ -342,7 +350,8 @@ export async function openSketchOnFace(faceInfo) {
   skEditId = null;
   resetEditor();
   skName = nextName();
-  faceRef = { outer: data.outer || [], holes: data.holes || [] };
+  faceRef = { outer: data.outer || [], holes: data.holes || [],
+              fit_box: data.fit_box || null };
   pendingFocus = focusOnPoints(faceRef.outer);
   enterMode();
   updateHint();
@@ -418,12 +427,19 @@ export function traceIntoSketch() {
     if (!f) return;
     const req = { entities_only: true };
     if (skOnFace && faceRef?.outer?.length) {
+      // the box the art belongs in is the SERVER's inscribed box (R1) —
+      // /api/face-outline computes it and faceRef carries it here. The
+      // outline's own min/max, which this used to send, is the face only
+      // when the face is a rectangle: on a 30 mm disc it fitted a square to
+      // 60x60 and every traced point landed off the material.
+      // An old response with no fit_box falls back to that bounding box.
       const xs = faceRef.outer.map(p => p[0]);
       const ys = faceRef.outer.map(p => p[1]);
-      req.fit_box = [Math.max(...xs) - Math.min(...xs),
-                     Math.max(...ys) - Math.min(...ys),
-                     (Math.max(...xs) + Math.min(...xs)) / 2,
-                     (Math.max(...ys) + Math.min(...ys)) / 2];
+      req.fit_box = faceRef.fit_box?.length === 4 ? faceRef.fit_box
+        : [Math.max(...xs) - Math.min(...xs),
+           Math.max(...ys) - Math.min(...ys),
+           (Math.max(...xs) + Math.min(...xs)) / 2,
+           (Math.max(...ys) + Math.min(...ys)) / 2];
     } else {
       // min/max are the server's own limits (imgtrace.image_to_entities):
       // the box used to accept 0.1 and the trace then came back "height_mm
@@ -453,7 +469,11 @@ export function traceIntoSketch() {
       const i = out.trace_info || {};
       bus.emit('msg', 'bot',
         `Traced "${f.name}" into this sketch — ${i.width_mm}×${i.height_mm}mm` +
-        (i.face_mm ? `, auto-fitted to the ${i.face_mm.join('×')}mm face` : '') +
+        // face_mm is the FIT BOX, not the face: the biggest rectangle that
+        // fits inside this face. On a 60 mm disc it is 42×42, and calling
+        // that "the face" is a wrong measurement in the user's chat.
+        (i.face_mm ? `, auto-fitted into the ${i.face_mm.join('×')}mm ` +
+                     `rectangle that fits inside this face` : '') +
         (i.rotated ? `, rotated 90° to run along the face (Mirror ↔ then ` +
                      `Mirror ↕ turns it 180°)` : '') +
         `, ${i.contours} outline(s), ${i.holes} hole(s). Move / Scale it if ` +

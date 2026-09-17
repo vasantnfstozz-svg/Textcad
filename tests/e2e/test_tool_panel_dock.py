@@ -123,6 +123,45 @@ def test_the_measure_panel_stays_off_the_chat_at_every_window_size(page, fresh_d
     assert page.errors == []
 
 
+INSIDE = """
+() => { const b = e => { const r = e.getBoundingClientRect();
+    return { l: Math.round(r.left), r: Math.round(r.right) }; };
+  return { win: window.innerWidth,
+           chat: b(document.getElementById('chatPane')),
+           send: b(document.getElementById('chatSend')),
+           scrollable: document.documentElement.scrollWidth > window.innerWidth
+                       && getComputedStyle(document.body).overflow !== 'hidden' }; }
+"""
+
+
+def test_the_chat_column_stays_inside_the_window_on_a_small_screen(
+        page, fresh_doc, server):
+    """The panels are a COLUMN now, so their width comes out of the same row as
+    the chat. Every pane has a floor, and when the floors add up to more than
+    the window the last one — the AI designer — is simply pushed off the right
+    edge. `body { overflow: hidden }`, so there is no scrolling to it: on a
+    1024 px window with one panel open the send button sat entirely outside the
+    window and a failed feature explained itself where no one could read it —
+    the very thing docking the panels was for."""
+    setup(page)
+    pick_top(page)
+    page.locator("button.tab", has_text="Inspect").click()
+    page.click("#ribbon .rbtn[title='Section']")
+    page.wait_for_selector("#sectionDialog", state="visible", timeout=15000)
+    page.wait_for_timeout(400)
+    for w, h in [(1120, 760), (1024, 720)]:
+        page.set_viewport_size({"width": w, "height": h})
+        page.wait_for_timeout(500)
+        m = page.evaluate(INSIDE)
+        assert m["chat"]["r"] <= m["win"] or m["scrollable"], \
+            f"the chat pane ends at {m['chat']['r']} on a {w} px window: {m}"
+        assert m["send"]["r"] <= m["win"] or m["scrollable"], \
+            f"the chat's send button is off the window at {w}: {m}"
+    page.set_viewport_size({"width": 1200, "height": 800})
+    page.click("#scClose")
+    assert page.errors == []
+
+
 def test_a_wider_chat_column_still_pushes_the_panel_clear(page, fresh_doc, server):
     """The splitters move the panes and the panel is a column between two of
     them: dragging the chat wider must move the panel, not be covered by it."""
