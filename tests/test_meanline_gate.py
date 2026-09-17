@@ -215,6 +215,35 @@ def test_build_from_design_refuses_an_impossible_wheel_without_the_kernel():
     assert "metres" in problems and "raise the speed" in problems, problems
 
 
+def test_the_shipped_compressor_example_is_pinned_feature_by_feature():
+    """Nothing in the fast tier rebuilds `compressor` — it is the most
+    expensive example there is (29.5 s on an idle box, 91.6 s with other
+    OpenCASCADE work beside it, probes/compressor_rebuild_cost.py), so a 13-
+    blade build cannot live here. What CAN live here is every number meanline
+    hands the tree, which costs nothing and is what a change to this module
+    would move. The solid those numbers build was measured alongside them:
+    volume 428259.878 mm3, 69 faces, ONE solid, health [] — the figures any
+    later speed-up has to reproduce exactly
+    (probes/meanline_gate_sentences.py)."""
+    import samples
+
+    doc = samples.sample_compressor()
+    p = {f.id: f.params for f in doc.features}
+    assert doc.name == "compressor-PR3-13blades"
+    assert p["hub_body"]["points"] == [[0, 0], [93.8, 0], [93.8, 2.81],
+                                       [9.85, 35.64], [0, 35.64]]
+    assert p["hub"]["radius"] == 4.92
+    assert p["blade"] == {"inner_radius": 7.39, "outer_radius": 93.8,
+                          "inlet_angle_deg": 49.4, "exit_angle_deg": 35.0,
+                          "height": 32.83, "thickness": 1.88}
+    assert p["blades_raw"]["count"] == 13
+    assert p["shroud_cutter"]["points"] == [
+        [5.39, 35.64], [32.81, 35.64], [93.8, 5.359999999999999],
+        [108.8, 5.359999999999999], [108.8, 85.64], [5.39, 85.64]]
+    assert doc.spec == {"symmetry": 13, "n_solids": 1, "tip_radius": 93.8,
+                        "tol": 1.0}
+
+
 def test_the_gate_reads_the_geometry_it_will_actually_build():
     """`exit_width` is CLAMPED to a machinable 1.0 mm minimum, so the gate has
     to judge the clamped number — that is the blade the kernel will cut."""
