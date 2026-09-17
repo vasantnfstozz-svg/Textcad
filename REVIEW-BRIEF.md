@@ -6,14 +6,14 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING** — review the range **`6b9fa0e..36ee69c`** (ONE code
-> commit, `36ee69c`, on branch `worktree-sweep-tool`; merged into master by the
-> build session if the main checkout was clean, else still on the branch — see
-> the merge note at the bottom). Base `6b9fa0e`. Built on Fable by the
-> scheduled Tier 2 build of 2026-09-17 with **no review yet** — the user asked
-> for the tools to be built one by one and the reviews to wait for their own
-> `code review` chats (LAUNCH-PLAN §11, 2026-09-17). More Tier 2 tools may
-> queue here before this is read; they are listed oldest first.
+> **Status: PENDING** — TWO code commits wait, oldest first: **Sweep
+> `36ee69c`** (range `6b9fa0e..36ee69c`, merged into master at `97a6aea`) and
+> **Loft `ec45cf1`** (range `97a6aea..ec45cf1`, section 2 below). Both built on
+> Fable by the scheduled Tier 2 build of 2026-09-17 with **no review yet** —
+> the user asked for the tools to be built one by one and the reviews to wait
+> for their own `code review` chats (LAUNCH-PLAN §11, 2026-09-17). One review
+> chat may take both (they share `tool.js`), or one each; strike a section
+> here when it is done. More Tier 2 tools may queue before this is read.
 
 ## 1. Sweep tool — `36ee69c` (`specs/sweep.md`)
 
@@ -84,10 +84,77 @@ orientation/taper/twist. Also deliberate: `SWEEP_SLANT_DEG = 2` is a NOTE
 threshold, not a refusal (8° costs 1 % of the volume — measured on the
 gauntlet's tapered wall); the in-plane refusal starts at 80°.
 
+## 2. Loft tool — `ec45cf1` (`specs/loft.md`)
+
+**What it is.** The second Tier 2 tool and the framework's FIRST MULTI-INPUT
+tool. `loft` stays a combiner (inputs = the sections, in order) and gains its
+first parameter, `ruled`. New: `sketch.loft_geometry` (the one verdict),
+`toolplan.plan_loft`, `static/js/loft.js`, three small `tool.js` changes
+(`spec.inputs(st)`; a profile tool with `onRepick` takes sketch picks while
+open; a multi-input tool's preview is UNBUILT and re-created when its input
+list changes), `viewport.beginLoftGhost`.
+
+**Where the risk is, ranked:**
+
+1. **The order guard refuses BEFORE the kernel** (`loft_geometry`: the
+   sections' centroids must step one way along the mean normal). Measured on
+   parallel XY planes and one perpendicular pair. Could a CORRECT loft fail
+   it? Sections whose normals differ a lot (a 90° fan of planes) project onto
+   the mean normal in an order that may not be the loft's — the kernel builds
+   such lofts (probe: XY + YZ planes, 785 mm3, valid). Sections whose
+   centroids are laterally far apart but at the same height along the axis
+   (a horizontal loft between two vertical profiles — the planes are
+   parallel, so the mean normal is horizontal and the stations are fine; but
+   two profiles on PERPENDICULAR planes with centroids at equal projection
+   would be called coplanar). Worth a probe on tilted planes: `LOFT_STEP_TOL`
+   is 1e-3 mm absolute.
+2. **The plan REORDERS silently-ish**: the tool puts out-of-order picks in
+   axis order and says so once in chat; the stored feature has the sorted
+   order. A user who WANTS a fold-back (they never do — the kernel's result is
+   self-intersecting) cannot get one. The AI path gets the refusal sentence
+   instead. Two behaviours for one rule: intended, but check the sentence
+   names the order the plan actually stored.
+3. **`tool.js` applyOnce now UNBUILDS a built preview** when
+   `JSON.stringify(spec.inputs(st)) !== st.inputsPushed` — only when
+   `spec.inputs` exists, so every other tool is untouched (Sweep's four and
+   Revolve's journeys were re-run: green, except one Revolve ring-drag flake
+   also seen on master — see below). Check: `unbuild` inside `applyOnce`
+   inside `holdViewport` — the combiner (`st.opId`) goes with it and
+   `applyOp` re-adds it; `st.lastGood` is kept from the previous feature and
+   `settle` would push it into the NEW feature — same params shape, fine, but
+   worth a look.
+4. **`document._eval` now passes `**params` for loft only** (`_loft(ins,
+   ids=..., ruled=...)`). `op_params("loft")` returns `(("ruled", False),)`
+   and `check_params` accepts it; an OLD saved loft with no params still
+   builds (six in autonomiq-panel / autonomiq-sat-panel — drift zero). A
+   design saved by a NEWER build with an unknown loft param would refuse at
+   `check_params` on edit, not on load — the existing rule.
+5. **`loft_sketches` health uses `check_valid=False`** (the rebuild's policy),
+   so a self-intersecting loft in a CORRECT order (a twisted pair of squares
+   beyond some angle?) would pass health and only the deep check at the end
+   of rebuild flags the body. The 45° twist measured valid; 90° is the same
+   square. Probe 60°–80°.
+6. **Candidates exclude consumed sketches** — but a sketch consumed by THIS
+   loft's own preview is in `taken`, so it stays listed as a section; a
+   sketch consumed by a struck-out feature is offered (suppressed consumers
+   are skipped), matching the framework's profile list.
+
+**Do not re-report** (LAUNCH-PLAN §10 P3 "Loft's loose ends"): no face
+sections, no rails / end conditions / seam control, no viewport highlight of
+picked profiles, smooth-vs-ruled volume difference, ghost seam twist. Also
+deliberate: the sections list is locked in an edit (the framework never
+rewires a combiner mid-edit); a single-profile OK says "Nothing lofted".
+
+**A timing flake, not this range's:** `tests/e2e/test_revolve_tool.py::
+test_open_from_the_tree_row_and_drag_the_ring` read the angle box as 0 at the
+37.3° drag step once, when run in one process after the four Sweep journeys.
+Re-run alone twice on this branch and twice on master: four passes. The ring
+drag's 40 ms move steps are the likely edge; not touched here.
+
 **Merge note.** The build session merges the branch into master only if the
 main checkout has no modified tracked files at that moment (the user's Opus
 bug-fix chat shares the checkout). If the bottom of this file says the branch
-is unmerged, review it on the branch: `git log master..worktree-sweep-tool`.
+is unmerged, review it on the branch: `git log master..worktree-loft-tool`.
 
 **How the review starts.** The user opens a fresh chat on Opus
 (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section

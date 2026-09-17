@@ -250,7 +250,13 @@ sketch is a Sketch of edges, `sweep` names it as a REFERENCE like a pattern's
 seed, the arrow rides the path's stations, eleven measured guards — the
 kernel calls a bend tighter than the profile VALID at exactly A·L, and
 BuildLine silently drops a doubling-back segment; review pending in the
-brief), Loft (op exists, needs the tool), Text in a sketch (`text` entity —
+brief), **Loft — BUILT 2026-09-17, `ec45cf1`** (`specs/loft.md`: the
+framework's first multi-input tool — `spec.inputs`, profile repicks, a
+preview remade when the input list changes; `sketch.loft_geometry` is the one
+verdict; the guard that matters: sections picked OUT OF ORDER along the axis
+loft into a self-intersecting solid at 1.98 × the honest volume that the
+kernel calls VALID — the op refuses, the tool reorders and says so; `ruled` is
+the first parameter a combiner has; review pending), Text in a sketch (`text` entity —
 names and logos), Section view, **Named parameters** (`wall = 3` once,
 everything follows; the biggest usability win after the tree, needs an
 expression engine), Assemblies/joints (assembly.py exists). Being built one
@@ -1123,7 +1129,7 @@ yet to keep selling simple) and the postponement answers it for now: no licence
 file, which keeps every option open. An open release cannot be taken back.
 
 **Later (the Tier 2 list of §4, in progress since 2026-09-17 — Sweep built
-`36ee69c`):** named parameters, Loft tool, Text entity, section view,
+`36ee69c`, Loft built `ec45cf1`):** named parameters, Text entity, section view,
 assemblies, the user's personal project.
 
 ---
@@ -1207,6 +1213,7 @@ assemblies, the user's personal project.
 
 | Pri | Item | Source |
 |-----|------|--------|
+| P3 | **Loft's loose ends, deliberately not built in the first session** (`specs/loft.md`, `ec45cf1`). (a) A flat FACE of a body is not accepted as a section (Fusion allows it; the sweep/revolve `face_profile` path would carry it, but a loft's inputs are sketches and a face is a body reference — it needs its own op or a face-to-profile feature). (b) No guide rails, no end conditions (tangent / direction), no per-section seam control: a circle-to-square loft twists the way the kernel matches vertices. (c) The picked profiles are shown by the ghost's rings and the panel list, not highlighted in the viewport's own sketch colour. (d) Three-plus sections smooth vs ruled differ by a quarter of the volume (r5-r2-r5: a spline bulging inward) — real, not guarded, said only in the AI note. (e) The plan resamples each outline to 64 points without aligning seams, so the ghost between a circle and a square may show a slight twist the solid does not have. | Tier 2 build 2026-09-17 |
 | P3 | **Sweep's loose ends, deliberately not built in the first session** (`specs/sweep.md`, `36ee69c`). (a) The Add Feature dialog renders `path` as a text box; the tool's panel has the real list (the plan's `paths`), so the AI / dialog path types an id. (b) While the arrow is DRAGGED it slides along the tangent of the station it started from and snaps back onto the path on release; Fusion's handle rides the curve live. (c) The Pappus check (volume = area × length to 2 %) guards ONE-face profiles only: a second face off the path follows a trajectory of its own length, so a multi-profile sweep is judged by validity alone. (d) The tree's corner-radius editor (`cornerlib.set_arc_radius`) on an OPEN path is untested. (e) Orientation (Fusion's Perpendicular / Parallel), taper and twist are not offered. | Tier 2 build 2026-09-17 |
 | P2 | **The trace's ground rule turns on a 5%-of-the-picture threshold, and that is a knife edge.** A 13 px dark scan edge traces correctly; **16 px traces the negative**, and so do a 30 px mount board and a 60 px picture frame. The alternatives were measured rather than guessed: removing the thickness test fixes mount boards AND the heavy-vignette case, but breaks inverse-video art with a counter (a white ring on black), which reads identically from inside. Any threshold has an edge and this one is at least defensible - but the rule has now been rewritten three times, each round scoring itself on its own corpus, so the next person to touch it should score all four rules on all four corpora first (`probes/imgtrace_r4_corpus.py` now runs all four). **And the light-shell half is a coin flip** - measured at +32 / -33 over a 458-picture generator: a margin round a PLATE and a margin round a CARD are the same geometry. The tie-break is that dark-on-light art dominates this product's input (all five traced designs are), so it must not be "simplified" back to symmetric without re-scoring every rule on every corpus. | section 9 rounds three and four, 2026-09-17 |
 | P2 | **Two traced HOLES that touch pinch the face: valid, right volume, not watertight.** `_uncross` guarantees no single polygon crosses itself; nothing guarantees two polygons of one sketch do not meet. Two holes touching at exactly 0.000000 mm give a body `is_valid True` with the correct volume, while `inspector.health` says "not manifold/watertight (open shell)". 2 of 450 fuzz traces, and **pre-existing under all three versions of the ground rule** - not introduced by this pass. Not silent (health reports it), hence P2 rather than P0. | section 9 round three, 2026-09-17 |
