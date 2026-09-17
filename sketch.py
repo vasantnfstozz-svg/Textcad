@@ -2414,8 +2414,25 @@ def assert_walls_could_be_a_skin(solid, out, t: float, direction: str, walls: st
     detail has inner parallel surfaces larger than its outer one, which is
     exactly why the margin is not tighter.
 
-    OUTSIDE shells are not judged here — their walls sit outside the old
-    surface and were not measured."""
+    OUTSIDE shells are not judged here, and since 2026-09-17 that is a
+    measurement and not an omission. The same corpus at the same nine
+    thicknesses, run outward (probes/shell_skin_direction_corpus.py): every
+    sound result runs 1.0023 to 1.5233, rising with `t` and with nothing else —
+    the l-bracket 1.4894 at t = 8, the dprism boss 1.4573, the cylinder 1.3840,
+    the plate with a hole 1.5233. That is Steiner's formula, not a kernel
+    fault: growing a body by `t` adds `A*t + M*t^2 + (4/3)*pi*t^3`, so the
+    ratio starts at 1 and rises without any bound the body's own area knows
+    about (a ball of radius 10 grown by 8 mm is 2.01 of its skin and exactly
+    right). No constant can mean the same thing outward, so none is invented;
+    an outside shell keeps every other check and not this one.
+
+    One number from that run is worth passing on rather than acting on: the
+    walls over the MEAN of the two surfaces they lie between, `out.area / 2 * t`,
+    sat at 1.0000 +/- 0.02 on every sound outward result and read 1.9183 and
+    5.4354 on the two wrong inward ones. A normaliser that means the same thing
+    in both directions would be a better guard than this one — and it is a new
+    bound, which wants its own calibration and its own corpus of wrong results
+    before it decides anything."""
     if direction != "inside":
         return
     import inspector                                 # local: avoids an import cycle

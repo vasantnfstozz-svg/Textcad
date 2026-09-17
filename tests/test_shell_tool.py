@@ -692,16 +692,34 @@ def test_a_wrong_hollow_the_old_ceiling_of_2_let_through():
     assert "27,429.7" in str(ei.value), "the sentence names what the kernel returned"
 
 
-def test_the_skin_ceiling_leaves_outside_shells_alone():
-    """Their walls sit OUTSIDE the old surface and were never measured, so they
-    are not judged by this bound (they keep every other check)."""
-    # a 50 mm cube is 125000 mm3 against a 3 mm skin of 6 x 2500 x 3 = 45000,
-    # so handing the body back as its own walls is 2.78x the ceiling
-    cube = b3d.Box(50.0, 50.0, 50.0)
-    assert cube.volume / (cube.area * 3.0) == pytest.approx(2.778, rel=1e-3)
-    assert sk.assert_walls_could_be_a_skin(cube, cube, 3.0, "outside", "walls of 3 mm") is None
+def test_the_skin_ceiling_cannot_be_made_to_mean_anything_outward():
+    """LAUNCH-PLAN section 10 asks whether the same ladder can judge an OUTSIDE
+    shell. Measured, in the outward direction, over the same corpus at the same
+    thicknesses (probes/shell_skin_direction_corpus.py): every sound outward
+    result runs from 1.0023 up to 1.5233, rising with `t` and with nothing else
+    — the l-bracket reads 1.4894 at t = 8, the dprism boss 1.4573, the cylinder
+    1.3840, and the plate with a hole 1.5233.
+
+    That is Steiner's formula and not a kernel fault: growing a body by `t`
+    adds `A*t + M*t^2 + (4/3)*pi*t^3`, so the ratio starts at 1 and rises
+    without any bound the body's own area knows about. A ball of radius 10
+    grown by 8 mm is 2.01 of its skin and exactly right — which is the shape of
+    the wrong result this ceiling exists to catch on the INSIDE. So no constant
+    can mean the same thing outward, and none is invented: an outside shell
+    keeps every other check and not this one.
+
+    The proof that it would really bite: a 50 x 50 x 30 box grown by 8 mm."""
+    cube = b3d.Box(50.0, 50.0, 30.0)
+    out = healthy(sk.shell(cube, 8.0, None, "outside", None))
+    assert bool(out.is_valid) and inspector.closed_shell(out)
+    assert out.volume == pytest.approx(66 * 66 * 46 - 75000, rel=1e-9)
+    grown = out.volume / (cube.area * 8.0)
+    assert grown == pytest.approx(1.4247, abs=1e-3)
+    assert grown > sk._SHELL_SKIN_FACTOR, "this correct result would be refused inward"
+    assert sk.assert_walls_could_be_a_skin(cube, out, 8.0, "outside", "walls") is None
+    # and the same numbers judged as an INSIDE shell are the refusal
     with pytest.raises(ValueError, match="came back as the body itself"):
-        sk.assert_walls_could_be_a_skin(cube, cube, 3.0, "inside", "walls of 3 mm")
+        sk.assert_walls_could_be_a_skin(cube, out, 8.0, "inside", "walls")
 
 
 # ---------------------------------------------------------------------------
