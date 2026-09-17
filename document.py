@@ -270,6 +270,38 @@ def _check_modifier_input(op: str, fid: str, part, params: dict | None = None) -
             f"extrude or revolve it first, then {op} the body{extra}")
 
 
+def _check_numeric_params(op: str, params: dict, feature_id: str) -> None:
+    """A NUMBER that is not a number, named — at BOTH doors, in ONE sentence.
+
+    "8mm" is what a CAD user types, and the tree's text edit passes any
+    non-numeric text through on purpose (edges="all", open_face="top" need
+    it). It used to reach the kernel: BRepPrimAPI_MakeBox answered with twelve
+    lines of C++ overloads in the feature row (measured 2026-09-10, section 5
+    review), so `check_params` started refusing it while AUTHORING.
+
+    A file does not come through that door — `Document.from_data` must always
+    open, whoever wrote it — so the same three forms went on reaching the
+    kernel at REBUILD and came back as raw Python: `extrude {"amount": null}`
+    said "TypeError: float() argument must be a string or a real number, not
+    'NoneType'" and `{"amount": ""}` said "could not convert string to float:
+    ''". Measured 2026-09-17 over every numeric parameter of every op
+    (probes/s10_numeric_null_door.py): 14 such messages across 7 ops, all
+    modifiers. No numeric parameter in the whole registry defaults to None,
+    so None is never a value one of them means — the signature says so
+    itself, which is what makes refusing it safe.
+
+    Unit-neutral on purpose: this also covers angles (degrees) and counts, and
+    naming the wrong unit is its own bug."""
+    numeric = Document.numeric_params(op)
+    for k, v in (params or {}).items():
+        if k not in numeric:
+            continue
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            raise ValueError(
+                f"'{feature_id}' ({op}): {k} must be a number (got "
+                f"{v!r}) — type just the number, without units")
+
+
 KNOWN_OPS = set(CREATORS) | set(MODIFIERS) | set(COMBINERS) | {"move"}
 
 
@@ -953,21 +985,7 @@ class Document:
                 f"'{feature_id}' ({op}) has no parameter "
                 + ", ".join(repr(k) for k in bad)
                 + f" -- it takes {sorted(allowed)}")
-        # A NUMBER that is not a number. "8mm" is what a CAD user types, and
-        # the tree's text edit passes any non-numeric text through on purpose
-        # (edges="all", open_face="top" need it). It used to reach the kernel:
-        # BRepPrimAPI_MakeBox answered with twelve lines of C++ overloads in
-        # the feature row (measured 2026-09-10, section 5 review).
-        numeric = Document.numeric_params(op)
-        for k, v in (params or {}).items():
-            if k not in numeric:
-                continue
-            if isinstance(v, bool) or not isinstance(v, (int, float)):
-                # unit-neutral on purpose: this also covers angles (degrees)
-                # and counts, and naming the wrong unit is its own bug
-                raise ValueError(
-                    f"'{feature_id}' ({op}): {k} must be a number (got "
-                    f"{v!r}) — type just the number, without units")
+        _check_numeric_params(op, params, feature_id)
 
     def get(self, feature_id: str) -> Feature:
         for f in self.features:
@@ -1588,6 +1606,12 @@ class Document:
             if len(ins) != 1:
                 raise ValueError(f"'{f.op}' needs exactly 1 input")
             _check_modifier_input(f.op, f.inputs[0], ins[0], f.params)
+            # AFTER the kind check: the kind of the input is the more basic
+            # fact, and a sketch fed to fillet is not fixed by typing a radius.
+            # Modifiers only — every creator already names the parameter AND
+            # its unit ("plate: width must be a number in mm (got None)"), and
+            # `move` reads a missing offset as 0 on purpose (_move_offsets).
+            _check_numeric_params(f.op, f.params, f.id)
             kw = self._clean(f.params)
             if f.op in pattern.SEEDED_OPS and kw.get("seed"):
                 kw.update(self._seed_parts(f, kw["seed"]))   # the seed's before / after bodies

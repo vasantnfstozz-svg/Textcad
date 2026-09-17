@@ -176,3 +176,120 @@ def test_a_feature_that_has_its_required_parameter_still_builds():
     d.add("e1", "extrude", {"amount": 4}, ["s1"])
     assert d.rebuild() is True
     assert d.get("e1").volume == pytest.approx(314.16, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# Round TWO of the same review: the OTHER way a parameter reaches the row as
+# raw Python. A REQUIRED parameter left OUT is now a sentence (above); one
+# that is present but null or "" was not. MEASURED 2026-09-17 over every
+# numeric parameter of every op (probes/s10_numeric_null_door.py): 14 raw
+# Python messages across 7 ops, every one of them a modifier —
+#   extrude / extrude_face  amount  -> TypeError: float() argument must be a
+#                                      string or a real number, not 'NoneType'
+#                                   -> could not convert string to float: ''
+#   revolve / revolve_face  angle   -> the same two
+#   scale                   factor  -> TypeError: '<=' not supported between
+#                                      instances of 'NoneType' and 'int'
+#   fillet / chamfer     radius,    -> TypeError: '>' not supported between
+#                        length        instances of 'str' and 'int'
+#   with_bolt_circle        count   -> TypeError: '<' not supported between
+#                                      instances of 'NoneType' and 'int'
+# The authoring doors refuse all three forms already (Document.check_params),
+# so this is reachable only through a hand-edited or foreign file — the same
+# door `Document.add(strict=False)` opens on purpose for the unknown-keyword
+# case above. The rebuild now says the SAME sentence the authoring door says,
+# out of the same function, so the two cannot drift.
+# ---------------------------------------------------------------------------
+
+NULL_LEAKS = [
+    ("extrude", {"amount": 4}, "amount", "sketch"),
+    ("revolve", {"axis": "Z", "angle": 180}, "angle", "sketch"),
+    ("scale", {"factor": 2}, "factor", "solid"),
+    ("fillet", {"radius": 1, "edges": "all"}, "radius", "solid"),
+    ("chamfer", {"length": 1, "edges": "all"}, "length", "solid"),
+    ("with_bolt_circle", {"count": 4, "bolt_radius": 1,
+                          "pitch_circle_dia": 14}, "count", "solid"),
+    ("extrude_face", {"face_center": [0, 0, 5], "face_normal": [0, 0, 1],
+                      "amount": 3}, "amount", "solid"),
+    ("revolve_face", {"face_center": [0, 0, 5], "face_normal": [0, 0, 1],
+                      "axis": [[-12, -12], [12, -12]], "angle": 90},
+     "angle", "solid"),
+]
+
+
+def _feature_on(kind: str, op: str, params: dict):
+    d = Document(name="n")
+    if kind == "sketch":
+        # off the Z axis, so `revolve` has a profile it can sweep
+        d.add("s1", "sketch",
+              {"entities": [{"kind": "circle", "x": 12, "y": 0, "r": 4,
+                             "mode": "add"}], "plane": "XZ", "offset": 0.0},
+              [])
+        src = "s1"
+    else:
+        d.add("b1", "plate", {"width": 20, "depth": 20, "thickness": 5}, [])
+        src = "b1"
+    d.add("p1", op, params, [src])
+    d.rebuild()
+    return d.get("p1")
+
+
+@pytest.mark.parametrize("op,base,key,kind", NULL_LEAKS)
+@pytest.mark.parametrize("bad", [None, "", "8mm"])
+def test_a_numeric_parameter_that_is_not_a_number_is_a_sentence(
+        op, base, key, kind, bad):
+    f = _feature_on(kind, op, {**base, key: bad})
+    assert f.status == "failed"
+    msg = " ".join(f.problems)
+    assert msg == (f"'p1' ({op}): {key} must be a number (got {bad!r}) — "
+                   f"type just the number, without units")
+    assert not any(w in msg for w in PYTHON_WORDS), msg
+    assert not any(w in msg for w in KERNEL_WORDS), msg
+
+
+@pytest.mark.parametrize("op,base,key,kind", NULL_LEAKS)
+def test_the_same_feature_with_a_real_number_still_builds(op, base, key, kind):
+    """The half that matters more: the check must not fire on sound work."""
+    f = _feature_on(kind, op, base)
+    assert f.status == "ok", f.problems
+
+
+def test_the_rebuild_says_exactly_what_the_authoring_door_says():
+    """ONE rule, one sentence: typing the bad value into the panel and loading
+    a file that already holds it must read the same."""
+    with pytest.raises(ValueError) as e:
+        Document.check_params("extrude", {"amount": None}, "p1")
+    assert str(e.value) == " ".join(
+        _feature_on("sketch", "extrude", {"amount": None}).problems)
+
+
+def test_move_still_reads_a_missing_offset_as_zero():
+    """`document._move_offsets` takes None as 0 ON PURPOSE (its comment says
+    so), so `move` is deliberately outside the check — measured: it still
+    builds, unmoved."""
+    d = Document(name="m")
+    d.add("b1", "plate", {"width": 20, "depth": 20, "thickness": 5}, [])
+    d.add("m1", "move", {"x": None, "y": 2, "z": None}, ["b1"])
+    assert d.rebuild() is True, d.get("m1").problems
+    assert d.get("m1").volume == pytest.approx(2000.0, abs=0.01)
+
+
+def test_a_creator_keeps_its_own_wording():
+    """The leak was in the modifiers; every creator already named the
+    parameter AND its unit (measured), and that sentence is not replaced."""
+    d = Document(name="c")
+    d.add("c1", "plate", {"width": None, "depth": 20, "thickness": 5}, [])
+    d.rebuild()
+    assert d.get("c1").problems == [
+        "plate: width must be a number in mm (got None) — type just the "
+        "number, no units"]
+
+
+def test_the_kind_of_the_input_is_still_the_more_basic_fact():
+    """A sketch fed to fillet AND a null radius: the user hears about the
+    sketch, because fixing the number would not help."""
+    d = Document(name="k")
+    d.add("s1", "sketch", {"entities": CIRC, "plane": "XY", "offset": 0.0}, [])
+    d.add("p1", "fillet", {"radius": None}, ["s1"])
+    d.rebuild()
+    assert "is a sketch" in " ".join(d.get("p1").problems)
