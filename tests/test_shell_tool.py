@@ -16,6 +16,7 @@ Every geometric claim below is checked against the kernel: volumes against
 formulas, the arrow against the face's own normal.
 """
 import json
+import math
 
 import build123d as b3d
 import pytest
@@ -632,29 +633,114 @@ def test_a_correct_shell_that_is_almost_a_block_still_builds():
     assert out.volume / plate.volume > 0.98, "this case is only interesting if it is near-solid"
 
 
-def test_the_skin_ceiling_sits_above_every_sound_result_ever_measured():
-    """Calibrated over THREE corpora, not guessed, and moved down from 2.0 on
-    2026-09-17 because 2.0 was measured letting a wrong result through.
+def test_no_constant_times_area_can_separate_a_sound_shell_from_a_wrong_one():
+    """The two populations OVERLAP on `walls / (area * t)`, so the first ratio
+    is a first question and never the verdict.
 
-      * the gauntlet corpus and the committed crash bodies, nine thicknesses
-        from 0.2 to 8 mm (probes/shell_wall_bound_corpus.py): the highest a
-        sound closed hollow reaches is 1.0559;
-      * the user's own 50 designs at t = 1/2/3, this check patched off
-        (probes/shell_skin_library_probe.py): 38 sound results, highest 1.0377,
-        and the wrong ones at 2.0524 and 2.7189;
-      * concave-heavy plates, every result over 1.0 put to a Monte Carlo oracle
-        (probes/shell_skin_concave_sweep.py) — the one that moved the number:
-        a plate with 196 holes of r 0.8 reads 1.1309 at t = 1.0 and is CORRECT
-        (21,107.5 mm3 against an oracle of 20,908 +/- 187, 1.1 sigma), and the
-        same plate with 100 holes of r 1.0 reads 1.7981 at t = 1.0 and is
-        WRONG by 59 SIGMA (27,429.7 against 16,212 +/- 189).
+    Measured 2026-09-17 with no sampling error at all, against the closed form
+    for a drilled box (probes/shell_skin_thick_plate_probe.py; the same
+    arithmetic reproduces the kernel's own 21,107.482 on the 196-hole plate to
+    every digit and its 12,759.862 on the 100-hole one):
 
-    So the lowest WRONG result on record is 1.6569, not 2.72 — under the old
-    ceiling — and the highest CORRECT one is 1.1309, not 1.056. The band is
-    narrower than the old numbers suggested and both margins are pinned here so
-    the next person cannot drift it without measuring again."""
-    assert sk._SHELL_SKIN_FACTOR >= 1.1309 * 1.15, "no margin over the highest CORRECT result"
-    assert sk._SHELL_SKIN_FACTOR <= 1.6569 / 1.20, "no margin under the lowest WRONG one"
+      * CORRECT, and the highest on record: a 50 x 50 x 60 block with 81 holes
+        of r 0.4 at 5 mm pitch, shelled inward at 1.8 mm — 95,594.085 mm3 of
+        walls against a closed form of 95,594.085, valid, watertight, health
+        clean — reads 1.8229;
+      * WRONG, and the lowest on record: the 60 x 60 x 10 plate with 100 holes
+        of r 1.0 at t = 1.3, where the kernel hands the whole body back —
+        reads 1.6569.
+
+    1.8229 is ABOVE 1.6569, so there is no ceiling that allows every sound
+    result and refuses every wrong one. What the first ratio still does is
+    separate cheaply and in the safe direction: every wrong result on record
+    clears it, so it can gate a SECOND question rather than decide alone."""
+    assert sk._SHELL_SKIN_FACTOR >= 1.1309 * 1.15, "no margin over the 196-hole plate"
+    assert sk._SHELL_SKIN_FACTOR < 1.8229, \
+        "a ceiling above the highest CORRECT result would let the wrong ones through too"
+
+
+def test_the_coarea_question_is_what_actually_decides_a_refusal():
+    """The second question, and the numbers that place it. The walls over the
+    MEAN of the two surfaces they lie between, `out.area / 2 * t`, is the
+    coarea formula, so it is pinned near 1.0 by geometry rather than by
+    calibration — and a hole, whose offset area moves LINEARLY with depth, is
+    exactly the feature that sends the first ratio up while leaving this one
+    alone. Measured over the gauntlet corpus and the committed crash bodies at
+    nine thicknesses in both directions (probes/shell_skin_direction_corpus.py)
+    and over the drilled blocks (probes/shell_skin_thick_plate_probe.py):
+
+      SOUND and able to reach this question (first ratio over 1.35):
+          1.0054, 1.0059, 1.0114, 1.0116, 1.0155, 1.0190, 1.0283
+      SOUND, everything else: 0.96 to 1.0018, plus one outlier at 1.3725 (the
+          oneplus case at t = 0.5, where the walls nearly meet and the inner
+          surface collapses) — its first ratio is 1.0559, so it never gets
+          here.
+      WRONG, and past every other check: 2.7116 and 3.3129 (the 100-hole plate
+          at t = 1.0 and 1.3), 4.1249 (the 49-hole block at t = 3) and 5.4354
+          (the user's own my-part-5 mirror body at t = 3, the P0 this guard was
+          built for). The 1.9183 the range's own notes quote is my-part-5 at
+          t = 1.5, which `is_valid` already refuses two checks earlier.
+
+    Both margins are pinned here so the next person cannot drift either number
+    without measuring again."""
+    assert sk._SHELL_COAREA_FACTOR >= 1.0283 * 1.25, "no margin over the highest SOUND result"
+    assert sk._SHELL_COAREA_FACTOR <= 2.7116 / 1.5, "no margin under the lowest WRONG one"
+    assert sk._SHELL_COAREA_FACTOR >= 1.3725, \
+        "under the highest sound coarea reading ever measured, in any direction"
+
+
+def drilled_block(L: float, H: float, n: int, r: float, pitch: float):
+    """an L x L x H block drilled with an n x n square grid of through holes.
+
+    The material within `t` of its boundary is exact arithmetic while the grown
+    holes neither merge nor reach the eroded box (`skin_truth` below), which is
+    what makes this body an oracle and not just another sample."""
+    span = (n - 1) * pitch
+    cut = b3d.Part()
+    for i in range(n):
+        for j in range(n):
+            cut += b3d.Pos(-span / 2 + i * pitch, -span / 2 + j * pitch, 0) * \
+                b3d.Cylinder(r, H * 2)
+    return (b3d.Part() + b3d.Box(L, L, H)) - cut
+
+
+def skin_truth(L: float, H: float, n: int, r: float, pitch: float, t: float) -> float:
+    """exact mm3 of material within `t` of that block's boundary"""
+    N, span = n * n, (n - 1) * pitch
+    assert pitch >= 2 * (r + t), "the grown holes merge: the closed form does not apply"
+    assert span / 2 + r + t <= L / 2 - t, "a grown hole reaches the eroded box"
+    core = (L - 2 * t) ** 2 * (H - 2 * t) - N * math.pi * (r + t) ** 2 * (H - 2 * t)
+    return L * L * H - N * math.pi * r * r * H - core
+
+
+def test_a_correct_shell_of_a_deeply_drilled_block_is_not_refused():
+    """The P1 the 1.35 ceiling shipped with: a block full of deep small holes
+    is a body where a PERFECTLY correct inward shell reads high, and 1.35
+    refused it.
+
+    The sweep that set 1.35 drilled its holes into a 60 x 60 x **10** plate and
+    never varied the thickness, which is the dimension that decides the answer:
+    a drilled plate's ratio is `1 + (hole area / area) * t/2r`, so the same
+    drilling in a thicker block has more hole wall per flat face and climbs
+    towards the hole's own `1 + t/2r` without becoming any harder to shell.
+
+    All three thicknesses below match the closed form to every digit the kernel
+    prints, and all three are over the first ceiling — the last one at 1.8229,
+    past the 1.6569 that the range calls the lowest WRONG result on record."""
+    L, H, n, r, pitch = 50.0, 60.0, 9, 0.4, 5.0
+    block = drilled_block(L, H, n, r, pitch)
+    assert block.volume == pytest.approx(147557.098, rel=1e-6)
+    area = block.area
+    for t, ratio in ((1.0, 1.4709), (1.5, 1.6935), (1.8, 1.8229)):
+        want = skin_truth(L, H, n, r, pitch, t)
+        out = healthy(sk.shell(block, t))
+        assert bool(out.is_valid) and inspector.closed_shell(out)
+        assert out.volume == pytest.approx(want, rel=1e-6), "the kernel is exactly right here"
+        assert out.volume / (area * t) == pytest.approx(ratio, abs=1e-3)
+        assert ratio > sk._SHELL_SKIN_FACTOR, "this case is only interesting over the ceiling"
+        # and the question that saves it: the walls really do lie between the
+        # two surfaces they should
+        assert out.volume / (out.area / 2 * t) < 1.05
 
 
 def drilled_plate(r: float, pitch: float):
@@ -681,15 +767,25 @@ def test_a_wrong_hollow_the_old_ceiling_of_2_let_through():
     kernel's 12,759.9, and 16,212 +/- 189 at t = 1.0 against its 27,429.7 —
     11,218 mm3 of walls that are not there. At t = 1.3 it hands the whole body
     back and that reads 1.6569, which is the lowest wrong result on record and
-    what sets the ceiling's upper margin."""
+    what sets the ceiling's upper margin.
+
+    Both wrong thicknesses are refused, and the coarea question is what makes
+    the refusal stand: they read 2.7116 and 3.3129 of the two surfaces their
+    walls are meant to lie between, where the sound one reads 1.0126."""
     plate = drilled_plate(1.0, 6.0)
     assert plate.volume == pytest.approx(32858.407, rel=1e-6)
     out = healthy(sk.shell(plate, 0.8))
     assert out.volume == pytest.approx(12759.862, rel=1e-5)
     assert out.volume / (plate.area * 0.8) == pytest.approx(1.0456, abs=1e-3)
+    assert out.volume / (out.area / 2 * 0.8) == pytest.approx(1.0126, abs=1e-3)
     with pytest.raises(ValueError, match="came back as the body itself") as ei:
         sk.shell(plate, 1.0)
     assert "27,429.7" in str(ei.value), "the sentence names what the kernel returned"
+    # and at 1.3 the kernel hands the whole body back — 1.6569 of its skin, the
+    # lowest wrong result on record, which the old ceiling of 2.0 also passed
+    with pytest.raises(ValueError, match="came back as the body itself") as ei:
+        sk.shell(plate, 1.3)
+    assert "32,858.3" in str(ei.value)
 
 
 def test_the_skin_ceiling_cannot_be_made_to_mean_anything_outward():
@@ -715,11 +811,15 @@ def test_the_skin_ceiling_cannot_be_made_to_mean_anything_outward():
     assert out.volume == pytest.approx(66 * 66 * 46 - 75000, rel=1e-9)
     grown = out.volume / (cube.area * 8.0)
     assert grown == pytest.approx(1.4247, abs=1e-3)
-    assert grown > sk._SHELL_SKIN_FACTOR, "this correct result would be refused inward"
+    assert grown > sk._SHELL_SKIN_FACTOR, "this correct result would trip the first gate inward"
     assert sk.assert_walls_could_be_a_skin(cube, out, 8.0, "outside", "walls") is None
-    # and the same numbers judged as an INSIDE shell are the refusal
+    # …and it would survive the second one even so, which is the point of
+    # asking twice: these walls really do lie between two surfaces of that
+    # area. What no inward result survives is the body handed back as its own
+    # hollow — no inner surface at all, so it reads 4.55 of the mean of one
     with pytest.raises(ValueError, match="came back as the body itself"):
-        sk.assert_walls_could_be_a_skin(cube, out, 8.0, "inside", "walls")
+        sk.assert_walls_could_be_a_skin(cube, cube, 3.0, "inside", "walls of 3 mm")
+    assert cube.volume / (cube.area / 2 * 3.0) == pytest.approx(4.545, abs=1e-3)
 
 
 # ---------------------------------------------------------------------------
@@ -863,25 +963,69 @@ def test_a_uniform_plateau_does_not_outrank_the_taper_it_is_fused_to():
     body = wedge_in_slab()
     assert len(body.solids()) == 1, "the repro is ONE solid, not two lumps"
     assert body.volume == pytest.approx(155657.143, rel=1e-6)
-    assert sk.deepest_material(body, 1e9)[0] == pytest.approx(12.4156, abs=0.03)
-    for t, cavity in ((12.0416, 22.110), (12.1662, 10.524), (12.2909, 3.270)):
+    assert sk.deepest_material(body, 1e9)[0] == pytest.approx(12.4444, abs=0.01)
+    for t, cavity in ((12.0416, 22.110), (12.1662, 10.524), (12.2909, 3.270),
+                      (12.4222, 0.103)):
         out = healthy(sk.shell(body, t))
         assert bool(out.is_valid) and inspector.closed_shell(out)
-        assert body.volume - out.volume == pytest.approx(cavity, rel=0.08)
+        assert body.volume - out.volume == pytest.approx(cavity, rel=0.08, abs=0.03)
     # and past the answer it is still refused, with the right number in it
     with pytest.raises(ValueError, match=r"more than 12\.4\d* mm from the faces"):
         sk.shell(body, 13.0)
 
 
-def test_the_climb_never_spends_more_than_the_three_seeds_used_to():
-    """The seeding draws from three rankings now, so without a budget it would
-    climb nine hills where it climbed three — measured at 47.3 s against 17.9 s
-    on a 330-face body's refusal path, for exactly the same answer
-    (probes/shell_depth_seed_cost_probe.py). The budget is the whole climb's,
-    in distance measurements, and it is what three seeds of forty steps could
-    already spend: the worst case is unchanged and only the ordering is better.
-    Counted, not timed — wall-clock on this box is noise."""
-    assert sk._DEPTH_CLIMB_CALLS == sk._DEPTH_CLIMB_SEEDS * sk._DEPTH_CLIMB_STEPS
+def plateau_pair():
+    """a uniform 20 mm slab with a fat 34 x 34 x 24 post on it: the slab's
+    plateau reads 10.0 everywhere and the deepest material is in the post"""
+    return b3d.Part() + (b3d.Pos(0, 0, 10) * b3d.Box(120, 80, 20)
+                         + b3d.Pos(40, 0, 32) * b3d.Box(34, 34, 24))
+
+
+def test_the_third_ranking_gets_enough_budget_to_reach_the_post():
+    """The body the THIRD ranking ("deepest, and with room") exists for, and
+    the one that showed the climb's shared budget starving the rankings that
+    were added beside it.
+
+    A slab carrying a fat post: the slab's mid-plane is a 10.0 plateau, the
+    post is deeper, and the winning station sits ON the plateau and climbs up
+    into the post. `_seeds_for_the_climb`'s own docstring records 17.0000 ->
+    17.2160 against a grid oracle of 17.2047 — and at a budget of 120 the
+    shipped code answered 17.0000, because the three DEEPEST seeds are spent
+    first, can take 41 measurements each, and leave nothing for the seed the
+    answer is on (probes/shell_depth_seed_starvation_probe.py). Re-ordering
+    does not help; the budget is the whole of it."""
+    body = plateau_pair()
+    assert body.volume == pytest.approx(219744.0, rel=1e-9)
+    assert sk.deepest_material(body, 1e9)[0] == pytest.approx(17.2160, abs=0.01)
+    # the guard now steps out of the way over the whole band it used to refuse,
+    # and the kernel's own refusal is a sentence, not a corrupt body
+    for t in (17.0216, 17.1512, 17.2052):
+        with pytest.raises(ValueError, match="could not offset its faces"):
+            sk.shell(body, t)
+    with pytest.raises(ValueError, match=r"more than 17\.2\d* mm from the faces"):
+        sk.shell(body, 18.0768)
+
+
+def test_the_climb_spends_what_it_measurably_needs_and_no_more():
+    """Nine seeds of forty steps could spend 369 distance measurements, and one
+    costs about 0.12 s on a 330-face body, so the whole climb shares one
+    budget.
+
+    That budget was 120 — "no more than the three seeds it used to take" — and
+    it was measured starving the two rankings the same commit added: the slab
+    with a post answered 17.0000 where the seeding really reaches 17.2160, and
+    the wedge in the slab 12.4156 where it reaches 12.4444. So the number comes
+    from what the climb actually SPENDS when nothing stops it, which is a
+    measurement and not a theoretical worst case: over the plateau bodies, the
+    gauntlet corpus, the four committed crash fixtures and drilled plates up to
+    330 faces, the unstopped spend is 3 to 172 and never approaches 369, since
+    seeds terminate early when the step halves out
+    (probes/shell_depth_seed_starvation_probe.py). On the 330-face body the
+    climb stops itself at 106 whichever budget it is given, so the rise costs
+    nothing there. Counted, not timed — wall-clock on this box swings 3x."""
+    assert sk._DEPTH_CLIMB_CALLS == 200
+    assert sk._DEPTH_CLIMB_CALLS < sk._DEPTH_CLIMB_SEEDS * 3 * (sk._DEPTH_CLIMB_STEPS + 1), \
+        "a budget that nine seeds could not reach is not a budget"
     spent, real = [0], sk._climb_to_the_deepest
 
     def counting(solid, measure, seen, best, tol):
@@ -892,7 +1036,8 @@ def test_the_climb_never_spends_more_than_the_three_seeds_used_to():
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(sk, "_climb_to_the_deepest", counting)
-        for solid in (wedge_in_slab(), box(), b3d.Cylinder(20, 40), draft_wedge()):
+        for solid in (wedge_in_slab(), plateau_pair(), box(),
+                      b3d.Cylinder(20, 40), draft_wedge()):
             spent[0] = 0
             sk.deepest_material(solid, 1e9)            # t = infinity: always climbs
             assert 0 < spent[0] <= sk._DEPTH_CLIMB_CALLS, spent[0]
