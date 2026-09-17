@@ -244,10 +244,18 @@ model, live verified preview, the value box as the second option, Esc cancels.
 | Move / Rotate body | three arrows / ring | body | done | built 2026-09-11 (`specs/move-rotate.md`); `rotate` has a pivot now, "center" from the tool |
 | Combine (Join / Cut) | in the tool's dropdown | two bodies | exist | Intersect stays locked until a real use appears |
 
-**Tier 2 — after launch:** Sweep, Loft (ops exist, need tools), Text in a
-sketch (`text` entity — names and logos), Section view, **Named parameters**
-(`wall = 3` once, everything follows; the biggest usability win after the
-tree, needs an expression engine), Assemblies/joints (assembly.py exists).
+**Tier 2 — after launch:** **Sweep — BUILT 2026-09-17, `36ee69c`**
+(`specs/sweep.md`: the sketch ribbon's PATH tool draws an open chain, a path
+sketch is a Sketch of edges, `sweep` names it as a REFERENCE like a pattern's
+seed, the arrow rides the path's stations, eleven measured guards — the
+kernel calls a bend tighter than the profile VALID at exactly A·L, and
+BuildLine silently drops a doubling-back segment; review pending in the
+brief), Loft (op exists, needs the tool), Text in a sketch (`text` entity —
+names and logos), Section view, **Named parameters** (`wall = 3` once,
+everything follows; the biggest usability win after the tree, needs an
+expression engine), Assemblies/joints (assembly.py exists). Being built one
+by one on Fable from 2026-09-17 with the reviews deferred to the user's own
+`code review` chats (§11).
 
 ---
 
@@ -1114,7 +1122,8 @@ away and match build123d, GPL/AGPL to stop a competitor closing it, or nothing
 yet to keep selling simple) and the postponement answers it for now: no licence
 file, which keeps every option open. An open release cannot be taken back.
 
-**Later:** named parameters, Sweep/Loft tools, Text entity, section view,
+**Later (the Tier 2 list of §4, in progress since 2026-09-17 — Sweep built
+`36ee69c`):** named parameters, Loft tool, Text entity, section view,
 assemblies, the user's personal project.
 
 ---
@@ -1198,6 +1207,7 @@ assemblies, the user's personal project.
 
 | Pri | Item | Source |
 |-----|------|--------|
+| P3 | **Sweep's loose ends, deliberately not built in the first session** (`specs/sweep.md`, `36ee69c`). (a) The Add Feature dialog renders `path` as a text box; the tool's panel has the real list (the plan's `paths`), so the AI / dialog path types an id. (b) While the arrow is DRAGGED it slides along the tangent of the station it started from and snaps back onto the path on release; Fusion's handle rides the curve live. (c) The Pappus check (volume = area × length to 2 %) guards ONE-face profiles only: a second face off the path follows a trajectory of its own length, so a multi-profile sweep is judged by validity alone. (d) The tree's corner-radius editor (`cornerlib.set_arc_radius`) on an OPEN path is untested. (e) Orientation (Fusion's Perpendicular / Parallel), taper and twist are not offered. | Tier 2 build 2026-09-17 |
 | P2 | **The trace's ground rule turns on a 5%-of-the-picture threshold, and that is a knife edge.** A 13 px dark scan edge traces correctly; **16 px traces the negative**, and so do a 30 px mount board and a 60 px picture frame. The alternatives were measured rather than guessed: removing the thickness test fixes mount boards AND the heavy-vignette case, but breaks inverse-video art with a counter (a white ring on black), which reads identically from inside. Any threshold has an edge and this one is at least defensible - but the rule has now been rewritten three times, each round scoring itself on its own corpus, so the next person to touch it should score all four rules on all four corpora first (`probes/imgtrace_r4_corpus.py` now runs all four). **And the light-shell half is a coin flip** - measured at +32 / -33 over a 458-picture generator: a margin round a PLATE and a margin round a CARD are the same geometry. The tie-break is that dark-on-light art dominates this product's input (all five traced designs are), so it must not be "simplified" back to symmetric without re-scoring every rule on every corpus. | section 9 rounds three and four, 2026-09-17 |
 | P2 | **Two traced HOLES that touch pinch the face: valid, right volume, not watertight.** `_uncross` guarantees no single polygon crosses itself; nothing guarantees two polygons of one sketch do not meet. Two holes touching at exactly 0.000000 mm give a body `is_valid True` with the correct volume, while `inspector.health` says "not manifold/watertight (open shell)". 2 of 450 fuzz traces, and **pre-existing under all three versions of the ground rule** - not introduced by this pass. Not silent (health reports it), hence P2 rather than P0. | section 9 round three, 2026-09-17 |
 | P3 | **The bug button's request ring records `"[object Request]"` instead of the URL** for any call three.js makes, because `bugreport.js` stores `String(url)` and the FileLoader passes a `Request` object. Pre-existing from P5b (`c11fd74`). It only fires on a FAILED mesh load (a successful GET is dropped by `worthKeeping`), so it costs a later fix session the URL in the bug folder and never touches geometry. | section 12 round seven, 2026-09-17 |
@@ -1306,6 +1316,16 @@ assemblies, the user's personal project.
 
 ## 11. Decisions log
 
+- **2026-09-17 — the Tier 2 tools are built one by one, on Fable, reviews
+  deferred.** The user's words (04:47, before going out): "start from one tool
+  by one, first sweep use fable for writing code, leave the code review right
+  now, we will do it later … write code every tool one by one". P6 stays on
+  hold. Order: Sweep, Loft, Text entity, Section view, Named parameters. Each
+  tool is built in its own worktree by a scheduled build session, ships with
+  the §8 ritual minus step 8, and leaves `REVIEW-BRIEF.md` at PENDING for the
+  user's next `code review` chat — so several tools may queue there; the
+  brief lists them oldest first. The spec is written before the code and
+  marked approved by default; the user's first try is the approval gate.
 - **2026-09-16 — the launch is postponed and P6 is ON HOLD.** The user's words:
   "we will not do p6 now, just hold it, because we are going to postpone the
   launch". Said the same day three parallel worktree streams closed four P1s
