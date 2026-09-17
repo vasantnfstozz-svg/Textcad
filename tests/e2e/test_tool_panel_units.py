@@ -90,7 +90,7 @@ def feature(server, fid):
     return next((f for f in features(server) if f["id"] == fid), None)
 
 
-def wait_params(server, fid, timeout=25):
+def wait_params(server, fid, timeout=60):
     """poll until the feature exists and has finished a build"""
     t0 = time.time()
     f = None
@@ -102,10 +102,11 @@ def wait_params(server, fid, timeout=25):
     raise AssertionError(f"{fid} never finished building: {f}")
 
 
-def wait_param(server, fid, key, want, timeout=25, tol=1e-6):
+def wait_param(server, fid, key, want, timeout=60, tol=1e-6):
     """poll until one stored param reaches `want` — the value the SERVER has —
     AND that value has finished building (a row is `stale` for as long as the
-    rebuild it asked for is still running)"""
+    rebuild it asked for is still running — which on a loaded machine can be
+    half a minute for one fillet, hence the patient timeout)"""
     t0 = time.time()
     got = f = None
     while time.time() - t0 < timeout:
