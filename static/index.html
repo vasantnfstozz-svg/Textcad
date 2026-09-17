@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=46">
+<link rel="stylesheet" href="/static/css/studio.css?v=47">
 </head>
 <body>
 
@@ -181,7 +181,9 @@
     <label>Path
       <select id="swPath" title="a sketch holding an open line-and-arc chain drawn with the sketch ribbon's Path tool, starting on the profile — clicking such a sketch's row in the tree chooses it too"></select></label>
     <div class="exrow">
-      <label>Distance <span class="unitlabel">(mm)</span> <input id="swDist" type="number" step="any" value="0"></label>
+      <!-- read in the DISPLAY unit like every length box, so settings.js names
+           it (data-unit) — a hard-wired (mm) is how a typed 2 becomes 50.8 -->
+      <label>Distance (<span data-unit>mm</span>) <input id="swDist" type="number" step="any" value="0"></label>
       <label title="sweep the whole path — a path edited longer stays fully swept"><input id="swFull" type="checkbox"> Whole path</label>
     </div>
     <label>Operation
@@ -230,7 +232,7 @@
         <option value="Z" selected>Z</option>
       </select></label>
     <div class="exrow">
-      <label>Offset <span class="unitlabel">(mm)</span> <input id="scOffset" type="number" step="any" value="0"></label>
+      <label>Offset (<span data-unit>mm</span>) <input id="scOffset" type="number" step="any" value="0"></label>
       <label title="hide the other side of the plane"><input id="scFlip" type="checkbox"> Flip</label>
     </div>
     <div id="scStatus" class="exhint"></div>
@@ -620,6 +622,6 @@
     "three/addons/": "/static/vendor/three/0.160.0/addons/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=219"></script>
+<script type="module" src="/static/js/main.js?v=220"></script>
 </body>
 </html>

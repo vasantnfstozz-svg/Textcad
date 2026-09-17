@@ -14,7 +14,7 @@
 
 import { S } from './state.js';
 import { bus } from './bus.js';
-import { beginSection, setSectionOffset, endSection } from './viewport.js';
+import { beginSection, setSectionOffset, endSection, sectionInfo } from './viewport.js';
 import { SETTINGS, toMm, fmtLen } from './settings.js';
 
 const g = id => document.getElementById(id);
@@ -70,6 +70,13 @@ export function initSection() {
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape' && !e.repeat && on && !S.modalTool) closeSection();
   }, true);
-  // the display unit changed: the box re-reads the offset in the new unit
-  bus.on('settings-changed', () => { if (on) writeOffset(readOffset()); });
+  // The display unit changed under an OPEN section panel. Every tool panel is
+  // safe from this (Settings is a ribbon action and modalGuard refuses those
+  // while a tool holds the lock), but a section takes no lock on purpose — so
+  // this is the one box whose number has to be rewritten under the user's
+  // hands. The millimetres are the VIEWPORT's (it owns the plane), never the
+  // box's: re-reading the box under the new unit left the number alone and
+  // silently multiplied what it meant — measured, a plane at 4 mm read as
+  // 4 in and the next click (Flip) moved it to 101.6 mm.
+  bus.on('settings-changed', () => { if (on) writeOffset(sectionInfo().offset); });
 }
