@@ -21,6 +21,7 @@
 import { S } from './state.js';
 import { bus } from './bus.js';
 import { postJSON, planRequest } from './api.js';
+import { SETTINGS, toMm, fmtLen } from './settings.js';
 import { holdViewport, cancelPlanePick, beginProfilePick, cancelProfilePick,
          beginEdgePick, endEdgePick, clearPick, pickWhat,
          profilePickArmed } from './viewport.js';
@@ -37,10 +38,34 @@ const solids = () => feats().filter(f => f.volume != null && !f.suppressed);
 export const g = id => document.getElementById(id);
 export const num = id => Number(g(id).value) || 0;
 export const say = text => bus.emit('msg', 'bot', text);
-/* a handle's value into its box, rounded to what the box can show */
+/* a handle's value into its box, rounded to what the box can show. For an
+   ANGLE or a COUNT — anything the display unit does not touch. */
 export const setBox = (id, v, decimals = 1) => {
   const f = 10 ** decimals; g(id).value = Math.round(v * f) / f;
 };
+
+/* ---------------- LENGTHS: the box is the only thing in the display unit ----
+   Millimetres are the working unit end to end in this browser — the plan, the
+   gizmos, every param the server stores. Settings ▸ Length unit changes only
+   the TEXT in a length box and the word beside it, so the conversion lives at
+   exactly two places: `mm(id)` reads a box AS millimetres, `setLen(id, v)`
+   writes millimetres INTO one. Everything between them stays mm and needs no
+   thought. A count, an angle in degrees and a taper are not lengths: they keep
+   num() and setBox().
+
+   In millimetres `setLen` writes the number itself (an edit that reopens a
+   12.7183 mm feature and presses OK must push 12.7183 back, not a rounded
+   copy); in another unit it writes that unit's own precision, the rule the
+   sketcher's dimension boxes already follow. `decimals` is the granularity in
+   MILLIMETRES a dragged handle rounds to, so a drag reads the same however the
+   screen is labelled. */
+export const mm = id => toMm(num(id));
+export const setLen = (id, v, decimals = null) => {
+  const r = decimals == null ? v : Math.round(v * 10 ** decimals) / 10 ** decimals;
+  g(id).value = SETTINGS.unit === 'mm' ? r : fmtLen(r, false);
+};
+/* a length in mm as a SENTENCE says it ("12 mm", "0.4724 in") */
+export const len = v => fmtLen(v);
 
 /* a backend failure as a sentence: unwrap the Python repr the tree stores
    (moved here from tree.js so a tool can relay WHY its build failed) */

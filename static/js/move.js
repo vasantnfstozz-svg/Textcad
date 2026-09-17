@@ -14,7 +14,7 @@
 // translucent, offset or turned by the change since the last build while a
 // handle is dragged; the real body follows on release.
 
-import { tool, g, num, setBox } from './tool.js';
+import { tool, g, num, mm, len, setBox, setLen } from './tool.js';
 import { beginArrows, endArrows, arrowsDragging, beginTaperRing, endTaperRing,
          setTaperRingAngle, beginAxisLine, endAxisLine,
          beginMoveGhost, setMoveGhost, endMoveGhost } from './viewport.js';
@@ -30,7 +30,8 @@ const along = (axes, v) =>
 
 /* ---------------- Move: three arrows meeting at the moved centre ---------------- */
 const mvBox = k => 'mv' + k.toUpperCase();
-const mvParams = () => ({ x: num('mvX'), y: num('mvY'), z: num('mvZ') });
+// an offset is a LENGTH: typed in the display unit, sent (and planned) in mm
+const mvParams = () => ({ x: mm('mvX'), y: mm('mvY'), z: mm('mvZ') });
 
 function placeArrows(st, plan) {
   endArrows();
@@ -41,8 +42,8 @@ function placeArrows(st, plan) {
     // base = origin + axis·amount must be the meeting point: this arrow rides its own offset
     origin: met.map((c, i) => c - plan.axes[k][i] * p[k]),
     axis: plan.axes[k], amount: p[k], color: ARROW_COLOURS[k],
-    onChange: v => { setBox(mvBox(k), v); ghostMove(st, plan); },
-    onCommit: async v => { setBox(mvBox(k), v); endMoveGhost(); await mv.apply(); },
+    onChange: v => { setLen(mvBox(k), v, 1); ghostMove(st, plan); },
+    onCommit: async v => { setLen(mvBox(k), v, 1); endMoveGhost(); await mv.apply(); },
   })));
 }
 function ghostMove(st, plan) {
@@ -64,7 +65,7 @@ const mv = tool({
      second move of the same body (the plan refuses that) — as Mirror and the
      Patterns already say */
   planExtra: st => (st.featureId ? { own_id: st.featureId } : {}),
-  show(st, p) { for (const k of XYZ) g(mvBox(k)).value = p[k] || 0; },
+  show(st, p) { for (const k of XYZ) setLen(mvBox(k), p[k] || 0); },
   params: mvParams,
   snapshot(f) {
     const p = f.params || {};
@@ -77,7 +78,7 @@ const mv = tool({
       // a new session's zeros) — the ghost's delta is measured from here
       if (!st.shown) st.shown = mvParams();
       placeArrows(st, plan);
-      if (!st.featureId && (num('mvX') || num('mvY') || num('mvZ'))) mv.apply();   // typed before the plan
+      if (!st.featureId && (mm('mvX') || mm('mvY') || mm('mvZ'))) mv.apply();   // typed before the plan
     },
     end() { endArrows(); endMoveGhost(); },
   },
@@ -88,7 +89,7 @@ const mv = tool({
   },
   nothing: 'Nothing moved — the offsets were 0. Open Move again, then drag an arrow or ' +
            'type an offset before OK.',
-  describe: p => `an offset of ${p.x}, ${p.y}, ${p.z} mm`,
+  describe: p => `an offset of ${len(p.x)}, ${len(p.y)}, ${len(p.z)}`,
 });
 
 /* ---------------- Rotate: one ring about the chosen axis, through the centre -------- */

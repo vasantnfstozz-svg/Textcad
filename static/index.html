@@ -209,8 +209,11 @@
       <option value="two">Two sides</option>
     </select></label>
   <div class="exrow">
-    <label>Distance (mm) <input id="exDist" type="number" step="any" value="10"></label>
-    <label id="exDist2Row" style="display:none">Distance 2 (mm) <input id="exDist2" type="number" step="any" value="10"></label>
+    <!-- EVERY length box is typed in the DISPLAY unit (Settings ▸ Length unit),
+         so its label is written by settings.js (data-unit) and never hard-wired:
+         a box labelled mm that is read as inches is how a 2 becomes 50.8. -->
+    <label>Distance (<span data-unit>mm</span>) <input id="exDist" type="number" step="any" value="10"></label>
+    <label id="exDist2Row" style="display:none">Distance 2 (<span data-unit>mm</span>) <input id="exDist2" type="number" step="any" value="10"></label>
   </div>
   <div class="exrow">
     <label>Taper (°) <input id="exTaper" type="number" step="any" value="0"></label>
@@ -272,7 +275,7 @@
 <div id="flDialog" class="toolpanel" style="display:none">
   <div class="exhead">◠ Fillet</div>
   <label>Edges <select id="flProfile" disabled></select></label>
-  <label>Radius (mm) <input id="flValue" type="number" step="any" min="0" value="0"></label>
+  <label>Radius (<span data-unit>mm</span>) <input id="flValue" type="number" step="any" min="0" value="0"></label>
   <label><input id="flChain" type="checkbox" checked
     title="clicking one edge of a smooth rim selects the whole rim (Fusion's tangent chain)"> Tangent chain</label>
   <!-- the selection is made in the viewport and the tree: an edge, a FACE (every
@@ -290,7 +293,7 @@
 <div id="chDialog" class="toolpanel" style="display:none">
   <div class="exhead">◣ Chamfer</div>
   <label>Edges <select id="chProfile" disabled></select></label>
-  <label>Distance (mm) <input id="chValue" type="number" step="any" min="0" value="0"></label>
+  <label>Distance (<span data-unit>mm</span>) <input id="chValue" type="number" step="any" min="0" value="0"></label>
   <label><input id="chChain" type="checkbox" checked
     title="clicking one edge of a smooth rim selects the whole rim (Fusion's tangent chain)"> Tangent chain</label>
   <select id="chOp" style="display:none"><option value="new">New body</option></select>
@@ -312,16 +315,16 @@
       <option value="countersink">Countersink</option>
     </select></label>
   <div class="exrow">
-    <label>Diameter (mm) <input id="hoDia" type="number" step="any" min="0" value="6"></label>
-    <label>Depth (mm) <input id="hoDepth" type="number" step="any" min="0" value="0"></label>
+    <label>Diameter (<span data-unit>mm</span>) <input id="hoDia" type="number" step="any" min="0" value="6"></label>
+    <label>Depth (<span data-unit>mm</span>) <input id="hoDepth" type="number" step="any" min="0" value="0"></label>
   </div>
   <label class="excheck" title="run the hole out through the far side, whatever the thickness">Through all <input id="hoThrough" type="checkbox"></label>
   <div class="exrow">
-    <label id="hoCbDiaRow" style="display:none">Counterbore ⌀ (mm) <input id="hoCbDia" type="number" step="any" min="0" value="0"></label>
-    <label id="hoCbDepthRow" style="display:none">Counterbore depth (mm) <input id="hoCbDepth" type="number" step="any" min="0" value="0"></label>
+    <label id="hoCbDiaRow" style="display:none">Counterbore ⌀ (<span data-unit>mm</span>) <input id="hoCbDia" type="number" step="any" min="0" value="0"></label>
+    <label id="hoCbDepthRow" style="display:none">Counterbore depth (<span data-unit>mm</span>) <input id="hoCbDepth" type="number" step="any" min="0" value="0"></label>
   </div>
   <div class="exrow">
-    <label id="hoCsDiaRow" style="display:none">Countersink ⌀ (mm) <input id="hoCsDia" type="number" step="any" min="0" value="0"></label>
+    <label id="hoCsDiaRow" style="display:none">Countersink ⌀ (<span data-unit>mm</span>) <input id="hoCsDia" type="number" step="any" min="0" value="0"></label>
     <label id="hoCsAngleRow" style="display:none">Countersink angle (°) <input id="hoCsAngle" type="number" step="any" min="1" max="179" value="90"></label>
   </div>
   <select id="hoOp" style="display:none"><option value="new">New body</option></select>
@@ -336,7 +339,7 @@
   <div class="exhead">▢ Shell</div>
   <label>Faces <select id="shProfile" disabled></select></label>
   <div class="exrow">
-    <label>Thickness (mm) <input id="shThickness" type="number" step="any" min="0" value="0"></label>
+    <label>Thickness (<span data-unit>mm</span>) <input id="shThickness" type="number" step="any" min="0" value="0"></label>
     <label>Direction
       <select id="shDirection" title="Inside: the walls grow inward and the outside stays where it is. Outside: the walls are added around the body and the old surface becomes the cavity">
         <option value="inside">Inside</option>
@@ -357,9 +360,9 @@
   <div class="exhead">↗ Move</div>
   <label>Body <select id="mvProfile" disabled></select></label>
   <div class="exrow">
-    <label>X (mm) <input id="mvX" type="number" step="any" value="0"></label>
-    <label>Y (mm) <input id="mvY" type="number" step="any" value="0"></label>
-    <label>Z (mm) <input id="mvZ" type="number" step="any" value="0"></label>
+    <label>X (<span data-unit>mm</span>) <input id="mvX" type="number" step="any" value="0"></label>
+    <label>Y (<span data-unit>mm</span>) <input id="mvY" type="number" step="any" value="0"></label>
+    <label>Z (<span data-unit>mm</span>) <input id="mvZ" type="number" step="any" value="0"></label>
   </div>
   <!-- the op returns the body in its new place: no Join / Cut, no target -->
   <select id="mvOp" style="display:none"><option value="new">New body</option></select>
@@ -419,11 +422,11 @@
   </div>
   <div class="exrow">
     <label>Count 1 <input id="rpCount" type="number" step="1" min="1" value="2"></label>
-    <label>Distance 1 (mm) <input id="rpDist" type="number" step="any" value="0"></label>
+    <label>Distance 1 (<span data-unit>mm</span>) <input id="rpDist" type="number" step="any" value="0"></label>
   </div>
   <div class="exrow">
     <label>Count 2 <input id="rpCount2" type="number" step="1" min="1" value="1"></label>
-    <label>Distance 2 (mm) <input id="rpDist2" type="number" step="any" value="0"></label>
+    <label>Distance 2 (<span data-unit>mm</span>) <input id="rpDist2" type="number" step="any" value="0"></label>
   </div>
   <select id="rpOp" style="display:none"><option value="new">New body</option></select>
   <label id="rpTargetRow" style="display:none">Combine with <select id="rpTarget"></select></label>
@@ -459,9 +462,9 @@
          param, so a read-only number never looks typeable -->
     <div id="meEdit" style="display:none">
       <input id="meInput" type="number" step="any" autocomplete="off">
-      <!-- the one dimension box that said no unit at all; it is typed in mm,
-           like every tool panel -->
-      <span class="punit">mm</span>
+      <!-- the one dimension box that said no unit at all; like every tool
+           panel it is typed in the DISPLAY unit, which settings.js names here -->
+      <span class="punit" data-unit>mm</span>
       <button class="primary" id="meApply">Set</button>
     </div>
     <div id="meKind"></div>
@@ -521,6 +524,6 @@
     "three/addons/": "/static/vendor/three/0.160.0/addons/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=210"></script>
+<script type="module" src="/static/js/main.js?v=211"></script>
 </body>
 </html>

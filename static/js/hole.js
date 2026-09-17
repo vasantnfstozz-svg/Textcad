@@ -16,7 +16,7 @@
 // the real hole, drawn by the kernel, replaces it on release (user, 2026-09-06:
 // the arrow of Extrude and Revolve has one, so must Hole's).
 
-import { tool, g, num, say, setBox } from './tool.js';
+import { tool, g, num, mm, len, say, setBox, setLen } from './tool.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          beginExtrudeGhost, setExtrudeGhost, hideExtrudeGhost, endExtrudeGhost,
          beginHoleMarker, setHoleMarker, endHoleMarker } from './viewport.js';
@@ -38,8 +38,8 @@ function params(st) {
   const kind = g('hoKind').value;
   const src = (st && st.plan) || (st && st.original) || {};
   const named = src.face || null;
-  const p = { at: src.at || null, diameter: Math.max(0, num('hoDia')),
-              depth: Math.max(0, num('hoDepth')), through: through(), kind,
+  const p = { at: src.at || null, diameter: Math.max(0, mm('hoDia')),
+              depth: Math.max(0, mm('hoDepth')), through: through(), kind,
               face: named,
               face_center: named ? null : (src.face_center || (st && st.input.center) || null),
               face_normal: named ? null : (src.face_normal || (st && st.input.normal) || null),
@@ -47,21 +47,22 @@ function params(st) {
               // pick carries it before the first plan lands
               face_area: named ? null
                 : (src.face_area ?? (st && st.input.area) ?? null) };
-  if (kind === 'counterbore') { p.cbore_diameter = num('hoCbDia'); p.cbore_depth = num('hoCbDepth'); }
-  if (kind === 'countersink') { p.csink_diameter = num('hoCsDia'); p.csink_angle = num('hoCsAngle'); }
+  if (kind === 'counterbore') { p.cbore_diameter = mm('hoCbDia'); p.cbore_depth = mm('hoCbDepth'); }
+  // every ⌀ and depth is a length; the countersink ANGLE is degrees
+  if (kind === 'countersink') { p.csink_diameter = mm('hoCsDia'); p.csink_angle = num('hoCsAngle'); }
   return p;
 }
 /* {} = the honest default: nothing drilled yet — depth 0, the remembered size
    (a diameter is a size, not an amount: nothing is cut until there is a depth) */
 function show(st, p) {
   g('hoKind').value = p.kind || 'simple';
-  g('hoDia').value = p.diameter != null ? p.diameter : lastDia;
-  g('hoDepth').value = p.depth || 0;
+  setLen('hoDia', p.diameter != null ? p.diameter : lastDia);
+  setLen('hoDepth', p.depth || 0);
   g('hoThrough').checked = !!p.through;
-  g('hoCbDia').value = p.cbore_diameter || 0;
-  g('hoCbDepth').value = p.cbore_depth || 0;
-  g('hoCsDia').value = p.csink_diameter || 0;
-  g('hoCsAngle').value = p.csink_angle || 90;
+  setLen('hoCbDia', p.cbore_diameter || 0);
+  setLen('hoCbDepth', p.cbore_depth || 0);
+  setLen('hoCsDia', p.csink_diameter || 0);
+  g('hoCsAngle').value = p.csink_angle || 90;          // degrees: not a length
 }
 /* every param the tool can write, normalized — Cancel-in-edit puts it back verbatim */
 function snapshot(f) {
@@ -89,18 +90,18 @@ const isEmpty = (pr, st) =>
    op refuses a ⌀0 seat, the framework reverts, and the Type box springs back
    to Simple: the seat kinds were unreachable once a depth existed. */
 function seed() {
-  const kind = g('hoKind').value, d = num('hoDia') || lastDia;
+  const kind = g('hoKind').value, d = mm('hoDia') || lastDia;
   // the room a seat has to sit in. No depth yet (or Through all) puts no limit
   // on it: the seat comes from the diameter, and a depth later typed too small
   // for it is the op's own sentence, not a 0.1 mm seat nobody can see.
-  const room = through() || !(num('hoDepth') > 0) ? Infinity : num('hoDepth');
+  const room = through() || !(mm('hoDepth') > 0) ? Infinity : mm('hoDepth');
   if (kind === 'counterbore') {
-    if (!(num('hoCbDia') > 0)) setBox('hoCbDia', 2 * d);
-    if (!(num('hoCbDepth') > 0)) setBox('hoCbDepth', Math.max(0.1, Math.min(d / 2, room * 0.4)));
+    if (!(mm('hoCbDia') > 0)) setLen('hoCbDia', 2 * d, 1);
+    if (!(mm('hoCbDepth') > 0)) setLen('hoCbDepth', Math.max(0.1, Math.min(d / 2, room * 0.4)), 1);
   } else if (kind === 'countersink') {
-    if (!(num('hoCsAngle') > 0)) setBox('hoCsAngle', 90);
+    if (!(num('hoCsAngle') > 0)) setBox('hoCsAngle', 90);       // degrees
     const t = Math.tan(Math.PI / 360 * num('hoCsAngle'));      // the cone's half-angle
-    if (!(num('hoCsDia') > 0)) setBox('hoCsDia', Math.min(2 * d, d + 0.8 * room * t));
+    if (!(mm('hoCsDia') > 0)) setLen('hoCsDia', Math.min(2 * d, d + 0.8 * room * t), 1);
   }
 }
 /* Values the op would CERTAINLY refuse because the user is mid-change. The
@@ -112,9 +113,9 @@ function hold(pr) {
     return 'The hole is unchanged until it has a depth — drag the arrow or type one ' +
            '(or tick Through all).';
   if (pr.kind === 'counterbore' && !(pr.cbore_diameter > pr.diameter && pr.cbore_depth > 0))
-    return `Counterbore: type a seat ⌀ wider than ${pr.diameter} mm, and a seat depth.`;
+    return `Counterbore: type a seat ⌀ wider than ${len(pr.diameter)}, and a seat depth.`;
   if (pr.kind === 'countersink' && !(pr.csink_diameter > pr.diameter))
-    return `Countersink: type a seat ⌀ wider than ${pr.diameter} mm.`;
+    return `Countersink: type a seat ⌀ wider than ${len(pr.diameter)}.`;
   return null;
 }
 
@@ -134,25 +135,25 @@ function circle(r) {
   });
 }
 const seated = () => g('hoKind').value === 'counterbore'
-  && num('hoCbDia') > num('hoDia') && num('hoCbDepth') > 0;
+  && mm('hoCbDia') > mm('hoDia') && mm('hoCbDepth') > 0;
 function ghost(st) {
   endExtrudeGhost();
   const plan = st && st.plan;
-  if (!plan || through() || !(num('hoDia') > 0)) return;   // through: no arrow, nothing to drag
-  const loops = [{ outer: circle(num('hoDia') / 2), holes: [] }];
-  if (seated()) loops.push({ outer: circle(num('hoCbDia') / 2), holes: [] });
+  if (!plan || through() || !(mm('hoDia') > 0)) return;   // through: no arrow, nothing to drag
+  const loops = [{ outer: circle(mm('hoDia') / 2), holes: [] }];
+  if (seated()) loops.push({ outer: circle(mm('hoCbDia') / 2), holes: [] });
   const z = plan.frame.z_dir, a = plan.axis;
   st.ghostSign = z[0] * a[0] + z[1] * a[1] + z[2] * a[2] < 0 ? -1 : 1;
   beginExtrudeGhost(plan.frame, loops);
 }
 function showGhost(st, depth) {
-  setExtrudeGhost(depth * (st.ghostSign || 1), 0, seated() ? [null, num('hoCbDepth')] : null);
+  setExtrudeGhost(depth * (st.ghostSign || 1), 0, seated() ? [null, mm('hoCbDepth')] : null);
 }
 function arrow(st) {
-  beginExtrudeArrow(st.plan.origin, st.plan.axis, num('hoDepth'),
-    v => { setBox('hoDepth', v); showGhost(st, v); },        // dragging: the box and the ghost follow
+  beginExtrudeArrow(st.plan.origin, st.plan.axis, mm('hoDepth'),
+    v => { setLen('hoDepth', v, 1); showGhost(st, v); },     // dragging: the box and the ghost follow
     async v => {                                              // release: ONE verified rebuild
-      setBox('hoDepth', v);
+      setLen('hoDepth', v, 1);
       await ho.apply();
       hideExtrudeGhost();                                     // the real hole replaces the ghost
     },
@@ -162,11 +163,11 @@ const gizmos = {
   begin(st, plan) {
     st.material = undefined;              // a new point: what lies under it is unknown again
     st.saidThrough = false;
-    beginHoleMarker(plan.frame, num('hoDia') / 2);
+    beginHoleMarker(plan.frame, mm('hoDia') / 2);
     if (!through()) arrow(st);            // through: nothing to drag, it runs out the far side
     ghost(st);
     // a depth typed or Through ticked before the plan arrived waits for it
-    if (!st.featureId && (through() || num('hoDepth') > 0)) ho.apply();
+    if (!st.featureId && (through() || mm('hoDepth') > 0)) ho.apply();
   },
   end() { endHoleMarker(); endExtrudeArrow(); endExtrudeGhost(); },
 };
@@ -197,20 +198,20 @@ async function ensureMaterial(st) {
 }
 function warnMaterial(st) {
   if (!st.material || through() || st.saidThrough) return;
-  if (!(num('hoDepth') > st.material + 1e-6)) return;
+  if (!(mm('hoDepth') > st.material + 1e-6)) return;
   st.saidThrough = true;
-  say(`ℹ The material under this point is ${st.material} mm — a depth of ` +
-      `${num('hoDepth')} mm comes out the other side. Through all says that on purpose.`);
+  say(`ℹ The material under this point is ${len(st.material)} — a depth of ` +
+      `${len(mm('hoDepth'))} comes out the other side. Through all says that on purpose.`);
 }
 function beforeApply(st) {
-  if (through() || !(num('hoDepth') > 0) || !st.plan) return;
+  if (through() || !(mm('hoDepth') > 0) || !st.plan) return;
   if (st.material === undefined) ensureMaterial(st);   // in the background: it only speaks
   else warnMaterial(st);
 }
 function afterApply() {
-  setExtrudeArrowAmount(num('hoDepth'));
-  setHoleMarker(num('hoDia') / 2);
-  if (num('hoDia') > 0) lastDia = num('hoDia');
+  setExtrudeArrowAmount(mm('hoDepth'));
+  setHoleMarker(mm('hoDia') / 2);
+  if (mm('hoDia') > 0) lastDia = mm('hoDia');
 }
 const KIND_WORD = { simple: '', counterbore: ', counterbored', countersink: ', countersunk' };
 
@@ -226,7 +227,7 @@ const ho = tool({
   nothing: 'Nothing drilled — the depth was 0. Open Hole again, then drag the arrow or ' +
            'type a depth (or tick Through all) before OK.',
   split: () => 'the hole cuts the part in two — move it, or make it smaller.',
-  describe: p => `⌀${p.diameter} ${p.through ? 'through' : `${p.depth} mm deep`}` +
+  describe: p => `⌀${len(p.diameter)} ${p.through ? 'through' : `${len(p.depth)} deep`}` +
                  (KIND_WORD[p.kind] || ''),
 });
 
@@ -235,6 +236,6 @@ export function initHole() {
   ho.init();
   // the circle and the ghost's outline follow the size boxes at once; the
   // hole itself after the usual pause
-  g('hoDia').addEventListener('input', () => { setHoleMarker(num('hoDia') / 2); ghost(ho.st); });
+  g('hoDia').addEventListener('input', () => { setHoleMarker(mm('hoDia') / 2); ghost(ho.st); });
   for (const id of ['hoCbDia', 'hoCbDepth']) g(id).addEventListener('input', () => ghost(ho.st));
 }
