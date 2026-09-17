@@ -6,15 +6,17 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING** — THREE code commits wait, oldest first: **Sweep
+> **Status: PENDING** — FOUR code commits wait, oldest first: **Sweep
 > `36ee69c`** (range `6b9fa0e..36ee69c`, merged into master at `97a6aea`),
-> **Loft `ec45cf1`** (range `97a6aea..ec45cf1`, merged at `559c342`, section 2)
-> and **Text entity `d3c8c85`** (range `559c342..d3c8c85`, section 3). All
-> built on Fable by the scheduled Tier 2 build of 2026-09-17 with **no review
-> yet** — the user asked for the tools to be built one by one and the reviews
-> to wait for their own `code review` chats (LAUNCH-PLAN §11, 2026-09-17).
-> Sweep and Loft share `tool.js` and suit one chat; Text is the sketcher and
-> stands alone. Strike a section here when it is done.
+> **Loft `ec45cf1`** (range `97a6aea..ec45cf1`, merged at `559c342`, section 2),
+> **Text entity `d3c8c85`** (range `559c342..d3c8c85`, merged at `a0d8761`,
+> section 3) and **Section view `60e64b0`** (range `a0d8761..60e64b0`, section
+> 4 — frontend only, the smallest). All built on Fable by the scheduled Tier 2
+> build of 2026-09-17 with **no review yet** — the user asked for the tools to
+> be built one by one and the reviews to wait for their own `code review`
+> chats (LAUNCH-PLAN §11, 2026-09-17). Sweep and Loft share `tool.js` and suit
+> one chat; Text is the sketcher; Section view is viewport.js + one small
+> module. Strike a section here when it is done.
 
 ## 1. Sweep tool — `36ee69c` (`specs/sweep.md`)
 
@@ -203,6 +205,49 @@ server-outline render cache, `tree.entTextRow`.
 silent Arial fallback for an unknown font; no bold / italic / spacing / text
 on a curve; the font row shown only when present; the brief invisible moment
 before the loops arrive; box-based hit-test and mode rule; no resize handles.
+
+## 4. Section view — `60e64b0` (`specs/section-view.md`)
+
+**What it is.** Display only: `viewport.beginSection` puts one `THREE.Plane`
+on every body mesh and edge material (`clippingPlanes`, `side = DoubleSide`,
+`renderer.localClippingEnabled`), `section.js` is the panel (Axis / Offset /
+Flip / Close), an Inspect-tab button toggles it. No document change, no plan
+request, nothing saved.
+
+**Where the risk is, ranked:**
+
+1. **`applySectionTo` flips `material.side` to DoubleSide while cut and back
+   to FrontSide after.** Every body material is created FrontSide today
+   (`addBodies`), so the restore is right — but if a body material is ever
+   made DoubleSide on purpose elsewhere, `endSection` would silently turn it
+   FrontSide. One grep.
+2. **`sectionMaterials()` reads `bodyObjs` and `edgeLines` at call time.**
+   `loadMesh` disposes and re-adds bodies; the new ones are clipped in
+   `addBodies` (`if (section) applySectionTo(...)`) — but the face-highlight
+   mesh (`hlMesh`) and the hover face are not, so a highlighted face on the
+   hidden side shows through the cut (§10). Also `renderer.localClippingEnabled`
+   is never turned back off (harmless: no material carries planes after
+   `endSection`).
+3. **The Escape listener is in the CAPTURE phase** so it sees `S.modalTool`
+   before tool.js / measure.js release it. A tool that sets no modal lock but
+   owns Escape (the viewport's plane pick, profile pick — `viewport.js:455`)
+   would be cancelled AND the section closed by one key. Measured only with
+   Measure. Worth one check with a pending Create Sketch plane pick.
+4. **Shared gizmos**: `beginExtrudeArrow` / `beginPlaneQuad` — Extrude or
+   Mirror opening over a section takes them; `endSection` then calls
+   `endExtrudeArrow` / `endPlaneQuad`, which would remove the TOOL's arrow if
+   the section is closed while the tool is open (Close button, or Esc after
+   the tool… no: Esc with a tool open cancels the tool first). The Close
+   button while Extrude is open is the door: it removes Extrude's arrow.
+   Cheap fix: `endSection` only ends the gizmos it still owns (compare
+   against a token), or the panel's Close is guarded by `S.modalTool`.
+5. **`fitCenter` / `fitRadius`** size the quad and set the default offset;
+   after a big model change with the section on they are stale until
+   `place()` is called again (Axis / Flip / Offset touch). Cosmetic.
+
+**Do not re-report** (LAUNCH-PLAN §10 P3 "Section view's loose ends"): no
+capped cut face; shared gizmos taken by a tool; one plane for all bodies; not
+saved across reloads; highlight / hover faces unclipped.
 
 **Merge note.** The build session merges the branch into master only if the
 main checkout has no modified tracked files at that moment (the user's Opus
