@@ -2352,12 +2352,41 @@ def assert_every_lump_hollowed(solid, out, direction: str, walls: str) -> None:
 
 
 # How many times `area * t` the walls of an inward shell may measure before the
-# result is refused as the body itself. Calibrated 2026-09-14, not guessed
-# (probes/shell_wall_bound_corpus.py): across the gauntlet corpus and the
-# committed crash bodies, nine thicknesses from 0.2 to 8 mm, every SOUND closed
-# hollow landed between 0.61 and 1.056, and every sound OPEN one between 0.61
-# and 0.955. The silent wrong result this exists for reads 2.72.
-_SHELL_SKIN_FACTOR = 2.0
+# result is refused as the body itself. Re-calibrated 2026-09-17 over THREE
+# corpora and moved down from 2.0, because 2.0 was measured to let a wrong
+# result through:
+#
+#   * the gauntlet corpus and the committed crash bodies, nine thicknesses from
+#     0.2 to 8 mm (probes/shell_wall_bound_corpus.py): the highest a SOUND
+#     closed hollow reached is 1.0559 (the oneplus case at t = 0.5);
+#   * the user's own 50 designs at t = 1/2/3, the check patched off so a result
+#     it would refuse is still measured (probes/shell_skin_library_probe.py):
+#     38 sound results, the highest 1.0377, and four wrong ones at 2.0524 and
+#     2.7189;
+#   * concave-heavy plates whose `t/2r` is dialled straight through the danger
+#     zone, every result over 1.0 put to an independent Monte Carlo oracle
+#     (probes/shell_skin_concave_sweep.py). This is the one that moved the
+#     number. A hole of radius r shelled at t leaves an annulus, so its own
+#     ratio is `1 + t/2r` and rises with t — and the sweep found BOTH edges of
+#     the real band there:
+#         a 60 x 60 x 10 plate, 196 holes of r 0.8 at 4 mm pitch, t = 1.0:
+#             21,107.5 mm3 of walls against an oracle of 20,908 +/- 187 (1.1
+#             sigma) — CORRECT, and the highest correct result on record at
+#             1.1309;
+#         the same plate with 100 holes of r 1.0 at 6 mm pitch, t = 1.0:
+#             27,429.7 mm3 against an oracle of 16,212 +/- 189 — 59 SIGMA out,
+#             11,218 mm3 of "walls" that are not there, and it reads 1.7981;
+#             at t = 1.3 the kernel hands the whole body back (32,858.3 against
+#             20,464 +/- 188) and that reads 1.6569.
+#
+# So the lowest WRONG result on record is 1.6569, not 2.72, and the old ceiling
+# of 2.0 passed both of those silently. 1.35 sits 1.19x above every correct
+# result ever measured and 1.23x below the nearest wrong one. That is a
+# narrower band than it looks from the old numbers, and it is the honest state
+# of it: a body whose surface is MOSTLY small holes has correct walls of
+# `1 + t/2r`, so the two sides really are converging, and anything tighter
+# would start refusing the user's drilled plates.
+_SHELL_SKIN_FACTOR = 1.35
 
 
 def assert_walls_could_be_a_skin(solid, out, t: float, direction: str, walls: str) -> None:
@@ -2380,13 +2409,30 @@ def assert_walls_could_be_a_skin(solid, out, t: float, direction: str, walls: st
     the corpus. Dividing by `area * t` normalises that away: the same plate
     reads 0.72 while the wrong result reads 2.72.
 
-    The factor is 2.0 against a measured ceiling of 1.056, so it sits 1.9x
-    above every sound result on record and 1.36x under the one it exists to
-    catch. It is a ceiling, not a theorem: a body whose surface is mostly
-    CONCAVE detail has inner parallel surfaces larger than its outer one (the
-    oneplus case at t = 0.5 is the 1.056), which is exactly why the margin is
-    not tighter. OUTSIDE shells are not judged here — their walls sit outside
-    the old surface and were not measured."""
+    The factor and the three corpora behind it are above `_SHELL_SKIN_FACTOR`.
+    It is a ceiling, not a theorem: a body whose surface is mostly CONCAVE
+    detail has inner parallel surfaces larger than its outer one, which is
+    exactly why the margin is not tighter.
+
+    OUTSIDE shells are not judged here, and since 2026-09-17 that is a
+    measurement and not an omission. The same corpus at the same nine
+    thicknesses, run outward (probes/shell_skin_direction_corpus.py): every
+    sound result runs 1.0023 to 1.5233, rising with `t` and with nothing else —
+    the l-bracket 1.4894 at t = 8, the dprism boss 1.4573, the cylinder 1.3840,
+    the plate with a hole 1.5233. That is Steiner's formula, not a kernel
+    fault: growing a body by `t` adds `A*t + M*t^2 + (4/3)*pi*t^3`, so the
+    ratio starts at 1 and rises without any bound the body's own area knows
+    about (a ball of radius 10 grown by 8 mm is 2.01 of its skin and exactly
+    right). No constant can mean the same thing outward, so none is invented;
+    an outside shell keeps every other check and not this one.
+
+    One number from that run is worth passing on rather than acting on: the
+    walls over the MEAN of the two surfaces they lie between, `out.area / 2 * t`,
+    sat at 1.0000 +/- 0.02 on every sound outward result and read 1.9183 and
+    5.4354 on the two wrong inward ones. A normaliser that means the same thing
+    in both directions would be a better guard than this one — and it is a new
+    bound, which wants its own calibration and its own corpus of wrong results
+    before it decides anything."""
     if direction != "inside":
         return
     import inspector                                 # local: avoids an import cycle
@@ -2454,10 +2500,17 @@ _DEPTH_RAY_BUDGET = 200_000
 _DEPTH_STATIONS = (0.5, 0.25, 0.75)
 _DEPTH_STATIONS_TO_OPENING = (1.0, 0.9)
 # ... and the climb that turns the best SAMPLE into the real maximum before a
-# refusal is allowed to stand: how many of the measured points are walked
-# uphill, and how many steps each is given.
+# refusal is allowed to stand: how many of the measured points EACH of the three
+# rankings in `_seeds_for_the_climb` walks uphill, and how many steps each gets.
 _DEPTH_CLIMB_SEEDS = 3
 _DEPTH_CLIMB_STEPS = 40
+# ... and the whole climb's budget in distance measurements: no more than the
+# three seeds it used to take could already spend, however many it now draws.
+# Measured 2026-09-17 (probes/shell_depth_seed_cost_probe.py): a measurement
+# costs about 0.12 s on a 330-face body, so nine unbudgeted seeds took its
+# refusal path from 17.9 s to 47.3 s and answered exactly the same number. The
+# budget is what makes a better-ORDERED seeding free.
+_DEPTH_CLIMB_CALLS = _DEPTH_CLIMB_SEEDS * _DEPTH_CLIMB_STEPS
 
 
 def _barycentres(k: int) -> tuple:
@@ -2618,7 +2671,7 @@ def deepest_material(solid, t: float, openings=()) -> tuple | None:
         d, _near = measure(q)
         if d is None:
             continue
-        seen.append((d, q))
+        seen.append((d, q, bound))        # the bound travels: the climb ranks on it
         if d > best[0]:
             best = (d, q)
         if d >= t - tol:
@@ -2626,6 +2679,82 @@ def deepest_material(solid, t: float, openings=()) -> tuple | None:
     if best[0] < t - tol:
         best = _climb_to_the_deepest(solid, measure, seen, best, tol)
     return best[0], (best[1].X, best[1].Y, best[1].Z), tol
+
+
+def _spread_out(ranked: list, tol: float, k: int) -> list:
+    """The first `k` of an already-ranked list, each further than its own radius
+    from the ones taken.
+
+    The top three of any ranking are usually three stations on ONE ray, which
+    climb the same hill three times; a seed that must clear its own radius
+    lands on another branch of the medial axis instead."""
+    seeds, taken = [], []
+    for _score, d0, q0 in ranked:
+        if len(seeds) >= k:
+            break
+        if all((q0 - p).length > max(d0, tol) for p in taken):
+            seeds.append((d0, q0))
+            taken.append(q0)
+    return seeds
+
+
+def _seeds_for_the_climb(seen: list, deepest: float, tol: float) -> list:
+    """Which measured stations are worth walking uphill — three questions, three
+    seeds each.
+
+    Ranking them by DEPTH alone is what a PLATEAU exploits, and that was the
+    other half of the 2026-09-16 finding (LAUNCH-PLAN section 10). A uniform
+    region measures exactly what its chord allows, so an 80 x 80 x 24 slab's
+    mid-plane reads 12.0000 at a dozen points more than 12 mm apart and takes
+    every seed, while the 2-to-30 mm draft wedge fused into it — whose real
+    maximum is 12.4300 — never gets one. Raising the seed count does not help
+    (the plateau has dozens more), and neither do more steps (a plateau has no
+    gradient). Measured on the repro (probes/shell_depth_plateau_seeds_probe.py):
+    climbing ALL 177 stations does find 12.4464, and the station it finds it
+    from is ranked #159 of 177 BY DEPTH. It started 2.4271 mm from a face.
+
+    What that station has is ROOM: its own ray passed through 40 mm of material
+    while the station itself measured 2.43, so `bound / depth` is 8.2 where
+    every plateau station scores exactly 1.0 — the lowest score there is, since
+    a station can never measure more than its own chord allows. That ranking
+    puts it #31, and its top three find the wedge.
+
+    So three rankings, because one is not enough for both shapes of plateau:
+
+      * the DEEPEST stations — today's rule, and the right one whenever the
+        thickest material happens to sit on a ray (a box, a plate, a cylinder);
+      * the stations with the most ROOM, wherever they are — the wedge fused
+        into a slab, where the answer sits beside a face and not near one;
+      * the deepest stations that ALSO have room — a slab carrying a fat post,
+        where the winner is on the plateau itself (depth 10.0 of a 17.0 best,
+        ranked #13 by depth and #132 by room) and climbs up into the post.
+
+    Measured over the four bodies, against a grid oracle: the wedge in a slab
+    12.0000 -> 12.4461 (oracle 12.4300), the slab with a post 17.0000 ->
+    17.2160 (17.2047), the 180 mm draft prism unchanged at 15.3405, the ramped
+    plate unchanged at 12.2987 — that last one is the climb's own limit and not
+    the seeding's: climbing all 160 of its stations reaches 12.2987 too."""
+    deep, room = [], []
+    for d0, q0, bound in seen:
+        deep.append((d0, d0, q0))
+        # an opening sample has no chord to bound it, and a station that is
+        # already ON a face has nothing but room — it would crawl through the
+        # whole budget a fraction of a millimetre at a time
+        if bound != float("inf") and d0 >= 0.1 * deepest:
+            room.append((bound / max(d0, 1e-9), d0, q0))
+    both = [r for r in room if r[1] >= 0.5 * deepest]
+    picked = [_spread_out(sorted(r, key=lambda x: -x[0]), tol, _DEPTH_CLIMB_SEEDS)
+              for r in (deep, room, both)]
+    # the deepest first, so a body the old rule already answered is answered the
+    # same way and the budget below only ever pays for what is left over
+    order = picked[0] + [s for pair in zip(picked[1], picked[2]) for s in pair] \
+        + picked[1][len(picked[2]):] + picked[2][len(picked[1]):]
+    seeds, at = [], []
+    for d0, q0 in order:
+        if all((q0 - p).length > tol for p in at):
+            seeds.append((d0, q0))
+            at.append(q0)
+    return seeds
 
 
 def _climb_to_the_deepest(solid, measure, seen: list, best: tuple, tol: float) -> tuple:
@@ -2648,7 +2777,8 @@ def _climb_to_the_deepest(solid, measure, seen: list, best: tuple, tol: float) -
     so each seed is stepped along that direction while the distance keeps
     rising, the step halving whenever it does not, and a candidate outside the
     body is never taken. Several seeds because the field has one maximum per
-    medial branch and the best sample need not sit on the right one.
+    medial branch and the best sample need not sit on the right one —
+    `_seeds_for_the_climb` says which, and why depth alone is not the question.
 
     This can only ever RAISE the answer — it accepts a point only when that
     point measures deeper, by the same exact `BRepExtrema` the stations use —
@@ -2667,24 +2797,27 @@ def _climb_to_the_deepest(solid, measure, seen: list, best: tuple, tol: float) -
         cls.Perform(gp_Pnt(q.X, q.Y, q.Z), 1e-7)
         return cls.State() == TopAbs_State.TopAbs_OUT
 
-    # the deepest measured points, SPREAD OUT: the top three by depth are
-    # usually three stations on one ray, which climb the same hill three
-    # times. A seed must sit further than its own radius from the ones already
-    # taken, which is what puts it on another branch of the medial axis.
-    seeds, taken = [], []
-    for d0, q0 in sorted(seen, key=lambda r: -r[0]):
-        if len(seeds) >= _DEPTH_CLIMB_SEEDS:
-            break
-        if all((q0 - p).length > max(d0, tol) for p in taken):
-            seeds.append((d0, q0))
-            taken.append(q0)
-    seeds = seeds or [best]
+    left = [_DEPTH_CLIMB_CALLS]
+
+    def spend(q):
+        """`measure`, against the climb's shared budget. Out of budget reads the
+        same as "nothing could be measured", which already ends a climb."""
+        if left[0] <= 0:
+            return None, None
+        left[0] -= 1
+        return measure(q)
+
+    seeds = _seeds_for_the_climb(seen, best[0], tol) or [best]
     for d0, q0 in seeds:
+        if left[0] <= 0:
+            break
         q, d = q0, d0
         step, near = max(d0, tol), None
         for _ in range(_DEPTH_CLIMB_STEPS):
+            if left[0] <= 0:
+                break                     # the budget, not the step count
             if near is None:
-                got = measure(q)
+                got = spend(q)
                 if got[0] is None:
                     break                 # keep the seed's own depth, not None
                 d, near = got
@@ -2693,7 +2826,7 @@ def _climb_to_the_deepest(solid, measure, seen: list, best: tuple, tol: float) -
             if reach <= 1e-9:
                 break                     # the point is ON a face: no way uphill
             cand = q + away * (step / reach)
-            got = (None, None) if outside(cand) else measure(cand)
+            got = (None, None) if outside(cand) else spend(cand)
             if got[0] is not None and got[0] > d:
                 q, d, near = cand, got[0], got[1]
             else:
