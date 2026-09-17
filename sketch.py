@@ -2764,9 +2764,11 @@ _DEPTH_CLIMB_STEPS = 40
 # the body the THIRD ranking exists for, and whose 17.0000 -> 17.2160 the
 # docstring below records — answers 17.0000 at a budget of 120 and 17.2160 as
 # soon as the budget lets the seeds run; the wedge in the slab answers 12.4156
-# against 12.4444. Re-ordering does not help (measured, all nine orders of the
-# three rankings: probes/shell_depth_seed_order_probe.py); the answer sits on a
-# seed that the first three exhaust the budget before reaching.
+# against 12.4444. Re-ordering does not help: spending the budget round-robin
+# across the three rankings instead of deepest-first answers IDENTICALLY on all
+# 17 bodies (probes/shell_depth_seed_order_probe.py), because the answer sits
+# on a seed that the first three exhaust the budget before reaching, whichever
+# three they are.
 #
 # So the budget is set from what the climb actually SPENDS when nothing stops
 # it, not from what nine seeds could spend in theory. Measured over the four
