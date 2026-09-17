@@ -1712,7 +1712,7 @@ class Document:
                 try:
                     out[k] = paramexpr.evaluate(v, self.param_values)
                 except ValueError as e:
-                    raise ValueError(f"{f.id}: {k} = {v!r} — {e}") from None
+                    raise ValueError(f"'{f.id}' ({f.op}): {k} = {v!r} — {e}") from None
         return out
 
     # -- named parameters (specs/named-parameters.md) --------------------------

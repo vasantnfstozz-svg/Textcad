@@ -163,7 +163,10 @@ def test_a_number_typed_with_its_unit_is_refused_before_the_kernel():
 
 def test_a_numeric_string_from_an_older_file_still_builds():
     """`from_data` deliberately bypasses the guard so any file opens. The
-    rebuild must cope rather than dump a constructor signature."""
+    rebuild must cope rather than dump a constructor signature — and since
+    named parameters (specs/named-parameters.md) a string in a numeric slot is
+    a FORMULA: "40" works out to 40, so the plate BUILDS at exactly the size
+    the file says (it used to fail with a sentence naming width)."""
     doc = Document.from_data({
         "name": "stringy",
         "features": [{"id": "p", "op": "plate",
@@ -171,9 +174,18 @@ def test_a_numeric_string_from_an_older_file_still_builds():
                       "inputs": []}]})
     doc.rebuild()
     f = doc.get("p")
-    assert f.status == "failed"
-    text = " ".join(f.problems or [])
-    assert "width" in text.lower()
+    assert f.status == "ok", f.problems
+    assert f.volume == 40 * 30 * 8
+    # ...while a string that is no number and no parameter is still a sentence
+    doc2 = Document.from_data({
+        "name": "wordy",
+        "features": [{"id": "p", "op": "plate",
+                      "params": {"width": "wide", "depth": 30, "thickness": 8},
+                      "inputs": []}]})
+    doc2.rebuild()
+    text = " ".join(doc2.get("p").problems or [])
+    assert doc2.get("p").status == "failed" and "width" in text.lower()
+    assert "no parameter named 'wide'" in text
     for j in JARGON:
         assert j not in text, f"leaks kernel text: {text!r}"
 

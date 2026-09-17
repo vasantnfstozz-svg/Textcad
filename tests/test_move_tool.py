@@ -157,7 +157,10 @@ def test_a_bad_move_offset_is_a_sentence_not_python_wording():
               ("m", "move", {"x": "abc"}, ["b"]))
     f = next(x for x in d.features if x.id == "m")
     assert f.status == "failed"
-    assert f.problems == ["move: x must be a number in mm (got 'abc')"]
+    # since named parameters (specs/named-parameters.md) a WORD in a numeric
+    # slot is read as a formula, so the sentence says what the word is not:
+    # a parameter. Still a sentence, still no Python wording.
+    assert f.problems == ["'m' (move): x = 'abc' — no parameter named 'abc'"]
     d.edit_many("m", {"x": 1, "y": float("inf"), "z": 0})
     d.rebuild()
     assert next(x for x in d.features if x.id == "m").problems == ["move: y must be a number in mm (got inf)"]
