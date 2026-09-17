@@ -447,6 +447,23 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
                     padding: 2px 4px; border-bottom: 1px solid var(--line); }
 .toolpanel .lfrow button { padding: 0 6px; }
 .toolpanel .exhint { font-size: 11px; opacity: 0.75; margin: 4px 0 6px; }
+/* Parameters: a small table — name · formula · value · note · used · ✕ */
+.toolpanel.pmpanel { flex-basis: 420px; max-width: 520px; }
+.pmhead, .pmrow { display: grid; grid-template-columns: 1.1fr 1.4fr 0.8fr 1.2fr 0.7fr 22px;
+                  gap: 6px; align-items: center; padding: 2px 4px; font-size: 12px; }
+.pmhead { color: var(--dim); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+.pmrow { border-bottom: 1px solid var(--line); }
+.pmrow.bad .pmval { color: #ff5d5d; }
+.pmrow span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pmrow .pmname, .pmrow .pmexpr, .pmrow .pmcomment { cursor: text; }
+.pmrow .pmname { font-weight: 600; }
+.pmrow .pmexpr { font-family: ui-monospace, Consolas, monospace; }
+.pmrow .pmval { color: var(--accent); }
+.pmrow .pmcomment, .pmrow .pmusers { color: var(--dim); }
+.pmrow input { width: 100%; font: inherit; }
+.pmdel { padding: 0 5px; }
+.pmadd { display: flex; gap: 6px; margin: 8px 0 2px; }
+.pmadd input { flex: 1; min-width: 0; font: inherit; }
 .toolpanel .excheck { display: flex; align-items: center; gap: 6px; }
 .toolpanel .excheck input { width: auto; }
 .toolpanel .exfoot { display: flex; justify-content: flex-end; gap: 8px;

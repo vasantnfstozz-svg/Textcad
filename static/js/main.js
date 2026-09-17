@@ -26,6 +26,7 @@ import { initMirror } from './mirror.js';
 import { initMove } from './move.js';
 import { initMeasure } from './measure.js';
 import { initSection } from './section.js';
+import { initParams } from './params.js';
 import { initVersions } from './versions.js';
 import { initBugReport } from './bugreport.js';
 
@@ -47,6 +48,7 @@ initMirror();     // Mirror of a feature or a body across a face / an origin pla
 initMove();       // Move (three arrows) and Rotate (a ring through the body's centre)
 initMeasure();    // the Measure tool (face/edge dimensions)
 initSection();    // Section view: cut the model open on screen (Tier 2, specs/section-view.md)
+initParams();     // Named parameters: wall = 3 once, everything follows (Tier 2, specs/named-parameters.md)
 initRibbon();
 initSplitters();
 initVersions();   // version tree under the feature tree

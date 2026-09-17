@@ -945,6 +945,8 @@ def _doc_json() -> dict:
         # the wording of a problem line (R1).
         "spec_checked": doc.spec_checked,
         "warnings": doc.warnings,
+        # named parameters: name, formula, value, comment, who uses it, a problem
+        "parameters": doc.parameters_json(),
         "tabs": _tabs_json(),
         # THE TAB THIS ANSWER IS ABOUT — never the live active tab. The
         # browser stores the whole reply as S.lastDoc and api.js sends
@@ -972,6 +974,9 @@ def _doc_json() -> dict:
             # as a path and never as a profile — a fact the server states (R1)
             "path_sketch": (f.op in sketchlib.SKETCH_PRODUCERS
                             and sketchlib.is_path_sketch((f.params or {}).get("entities"))),
+            # {param: value} for every FORMULA this feature holds, so the tree
+            # can show `wall*2 = 6` (a formula that does not work out: null)
+            "resolved": doc.resolved_json(f),
         } for f in doc.features],
     }
 
@@ -1081,6 +1086,21 @@ class EditReq(BaseModel):
     feature_id: str
     param: str
     value: object
+
+
+class ParamSetReq(BaseModel):          # named parameters (specs/named-parameters.md)
+    name: str
+    expr: object                       # "3" | "wall*2" | a number
+    comment: str | None = None
+
+
+class ParamRenameReq(BaseModel):
+    old: str
+    new: str
+
+
+class ParamRemoveReq(BaseModel):
+    name: str
 
 
 class ParamsReq(BaseModel):
@@ -2000,6 +2020,40 @@ def edit(req: EditReq):
     _hand_edit()              # AFTER it lands: a refusal is not a hand edit
     _rebuild_and_mesh()
     return _doc_json()
+
+
+def _param_change(fn) -> JSONResponse | dict:
+    """One named-parameter change: a snapshot for undo, the document's own
+    sentence on refusal (nothing half-applied), one rebuild — the same shape
+    as /api/edit, because a parameter IS an edit of every feature that names
+    it (specs/named-parameters.md)."""
+    _snapshot()
+    try:
+        fn(_doc())
+    except (KeyError, ValueError) as e:
+        _unsnapshot()
+        return _refused(e)
+    _hand_edit()
+    _rebuild_and_mesh()
+    return _doc_json()
+
+
+@app.post("/api/parameters")
+def set_parameter(req: ParamSetReq):
+    """Create or change a parameter: `wall = 3`, `depth = wall*2`."""
+    return _param_change(lambda d: d.set_parameter(req.name, req.expr, req.comment))
+
+
+@app.post("/api/parameters/rename")
+def rename_parameter(req: ParamRenameReq):
+    """Rename a parameter everywhere it is referred to — by name token."""
+    return _param_change(lambda d: d.rename_parameter(req.old, req.new))
+
+
+@app.post("/api/parameters/remove")
+def remove_parameter(req: ParamRemoveReq):
+    """Delete a parameter nothing uses; otherwise the sentence names its users."""
+    return _param_change(lambda d: d.remove_parameter(req.name))
 
 
 _FIT_CELLS = 160          # grid across the face's long side (0.4 mm at 60 mm)

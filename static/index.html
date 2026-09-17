@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=45">
+<link rel="stylesheet" href="/static/css/studio.css?v=46">
 </head>
 <body>
 
@@ -236,6 +236,24 @@
     <div id="scStatus" class="exhint"></div>
     <div class="exfoot">
       <button class="primary" id="scClose" title="put the model back whole">Close</button>
+    </div>
+  </div>
+
+  <!-- ============ Parameters panel (named values; specs/named-parameters.md) ============ -->
+  <div id="paramsDialog" class="toolpanel pmpanel" style="display:none">
+    <div class="exhead">𝑥 Parameters</div>
+    <div class="exhint">Name a value once (<b>wall = 3</b>), then type its name in any dimension of the tree — <b>wall*2</b> — and the part follows when it changes. Formulas may use + − × ÷, brackets and min, max, abs, round, sqrt, sin, cos, tan.</div>
+    <div class="pmhead"><span>name</span><span>formula</span><span>value</span><span>note</span><span>used</span><span></span></div>
+    <div id="pmRows"></div>
+    <div id="pmEmpty" class="exhint">no parameters yet</div>
+    <div class="pmadd">
+      <input id="pmName" placeholder="name (wall)" size="9">
+      <input id="pmExpr" placeholder="value or formula (3, wall*2)" size="14">
+      <input id="pmComment" placeholder="note" size="10">
+      <button id="pmAdd" type="button" class="exbtn">Add</button>
+    </div>
+    <div class="exfoot">
+      <button class="primary" id="pmClose">Close</button>
     </div>
   </div>
 
@@ -602,6 +620,6 @@
     "three/addons/": "/static/vendor/three/0.160.0/addons/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=218"></script>
+<script type="module" src="/static/js/main.js?v=219"></script>
 </body>
 </html>

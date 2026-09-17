@@ -352,6 +352,14 @@ each one in the tool that created it, and edit dimensions):
   params ARE the editable dimensions (a washer = disc + with_center_hole).
   revolve_profile is for genuinely curved axisymmetric sections only.
 
+NAMED PARAMETERS: a design may carry a top-level "parameters" object,
+{{"wall": {{"expr": "3", "comment": "wall thickness"}}, "depth": {{"expr":
+"wall*2"}}}}, and any NUMERIC feature param may then be a formula string
+naming them ("amount": "wall*2", "radius": "bore/2"). Formulas use numbers,
+parameter names, + - * / ** and min/max/abs/round/sqrt/floor/ceil/sin/cos/tan
+(degrees) — nothing else. Use them when one dimension governs several
+features (a wall thickness, a bolt size), so changing it once moves all.
+
 SKETCH -> EXTRUDE IS THE PRIMARY WORKFLOW — required for logos, emblems,
 text-like artwork, plates with cutouts, brackets, and any flat/prismatic
 shape: make a "sketch" feature (a creator), then an "extrude"/"revolve"/
@@ -660,6 +668,15 @@ def _to_document(data: dict) -> Document:
     if not isinstance(data.get("features"), list) or not data["features"]:
         raise ValueError("JSON must contain a non-empty 'features' list")
     doc = Document(name=str(data.get("name", "untitled"))[:60])
+    # named parameters first, so a feature's "wall*2" has something to name;
+    # each one refused with its own sentence (a loop, a reserved word)
+    params = data.get("parameters") or {}
+    if not isinstance(params, dict):
+        raise ValueError("'parameters' must be an object: {\"wall\": {\"expr\": \"3\"}}")
+    for name, spec in params.items():
+        expr = spec.get("expr") if isinstance(spec, dict) else spec
+        comment = spec.get("comment") if isinstance(spec, dict) else None
+        doc.set_parameter(str(name), expr, comment)
     for f in data["features"]:
         doc.add(f["id"], f["op"], f.get("params") or {}, f.get("inputs") or [],
                 strict=True)          # a hallucinated key is named, not stored

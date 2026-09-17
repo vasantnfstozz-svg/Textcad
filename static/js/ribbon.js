@@ -25,6 +25,7 @@ import { openMove, openRotate } from './move.js';
 import { cancelTool } from './tool.js';
 import { openMeasure, cancelMeasure } from './measure.js';
 import { toggleSection } from './section.js';
+import { toggleParams } from './params.js';
 
 // sketch draw tools shown in the contextual SKETCH tab's CREATE group (top)
 const SKETCH_TOOLS = {
@@ -72,6 +73,7 @@ const ACTIONS = {
   spec:    { icon: '✓', name: 'Spec',        fn: actionSpec },
   measure: { icon: '⟺', name: 'Measure',     fn: () => openMeasure() },
   section: { icon: '◫', name: 'Section',     fn: () => toggleSection() },   // cut the model open on screen
+  parameters: { icon: '𝑥', name: 'Parameters', fn: () => toggleParams() },  // named values (wall = 3)
   select:  { icon: '◉', name: 'Select',
              fn: () => document.getElementById('vSelect').click() },
   settings: { icon: '⚙', name: 'Settings', fn: openSettings },
@@ -121,6 +123,7 @@ const TABS = {
                   'shell']],
     ['Transform', ['move', 'rotate', 'scale', 'mirror']],
     ['Pattern', ['polar_pattern', 'linear_pattern']],
+    ['Parameters', [{ a: 'parameters' }]],
     ['Combine', ['fuse', 'cut', 'intersect']],
   ],
   Inspect: [

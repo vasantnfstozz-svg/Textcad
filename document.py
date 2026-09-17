@@ -42,6 +42,7 @@ from OCP.TopExp import TopExp_Explorer
 
 import blocks
 import inspector
+import paramexpr
 import pattern
 import sketch as sk
 
@@ -269,7 +270,8 @@ def _check_modifier_input(op: str, fid: str, part, params: dict | None = None) -
             f"extrude or revolve it first, then {op} the body{extra}")
 
 
-def _check_numeric_params(op: str, params: dict, feature_id: str) -> None:
+def _check_numeric_params(op: str, params: dict, feature_id: str,
+                          values: dict | None = None) -> None:
     """A NUMBER that is not a number, named — at BOTH doors, in ONE sentence.
 
     "8mm" is what a CAD user types, and the tree's text edit passes any
@@ -295,6 +297,16 @@ def _check_numeric_params(op: str, params: dict, feature_id: str) -> None:
     for k, v in (params or {}).items():
         if k not in numeric:
             continue
+        # a FORMULA is accepted where a number is, when it works out today
+        # (specs/named-parameters.md): "wall*2" with wall defined; "8mm" and
+        # "wal*2" are refused with the evaluator's own sentence
+        if isinstance(v, str) and not isinstance(v, bool) and paramexpr.is_expression(v):
+            try:
+                paramexpr.evaluate(v, values or {})
+            except ValueError as e:
+                raise ValueError(f"'{feature_id}' ({op}): {k} = {v!r} — {e}") from None
+            continue
+        # ("8mm", "" and other text that is no formula keep the sentence below)
         if isinstance(v, bool) or not isinstance(v, (int, float)):
             raise ValueError(
                 f"'{feature_id}' ({op}): {k} must be a number (got "
@@ -730,6 +742,14 @@ class Document:
     # saved: a reopened file falls back to the plan, which is all the
     # information a file carries.
     _struck_by: dict = field(default_factory=dict, repr=False)
+    # NAMED PARAMETERS (specs/named-parameters.md): name -> {"expr", "comment"}.
+    # A feature's numeric param may hold a FORMULA naming them ("wall*2");
+    # `_resolved` turns it into the number before any op sees it, and the
+    # cache signature is taken on the resolved values, so a change to `wall`
+    # rebuilds exactly what refers to it. Saved only when non-empty.
+    parameters: dict = field(default_factory=dict)
+    param_values: dict = field(default_factory=dict, repr=False)    # name -> float
+    param_problems: dict = field(default_factory=dict, repr=False)  # name -> sentence
 
     # -- authoring ----------------------------------------------------------
     def add(self, id: str, op: str, params: dict | None = None,
@@ -748,7 +768,10 @@ class Document:
         if any(f.id == id for f in self.features):
             raise ValueError(f"duplicate feature id '{id}'")
         if strict:
-            self.check_params(op, params or {}, id)
+            self.check_params(op, params or {}, id, values=self.param_values)
+        if id in self.parameters:
+            raise ValueError(f"'{id}' is the name of a parameter — a feature and a parameter "
+                             f"cannot share a name")
         for dep in (inputs or []):
             if not any(f.id == dep for f in self.features):
                 raise ValueError(f"feature '{id}' references unknown input '{dep}'")
@@ -883,7 +906,7 @@ class Document:
         not stored yet IS accepted: `through` on an extrude saved as
         {amount} was refused for a month as "no such parameter"."""
         f = self.get(feature_id)
-        self.check_params(f.op, params, feature_id, stored=f.params)
+        self.check_params(f.op, params, feature_id, stored=f.params, values=self.param_values)
         delta = self._move_delta(f, params)
         f.params.update(params)
         if delta:
@@ -1002,7 +1025,7 @@ class Document:
 
     @staticmethod
     def check_params(op: str, params: dict, feature_id: str,
-                     stored: dict | None = None) -> None:
+                     stored: dict | None = None, values: dict | None = None) -> None:
         """Refuse a key `op` cannot take, naming EVERY bad one so a save with
         three typos is not three round trips.
 
@@ -1017,7 +1040,7 @@ class Document:
                 f"'{feature_id}' ({op}) has no parameter "
                 + ", ".join(repr(k) for k in bad)
                 + f" -- it takes {sorted(allowed)}")
-        _check_numeric_params(op, params, feature_id)
+        _check_numeric_params(op, params, feature_id, values)
 
     def get(self, feature_id: str) -> Feature:
         for f in self.features:
@@ -1056,6 +1079,9 @@ class Document:
             return
         if any(x.id == new for x in self.features):
             raise ValueError(f"duplicate feature id '{new}'")
+        if new in self.parameters:
+            raise ValueError(f"'{new}' is the name of a parameter — a feature and a parameter "
+                             f"cannot share a name")
         f.id = new
         for x in self.features:
             x.inputs = [new if d == old else d for d in x.inputs]
@@ -1366,9 +1392,17 @@ class Document:
         the signatures of its inputs. Inputs by signature (not by id) so a
         rename costs nothing and an upstream edit invalidates everything below
         it automatically."""
+        # RESOLVED params: a change to `wall` changes the signature of every
+        # feature whose formula names it — and nothing else (measured:
+        # probes/named_params_probe.py). A formula that does not work out
+        # keeps its text in the signature; _eval will say why.
+        try:
+            params = self._resolved(f)
+        except ValueError:
+            params = f.params
         payload = {
             "op": f.op,
-            "params": _canon_number(f.params),
+            "params": _canon_number(params),
             "suppressed": f.suppressed,
             "inputs": [sigs.get(dep, "?") for dep in f.inputs],
         }
@@ -1636,7 +1670,7 @@ class Document:
             ins.append(p)
 
         if f.op in CREATORS:
-            return CREATORS[f.op](**self._clean(f.params))
+            return CREATORS[f.op](**self._clean(self._resolved(f)))
         if f.op in MODIFIERS:
             if len(ins) != 1:
                 raise ValueError(f"'{f.op}' needs exactly 1 input")
@@ -1646,8 +1680,8 @@ class Document:
             # Modifiers only — every creator already names the parameter AND
             # its unit ("plate: width must be a number in mm (got None)"), and
             # `move` reads a missing offset as 0 on purpose (_move_offsets).
-            _check_numeric_params(f.op, f.params, f.id)
-            kw = self._clean(f.params)
+            _check_numeric_params(f.op, f.params, f.id, self.param_values)
+            kw = self._clean(self._resolved(f))
             if f.op in pattern.SEEDED_OPS and kw.get("seed"):
                 kw.update(self._seed_parts(f, kw["seed"]))   # the seed's before / after bodies
             if f.op in SWEEP_OPS and kw.get("path"):
@@ -1656,15 +1690,185 @@ class Document:
         if f.op == "move":
             if len(ins) != 1:
                 raise ValueError("'move' needs exactly 1 input")
-            return Pos(*_move_offsets(f.params)) * ins[0]
+            return Pos(*_move_offsets(self._resolved(f))) * ins[0]
         if f.op in COMBINERS:
             if len(ins) < 2:
                 raise ValueError(f"'{f.op}' needs 2+ inputs")
             _check_combiner_inputs(f.op, f.inputs, ins)
             if f.op == "loft":                   # the one combiner with parameters
-                return _loft(ins, ids=list(f.inputs), **self._clean(f.params))
+                return _loft(ins, ids=list(f.inputs), **self._clean(self._resolved(f)))
             return COMBINERS[f.op](ins)
         raise ValueError(f"unknown op '{f.op}'")
+
+    def _resolved(self, f: Feature) -> dict:
+        """`f.params` with every FORMULA (a string in a numeric parameter)
+        replaced by its value under the current parameters — the ops never see
+        a string. A formula that does not work out is a sentence naming the
+        feature and the parameter."""
+        numeric = Document.numeric_params(f.op)
+        out = dict(f.params)
+        for k, v in f.params.items():
+            if k in numeric and isinstance(v, str) and not isinstance(v, bool):
+                try:
+                    out[k] = paramexpr.evaluate(v, self.param_values)
+                except ValueError as e:
+                    raise ValueError(f"{f.id}: {k} = {v!r} — {e}") from None
+        return out
+
+    # -- named parameters (specs/named-parameters.md) --------------------------
+    def _eval_parameters(self) -> None:
+        """Every parameter's value from its formula, in dependency order; a
+        cycle, an unknown name or a bad formula is a sentence in
+        `param_problems` and the parameter has no value (its users fail with
+        that sentence, the document still opens)."""
+        values: dict = {}
+        problems: dict = {}
+        pending = dict(self.parameters)
+        while pending:
+            progressed = False
+            for name, spec in list(pending.items()):
+                expr = spec.get("expr", "")
+                try:
+                    needs = paramexpr.names_in(expr)
+                except ValueError as e:
+                    problems[name] = str(e)
+                    del pending[name]
+                    progressed = True
+                    continue
+                if any(n in pending for n in needs if n != name):
+                    continue                            # wait for what it needs
+                try:
+                    values[name] = paramexpr.evaluate(expr, values)
+                except ValueError as e:
+                    problems[name] = str(e)
+                del pending[name]
+                progressed = True
+            if not progressed:                          # what is left only waits on itself
+                cycle = " -> ".join(pending) + f" -> {next(iter(pending))}"
+                for name in pending:
+                    problems[name] = (f"'{name}' is in a loop of parameters that need each "
+                                      f"other ({cycle}) — one of them must be a plain number")
+                break
+        self.param_values, self.param_problems = values, problems
+
+    def parameter_users(self, name: str) -> dict:
+        """Who refers to a parameter: {"features": [ids], "parameters": [names]}."""
+        feats = []
+        for f in self.features:
+            numeric = Document.numeric_params(f.op)
+            for k, v in f.params.items():
+                if k in numeric and isinstance(v, str) and not isinstance(v, bool):
+                    try:
+                        if name in paramexpr.names_in(v):
+                            feats.append(f.id)
+                            break
+                    except ValueError:
+                        continue
+        params = []
+        for other, spec in self.parameters.items():
+            if other == name:
+                continue
+            try:
+                if name in paramexpr.names_in(spec.get("expr", "")):
+                    params.append(other)
+            except ValueError:
+                continue
+        return {"features": feats, "parameters": params}
+
+    def set_parameter(self, name: str, expr, comment: str | None = None) -> None:
+        """Create or change a parameter — all of it or none: the name must be
+        usable and not a feature's, the formula must parse, and with it in
+        place every parameter must still work out (no loop, no unknown name).
+        A refusal leaves the document exactly as it was."""
+        why = paramexpr.name_problem(name)
+        if why:
+            raise ValueError(why)
+        if any(f.id == name for f in self.features):
+            raise ValueError(f"'{name}' is the name of a feature — a parameter and a feature "
+                             f"cannot share a name")
+        text = str(expr).strip() if not isinstance(expr, str) else expr.strip()
+        if name in paramexpr.names_in(text):            # (parse: its own sentence)
+            raise ValueError(f"{name} = {text!r} — a parameter cannot be defined by itself")
+        before = (dict(self.parameters), dict(self.param_values), dict(self.param_problems))
+        entry = dict(self.parameters.get(name, {}))
+        entry["expr"] = text
+        if comment is not None:
+            entry["comment"] = str(comment)
+        self.parameters[name] = entry
+        self._eval_parameters()
+        if name in self.param_problems:
+            problem = self.param_problems[name]
+            self.parameters, self.param_values, self.param_problems = before
+            raise ValueError(f"{name} = {text!r} — {problem}")
+        self._mark_stale()
+
+    def remove_parameter(self, name: str) -> None:
+        """Delete a parameter nothing refers to; otherwise the sentence names
+        every user, like a feature's delete plan."""
+        if name not in self.parameters:
+            raise ValueError(f"no parameter named '{name}'")
+        users = self.parameter_users(name)
+        held = [f"feature '{i}'" for i in users["features"]] + \
+               [f"parameter '{p}'" for p in users["parameters"]]
+        if held:
+            raise ValueError(f"'{name}' is used by {', '.join(held)} — change those to a "
+                             f"number or another parameter first")
+        del self.parameters[name]
+        self._eval_parameters()
+        self._mark_stale()
+
+    def rename_parameter(self, old: str, new: str) -> None:
+        """Rename a parameter EVERYWHERE it is referred to — other parameters'
+        formulas and features' formulas — by NAME token (paramexpr.rename_in),
+        so `wall` inside `wall_2` is left alone."""
+        if old not in self.parameters:
+            raise ValueError(f"no parameter named '{old}'")
+        new = (new or "").strip()
+        if new == old:
+            return
+        why = paramexpr.name_problem(new)
+        if why:
+            raise ValueError(why)
+        if new in self.parameters:
+            raise ValueError(f"there is already a parameter named '{new}'")
+        if any(f.id == new for f in self.features):
+            raise ValueError(f"'{new}' is the name of a feature — a parameter and a feature "
+                             f"cannot share a name")
+        self.parameters = {(new if k == old else k):
+                           {**v, "expr": paramexpr.rename_in(v.get("expr", ""), old, new)}
+                           for k, v in self.parameters.items()}
+        for f in self.features:
+            numeric = Document.numeric_params(f.op)
+            for k, v in list(f.params.items()):
+                if k in numeric and isinstance(v, str) and not isinstance(v, bool):
+                    f.params[k] = paramexpr.rename_in(v, old, new)
+        self._eval_parameters()
+        self._mark_stale()
+
+    def parameters_json(self) -> list[dict]:
+        """The parameters for the UI: name, formula, value, comment, users, problem."""
+        out = []
+        for name, spec in self.parameters.items():
+            users = self.parameter_users(name)
+            out.append({"name": name, "expr": spec.get("expr", ""),
+                        "value": self.param_values.get(name),
+                        "comment": spec.get("comment", ""),
+                        "users": users["features"], "used_by_parameters": users["parameters"],
+                        "problem": self.param_problems.get(name)})
+        return out
+
+    def resolved_json(self, f: Feature) -> dict:
+        """Per feature: {param: value} for every FORMULA it holds, for the tree
+        to show `wall*2 = 6`; a formula that does not work out maps to None."""
+        numeric = Document.numeric_params(f.op)
+        out = {}
+        for k, v in f.params.items():
+            if k in numeric and isinstance(v, str) and not isinstance(v, bool):
+                try:
+                    out[k] = paramexpr.evaluate(v, self.param_values)
+                except ValueError:
+                    out[k] = None
+        return out
 
     @staticmethod
     def _clean(params: dict) -> dict:
@@ -2146,13 +2350,16 @@ class Document:
     # -- persistence: the recipe is the artifact ------------------------------
     def to_data(self) -> dict:
         """The document's intent (not its build status) as JSON-safe data."""
-        return {
+        data = {
             "name": self.name,
             "spec": json.loads(json.dumps(self.spec)),
             "features": [{k: v for k, v in asdict(f).items()
                           if k in ("id", "op", "params", "inputs", "suppressed")}
                          for f in self.features],
         }
+        if self.parameters:            # ABSENT when empty: the 47 saved designs round-trip byte for byte
+            data["parameters"] = {k: dict(v) for k, v in self.parameters.items()}
+        return data
 
     @classmethod
     def from_data(cls, data: dict) -> "Document":
@@ -2165,6 +2372,18 @@ class Document:
         # tolerating an unknown op is about walking the CATALOGUE without
         # raising, not a promise that the file opens. Proposed as a finding
         # in the section 2 review, 2026-09-10, and rejected on this evidence.
+        # parameters FIRST and without refusal: a file must always open. One
+        # whose formula no longer works (a name gone, a loop) is carried as
+        # written and flagged in param_problems; the features that use it go
+        # red with the sentence at rebuild.
+        for name, spec in (data.get("parameters") or {}).items():
+            if isinstance(spec, dict):
+                doc.parameters[str(name)] = {"expr": str(spec.get("expr", "")),
+                                             **({"comment": str(spec["comment"])}
+                                                if spec.get("comment") else {})}
+            else:                                       # a bare number or formula
+                doc.parameters[str(name)] = {"expr": str(spec)}
+        doc._eval_parameters()
         for f in data["features"]:
             doc.add(f["id"], f["op"], f.get("params"), f.get("inputs"))
             doc.features[-1].suppressed = f.get("suppressed", False)

@@ -541,7 +541,16 @@ function buildBody(f) {
       };
       val.appendChild(cb); pr.appendChild(val); body.appendChild(pr);
     } else if (typeof v === 'number' || typeof v === 'string') {
-      val.className = 'pval'; val.textContent = v; val.title = 'click to edit';
+      val.className = 'pval';
+      // a FORMULA (named parameters): the row reads `wall*2 = 6` — the value
+      // is the server's (`resolved`), the text is what the user typed and
+      // what the edit box opens on; a formula that does not work out reads
+      // `wall*2 = ?` and the row's problem says why
+      const formula = f.resolved && Object.hasOwn(f.resolved, k);
+      val.textContent = formula ? `${v} = ${f.resolved[k] == null ? '?' : round4(f.resolved[k])}` : v;
+      val.title = formula ? 'a formula — click to edit it; type a number or another formula'
+        : 'click to edit — a number, or a formula such as wall*2';
+      if (formula) val.classList.add('formula');
       val.onclick = e => {
         e.stopPropagation();
         if (!modalGuard()) beginEdit(val, f.id, k, v);
