@@ -57,7 +57,20 @@ def _hub(p: ImpellerParams):
 
 def _one_blade(p: ImpellerParams):
     """A single tapered blade: a trapezoid profile (tall at the hub, short at the
-    tip) extruded thin, then leaned over by the backsweep angle."""
+    tip) extruded thin, then leaned over by the backsweep angle.
+
+    THE SHAFT BORE IS TAKEN OUT OF IT HERE, for the reason `meanline.one_blade`
+    carries in full: `_hub` drills the bore with `blocks.with_center_hole` and
+    `build` fuses the blades on AFTERWARDS, so any blade material reaching
+    inside the bore fills the hole back in, and the spec below
+    (`symmetry`, `n_solids`, `require_manifold`) still passes every line. The
+    shipped defaults clear it — the blade starts at `hub_top_radius` 9.0
+    against a 6.0 bore — so today the cut removes nothing and the impeller is
+    identical to the last digit (measured 2026-09-17,
+    probes/impeller_bore_order_probe.py: 89,143.229 mm3, 37 faces, 7-fold,
+    both ways). One edit is all it takes: a nose narrower than the bore, or a
+    wider bore, and the wheel comes back "verified" with no hole in it.
+    """
     with BuildSketch(Plane.XZ) as sk:
         with BuildLine():
             Polyline(
@@ -69,7 +82,9 @@ def _one_blade(p: ImpellerParams):
             )
         make_face()
     blade = extrude(sk.sketch, amount=p.blade_thickness)
-    return blade.rotate(Axis.Z, p.backsweep_deg)
+    leaned = blade.rotate(Axis.Z, p.backsweep_deg)
+    return leaned - b3d.Cylinder(radius=p.bore_radius,
+                                 height=8.0 * max(p.hub_height, 1.0))
 
 
 def _blades(p: ImpellerParams):
