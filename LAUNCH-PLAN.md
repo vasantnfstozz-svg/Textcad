@@ -256,8 +256,12 @@ preview remade when the input list changes; `sketch.loft_geometry` is the one
 verdict; the guard that matters: sections picked OUT OF ORDER along the axis
 loft into a self-intersecting solid at 1.98 × the honest volume that the
 kernel calls VALID — the op refuses, the tool reorders and says so; `ruled` is
-the first parameter a combiner has; review pending), Text in a sketch (`text` entity —
-names and logos), Section view, **Named parameters** (`wall = 3` once,
+the first parameter a combiner has; review pending), **Text in a sketch —
+BUILT 2026-09-17, `d3c8c85`** (`specs/text-entity.md`: the `text` entity, a
+word as the kernel's own glyph faces centred on x / y; the sketcher gets the
+loops from `POST /api/sketch/outline` because a font lives in the kernel; the
+tree edits the word as text; `plate − word` is the engraving, measured exact;
+review pending), Section view, **Named parameters** (`wall = 3` once,
 everything follows; the biggest usability win after the tree, needs an
 expression engine), Assemblies/joints (assembly.py exists). Being built one
 by one on Fable from 2026-09-17 with the reviews deferred to the user's own
@@ -1129,7 +1133,7 @@ yet to keep selling simple) and the postponement answers it for now: no licence
 file, which keeps every option open. An open release cannot be taken back.
 
 **Later (the Tier 2 list of §4, in progress since 2026-09-17 — Sweep built
-`36ee69c`, Loft built `ec45cf1`):** named parameters, Text entity, section view,
+`36ee69c`, Loft built `ec45cf1`, Text entity built `d3c8c85`):** named parameters, section view,
 assemblies, the user's personal project.
 
 ---
@@ -1213,6 +1217,7 @@ assemblies, the user's personal project.
 
 | Pri | Item | Source |
 |-----|------|--------|
+| P3 | **Text entity's loose ends, deliberately not built in the first session** (`specs/text-entity.md`, `d3c8c85`). (a) An unknown font name falls back to Arial with a warning on the SERVER's stderr only — the user sees the shape build in a different face than they named; a sentence would need the font manager asked first. (b) No bold / italic (`FontStyle`), no letter spacing, no text on a curve. (c) The tree shows the `font` row only when the entity carries one (the tool never writes it), so the font is AI-only today. (d) Until the glyph loops arrive from the server a freshly placed word draws nothing (typically well under a second). (e) Hit-testing and the even-odd mode rule use the word's bounding box, not the glyphs, so clicking between two letters selects the word and a word drawn across a shape's edge is judged by its box. (f) No resize handles: the height is typed (in the box or the tree). | Tier 2 build 2026-09-17 |
 | P3 | **Loft's loose ends, deliberately not built in the first session** (`specs/loft.md`, `ec45cf1`). (a) A flat FACE of a body is not accepted as a section (Fusion allows it; the sweep/revolve `face_profile` path would carry it, but a loft's inputs are sketches and a face is a body reference — it needs its own op or a face-to-profile feature). (b) No guide rails, no end conditions (tangent / direction), no per-section seam control: a circle-to-square loft twists the way the kernel matches vertices. (c) The picked profiles are shown by the ghost's rings and the panel list, not highlighted in the viewport's own sketch colour. (d) Three-plus sections smooth vs ruled differ by a quarter of the volume (r5-r2-r5: a spline bulging inward) — real, not guarded, said only in the AI note. (e) The plan resamples each outline to 64 points without aligning seams, so the ghost between a circle and a square may show a slight twist the solid does not have. | Tier 2 build 2026-09-17 |
 | P3 | **Sweep's loose ends, deliberately not built in the first session** (`specs/sweep.md`, `36ee69c`). (a) The Add Feature dialog renders `path` as a text box; the tool's panel has the real list (the plan's `paths`), so the AI / dialog path types an id. (b) While the arrow is DRAGGED it slides along the tangent of the station it started from and snaps back onto the path on release; Fusion's handle rides the curve live. (c) The Pappus check (volume = area × length to 2 %) guards ONE-face profiles only: a second face off the path follows a trajectory of its own length, so a multi-profile sweep is judged by validity alone. (d) The tree's corner-radius editor (`cornerlib.set_arc_radius`) on an OPEN path is untested. (e) Orientation (Fusion's Perpendicular / Parallel), taper and twist are not offered. | Tier 2 build 2026-09-17 |
 | P2 | **The trace's ground rule turns on a 5%-of-the-picture threshold, and that is a knife edge.** A 13 px dark scan edge traces correctly; **16 px traces the negative**, and so do a 30 px mount board and a 60 px picture frame. The alternatives were measured rather than guessed: removing the thickness test fixes mount boards AND the heavy-vignette case, but breaks inverse-video art with a counter (a white ring on black), which reads identically from inside. Any threshold has an edge and this one is at least defensible - but the rule has now been rewritten three times, each round scoring itself on its own corpus, so the next person to touch it should score all four rules on all four corpora first (`probes/imgtrace_r4_corpus.py` now runs all four). **And the light-shell half is a coin flip** - measured at +32 / -33 over a 458-picture generator: a margin round a PLATE and a margin round a CARD are the same geometry. The tie-break is that dark-on-light art dominates this product's input (all five traced designs are), so it must not be "simplified" back to symmetric without re-scoring every rule on every corpus. | section 9 rounds three and four, 2026-09-17 |

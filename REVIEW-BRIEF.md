@@ -6,14 +6,15 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING** — TWO code commits wait, oldest first: **Sweep
-> `36ee69c`** (range `6b9fa0e..36ee69c`, merged into master at `97a6aea`) and
-> **Loft `ec45cf1`** (range `97a6aea..ec45cf1`, section 2 below). Both built on
-> Fable by the scheduled Tier 2 build of 2026-09-17 with **no review yet** —
-> the user asked for the tools to be built one by one and the reviews to wait
-> for their own `code review` chats (LAUNCH-PLAN §11, 2026-09-17). One review
-> chat may take both (they share `tool.js`), or one each; strike a section
-> here when it is done. More Tier 2 tools may queue before this is read.
+> **Status: PENDING** — THREE code commits wait, oldest first: **Sweep
+> `36ee69c`** (range `6b9fa0e..36ee69c`, merged into master at `97a6aea`),
+> **Loft `ec45cf1`** (range `97a6aea..ec45cf1`, merged at `559c342`, section 2)
+> and **Text entity `d3c8c85`** (range `559c342..d3c8c85`, section 3). All
+> built on Fable by the scheduled Tier 2 build of 2026-09-17 with **no review
+> yet** — the user asked for the tools to be built one by one and the reviews
+> to wait for their own `code review` chats (LAUNCH-PLAN §11, 2026-09-17).
+> Sweep and Loft share `tool.js` and suit one chat; Text is the sketcher and
+> stands alone. Strike a section here when it is done.
 
 ## 1. Sweep tool — `36ee69c` (`specs/sweep.md`)
 
@@ -151,10 +152,62 @@ test_open_from_the_tree_row_and_drag_the_ring` read the angle box as 0 at the
 Re-run alone twice on this branch and twice on master: four passes. The ring
 drag's 40 ms move steps are the likely edge; not touched here.
 
+## 3. Text sketch entity — `d3c8c85` (`specs/text-entity.md`)
+
+**What it is.** A new entity kind, `text`: a word as build123d `Text` faces,
+centred on x / y, composing like any shape. New: `sketch._text_faces`,
+`ENTITY_STRINGS`, `entity_outlines`, `POST /api/sketch/outline`, the
+sketcher's Text tool (one click + a text field in the draw-time box), the
+server-outline render cache, `tree.entTextRow`.
+
+**Where the risk is, ranked:**
+
+1. **`entity_schema()` gained two keys** (`strings`, `server_outline`) and the
+   tree reads `cat.strings[kind]`. An OLD page against this server is fine
+   (extra keys); THIS page against an old server (no `strings`) renders no
+   word row — the fallback path (`cat.ok === false`) shows generic numeric
+   fields only, so a text entity's word would be uneditable there. Deliberate
+   (the server and page ship together) but worth one look at `shapeList`.
+2. **`_text_faces` returns a Sketch of several faces** — `compose()` treats it
+   as ONE shape: `_containment` / `_overlaps` / `_area_of` run on the whole
+   word. A word drawn OVER the edge of a rectangle (half in, half out) with
+   mode add: measured nothing. The even-odd rule in the sketcher uses the
+   word's BOX; the kernel composes the real glyphs. A letter straddling a hole
+   edge is the shape to probe (`compose` with a subtract word partly outside
+   the plate: does the outside part vanish silently, as any subtract does?).
+3. **The sketcher draws nothing for a word until the server answers**, and
+   caches `[]` on an error — after an error the word never draws again in
+   that session (the cache key has no retry). The error IS said in chat. A
+   word whose glyphs fail (an emoji, say) would sit invisible but present in
+   `skEnts`; the tree shows it. Probe an emoji / a non-Latin word: the kernel
+   may shape it with Arial's fallback glyphs or produce nothing.
+4. **The draw-time box now holds a TEXT input** and `routeDigitToDrawBox`
+   focuses the FIRST input when a digit is typed anywhere in sketch mode —
+   for the Text tool that first input IS the word field (a digit typed
+   before the box exists goes nowhere; after it exists the field is already
+   focused). Escape in the word field calls `updateDrawDimBox` which
+   re-focuses it (`!el.contains(document.activeElement)` is false while
+   focused, so no loop) — check Escape still leaves the tool as it does for
+   other shapes.
+5. **`_validate_dims` runs on `size` only**; `text` and `font` are validated
+   in `_text_faces` (empty, non-string). A `text` that is a NUMBER (the AI
+   writing `"text": 2026`) is refused as "needs a word" — arguably it should
+   be shaped as "2026". Deliberate? No: a cheap improvement (str() a number).
+6. **Extrude of a word gives N solids** and `_check_pieces` exempts extrude by
+   name, but a **Cut** made of the word's prisms is judged too: the engraving
+   journey (plate − 'AB' prisms) passed with no pieces warning because the
+   RESULT is one body. A word cut THROUGH a thin plate would split it — the
+   existing "falls into pieces" warning covers that.
+
+**Do not re-report** (LAUNCH-PLAN §10 P3 "Text entity's loose ends"): the
+silent Arial fallback for an unknown font; no bold / italic / spacing / text
+on a curve; the font row shown only when present; the brief invisible moment
+before the loops arrive; box-based hit-test and mode rule; no resize handles.
+
 **Merge note.** The build session merges the branch into master only if the
 main checkout has no modified tracked files at that moment (the user's Opus
-bug-fix chat shares the checkout). If the bottom of this file says the branch
-is unmerged, review it on the branch: `git log master..worktree-loft-tool`.
+bug-fix chat shares the checkout). If the bottom of this file says a branch
+is unmerged, review it on the branch: `git log master..worktree-<name>`.
 
 **How the review starts.** The user opens a fresh chat on Opus
 (`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
