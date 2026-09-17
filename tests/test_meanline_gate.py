@@ -25,6 +25,7 @@ import pytest
 from build123d import Cylinder
 
 import blocks
+import inspector
 import meanline
 
 
@@ -240,6 +241,36 @@ def test_build_from_design_refuses_an_impossible_wheel_without_the_kernel():
     assert "metres" in problems and "raise the speed" in problems, problems
 
 
+def test_the_samples_drill_their_shaft_bore_after_the_blades_are_on():
+    """ROUND TWO. `sample_compressor` drilled the bore into `hub` and fused the
+    blades on afterwards — the exact ordering that made round one's P0. Its own
+    wheel is large enough to be clear (blade reach 6.5578 against a 4.92 mm
+    bore), but a user editing the tree down to a small wheel plugged the bore
+    with no warning and nothing could see it. MEASURED on that same tree at the
+    micro-turbo duty (probes/compressor_bore_order_probe.py, 2026-09-17):
+
+        bore drilled first   67.210 mm3 inside a 2 mm bore, ok=True,
+                             spec_problems=[], health [], ONE watertight solid
+        bore drilled last     0.000 mm3, same bbox, same max_radius
+
+    and on the SHIPPED duty the two orderings are identical to the last digit
+    (volume 428259.878, 69 faces, 187.6 x 187.6 x 35.64, max_radius 93.8), so
+    the tree that teaches the right shape costs the example nothing.
+    """
+    import samples
+
+    for maker in (samples.sample_compressor, samples.sample_impeller):
+        doc = maker()
+        ops = [(f.id, f.op) for f in doc.features]
+        drills = [i for i, (_, op) in enumerate(ops)
+                  if op == "with_center_hole"]
+        fuses = [i for i, (_, op) in enumerate(ops) if op == "fuse"]
+        assert drills and fuses, ops
+        assert min(drills) > max(fuses), (maker.__name__, ops)
+        # ...and the drilled body is the one the user ends up with
+        assert ops[-1][1] == "with_center_hole", ops
+
+
 def test_the_shipped_compressor_example_is_pinned_feature_by_feature():
     """Nothing in the fast tier rebuilds `compressor` — it is the most
     expensive example there is (29.5 s on an idle box, 91.6 s with other
@@ -257,7 +288,6 @@ def test_the_shipped_compressor_example_is_pinned_feature_by_feature():
     assert doc.name == "compressor-PR3-13blades"
     assert p["hub_body"]["points"] == [[0, 0], [93.8, 0], [93.8, 2.81],
                                        [9.85, 35.64], [0, 35.64]]
-    assert p["hub"]["radius"] == 4.92
     assert p["blade"] == {"inner_radius": 7.39, "outer_radius": 93.8,
                           "inlet_angle_deg": 49.4, "exit_angle_deg": 35.0,
                           "height": 32.83, "thickness": 1.88}
@@ -265,6 +295,7 @@ def test_the_shipped_compressor_example_is_pinned_feature_by_feature():
     assert p["shroud_cutter"]["points"] == [
         [5.39, 35.64], [32.81, 35.64], [93.8, 5.359999999999999],
         [108.8, 5.359999999999999], [108.8, 85.64], [5.39, 85.64]]
+    assert p["impeller"]["radius"] == 4.92      # the bore, drilled LAST
     assert doc.spec == {"symmetry": 13, "n_solids": 1, "tip_radius": 93.8,
                         "tol": 1.0}
 
@@ -316,18 +347,71 @@ def test_the_blades_leave_the_shaft_bore_open(name, kw):
     assert vol < 1e-9, f"{name}: {vol:.3f} mm3 of blade inside the shaft bore"
 
 
-def test_a_wheel_whose_blades_already_clear_the_bore_is_untouched():
-    """The shipped duty's blade reaches in to 6.5578 mm against a 4.92 mm bore
-    (probes/meanline_bore_reach.py), so the cut must remove nothing at all —
-    not a micron, not a face."""
-    d = meanline.design(duty())
-    raw = blocks.curved_blade(
+def _raw_blade(d):
+    return blocks.curved_blade(
         inner_radius=0.75 * d.inducer_hub_radius, outer_radius=d.tip_radius,
         inlet_angle_deg=d.beta1_deg, exit_angle_deg=d.beta2_deg,
         height=d.axial_length, thickness=max(0.02 * d.tip_radius, 1.5))
-    assert meanline.one_blade(d).volume == pytest.approx(raw.volume, rel=1e-12)
+
+
+# ROUND TWO. Round one proved the bore cut on three duties, all of them the
+# same 25-45 degree traced kind. A bore that is clear on the corpus and plugged
+# on a shape nobody tried is the same defect, so the BACKSWEEP — the one dial
+# that changes the blade's shape rather than its size, and which
+# tests/test_mcp_server.py blesses from -60 to 74 — is swept here as well,
+# thick blades and thin. Measured over 30 shapes
+# (probes/meanline_bore_sweep.py, 2026-09-17): every one came back with an
+# empty bore, ONE solid, health [], and every blade that already cleared the
+# bore came back byte-identical in volume.
+BLADE_SHAPES = [
+    ("forward swept -30", dict(mass_flow=0.05, pressure_ratio=1.8, rpm=180000,
+                               backsweep_deg=-30.0)),
+    ("radial 0", dict(mass_flow=0.05, pressure_ratio=1.8, rpm=180000,
+                      backsweep_deg=0.0)),
+    ("heavy 60", dict(mass_flow=0.05, pressure_ratio=1.8, rpm=180000,
+                      backsweep_deg=60.0)),
+    ("the last blessed 74", dict(mass_flow=0.05, pressure_ratio=1.8,
+                                 rpm=180000, backsweep_deg=74.0)),
+    ("the smallest wheel", dict(mass_flow=1e-6, pressure_ratio=1.5,
+                                rpm=500000)),
+    ("a thick blade", dict(mass_flow=20.0, pressure_ratio=3.5, rpm=8000)),
+]
+
+
+@pytest.mark.parametrize("name,kw", BLADE_SHAPES,
+                         ids=[s[0].replace(" ", "_") for s in BLADE_SHAPES])
+def test_the_bore_cut_holds_on_every_blade_shape_the_dials_reach(name, kw):
+    d = meanline.design(duty(**kw))
+    blade = meanline.one_blade(d)
+    assert blade.volume > 0, f"{name}: the cut emptied the blade"
+    # a blade the cut SEVERS still patterns into a watertight wheel — silent
+    assert len(blade.solids()) == 1, f"{name}: the cut severed the blade"
+    assert inspector.health(blade) == [], name
+    left = blade & _bore_plug(d)
+    vol = left.volume if left is not None else 0.0
+    assert vol < 1e-9, f"{name}: {vol:.3f} mm3 of blade inside the shaft bore"
+
+
+# every one of these has a blade root outside its bore already, so the cut has
+# to remove NOTHING — round one claimed "identical to the last digit" and
+# measured the shipped duty only
+BORE_CLEAR = [s for s in SOUND
+              if s[0] not in ("a micro turbo", "a small turbo")]
+
+
+@pytest.mark.parametrize("name,kw,_e", BORE_CLEAR,
+                         ids=[s[0].replace(" ", "_") for s in BORE_CLEAR])
+def test_a_wheel_whose_blades_already_clear_the_bore_is_untouched(name, kw, _e):
+    """The shipped duty's blade reaches in to 6.5578 mm against a 4.92 mm bore
+    (probes/meanline_bore_reach.py), so the cut must remove nothing at all —
+    not a micron, not a face — and that has to hold for every clear wheel, not
+    just the one the fix was written against."""
+    d = meanline.design(duty(**kw))
+    raw = _raw_blade(d)
     left = raw & _bore_plug(d)
-    assert (left.volume if left is not None else 0.0) < 1e-9
+    assert (left.volume if left is not None else 0.0) < 1e-9, \
+        f"{name} is not a bore-clear wheel; this test proves nothing on it"
+    assert meanline.one_blade(d).volume == pytest.approx(raw.volume, rel=1e-12)
 
 
 def test_a_bore_wider_than_the_wheel_is_refused_in_words():
@@ -402,3 +486,181 @@ def test_the_gate_reads_the_geometry_it_will_actually_build():
     assert d.exit_width < d.tip_radius              # and it is still a wheel
     assert all(math.isfinite(v) for v in
                (d.tip_radius, d.exit_width, d.inducer_shroud_radius))
+
+
+# ------------------------- the machinable floor no longer keeps its mouth shut
+
+# name, duty, the width continuity ASKED for (mm), and the overstatement
+# (probes/meanline_exit_width_clamp.py, 2026-09-17)
+CLAMPED = [
+    ("PR 3 at 1,000 rpm", dict(pressure_ratio=3.0, rpm=1000), 0.056719, 17.6),
+    ("1e-6 kg/s", dict(mass_flow=1e-6), 0.0000051, 195897.8),
+    ("1e-4 kg/s at 500,000 rpm",
+     dict(mass_flow=1e-4, pressure_ratio=1.5, rpm=500000), 0.027937, 35.8),
+]
+
+
+@pytest.mark.parametrize("name,kw,ideal,ratio", CLAMPED,
+                         ids=[s[0].replace(" ", "_") for s in CLAMPED])
+def test_the_exit_width_floor_says_so_when_it_fires(name, kw, ideal, ratio):
+    """THE REPRO. `exit_width` is clamped to a machinable 1.0 mm and NOTHING
+    said so, so a design whose physics wanted 57 micrometres reported 1.00 mm —
+    18 times wider — and `mcp_server.design_compressor` handed that number to
+    an AI as `exit_width_mm`. It is also why `b2 >= r2` cannot catch a wheel
+    enormously oversized for its flow: the number that rule reads is the
+    clamped one. The floor stays (nothing cuts a 57 micrometre channel); the
+    silence does not."""
+    d = meanline.design(duty(**kw))
+    assert d.exit_width == 1.0
+    assert d.exit_width_ideal == pytest.approx(ideal, rel=1e-3), name
+    assert d.exit_width / d.exit_width_ideal == pytest.approx(ratio, rel=1e-2)
+    note = " ".join(d.notes)
+    assert note, f"{name}: the clamp fired and the design said nothing"
+    # a SENTENCE a person can act on, naming the dials that are free
+    assert "exit blade width" in note and "floor" in note, note
+    assert "raise the speed" in note, note
+    assert len(note.split()) >= 20, note
+    # ...and it reaches whoever reads the design
+    assert "NOTE:" in d.report() and "exit blade width" in d.report()
+
+
+@pytest.mark.parametrize("name,kw,expect", SOUND,
+                         ids=[s[0].replace(" ", "_") for s in SOUND])
+def test_a_wheel_whose_width_is_real_says_nothing(name, kw, expect):
+    """The note may not cry wolf on the eight duties the corpus calls sound —
+    every one of them has a true b2 between 2.55 and 38.27 mm, well clear of
+    the floor (probes/meanline_exit_width_clamp.py)."""
+    d = meanline.design(duty(**kw))
+    assert d.exit_width_ideal > 1.0, name
+    assert d.exit_width == pytest.approx(d.exit_width_ideal, abs=0.005)
+    assert d.notes == (), (name, d.notes)
+    assert "NOTE:" not in d.report()
+
+
+# ---------------------------- the bore is MEASURED now, not taken on trust ---
+
+def test_a_filled_in_bore_is_measured_and_refused_in_words():
+    """`to_spec` checks symmetry, solid count, tip radius and height, and round
+    one measured a wheel that passed all four with 67.27 mm3 of blade in its
+    2 mm bore. `Spec.holes` cannot reach it either: the plugged micro-turbo
+    still measured `cylinder_radii={2.0: 1, 16.51: 5}` — the bore's wall is
+    still a cylindrical face, just filled in behind
+    (probes/compressor_bore_order_probe.py). Only a boolean answers, and it
+    costs 0.14 s against a 73 s build."""
+    d = meanline.design(duty())
+    solid = Cylinder(radius=d.tip_radius, height=d.backplate_thk)
+    assert meanline.bore_material(solid, d) > 0
+    problem = meanline.bore_problem(solid, d)
+    assert problem and "shaft bore is not a hole" in problem, problem
+    assert "9.84 mm bore" in problem, problem       # the DIAMETER, in words
+    drilled = blocks.with_center_hole(solid, d.bore_radius)
+    assert meanline.bore_material(drilled, d) < 1e-9
+    assert meanline.bore_problem(drilled, d) is None
+
+
+def test_the_bore_check_does_not_fire_on_a_hair_of_boolean_noise():
+    """A guard that refuses correct geometry is the worse sin. The threshold is
+    0.5% of the bore's own volume: round one's plug filled 69% of it, and every
+    sound wheel measured exactly 0.000000 mm3 — three orders of magnitude of
+    daylight on both sides."""
+    d = meanline.design(duty())
+    room = math.pi * d.bore_radius ** 2 * (d.backplate_thk + d.axial_length)
+    drilled = blocks.with_center_hole(
+        Cylinder(radius=d.tip_radius, height=d.backplate_thk + d.axial_length),
+        d.bore_radius)
+    # a wisp one thousandth of the bore: not a plug, and not refused
+    wisp = Cylinder(radius=d.bore_radius, height=0.0005 * (d.backplate_thk
+                                                           + d.axial_length))
+    assert meanline.bore_problem(drilled + wisp, d) is None
+    # a real plug — a quarter of the bore — is
+    plug = Cylinder(radius=d.bore_radius,
+                    height=0.25 * (d.backplate_thk + d.axial_length))
+    assert meanline.bore_problem(drilled + plug, d) is not None
+    assert room > 0
+
+
+# --------------- the exit width has to fit in the wheel, or it is not built ---
+
+# Every one of these designed cleanly at 4092242, built a sound watertight
+# wheel, and published an exit width the wheel did not have. Measured
+# (probes/meanline_rim_height_probe.py, probes/meanline_shroud_scan.py):
+#
+#   0.05 kg/s PR 1.01 @ 10,000 rpm, 25 deg   said b2 17.29, built 12.480 (= L)
+#
+# name, duty, (published b2, the wheel's depth L)
+EXIT_TALLER_THAN_THE_WHEEL = [
+    ("the measured one", dict(mass_flow=0.05, pressure_ratio=1.01, rpm=10000,
+                              backsweep_deg=25.0), (17.29, 12.48)),
+    ("a 124 mm blower", dict(mass_flow=0.5, pressure_ratio=1.01, rpm=3000,
+                             backsweep_deg=35.0), (47.96, 43.27)),
+    ("a small fast one", dict(mass_flow=0.01, pressure_ratio=1.2, rpm=300000,
+                              backsweep_deg=60.0), (2.89, 2.35)),
+]
+
+
+@pytest.mark.parametrize("name,kw,expect", EXIT_TALLER_THAN_THE_WHEEL,
+                         ids=[s[0].replace(" ", "_")
+                              for s in EXIT_TALLER_THAN_THE_WHEEL])
+def test_a_wheel_too_shallow_for_its_own_exit_width_is_refused(name, kw,
+                                                               expect):
+    """ROUND TWO, and the one the round-one question "what ELSE can `to_spec`
+    not see?" turned up. `build_from_design`'s shroud cutter runs from
+    (r1s, t+L) DOWN to (r2, t+b2). When b2 is taller than the wheel is deep the
+    line runs UP, the cut takes nothing off the rim, and the blades stand full
+    height there — so the wheel's exit width is L, not the b2 the design
+    published, and every check passes: one watertight solid, health [], 14-fold
+    symmetric, the right tip radius, the right overall height.
+
+    MEASURED at 4092242 (probes/meanline_rim_height_probe.py): 0.05 kg/s at
+    pressure ratio 1.01 and 10,000 rpm published `exit_width` 17.29 mm and
+    built a wheel 12.480 mm tall at the rim, in both a 0.5 mm and a 1.0 mm rim
+    band — 39% wrong on the one number that sets what the machine flows, and
+    `mcp_server.design_compressor` hands it to an AI as `exit_width_mm`.
+
+    The same probe on a sound duty reads the design's own number back
+    (micro turbo: 2.97 published, 2.97 measured at the rim), so the
+    measurement is not the suspect."""
+    b2, L = expect
+    with pytest.raises(ValueError) as e:
+        meanline.design(duty(**kw))
+    msg = str(e.value)
+    assert f"{b2:,.2f} mm tall" in msg, (name, msg)
+    assert f"{L:,.2f} mm deep" in msg, (name, msg)
+    assert "lower the speed" in msg, (name, msg)
+    assert "Traceback" not in msg and "Error" not in msg, msg
+
+
+def test_no_duty_that_designs_can_make_the_shroud_cut_run_backwards():
+    """The invariant behind the rule, over a grid rather than three rows: a
+    design that passes the gate always has an exit width its wheel is deep
+    enough for, so the shroud cutter's line never runs upward. 163 of 5,965
+    duties in the full 12,320-duty grid were refused by it, every one with
+    b2/r2 at or above 0.35 where a real centrifugal wheel is 0.02 to 0.10
+    (probes/meanline_shroud_scan.py)."""
+    seen = refused = 0
+    for mdot in (1e-4, 0.01, 0.05, 0.5, 5.0, 50.0):
+        for pr in (1.01, 1.2, 1.8, 3.0, 6.0):
+            for rpm in (3000, 10000, 45000, 300000):
+                for beta in (-30.0, 0.0, 35.0, 60.0):
+                    try:
+                        d = meanline.design(meanline.Duty(
+                            mass_flow=mdot, pressure_ratio=pr, rpm=rpm,
+                            backsweep_deg=beta))
+                    except ValueError:
+                        refused += 1
+                        continue
+                    seen += 1
+                    assert d.exit_width <= d.axial_length, (mdot, pr, rpm,
+                                                            beta, d.exit_width,
+                                                            d.axial_length)
+    assert seen > 100 and refused > 0, (seen, refused)
+
+
+def test_the_corpus_is_nowhere_near_the_new_rule():
+    """A guard that refuses correct geometry is the worse sin. Every sound duty
+    keeps a wide margin: the tightest is the micro turbo at b2/L = 0.514."""
+    worst = 0.0
+    for _name, kw, _e in SOUND:
+        d = meanline.design(duty(**kw))
+        worst = max(worst, d.exit_width / d.axial_length)
+    assert worst == pytest.approx(0.514, abs=0.01), worst

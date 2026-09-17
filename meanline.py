@@ -51,6 +51,19 @@ class Duty:
     R: float = 287.0
 
 
+def _width(mm_value: float) -> str:
+    """A blade width in the units a person would say it in.
+
+    The clamped widths are 0.056719 mm and 0.000005 mm, and "0.00 mm" is not a
+    sentence anyone can act on.
+    """
+    if mm_value >= 0.1:
+        return f"{mm_value:.2f} mm"
+    if mm_value >= 1e-3:
+        return f"{mm_value * 1000.0:,.0f} micrometres"
+    return "under a micrometre"
+
+
 @dataclass
 class CompressorDesign:
     """Everything geometry needs, all in mm/deg except where noted."""
@@ -70,9 +83,46 @@ class CompressorDesign:
     axial_length: float         # impeller axial length L
     backplate_thk: float        # backplate disc thickness
     bore_radius: float
+    # what continuity actually asked for, BEFORE the machinable floor below
+    # clamped it. 0.0 on a design built by hand, which knows no ideal.
+    exit_width_ideal: float = 0.0
+
+    @property
+    def notes(self) -> tuple[str, ...]:
+        """Where these numbers are NOT the physics, said in plain sentences.
+
+        `exit_width` is clamped to a machinable floor and nothing said so, so
+        the design REPORTED a width the equations never asked for and the MCP
+        tool handed it to an AI as `exit_width_mm`. Measured 2026-09-17
+        (probes/meanline_exit_width_clamp.py): 0.5 kg/s at pressure ratio 3 and
+        1,000 rpm wants 0.056719 mm and the design said 1.00 — 18x — and the
+        1e-6 kg/s duty wants 0.000005 mm and said the same 1.00. The floor
+        itself is right (nothing cuts a 57 micrometre channel); the silence is
+        not, and it is also why `b2 >= r2` cannot catch a wheel enormously
+        oversized for its flow — the number that rule reads has been clamped.
+        (`_check_wheel`'s `b2 > L` rule, added the same day, does catch the
+        clamped ones whose wheel is shallower than the floor.)
+        """
+        out: list[str] = []
+        ideal = self.exit_width_ideal
+        if ideal > 0.0 and self.exit_width > 1.01 * ideal:
+            ratio = self.exit_width / ideal
+            times = ("thousands of times" if ratio >= 1000.0
+                     else f"{ratio:,.0f} times")
+            out.append(
+                f"the exit blade width works out at {_width(ideal)}, thinner "
+                f"than a cutter can make, so the wheel is built with the "
+                f"{self.exit_width:.2f} mm floor instead — {times} wider than "
+                f"this flow needs. It builds, but it is not the wheel the duty "
+                f"describes: raise the speed or the mass flow, or lower the "
+                f"pressure ratio, and the width becomes a real one")
+        return tuple(out)
 
     def report(self) -> str:
-        return "\n".join([
+        return "\n".join(self._lines() + [f"  NOTE: {n}" for n in self.notes])
+
+    def _lines(self) -> list[str]:
+        return [
             f"  tip radius r2          : {self.tip_radius:8.2f} mm",
             f"  tip speed U2           : {self.tip_speed:8.1f} m/s",
             f"  exit blade width b2    : {self.exit_width:8.2f} mm",
@@ -84,7 +134,7 @@ class CompressorDesign:
             f"  axial length L         : {self.axial_length:8.2f} mm",
             f"  slip factor (Wiesner)  : {self.slip_factor:8.3f}",
             f"  shaft power            : {self.power_kw:8.1f} kW",
-        ])
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +203,21 @@ _R2_MIN_MM = 1.0        # 16x below the smallest sound wheel measured
 # it is set where it was MEASURED sound. The answer that actually failed (rpm
 # 1: 4,221,135 mm, 110 s to an open shell) is still 422x outside it.
 _R2_MAX_MM = 10000.0    # a wheel 20 metres across, measured sound at 9998.67
+
+# The exit blade width has a machinable floor, and it should: continuity asks
+# for 57 micrometres at 0.5 kg/s / PR 3 / 1,000 rpm and 0.005 micrometres at
+# 1e-6 kg/s, and no cutter makes either. What was wrong was the SILENCE — the
+# design reported 1.00 mm for both and the MCP tool passed that on as
+# `exit_width_mm`. See `CompressorDesign.notes`.
+_EXIT_WIDTH_FLOOR_MM = 1.0
+
+# How much of its own shaft bore a finished wheel may contain before the build
+# is called a failure, as a fraction of the bore cylinder's volume over the
+# wheel's height. Round one's plugged micro-turbo held 67.21 mm3 of a 97.8 mm3
+# bore — 69% — while every sound wheel measured exactly 0.000000 mm3, so the
+# threshold sits three orders of magnitude clear of both
+# (probes/compressor_bore_order_probe.py, probes/meanline_bore_check_cost.py).
+_BORE_PLUG_FRACTION = 0.005
 
 
 def _across(radius_mm: float) -> str:
@@ -249,6 +314,28 @@ def _check_wheel(d: CompressorDesign, duty: Duty | None = None) -> None:
             f"{lead}the shaft bore would come out {d.bore_radius:,.2f} mm, at "
             f"or past the rim of a wheel only {r2:,.2f} mm in radius — there "
             f"would be no impeller left around it; {fix}")
+    # THE EXIT WIDTH HAS TO FIT IN THE WHEEL. `build_from_design`'s shroud
+    # cutter runs from (r1s, t+L) DOWN to (r2, t+b2); if b2 is taller than the
+    # wheel is deep the line runs UP instead, the cut takes nothing off the
+    # rim, and the blades stand full height there — so the wheel's exit width
+    # is L, not the b2 the design published, and NOTHING could see it: not
+    # `to_spec` (symmetry, solid count, tip radius, overall height all still
+    # pass), not health, not the symmetry proof. MEASURED 2026-09-17
+    # (probes/meanline_rim_height_probe.py): 0.05 kg/s at pressure ratio 1.01
+    # and 10,000 rpm published exit_width 17.29 mm and built a wheel 12.480 mm
+    # tall at the rim — ok=True, one watertight solid, health [], 14-fold
+    # symmetric, 39% wrong on the one number that sets what the machine flows.
+    # 43 duties in a 12,320-duty grid land here with an UNCLAMPED width
+    # (probes/meanline_shroud_scan.py); every one has b2/r2 >= 0.35, where a
+    # real centrifugal wheel is 0.02 to 0.10, so this refuses no machine
+    # anyone would build — it refuses the answers the model cannot draw.
+    if b2 > d.axial_length:
+        raise ValueError(
+            f"{lead}the blades would have to be {b2:,.2f} mm tall where they "
+            f"leave the rim, but the wheel comes out only "
+            f"{d.axial_length:,.2f} mm deep — they would run full height "
+            f"there and the wheel would not be the one these numbers "
+            f"describe; {fix}")
 
 
 def shroud_root_radius(blade_root_radius: float) -> float:
@@ -346,7 +433,11 @@ def design(duty: Duty, flow_coeff: float = 0.28,
         work_input=dh0, tip_speed=U2, slip_factor=sigma,
         power_kw=duty.mass_flow * dh0 / 1000.0,
         tip_radius=round(r2 * mm, 2),
-        exit_width=round(max(b2 * mm, 1.0), 2),   # clamp: machinable minimum
+        # the clamp is right — nothing cuts a 57 micrometre channel — but it
+        # is no longer SILENT: `exit_width_ideal` carries what continuity
+        # asked for, and `CompressorDesign.notes` says so in a sentence
+        exit_width=round(max(b2 * mm, _EXIT_WIDTH_FLOOR_MM), 2),
+        exit_width_ideal=b2 * mm,
         blade_count=Z,
         beta2_deg=duty.backsweep_deg,
         beta1_deg=round(beta1, 1),
@@ -365,6 +456,40 @@ def design(duty: Duty, flow_coeff: float = 0.28,
 # ---------------------------------------------------------------------------
 # Design -> geometry (via the verified blocks) and -> Spec (ground truth)
 # ---------------------------------------------------------------------------
+
+def bore_material(part, d: CompressorDesign) -> float:
+    """mm3 of a finished wheel sitting INSIDE its own shaft bore.
+
+    The one question `to_spec` cannot ask. A Spec can pin symmetry, solid
+    count, tip radius and height, and round one measured a wheel that passed
+    all four with 67.27 mm3 of blade in its 2 mm bore. `Spec.holes` does not
+    reach it either: the plugged micro-turbo still reported
+    `cylinder_radii={2.0: 1, 16.51: 5}` — the bore's wall is still a
+    cylindrical face, it is just filled in behind
+    (probes/compressor_bore_order_probe.py, 2026-09-17). Only a boolean
+    answers, and on the shipped wheel it costs 0.14 s against a 73 s build
+    (probes/meanline_bore_check_cost.py).
+    """
+    try:
+        plug = part & Cylinder(radius=d.bore_radius,
+                               height=4.0 * (d.backplate_thk + d.axial_length))
+    except Exception:
+        # build123d raises on an EMPTY operand rather than returning nothing;
+        # a wheel that is not there is somebody else's failure, not this one
+        return 0.0
+    return float(plug.volume) if plug is not None else 0.0
+
+
+def bore_problem(part, d: CompressorDesign) -> str | None:
+    """The sentence a wheel with a filled-in shaft bore earns, or None."""
+    room = math.pi * d.bore_radius ** 2 * (d.backplate_thk + d.axial_length)
+    plug = bore_material(part, d)
+    if room <= 0 or plug <= _BORE_PLUG_FRACTION * room:
+        return None
+    return (f"the shaft bore is not a hole: {plug:,.2f} mm3 of the wheel "
+            f"stands inside the {2 * d.bore_radius:,.2f} mm bore, so no shaft "
+            f"would go through it")
+
 
 def to_spec(d: CompressorDesign) -> inspector.Spec:
     """The Spec IS the calculation — ground truth the build must hit."""
@@ -414,10 +539,20 @@ def build_from_design(d: CompressorDesign) -> assembly.AssemblyReport:
         ])
         return allb - cutter
 
-    return assembly.build_and_verify(
+    rep = assembly.build_and_verify(
         [assembly.Component("hub", hub),
          assembly.Component("blades", bladeset)],
         mode="fuse", assembly_spec=to_spec(d))
+    # ...and then the question the Spec cannot ask, MEASURED. Round one's P0
+    # was a wheel that passed every line of `to_spec` with its bore filled in;
+    # `one_blade` is why it cannot happen now, and this is the proof rather
+    # than the promise. 0.14 s on the shipped wheel's 73 s build.
+    if rep.part is not None:
+        problem = bore_problem(rep.part, d)
+        if problem:
+            rep.assembly_problems.append(problem)
+            rep.ok = False
+    return rep
 
 
 # ---------------------------------------------------------------------------
