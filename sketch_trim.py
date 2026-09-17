@@ -26,6 +26,7 @@ current entity list every time, so a stale id is detected, never mis-applied.
 
 from __future__ import annotations
 import math
+from bisect import bisect_right
 import numpy as np
 import build123d as b3d
 import sketch as sk
@@ -47,16 +48,65 @@ def _entity_face(e: dict, idx: int):
                          f"build: {ex}") from ex
 
 
+def _sample_wire(wire, n: int) -> np.ndarray:
+    """`n` points spaced evenly by arc length round a wire, as (n,2) XY.
+
+    THE SAME POINTS `wire.position_at(i / n)` returns — bit for bit — with
+    the part that does not depend on `i` lifted out of the loop. That loop
+    WAS 99% of the Trim tool (LAUNCH-PLAN section 10 P2, profiled 2026-09-17
+    by `probes/trim_profile.py`): hovering the user's 23-entity
+    `rocky-balboa/field_sketch` spent 8806 ms of 8903 ms in here, and a click
+    9152 ms of 18021 ms.
+
+    The reason is inside build123d. `Wire._occt_param_at` rebuilds the whole
+    edge table on EVERY call — `self.edges()`, then `e.length` for each of
+    them — before it bisects to the one edge the point is on. The traced
+    polygons in that sketch have up to 320 edges each, so 2671 sample points
+    built 247,466 Edge objects and made 255,364 BRepGProp length calls. The
+    table is the same for every sample of one wire, so it is built once here.
+
+    Identical, not merely close: after the bisect, build123d divides the
+    leftover distance by the target edge's length and hands that fraction to
+    `Edge.position_at`, which is exactly the last line below — same flip for a
+    reversed edge, same `param_at` formula, same adaptor `Value()`. Proven
+    float-bit-equal on all 7 entity kinds and on every entity of
+    `rocky-balboa/field_sketch` and `esp32-remote/sketch28` by
+    `probes/wire_sample_probe.py`, and locked in by `tests/test_trim_speed.py`.
+    """
+    fwd = wire.is_forward
+    wire_len = wire.length
+    edges = wire.edges()
+    lens = [e.length for e in edges]
+    cum, total = [], 0.0
+    for edge_len in lens:
+        total += edge_len
+        cum.append(total)
+    last = len(edges) - 1
+    pts = np.empty((n, 2))
+    for i in range(n):
+        position = i / n
+        if not fwd:
+            position = 1.0 - position
+        distance = position * wire_len
+        if distance <= 0.0:
+            k, local = 0, 0.0
+        elif distance >= total:
+            k, local = last, lens[last]
+        else:
+            k = bisect_right(cum, distance)
+            local = distance - (cum[k - 1] if k > 0 else 0.0)
+        p = edges[k].position_at(0.0 if lens[k] == 0 else local / lens[k])
+        pts[i] = (p.X, p.Y)
+    return pts
+
+
 def _outline(e: dict, idx: int) -> dict:
     """Sample an entity's outer boundary into a closed polyline.
     Returns {pts (n,2), seglen (n,), cum (n+1,), L} — cum[k] is the
     arc-length at sample k, the loop closes from pts[-1] back to pts[0]."""
     wire = _entity_face(e, idx).outer_wire()
     n = int(min(max(wire.length / 0.8, 96), 384))
-    pts = np.empty((n, 2))
-    for i in range(n):
-        p = wire.position_at(i / n)          # LENGTH mode: fraction of perimeter
-        pts[i] = (p.X, p.Y)
+    pts = _sample_wire(wire, n)              # fraction of perimeter, per point
     seg = np.roll(pts, -1, axis=0) - pts
     seglen = np.hypot(seg[:, 0], seg[:, 1])
     cum = np.concatenate(([0.0], np.cumsum(seglen)))
@@ -282,11 +332,7 @@ def _face_contains(face, x, y) -> bool:
     """Point inside an OCCT face (2D): inside its outer wire, outside holes."""
     def wire_pip(w):
         n = int(min(max(w.length / 0.8, 64), 384))
-        pts = np.empty((n, 2))
-        for i in range(n):
-            p = w.position_at(i / n)
-            pts[i] = (p.X, p.Y)
-        return _inside({"pts": pts}, x, y)
+        return _inside({"pts": _sample_wire(w, n)}, x, y)
     ow = face.outer_wire()
     if not wire_pip(ow):
         return False
