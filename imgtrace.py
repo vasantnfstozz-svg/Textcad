@@ -171,8 +171,8 @@ def _edge_shell(m, side, valid):
 
 
 def _border_bright(m) -> float:
-    """How much of the picture's border is BRIGHT — read PAST a thin border
-    shell.
+    """How much of the picture's border is BRIGHT — read PAST a thin shell of
+    INK at the edge.
 
     Round one read the outermost ONE pixel. A scan's dark platen edge, a
     printed rule box, even the 1 px frame an exporter leaves behind all fill
@@ -182,16 +182,28 @@ def _border_bright(m) -> float:
     said (measured 2026-09-17, REVIEW-QUEUE section 9 round two) — the same
     P0 round one had just fixed, through the other door.
 
-    A shell only counts as a frame when it is THIN (under 5% of the picture)
-    and there is something on both sides of the split left inside it. A
-    genuinely dark ground is fat — a white disc filling all but 10 px of its
-    picture still leaves a 93 px thick corner — so inverse-video art is
-    untouched, and art with a thin light margin has nothing to read inside."""
+    Only a DARK shell is read past. Round two read past a thin shell of
+    EITHER side, and a thin LIGHT shell is not an artefact — it is the margin
+    every exported logo has. Strip it and the art's own outer boundary is all
+    ink, so the rule says "the ground is dark" and returns the negative: a
+    2400 px plate silhouette with nine bolt holes and a 50 px pad traced
+    440.1 mm2 of a true 1258.0, as ten pieces with one hole, valid and green
+    (measured 2026-09-17, round three). A bright border needs no reading past
+    — it already says what it means.
+
+    A dark shell counts as a frame when it is THIN (under 5% of the picture,
+    by distance transform) and there are 64 px of both sides left inside it.
+    A genuinely dark ground is fat — a white disc filling all but 10 px of
+    its picture still leaves a 93 px thick corner — so inverse-video art is
+    untouched. The floor inside used to be 1% of the picture as well, which
+    left round two's own P0 open for small art: an 800 px sheet with a 12 px
+    platen edge and a logo at 0.5% of it traced 1587.8 mm2 of a true 102.1,
+    the paper as a slab with a logo-shaped hole (measured, round three)."""
     valid = np.ones(m.shape, np.uint8)
     ring = _ring_mean(m, valid)
-    if 0.4 <= ring <= 0.6:                     # a split border says nothing
+    if ring > 0.4:                             # a light border is a MARGIN
         return ring
-    shell = _edge_shell(m, 1 if ring > 0.5 else 0, valid)
+    shell = _edge_shell(m, 0, valid)
     if shell is None:
         return ring
     if float(cv2.distanceTransform(shell, cv2.DIST_L2, 3).max()) > \
@@ -200,7 +212,7 @@ def _border_bright(m) -> float:
     rest = (1 - shell).astype(np.uint8)
     inside = m[rest.astype(bool)]
     lit = int(inside.sum())
-    if min(lit, int(inside.size) - lit) < max(64.0, 0.01 * inside.size):
+    if min(lit, int(inside.size) - lit) < 64:
         return ring                            # nothing inside it to read
     return _ring_mean(m, rest)
 
@@ -224,8 +236,9 @@ def _mask_from_image(img) -> np.ndarray:
     with a hollow middle — a picture-frame shape cropped to zero margin — is
     genuinely ambiguous either way, and this rule reads it as the middle.
 
-    `_border_bright` reads that border PAST a thin shell, because a scan's
-    platen edge or a printed rule box fills it without being the ground."""
+    `_border_bright` reads that border PAST a thin shell of INK, because a
+    scan's platen edge or a printed rule box fills it without being the
+    ground. A thin shell of PAPER is left alone: that is a margin."""
     if img is None:
         raise ValueError("could not decode the image — is it a PNG/JPG?")
     if img.ndim == 3 and img.shape[2] == 4 and int(img[:, :, 3].min()) < 250:

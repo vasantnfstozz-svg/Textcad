@@ -560,3 +560,75 @@ def test_art_too_fine_for_the_target_size_still_refuses():
     with pytest.raises(ValueError) as ex:
         imgtrace.image_to_entities(_png(img), height_mm=1.0)
     assert "0.25" in str(ex.value), str(ex.value)
+
+
+# ---------------------------------------------------------------------------
+# REVIEW-QUEUE section 9, ROUND THREE (2026-09-17): round two's own new code.
+# Round two started reading the picture's border PAST a thin shell. A shell
+# of INK at the edge really is an artefact (a scan's platen edge, a printed
+# rule box) — but a thin shell of PAPER is the ordinary margin of an exported
+# logo, and reading past it turns art into its negative. Measured first in
+# probes/imgtrace_r3_negative.py.
+# ---------------------------------------------------------------------------
+
+
+def _padded_plate(size, pad, n=3):
+    """A rectangular part silhouette with round holes and a UNIFORM light
+    pad — what `img.crop(getbbox())` plus any padding gives, and the shape
+    the Trace Image button exists for."""
+    img = np.full((size, size, 3), 255, np.uint8)
+    cv2.rectangle(img, (pad, pad), (size - 1 - pad, size - 1 - pad),
+                  (0, 0, 0), -1)
+    step = (size - 2 * pad) // (n + 1)
+    for i in range(n):
+        for j in range(n):
+            cv2.circle(img, (pad + (i + 1) * step, pad + (j + 1) * step),
+                       size // 12, (255, 255, 255), -1)
+    return img
+
+
+@pytest.mark.parametrize("size,pad", [(400, 8), (1200, 20), (2400, 50)])
+def test_a_light_pad_is_a_margin_not_a_frame(size, pad):
+    """Round two reads the border past ANY thin shell, a light one too. A
+    light pad is not an artefact, it is the margin every exported logo has,
+    and once it is stripped the art's own outer boundary is all ink — so the
+    rule says "the ground is dark" and the tracer returns the NEGATIVE. A
+    2400 px plate with a 50 px pad traced 440.1 mm2 of a true 1258.0 as ten
+    pieces with one hole, green and healthy (measured 2026-09-17, round
+    three); round one had it right at 1257.1."""
+    ents, info = imgtrace.image_to_entities(
+        _png(_padded_plate(size, pad)), height_mm=40)
+    assert info["contours"] == 1 and info["holes"] == 9, (
+        f"{size} px plate, {pad} px pad: {info['contours']} pieces and "
+        f"{info['holes']} holes — the pad traced as a ring round nine discs "
+        f"is the NEGATIVE of the plate")
+    area = sk.make_sketch("XY", 0, ents).area
+    assert area > 1000, f"{area:.1f} mm2 is the pad and the holes, not the plate"
+
+
+def _scan_sheet(size, band, logo_frac):
+    """paper with a dark platen edge and a logo of a given area fraction"""
+    img = np.full((size, size, 3), 255, np.uint8)
+    r = int(np.sqrt(logo_frac * size * size / np.pi))
+    cv2.circle(img, (size // 2, size // 2), r, (0, 0, 0), -1)
+    img[:band] = img[-band:] = 0
+    img[:, :band] = img[:, -band:] = 0
+    return img
+
+
+@pytest.mark.parametrize("frac", [0.005, 0.002])
+def test_a_small_logo_inside_a_scan_edge_is_still_the_artwork(frac):
+    """Round two's guard for "is there anything inside the shell to read" is
+    max(64 px, 1% OF THE PICTURE), so its own headline P0 stayed open for
+    small art: an 800 px sheet with a 12 px platen edge and a logo at 0.5%
+    of it traced 1587.8 mm2 of a true 102.1 — the paper as a slab with a
+    logo-shaped hole — green (measured 2026-09-17, round three). The
+    pre-4c9ea32 rule got it right."""
+    ents, info = imgtrace.image_to_entities(
+        _png(_scan_sheet(800, 12, frac)), height_mm=40)
+    area = sk.make_sketch("XY", 0, ents).area
+    assert area < 400, (
+        f"logo at {frac * 100:.1f}% of the sheet: {area:.1f} mm2 with "
+        f"{info['contours']} pieces and {info['holes']} holes is the PAPER, "
+        f"not the logo")
+    assert info["holes"] <= 1
