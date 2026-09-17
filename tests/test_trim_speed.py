@@ -68,6 +68,35 @@ def counting_pair_intersections():
 
 
 @contextmanager
+def counting_wire_param_at_point():
+    """Count `Wire.param_at_point` — the O(edges) walk `order_edges()` pays
+    once per edge, so O(edges^2) for one rebuilt outline."""
+    seen = {"n": 0}
+    original = b3d.Wire.param_at_point
+
+    def param_at_point(self, point):
+        seen["n"] += 1
+        return original(self, point)
+
+    b3d.Wire.param_at_point = param_at_point
+    try:
+        yield seen
+    finally:
+        b3d.Wire.param_at_point = original
+
+
+@contextmanager
+def stock_edge_order():
+    """`_wire_entity` as it stood at 916a731: it asked `order_edges()`."""
+    original = tr._ordered_edges
+    tr._ordered_edges = lambda wire: wire.order_edges()
+    try:
+        yield
+    finally:
+        tr._ordered_edges = original
+
+
+@contextmanager
 def stock_sampler():
     """`_outline` as it stood before the fix: one position_at per point."""
     original = tr._sample_wire
@@ -220,6 +249,66 @@ def test_pieces_are_bit_for_bit_the_stock_sampler(name):
     for b, a in zip(before[0], after[0]):
         assert b[3] == a[3], f"piece {b[0]} moved"
     assert before[1] == after[1], "which outlines cross changed"
+
+
+# ------------------------------- and the rebuild does not re-sort a wire --
+
+# `_wire_entity` used to walk `wire.order_edges()`, which is
+# `self.edges().sort_by(self)` plus a flip pass. Both halves were already
+# done for it: build123d DEFINES a wire's parameter by walking
+# `BRepTools_WireExplorer` and summing edge lengths (`Wire.param_at_point`),
+# and `Wire.edges()` walks that same explorer — so the sort cannot reorder
+# the list — while `_wire_entity` flips each edge itself. The sort cost one
+# `closest_points` plus one O(edges) `param_at_point` per edge: measured
+# 2026-09-18 by `probes/trim_order_edges_lead.py`, 3464 ms against 7.1 ms on
+# a 240-edge traced polygon and 2706 ms against 14.2 ms on the 206-edge wire
+# a circle cut leaves — the same order and the same edge directions both ways.
+
+def test_rebuilding_an_outline_does_not_re_sort_the_wire():
+    """The fix, stated as a count: no `param_at_point` at all."""
+    wire = tr._entity_face(traced(240, 20.0), 0).outer_wire()
+    with counting_wire_param_at_point() as seen:
+        ent = tr._wire_entity(wire, "add")
+    assert ent["kind"] == "path" and len(ent["segments"]) == 240
+    assert seen["n"] == 0, (
+        f"the wire was parameterised {seen['n']} times to sort 240 edges it "
+        f"already had in order")
+
+
+def test_a_trim_click_does_not_re_sort_any_wire():
+    ents = [traced(120, 18.0, x=-8), traced(96, 15.0, x=8)]
+    done = 0
+    for piece in tr.trim_pieces(ents):
+        with counting_wire_param_at_point() as seen:
+            try:
+                tr.trim_apply(ents, piece["id"])
+            except ValueError:
+                continue                   # the outer boundary rebuilds nothing
+        done += 1
+        assert seen["n"] == 0, (
+            f"{seen['n']} wire parameterisations for one click on "
+            f"{piece['id']}")
+    assert done, "no piece of this sketch rebuilt anything"
+
+
+@pytest.mark.parametrize("name", sorted(IDENTITY_CASES))
+def test_rebuilt_entities_are_what_order_edges_gave(name):
+    """Same rule as the sampler: a cheaper edge order that moves a rebuilt
+    profile is a defect however fast it is. (Also checked on 20 wire shapes
+    including REVERSED wires and Text glyphs by
+    `probes/trim_wire_entity_identity.py`.)"""
+    ents = IDENTITY_CASES[name]
+
+    def click(pid):
+        try:
+            return tr.trim_apply(ents, pid)
+        except ValueError as ex:
+            return f"REFUSED {ex}"
+
+    for piece in tr.trim_pieces(ents):
+        with stock_edge_order():
+            before = click(piece["id"])
+        assert click(piece["id"]) == before, f"piece {piece['id']} differs"
 
 
 @pytest.mark.parametrize("name", ["rect + circle cut",
