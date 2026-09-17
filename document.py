@@ -207,10 +207,34 @@ def _check_modifier_input(op: str, fid: str, part) -> None:
 KNOWN_OPS = set(CREATORS) | set(MODIFIERS) | set(COMBINERS) | {"move"}
 
 
+class _RequiredParam:
+    """The default of a parameter that HAS no default. Test it with `is`."""
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "REQUIRED"
+
+
+REQUIRED = _RequiredParam()
+"""`op_params`' stand-in for "this parameter must be given".
+
+Before it, a parameter with NO default and one whose default IS None came back
+identically (both as None), so nothing downstream could tell them apart: the
+catalogue the AI reads rendered `hole(face_center, face_normal, face,
+face_area, at=(0.0, 0.0), ...)` — four OPTIONAL parameters that look required
+and that the prompt forbids it to compute — beside `extrude(amount, both=False,
+...)`, where `amount` really is required. 22 of the 29 ops have at least one
+(probes/s10_required_census.py). Left out, it reached the feature row as raw
+Python: `TypeError: extrude_sketch() missing 1 required positional argument:
+'amount'` — which is what `blocks.plain_cause` now translates."""
+
+
 @lru_cache(maxsize=None)
 def op_params(op: str) -> tuple:
     """Every parameter `op` accepts, in signature order, as (name, default)
-    pairs — read from the function the rebuild unpacks the params into.
+    pairs — read from the function the rebuild unpacks the params into. A
+    parameter with no default pairs with `REQUIRED`, never with None: those
+    are two different facts and this is the only place that knows which.
 
     ONE source, because there were two: the edit guard and the catalogue the
     AI reads (`author.op_catalog`) each walked the registries with their own
@@ -228,10 +252,16 @@ def op_params(op: str) -> tuple:
         sig = sig[1:]                    # the upstream part
     # an underscored parameter is the document's, not the user's: the pattern
     # ops take the seed's before / after bodies that way (Document._eval)
-    return tuple((p.name, None if p.default is inspect._empty else p.default)
+    return tuple((p.name, REQUIRED if p.default is inspect._empty else p.default)
                  for p in sig
                  if p.kind not in (p.VAR_KEYWORD, p.VAR_POSITIONAL)
                  and not p.name.startswith("_"))
+
+
+def required_params(op: str) -> tuple:
+    """The names of `op`'s parameters that have no default — the truth
+    `op_params` carries, for anyone who only wants the names."""
+    return tuple(n for n, d in op_params(op) if d is REQUIRED)
 
 # how many inputs an op NEEDS to still mean something (used when a delete
 # takes one of its inputs away: a modifier with none left cannot survive)
