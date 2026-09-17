@@ -126,7 +126,8 @@ HEALTH = "--health" in sys.argv
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("-")]
     n = int(args[0]) if args else 120
-    rng = np.random.default_rng(917_2026)
+    seed = int(args[1]) if len(args) > 1 else 917_2026
+    rng = np.random.default_rng(seed)
     rows = []
     print("--- pinch family: rings cut by hairline spokes ---")
     for k in range(n):
@@ -138,15 +139,16 @@ def main():
             r = audit(f"ring{k}(r={radius},{n_sp})", data, h_mm)
             if r:
                 rows.append(r)
-    print("--- round-four fuzz corpus ---")
-    from imgtrace_r4_fuzz import corpus
-    for pname, img, _art, _cls, _drew in corpus(n):
-        ok, buf = cv2.imencode(".png", img)
-        assert ok
-        for h_mm in (15.0, 45.0):
-            r = audit(pname, buf.tobytes(), h_mm)
-            if r:
-                rows.append(r)
+    if "--rings-only" not in sys.argv:
+        print("--- round-four fuzz corpus ---")
+        from imgtrace_r4_fuzz import corpus
+        for pname, img, _art, _cls, _drew in corpus(n):
+            ok, buf = cv2.imencode(".png", img)
+            assert ok
+            for h_mm in (15.0, 45.0):
+                r = audit(pname, buf.tobytes(), h_mm)
+                if r:
+                    rows.append(r)
     sc = sum(r[1] for r in rows)
     touch = [r for r in rows if r[2] < 0.002]
     blind = [r for r in rows if r[2] < 0.002 <= r[3]]
