@@ -226,10 +226,26 @@ export function initViewport() {
   bus.on('view-changed', updateGroundGrid);
   updateGroundGrid();
 
+  let paneW = 0;              // the width the camera's framing was set for
   const resize = () => {
-    camera.aspect = pane.clientWidth / pane.clientHeight;
+    const w = pane.clientWidth, h = pane.clientHeight;
+    // A TOOL PANEL IS A COLUMN of its own, so opening one takes width from this
+    // pane (and dragging a splitter does the same). Hold the camera's
+    // HORIZONTAL reach instead of letting the part be cropped out of view: pull
+    // back by exactly the ratio the pane changed by, and push in again by the
+    // same ratio when the panel closes, so the view the user had comes back.
+    // Nothing moves on the FIRST layout (paneW 0) or on a height-only change.
+    if (controls && paneW && w && w !== paneW) {
+      const off = camera.position.clone().sub(controls.target);
+      const r = Math.min(Math.max(off.length() * (paneW / w),
+                                  controls.minDistance), controls.maxDistance);
+      camera.position.copy(controls.target).add(off.setLength(r));
+      controls.update();
+    }
+    paneW = w;
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    renderer.setSize(pane.clientWidth, pane.clientHeight);
+    renderer.setSize(w, h);
     updateGroundGrid();       // first layout builds the boot grid; the canvas
   };                          // has no size before the observer fires
   new ResizeObserver(resize).observe(pane);

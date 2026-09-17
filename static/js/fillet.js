@@ -15,7 +15,7 @@
 // told. There is no ghost: a rounded corner is drawn only by the kernel — the
 // value box follows the drag live and the real solid appears on release.
 
-import { tool, g, num, setBox } from './tool.js';
+import { tool, g, mm, len, setLen } from './tool.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          beginEdgeGlow, endEdgeGlow } from './viewport.js';
 
@@ -34,7 +34,7 @@ function edgeTool(o) {                 // o = {name, icon, op, ids, param, unit,
     /* the op gets the plan's stored edges — never an index, never JS geometry.
        Before the plan lands (OK pressed straight after an edit opens) the
        feature's OWN edges stand in, so a rebuild is never asked for none. */
-    params: st => ({ [o.param]: Math.max(0, num(box)),
+    params: st => ({ [o.param]: Math.max(0, mm(box)),   // a radius / a distance: a length
                      edges: (st && st.plan && st.plan.edges_param)
                        || (st && st.original && st.original.edges) || [] }),
     /* THE CHAIN DEFAULT IS THE SERVER'S (R1). The first plan of a session asks
@@ -43,7 +43,7 @@ function edgeTool(o) {                 // o = {name, icon, op, ids, param, unit,
        grown; the checkbox then shows what came back and speaks from there on. */
     planExtra: st => (st && st.plan ? { chain: chainOn() } : {}),
     show(st, p) {
-      g(box).value = p[o.param] || 0;
+      setLen(box, p[o.param] || 0);
       // a NEW session starts at the honest default; the plan's answer follows
       if (!st || !st.editing) g(P + 'Chain').checked = true;
     },
@@ -54,21 +54,20 @@ function edgeTool(o) {                 // o = {name, icon, op, ids, param, unit,
     isEmpty: pr => !(pr[o.param] > 0) || !hasEdges(pr.edges),
     nothing: `Nothing ${o.verb} — the ${o.unit.toLowerCase()} was 0. Open ${o.name} again, ` +
              `click the edges, then drag the arrow or type a value before OK.`,
-    describe: p => `${o.unit.toLowerCase()} ${p[o.param]} mm`,
+    describe: p => `${o.unit.toLowerCase()} ${len(p[o.param])}`,
     gizmos: {
       begin(st, plan) {
         if (plan.chain != null) g(P + 'Chain').checked = !!plan.chain;
         beginEdgeGlow(plan.edges);
         if (!plan.ball) return;                    // nothing picked yet: the hint is up
-        beginExtrudeArrow(plan.ball.origin, plan.ball.dir, num(box),
-          v => setBox(box, v),                     // dragging: the box follows
-          async v => { setBox(box, v); await ctl.apply(); },   // release: ONE verified rebuild
+        beginExtrudeArrow(plan.ball.origin, plan.ball.dir, mm(box),
+          v => setLen(box, v, 1),                  // dragging: the box follows
+          async v => { setLen(box, v, 1); await ctl.apply(); },   // release: ONE verified rebuild
           v => Math.max(0, v));                    // a radius has no sign
-        if (!st.featureId && num(box) > 0) ctl.apply();   // a value typed before the plan arrived
       },
       end() { endEdgeGlow(); endExtrudeArrow(); },
     },
-    afterApply() { setExtrudeArrowAmount(num(box)); },
+    afterApply() { setExtrudeArrowAmount(mm(box)); },
     /* No `settle`: there is no safe way to ASK the kernel what would have fit.
        Searching means filleting at radii the user never typed, and one of those
        segfaulted OCCT on a real design (see blocks._finish). The framework puts

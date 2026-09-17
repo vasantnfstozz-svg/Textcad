@@ -16,6 +16,7 @@
 import { bus } from './bus.js';
 import { postJSON } from './api.js';
 import { S } from './state.js';
+import { SETTINGS, fmtLen, toMm } from './settings.js';
 import { showDimension, clearDimension, loadMesh,
          showSelectionOverlay, clearSelectionOverlay,
          setPickHighlightEnabled, setDimProbe, clearDimProbe,
@@ -35,6 +36,20 @@ let chosenSide = null;    // 'a'/'b' when the user overrode which side moves
 
 const el = id => document.getElementById(id);
 const panel = () => el('measureDialog');
+
+/* ------------------------------------------------- the display unit --------
+   Every measurement carries the number the kernel measured (`value`) and the
+   unit it is in (`unit`, always mm for a length) beside the server's own
+   mm-spelled `label`, so nothing here is re-derived (R1) — a length is only
+   FORMATTED in the unit the user chose, exactly as the status bar and the
+   sketcher format the same millimetres. An area (mm²) or an angle has no
+   length unit to change, so the server's label stands. */
+const readout = r => (r && r.unit === 'mm' && r.value != null
+  && SETTINGS.unit !== 'mm') ? fmtLen(r.value) : ((r && r.label) || '—');
+/* a millimetre value INTO the Set box: the number itself while millimetres are
+   the display unit (the box must not round the server's reading), the chosen
+   unit's own precision otherwise */
+const box = v => (SETTINGS.unit === 'mm' ? v : fmtLen(v, false));
 
 function label(sel) {
   if (!sel) return '—';
@@ -240,7 +255,7 @@ function show(r, error) {
     clearDimension();
     return;
   }
-  val.textContent = r.label || '—';
+  val.textContent = readout(r);
   el('meKind').textContent = KIND_NAMES[r.kind] || r.kind || '';
   showEdit(r);
   for (const [k, v] of (r.rows || [])) {
@@ -252,7 +267,7 @@ function show(r, error) {
     rows.appendChild(d);
   }
   // draw what was actually measured (see viewport.showDimension)
-  if (r.from && r.to) showDimension(r.from, r.to, r.label);
+  if (r.from && r.to) showDimension(r.from, r.to, readout(r));
   else clearDimension();
   armProbe(r);
 }
@@ -284,7 +299,7 @@ function armProbe(r) {
 }
 
 function paintProbe(r, kindText) {
-  el('meValue').textContent = r.label;
+  el('meValue').textContent = readout(r);
   el('meKind').textContent = kindText;
   const rows = el('meRows');
   rows.innerHTML = '';
@@ -294,10 +309,10 @@ function paintProbe(r, kindText) {
     d.className = 'merow';
     d.innerHTML = '<span class="k"></span><span class="v"></span>';
     d.querySelector('.k').textContent = 'nearest anywhere';
-    d.querySelector('.v').textContent = r.nearest.toFixed(2) + ' mm';
+    d.querySelector('.v').textContent = fmtLen(r.nearest);
     rows.appendChild(d);
   }
-  showDimension(r.from, r.to, r.label);
+  showDimension(r.from, r.to, readout(r));
 }
 
 async function sendProbe(pt) {
@@ -379,7 +394,7 @@ function showEdit(r) {
     return;
   }
   row.style.display = 'flex';
-  el('meInput').value = r.value;
+  el('meInput').value = box(r.value);      // typed in the display unit (see applyEdit)
   who.style.display = 'block';
   who.textContent = d ? `drives ${d.label}` : `moves ${mv.label}`;
   // Only offer the A/B choice when BOTH sides could move; with one candidate
@@ -401,8 +416,11 @@ async function applyEdit() {
   const editable = last && (last.driver
                             || (last.move && !last.move.error));
   if (!editable || busy) return;
-  const v = parseFloat(el('meInput').value);
-  if (!isFinite(v)) { note('Type a number first.'); return; }
+  const typed = parseFloat(el('meInput').value);
+  if (!isFinite(typed)) { note('Type a number first.'); return; }
+  // the box is in the DISPLAY unit and /api/measure/set is in millimetres:
+  // typing 2 with inches chosen used to set 2 mm (LAUNCH-PLAN §10)
+  const v = toMm(typed);
   let failed = null, warn = null;
   busy = true;
   try {

@@ -1,0 +1,146 @@
+"""E2E: an open tool panel covers nothing (LAUNCH-PLAN.md §10, P2).
+
+#extrudeDialog, #measureDialog and the rest were `position: fixed; right: 24px`
+— pinned to the WINDOW's right edge, which is where the AI designer column
+lives. A failed feature explains itself in that column (rule 7), so the one
+place a user must be able to read was the one place the open panel sat on top
+of: the click appeared to do nothing and the reason was underneath the panel.
+
+They are a column of `main` now, between the viewport and the chat, so they
+take their own space instead of floating over someone else's. This test
+measures the boxes at a wide window and a narrow one: the panel may not
+overlap the chat, the feature tree, the status bar OR the 3D canvas — the
+model's own drag handles are as hideable as the chat is (floating the panel
+over the viewport instead put the panel on top of the arrow you are meant to
+drag, on a 1200 px window).
+"""
+import pytest
+
+pytest.importorskip("playwright.sync_api")
+
+BUILD_BOX = """
+async () => {
+  const { postJSON } = await import('/static/js/api.js');
+  const { loadMesh, setView } = await import('/static/js/viewport.js');
+  await postJSON('/api/feature/add',
+    { id: 'b', op: 'plate', params: { width: 60, depth: 40, thickness: 12 }, inputs: [] }, 'add');
+  await loadMesh(true);
+  setView('iso');
+}
+"""
+TO_SCREEN = """
+(w) => {
+  const vp = window.__vp;
+  const cv = document.querySelector('#viewer canvas');
+  const r = cv.getBoundingClientRect();
+  const V3 = vp.camera.position.constructor;
+  const v = new V3(w[0], w[1], w[2]).project(vp.camera);
+  return { x: r.left + (v.x + 1) / 2 * r.width,
+           y: r.top + (1 - (v.y + 1) / 2) * r.height };
+}
+"""
+TOP_PICKED = """
+async () => {
+  const { S } = await import('/static/js/state.js');
+  return !!(S.pickedFace && S.pickedFace.normal && S.pickedFace.normal[2] > 0.9);
+}
+"""
+RECTS = """
+(id) => {
+  const box = e => { const r = e.getBoundingClientRect();
+    return { l: r.left, t: r.top, r: r.right, b: r.bottom }; };
+  const out = { panel: box(document.getElementById(id)),
+                canvas: box(document.querySelector('#viewer canvas')) };
+  for (const k of ['viewportPane', 'chatPane', 'treePane', 'statusbar'])
+    out[k] = box(document.getElementById(k));
+  return out;
+}
+"""
+PT = [10.0, 5.0, 6.0]                              # a point on the plate's top face
+SIZES = [(1600, 900), (1150, 700)]                 # a wide window and a narrow one
+
+
+def overlaps(a, b):
+    return not (a["r"] <= b["l"] + 0.5 or a["l"] >= b["r"] - 0.5
+                or a["b"] <= b["t"] + 0.5 or a["t"] >= b["b"] - 0.5)
+
+
+def check_docked(page, panel_id, where):
+    rc = page.evaluate(RECTS, panel_id)
+    p = rc["panel"]
+    assert p["r"] > p["l"] and p["b"] > p["t"], f"{panel_id} has no box at {where}"
+    for k in ("chatPane", "treePane", "statusbar", "canvas"):
+        assert not overlaps(p, rc[k]), \
+            f"{panel_id} covers #{k} at {where}: {p} vs {rc[k]}"
+    # ...and the model still has room to be worked on
+    assert rc["canvas"]["r"] - rc["canvas"]["l"] >= 180, \
+        f"the viewport is {rc['canvas']} at {where} — too little left to drag in"
+
+
+def setup(page):
+    page.evaluate(BUILD_BOX)
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    page.wait_for_timeout(600)
+
+
+def pick_top(page):
+    sp = page.evaluate(TO_SCREEN, PT)
+    page.mouse.click(sp["x"], sp["y"])
+    page.wait_for_function(TOP_PICKED, timeout=15000)
+
+
+def test_the_hole_panel_stays_off_the_chat_at_every_window_size(page, fresh_doc, server):
+    """Hole with a counterbore is the tallest panel there is — the one most
+    likely to spill out of the pane it is docked in."""
+    setup(page)
+    pick_top(page)
+    page.click("#ribbon .rbtn[title='hole']")
+    page.wait_for_selector("#holeDialog", state="visible", timeout=15000)
+    page.wait_for_function("() => window.__vp.gizmos().arrow", timeout=15000)
+    page.select_option("#hoKind", "counterbore")
+    page.wait_for_timeout(400)
+    for w, h in SIZES:
+        page.set_viewport_size({"width": w, "height": h})
+        page.wait_for_timeout(500)
+        check_docked(page, "holeDialog", f"{w}x{h}")
+    page.set_viewport_size({"width": 1200, "height": 800})
+    assert page.errors == []
+
+
+def test_the_measure_panel_stays_off_the_chat_at_every_window_size(page, fresh_doc, server):
+    setup(page)
+    pick_top(page)
+    page.locator("button.tab", has_text="Inspect").click()
+    page.wait_for_timeout(200)
+    page.click("#ribbon .rbtn[title='Measure']")
+    page.wait_for_selector("#measureDialog", state="visible", timeout=15000)
+    page.wait_for_timeout(800)
+    for w, h in SIZES:
+        page.set_viewport_size({"width": w, "height": h})
+        page.wait_for_timeout(500)
+        check_docked(page, "measureDialog", f"{w}x{h}")
+    page.set_viewport_size({"width": 1200, "height": 800})
+    assert page.errors == []
+
+
+def test_a_wider_chat_column_still_pushes_the_panel_clear(page, fresh_doc, server):
+    """The splitters move the panes and the panel is a column between two of
+    them: dragging the chat wider must move the panel, not be covered by it."""
+    setup(page)
+    pick_top(page)
+    page.click("#ribbon .rbtn[title='extrude']")
+    page.wait_for_selector("#extrudeDialog", state="visible", timeout=15000)
+    page.wait_for_function("() => window.__vp.gizmos().arrow", timeout=15000)
+    before = page.evaluate(RECTS, "extrudeDialog")["panel"]["r"]
+    bar = page.locator("#splitRight").bounding_box()
+    page.mouse.move(bar["x"] + bar["width"] / 2, bar["y"] + bar["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(bar["x"] - 200, bar["y"] + bar["height"] / 2, steps=8)
+    page.mouse.up()
+    page.wait_for_timeout(500)
+    after = page.evaluate(RECTS, "extrudeDialog")["panel"]["r"]
+    # it moves LEFT with the chat's edge — how far depends on how much room the
+    # other panes have left to give (the viewport has a floor of its own)
+    assert after < before - 20, f"the panel did not follow the pane: {before} -> {after}"
+    check_docked(page, "extrudeDialog", "chat dragged wider")
+    assert page.errors == []

@@ -15,7 +15,7 @@
 // an opaque body and cannot be drawn by growing an outline — the box follows
 // the drag live and the real hollow, drawn by the kernel, appears on release.
 
-import { tool, g, num, say, setBox } from './tool.js';
+import { tool, g, mm, len, say, setLen } from './tool.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          beginEdgeGlow, endEdgeGlow } from './viewport.js';
 
@@ -26,14 +26,14 @@ const direction = () => g('shDirection').value;
    its OWN set — the key is simply not sent, so a legacy `open_face` row still
    builds. Once the plan speaks, the list is the one form and open_face goes. */
 function params(st) {
-  const p = { thickness: Math.max(0, num('shThickness')), direction: direction() };
+  const p = { thickness: Math.max(0, mm('shThickness')), direction: direction() };   // a wall is a length
   const src = (st && st.plan) || (st && st.original) || {};
   if (src.faces != null) { p.faces = src.faces; p.open_face = null; }
   return p;
 }
 /* {} = the honest default: nothing hollowed yet — thickness 0 */
 function show(st, p) {
-  g('shThickness').value = p.thickness || 0;
+  setLen('shThickness', p.thickness || 0);
   g('shDirection').value = p.direction || 'inside';
 }
 /* every param the tool can write, normalized — Cancel-in-edit puts it back verbatim */
@@ -45,19 +45,17 @@ function snapshot(f) {
 }
 const openCount = p => Array.isArray(p.faces) ? p.faces.length
   : (p.open_face && p.open_face !== 'none' ? 1 : 0);
-/* honest zero: no plan yet (its arrival applies), no thickness */
-const isEmpty = (pr, st) => !st.plan || !(pr.thickness > 0);
+/* honest zero: no thickness */
+const isEmpty = pr => !(pr.thickness > 0);
 
 const gizmos = {
   begin(st, plan) {
     beginEdgeGlow(plan.edges);                       // the open faces' outlines, gold
-    beginExtrudeArrow(plan.origin, plan.axis, num('shThickness'),
-      v => setBox('shThickness', v),                 // dragging: the box follows
-      async v => { setBox('shThickness', v); await sh.apply(); },   // release: ONE verified rebuild
+    beginExtrudeArrow(plan.origin, plan.axis, mm('shThickness'),
+      v => setLen('shThickness', v, 1),              // dragging: the box follows
+      async v => { setLen('shThickness', v, 1); await sh.apply(); },   // release: ONE verified rebuild
       v => Math.max(0, v));                          // a thickness has no sign
     if (plan.click_words) say(plan.click_words);     // what the click did (rule 7)
-    // a thickness typed before the plan arrived waits for it
-    if (!st.featureId && num('shThickness') > 0) sh.apply();
   },
   end() { endEdgeGlow(); endExtrudeArrow(); },
 };
@@ -82,11 +80,11 @@ const sh = tool({
   show, params, snapshot, gizmos, isEmpty,
   /* Direction changed: the arrow's side is the plan's, so ask again */
   refresh: st => { if (st && st.plan) sh.replan(); },
-  afterApply: () => setExtrudeArrowAmount(num('shThickness')),
+  afterApply: () => setExtrudeArrowAmount(mm('shThickness')),
   nothing: 'Nothing hollowed — the thickness was 0. Open Shell again, then drag the arrow ' +
            'or type a wall thickness before OK.',
   split: () => 'the walls are too thin somewhere — use a thicker wall or open another face.',
-  describe: p => `${p.thickness} mm walls ${p.direction || 'inside'}, ` +
+  describe: p => `${len(p.thickness)} walls ${p.direction || 'inside'}, ` +
                  `${openCount(p)} face${openCount(p) === 1 ? '' : 's'} open`,
 });
 

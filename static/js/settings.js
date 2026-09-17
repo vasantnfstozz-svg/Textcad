@@ -62,6 +62,7 @@ function round(v, dp) {
    status bar's readouts, and it follows the display unit so it can never
    disagree with the volume sitting next to it. */
 function paintUnit() {
+  paintUnitLabels();
   const el = document.getElementById('sUnit');
   if (!el) return;
   el.textContent = unitLabel();
@@ -71,6 +72,18 @@ function paintUnit() {
     : `lengths and volumes on this screen are shown in ${unitLabel()}; the ` +
       'design itself is always exact in millimetres';
 }
+/* EVERY "(mm)" beside a box the user types into. The tool panels used to spell
+   the unit into the HTML, so choosing inches converted the readouts while the
+   boxes stayed mm-labelled AND mm-read — a typed 2 became 2 mm (LAUNCH-PLAN
+   §10). One attribute, `data-unit`, marks a label that names the unit its box
+   is read in; nothing else may write one. A unit cannot change while a tool
+   panel is open (the Settings button is a ribbon action, and modalGuard
+   refuses every one of those while a tool holds the modal lock — rule 9), so
+   no box's NUMBER ever has to be rewritten under the user's hands. */
+function paintUnitLabels() {
+  for (const el of document.querySelectorAll('[data-unit]')) el.textContent = unitLabel();
+}
+
 bus.on('settings-changed', paintUnit);
 
 /* ---------------- the Settings dialog ---------------- */

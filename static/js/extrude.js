@@ -11,7 +11,8 @@
 // limits, the default target and which sign goes INTO the body all arrive in
 // ONE plan (toolplan.py). This file draws what it is told and computes nothing.
 
-import { tool, g, num, say, setBox, selectionKind, endPending } from './tool.js';
+import { tool, g, num, mm, len, say, setBox, setLen, selectionKind,
+         endPending } from './tool.js';
 import { openFillet } from './fillet.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          extrudeArrowDragging,
@@ -30,7 +31,9 @@ const maxTaper = st => Number(lim(st).max_taper) || 89;
 
 /* ---------------- the panel <-> params ---------------- */
 function params(st) {
-  const d = num('exDist'), taper = num('exTaper');
+  // a DISTANCE is a length (typed in the display unit, sent in mm); a TAPER is
+  // an angle in degrees, which no length unit touches
+  const d = mm('exDist'), taper = num('exTaper');
   const flip = g('exFlip').checked, through = g('exThrough').checked;
   if (isFace(st))
     return { face_center: st.input.center, face_normal: st.input.normal,
@@ -45,7 +48,7 @@ function params(st) {
   // side cut anything (review of section 7).
   const amt = (through && d === 0 && intoSign(st)) ? intoSign(st) : d;
   if (dir === 'sym') return { amount: d, both: true, amount2: 0, taper, flip: false, through };
-  if (dir === 'two') return { amount: amt, both: false, amount2: num('exDist2'), taper, flip, through };
+  if (dir === 'two') return { amount: amt, both: false, amount2: mm('exDist2'), taper, flip, through };
   return { amount: amt, both: false, amount2: 0, taper, flip, through };
 }
 /* write params into the boxes; {} = the honest defaults: the distance starts
@@ -53,8 +56,8 @@ function params(st) {
 function show(st, p) {
   g('exDir').value = p.both ? 'sym' : (p.amount2 ? 'two' : 'one');
   g('exDir').disabled = isFace(st);        // a face extrude is one-directional (drag ± instead)
-  g('exDist').value = p.amount || 0;
-  g('exDist2').value = p.amount2 || 10;
+  setLen('exDist', p.amount || 0);
+  setLen('exDist2', p.amount2 || 10);
   g('exTaper').value = p.taper || 0;
   g('exFlip').checked = !!p.flip;
   g('exThrough').checked = !!p.through;
@@ -112,13 +115,13 @@ function placeArrow(st) {
   // the plan can land mid-drag (setup is async): rebuilding the arrow then
   // would kill the drag and leave orbit switched off
   if (extrudeArrowDragging()) return;
-  beginExtrudeArrow(st.plan.origin, st.axis, num('exDist'),
+  beginExtrudeArrow(st.plan.origin, st.axis, mm('exDist'),
     amount => {                          // dragging: the instant ghost only
-      setBox('exDist', amount, 2);
+      setLen('exDist', amount, 2);
       showGhost(st, amount, num('exTaper'));
     },
     async amount => {                    // release: ONE real verified rebuild
-      setBox('exDist', amount, 2);
+      setLen('exDist', amount, 2);
       await ex.apply();
       hideExtrudeGhost();                // the real solid replaces the ghost
     });
@@ -159,13 +162,13 @@ function clampTaper(st, t) {
   const m = maxTaper(st);
   t = Math.max(-m, Math.min(m, t));
   if (t < 0) ensureCollapse(st);
-  const a = Math.abs(num('exDist'));
+  const a = Math.abs(mm('exDist'));
   const h = apexMin(st, t);
   if (!st.saidApex && h != null && h < a) {
     st.saidApex = true;                      // once — the server's note repeats it in the tree
     const rMin = Math.min(...st.collapse.filter(r => r != null));
     const meet = -Math.atan(rMin / Math.max(a, 0.01)) * 180 / Math.PI;
-    say(`Steeper than ${Math.round(meet * 10) / 10}° the walls meet before ${a} mm, ` +
+    say(`Steeper than ${Math.round(meet * 10) / 10}° the walls meet before ${len(a)}, ` +
       `so the solid ends at the tip — lower the angle, the taller it gets ` +
       `(Fusion does the same). The distance stays your maximum.`);
   }
@@ -176,7 +179,7 @@ function setupTaperRing(st, plan) {
   beginTaperRing(plan.origin, plan.frame, plan.limits.outer_radius * 1.35, num('exTaper'),
     t => {                                   // dragging: ghost + value box only
       setBox('exTaper', t);
-      showGhost(st, num('exDist'), t);
+      showGhost(st, mm('exDist'), t);
     },
     async t => {                             // release: ONE verified rebuild
       setBox('exTaper', t);
@@ -213,7 +216,7 @@ function beforeApply(st) {
   // edit never rewires; Through all is a cut already.
   if (!st.editing && !st.opUser && !g('exThrough').checked
       && (isFace(st) || g('exDir').value === 'one')) {
-    const into = intoSign(st), d = num('exDist');
+    const into = intoSign(st), d = mm('exDist');
     if (into && d !== 0) {
       // the box value runs along the arrow, which Flip turns around
       const eff = Math.sign(d) * (g('exFlip').checked ? -1 : 1);
@@ -228,11 +231,11 @@ function beforeApply(st) {
   // from the plan: negative on a top face, POSITIVE on a bottom / -x / +y face.
   if (!isFace(st) && !st.cutFlipped && g('exOp').value === 'cut'
       && !g('exThrough').checked && g('exDir').value === 'one') {
-    const into = intoSign(st), d = num('exDist');
+    const into = intoSign(st), d = mm('exDist');
     if (into && d !== 0 && Math.sign(d) !== into) {
       st.cutFlipped = true;
-      g('exDist').value = into * Math.abs(d);
-      say(`Cut goes INTO the body — distance flipped to ${g('exDist').value}mm. ` +
+      setLen('exDist', into * Math.abs(d));
+      say(`Cut goes INTO the body — distance flipped to ${len(into * Math.abs(d))}. ` +
         `Drag the arrow (or type) to set the pocket depth.`);
     }
   }
@@ -244,7 +247,7 @@ function beforeApply(st) {
   }
 }
 function afterApply(st) {                    // gizmos follow the (adjusted) boxes
-  setExtrudeArrowAmount(num('exDist'));      // st.axis already carries Flip
+  setExtrudeArrowAmount(mm('exDist'));       // st.axis already carries Flip
   setTaperRingAngle(num('exTaper'));
 }
 /* the server told us the build stopped at the tip (feature notes, R7): say
@@ -294,7 +297,7 @@ const ex = tool({
   nothing: 'Nothing extruded — the distance was 0. Open Extrude again, then drag ' +
            'the arrow or type a distance before OK.',
   beforeApply, afterApply, afterPush, settle, split,
-  describe: p => `${p.amount}mm / ${p.taper}°`,
+  describe: p => `${len(p.amount)} / ${p.taper}°`,
 });
 
 export const openExtrude = profileId => ex.open(profileId);

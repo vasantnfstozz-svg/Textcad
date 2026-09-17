@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=43">
+<link rel="stylesheet" href="/static/css/studio.css?v=44">
 </head>
 <body>
 
@@ -86,6 +86,307 @@
     <div id="sk3dSnap" style="display:none"></div>
     <div id="sk3dScale" style="display:none"></div>
     <div id="sk3dScaleW" style="display:none"></div>
+  </div>
+
+  <!-- ============ the tool panels ============
+       A COLUMN OF MAIN, between the viewport and the AI designer — not a card
+       floating over either of them. At `position: fixed; right: 24px` an open
+       panel lay on top of the chat column, which is exactly where a failed
+       feature says why it failed: the click appeared to do nothing and the
+       reason was underneath the panel (LAUNCH-PLAN.md section 10). Floating it
+       over the VIEWPORT instead only moved the problem — on a 1200 px window
+       the panel covered the middle of the model, and the arrow you are meant
+       to drag was under it. As a column it takes its own space: the viewport
+       narrows while a tool is open — and pulls its camera back by the same
+       ratio, so the part stays in view (viewport.js, resize) — and nothing is
+       ever hidden behind anything. One command at a time, so at most one of
+       these is ever visible. -->
+  <!-- ============ Extrude panel (non-modal, live preview) ============ -->
+  <div id="extrudeDialog" class="toolpanel" style="display:none">
+    <div class="exhead">↑ Extrude</div>
+    <label>Profile <select id="exProfile"></select></label>
+    <label>Direction
+      <select id="exDir">
+        <option value="one">One side</option>
+        <option value="sym">Symmetric</option>
+        <option value="two">Two sides</option>
+      </select></label>
+    <div class="exrow">
+      <!-- EVERY length box is typed in the DISPLAY unit (Settings ▸ Length unit),
+           so its label is written by settings.js (data-unit) and never hard-wired:
+           a box labelled mm that is read as inches is how a 2 becomes 50.8. -->
+      <label>Distance (<span data-unit>mm</span>) <input id="exDist" type="number" step="any" value="10"></label>
+      <label id="exDist2Row" style="display:none">Distance 2 (<span data-unit>mm</span>) <input id="exDist2" type="number" step="any" value="10"></label>
+    </div>
+    <div class="exrow">
+      <label>Taper (°) <input id="exTaper" type="number" step="any" value="0"></label>
+      <label class="excheck">Flip <input id="exFlip" type="checkbox"></label>
+      <label class="excheck" id="exThroughRow" title="run the cut right through the material - a tool that stops inside it slices the part instead of clearing it">Through all <input id="exThrough" type="checkbox"></label>
+    </div>
+    <label>Operation
+      <select id="exOp">
+        <option value="new">New body</option>
+        <option value="join">Join</option>
+        <option value="cut">Cut</option>
+        <!-- locked until it has a workflow that makes sense here: extruding a
+             face sketch upward intersects NOTHING (honest empty-solid failure) -->
+        <option value="intersect" disabled>Intersect — coming soon</option>
+      </select></label>
+    <label id="exTargetRow" style="display:none">Combine with <select id="exTarget"></select></label>
+    <div class="exfoot">
+      <button id="exCancel">Cancel</button>
+      <button class="primary" id="exOk">OK</button>
+    </div>
+  </div>
+
+  <!-- ============ Revolve panel (non-modal, live preview; specs/revolve.md) ============ -->
+  <div id="revolveDialog" class="toolpanel" style="display:none">
+    <div class="exhead">↻ Revolve</div>
+    <label>Profile <select id="rvProfile"></select></label>
+    <label>Axis
+      <select id="rvAxis" title="the plane's own axes through the sketch origin, and the straight edges of the outline - the profile must lie entirely on one side">
+        <option value="v">v — the plane's vertical axis</option>
+        <option value="u">u — the plane's horizontal axis</option>
+      </select></label>
+    <label>Direction
+      <select id="rvDir" title="One side sweeps the angle from the profile; Two sides adds a second angle the other way; Symmetric sweeps the angle to each side">
+        <option value="one">One side</option>
+        <option value="two">Two sides</option>
+        <option value="sym">Symmetric</option>
+      </select></label>
+    <div class="exrow">
+      <label>Angle (°) <input id="rvAngle" type="number" step="any" value="0"></label>
+      <label>&nbsp;<button id="rvFull" type="button" class="exbtn" title="a full turn">Full 360°</button></label>
+    </div>
+    <label id="rvAngle2Row" style="display:none">Angle 2 (°) <input id="rvAngle2" type="number" step="any" min="0" value="0"></label>
+    <label>Operation
+      <select id="rvOp">
+        <option value="new">New body</option>
+        <option value="join">Join</option>
+        <option value="cut">Cut</option>
+        <option value="intersect" disabled>Intersect — coming soon</option>
+      </select></label>
+    <label id="rvTargetRow" style="display:none">Combine with <select id="rvTarget"></select></label>
+    <div class="exfoot">
+      <button id="rvCancel">Cancel</button>
+      <button class="primary" id="rvOk">OK</button>
+    </div>
+  </div>
+
+
+  <!-- ============ Fillet panel (edges picked in the viewport; specs/fillet-chamfer.md) ============ -->
+  <div id="flDialog" class="toolpanel" style="display:none">
+    <div class="exhead">◠ Fillet</div>
+    <label>Edges <select id="flProfile" disabled></select></label>
+    <label>Radius (<span data-unit>mm</span>) <input id="flValue" type="number" step="any" min="0" value="0"></label>
+    <label><input id="flChain" type="checkbox" checked
+      title="clicking one edge of a smooth rim selects the whole rim (Fusion's tangent chain)"> Tangent chain</label>
+    <!-- the selection is made in the viewport and the tree: an edge, a FACE (every
+         edge of it) or a tree ROW (the edges of the faces that feature made); a
+         second click on the same one takes its edges out again -->
+    <select id="flOp" style="display:none"><option value="new">New body</option></select>
+    <label id="flTargetRow" style="display:none">Combine with <select id="flTarget"></select></label>
+    <div class="exfoot">
+      <button id="flCancel">Cancel</button>
+      <button class="primary" id="flOk">OK</button>
+    </div>
+  </div>
+
+  <!-- ============ Chamfer panel (edges picked in the viewport; specs/fillet-chamfer.md) ============ -->
+  <div id="chDialog" class="toolpanel" style="display:none">
+    <div class="exhead">◣ Chamfer</div>
+    <label>Edges <select id="chProfile" disabled></select></label>
+    <label>Distance (<span data-unit>mm</span>) <input id="chValue" type="number" step="any" min="0" value="0"></label>
+    <label><input id="chChain" type="checkbox" checked
+      title="clicking one edge of a smooth rim selects the whole rim (Fusion's tangent chain)"> Tangent chain</label>
+    <select id="chOp" style="display:none"><option value="new">New body</option></select>
+    <label id="chTargetRow" style="display:none">Combine with <select id="chTarget"></select></label>
+    <div class="exfoot">
+      <button id="chCancel">Cancel</button>
+      <button class="primary" id="chOk">OK</button>
+    </div>
+  </div>
+
+  <!-- ============ Hole panel (a flat face + the point clicked on it; specs/hole.md) ============ -->
+  <div id="holeDialog" class="toolpanel" style="display:none">
+    <div class="exhead">◎ Hole</div>
+    <label>Face <select id="hoProfile" disabled></select></label>
+    <label>Type
+      <select id="hoKind" title="Simple: a plain bore. Counterbore: a wider flat-bottomed seat at the face. Countersink: a conical seat at the face">
+        <option value="simple">Simple</option>
+        <option value="counterbore">Counterbore</option>
+        <option value="countersink">Countersink</option>
+      </select></label>
+    <div class="exrow">
+      <label>Diameter (<span data-unit>mm</span>) <input id="hoDia" type="number" step="any" min="0" value="6"></label>
+      <label>Depth (<span data-unit>mm</span>) <input id="hoDepth" type="number" step="any" min="0" value="0"></label>
+    </div>
+    <label class="excheck" title="run the hole out through the far side, whatever the thickness">Through all <input id="hoThrough" type="checkbox"></label>
+    <div class="exrow">
+      <label id="hoCbDiaRow" style="display:none">Counterbore ⌀ (<span data-unit>mm</span>) <input id="hoCbDia" type="number" step="any" min="0" value="0"></label>
+      <label id="hoCbDepthRow" style="display:none">Counterbore depth (<span data-unit>mm</span>) <input id="hoCbDepth" type="number" step="any" min="0" value="0"></label>
+    </div>
+    <div class="exrow">
+      <label id="hoCsDiaRow" style="display:none">Countersink ⌀ (<span data-unit>mm</span>) <input id="hoCsDia" type="number" step="any" min="0" value="0"></label>
+      <label id="hoCsAngleRow" style="display:none">Countersink angle (°) <input id="hoCsAngle" type="number" step="any" min="1" max="179" value="90"></label>
+    </div>
+    <select id="hoOp" style="display:none"><option value="new">New body</option></select>
+    <label id="hoTargetRow" style="display:none">Combine with <select id="hoTarget"></select></label>
+    <div class="exfoot">
+      <button id="hoCancel">Cancel</button>
+      <button class="primary" id="hoOk">OK</button>
+    </div>
+  </div>
+
+  <div id="shellDialog" class="toolpanel" style="display:none">
+    <div class="exhead">▢ Shell</div>
+    <label>Faces <select id="shProfile" disabled></select></label>
+    <div class="exrow">
+      <label>Thickness (<span data-unit>mm</span>) <input id="shThickness" type="number" step="any" min="0" value="0"></label>
+      <label>Direction
+        <select id="shDirection" title="Inside: the walls grow inward and the outside stays where it is. Outside: the walls are added around the body and the old surface becomes the cavity">
+          <option value="inside">Inside</option>
+          <option value="outside">Outside</option>
+        </select></label>
+    </div>
+    <!-- the openings are picked in the viewport: a click on a flat face of the body
+         opens it, a second click closes it again; no face open = a closed hollow -->
+    <select id="shOp" style="display:none"><option value="new">New body</option></select>
+    <label id="shTargetRow" style="display:none">Combine with <select id="shTarget"></select></label>
+    <div class="exfoot">
+      <button id="shCancel">Cancel</button>
+      <button class="primary" id="shOk">OK</button>
+    </div>
+  </div>
+
+  <div id="mvDialog" class="toolpanel" style="display:none">
+    <div class="exhead">↗ Move</div>
+    <label>Body <select id="mvProfile" disabled></select></label>
+    <div class="exrow">
+      <label>X (<span data-unit>mm</span>) <input id="mvX" type="number" step="any" value="0"></label>
+      <label>Y (<span data-unit>mm</span>) <input id="mvY" type="number" step="any" value="0"></label>
+      <label>Z (<span data-unit>mm</span>) <input id="mvZ" type="number" step="any" value="0"></label>
+    </div>
+    <!-- the op returns the body in its new place: no Join / Cut, no target -->
+    <select id="mvOp" style="display:none"><option value="new">New body</option></select>
+    <label id="mvTargetRow" style="display:none">Combine with <select id="mvTarget"></select></label>
+    <div class="exfoot">
+      <button id="mvCancel">Cancel</button>
+      <button class="primary" id="mvOk">OK</button>
+    </div>
+  </div>
+
+  <div id="rtDialog" class="toolpanel" style="display:none">
+    <div class="exhead">⟳ Rotate</div>
+    <label>Body <select id="rtProfile" disabled></select></label>
+    <div class="exrow">
+      <label>Axis
+        <select id="rtAxis" title="the world axis the body turns about, through its own centre">
+          <option value="X">X</option>
+          <option value="Y">Y</option>
+          <option value="Z" selected>Z</option>
+        </select></label>
+      <label>Angle (°) <input id="rtAngle" type="number" step="any" value="0"></label>
+    </div>
+    <select id="rtOp" style="display:none"><option value="new">New body</option></select>
+    <label id="rtTargetRow" style="display:none">Combine with <select id="rtTarget"></select></label>
+    <div class="exfoot">
+      <button id="rtCancel">Cancel</button>
+      <button class="primary" id="rtOk">OK</button>
+    </div>
+  </div>
+
+  <div id="cpDialog" class="toolpanel" style="display:none">
+    <div class="exhead">✳ Circular Pattern</div>
+    <label>Seed <select id="cpProfile" disabled></select></label>
+    <label>Axis <input id="cpAxis" type="text" readonly value="" title="the seed face's normal through its centre — click a bore's wall or another flat face while the panel is open to re-aim"></label>
+    <div class="exrow">
+      <label>Count <input id="cpCount" type="number" step="1" min="1" value="1"></label>
+      <label>Angle (°) <input id="cpAngle" type="number" step="any" min="1" max="360" value="360" title="360 = a full circle; less spreads the copies from the seed to this angle"></label>
+    </div>
+    <select id="cpOp" style="display:none"><option value="new">New body</option></select>
+    <label id="cpTargetRow" style="display:none">Combine with <select id="cpTarget"></select></label>
+    <div class="exfoot">
+      <button id="cpCancel">Cancel</button>
+      <button class="primary" id="cpOk">OK</button>
+    </div>
+  </div>
+
+  <div id="rpDialog" class="toolpanel" style="display:none">
+    <div class="exhead">⋯ Rectangular Pattern</div>
+    <label>Seed <select id="rpProfile" disabled></select></label>
+    <div class="exrow">
+      <label>Along <select id="rpAlong" title="which of the seed face's axes is direction 1; direction 2 is the other"></select></label>
+      <label>Distance type
+        <select id="rpDistType" title="Spacing: the copies are this far apart. Extent: they all fit inside this distance">
+          <option value="spacing">Spacing</option>
+          <option value="extent">Extent</option>
+        </select></label>
+    </div>
+    <div class="exrow">
+      <label>Count 1 <input id="rpCount" type="number" step="1" min="1" value="2"></label>
+      <label>Distance 1 (<span data-unit>mm</span>) <input id="rpDist" type="number" step="any" value="0"></label>
+    </div>
+    <div class="exrow">
+      <label>Count 2 <input id="rpCount2" type="number" step="1" min="1" value="1"></label>
+      <label>Distance 2 (<span data-unit>mm</span>) <input id="rpDist2" type="number" step="any" value="0"></label>
+    </div>
+    <select id="rpOp" style="display:none"><option value="new">New body</option></select>
+    <label id="rpTargetRow" style="display:none">Combine with <select id="rpTarget"></select></label>
+    <div class="exfoot">
+      <button id="rpCancel">Cancel</button>
+      <button class="primary" id="rpOk">OK</button>
+    </div>
+  </div>
+
+  <div id="mrDialog" class="toolpanel" style="display:none">
+    <div class="exhead">⇋ Mirror</div>
+    <label>Seed <select id="mrProfile" disabled></select></label>
+    <label>Plane <select id="mrPlane" title="the mirror plane: click a flat face or an origin plane in the viewport, or choose one here (the body's mid-planes included)"></select></label>
+    <select id="mrOp" style="display:none"><option value="new">New body</option></select>
+    <label id="mrTargetRow" style="display:none">Combine with <select id="mrTarget"></select></label>
+    <div class="exfoot">
+      <button id="mrCancel">Cancel</button>
+      <button class="primary" id="mrOk">OK</button>
+    </div>
+  </div>
+
+  <!-- ============ measure panel ============ -->
+  <div id="measureDialog" style="display:none">
+    <div class="mehead">⟺ Measure</div>
+    <div class="mehint" id="meHint">Click a face or an edge in the viewport.</div>
+    <div class="mesel">
+      <label>A <span id="meSelA" class="empty">—</span></label>
+      <label>B <span id="meSelB" class="empty">—</span></label>
+    </div>
+    <div class="meout">
+      <div id="meValue">—</div>
+      <!-- the EDITABLE half: shown only when the measurement maps to a single
+           param, so a read-only number never looks typeable -->
+      <div id="meEdit" style="display:none">
+        <input id="meInput" type="number" step="any" autocomplete="off">
+        <!-- the one dimension box that said no unit at all; like every tool
+             panel it is typed in the DISPLAY unit, which settings.js names here -->
+        <span class="punit" data-unit>mm</span>
+        <button class="primary" id="meApply">Set</button>
+      </div>
+      <div id="meKind"></div>
+      <div id="meDriver" style="display:none"></div>
+      <!-- WHICH SIDE MOVES. A derived distance is stored nowhere, so changing it
+           means moving one side; the tool must never pick silently. -->
+      <div id="meSide" style="display:none">
+        <span>move</span>
+        <label><input type="radio" name="meSideR" value="a"> A</label>
+        <label><input type="radio" name="meSideR" value="b"> B</label>
+      </div>
+    </div>
+    <div id="meRows"></div>
+    <div id="meNote" style="display:none"></div>
+    <div class="mefoot">
+      <button id="meSwap" title="measure B to A instead">⇄ Swap</button>
+      <button id="meReset">Reset</button>
+      <button class="primary" id="meCancel">Close</button>
+    </div>
   </div>
 
   <div class="splitter" id="splitRight" title="drag to resize · double-click to reset"></div>
@@ -198,291 +499,6 @@
   </form>
 </dialog>
 
-<!-- ============ Extrude panel (non-modal, live preview) ============ -->
-<div id="extrudeDialog" class="toolpanel" style="display:none">
-  <div class="exhead">↑ Extrude</div>
-  <label>Profile <select id="exProfile"></select></label>
-  <label>Direction
-    <select id="exDir">
-      <option value="one">One side</option>
-      <option value="sym">Symmetric</option>
-      <option value="two">Two sides</option>
-    </select></label>
-  <div class="exrow">
-    <label>Distance (mm) <input id="exDist" type="number" step="any" value="10"></label>
-    <label id="exDist2Row" style="display:none">Distance 2 (mm) <input id="exDist2" type="number" step="any" value="10"></label>
-  </div>
-  <div class="exrow">
-    <label>Taper (°) <input id="exTaper" type="number" step="any" value="0"></label>
-    <label class="excheck">Flip <input id="exFlip" type="checkbox"></label>
-    <label class="excheck" id="exThroughRow" title="run the cut right through the material - a tool that stops inside it slices the part instead of clearing it">Through all <input id="exThrough" type="checkbox"></label>
-  </div>
-  <label>Operation
-    <select id="exOp">
-      <option value="new">New body</option>
-      <option value="join">Join</option>
-      <option value="cut">Cut</option>
-      <!-- locked until it has a workflow that makes sense here: extruding a
-           face sketch upward intersects NOTHING (honest empty-solid failure) -->
-      <option value="intersect" disabled>Intersect — coming soon</option>
-    </select></label>
-  <label id="exTargetRow" style="display:none">Combine with <select id="exTarget"></select></label>
-  <div class="exfoot">
-    <button id="exCancel">Cancel</button>
-    <button class="primary" id="exOk">OK</button>
-  </div>
-</div>
-
-<!-- ============ Revolve panel (non-modal, live preview; specs/revolve.md) ============ -->
-<div id="revolveDialog" class="toolpanel" style="display:none">
-  <div class="exhead">↻ Revolve</div>
-  <label>Profile <select id="rvProfile"></select></label>
-  <label>Axis
-    <select id="rvAxis" title="the plane's own axes through the sketch origin, and the straight edges of the outline - the profile must lie entirely on one side">
-      <option value="v">v — the plane's vertical axis</option>
-      <option value="u">u — the plane's horizontal axis</option>
-    </select></label>
-  <label>Direction
-    <select id="rvDir" title="One side sweeps the angle from the profile; Two sides adds a second angle the other way; Symmetric sweeps the angle to each side">
-      <option value="one">One side</option>
-      <option value="two">Two sides</option>
-      <option value="sym">Symmetric</option>
-    </select></label>
-  <div class="exrow">
-    <label>Angle (°) <input id="rvAngle" type="number" step="any" value="0"></label>
-    <label>&nbsp;<button id="rvFull" type="button" class="exbtn" title="a full turn">Full 360°</button></label>
-  </div>
-  <label id="rvAngle2Row" style="display:none">Angle 2 (°) <input id="rvAngle2" type="number" step="any" min="0" value="0"></label>
-  <label>Operation
-    <select id="rvOp">
-      <option value="new">New body</option>
-      <option value="join">Join</option>
-      <option value="cut">Cut</option>
-      <option value="intersect" disabled>Intersect — coming soon</option>
-    </select></label>
-  <label id="rvTargetRow" style="display:none">Combine with <select id="rvTarget"></select></label>
-  <div class="exfoot">
-    <button id="rvCancel">Cancel</button>
-    <button class="primary" id="rvOk">OK</button>
-  </div>
-</div>
-
-
-<!-- ============ Fillet panel (edges picked in the viewport; specs/fillet-chamfer.md) ============ -->
-<div id="flDialog" class="toolpanel" style="display:none">
-  <div class="exhead">◠ Fillet</div>
-  <label>Edges <select id="flProfile" disabled></select></label>
-  <label>Radius (mm) <input id="flValue" type="number" step="any" min="0" value="0"></label>
-  <label><input id="flChain" type="checkbox" checked
-    title="clicking one edge of a smooth rim selects the whole rim (Fusion's tangent chain)"> Tangent chain</label>
-  <!-- the selection is made in the viewport and the tree: an edge, a FACE (every
-       edge of it) or a tree ROW (the edges of the faces that feature made); a
-       second click on the same one takes its edges out again -->
-  <select id="flOp" style="display:none"><option value="new">New body</option></select>
-  <label id="flTargetRow" style="display:none">Combine with <select id="flTarget"></select></label>
-  <div class="exfoot">
-    <button id="flCancel">Cancel</button>
-    <button class="primary" id="flOk">OK</button>
-  </div>
-</div>
-
-<!-- ============ Chamfer panel (edges picked in the viewport; specs/fillet-chamfer.md) ============ -->
-<div id="chDialog" class="toolpanel" style="display:none">
-  <div class="exhead">◣ Chamfer</div>
-  <label>Edges <select id="chProfile" disabled></select></label>
-  <label>Distance (mm) <input id="chValue" type="number" step="any" min="0" value="0"></label>
-  <label><input id="chChain" type="checkbox" checked
-    title="clicking one edge of a smooth rim selects the whole rim (Fusion's tangent chain)"> Tangent chain</label>
-  <select id="chOp" style="display:none"><option value="new">New body</option></select>
-  <label id="chTargetRow" style="display:none">Combine with <select id="chTarget"></select></label>
-  <div class="exfoot">
-    <button id="chCancel">Cancel</button>
-    <button class="primary" id="chOk">OK</button>
-  </div>
-</div>
-
-<!-- ============ Hole panel (a flat face + the point clicked on it; specs/hole.md) ============ -->
-<div id="holeDialog" class="toolpanel" style="display:none">
-  <div class="exhead">◎ Hole</div>
-  <label>Face <select id="hoProfile" disabled></select></label>
-  <label>Type
-    <select id="hoKind" title="Simple: a plain bore. Counterbore: a wider flat-bottomed seat at the face. Countersink: a conical seat at the face">
-      <option value="simple">Simple</option>
-      <option value="counterbore">Counterbore</option>
-      <option value="countersink">Countersink</option>
-    </select></label>
-  <div class="exrow">
-    <label>Diameter (mm) <input id="hoDia" type="number" step="any" min="0" value="6"></label>
-    <label>Depth (mm) <input id="hoDepth" type="number" step="any" min="0" value="0"></label>
-  </div>
-  <label class="excheck" title="run the hole out through the far side, whatever the thickness">Through all <input id="hoThrough" type="checkbox"></label>
-  <div class="exrow">
-    <label id="hoCbDiaRow" style="display:none">Counterbore ⌀ (mm) <input id="hoCbDia" type="number" step="any" min="0" value="0"></label>
-    <label id="hoCbDepthRow" style="display:none">Counterbore depth (mm) <input id="hoCbDepth" type="number" step="any" min="0" value="0"></label>
-  </div>
-  <div class="exrow">
-    <label id="hoCsDiaRow" style="display:none">Countersink ⌀ (mm) <input id="hoCsDia" type="number" step="any" min="0" value="0"></label>
-    <label id="hoCsAngleRow" style="display:none">Countersink angle (°) <input id="hoCsAngle" type="number" step="any" min="1" max="179" value="90"></label>
-  </div>
-  <select id="hoOp" style="display:none"><option value="new">New body</option></select>
-  <label id="hoTargetRow" style="display:none">Combine with <select id="hoTarget"></select></label>
-  <div class="exfoot">
-    <button id="hoCancel">Cancel</button>
-    <button class="primary" id="hoOk">OK</button>
-  </div>
-</div>
-
-<div id="shellDialog" class="toolpanel" style="display:none">
-  <div class="exhead">▢ Shell</div>
-  <label>Faces <select id="shProfile" disabled></select></label>
-  <div class="exrow">
-    <label>Thickness (mm) <input id="shThickness" type="number" step="any" min="0" value="0"></label>
-    <label>Direction
-      <select id="shDirection" title="Inside: the walls grow inward and the outside stays where it is. Outside: the walls are added around the body and the old surface becomes the cavity">
-        <option value="inside">Inside</option>
-        <option value="outside">Outside</option>
-      </select></label>
-  </div>
-  <!-- the openings are picked in the viewport: a click on a flat face of the body
-       opens it, a second click closes it again; no face open = a closed hollow -->
-  <select id="shOp" style="display:none"><option value="new">New body</option></select>
-  <label id="shTargetRow" style="display:none">Combine with <select id="shTarget"></select></label>
-  <div class="exfoot">
-    <button id="shCancel">Cancel</button>
-    <button class="primary" id="shOk">OK</button>
-  </div>
-</div>
-
-<div id="mvDialog" class="toolpanel" style="display:none">
-  <div class="exhead">↗ Move</div>
-  <label>Body <select id="mvProfile" disabled></select></label>
-  <div class="exrow">
-    <label>X (mm) <input id="mvX" type="number" step="any" value="0"></label>
-    <label>Y (mm) <input id="mvY" type="number" step="any" value="0"></label>
-    <label>Z (mm) <input id="mvZ" type="number" step="any" value="0"></label>
-  </div>
-  <!-- the op returns the body in its new place: no Join / Cut, no target -->
-  <select id="mvOp" style="display:none"><option value="new">New body</option></select>
-  <label id="mvTargetRow" style="display:none">Combine with <select id="mvTarget"></select></label>
-  <div class="exfoot">
-    <button id="mvCancel">Cancel</button>
-    <button class="primary" id="mvOk">OK</button>
-  </div>
-</div>
-
-<div id="rtDialog" class="toolpanel" style="display:none">
-  <div class="exhead">⟳ Rotate</div>
-  <label>Body <select id="rtProfile" disabled></select></label>
-  <div class="exrow">
-    <label>Axis
-      <select id="rtAxis" title="the world axis the body turns about, through its own centre">
-        <option value="X">X</option>
-        <option value="Y">Y</option>
-        <option value="Z" selected>Z</option>
-      </select></label>
-    <label>Angle (°) <input id="rtAngle" type="number" step="any" value="0"></label>
-  </div>
-  <select id="rtOp" style="display:none"><option value="new">New body</option></select>
-  <label id="rtTargetRow" style="display:none">Combine with <select id="rtTarget"></select></label>
-  <div class="exfoot">
-    <button id="rtCancel">Cancel</button>
-    <button class="primary" id="rtOk">OK</button>
-  </div>
-</div>
-
-<div id="cpDialog" class="toolpanel" style="display:none">
-  <div class="exhead">✳ Circular Pattern</div>
-  <label>Seed <select id="cpProfile" disabled></select></label>
-  <label>Axis <input id="cpAxis" type="text" readonly value="" title="the seed face's normal through its centre — click a bore's wall or another flat face while the panel is open to re-aim"></label>
-  <div class="exrow">
-    <label>Count <input id="cpCount" type="number" step="1" min="1" value="1"></label>
-    <label>Angle (°) <input id="cpAngle" type="number" step="any" min="1" max="360" value="360" title="360 = a full circle; less spreads the copies from the seed to this angle"></label>
-  </div>
-  <select id="cpOp" style="display:none"><option value="new">New body</option></select>
-  <label id="cpTargetRow" style="display:none">Combine with <select id="cpTarget"></select></label>
-  <div class="exfoot">
-    <button id="cpCancel">Cancel</button>
-    <button class="primary" id="cpOk">OK</button>
-  </div>
-</div>
-
-<div id="rpDialog" class="toolpanel" style="display:none">
-  <div class="exhead">⋯ Rectangular Pattern</div>
-  <label>Seed <select id="rpProfile" disabled></select></label>
-  <div class="exrow">
-    <label>Along <select id="rpAlong" title="which of the seed face's axes is direction 1; direction 2 is the other"></select></label>
-    <label>Distance type
-      <select id="rpDistType" title="Spacing: the copies are this far apart. Extent: they all fit inside this distance">
-        <option value="spacing">Spacing</option>
-        <option value="extent">Extent</option>
-      </select></label>
-  </div>
-  <div class="exrow">
-    <label>Count 1 <input id="rpCount" type="number" step="1" min="1" value="2"></label>
-    <label>Distance 1 (mm) <input id="rpDist" type="number" step="any" value="0"></label>
-  </div>
-  <div class="exrow">
-    <label>Count 2 <input id="rpCount2" type="number" step="1" min="1" value="1"></label>
-    <label>Distance 2 (mm) <input id="rpDist2" type="number" step="any" value="0"></label>
-  </div>
-  <select id="rpOp" style="display:none"><option value="new">New body</option></select>
-  <label id="rpTargetRow" style="display:none">Combine with <select id="rpTarget"></select></label>
-  <div class="exfoot">
-    <button id="rpCancel">Cancel</button>
-    <button class="primary" id="rpOk">OK</button>
-  </div>
-</div>
-
-<div id="mrDialog" class="toolpanel" style="display:none">
-  <div class="exhead">⇋ Mirror</div>
-  <label>Seed <select id="mrProfile" disabled></select></label>
-  <label>Plane <select id="mrPlane" title="the mirror plane: click a flat face or an origin plane in the viewport, or choose one here (the body's mid-planes included)"></select></label>
-  <select id="mrOp" style="display:none"><option value="new">New body</option></select>
-  <label id="mrTargetRow" style="display:none">Combine with <select id="mrTarget"></select></label>
-  <div class="exfoot">
-    <button id="mrCancel">Cancel</button>
-    <button class="primary" id="mrOk">OK</button>
-  </div>
-</div>
-
-<!-- ============ measure panel ============ -->
-<div id="measureDialog" style="display:none">
-  <div class="mehead">⟺ Measure</div>
-  <div class="mehint" id="meHint">Click a face or an edge in the viewport.</div>
-  <div class="mesel">
-    <label>A <span id="meSelA" class="empty">—</span></label>
-    <label>B <span id="meSelB" class="empty">—</span></label>
-  </div>
-  <div class="meout">
-    <div id="meValue">—</div>
-    <!-- the EDITABLE half: shown only when the measurement maps to a single
-         param, so a read-only number never looks typeable -->
-    <div id="meEdit" style="display:none">
-      <input id="meInput" type="number" step="any" autocomplete="off">
-      <!-- the one dimension box that said no unit at all; it is typed in mm,
-           like every tool panel -->
-      <span class="punit">mm</span>
-      <button class="primary" id="meApply">Set</button>
-    </div>
-    <div id="meKind"></div>
-    <div id="meDriver" style="display:none"></div>
-    <!-- WHICH SIDE MOVES. A derived distance is stored nowhere, so changing it
-         means moving one side; the tool must never pick silently. -->
-    <div id="meSide" style="display:none">
-      <span>move</span>
-      <label><input type="radio" name="meSideR" value="a"> A</label>
-      <label><input type="radio" name="meSideR" value="b"> B</label>
-    </div>
-  </div>
-  <div id="meRows"></div>
-  <div id="meNote" style="display:none"></div>
-  <div class="mefoot">
-    <button id="meSwap" title="measure B to A instead">⇄ Swap</button>
-    <button id="meReset">Reset</button>
-    <button class="primary" id="meCancel">Close</button>
-  </div>
-</div>
-
 <!-- ============ spec editor dialog ============ -->
 <dialog id="specDialog">
   <form id="specForm" method="dialog">
@@ -521,6 +537,6 @@
     "three/addons/": "/static/vendor/three/0.160.0/addons/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=210"></script>
+<script type="module" src="/static/js/main.js?v=214"></script>
 </body>
 </html>

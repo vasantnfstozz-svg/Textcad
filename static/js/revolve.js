@@ -129,8 +129,6 @@ const gizmos = {
         hideRevolveGhost();                                   // the real solid replaces the ghost
       },
       t => clampAngle(st, t));
-    // a value typed or Full pressed before the plan arrived waits for it
-    if (!st.featureId && num('rvAngle') !== 0) rv.apply();
   },
   end() { endAxisLine(); endTaperRing(); endRevolveGhost(); },
 };
@@ -185,7 +183,7 @@ const rv = tool({
   ops: { profile: 'revolve', face: 'revolve_face' },
   fields: { change: ['Axis', 'Dir'], typed: ['Angle', 'Angle2'] },
   show, params, snapshot, sync, refresh, gizmos, beforeApply, afterApply,
-  isEmpty: (pr, st) => Math.abs(pr.angle) + (pr.angle2 || 0) === 0 || !st.plan,   // no plan yet: the plan's arrival applies
+  isEmpty: pr => Math.abs(pr.angle) + (pr.angle2 || 0) === 0,
   nothing: 'Nothing revolved — the angle was 0. Open Revolve again, then drag the ' +
            'ring or type an angle before OK.',
   split: () => 'the revolved cut leaves material on both sides — revolve the ' +

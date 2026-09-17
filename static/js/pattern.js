@@ -17,7 +17,7 @@
 // There is no ghost: the copies are drawn only by the kernel — the value box
 // follows the drag live and the real pattern appears on release.
 
-import { tool, g, num, setBox } from './tool.js';
+import { tool, g, num, mm, len, setBox, setLen } from './tool.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          beginSecondArrow, endSecondArrow, setSecondArrowAmount,
          beginAxisLine, endAxisLine,
@@ -61,7 +61,7 @@ function circular() {
       return { seed: p.seed ?? null, axis: p.axis ?? null, count: Number(p.count) || 1,
                angle: p.angle == null ? FULL : Number(p.angle) };
     },
-    isEmpty: (pr, st) => !st.plan || !(pr.count > 1),
+    isEmpty: pr => !(pr.count > 1),
     nothing: 'Nothing patterned — the count was 1. Open Circular Pattern again and type how ' +
              'many copies before OK.',
     describe: p => `${p.count} copies over ${p.angle}°`,
@@ -75,7 +75,6 @@ function circular() {
           t => setBox('cpAngle', t),                              // dragging: the box follows
           async t => { setBox('cpAngle', t); await ctl.apply(); },   // release: ONE verified rebuild
           clampAngle);
-        if (!st.featureId && num('cpCount') > 1) ctl.apply();    // a count typed before the plan arrived
       },
       end() { endAxisLine(); endTaperRing(); },
     },
@@ -98,15 +97,16 @@ function rectangular() {
                         ...(st.featureId ? { own_id: st.featureId } : {}) }),
     params: st => ({ seed: stored(st).seed ?? null,
                      direction: stored(st).direction ?? null, direction2: stored(st).direction2 ?? null,
-                     count: count('rpCount'), distance: num('rpDist'),
+                     // a COUNT is a number and the distances are LENGTHS
+                     count: count('rpCount'), distance: mm('rpDist'),
                      distance_type: g('rpDistType').value,
-                     count2: count('rpCount2'), distance2: num('rpDist2') }),
+                     count2: count('rpCount2'), distance2: mm('rpDist2') }),
     show(st, p) {
       g('rpCount').value = p.count || 2;            // the smallest pattern: the seed and one copy
-      g('rpDist').value = p.distance || 0;          // 0: the copy sits on the seed — nothing built
+      setLen('rpDist', p.distance || 0);            // 0: the copy sits on the seed — nothing built
       g('rpDistType').value = p.distance_type || 'spacing';
       g('rpCount2').value = p.count2 || 1;
-      g('rpDist2').value = p.distance2 || 0;
+      setLen('rpDist2', p.distance2 || 0);
     },
     snapshot(f) {
       const p = f.params || {};
@@ -118,8 +118,7 @@ function rectangular() {
     /* honest zero: nothing is built until ONE of the two rows has both a count
        above 1 and a distance — Direction 2 alone is a pattern too (it used to be
        refused silently, and OK then blamed "the distance", P4 review) */
-    isEmpty: (pr, st) => !st.plan
-      || !((pr.count > 1 && pr.distance) || (pr.count2 > 1 && pr.distance2)),
+    isEmpty: pr => !((pr.count > 1 && pr.distance) || (pr.count2 > 1 && pr.distance2)),
     /* half-made: a second row asked for without its distance, or the distance
        taken away — the op would refuse and the revert would undo the choice */
     hold(pr) {
@@ -131,7 +130,7 @@ function rectangular() {
     },
     nothing: 'Nothing patterned — no direction had both a count above 1 and a distance. Open ' +
              'Rectangular Pattern again, then drag an arrow or type a distance before OK.',
-    describe: p => `${p.count} × ${p.count2} copies, ${p.distance} / ${p.distance2} mm`,
+    describe: p => `${p.count} × ${p.count2} copies, ${len(p.distance)} / ${len(p.distance2)}`,
     split: () => 'separate copies are what a body pattern makes — pattern a feature of the ' +
                  'body instead if you wanted one part.',
     gizmos: {
@@ -145,23 +144,22 @@ function rectangular() {
         // the number is the server's, never derived from the step in JS)
         if (plan.params && plan.params.distance != null && !st.legacyShown) {
           st.legacyShown = true;
-          g('rpDist').value = plan.params.distance;
+          setLen('rpDist', plan.params.distance);
         }
-        beginExtrudeArrow(plan.centre, plan.direction, num('rpDist'),
-          v => setBox('rpDist', v),
-          async v => { setBox('rpDist', v); await ctl.apply(); });
-        beginSecondArrow(plan.centre, plan.direction2, num('rpDist2'),
-          v => setBox('rpDist2', v),
+        beginExtrudeArrow(plan.centre, plan.direction, mm('rpDist'),
+          v => setLen('rpDist', v, 1),
+          async v => { setLen('rpDist', v, 1); await ctl.apply(); });
+        beginSecondArrow(plan.centre, plan.direction2, mm('rpDist2'),
+          v => setLen('rpDist2', v, 1),
           async v => {                                  // Fusion: a distance wakes Direction 2
-            setBox('rpDist2', v);
+            setLen('rpDist2', v, 1);
             if (num('rpCount2') < 2 && Math.abs(v) > 1e-9) setBox('rpCount2', 2, 0);
             await ctl.apply();
           });
-        if (!st.featureId && num('rpDist') && num('rpCount') > 1) ctl.apply();
       },
       end() { endExtrudeArrow(); endSecondArrow(); },
     },
-    afterApply() { setExtrudeArrowAmount(num('rpDist')); setSecondArrowAmount(num('rpDist2')); },
+    afterApply() { setExtrudeArrowAmount(mm('rpDist')); setSecondArrowAmount(mm('rpDist2')); },
   });
   g('rpAlong').onchange = () => ctl.replan();      // the directions come back from the plan
   return ctl;
