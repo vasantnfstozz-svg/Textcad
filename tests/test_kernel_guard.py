@@ -389,6 +389,57 @@ def test_a_budget_measured_in_awake_seconds_still_runs_out():
     assert 0.3 <= time.perf_counter() - t0 < 3.0
 
 
+def test_a_worker_that_dies_while_the_machine_sleeps_still_ends_the_call():
+    """The safety valve on the loop that no longer ends at `queue.Empty`.
+
+    With the awake clock stopped there is, by design, no wall-clock ceiling at
+    all — the budget is 15 AWAKE minutes and a machine can be shut for a day
+    inside them. The only thing that may then end the wait is the worker
+    itself, so the EOF the reader thread puts on the queue when the pipe closes
+    has to be read as EOF and not skipped as "a line that is not ours". It is
+    read before the `continue`, and this pins that: a worker killed during the
+    sleep raises EOFError in well under a second, which is the branch `call`
+    turns into "crashed the geometry kernel" and a fresh worker.
+
+    Reviewed 2026-09-17: the OTHER two ways out were read and neither can
+    hang. A non-JSON line, or one carrying another `seq`, goes round a loop
+    that re-reads the clock every time, so a worker printing noise cannot hold
+    the budget open; and out-of-budget is tested before the `get`, never
+    after."""
+    stub = _Lines()
+    threading.Timer(0.3, stub.lines.put, [None]).start()      # the pipe closed
+    t0 = time.perf_counter()
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(kernelguard, "_awake_s", lambda: 1000.0)   # asleep for ever
+        with pytest.raises(EOFError):
+            kernelguard._Worker.answer(stub, 9, 900.0)
+    assert time.perf_counter() - t0 < 3.0, "the death must not wait out the budget"
+
+
+def test_a_worker_printing_noise_cannot_hold_the_budget_open():
+    """`answer` skips a line that is not ours and goes round the loop, and
+    since 2026-09-17 a `queue.Empty` goes round it too. Neither may cost the
+    ceiling: a library writing to the worker's stdout in a tight loop must
+    still be stopped at the budget and not one line later."""
+    stub = _Lines()
+    stop = threading.Event()
+
+    def noise():
+        while not stop.is_set():
+            stub.lines.put("Warning: BRepCheck says something\n")
+            stub.lines.put(json.dumps({"seq": 8, "ok": True}) + "\n")   # not ours
+            time.sleep(0.005)
+
+    threading.Thread(target=noise, daemon=True).start()
+    t0 = time.perf_counter()
+    try:
+        with pytest.raises(TimeoutError):
+            kernelguard._Worker.answer(stub, 9, 0.4)
+    finally:
+        stop.set()
+    assert 0.4 <= time.perf_counter() - t0 < 3.0
+
+
 def test_the_awake_clock_is_the_one_windows_stops_at_suspend():
     """`_awake_s` must really reach QueryUnbiasedInterruptTime, not quietly
     fall back to `time.monotonic` — the fallback is right on Linux and macOS
