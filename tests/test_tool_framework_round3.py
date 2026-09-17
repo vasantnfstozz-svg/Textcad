@@ -271,7 +271,9 @@ console.log(JSON.stringify(out));
 
 
 def _run_tool_js(tmp_path):
-    for name in ("tool.js", "bus.js", "state.js"):
+    # tool.js imports settings.js for toMm/fmtLen (the display-unit pass),
+    # and settings.js imports only bus.js, so the stub tree stays this small.
+    for name in ("tool.js", "bus.js", "state.js", "settings.js"):
         shutil.copy(JS / name, tmp_path / name)
     (tmp_path / "api.js").write_text(_API_STUB, encoding="utf-8")
     (tmp_path / "viewport.js").write_text(_VIEWPORT_STUB, encoding="utf-8")
