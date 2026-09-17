@@ -194,6 +194,28 @@ SKETCH_CONSUMING_MODIFIERS = {"extrude", "revolve", "sweep"}
 # `_check_modifier_input` adds to this set for itself (see there).
 SOLID_REPEATING_MODIFIERS = set(pattern.PATTERN_OPS)
 
+# ...and the rest of that family: the ops that CHANGE a solid and have nothing
+# to say about a flat profile. Each one MEASURED on a sketch before it was put
+# in this set (probes/s10_solid_only_census.py, 2026-09-17) — and measured
+# again on a RECTANGLE sketch with four real corners and a generous small
+# radius (probes/s10_solid_only_corners.py), because "radius 1 mm does not fit
+# on 1 edge" proves nothing on a circle that has no corner to round:
+#   fillet           radius 1 mm does not fit on 1 edge / on 4 edges
+#   chamfer          distance 1 mm does not fit on 1 edge / on 4 edges
+#   shell            walls of 1 mm do not fit this body
+#   hole             nothing was cut — the hole at (0, 0) finds no material
+#   with_center_hole nothing was drilled — the hole falls outside this body
+#   with_bolt_circle nothing was drilled — a pitch circle diameter of 14 mm
+#                    puts all 4 holes outside this body
+# Six diagnoses about a body that was never there. What is NOT here is as
+# measured as what is: `extrude_face` builds a 235.62 mm3 prism from a sketch
+# face and `revolve_face` a 616.85 mm3 solid about a line in the sketch plane,
+# `sketch_on_face` answers a sketch with a sketch, and `move`, `rotate`,
+# `scale` and a joinless `mirror` all move a sketch and hand back a sketch —
+# gating any of those would take away work that is correct today.
+SOLID_ONLY_MODIFIERS = {"fillet", "chamfer", "shell", "hole",
+                        "with_center_hole", "with_bolt_circle"}
+
 
 def _check_modifier_input(op: str, fid: str, part, params: dict | None = None) -> None:
     """Refuse a profile op fed a solid BODY — BEFORE the kernel.
@@ -236,11 +258,12 @@ def _check_modifier_input(op: str, fid: str, part, params: dict | None = None) -
     # ("a sketch is not a feature to repeat") — so the two cannot disagree.
     _p = params or {}
     joins = op == "mirror" and not _p.get("seed") and _p.get("join")
-    if ((op in SOLID_REPEATING_MODIFIERS or joins)
+    if ((op in SOLID_REPEATING_MODIFIERS or op in SOLID_ONLY_MODIFIERS or joins)
             and (n_solids(part) or 0) == 0
             and (inspector._try(lambda: part.area) or 0) > 0):
         does = ("with join fuses a SOLID body with its reflection" if joins
-                else "repeats a SOLID body")
+                else "repeats a SOLID body" if op in SOLID_REPEATING_MODIFIERS
+                else "works on a SOLID body")
         extra = " (without join it returns the reflected sketch)" if joins else ""
         raise ValueError(
             f"{op} {does}, and '{fid}' is a sketch — "
