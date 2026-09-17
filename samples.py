@@ -23,11 +23,22 @@ def sample_flange() -> Document:
 
 
 def sample_impeller() -> Document:
-    """The 7-blade curved impeller as an editable feature tree."""
+    """The 7-blade curved impeller as an editable feature tree.
+
+    THE SHAFT BORE IS DRILLED LAST, after the blades are fused on. A bore
+    drilled into the hub FIRST is filled straight back in by any blade that
+    reaches inside it, and nothing notices — the wheel is still one watertight
+    solid, still 7-fold symmetric, still the right tip radius, so the spec
+    passes (measured 2026-09-17 on the compressor sample edited down to a
+    small wheel: 67.210 mm3 of blade in a 2 mm bore, `spec_problems=[]`;
+    probes/compressor_bore_order_probe.py). This sample's own blades clear its
+    bore by 3 mm, so the ordering costs it nothing — volume, face count and
+    bounding box are identical either way — but the tree a user edits has to
+    teach the shape that survives being edited.
+    """
     doc = Document(name="impeller-7")
     doc.add("hub_body", "revolve_profile",
             {"points": [[0, 0], [22, 0], [22, 3], [10, 28], [0, 28]]})
-    doc.add("hub", "with_center_hole", {"radius": 6}, inputs=["hub_body"])
     doc.add("blade", "curved_blade",
             {"inner_radius": 9, "outer_radius": 40, "inlet_angle_deg": 30,
              "exit_angle_deg": 55, "height": 26, "thickness": 2.5})
@@ -35,7 +46,8 @@ def sample_impeller() -> Document:
     doc.add("shroud_cutter", "revolve_profile",
             {"points": [[8, 26], [40, 10], [48, 10], [48, 60], [8, 60]]})
     doc.add("blades", "cut", inputs=["blades_raw", "shroud_cutter"])
-    doc.add("impeller", "fuse", inputs=["hub", "blades"])
+    doc.add("wheel", "fuse", inputs=["hub_body", "blades"])
+    doc.add("impeller", "with_center_hole", {"radius": 6}, inputs=["wheel"])
     doc.spec = {"symmetry": 7, "n_solids": 1, "tip_radius": 40.0, "tol": 0.5}
     return doc
 
@@ -86,8 +98,6 @@ def sample_compressor() -> Document:
     doc.add("hub_body", "revolve_profile",
             {"points": [[0, 0], [d.tip_radius, 0], [d.tip_radius, t],
                         [d.inducer_hub_radius, t + L], [0, t + L]]})
-    doc.add("hub", "with_center_hole", {"radius": d.bore_radius},
-            inputs=["hub_body"])
     doc.add("blade", "curved_blade",
             {"inner_radius": r_in, "outer_radius": d.tip_radius,
              "inlet_angle_deg": d.beta1_deg, "exit_angle_deg": d.beta2_deg,
@@ -101,7 +111,20 @@ def sample_compressor() -> Document:
                         [d.tip_radius + 15, t + d.exit_width],
                         [d.tip_radius + 15, big], [root, big]]})
     doc.add("blades", "cut", inputs=["blades_raw", "shroud_cutter"])
-    doc.add("impeller", "fuse", inputs=["hub", "blades"])
+    doc.add("wheel", "fuse", inputs=["hub_body", "blades"])
+    # THE BORE IS DRILLED LAST. Drilled into the hub first, as this tree did
+    # until 2026-09-17, the blades fused on afterwards fill it back in on any
+    # wheel small enough for them to reach — measured on this same tree at the
+    # micro-turbo duty: 67.210 mm3 of blade inside a 2 mm bore, `ok=True`,
+    # `spec_problems=[]`, one watertight solid, health [], 13-fold symmetric.
+    # Nothing in the tree or the spec can see it, because the bore's wall is
+    # still there (`cylinder_radii={2.0: 1, ...}`), just filled in behind.
+    # Drilling last, the same duty measures 0.000 mm3 in the bore, and on THIS
+    # duty the wheel is identical to the last digit: volume 428259.878, 69
+    # faces, one solid, bbox 187.6 x 187.6 x 35.64, max_radius 93.8 — and the
+    # rebuild is no slower (probes/compressor_bore_order_probe.py).
+    doc.add("impeller", "with_center_hole", {"radius": d.bore_radius},
+            inputs=["wheel"])
     doc.spec = {"symmetry": d.blade_count, "n_solids": 1,
                 "tip_radius": d.tip_radius, "tol": 1.0}
     return doc
