@@ -181,15 +181,13 @@ def test_trim_endpoints_are_stateless_and_speak_errors():
     assert empty["pieces"] == [] and "error" in empty
 
 
-# ----------------------------------------- shapes Trim cannot see WHOLE --
+# ------------------------------------- an entity is ALL its closed loops --
 
 # The Text entity (d3c8c85) is the first kind whose `sk._entity()` returns
 # more than one face — one per glyph piece — and whose faces have HOLES.
-# Trim's model is "one entity = one face = its outer wire": `_entity_face`
-# keeps `faces()[0]` and `_outline` keeps that face's outer wire.
-#
-# Measured on `plate + text 'AB' (subtract)` by
-# `probes/trim_text_material_lie.py` BEFORE the guard below:
+# Trim's model used to be "one entity = one face = its outer wire", so a word
+# was read as its first letter's outline. Measured on
+# `plate + text 'AB' (subtract)` by `probes/trim_text_material_lie.py`:
 #   * `_material_at` said MATERIAL at (-7.57, -2.51), inside the engraved
 #     letter A, where the builder leaves a hole;
 #   * it said NO MATERIAL inside the hole of the B, where the builder leaves
@@ -198,46 +196,165 @@ def test_trim_endpoints_are_stateless_and_speak_errors():
 #     canvas draws for that word;
 #   * a circle laid across the A was reported "whole" and a click answered
 #     "removed the circle (it crossed nothing)".
-# Those are the inputs `trim_apply` picks dissolve-vs-fill from, so the
-# rebuilt cluster it writes back can be wrong without saying so.
-# `probes/trim_corpus_census.py`: 0 of the 1374 entities in the user's 40
-# designs build more than one face or a holed face, so refusing costs nothing
-# that works today.
+#
+# The review of 916a731 replaced that with a REFUSAL, which is the right
+# direction but far wider than the defect: `probes/trim_refusal_cost.py`
+# measured it at **32 of the 90 printable characters a user can type** and at
+# EVERY word of two or more letters (two glyph pieces is already "more than
+# one face" — LX, 12, v1 all refused), and the refusal came out of `_outline`,
+# which runs for every entity in the sketch — so one 'O' 200 mm away, touching
+# nothing, stopped Trim on two overlapping rectangles it had nothing to do
+# with, on hover AND on click.
+#
+# An entity is read as EVERY closed loop of every face now — which is what
+# `sketch.entity_outlines` already hands the canvas to draw — and even-odd
+# across those loops is exactly the builder's region.
 
 WORD = {"kind": "text", "mode": "subtract", "x": 0, "y": 0, "text": "AB",
         "size": 14}
 PLATE = {"kind": "rectangle", "mode": "add", "x": 0, "y": 0, "w": 60, "h": 30}
 
 
-def test_a_word_is_refused_not_quietly_reduced_to_one_letter():
-    assert len(sk._entity(WORD).faces()) == 2          # the fact behind it
-    with pytest.raises(ValueError, match="separate"):
-        tr.trim_pieces([dict(PLATE), dict(WORD)])
+def loops_of(shape):
+    """Sampled loops of a built shape — an oracle that shares no code with
+    `_material_at`'s replay of the entity list."""
+    out = []
+    for f in shape.faces():
+        for w in f.wires():
+            n = int(min(max(w.length / 0.8, 96), 384))
+            out.append({"pts": tr._sample_wire(w, n)})
+    return out
 
 
-def test_a_letter_with_a_hole_is_refused_too():
-    one = dict(WORD, text="O")
-    assert len(sk._entity(one).faces()) == 1           # one face, one hole
-    with pytest.raises(ValueError, match="hole"):
-        tr.trim_pieces([dict(PLATE), one])
+def in_loops(loops, x, y):
+    return sum(tr._inside(o, x, y) for o in loops) % 2 == 1
+
+
+def test_a_word_is_read_as_every_loop_the_canvas_draws():
+    """5 loops for 'AB' — two outers and three counters — not 1."""
+    assert len(sk.entity_outlines(WORD)) == 5          # what the canvas draws
+    assert len(tr._entity_loops(WORD, 0)) == 5
+
+
+def test_material_under_an_engraved_word_is_the_builders_answer():
+    """The measurement round one made with two probe points, made with 1800.
+
+    `_material_at` replays the add/subtract list; the oracle is the face
+    `sketch.py` actually composes. They must agree everywhere.
+    """
+    ents = [dict(PLATE), dict(WORD)]
+    pieces, loops, crossing = tr._pieces_raw(ents)
+    order = tr._cluster(ents, loops, crossing, 0)
+    oracle = loops_of(sk.compose(ents, note=False))
+    wrong = []
+    for gx in range(-29, 30):
+        for gy in range(-14, 15):
+            x, y = gx + 0.37, gy + 0.21       # off the grid lines on purpose
+            if tr._material_at(ents, loops, order, x, y) != \
+                    in_loops(oracle, x, y):
+                wrong.append((x, y))
+    assert not wrong, f"{len(wrong)} of 1711 points disagree with the " \
+                      f"builder, e.g. {wrong[:4]}"
+
+
+def test_a_circle_laid_across_a_letter_is_not_whole():
+    """Round one's fourth symptom: the circle crossed the A and Trim said it
+    crossed nothing."""
+    ents = [dict(PLATE), dict(WORD),
+            {"kind": "circle", "mode": "add", "x": -7.5, "y": 0, "r": 4}]
+    pieces = tr.trim_pieces(ents)
+    mine = [p for p in pieces if p["ent"] == 2]
+    assert mine and not any(p["whole"] for p in mine), \
+        "a circle drawn across the letter A is not crossing-free"
+
+
+def test_a_word_elsewhere_does_not_stop_the_rest_of_the_sketch():
+    """The refusal's real cost: one 'O' 200 mm away killed the whole tool."""
+    plain = [dict(RECT), {"kind": "circle", "mode": "add",
+                          "x": 20, "y": 0, "r": 8}]
+    far = dict(WORD, text="O", mode="add", x=200, y=200)
+    base = tr.trim_pieces(plain)
+    with_word = tr.trim_pieces(plain + [far])
+    assert len(base) == 4
+    # every piece of entities 0 and 1 is untouched by the word
+    same = [p for p in with_word if p["ent"] in (0, 1)]
+    assert [(p["id"], p["ent"], p["whole"], p["pts"]) for p in same] == \
+           [(p["id"], p["ent"], p["whole"], p["pts"]) for p in base]
+    pid = next(p["id"] for p in base if not p["whole"])
+    assert tr.trim_apply(plain, pid)["message"] == \
+        tr.trim_apply(plain + [far], pid)["message"]
 
 
 def test_a_hole_free_single_letter_still_trims():
-    """The guard is the smallest one that works: a word that really IS one
-    closed outline is left alone."""
     one = dict(WORD, text="L", mode="add", x=0, y=0, size=14)
     faces = sk._entity(one).faces()
     ow = faces[0].outer_wire()
     assert len(faces) == 1 and not [w for w in faces[0].wires()
                                     if not w.is_same(ow)]
-    assert tr.trim_pieces([one])                       # no refusal
+    assert tr.trim_pieces([one])
 
 
-def test_the_refusal_reaches_the_user_as_a_message_not_a_500():
+def test_trimming_a_word_off_a_plate_keeps_the_builders_area():
+    """A real click on a cluster that holds a word: the rebuilt profile must
+    have the area the builder gives, not an area with a letter missing."""
+    ents = [dict(PLATE), dict(WORD, x=0, y=0)]
+    before = area_of(ents)
+    pieces = tr.trim_pieces(ents)
+    # the word is inside the plate and crosses nothing, so every loop of it
+    # is a WHOLE piece: clicking one takes the whole word away
+    mine = [p for p in pieces if p["ent"] == 1]
+    assert len(mine) == 5 and all(p["whole"] for p in mine)
+    out = tr.trim_apply(ents, mine[0]["id"])
+    assert len(out["entities"]) == 1                   # the word is gone
+    assert area_of(out["entities"]) == pytest.approx(60 * 30, rel=1e-9)
+    assert before < 60 * 30                            # it really was engraved
+
+
+TEXT_GAUNTLET = {
+    "word alone": [WORD.copy() | {"mode": "add"}],
+    "word engraved in a plate": [dict(PLATE), dict(WORD)],
+    "circle across the A": [dict(PLATE), dict(WORD),
+                            {"kind": "circle", "mode": "add",
+                             "x": -7.5, "y": 0, "r": 4}],
+    "bar across a whole word": [WORD.copy() | {"mode": "add", "size": 18},
+                                {"kind": "rectangle", "mode": "add",
+                                 "x": 0, "y": 0, "w": 40, "h": 2}],
+    "circle in the O counter": [{"kind": "text", "mode": "add", "x": 0, "y": 0,
+                                 "text": "O", "size": 24},
+                                {"kind": "circle", "mode": "add",
+                                 "x": 0, "y": 0, "r": 2.5}],
+}
+
+
+@pytest.mark.parametrize("name", sorted(TEXT_GAUNTLET))
+def test_every_click_on_a_word_cluster_is_a_message_or_a_sketch(name):
+    """An operation is the feature TIMES the geometry. Reading an entity as
+    all its loops lets a multi-face Text entity into the cluster machinery for
+    the first time — `_union_faces` unions a Sketch, the cell refinement clips
+    a Face by one. Click EVERY piece: only a plain ValueError may come out
+    (OCP errors are `Exception`, not `RuntimeError`), and whatever does come
+    out must build. `probes/trim_text_gauntlet.py` runs 181 clicks over 15
+    such sketches: 0 crashes, 0 results that do not build, 0 invalid faces.
+    """
+    ents = TEXT_GAUNTLET[name]
+    applied = 0
+    for piece in tr.trim_pieces(ents):
+        try:
+            out = tr.trim_apply([dict(e) for e in ents], piece["id"])
+        except ValueError:
+            continue                              # a refusal is an answer
+        applied += 1
+        if out["entities"]:
+            shape = sk.compose(out["entities"], note=False)
+            assert shape.is_valid, f"{piece['id']} built an invalid face set"
+    assert applied, f"{name}: not one piece of this sketch did anything"
+
+
+def test_the_endpoint_answers_pieces_for_a_word():
     from fastapi.testclient import TestClient
     import studio
     client = TestClient(studio.app)
     out = client.post("/api/sketch/trim/pieces",
                       json={"entities": [dict(PLATE), dict(WORD)]}).json()
-    assert out["pieces"] == []
-    assert "separate" in out["error"]
+    assert "error" not in out
+    assert len([p for p in out["pieces"] if p["ent"] == 1]) == 5

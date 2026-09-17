@@ -63,7 +63,7 @@ FAR_AREA = math.pi * 25
 
 
 def cluster_of(entities, seed=0):
-    outlines = [T._outline(e, i) for i, e in enumerate(entities)]
+    outlines = [T._entity_loops(e, i) for i, e in enumerate(entities)]
     _, _, crossing = T._pieces_raw(entities)
     return entities, outlines, T._cluster(entities, outlines, crossing, seed)
 
@@ -181,7 +181,7 @@ def test_the_material_test_agrees_with_the_builder_across_the_cluster():
     for x in np.linspace(-21, 21, 43):
         for y in np.linspace(-11, 11, 23):
             if any(np.hypot(o["pts"][:, 0] - x, o["pts"][:, 1] - y).min() < 0.35
-                   for o in outlines):
+                   for loops in outlines for o in loops):
                 continue
             tested += 1
             if T._material_at(entities, outlines, cl, float(x), float(y)) \
