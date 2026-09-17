@@ -123,6 +123,105 @@ def _uncross(pts):
     return loops
 
 
+_HAIR_MM = 0.01          # thinner than this, a wall is not geometry
+
+
+def _pull_apart(loops, gap=_HAIR_MM):
+    """Open a `gap` between loops of ONE sketch that come within a hair of
+    each other. Returns the loops, the small ones moved.
+
+    `_uncross` guarantees no ONE polygon crosses itself. Nothing guaranteed
+    that two DIFFERENT polygons of the same sketch stay apart, and two hole
+    loops that meet at a POINT pinch the face: measured 2026-09-17, round
+    three's fuzz cases f73 at 90 mm and f122 at 12 mm build a solid OCCT calls
+    `is_valid` True, with the right volume, that `inspector.health` calls "not
+    manifold/watertight (open shell)" — 2 of 450 traces
+    (probes/imgtrace_r3_pinch.py).
+
+    It is a SLIVER, not a coincidence: before any rounding those two loops
+    pass 0.000209 mm and 0.000346 mm apart, and the 0.001 mm coordinate grid
+    then puts them on the same point exactly — the same argument
+    `_first_crossing`'s `tol` makes for one polygon. A wall a fifth of a
+    micron thick is not something the picture carries.
+
+    So the SMALLER loop gives way: each of its vertices inside the hair is
+    pushed straight out to `gap` from the vertex it is nearest. 0.01 mm is ten
+    times the coordinate grid (so rounding cannot close it again), five times
+    the 0.002 mm that measures healthy in
+    probes/imgtrace_touching_loops_probe.py, and a quarter of the thinnest
+    wall the corpus really carries (f122's next-closest pair, 0.0373 mm). A
+    vertex is left alone if the push is more than a quarter of its own
+    shorter edge, so a loop cannot be turned inside out to save a sliver."""
+    if len(loops) < 2:
+        return loops
+    arr = [np.asarray(p, dtype=float) for p in loops]
+    size = np.array([abs(_area2(p)) for p in loops])
+    # only pairs whose (widened) boxes overlap can possibly be within a hair,
+    # and the test is done for all pairs at once: detailed art is legitimately
+    # hundreds of pieces, and a per-pair python test costs more than the
+    # geometry does (392 entities: 1.25 s, against 0.02 s this way)
+    lo = np.array([a.min(axis=0) for a in arr]) - gap
+    hi = np.array([a.max(axis=0) for a in arr]) + gap
+    box = ((lo[:, None, :] <= hi[None, :, :]).all(axis=2)
+           & (lo[None, :, :] <= hi[:, None, :]).all(axis=2))
+    pairs = [(int(i), int(j))
+             for i in np.argsort(size, kind="stable")   # smallest gives way
+             for j in np.flatnonzero(box[i] & (size >= size[i])) if i != j]
+    for _ in range(4):
+        moved = False
+        for i, j in pairs:
+            d, foot = _nearest_on_ring(arr[i], arr[j])
+            near = np.where(d < gap)[0]
+            if not len(near):
+                continue
+            cij = arr[i].mean(axis=0) - arr[j].mean(axis=0)
+            for v in near:
+                home = arr[i][v]
+                nxt = arr[i][(v + 1) % len(arr[i])]
+                room = min(float(np.hypot(*(home - arr[i][v - 1]))),
+                           float(np.hypot(*(home - nxt)))) / 4.0
+                away = home - foot[v]
+                n = float(np.hypot(*away))
+                if n < 1e-9:                  # exactly on the other outline
+                    away, n = cij, float(np.hypot(*cij))
+                    if n < 1e-9:
+                        continue
+                step = foot[v] + away / n * gap
+                if float(np.hypot(*(step - home))) > max(room, 1e-9):
+                    continue                  # no room: leave it as traced
+                arr[i][v] = step
+                moved = True
+        if not moved:
+            break
+    return [[(float(x), float(y)) for x, y in a] for a in arr]
+
+
+def _nearest_on_ring(pts, ring, chunk=128):
+    """For every point of `pts`, its distance to the closed polyline `ring`
+    and the point ON that ring it is nearest — the honest "how close do these
+    two outlines come", where vertex-to-vertex alone misses a vertex sitting
+    on the middle of an edge. Chunked so a 3000-point trace cannot build a
+    3000 x 3000 x 2 array."""
+    a = ring
+    ab = np.roll(ring, -1, axis=0) - a
+    den = (ab * ab).sum(axis=1)
+    safe = np.where(den > 1e-18, den, 1.0)
+    dist = np.empty(len(pts))
+    foot = np.empty((len(pts), 2))
+    for s in range(0, len(pts), chunk):
+        p = pts[s:s + chunk]
+        t = ((p[:, None, :] - a[None]) * ab[None]).sum(axis=2) / safe
+        t = np.clip(np.where(den > 1e-18, t, 0.0), 0.0, 1.0)
+        proj = a[None] + t[:, :, None] * ab[None]
+        d = np.hypot(proj[:, :, 0] - p[:, None, 0],
+                     proj[:, :, 1] - p[:, None, 1])
+        k = d.argmin(axis=1)
+        rows = np.arange(len(p))
+        dist[s:s + chunk] = d[rows, k]
+        foot[s:s + chunk] = proj[rows, k]
+    return dist, foot
+
+
 def _poly_entity(pts, mode="add"):
     """CCW-normalised, bbox-centred polygon entity (see sketch.py polygon)."""
     n = len(pts)
@@ -314,14 +413,19 @@ def artwork_aspect(data: bytes, height_mm: float = 50.0) -> float:
     return w / h
 
 
-def _bridge_pieces(solid: np.ndarray, thickness: int) -> np.ndarray:
+def _bridge_pieces(solid: np.ndarray, thickness: int, rounds: int = 16):
     """Connect disjoint art pieces (highlight-streak splits) by drawing a
-    thick line between the globally closest pair until one piece remains."""
-    for _ in range(16):
+    thick line between the globally closest pair until one piece remains.
+    -> (mask, welded)
+
+    `welded` is False when the rounds ran out with the art still in pieces.
+    It used to return quietly, so a caller that asked for ONE piece was handed
+    seventeen and told nothing (LAUNCH-PLAN section 10)."""
+    for _ in range(rounds):
         pieces, _h = cv2.findContours(solid, cv2.RETR_EXTERNAL,
                                       cv2.CHAIN_APPROX_NONE)
         if len(pieces) <= 1:
-            break
+            return solid, True
         best = None
         for a in range(len(pieces)):
             for b in range(a + 1, len(pieces)):
@@ -333,7 +437,9 @@ def _bridge_pieces(solid: np.ndarray, thickness: int) -> np.ndarray:
                     best = (d[i, j], tuple(int(v) for v in pa[i]),
                             tuple(int(v) for v in pb[j]))
         cv2.line(solid, best[1], best[2], 1, thickness)
-    return solid
+    left, _h = cv2.findContours(solid, cv2.RETR_EXTERNAL,
+                                cv2.CHAIN_APPROX_NONE)
+    return solid, len(left) <= 1
 
 
 def _chaikin(pts: np.ndarray, cut_px: float) -> np.ndarray:
@@ -380,8 +486,9 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
     x, y = int(xs.min()), int(ys.min())
     w, h = int(xs.max()) - x + 1, int(ys.max()) - y + 1
     mm_px = float(height_mm) / h
+    welded = None
     if connect_pieces:
-        solid = _bridge_pieces(solid, max(3, int(0.6 / mm_px)))
+        solid, welded = _bridge_pieces(solid, max(3, int(0.6 / mm_px)))
 
     if min_channel_mm and min_channel_mm > 0:
         k = int(min_channel_mm / mm_px) | 1
@@ -395,7 +502,20 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
     # PIXELS with hard caps — the sketch must look like the artwork at any
     # target size (resize later with the sketch Scale tool if needed).
     cnts, hier = cv2.findContours(solid, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
-    x, y, w, h = cv2.boundingRect(np.vstack([c for c in cnts]))
+    hier = hier[0] if hier is not None else []
+    order = sorted(range(len(cnts)),
+                   key=lambda i: cv2.contourArea(cnts[i]), reverse=True)
+    # The box the art is scaled and centred on holds only what will BE drawn.
+    # `_traceable` drops components by PIXEL COUNT and the loop below drops
+    # contours by the area they ENCLOSE, which are different questions: a 1 px
+    # hairline is hundreds of pixels and encloses nothing, so it passed the
+    # first gate, failed the second, and still stretched the box every
+    # surviving piece was measured against. Measured 2026-09-17: a 40 mm
+    # square beside a loose 140 px hairline reported width_mm 56.00 for
+    # 39.90 mm of drawn art and put that art 8.05 mm off the sketch origin
+    # (probes/imgtrace_bbox_gate_probe.py).
+    keep = [i for i in order if cv2.contourArea(cnts[i]) >= min_area]
+    x, y, w, h = cv2.boundingRect(np.vstack([cnts[i] for i in keep or order]))
     mm_px = float(height_mm) / h
     cx_px, cy_px = x + w / 2.0, y + h / 2.0
     eps = max(1.0, min(3.0, tol_mm / mm_px))
@@ -420,24 +540,53 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
         floor = 2.0 * min_area * mm_px * mm_px
         return loops[:1] + [p for p in loops[1:] if abs(_area2(p)) >= floor]
 
-    ents, n_holes = [], 0
-    hier = hier[0] if hier is not None else []
-    order = sorted(range(len(cnts)),
-                   key=lambda i: cv2.contourArea(cnts[i]), reverse=True)
-    for i in order:
-        if cv2.contourArea(cnts[i]) < min_area:
-            continue
+    drawn = []
+    for i in keep:
         outer = hier[i][3] < 0            # no parent -> outer ring
-        for pts in to_mm(cnts[i]):
-            if outer:
-                ents.append(_poly_entity(pts, "add"))
-            else:
-                ents.append(_poly_entity(pts, "subtract"))
-                n_holes += 1
+        drawn += [(outer, pts) for pts in to_mm(cnts[i])]
+    # …and the sketch is centred on what was drawn, for the same reason: the
+    # contour gate is not the last word, `_uncross` and the sliver floor also
+    # drop loops, and a dropped loop used to pull the whole sketch off the
+    # origin by up to 12.90 mm of a 40 mm piece. A translation only — the
+    # fidelity knobs ran at `mm_px` and must not be re-scaled under them.
+    if drawn:
+        ax = [p[0] for _o, pts in drawn for p in pts]
+        ay = [p[1] for _o, pts in drawn for p in pts]
+        dx, dy = (max(ax) + min(ax)) / 2.0, (max(ay) + min(ay)) / 2.0
+        drawn = [(o, [(px - dx, py - dy) for px, py in pts])
+                 for o, pts in drawn]
+    # no two loops of ONE sketch may meet: a pair that does pinches the face
+    # into an open shell, valid and the right volume (REVIEW-QUEUE section 9)
+    apart = _pull_apart([pts for _outer, pts in drawn])
+    ents, n_holes = [], 0
+    for (outer, _raw), pts in zip(drawn, apart):
+        pts = _round_pts(pts)
+        if len(pts) < 3:
+            continue
+        if outer:
+            ents.append(_poly_entity(pts, "add"))
+        else:
+            ents.append(_poly_entity(pts, "subtract"))
+            n_holes += 1
     if not ents or ents[0]["mode"] != "add":
         raise ValueError("tracing produced no usable outline")
 
-    info = {"width_mm": round(w * mm_px, 2), "height_mm": round(h * mm_px, 2),
+    # the size reported is the size of what was DRAWN, read back off the
+    # entities themselves — a loop `_uncross` or the sliver floor dropped is
+    # no more part of the artwork than a contour the min_area gate dropped
+    xs = [e["x"] + p[0] for e in ents for p in e["points"]]
+    ys = [e["y"] + p[1] for e in ents for p in e["points"]]
+    info = {"width_mm": round(max(xs) - min(xs), 2),
+            "height_mm": round(max(ys) - min(ys), 2),
             "contours": len(ents) - n_holes, "holes": n_holes,
             "points": sum(len(e["points"]) for e in ents)}
+    if welded is not None:
+        # asked to weld the art into one piece, and it did not: say so rather
+        # than hand back several pieces as if it had (LAUNCH-PLAN section 10)
+        info["welded"] = bool(welded and info["contours"] == 1)
+        if not info["welded"]:
+            info["note"] = (
+                f"the artwork is still {info['contours']} separate pieces — "
+                f"16 bridges were not enough to join it. Extrude it as it is, "
+                f"or close the gaps in the picture and trace it again.")
     return ents, info

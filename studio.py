@@ -51,6 +51,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import cv2
+import numpy as np
 import build123d as b3d
 from OCP.BRep import BRep_Tool
 from OCP.BRepAdaptor import BRepAdaptor_Surface
@@ -1994,13 +1996,94 @@ def edit(req: EditReq):
     return _doc_json()
 
 
+_FIT_CELLS = 160          # grid across the face's long side (0.4 mm at 60 mm)
+
+
+def _biggest_all_true_block(mask):
+    """(area, i0, i1, j0, j1) of the largest all-true axis-aligned block of a
+    2D boolean array — the classic per-row histogram sweep."""
+    gh, gw = mask.shape
+    heights = np.zeros(gw + 1, np.int32)
+    best = (0, 0, -1, 0, -1)
+    for j in range(gh):
+        heights[:gw] = np.where(mask[j], heights[:gw] + 1, 0)
+        stack = []
+        for i in range(gw + 1):
+            start = i
+            while stack and stack[-1][1] >= heights[i]:
+                s, hgt = stack.pop()
+                if hgt * (i - s) > best[0]:
+                    best = (hgt * (i - s), s, i - 1, j - hgt + 1, j)
+                start = s
+            stack.append((start, int(heights[i])))
+    return best
+
+
+def _inscribed_box(outer) -> list[float]:
+    """The biggest axis-aligned rectangle that fits INSIDE a face's outline,
+    as [w, h, cx, cy] in the face's own 2D — the box traced art is fitted
+    into.
+
+    The fit box used to be the face's BOUNDING box, which is the face only
+    when the face is a rectangle. Measured 2026-09-17 on a disc of radius
+    30.00 mm: square art auto-fitted to "the 60x60mm face" put all 8 of its
+    points OUTSIDE the disc, the furthest 37.96 mm from the centre, with the
+    feature green (probes/imgtrace_inscribed_box_probe.py). An L-shaped face
+    put 2 points up to 11.68 mm off the material.
+
+    Rasterised rather than solved: the outline is filled onto a grid
+    `_FIT_CELLS` across its long side, eroded by one cell so a rectangle of
+    grid points cannot bulge out between them, and the largest all-inside
+    block is read off. Probed against geometry with a known answer in
+    `probes/imgtrace_inscribed_algo_probe.py` — a circle of radius r holds a
+    square of side r*sqrt(2) and this reads 42.00 of 42.43 mm at r = 30,
+    always INSIDE (worst clearance +0.301 mm, never negative) — and a
+    RECTANGLE returns its own bbox exactly, by an early exit, so every flat
+    plate face behaves as it always did and costs nothing.
+
+    HOLES are deliberately ignored: art crossing a bolt hole is ordinary
+    (the extrude simply has nothing to cut there), while art off the face
+    edge is the bug."""
+    xs = [float(p[0]) for p in outer]
+    ys = [float(p[1]) for p in outer]
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    bw, bh = x1 - x0, y1 - y0
+    box = [bw, bh, (x0 + x1) / 2, (y0 + y1) / 2]
+    if bw <= 0 or bh <= 0:
+        return box
+    cell = max(bw, bh) / float(_FIT_CELLS)
+    pts = np.array([[[round((x - x0) / cell), round((y - y0) / cell)]
+                     for x, y in zip(xs, ys)]], np.int32)
+    grid = np.zeros((max(1, round(bh / cell)) + 1,
+                     max(1, round(bw / cell)) + 1), np.uint8)
+    cv2.fillPoly(grid, pts, 1)
+    if int(grid.sum()) == grid.size:
+        return box                          # the face IS its bounding box
+    inside = cv2.erode(grid, np.ones((3, 3), np.uint8),
+                       borderType=cv2.BORDER_CONSTANT, borderValue=0)
+    area, i0, i1, j0, j1 = _biggest_all_true_block(inside.astype(bool))
+    if area <= 0:
+        return box                          # slivers: the caller's own guard
+    ax0, ax1 = x0 + i0 * cell, x0 + i1 * cell
+    ay0, ay1 = y0 + j0 * cell, y0 + j1 * cell
+    if ax1 <= ax0 or ay1 <= ay0:
+        return box
+    return [ax1 - ax0, ay1 - ay0, (ax0 + ax1) / 2, (ay0 + ay1) / 2]
+
+
 @app.post("/api/face-outline")
 def face_outline(req: FaceReq):
     """The picked face's boundary (outer + holes) projected into its plane's
     local 2D — so the sketch editor can show the selected surface as reference
     geometry. Resolves the face by GEOMETRY on the body it was picked from
     (feature_id), falling back to the result solid; with several bodies visible
-    the result is not necessarily the one you clicked."""
+    the result is not necessarily the one you clicked.
+
+    `fit_box` ([w, h, cx, cy]) is the biggest rectangle that fits INSIDE that
+    outline — the box anything auto-fitted onto the face belongs in. It is a
+    server fact, not a browser one (LAUNCH-PLAN R1): the sketcher takes the
+    min/max of `outer` itself, which is the face only when the face is a
+    rectangle."""
     part = None
     if req.feature_id:
         part = _doc()._parts.get(req.feature_id)
@@ -2010,11 +2093,14 @@ def face_outline(req: FaceReq):
         return {"outer": [], "holes": [], "planar": False,
                 "error": "no solid to sketch on"}
     try:
-        return sketchlib.face_outline_2d(part, req.face_center, req.face_normal,
-                                         face=req.face, offset=req.offset,
-                                         face_area=req.face_area)
+        out = sketchlib.face_outline_2d(part, req.face_center, req.face_normal,
+                                        face=req.face, offset=req.offset,
+                                        face_area=req.face_area)
     except Exception as e:
         return {"outer": [], "holes": [], "planar": False, "error": str(e)}
+    if out.get("planar") and out.get("outer"):
+        out["fit_box"] = [round(v, 3) for v in _inscribed_box(out["outer"])]
+    return out
 
 
 @app.post("/api/tool/plan")
@@ -2133,8 +2219,14 @@ def add_feature(req: FeatureReq):
 
 
 def _trace_face_fit(req: TracePngReq):
-    """The picked face's sketch-frame bbox, for fitting traced art onto it.
-    -> (body_feature_id, face_w, face_h, face_cx, face_cy)"""
+    """The box traced art is fitted into on the picked face, in the sketch
+    frame — the biggest rectangle INSIDE the face's outline, not its bounding
+    box. -> (body_feature_id, fit_w, fit_h, fit_cx, fit_cy)
+
+    The bounding box is the face only when the face is a rectangle: on a disc
+    of radius 30.00 mm, square art "auto-fitted to the 60x60mm face" put all 8
+    of its points off the disc, 37.96 mm out (measured 2026-09-17, see
+    `_inscribed_box`)."""
     body_id = req.body_feature_id
     if not body_id or not any(f.id == body_id for f in _doc().features):
         body_id = (_doc().leaf_solid_ids() or [None])[-1]
@@ -2147,10 +2239,65 @@ def _trace_face_fit(req: TracePngReq):
     if not outline.get("planar") or not outline.get("outer"):
         raise ValueError("that face is curved — pick a FLAT face to put "
                          "the logo on")
-    xs = [p[0] for p in outline["outer"]]
-    ys = [p[1] for p in outline["outer"]]
-    return (body_id, max(xs) - min(xs), max(ys) - min(ys),
-            (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2)
+    w, h, cx, cy = _inscribed_box(outline["outer"])
+    if w <= 0 or h <= 0:
+        raise ValueError("that face is too thin to fit artwork onto — pick "
+                         "a bigger face, or trace without a face selected")
+    return (body_id, w, h, cx, cy)
+
+
+def _trace_fit_height(data: bytes, m_w: float, m_h: float, rounds: int = 5):
+    """The trace height and the 90° rotate for art fitted into an
+    `m_w` × `m_h` box — from the artwork's aspect measured AT the height the
+    art will actually be traced at. -> (height_mm, rotated).
+
+    The aspect is not a constant of the picture. `imgtrace`'s speckle floor is
+    a physical 0.25 mm at the FINAL scale, so a smaller target drops more
+    pieces and the artwork's own bounding box changes shape with it. Asking
+    once at the default 50 mm and then tracing at the fitted height is the
+    out-of-step bug the shared `_traceable()` was written to close, through
+    the fit door: measured 2026-09-17, one picture reads aspect 1.3467 with
+    3 pieces at 50 mm and 0.3333 with 1 piece at 13.4 mm, and that number
+    sets BOTH the height and the rotate.
+
+    Re-deriving ONCE is not enough — it oscillates. That same picture on a
+    12 × 14 mm face runs 50 → 9.356 → 12.600 → 9.356 for ever, because the
+    ornaments come back at one size and go away again at the other
+    (`probes/imgtrace_fit_height_probe.py`). So every height that is tried is
+    measured at its OWN size, and the winner is the biggest tried height
+    whose own measured artwork really fits the box — a choice over a finite
+    set, which terminates whether or not the iteration settles. Measured on
+    that 12 × 14 face: the shipped rule lays the art down at 9.36 × 3.12 mm,
+    this one stands it up at 4.20 × 12.60 mm."""
+    tried: list[tuple[float, float]] = []
+    height = 50.0                     # imgtrace's own default: the bootstrap
+    for _ in range(max(1, rounds)):
+        if tried:
+            try:
+                aspect = imgtrace.artwork_aspect(data, height)
+            except ValueError:
+                break                 # too small at THIS size — keep what we
+        else:                         # have; the trace re-raises if it must
+            aspect = imgtrace.artwork_aspect(data, height)
+        tried.append((height, aspect))
+        h0 = min(m_h, m_w / aspect)                    # as-is
+        h90 = min(m_w, m_h / aspect)                   # long side along Y
+        nxt = max(1.0, min(1000.0, h90 if h90 > h0 * 1.001 else h0))
+        if any(abs(nxt - h) <= 1e-6 * h for h, _ in tried):
+            break                     # settled, or a cycle we cannot settle
+        height = nxt
+    best = None
+    for h, aspect in tried:
+        tol = 1.0 + 1e-9
+        fits = (False if h <= m_h * tol and h * aspect <= m_w * tol else
+                True if h <= m_w * tol and h * aspect <= m_h * tol else None)
+        if fits is not None and (best is None or h > best[0]):
+            best = (h, fits)
+    if best is None:                  # nothing tried fits; the smallest is
+        h, aspect = min(tried)        # the least bad, and the residual
+        best = (h, min(m_w, m_h / aspect)        # rescale below shrinks it
+                > min(m_h, m_w / aspect) * 1.001)
+    return best
 
 
 def _trace_fitted(data: bytes, req: TracePngReq,
@@ -2171,13 +2318,11 @@ def _trace_fitted(data: bytes, req: TracePngReq,
         fw, fh, fcx, fcy = (float(v) for v in box)
         if fw <= 0 or fh <= 0:
             raise ValueError("the fit box needs a positive width and height")
-        # pick the trace height so the art fits the box both ways —
-        # image_to_entities' fidelity floors then run at the REAL scale
-        aspect = imgtrace.artwork_aspect(data)
-        h0 = req.fit_margin * min(fh, fw / aspect)     # as-is
-        h90 = req.fit_margin * min(fw, fh / aspect)    # long side along Y
-        rotated = h90 > h0 * 1.001     # rotate only when it clearly wins
-        height = max(1.0, min(1000.0, h90 if rotated else h0))
+        # pick the trace height so the art fits the box both ways — measured
+        # at the height it will BE traced at, because imgtrace's fidelity
+        # floors run at the real scale and change which pieces exist
+        height, rotated = _trace_fit_height(data, req.fit_margin * fw,
+                                            req.fit_margin * fh)
     ents, info = imgtrace.image_to_entities(
         data, height, req.tol_mm, req.min_channel_mm,
         connect_pieces=req.connect_pieces)
