@@ -188,13 +188,14 @@ SKETCH_CONSUMING_MODIFIERS = {"extrude", "revolve", "sweep"}
 # dx 20 on a plain circle sketch answered "the pattern leaves a broken solid
 # (non-positive volume (0) — empty solid) — a copy touches the body along an
 # edge only; a smaller count, a shorter distance, or another direction", a
-# diagnosis about a shape the user never asked for. Only these two: `mirror`
-# is the third member of pattern.SEEDED_OPS and it mirrors a SKETCH correctly
-# (status ok), as do `move`, `rotate` and `scale`, so none of them is gated.
+# diagnosis about a shape the user never asked for. Only these two by NAME:
+# `move`, `rotate` and `scale` all answer a sketch with a sketch, and so does
+# `mirror` — until its `join` is on, which is the one case
+# `_check_modifier_input` adds to this set for itself (see there).
 SOLID_REPEATING_MODIFIERS = set(pattern.PATTERN_OPS)
 
 
-def _check_modifier_input(op: str, fid: str, part) -> None:
+def _check_modifier_input(op: str, fid: str, part, params: dict | None = None) -> None:
     """Refuse a profile op fed a solid BODY — BEFORE the kernel.
 
     `sweep` is the silent one: build123d takes `sections.faces()`, so a BODY is
@@ -220,11 +221,30 @@ def _check_modifier_input(op: str, fid: str, part) -> None:
     # "it is a sketch" would be a lie about it — that one keeps the pattern's
     # own broken-solid sentence, which is true of it. `_try`, not `getattr`: a
     # default only covers AttributeError, and `area` can RAISE (see _loft).
-    if (op in SOLID_REPEATING_MODIFIERS and (n_solids(part) or 0) == 0
+    #
+    # `mirror` belongs to this half only when it JOINS. Without `join` it hands
+    # back the reflected SKETCH and is correct (status ok, measured), but
+    # `join=true` fuses the body with its reflection through
+    # pattern._body_pattern — the same function the two pattern ops use, so the
+    # same health check, so the same diagnosis about a solid the user never
+    # asked for: "mirror: the mirror image leaves a broken solid (non-positive
+    # volume (0) — empty solid) — it touches the body along an edge only"
+    # (measured 2026-09-17, probes/s10_pattern_gate_review_probe.py §1, the
+    # review of eed6a33). The FLAG decides, not the op, and it is read exactly
+    # as `pattern.mirror` reads it — plain truthiness, under `if not seed`,
+    # because a SEEDED mirror ignores join and already has its own sentence
+    # ("a sketch is not a feature to repeat") — so the two cannot disagree.
+    _p = params or {}
+    joins = op == "mirror" and not _p.get("seed") and _p.get("join")
+    if ((op in SOLID_REPEATING_MODIFIERS or joins)
+            and (n_solids(part) or 0) == 0
             and (inspector._try(lambda: part.area) or 0) > 0):
+        does = ("with join fuses a SOLID body with its reflection" if joins
+                else "repeats a SOLID body")
+        extra = " (without join it returns the reflected sketch)" if joins else ""
         raise ValueError(
-            f"{op} repeats a SOLID body, and '{fid}' is a sketch — "
-            f"extrude or revolve it first, then {op} the body")
+            f"{op} {does}, and '{fid}' is a sketch — "
+            f"extrude or revolve it first, then {op} the body{extra}")
 
 
 KNOWN_OPS = set(CREATORS) | set(MODIFIERS) | set(COMBINERS) | {"move"}
@@ -1544,7 +1564,7 @@ class Document:
         if f.op in MODIFIERS:
             if len(ins) != 1:
                 raise ValueError(f"'{f.op}' needs exactly 1 input")
-            _check_modifier_input(f.op, f.inputs[0], ins[0])
+            _check_modifier_input(f.op, f.inputs[0], ins[0], f.params)
             kw = self._clean(f.params)
             if f.op in pattern.SEEDED_OPS and kw.get("seed"):
                 kw.update(self._seed_parts(f, kw["seed"]))   # the seed's before / after bodies
