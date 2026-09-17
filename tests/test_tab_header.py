@@ -25,6 +25,32 @@ import studio
 JS = pathlib.Path(__file__).resolve().parents[1] / "static" / "js"
 
 
+def _no_tabs():
+    studio.STATE["docs"].clear()
+    studio.STATE["active"] = None
+    studio.STATE["seq"] = 0
+
+
+@pytest.fixture(autouse=True)
+def _tabs_of_our_own():
+    """Every test here opens tabs, and `studio.STATE` is a module global that
+    the whole fast tier shares.
+
+    Without this the file passes ALONE and fails in the TIER, which is the
+    worst way for a test to be wrong. MAX_TABS is 12, so once earlier files
+    have filled them `/api/new` is REFUSED - and the refusal still carries
+    `active_tab`, so `other` silently becomes the SAME tab as `mine`, and a
+    test comparing two designs compares one with itself. Measured 2026-09-17:
+    the full tier went red on
+    `test_a_mesh_load_without_a_tab_is_served_the_other_windows_body` while
+    the file alone was green. `test_tab_reuse.py` and `test_server_layer.py`
+    have always cleared it; this file was written tonight and did not.
+    """
+    _no_tabs()
+    yield
+    _no_tabs()
+
+
 def _node(tmp_path, source):
     harness = tmp_path / "h.mjs"
     harness.write_text(source, encoding="utf-8")
