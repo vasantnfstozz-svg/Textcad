@@ -666,3 +666,87 @@ def test_a_pattern_axis_click_must_be_a_face_the_body_really_has():
     # a click on nothing at all
     p = plan_with({"center": [200, 0, 0], "normal": [0, 0, 1]})
     assert not p["ok"] and "that face is not on hole1" in p["error"], p
+
+
+# ---------------------------------------------------------------------------
+# A pattern fed a SKETCH  (LAUNCH-PLAN §10, measured 2026-09-11 and 2026-09-17,
+# probes/s10_pattern_kind_probe.py). It answered with a diagnosis about a shape
+# the user never asked for:
+#   "linear_pattern: the pattern leaves a broken solid (non-positive volume (0)
+#    — empty solid) — a copy touches the body along an edge only; a smaller
+#    count, a shorter distance, or another direction"
+# The combiners have refused a wrong-KIND input BY NAME since §4 and the
+# sketch-consuming modifiers since §7; these are the same family, in the
+# opposite direction.
+# ---------------------------------------------------------------------------
+
+CIRCLE_ENTS = [{"kind": "circle", "x": 0, "y": 0, "r": 5, "mode": "add"}]
+TWO_CIRCLE_ENTS = [{"kind": "circle", "x": -15, "y": 0, "r": 5, "mode": "add"},
+                   {"kind": "circle", "x": 15, "y": 0, "r": 5, "mode": "add"}]
+KIND_KERNEL_WORDS = ("Standard_", "StdFail", "TopoDS", "BRep_API", "NCollection",
+                     "empty solid", "non-positive")
+
+
+def _sketch_then(op, params, entities=None):
+    d = Document(name="k")
+    d.add("s1", "sketch",
+          {"entities": entities or CIRCLE_ENTS, "plane": "XY", "offset": 0.0}, [])
+    d.add("p1", op, params, ["s1"])
+    d.rebuild()
+    return d.get("p1")
+
+
+@pytest.mark.parametrize("op,params", [
+    ("linear_pattern", {"count": 3, "dx": 20}),
+    ("polar_pattern", {"count": 4}),
+])
+def test_a_pattern_fed_a_sketch_is_refused_by_name(op, params):
+    f = _sketch_then(op, params)
+    assert f.status == "failed"
+    msg = " ".join(f.problems)
+    assert msg == (f"{op} repeats a SOLID body, and 's1' is a sketch — "
+                   f"extrude or revolve it first, then {op} the body")
+    assert not any(w in msg for w in KIND_KERNEL_WORDS), msg
+
+
+def test_a_sketch_of_disjoint_islands_is_refused_the_same_way():
+    """The gate tests SOLIDS and AREA, never `is_sketch`: disjoint entities can
+    compose into a Compound that is not a Sketch instance, and the §7 gate
+    lets exactly those extrude."""
+    f = _sketch_then("linear_pattern", {"count": 3, "dx": 40}, TWO_CIRCLE_ENTS)
+    assert f.status == "failed"
+    assert "is a sketch" in " ".join(f.problems)
+
+
+def test_the_pattern_refusal_beats_the_axis_check_to_it():
+    """The kind of the input is the more basic fact: a sketch patterned about
+    a bad axis used to be told about the axis, which is not the problem."""
+    f = _sketch_then("polar_pattern", {"count": 4, "axis": "Z"})
+    assert "is a sketch" in " ".join(f.problems)
+
+
+@pytest.mark.parametrize("op,params,want", [
+    ("linear_pattern", {"count": 3, "dx": 20}, 6000.0),
+    ("polar_pattern", {"count": 4, "axis": "+z"}, 2000.0),
+    ("mirror", {"plane": "YZ"}, 2000.0),
+])
+def test_a_pattern_of_a_solid_still_builds(op, params, want):
+    d = Document(name="s")
+    d.add("b1", "plate", {"width": 20, "depth": 20, "thickness": 5}, [])
+    d.add("p1", op, params, ["b1"])
+    assert d.rebuild() is True, d.get("p1").problems
+    assert d.get("p1").volume == pytest.approx(want, abs=0.01)
+
+
+@pytest.mark.parametrize("op,params", [
+    ("mirror", {"plane": "YZ"}),
+    ("scale", {"factor": 2}),
+    ("rotate", {"axis": "Z", "angle_deg": 45}),
+])
+def test_the_gate_does_not_widen_to_the_ops_that_move_a_sketch(op, params):
+    """Measured: `mirror`, `scale` and `rotate` all take a sketch and answer
+    with a sketch. Refusing them would take away work that is correct today,
+    which is why SOLID_REPEATING_MODIFIERS is pattern.PATTERN_OPS and not
+    pattern.SEEDED_OPS."""
+    f = _sketch_then(op, params)
+    assert f.status == "ok", f.problems

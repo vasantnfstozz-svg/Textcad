@@ -182,6 +182,17 @@ def _check_combiner_inputs(op: str, ids: list, parts: list) -> None:
 # a sketch and never a body (`loft` is a combiner and gated above)
 SKETCH_CONSUMING_MODIFIERS = {"extrude", "revolve", "sweep"}
 
+# ...and the same rule the other way round: the ops that repeat a SOLID and
+# cannot mean anything without one. MEASURED 2026-09-11 and again on
+# 2026-09-17 (probes/s10_pattern_kind_probe.py): `linear_pattern` count 3,
+# dx 20 on a plain circle sketch answered "the pattern leaves a broken solid
+# (non-positive volume (0) — empty solid) — a copy touches the body along an
+# edge only; a smaller count, a shorter distance, or another direction", a
+# diagnosis about a shape the user never asked for. Only these two: `mirror`
+# is the third member of pattern.SEEDED_OPS and it mirrors a SKETCH correctly
+# (status ok), as do `move`, `rotate` and `scale`, so none of them is gated.
+SOLID_REPEATING_MODIFIERS = set(pattern.PATTERN_OPS)
+
 
 def _check_modifier_input(op: str, fid: str, part) -> None:
     """Refuse a profile op fed a solid BODY — BEFORE the kernel.
@@ -202,6 +213,18 @@ def _check_modifier_input(op: str, fid: str, part) -> None:
         raise ValueError(
             f"{op} pulls a SKETCH profile, and '{fid}' is a solid body — "
             f"sketch on one of its faces, then {op} that sketch")
+    # The mirror image. NO solids AND some area: a 2D thing, whether it is a
+    # Sketch instance or the Compound disjoint islands compose into — the same
+    # pair of tests, so the two gates agree about what a sketch is. The area
+    # half matters: a feature that built an EMPTY solid also has no solids, and
+    # "it is a sketch" would be a lie about it — that one keeps the pattern's
+    # own broken-solid sentence, which is true of it. `_try`, not `getattr`: a
+    # default only covers AttributeError, and `area` can RAISE (see _loft).
+    if (op in SOLID_REPEATING_MODIFIERS and (n_solids(part) or 0) == 0
+            and (inspector._try(lambda: part.area) or 0) > 0):
+        raise ValueError(
+            f"{op} repeats a SOLID body, and '{fid}' is a sketch — "
+            f"extrude or revolve it first, then {op} the body")
 
 
 KNOWN_OPS = set(CREATORS) | set(MODIFIERS) | set(COMBINERS) | {"move"}
