@@ -265,11 +265,18 @@ review pending), **Section view — BUILT 2026-09-17, `60e64b0`**
 (`specs/section-view.md`: an Inspect-tab button puts a clipping plane on every
 body material — display only, nothing saved, no plan request; axis / offset /
 flip panel, the shared quad and arrow drag it; Esc in the CAPTURE phase so a
-tool cancels first; review pending), **Named parameters** (`wall = 3` once,
-everything follows; the biggest usability win after the tree, needs an
-expression engine), Assemblies/joints (assembly.py exists). Being built one
-by one on Fable from 2026-09-17 with the reviews deferred to the user's own
-`code review` chats (§11).
+tool cancels first; review pending), **Named parameters — BUILT 2026-09-17,
+`127f350` + `4343f30`** (`specs/named-parameters.md`: `paramexpr.py` parses a
+formula with `ast` and walks it by hand — never eval — 46 injection strings
+all refused; any numeric feature param may be a formula, resolved before the
+op runs and the cache signed on the resolved value (`wall` 3 → 4 moved a
+`wall*2` extrude 1200 → 1600 mm³); rename by token, delete refused while
+used, loops named; `parameters` saved only when present — all 47 designs
+round-trip byte for byte; a Parameters panel and `wall*2 = 6` rows in the
+tree; review pending), Assemblies/joints (assembly.py exists — the one Tier 2
+item not built). **The five-tool Tier 2 list is BUILT (2026-09-17, one day,
+one scheduled build session each) and awaits review — five sections in
+`REVIEW-BRIEF.md`.**
 
 ---
 
@@ -1137,7 +1144,7 @@ yet to keep selling simple) and the postponement answers it for now: no licence
 file, which keeps every option open. An open release cannot be taken back.
 
 **Later (the Tier 2 list of §4, in progress since 2026-09-17 — Sweep built
-`36ee69c`, Loft built `ec45cf1`, Text entity built `d3c8c85`, Section view built `60e64b0`):** named parameters,
+`36ee69c`, Loft built `ec45cf1`, Text entity built `d3c8c85`, Section view built `60e64b0`, Named parameters built `127f350` — ALL FIVE BUILT, review pending):**
 assemblies, the user's personal project.
 
 ---
@@ -1221,6 +1228,7 @@ assemblies, the user's personal project.
 
 | Pri | Item | Source |
 |-----|------|--------|
+| P3 | **Named parameters' loose ends, deliberately not built in the first session** (`specs/named-parameters.md`, `127f350`). (a) The TOOL panels' boxes (Extrude's distance, Fillet's radius…) stay numeric: a formula is typed into the tree row after the tool is done — the tool framework reads its boxes with `Number()` and would need a formula-aware box. (b) No units on parameters (Fusion's mm / deg / unitless column) and no comment-only edits from the AI. (c) MEASURE-PLAN P4's "⛓ make this measurement a parameter" button and a parameter driven BY a measurement are not built — the model (a parameter is a formula, features name it) is ready for both. (d) Sketch ENTITY dimensions (a circle's radius inside a sketch) cannot hold a formula: `entities` is not a numeric param, its numbers live inside the list. (e) A formula's value shows rounded to 4 decimals in the tree and the panel; the op gets the full float. (f) Two sentences changed on purpose: a numeric STRING in an old file ("40") now BUILDS as 40 instead of failing, and a bare word in a numeric slot is "no parameter named 'abc'" — see the brief. | Tier 2 build 2026-09-17 |
 | P3 | **Section view's loose ends, deliberately not built in the first session** (`specs/section-view.md`, `60e64b0`). (a) The cut face is not CAPPED: the body is drawn two-sided so its inside shows in the body's colour, but a hollow part shows its inner walls rather than a filled cross-section (a stencil-buffer cap is the Fusion look). (b) The gold quad and the arrow are the gizmos Mirror and Extrude use: a tool opened over the section takes them and they go with it when the tool closes; the clipping stays and any panel change brings them back. (c) One plane for the whole model — no per-body sections, no two planes. (d) The section is not saved and does not survive a reload (deliberate: a viewing aid). (e) The face-highlight mesh and the pick hover face are not clipped, so a highlighted face on the hidden side still shows through. | Tier 2 build 2026-09-17 |
 | P3 | **Text entity's loose ends, deliberately not built in the first session** (`specs/text-entity.md`, `d3c8c85`). (a) An unknown font name falls back to Arial with a warning on the SERVER's stderr only — the user sees the shape build in a different face than they named; a sentence would need the font manager asked first. (b) No bold / italic (`FontStyle`), no letter spacing, no text on a curve. (c) The tree shows the `font` row only when the entity carries one (the tool never writes it), so the font is AI-only today. (d) Until the glyph loops arrive from the server a freshly placed word draws nothing (typically well under a second). (e) Hit-testing and the even-odd mode rule use the word's bounding box, not the glyphs, so clicking between two letters selects the word and a word drawn across a shape's edge is judged by its box. (f) No resize handles: the height is typed (in the box or the tree). | Tier 2 build 2026-09-17 |
 | P3 | **Loft's loose ends, deliberately not built in the first session** (`specs/loft.md`, `ec45cf1`). (a) A flat FACE of a body is not accepted as a section (Fusion allows it; the sweep/revolve `face_profile` path would carry it, but a loft's inputs are sketches and a face is a body reference — it needs its own op or a face-to-profile feature). (b) No guide rails, no end conditions (tangent / direction), no per-section seam control: a circle-to-square loft twists the way the kernel matches vertices. (c) The picked profiles are shown by the ghost's rings and the panel list, not highlighted in the viewport's own sketch colour. (d) Three-plus sections smooth vs ruled differ by a quarter of the volume (r5-r2-r5: a spline bulging inward) — real, not guarded, said only in the AI note. (e) The plan resamples each outline to 64 points without aligning seams, so the ghost between a circle and a square may show a slight twist the solid does not have. | Tier 2 build 2026-09-17 |
@@ -1333,6 +1341,14 @@ assemblies, the user's personal project.
 
 ## 11. Decisions log
 
+- **2026-09-17 (evening) — the Tier 2 list is BUILT, all five, and awaits
+  review.** Sweep `36ee69c`, Loft `ec45cf1`, Text entity `d3c8c85`, Section
+  view `60e64b0`, Named parameters `127f350`+`4343f30` — one scheduled build
+  session each, each in its own worktree, each fast-forwarded into master the
+  same day with the fast tier green, lint at zero and all 47 live designs
+  rebuilding to identical volumes. Nothing has been reviewed: `REVIEW-BRIEF.md`
+  holds five sections, oldest first, for the user's `code review` chats.
+  Assemblies / joints is the one Tier 2 item left untouched.
 - **2026-09-17 — the Tier 2 tools are built one by one, on Fable, reviews
   deferred.** The user's words (04:47, before going out): "start from one tool
   by one, first sweep use fable for writing code, leave the code review right
