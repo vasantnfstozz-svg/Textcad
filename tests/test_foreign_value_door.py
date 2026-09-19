@@ -874,3 +874,61 @@ def test_a_move_still_carries_a_real_face_pick():
            "entities": CIRC, "offset": 0.0}, ["mv"])
     d.edit("mv", "x", 8)
     assert d.get("sf").params["face_center"] == [8.0, 0.0, 5.0]
+
+
+# --- ROUND FIVE: the parameters round four's census never reached ------------
+#
+# probes/s10_r4_census.py walks `for k in base` -- the keys its own BASE dict
+# sets up per op, not every parameter the op HAS. So `seed` was never fed a
+# hostile value for any of the three SEEDED_OPS. Round five censused every
+# parameter of every op instead (probes/s10_r5_full_param_census.py, 1089 rows)
+# and the seed is the only new Python outside sketch.py.
+
+SEED_BASE = {"linear_pattern": {"count": 3, "dx": 8},
+             "polar_pattern": {"count": 3, "axis": "+z"},
+             "mirror": {"plane": "YZ"}}
+
+
+def _seeded(op, seed):
+    d = Document(name="s")
+    d.add("body", "plate", {"width": 40, "depth": 40, "thickness": 10}, [])
+    d.add("h", "with_center_hole", {"radius": 3}, ["body"])
+    d.add("p", op, {**SEED_BASE[op], "seed": seed}, ["h"])
+    d.rebuild()
+    return d, d.get("p")
+
+
+def test_a_seed_that_is_not_a_name_is_refused_in_words():
+    """MEASURED RED: a `seed` a file holds as a list or a table reached
+    `delta_features`' `by_id.get(seed)` and answered `TypeError: cannot use
+    'list' as a dict key (unhashable type: 'list')` in the feature row, for
+    all three seeded ops. `_eval` already writes `str(kw["path"])` on the very
+    next line for a sweep -- the seed one line above it did not."""
+    for op in SEED_BASE:
+        for bad in ([1, 2], {"a": 1}, [[1, 2]]):
+            d, f = _seeded(op, bad)
+            assert f.status == "failed", (op, bad)
+            said = " ".join(f.problems)
+            assert "seed" in said, (op, bad, said)
+            assert not _is_python(said), (op, bad, said)
+
+
+def test_a_seed_that_names_nothing_still_says_so_the_way_it_did():
+    """The sentences that already worked must not move."""
+    for op in SEED_BASE:
+        for bad, shown in (("ghost", "ghost"), (5, "5")):
+            d, f = _seeded(op, bad)
+            assert f"the seed '{shown}' is not in the tree" in " ".join(f.problems)
+
+
+def test_a_real_seed_still_repeats_the_feature_it_names():
+    """The other direction: `str()` on a seed that is already text changes
+    nothing, and the pattern still repeats the hole it is seeded with."""
+    d, f = _seeded("linear_pattern", "h")
+    assert f.status == "ok", f.problems
+    plain = Document(name="plain")
+    plain.add("body", "plate", {"width": 40, "depth": 40, "thickness": 10}, [])
+    plain.add("h", "with_center_hole", {"radius": 3}, ["body"])
+    plain.rebuild()
+    one_hole = plain.get("h").volume
+    assert f.volume < one_hole, (f.volume, one_hole)

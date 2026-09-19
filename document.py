@@ -1858,6 +1858,18 @@ class Document:
             _check_numeric_params(f.op, f.params, f.id, self.param_values)
             kw = self._clean(self._resolved(f))
             if f.op in pattern.SEEDED_OPS and kw.get("seed"):
+                # str(), the same as the path below and the same as
+                # `param_refs` (which signs it), so the op, the document and
+                # the signature all name the seed the same way. A seed a file
+                # holds as a LIST or a TABLE reached `delta_features`'
+                # `by_id.get(seed)` unhashable and answered `TypeError: cannot
+                # use 'list' as a dict key` in the feature row, for all three
+                # seeded ops; a seed holding a NUMBER already read "the seed
+                # '5' is not in the tree". Round four's census never fed it —
+                # it walks the keys its own BASE dict sets, and `seed` is not
+                # one of them (measured 2026-09-19,
+                # probes/s10_r5_full_param_census.py, 1089 rows).
+                kw["seed"] = str(kw["seed"])
                 kw.update(self._seed_parts(f, kw["seed"]))   # the seed's before / after bodies
             if f.op in SWEEP_OPS and kw.get("path"):
                 kw["_path_sketch"] = self._path_part(f, str(kw["path"]))   # the path sketch's wires
