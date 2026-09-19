@@ -335,3 +335,89 @@ def test_the_handles_come_back_where_the_plane_is_now_not_where_it_was(
     assert q["origin"][2] == pytest.approx(4, abs=0.01), \
         f"the gold plane came back at the old offset: {q}"
     assert not page.errors, page.errors
+
+
+# ---------------------------------------------------------------------------
+# Round FOUR's attack on the fix above. `retakeSectionHandles()` gives up when
+# `section.handles` is null, and `beginSection(..., handles=false)` set it to
+# null — so the one door the section panel keeps open under a tool takes the
+# handles away for good. The panel is not modal-guarded (it is a view state),
+# so Axis and Flip stay clickable with a tool open, and both re-run
+# beginSection, which is where handles=false comes from.
+#
+# Measured 2026-09-19 on the plate: Section on (quad + arrow, ownsQuad and
+# ownsArrow true), the top face picked, Extrude opened (ownsArrow false),
+# #scFlip pressed — quad FALSE at once — then Cancel: quad false, arrow false,
+# ownsQuad false, ownsArrow false, with the model still cut open on 13 of 13
+# materials and the panel still telling the user to drag the arrow. Only
+# closing and reopening the whole section brought one back.
+# ---------------------------------------------------------------------------
+
+def test_flip_under_a_tool_does_not_cost_the_section_its_handles_for_good(
+        page, fresh_doc, server):
+    setup(page)
+    page.evaluate(TOGGLE)
+    page.wait_for_timeout(400)
+    assert info(page)["ownsArrow"] and info(page)["ownsQuad"]
+
+    sp = page.evaluate(TO_SCREEN, [22.0, 15.0, 6.0])
+    page.mouse.click(sp["x"], sp["y"])
+    page.wait_for_timeout(700)
+    page.locator("button.tab", has_text="Create").click()
+    page.wait_for_timeout(200)
+    page.click("#ribbon .rbtn[title='extrude']")
+    page.wait_for_selector("#extrudeDialog", state="visible", timeout=15000)
+    page.wait_for_function("() => window.__vp.gizmos().arrow", timeout=15000)
+    assert not info(page)["ownsArrow"], "the tool did not take the arrow"
+
+    page.click("#scFlip")                  # the panel is live: it takes no lock
+    page.wait_for_timeout(600)
+    assert info(page)["flip"], "Flip did not reach the plane"
+    assert page.evaluate("() => window.__vp.gizmos().arrow"), \
+        "Flip left the open tool with no handle"
+
+    page.click("#exCancel")
+    page.wait_for_timeout(1200)
+    i = info(page)
+    assert i["on"] and i["clipped"] == i["materials"], f"the section came off: {i}"
+    assert page.evaluate("() => window.__vp.gizmos().arrow"), \
+        "after a Flip under the tool the section was left with nothing to drag"
+    assert i["ownsArrow"] and i["ownsQuad"], \
+        f"the handles on screen are not the section's: {i}"
+    assert i["flip"], "the retaken handles lost the flip"
+
+    # ...and the arrow it got back really drives the plane
+    before = i["offset"]
+    drag_arrow(page, 60)
+    page.wait_for_timeout(400)
+    j = info(page)
+    assert abs(j["offset"] - before) > 1, (before, j["offset"])
+    assert not page.errors, page.errors
+
+
+def test_an_axis_change_under_a_tool_does_not_cost_them_either(
+        page, fresh_doc, server):
+    """The same door, the other control: Axis re-runs beginSection too."""
+    setup(page)
+    page.evaluate(TOGGLE)
+    page.wait_for_timeout(400)
+    sp = page.evaluate(TO_SCREEN, [22.0, 15.0, 6.0])
+    page.mouse.click(sp["x"], sp["y"])
+    page.wait_for_timeout(700)
+    page.locator("button.tab", has_text="Create").click()
+    page.wait_for_timeout(200)
+    page.click("#ribbon .rbtn[title='extrude']")
+    page.wait_for_selector("#extrudeDialog", state="visible", timeout=15000)
+    page.wait_for_function("() => window.__vp.gizmos().arrow", timeout=15000)
+
+    page.select_option("#scAxis", "Y")
+    page.wait_for_timeout(600)
+    assert info(page)["axis"] == "Y"
+
+    page.click("#exCancel")
+    page.wait_for_timeout(1200)
+    i = info(page)
+    assert i["on"] and i["axis"] == "Y", i
+    assert i["ownsArrow"] and i["ownsQuad"], \
+        f"an axis change under the tool cost the section its handles: {i}"
+    assert not page.errors, page.errors

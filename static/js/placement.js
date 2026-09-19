@@ -8,6 +8,7 @@ import { bus } from './bus.js';
 import { postJSON } from './api.js';
 import { beginPlacement, loadMesh, cancelPlanePick } from './viewport.js';
 import { cancelTool, uid } from './tool.js';
+import { SETTINGS, toMm, fmtLen, unitLabel } from './settings.js';
 
 // sensible starting dimensions (mm) per primitive — blocks have no defaults
 const DEFAULTS = {
@@ -58,16 +59,49 @@ function debounce(key, fn) {
   timers[key] = setTimeout(fn, 250);
 }
 
+/* Which of a primitive's params is a LENGTH. Everything in DEFAULTS above is
+   a millimetre except polygon_plate's `sides`, which is a COUNT — and the
+   popup labelled every box "(mm)", `sides` included, until 2026-09-19. */
+const COUNTS = new Set(['sides']);
+
+/* The LENGTH boxes of the popup that is open, so the display unit can be
+   changed under it: it takes no modal lock (Settings is a ribbon action and
+   modalGuard only refuses those for a tool holding the lock), which makes this
+   the second panel — after Section view — whose numbers have to be rewritten
+   under the user's hands. Each entry knows how to read its own millimetres
+   back out of the state. */
+let liveBoxes = null;
+
+/* a length in mm -> what the box shows, the way every tool panel writes one:
+   millimetres keep the number itself, another unit is quantised to the box's
+   own precision (settings.js `fmtLen`) */
+const shown = v => SETTINGS.unit === 'mm' ? v : fmtLen(v, false);
+
 function openPlacePopup(st) {
   const el = popup();
-  const field = (label, key, val, onIn) => {
+  const boxes = [];
+  /* `kind`: 'len' a length that names its own unit, 'pos' a length the
+     Position heading names for it, 'count' a plain number that is neither.
+     A length is typed in the DISPLAY unit like every other model dimension in
+     the app, and settings.js writes the word (data-unit) — a box labelled mm
+     that is read in inches is how a 2 becomes 50.8 (static/index.html). */
+  const field = (name, kind, val, onIn, read) => {
     const wrap = document.createElement('label');
     wrap.className = 'pp-field';
-    wrap.innerHTML = `<span>${label}</span>`;
+    // the word is written NOW (unitLabel) and marked `data-unit` so it is
+    // repainted later: settings.js only walks the page when the unit CHANGES,
+    // so a span built afterwards that spelled "mm" would keep saying mm for
+    // as long as the popup stayed open in inches
+    wrap.innerHTML = kind === 'len'
+      ? `<span>${name} (<span data-unit>${unitLabel()}</span>)</span>`
+      : `<span>${name}</span>`;
     const inp = document.createElement('input');
-    inp.type = 'number'; inp.step = 'any'; inp.value = val;
+    inp.type = 'number'; inp.step = 'any';
+    inp.value = kind === 'count' ? val : shown(val);
     inp.oninput = () => onIn(inp.value);
-    wrap.appendChild(inp); return wrap;
+    wrap.appendChild(inp);
+    if (kind !== 'count') boxes.push({ inp, read });
+    return wrap;
   };
 
   el.innerHTML = '';
@@ -82,25 +116,30 @@ function openPlacePopup(st) {
   const num = v => { const n = Number(v); return v !== '' && isFinite(n) ? n : null; };
 
   const dimBox = document.createElement('div'); dimBox.className = 'pp-grid';
-  for (const k of Object.keys(st.dims))
-    dimBox.appendChild(field(`${k} (mm)`, k, st.dims[k], v => {
+  for (const k of Object.keys(st.dims)) {
+    const isLen = !COUNTS.has(k);
+    dimBox.appendChild(field(k, isLen ? 'len' : 'count', st.dims[k], v => {
       const n = num(v);
       if (n === null) return;
-      st.dims[k] = n;
+      st.dims[k] = isLen ? toMm(n) : n;
       debounce('dims', () => applyDims(st));
-    }));
+    }, () => st.dims[k]));
+  }
   el.appendChild(dimBox);
 
+  // x / y / z are labelled plain, so this heading is the only thing that names
+  // the unit they are typed in — it has to follow the display unit too
   const posHead = document.createElement('div'); posHead.className = 'pp-sub';
-  posHead.textContent = 'Position (mm)'; el.appendChild(posHead);
+  posHead.innerHTML = `Position (<span data-unit>${unitLabel()}</span>)`;
+  el.appendChild(posHead);
   const posBox = document.createElement('div'); posBox.className = 'pp-grid';
   for (const axis of ['x', 'y', 'z'])
-    posBox.appendChild(field(axis, axis, st.pos[axis], v => {
+    posBox.appendChild(field(axis, 'pos', st.pos[axis], v => {
       const n = num(v);
       if (n === null) return;
-      st.pos[axis] = n;
+      st.pos[axis] = toMm(n);
       debounce('pos', () => applyPos(st));
-    }));
+    }, () => st.pos[axis]));
   el.appendChild(posBox);
 
   const foot = document.createElement('div'); foot.className = 'pp-foot';
@@ -108,12 +147,26 @@ function openPlacePopup(st) {
   done.textContent = 'Done'; done.onclick = closePlacePopup;
   foot.appendChild(done); el.appendChild(foot);
 
+  liveBoxes = boxes;
   el.style.display = 'block';
 }
 
 export function closePlacePopup() {
+  liveBoxes = null;
   const el = popup(); el.style.display = 'none'; el.innerHTML = '';
 }
+
+/* The display unit changed with the popup open — the fourth handler of this
+   event (settings.js repaints every [data-unit] label, the tree redraws, the
+   section panel rewrites its offset). The millimetres are the STATE's, never
+   the box's: re-reading a box under the NEW unit would leave the number alone
+   and silently multiply what it means, which is the bug section.js carries a
+   comment about. The labels need nothing here — paintUnitLabels walks the
+   whole page, this popup included. */
+bus.on('settings-changed', () => {
+  if (!liveBoxes) return;
+  for (const b of liveBoxes) b.inp.value = shown(b.read());
+});
 
 async function applyDims(st) {
   await postJSON('/api/feature/params', { feature_id: st.id, params: st.dims });

@@ -1641,9 +1641,15 @@ export function beginSection(axis, offset, flip, onDrag, onCommit,
   section.plane.constant = sectionConstant(o);
   renderer.localClippingEnabled = true;
   for (const m of sectionMaterials()) applySectionTo(m);
-  // the callbacks the panel gave us, kept so the handles can be built again
-  // when a tool that borrowed them lets go (retakeSectionHandles below)
-  section.handles = handles ? { onDrag, onCommit } : null;
+  // The callbacks the panel gave us, kept so the handles can be built again
+  // when a tool that borrowed them lets go (retakeSectionHandles below).
+  // ALWAYS kept, whatever `handles` says: `handles` answers "may I take the
+  // shared gizmos NOW", not "does this section want any". Keeping them only
+  // when it could take them threw the retake away down the one door the panel
+  // leaves open under a tool — Axis and Flip re-run this with handles=false
+  // (measured 2026-09-19: Flip with Extrude open, then Cancel, and the model
+  // stayed cut open with no gold plane and no arrow at all).
+  section.handles = { onDrag, onCommit };
   // which quad and which arrow are OURS — null when a tool already had them.
   // A tool that opens afterwards calls beginPlaneQuad / beginExtrudeArrow and
   // takes them for its session, and then these no longer match: that is how
@@ -1680,7 +1686,12 @@ function sectionHandles() {
    covered without knowing the section exists. */
 export function retakeSectionHandles() {
   if (!section || !section.handles) return;
-  if (planeQuad === section.ownQuad && exArrow === section.ownArrow) return;
+  // the section is already holding BOTH of them — nothing to take back. The
+  // identity test alone was not enough: after a handles=false beginSection
+  // both sides are null, which compared EQUAL and refused to build anything
+  // (round four). `ownsQuad && ownsArrow`, exactly as sectionInfo reports it.
+  if (planeQuad && planeQuad === section.ownQuad
+      && exArrow && exArrow === section.ownArrow) return;
   sectionHandles();
 }
 /* the plane and the quad follow a new offset; the arrow rides by itself */

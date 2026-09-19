@@ -282,15 +282,22 @@ WALK = """
 }
 """
 
-# the runtime boxes, by the key above, and what each one is
-RUNTIME_LENGTHS = {"skDimDraw:r", "skDimEdit3d:r"}          # read with toMm()
-RUNTIME_COUNTS = set()                                       # `sides`, when a polygon is drawn
-# the placement popup: millimetres, and it says so — the open item above. The
-# dimension boxes carry "(mm)" each; the three position boxes are labelled
-# plain x / y / z under one "Position (mm)" heading.
-RUNTIME_MM_DIMS = {"placePopup:width", "placePopup:depth", "placePopup:thickness"}
-RUNTIME_MM_POS = {"placePopup:x", "placePopup:y", "placePopup:z"}
-RUNTIME_ALWAYS_MM = RUNTIME_MM_DIMS | RUNTIME_MM_POS
+# the runtime boxes, by the key above, and what each one is.
+#
+# ROUND FOUR: the placement popup follows Settings ▸ Length unit now, like
+# every other model dimension. It used to hard-write "(mm)" and read the
+# numbers as millimetres — truthful, but with the app in inches a plate placed
+# at "width (mm) 40" was 40 mm while every other box on the screen was inches.
+RUNTIME_LENGTHS = {"skDimDraw:r", "skDimEdit3d:r",                  # toMm()
+                   "placePopup:width", "placePopup:depth", "placePopup:thickness",
+                   "placePopup:circumradius"}
+# `sides` is polygon_plate's side COUNT and the popup labelled it "sides (mm)",
+# which is the same lie the other way round — and reading 6 as 6 inches would
+# have made a 152-sided plate.
+RUNTIME_COUNTS = {"placePopup:sides"}
+# the three position boxes are labelled plain x / y / z under ONE heading, so
+# the heading is what has to name the unit
+RUNTIME_HEADED_LENGTHS = {"placePopup:x", "placePopup:y", "placePopup:z"}
 
 
 def test_the_walk_also_sees_the_boxes_that_are_built_while_you_work(
@@ -310,17 +317,39 @@ def test_the_walk_also_sees_the_boxes_that_are_built_while_you_work(
     walked = page.evaluate(WALK)
     place = {b["key"] for b in walked} - at_rest
     assert place, "the placement popup put no numeric box on the page"
-    assert not place - RUNTIME_ALWAYS_MM, \
+    known = RUNTIME_LENGTHS | RUNTIME_COUNTS | RUNTIME_HEADED_LENGTHS
+    assert not place - known, \
         ("the placement popup has numeric boxes in no class — say what each is: "
-         f"{sorted(place - RUNTIME_ALWAYS_MM)}")
+         f"{sorted(place - known)}")
     for b in walked:
-        if b["key"] in RUNTIME_MM_DIMS:
-            assert b["unit"] == "mm", \
-                (f"{b['key']} is read as millimetres by placement.js and must "
-                 f"say so: {b}")
-    assert "position (mm)" in page.inner_text("#placePopup").lower(), \
+        if b["key"] in RUNTIME_LENGTHS:
+            assert b["unit"] == "in", \
+                (f"{b['key']} is read with toMm() while the app is in inches "
+                 f"and says {b['unit']!r}: {b}")
+    assert "position (in)" in page.inner_text("#placePopup").lower(), \
         "the position boxes are labelled plain x / y / z — only this heading " \
-        "tells the user they are millimetres"
+        "tells the user which unit they are typed in"
+    page.click("#placePopup .pp-foot button")
+    page.wait_for_timeout(400)
+
+    # --- the polygon's SIDE COUNT is not a length and must carry no unit ---
+    page.locator("button.tab", has_text="Create").click()
+    page.wait_for_timeout(250)
+    page.click("#ribbon .rbtn[title='polygon_plate']")
+    page.wait_for_timeout(400)
+    cv = page.locator("#viewer canvas").bounding_box()
+    page.mouse.click(cv["x"] + cv["width"] * 0.5, cv["y"] + cv["height"] * 0.42)
+    page.wait_for_selector("#placePopup", state="visible", timeout=20000)
+    page.wait_for_timeout(600)
+    poly = page.evaluate(WALK)
+    got = {b["key"] for b in poly} - at_rest
+    assert not got - known, f"the polygon popup has boxes in no class: {sorted(got - known)}"
+    for b in poly:
+        if b["key"] in RUNTIME_COUNTS:
+            assert b["unit"] is None and "(" not in b["text"], \
+                f"{b['key']} is a count and must carry no unit at all: {b}"
+        if b["key"] in RUNTIME_LENGTHS:
+            assert b["unit"] == "in", f"{b['key']} does not name the display unit: {b}"
     page.click("#placePopup .pp-foot button")
     page.wait_for_timeout(400)
 
@@ -358,4 +387,113 @@ def test_the_walk_also_sees_the_boxes_that_are_built_while_you_work(
             assert b["unit"] == "in", \
                 (f"{b['key']} is read with toMm() while the app is in inches "
                  f"and says {b['unit']!r}: {b}")
+    assert page.errors == []
+
+
+# ---------------------------------------------------------------------------
+# Round four: the placement popup FOLLOWS the display unit now, and the proof
+# is what the SERVER stored. The user has already chosen, for the tool panels,
+# that a box is typed in the unit on the screen; this was the one model
+# dimension left reading millimetres whatever the app said.
+# ---------------------------------------------------------------------------
+
+DOC = "async () => await (await fetch('/api/doc')).json()"
+
+
+def params_of(page, op):
+    """The params of the one feature with this op — the id is auto-numbered
+    from whatever the browser already had, so it is not a stable handle."""
+    doc = page.evaluate(DOC)
+    f = next((f for f in doc["features"] if f["op"] == op), None)
+    assert f, f"no {op} in {[(x['id'], x['op']) for x in doc['features']]}"
+    return f["params"]
+
+
+def place_a_plate(page):
+    page.locator("button.tab", has_text="Create").click()
+    page.wait_for_timeout(250)
+    page.click("#ribbon .rbtn[title='plate']")
+    page.wait_for_timeout(400)
+    cv = page.locator("#viewer canvas").bounding_box()
+    page.mouse.click(cv["x"] + cv["width"] * 0.5, cv["y"] + cv["height"] * 0.62)
+    page.wait_for_selector("#placePopup", state="visible", timeout=20000)
+    page.wait_for_timeout(600)
+
+
+def test_a_dimension_typed_in_the_placement_popup_is_stored_in_that_unit(
+        page, fresh_doc, server):
+    """40 in the popup with the app in inches is 40 INCHES — 1016 mm in the
+    document — not 40 mm sitting under a label that says inches."""
+    choose_unit(page, "in")
+    place_a_plate(page)
+    # it opens on the DEFAULTS in the display unit: 40 mm is 1.5748 in
+    started = float(page.evaluate(
+        "() => [...document.querySelectorAll('#placePopup .pp-field')]"
+        ".find(f => f.textContent.trim().startsWith('width')).querySelector('input').value"))
+    assert abs(started - 40 / 25.4) < 5e-4, \
+        f"the popup opened showing {started} for a 40 mm plate in inches"
+
+    page.evaluate("""
+      () => { const f = [...document.querySelectorAll('#placePopup .pp-field')]
+                .find(f => f.textContent.trim().startsWith('thickness'));
+              const i = f.querySelector('input');
+              i.value = '2'; i.dispatchEvent(new Event('input', { bubbles: true })); }""")
+    page.wait_for_timeout(1500)
+    p = params_of(page, "plate")
+    assert abs(p["thickness"] - 50.8) < 1e-6, \
+        f"2 in was stored as {p['thickness']} mm — the box is labelled in: {p}"
+    assert abs(p["width"] - 40) < 1e-6 and abs(p["depth"] - 40) < 1e-6, \
+        f"the boxes the user did not touch moved: {p}"
+    page.click("#placePopup .pp-foot button")
+    assert page.errors == []
+
+
+def test_the_open_placement_popup_follows_a_unit_change(page, fresh_doc, server):
+    """It takes no modal lock, so Settings opens over it — the one other panel
+    (Section view) whose numbers have to be rewritten under the user's hands.
+    The millimetres are the STATE's: re-reading the box under the new unit
+    would leave the number alone and silently multiply what it means."""
+    place_a_plate(page)                                  # in mm
+    def width():
+        return float(page.evaluate(
+            "() => [...document.querySelectorAll('#placePopup .pp-field')]"
+            ".find(f => f.textContent.trim().startsWith('width'))"
+            ".querySelector('input').value"))
+    assert width() == 40
+    choose_unit(page, "in")
+    page.wait_for_timeout(400)
+    assert abs(width() - 40 / 25.4) < 5e-4, \
+        f"the open popup still reads {width()} after switching to inches"
+    assert "width (in)" in page.inner_text("#placePopup").lower(), \
+        "the label did not follow the unit"
+    p = params_of(page, "plate")
+    assert abs(p["width"] - 40) < 1e-6, \
+        f"switching the unit RESIZED the plate: {p}"
+    page.click("#placePopup .pp-foot button")
+    assert page.errors == []
+
+
+def test_the_polygons_side_count_is_never_converted(page, fresh_doc, server):
+    """`sides` is the one param in DEFAULTS that is not a length. Read as a
+    length in inches, 6 would become 152."""
+    choose_unit(page, "in")
+    page.locator("button.tab", has_text="Create").click()
+    page.wait_for_timeout(250)
+    page.click("#ribbon .rbtn[title='polygon_plate']")
+    page.wait_for_timeout(400)
+    cv = page.locator("#viewer canvas").bounding_box()
+    page.mouse.click(cv["x"] + cv["width"] * 0.5, cv["y"] + cv["height"] * 0.62)
+    page.wait_for_selector("#placePopup", state="visible", timeout=20000)
+    page.wait_for_timeout(600)
+    assert params_of(page, "polygon_plate")["sides"] == 6
+    page.evaluate("""
+      () => { const f = [...document.querySelectorAll('#placePopup .pp-field')]
+                .find(f => f.textContent.trim().startsWith('sides'));
+              const i = f.querySelector('input');
+              i.value = '8'; i.dispatchEvent(new Event('input', { bubbles: true })); }""")
+    page.wait_for_timeout(1500)
+    p = params_of(page, "polygon_plate")
+    assert p["sides"] == 8, f"the side count went through the unit: {p}"
+    assert abs(p["circumradius"] - 20) < 1e-6, p
+    page.click("#placePopup .pp-foot button")
     assert page.errors == []
