@@ -126,7 +126,7 @@ def _uncross(pts):
 _HAIR_MM = 0.01          # thinner than this, a wall is not geometry
 
 
-def _pull_apart(loops, gap=_HAIR_MM):
+def _pull_apart(loops, gap=_HAIR_MM, report=None):
     """Open a `gap` between loops of ONE sketch that come within a hair of
     each other. Returns the loops, the small ones moved.
 
@@ -193,8 +193,11 @@ def _pull_apart(loops, gap=_HAIR_MM):
     pairs = [(int(i), int(j))
              for i in np.argsort(size, kind="stable")   # smallest gives way
              for j in np.flatnonzero(box[i] & (size >= size[i])) if i != j]
+    stuck: list = []
+    moved = False
     for _ in range(4):
         moved = False
+        stuck = []
         for i, j in pairs:
             d, foot = _nearest_on_ring(arr[i], arr[j])
             # ...and the mirror question, when it can possibly matter. If a
@@ -221,6 +224,7 @@ def _pull_apart(loops, gap=_HAIR_MM):
                 if n < 1e-9:                  # exactly on the other outline
                     away, n = cij, float(np.hypot(*cij))
                     if n < 1e-9:
+                        stuck.append((i, j, float(d[v])))
                         continue
                 delta = foot[v] + away / n * gap - home
                 # ...ON the 0.001 mm grid the sketch is written on. Every
@@ -240,17 +244,65 @@ def _pull_apart(loops, gap=_HAIR_MM):
                 delta = snapped
                 span = 4.0 * float(np.hypot(*delta))   # the old room test,
                 if span < 1e-12:                       # read the other way
+                    stuck.append((i, j, float(d[v])))
                     continue
                 block = _hair_cluster(arr[i], int(v), span)
                 if block is None:             # the whole loop is sub-hair
+                    stuck.append((i, j, float(d[v])))
                     continue                  # — leave it as traced
                 if _walks_through_itself(arr[i], block, delta):
+                    stuck.append((i, j, float(d[v])))
                     continue                  # the loop's OWN far wall
                 arr[i][block] += delta
                 moved = True
         if not moved:
             break
+    if report is not None:
+        # In the round that moved NOTHING, every pair still inside the hair
+        # was one this pass gave up on, so `stuck` IS the residual and costs
+        # no extra pass. Only when the four rounds run out does it have to be
+        # measured, which is the rare case.
+        if moved:
+            stuck = []
+            for i, j in pairs:
+                d, _f = _nearest_on_ring(arr[i], arr[j])
+                if float(d.min()) < gap:
+                    stuck.append((i, j, float(d.min())))
+        report.extend(stuck)
     return [[(float(x), float(y)) for x, y in a] for a in arr]
+
+
+def _worst_residual(loops, stuck):
+    """How close the closest pair `_pull_apart` could NOT open really comes,
+    measured BOTH ways on the rounded coordinates `sketch.py` is handed.
+    `None` when it opened them all.
+
+    The guard gives way rather than turn a loop inside out, and when it does
+    it used to say nothing at all. A sliver squeezed between two bigger loops
+    is a fixed point for it: measured 2026-09-17 (round five), 2 of 960 ring
+    traces end still inside the hair by the guard's own test, the worst at
+    0.000259 mm, and running the pass eight more times does not improve them.
+    They build healthy today — and 0.000259 mm is exactly the pre-condition
+    that produced the pinch of round one. Reading it back off the FINAL
+    coordinates is the honest number: whatever the push measured, this is
+    what the sketch carries."""
+    if not stuck:
+        return None
+    rings: dict = {}
+    worst = None
+    for i, j, _d in stuck:
+        for k in (i, j):
+            if k not in rings:
+                p = _round_pts(loops[k])
+                rings[k] = np.asarray(p, float) if len(p) >= 3 else None
+        a, b = rings[i], rings[j]
+        if a is None or b is None:
+            continue
+        d1, _f = _nearest_on_ring(a, b)
+        d2, _f = _nearest_on_ring(b, a)
+        g = min(float(d1.min()), float(d2.min()))
+        worst = g if worst is None else min(worst, g)
+    return worst
 
 
 def _walks_through_itself(pts, block, delta) -> bool:
@@ -776,7 +828,8 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
                       for px, py in pts]) for o, pts in drawn]
     # no two loops of ONE sketch may meet: a pair that does pinches the face
     # into an open shell, valid and the right volume (REVIEW-QUEUE section 9)
-    apart = _pull_apart([pts for _outer, pts in drawn])
+    stuck: list = []
+    apart = _pull_apart([pts for _outer, pts in drawn], report=stuck)
     ents, n_holes = [], 0
     for (outer, _raw), pts in zip(drawn, apart):
         pts = _round_pts(pts)
@@ -799,12 +852,31 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
             "height_mm": round(max(ys) - min(ys), 2),
             "contours": len(ents) - n_holes, "holes": n_holes,
             "points": sum(len(e["points"]) for e in ents)}
+    # ...and when the guard could NOT open a pair, it says so instead of
+    # handing the sketch over as if it had. A pair that still MEETS is the
+    # banned failure — a pinched face that builds "successfully" as an open
+    # shell — so that one is refused; a pair merely inside the hair builds
+    # today and is reported, not refused.
+    tight = _worst_residual(apart, stuck)
+    if tight is not None and tight < _HAIR_MM:
+        if tight <= 0.0:
+            raise ValueError(
+                "two parts of this artwork meet at a point and the tracer "
+                "could not pull them apart — extruding it would make a "
+                "pinched, unusable solid. Trace it taller, or open the gap "
+                "in the picture where the two shapes touch")
+        info["tight_mm"] = round(tight, 6)
+        info["note"] = (
+            f"two parts of this artwork pass {tight * 1000:.2f} microns "
+            f"apart — thinner than the tracer can open. The sketch builds, "
+            f"but trace it taller if the extrude ever refuses."
+            + (" " + info["note"] if info.get("note") else ""))
     if welded is not None:
         # asked to weld the art into one piece, and it did not: say so rather
         # than hand back several pieces as if it had (LAUNCH-PLAN section 10)
         info["welded"] = bool(welded and info["contours"] == 1)
         if not info["welded"]:
-            info["note"] = (
+            info["note"] = (info.get("note", "") and info["note"] + " ") + (
                 f"the artwork is still {info['contours']} separate pieces — "
                 f"16 bridges were not enough to join it. Extrude it as it is, "
                 f"or close the gaps in the picture and trace it again.")

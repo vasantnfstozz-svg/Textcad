@@ -341,3 +341,63 @@ def test_the_push_never_walks_a_loop_through_itself():
     solid = sk.extrude_sketch(sk.make_sketch("XY", 0, ents), 2.0)
     assert solid.is_valid
     assert inspector.health(solid) == []
+
+
+# The guard gives way rather than turn a loop inside out, and it used to say
+# NOTHING when it did. A sliver squeezed between two bigger loops is a fixed
+# point for it: 8 of 960 ring traces end still inside the hair (round six,
+# probes/imgtrace_r6_residual.py), the worst at 0.000255 mm — the very
+# distance that produced round one's pinch. They build healthy today; going
+# quiet about them is what produced two P0s.
+_TIGHT_RING = dict(radius=138, spokes=[(1.1317991019756732, 1),
+                                       (0.3325084868862962, 2),
+                                       (0.6333420393182404, 2),
+                                       (3.822255228295022, 1)], height=40.0)
+
+
+def test_the_guard_says_when_it_could_not_open_a_wall():
+    m = _ring_with_mixed_spokes(_TIGHT_RING["radius"], _TIGHT_RING["spokes"])
+    ents, info = imgtrace.image_to_entities(_png(m),
+                                            height_mm=_TIGHT_RING["height"])
+    assert 0.0 < info["tight_mm"] < imgtrace._HAIR_MM
+    assert "microns apart" in info["note"]
+    solid = sk.extrude_sketch(sk.make_sketch("XY", 0, ents), 2.0)
+    assert inspector.health(solid) == []
+
+
+def test_art_the_guard_opened_says_nothing():
+    """A trace whose loops are all clear carries no residual at all."""
+    m = _ring_with_mixed_spokes(119, [(2.390072, 1), (0.839769, 1)])
+    _ents, info = imgtrace.image_to_entities(_png(m), height_mm=12.0)
+    assert "tight_mm" not in info and "note" not in info
+
+
+# A loop every edge of which is shorter than the push has nothing that can be
+# nudged rigidly, so `_hair_cluster` returns None and the guard leaves it as
+# traced. That is allowed; going quiet about it is not.
+_SPECK = [(0.0, 0.0), (0.003, 0.0), (0.0015, 0.0026)]
+_PLATE = [(-5.0, -5.0), (5.0, -5.0), (5.0, 0.0), (-5.0, 0.0)]
+
+
+def test_a_pair_the_guard_cannot_open_is_reported():
+    stuck = []
+    out = imgtrace._pull_apart([list(_SPECK), list(_PLATE)], report=stuck)
+    assert out[0] == _SPECK                      # it really did give up
+    assert stuck
+    assert imgtrace._worst_residual(out, stuck) == 0.0
+    clear = []
+    away = [(x, y + 0.004) for x, y in _SPECK]
+    out2 = imgtrace._pull_apart([list(away), list(_PLATE)], report=clear)
+    assert imgtrace._worst_residual(out2, clear) == pytest.approx(0.004)
+
+
+def test_artwork_whose_loops_still_meet_is_refused(monkeypatch):
+    """With the guard unable to nudge anything, round five's own picture —
+    whose two hole loops meet at exactly 0.000000000 mm — must come back as a
+    sentence, not as a sketch that extrudes into a pinched open shell."""
+    monkeypatch.setattr(imgtrace, "_hair_cluster",
+                        lambda pts, v, span: None)
+    m = _ring_with_mixed_spokes(131, [(5.825232830329833, 1),
+                                      (4.6218438148683765, 2)])
+    with pytest.raises(ValueError, match="meet at a point"):
+        imgtrace.image_to_entities(_png(m), height_mm=9.5)
