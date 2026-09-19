@@ -610,11 +610,25 @@ def _mask_from_image(img) -> np.ndarray:
 
     `_border_bright` reads that border PAST a thin shell of INK, because a
     scan's platen edge or a printed rule box fills it without being the
-    ground. A thin shell of PAPER is left alone: that is a margin."""
+    ground. A thin shell of PAPER is left alone: that is a margin.
+
+    An alpha channel only wins when it really CUTS the picture in two. The
+    test used to be `min(alpha) < 250` alone, and one flat opacity passes it:
+    a picture saved at 95% has alpha 242 everywhere, every pixel then reads
+    "foreground", and the tracer drew the picture's own frame and threw the
+    art away — a 90 px disc traced as a 26.60 x 19.93 mm rectangle where the
+    logo is 19.86 mm across, one piece, status ok, nothing said. Read from
+    the other end, 15% opacity put every pixel under the 128 cut and the
+    trace refused "no artwork found in the image" for a picture that plainly
+    has a logo in it (measured 2026-09-17, round seven). A channel with
+    nothing on one side of the cut carries no silhouette; the luminance does.
+    """
     if img is None:
         raise ValueError("could not decode the image — is it a PNG/JPG?")
     if img.ndim == 3 and img.shape[2] == 4 and int(img[:, :, 3].min()) < 250:
-        return (img[:, :, 3] > 128).astype(np.uint8)
+        cut = (img[:, :, 3] > 128).astype(np.uint8)
+        if 0 < int(cut.sum()) < cut.size:
+            return cut
     gray = (cv2.cvtColor(img[:, :, :3], cv2.COLOR_BGR2GRAY)
             if img.ndim == 3 else img)
     _, m = cv2.threshold(gray, 0, 1, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -680,8 +694,29 @@ def _traced_mask(data: bytes, height_mm: float, min_channel_mm: float = 0.0,
     six, probes/imgtrace_r6_gates.py) a disc beside five loose 1 px hairlines
     read aspect 1.0000 for art `connect_pieces` really draws at 2.1144, and
     on a 20 x 60 mm face the fit laid it down at 18.00 x 8.50 mm — 153 mm2
-    where standing it up gives 684."""
-    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
+    where standing it up gives 684.
+
+    `min_channel_mm` is the one knob with no bound on it, and the browser
+    never sends it — only the HTTP door and a script do. Unbounded it fails
+    both ways at once (measured 2026-09-17, round seven,
+    probes/imgtrace_r7_channel.py): the open erases the space AROUND the art
+    as readily as the recesses IN it, so a 30 mm channel on artwork 19.9 mm
+    across traced the picture's own 24.98 x 19.98 mm rectangle, one piece, no
+    holes, status ok and nothing said; and the cost is k**2 a pixel, so the
+    same knob at 60 mm on a 1500 x 1200 picture took 119.56 SECONDS for one
+    trace. So a channel that cannot be a recess in this artwork is refused
+    before the morphology runs, and a fill that spilled past the artwork's
+    own boundary is refused after it."""
+    try:
+        img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
+    except cv2.error:
+        # an empty or unreadable buffer makes OpenCV ASSERT, and its assertion
+        # is not a ValueError: a zero-byte file dragged into Trace Image put
+        # "OpenCV(5.0.0) ... (-215:Assertion failed) !buf.empty()" straight
+        # into the user's chat (measured 2026-09-17, round seven). The
+        # browser's own reader hands a 0-byte .png through as
+        # "data:image/png;base64," with nothing after the comma.
+        img = None
     solid, min_area = _traceable(_mask_from_image(img), height_mm)
     ys, xs = np.where(solid)
     mm_px = float(height_mm) / (int(ys.max()) - int(ys.min()) + 1)
@@ -689,13 +724,37 @@ def _traced_mask(data: bytes, height_mm: float, min_channel_mm: float = 0.0,
     if connect_pieces:
         solid, welded = _bridge_pieces(solid, max(3, int(0.6 / mm_px)))
     if min_channel_mm and min_channel_mm > 0:
+        box = _art_box(solid)
+        wide = min(box[1] - box[0] + 1, box[3] - box[2] + 1) * mm_px
+        if float(min_channel_mm) >= wide:
+            raise ValueError(
+                f"a {float(min_channel_mm):g} mm channel is as wide as this "
+                f"artwork, which measures {wide:.1f} mm across at "
+                f"{float(height_mm):g} mm tall — filling it would leave a "
+                f"plain rectangle. Set the channel to your end-mill diameter")
         k = int(min_channel_mm / mm_px) | 1
         field = 1 - solid
         field = cv2.morphologyEx(
             field, cv2.MORPH_OPEN,
             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
         solid = (1 - field).astype(np.uint8)
+        grew = _art_box(solid)
+        if (grew[0] < box[0] - 2 or grew[1] > box[1] + 2
+                or grew[2] < box[2] - 2 or grew[3] > box[3] + 2):
+            raise ValueError(
+                f"filling channels narrower than {float(min_channel_mm):g} mm "
+                f"swallowed the space AROUND this artwork, not just the "
+                f"recesses in it — the trace would come back as a plain "
+                f"rectangle. Use a smaller channel, or trace it bigger")
     return solid, min_area, mm_px, welded
+
+
+def _art_box(solid):
+    """(y0, y1, x0, x1) of the set pixels — the artwork's own bounding box"""
+    ys, xs = np.where(solid)
+    if not len(ys):
+        raise ValueError("no artwork found in the image")
+    return int(ys.min()), int(ys.max()), int(xs.min()), int(xs.max())
 
 
 def artwork_aspect(data: bytes, height_mm: float = 50.0,

@@ -632,3 +632,129 @@ def test_a_small_logo_inside_a_scan_edge_is_still_the_artwork(frac):
         f"{info['contours']} pieces and {info['holes']} holes is the PAPER, "
         f"not the logo")
     assert info["holes"] <= 1
+
+
+def _logo_on_a_card(alpha):
+    """A dark logo on a white card, saved RGBA with ONE opacity for the whole
+    picture — what an exporter writes when a layer's opacity is not 100%.
+    The alpha channel carries no silhouette at all: every pixel is the same."""
+    img = np.full((300, 400, 4), 255, np.uint8)
+    img[:, :, 3] = alpha
+    cv2.circle(img, (200, 150), 90, (10, 10, 10, alpha), -1)
+    return img
+
+
+@pytest.mark.parametrize("alpha", [249, 230, 200, 129])
+def test_one_flat_opacity_is_not_a_silhouette(alpha):
+    """`min(alpha) < 250` was the whole test for "this PNG has a real alpha
+    channel", and a picture saved at 95% opacity passes it with an alpha that
+    is the SAME everywhere. Every pixel then reads "foreground", so the
+    tracer drew the picture's own rectangle and threw the logo away: a 90 px
+    disc traced 26.60 x 19.93 mm — the whole 400 x 300 frame — instead of
+    19.86 x 19.86 mm, one piece, status ok, nothing said (measured
+    2026-09-17, round seven). An alpha channel that does not cut the picture
+    in two is not a silhouette; the luminance is."""
+    ents, info = imgtrace.image_to_entities(_png(_logo_on_a_card(alpha)),
+                                            height_mm=20)
+    assert info["width_mm"] == pytest.approx(19.9, abs=0.6), (
+        f"alpha {alpha} everywhere: traced {info['width_mm']} x "
+        f"{info['height_mm']} mm — that is the picture's own frame, not the "
+        f"logo")
+    area = sk.make_sketch("XY", 0, ents).area
+    assert area == pytest.approx(np.pi * 10 ** 2, rel=0.05), (
+        f"alpha {alpha} everywhere: {area:.1f} mm2 is not the disc")
+
+
+@pytest.mark.parametrize("alpha", [0, 40, 128])
+def test_one_flat_transparency_is_not_a_silhouette_either(alpha):
+    """The same rule read from the other end: a picture saved at 15% opacity
+    has an alpha under the 128 cut everywhere, so the mask came back EMPTY
+    and the tracer refused "no artwork found in the image" for a picture
+    that plainly has a logo in it."""
+    ents, info = imgtrace.image_to_entities(_png(_logo_on_a_card(alpha)),
+                                            height_mm=20)
+    assert info["width_mm"] == pytest.approx(19.9, abs=0.6)
+    assert sk.make_sketch("XY", 0, ents).area == pytest.approx(
+        np.pi * 10 ** 2, rel=0.05)
+
+
+def test_a_real_alpha_channel_still_wins():
+    """The guard must not take the alpha away from a picture that really uses
+    it: a disc cut out of a transparent background, and a full-bleed picture
+    whose only transparent pixels are a one-pixel border."""
+    img = np.zeros((300, 400, 4), np.uint8)
+    cv2.circle(img, (200, 150), 90, (255, 255, 255, 255), -1)
+    _e, info = imgtrace.image_to_entities(_png(img), height_mm=20)
+    assert info["width_mm"] == pytest.approx(19.9, abs=0.6)
+    bleed = np.full((300, 400, 4), 255, np.uint8)
+    bleed[0] = bleed[-1] = 0
+    bleed[:, 0] = bleed[:, -1] = 0
+    _e2, info2 = imgtrace.image_to_entities(_png(bleed), height_mm=20)
+    assert info2["contours"] == 1 and info2["holes"] == 0
+
+
+def test_an_empty_image_file_is_a_sentence_not_an_opencv_assertion():
+    r"""A zero-byte file dragged into Trace Image (a failed download, an empty
+    export) reaches `cv2.imdecode` as an empty buffer, and OpenCV's own
+    assertion is not a ValueError — so it went straight past
+    `image_to_entities` and `studio.trace_png` put the raw text in the user's
+    chat: "OpenCV(5.0.0) D:\a\opencv-python\...\loadsave.cpp:1291: error:
+    (-215:Assertion failed) !buf.empty() in function 'cv::imdecode_'"
+    (measured 2026-09-17, round seven). The browser's own reader hands a
+    0-byte .png through as "data:image/png;base64," with nothing after the
+    comma, so this is one drag away."""
+    with pytest.raises(ValueError) as exc:
+        imgtrace.image_to_entities(b"", height_mm=20)
+    assert "OpenCV" not in str(exc.value) and "Assertion" not in str(exc.value)
+
+
+def test_the_empty_file_reaches_the_user_as_a_sentence():
+    import base64
+    from fastapi.testclient import TestClient
+    import studio
+    studio.STATE["docs"].clear()
+    studio.STATE["active"] = None
+    studio.STATE["seq"] = 0
+    studio._new_tab(studio.sample_flange())
+    studio._rebuild_and_mesh()
+    client = TestClient(studio.app)
+    assert base64.b64decode("") == b""          # the browser's own payload
+    d = client.post("/api/trace-png", json={
+        "png_base64": "data:image/png;base64,",
+        "feature_id": "logo", "height_mm": 42})
+    assert d.status_code == 400
+    msg = d.json()["error"]
+    assert "OpenCV" not in msg and "Assertion" not in msg, msg
+
+
+def _slotted_bar(w=400, h=300):
+    m = np.zeros((h, w), np.uint8)
+    cv2.rectangle(m, (w // 8, h // 4), (w - w // 8, h - h // 4), 255, -1)
+    step = max(4, w // 20)
+    for x in range(w // 6, w - w // 6, step):
+        cv2.rectangle(m, (x, h // 4), (x + max(1, step // 4), h // 2), 0, -1)
+    return m
+
+
+@pytest.mark.parametrize("channel", [16.0, 20.0, 30.0, 60.0])
+def test_a_channel_wider_than_the_recesses_says_so(channel):
+    """`min_channel_mm` had no bound, and the browser never sends it — only
+    the HTTP door and a script do. The open erases the space AROUND the art
+    as readily as the recesses IN it: on artwork 19.9 mm across, a 30 mm
+    channel traced the picture's own 26.60 x 19.93 mm rectangle, one piece,
+    no holes, status ok and nothing said, and a 60 mm channel on a
+    1500 x 1200 picture took 119.56 SECONDS to do it (measured 2026-09-17,
+    round seven, probes/imgtrace_r7_channel.py)."""
+    data = _png(_slotted_bar())
+    with pytest.raises(ValueError) as exc:
+        imgtrace.image_to_entities(data, height_mm=20, min_channel_mm=channel)
+    assert "rectangle" in str(exc.value)
+
+
+@pytest.mark.parametrize("channel", [0.5, 2.0, 8.0, 12.0])
+def test_an_ordinary_channel_is_untouched_by_that_guard(channel):
+    data = _png(_slotted_bar())
+    _e, info = imgtrace.image_to_entities(data, height_mm=20,
+                                          min_channel_mm=channel)
+    assert info["width_mm"] == pytest.approx(39.7, abs=0.5)
+    assert info["height_mm"] == pytest.approx(19.9, abs=0.5)
