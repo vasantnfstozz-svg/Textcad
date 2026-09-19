@@ -219,6 +219,10 @@ export function cancelProfilePick() {} export function beginEdgePick() {}
 export function endEdgePick() {} export function clearPick() {}
 export function pickWhat() { return 'a sketch'; }
 export function profilePickArmed() { return false; }
+// the frontend review's section fix: tool.js calls this where it releases
+// the modal lock, so a tool ending its own arrow hands it back to an open
+// section rather than leaving the model cut open with nothing to drag.
+export function retakeSectionHandles() {}
 """
 # the browser globals tool.js touches AT IMPORT TIME, then the real module
 _BOOT = """
