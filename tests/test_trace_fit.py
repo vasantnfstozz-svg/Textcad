@@ -154,11 +154,17 @@ def test_a_margin_outside_its_range_says_so(margin):
     art on a 30 x 20 mm box and 1e9 put 993.80 mm of it there, both green and
     silent; a negative margin mirrored the art and rotated it."""
     client = _client()
-    d = client.post("/api/trace-png", json={
+    r = client.post("/api/trace-png", json={
         "png_base64": base64.b64encode(_png(_disc_png())).decode(),
         "entities_only": True, "fit_box": [30.0, 20.0, 0.0, 0.0],
-        "fit_margin": margin}).json()
+        "fit_margin": margin})
+    # 400, not 200: a route that answers a refusal with 200 tells a script the
+    # opposite of what happened (REVIEW-QUEUE section 12) — and this door
+    # answered 200 for every refusal it has
+    assert r.status_code == 400
+    d = r.json()
     assert "fit_margin" in (d.get("error") or ""), d
+    assert "features" not in d          # nothing changed; do not redraw
 
 
 def test_a_fit_box_that_is_not_four_numbers_says_so():

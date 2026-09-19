@@ -2565,7 +2565,13 @@ def trace_png(req: TracePngReq):
             ents, info = _trace_fitted(data, req, tuple(req.fit_box)
                                        if req.fit_box else None)
         except Exception as e:
-            return {"error": str(e)}
+            # 400, not 200: a route that answers a refusal with 200 tells a
+            # script the opposite of what happened (REVIEW-QUEUE section 12).
+            # The document is NOT sent with it — this door takes no snapshot
+            # and changes nothing, and a `features` key here would fire the
+            # browser's 'doc-updated' under an open sketch. `api.js` reads the
+            # body whatever the status, so the chat says the same sentence.
+            return JSONResponse(status_code=400, content={"error": str(e)})
         return {"entities": ents, "trace_info": info}
     _snapshot()
     try:
