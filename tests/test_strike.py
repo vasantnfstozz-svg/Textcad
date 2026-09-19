@@ -288,3 +288,105 @@ def test_strike_errors_speak(client):
     client.post("/api/feature/strike", json={"feature_id": "sk"})
     r = client.post("/api/feature/strike", json={"feature_id": "sk"}).json()
     assert "already struck out" in r["error"]
+
+
+# --- ROUND FIVE: a feature the restored one NAMES, not just one it eats ------
+#
+# `unstrike`'s upstream walk is built on one sentence -- "restoring an extrude
+# whose sketch is still struck would bring it back broken, so the sketch comes
+# back with it" -- and it walks `f.inputs`. A sweep's `path` and a pattern's
+# `seed` are REF_PARAMS: named, never consumed, and exactly as necessary. Both
+# `_path_part` and `delta_features` refuse a struck one outright, so "it hands
+# its input down" (the P5b rule that keeps a struck passthrough switched off)
+# cannot be true of a ref target -- it is needed AS ITSELF or not at all.
+#
+# Measured 2026-09-19, probes/s10_r5_strike_refs_and_door.py section A: ↩ on
+# the sweep restored the sweep alone and the row came back RED, "the path
+# sketch 'rail' is struck out".
+
+def _swept(client):
+    """a circle swept along a rail, the rail NAMED in `path` (specs/sweep.md)"""
+    client.post("/api/new", json={"name": "swept"})
+    client.post("/api/feature/add", json={
+        "id": "prof", "op": "sketch",
+        "params": {"plane": "XY", "offset": 0.0,
+                   "entities": [{"kind": "circle", "mode": "add",
+                                 "x": 0, "y": 0, "r": 5}]}, "inputs": []})
+    client.post("/api/feature/add", json={
+        "id": "rail", "op": "sketch",
+        "params": {"plane": "XZ", "offset": 0.0,
+                   "entities": [{"kind": "path", "closed": False,
+                                 "start": [0, 0],
+                                 "segments": [{"kind": "line",
+                                               "to": [0, 20]}]}]},
+        "inputs": []})
+    r = client.post("/api/feature/add", json={
+        "id": "sw", "op": "sweep", "params": {"path": "rail", "full": True},
+        "inputs": ["prof"]})
+    feats = {f["id"]: f for f in r.json()["features"]}
+    assert feats["sw"]["status"] == "ok", feats["sw"]["problems"]
+    return feats
+
+
+def test_restoring_a_sweep_restores_the_path_it_follows(client):
+    """MEASURED RED: with the rail switched off by hand, ↩ on the sweep put
+    back the sweep alone and the row read "the path sketch 'rail' is struck
+    out" -- the tool handed back a feature it knew could not build, which is
+    the one thing the upstream walk exists to prevent."""
+    before = _swept(client)["sw"]["volume"]
+    client.post("/api/feature/suppress",
+                json={"feature_id": "rail", "suppressed": True})
+    assert _feats(client)["sw"]["status"] == "failed"
+    client.post("/api/feature/strike", json={"feature_id": "sw"})
+    r = client.post("/api/feature/strike",
+                    json={"feature_id": "sw", "restore": True}).json()
+    assert "rail" in r["strike_plan"]["restored"], r["strike_plan"]
+    feats = _feats(client)
+    assert feats["sw"]["status"] == "ok", feats["sw"]["problems"]
+    assert feats["sw"]["volume"] == pytest.approx(before, rel=1e-9)
+
+
+def test_restoring_a_pattern_restores_the_feature_it_repeats(client):
+    """The same rule through the other REF_PARAMS door, a pattern's `seed`."""
+    client.post("/api/new", json={"name": "seeded"})
+    client.post("/api/feature/add", json={
+        "id": "body", "op": "plate",
+        "params": {"width": 40, "depth": 40, "thickness": 10}, "inputs": []})
+    client.post("/api/feature/add", json={
+        "id": "bore", "op": "with_center_hole", "params": {"radius": 3},
+        "inputs": ["body"]})
+    r = client.post("/api/feature/add", json={
+        "id": "pat", "op": "linear_pattern",
+        "params": {"count": 3, "dx": 8, "seed": "bore"}, "inputs": ["bore"]})
+    before = {f["id"]: f for f in r.json()["features"]}["pat"]["volume"]
+
+    client.post("/api/feature/suppress",
+                json={"feature_id": "bore", "suppressed": True})
+    assert _feats(client)["pat"]["status"] == "failed"
+    client.post("/api/feature/strike", json={"feature_id": "pat"})
+    r = client.post("/api/feature/strike",
+                    json={"feature_id": "pat", "restore": True}).json()
+    assert "bore" in r["strike_plan"]["restored"], r["strike_plan"]
+    feats = _feats(client)
+    assert feats["pat"]["status"] == "ok", feats["pat"]["problems"]
+    assert feats["pat"]["volume"] == pytest.approx(before, rel=1e-9)
+
+
+def test_a_ref_target_that_is_not_struck_is_left_exactly_as_it_is(client):
+    """The other direction, and the P5b rule it must not undo: ↩ may only add
+    a struck ref target, never touch one that is switched ON, and never drag
+    an unrelated struck row back with it."""
+    _swept(client)
+    client.post("/api/feature/add", json={
+        "id": "prof2", "op": "sketch",
+        "params": {"plane": "XY", "offset": 0.0,
+                   "entities": [{"kind": "circle", "mode": "add",
+                                 "x": 30, "y": 0, "r": 4}]}, "inputs": []})
+    client.post("/api/feature/strike", json={"feature_id": "prof2"})  # off on purpose
+    client.post("/api/feature/strike", json={"feature_id": "sw"})
+    r = client.post("/api/feature/strike",
+                    json={"feature_id": "sw", "restore": True}).json()
+    assert r["strike_plan"]["restored"] == ["sw"]
+    feats = _feats(client)
+    assert feats["prof2"]["suppressed"], "an unrelated struck row came back"
+    assert not feats["rail"]["suppressed"] and feats["sw"]["status"] == "ok"

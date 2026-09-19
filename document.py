@@ -1324,7 +1324,18 @@ class Document:
         the logo back on in designs/esp32-remote and milled 227 mm3 away from
         a part the user had switched it off in (P5b review, 2026-09-12).
         `_passthrough` decides "hands it down", which is the same rule the
-        delete plan heals with, so the two mechanisms still agree."""
+        delete plan heals with, so the two mechanisms still agree.
+
+        A feature the restored one NAMES (`param_refs`: a sweep's `path`, a
+        pattern's `seed`) is walked with its inputs and ALWAYS comes back —
+        "it hands its input down" cannot be true of a ref target, because
+        `_path_part` and `delta_features` both refuse a struck one outright.
+        Measured 2026-09-19 (probes/s10_r5_strike_refs_and_door.py): with the
+        rail switched off by hand, ↩ on the sweep put back the sweep alone and
+        the row came back RED, "the path sketch 'rail' is struck out" — the
+        broken restore this walk exists to prevent, in the one dependency it
+        was not walking. The delete plan already knew: striking the rail takes
+        the sweep with it (`lost_seed` in `remove_plan`)."""
         if not self.get(feature_id).suppressed:
             raise ValueError(f"'{feature_id}' is not struck out")
         plan = self.remove_plan(feature_id, "auto")
@@ -1342,11 +1353,13 @@ class Document:
             f = by_id.get(stack.pop())
             if f is None:
                 continue
-            for dep in f.inputs:
+            refs = set(self.param_refs(f))
+            for dep in list(f.inputs) + sorted(refs):
                 d = by_id.get(dep)
                 if d is None or not d.suppressed or dep in back:
                     continue
-                if self._passthrough(dep, still, by_id, kinds) is not None:
+                if (dep not in refs
+                        and self._passthrough(dep, still, by_id, kinds) is not None):
                     continue               # struck, but it passes its input down
                 back.add(dep)
                 still.discard(dep)
