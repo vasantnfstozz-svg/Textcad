@@ -2341,7 +2341,9 @@ def _trace_face_fit(req: TracePngReq):
     return (body_id, w, h, cx, cy)
 
 
-def _trace_fit_height(data: bytes, m_w: float, m_h: float, rounds: int = 5):
+def _trace_fit_height(data: bytes, m_w: float, m_h: float, rounds: int = 5,
+                      min_channel_mm: float = 0.0,
+                      connect_pieces: bool = False):
     """The trace height and the 90° rotate for art fitted into an
     `m_w` × `m_h` box — from the artwork's aspect measured AT the height the
     art will actually be traced at. -> (height_mm, rotated).
@@ -2363,17 +2365,27 @@ def _trace_fit_height(data: bytes, m_w: float, m_h: float, rounds: int = 5):
     whose own measured artwork really fits the box — a choice over a finite
     set, which terminates whether or not the iteration settles. Measured on
     that 12 × 14 face: the shipped rule lays the art down at 9.36 × 3.12 mm,
-    this one stands it up at 4.20 × 12.60 mm."""
+    this one stands it up at 4.20 × 12.60 mm.
+
+    The aspect is asked with the SAME knobs the trace will run with. The
+    bridges and the channel absorb both add material, and adding material
+    changes which contours clear the area gate: measured 2026-09-17 (round
+    six, `probes/imgtrace_r6_gates.py`) a disc beside five loose 1 px
+    hairlines reads aspect 1.0000 for art `connect_pieces` really draws at
+    2.1144, and on a 20 × 60 mm face this laid it down at 18.00 × 8.50 mm —
+    153 mm2 of the 684 standing it up gives."""
     tried: list[tuple[float, float]] = []
     height = 50.0                     # imgtrace's own default: the bootstrap
     for _ in range(max(1, rounds)):
         if tried:
             try:
-                aspect = imgtrace.artwork_aspect(data, height)
+                aspect = imgtrace.artwork_aspect(data, height, min_channel_mm,
+                                                 connect_pieces)
             except ValueError:
                 break                 # too small at THIS size — keep what we
         else:                         # have; the trace re-raises if it must
-            aspect = imgtrace.artwork_aspect(data, height)
+            aspect = imgtrace.artwork_aspect(data, height, min_channel_mm,
+                                             connect_pieces)
         tried.append((height, aspect))
         h0 = min(m_h, m_w / aspect)                    # as-is
         h90 = min(m_w, m_h / aspect)                   # long side along Y
@@ -2433,12 +2445,24 @@ def _trace_fitted(data: bytes, req: TracePngReq,
     if box:
         fw, fh, fcx, fcy = (float(v) for v in box)
         if fw <= 0 or fh <= 0:
-            raise ValueError("the fit box needs a positive width and height")
+            # the SAME sentence `_trace_face_fit` gives, because this is the
+            # SAME situation reached through the sketcher's door: the browser
+            # sends the server's own `fit_box`, and a face that holds no
+            # rectangle sends a zero one. Measured 2026-09-17 (round six,
+            # probes/imgtrace_r6_fitbox.py): a 400 x 0.5 mm sliver face at 45
+            # degrees does hold no box, and this door answered "the fit box
+            # needs a positive width and height" — an internal thing, in the
+            # user's chat, at the only door the browser has.
+            raise ValueError("that face is too thin to fit artwork onto — "
+                             "pick a bigger face, or trace without a face "
+                             "selected")
         # pick the trace height so the art fits the box both ways — measured
         # at the height it will BE traced at, because imgtrace's fidelity
         # floors run at the real scale and change which pieces exist
-        height, rotated = _trace_fit_height(data, req.fit_margin * fw,
-                                            req.fit_margin * fh)
+        height, rotated = _trace_fit_height(
+            data, req.fit_margin * fw, req.fit_margin * fh,
+            min_channel_mm=req.min_channel_mm,
+            connect_pieces=req.connect_pieces)
     ents, info = imgtrace.image_to_entities(
         data, height, req.tol_mm, req.min_channel_mm,
         connect_pieces=req.connect_pieces)
@@ -2472,7 +2496,11 @@ def _trace_fitted(data: bytes, req: TracePngReq,
             e["y"] = round(e["y"] + fcy, 3)
         info["width_mm"] = round(info["width_mm"] * s, 2)
         info["height_mm"] = round(info["height_mm"] * s, 2)
-        info["face_mm"] = [round(fw, 2), round(fh, 2)]
+        # the FIT BOX, not the face: on a 30 mm disc the face is 60 x 60 and
+        # this is 42 x 42. `face_mm` is kept beside it so a browser mid-flight
+        # keeps working; static/js/sketcher.js must move to `fit_mm` and the
+        # old key then goes.
+        info["fit_mm"] = info["face_mm"] = [round(fw, 2), round(fh, 2)]
         info["rotated"] = rotated
     return ents, info
 
