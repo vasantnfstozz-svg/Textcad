@@ -682,11 +682,24 @@ def test_the_coarea_question_is_what_actually_decides_a_refusal():
           t = 1.5, which `is_valid` already refuses two checks earlier.
 
     Both margins are pinned here so the next person cannot drift either number
-    without measuring again."""
+    without measuring again.
+
+    ROUND TWO, 2026-09-18, corrects the last line of that list. The lowest
+    WRONG coarea on record is not 2.7116: the same 100-hole plate at t = 3.0
+    hands back all but 0.96 mm3 of a 77.4 mm3 cavity and reads **1.4351**,
+    which is UNDER this bound and ABOVE the 1.3725 that the sound population
+    reaches. So these two populations overlap exactly as the `area * t` ones
+    do, and no constant on EITHER normaliser can separate them — which is why
+    the refusal that catches that result is
+    `assert_the_deepest_point_was_hollowed`, a theorem about the body in hand,
+    and not a third number. The bound is kept where it is because moving it
+    down to 1.43 would refuse the sound 1.3725 with almost no margin, and
+    because as the second half of an AND it can only ever allow."""
     assert sk._SHELL_COAREA_FACTOR >= 1.0283 * 1.25, "no margin over the highest SOUND result"
-    assert sk._SHELL_COAREA_FACTOR <= 2.7116 / 1.5, "no margin under the lowest WRONG one"
     assert sk._SHELL_COAREA_FACTOR >= 1.3725, \
         "under the highest sound coarea reading ever measured, in any direction"
+    assert 1.3725 < 1.4351 < sk._SHELL_COAREA_FACTOR, \
+        "the sound and wrong coarea populations overlap: see the docstring"
 
 
 def drilled_block(L: float, H: float, n: int, r: float, pitch: float):
@@ -786,6 +799,108 @@ def test_a_wrong_hollow_the_old_ceiling_of_2_let_through():
     with pytest.raises(ValueError, match="came back as the body itself") as ei:
         sk.shell(plate, 1.3)
     assert "32,858.3" in str(ei.value)
+
+
+def test_the_same_handback_goes_silent_once_the_wall_is_thick_enough():
+    """Round two, 2026-09-18. `walls / (area * t)` is the body's OWN
+    `volume / (area * t)` whenever the kernel hands the body back, so the 1.35
+    ceiling can only ever see a handback while `t < volume / (1.35 * area)`.
+    Every wrong result the ceiling was calibrated on was measured at t <= 1.3
+    on a body whose volume/area is 2.154 — walk the SAME plate past
+    32,858.407 / (1.35 * 15,254.867) = 1.596 mm and the same handback reads
+    under the ceiling and says nothing.
+
+    Measured against a Monte Carlo oracle over the ANALYTIC distance to a
+    drilled box's boundary — no OpenCASCADE, no closed form
+    (probes/shell_coarea_merge_probe.py --case flat100 --oracle 2000000):
+
+        t = 2.5   kernel 32,846.427, true 31,886.6 +/- 4.1  — 234 sigma out.
+                  12.0 mm3 of cavity where 971.8 mm3 had to go, and it reads
+                  0.8613 of its skin: the coarea question is never even asked
+        t = 3.0   kernel 32,857.445, true 32,781.0 +/- 1.2  — 64 sigma out.
+                  0.96 mm3 where 77.4 had to go, 0.7180 of its skin and 1.4351
+                  of its coarea: BOTH ratios under their own bounds
+
+    Neither ratio can see either one. The point the guard already measured
+    can: at depth 3.2426 (the middle of the cell the four holes leave, which
+    is 6/sqrt2 - 1 mm from all four) it comes back INSIDE the walls."""
+    plate = drilled_plate(1.0, 6.0)
+    area = plate.area
+    assert plate.volume / (area * sk._SHELL_SKIN_FACTOR) == pytest.approx(1.596, abs=1e-3)
+    for t, walls, skin, coarea in ((2.5, 32846.427, 0.8613, 1.7181),
+                                   (3.0, 32857.445, 0.7180, 1.4351)):
+        # the two ratios are BOTH under their bounds here — this is what makes
+        # the case, so it is measured and not assumed
+        assert walls / (area * t) == pytest.approx(skin, abs=1e-3)
+        assert skin < sk._SHELL_SKIN_FACTOR, "the first gate would have caught it"
+        with pytest.raises(ValueError, match="hollowed next to nothing") as ei:
+            sk.shell(plate, t)
+        assert "3.243 mm from every face that stays" in str(ei.value)
+    assert 1.4351 < sk._SHELL_COAREA_FACTOR, \
+        "at t = 3 the coarea reading is under its own bound too"
+
+
+def test_the_plate_that_the_kernel_does_hollow_is_untouched_by_the_new_check():
+    """The other direction of the same measurement: the same plate at 1.6 mm,
+    where the kernel is right. 24,362.544 against the same Monte Carlo oracle's
+    24,357.5 +/- 10.8 (0.5 sigma), and the deep point — the same one, depth
+    2.0000 there — comes back OUT of the walls."""
+    plate = drilled_plate(1.0, 6.0)
+    out = healthy(sk.shell(plate, 1.6))
+    assert out.volume == pytest.approx(24362.544, rel=1e-5)
+    assert abs(out.volume - 24357.5) < 5 * 10.8, "five sigma of the oracle"
+
+
+def test_the_deep_point_refuses_only_when_both_halves_say_so():
+    """Every gate of the new refusal, on one 50 x 50 x 30 box, because each of
+    them was put there by a measurement that would otherwise be a false
+    refusal.
+
+    A 14.9 mm wall leaves a 20.2 x 20.2 x 0.2 cavity — 0.109 per cent of the
+    body, under the "hollowed nothing" floor — so that is the result the point
+    is allowed to judge. A 3 mm wall hollows 62 per cent of it, and there the
+    point decides nothing however deep it claims to be: a kernel that drops a
+    sliver of cavity is not a kernel that handed the body back (the oneplus
+    case at t = 0.5 is a real one, 13 per cent hollowed with its deep point
+    still inside)."""
+    body = box()
+    in_the_wall = (0.0, 0.0, 14.0)             # the top wall spans z 12..15
+    roomy = sk.shell(body, 3.0, None, "inside", None)
+    assert (body.volume - roomy.volume) / body.volume > 0.5
+    sk.assert_the_deepest_point_was_hollowed(body, roomy, (9.0, in_the_wall, 1e-3),
+                                             3.0, "walls of 3 mm")
+    thin = sk.shell(body, 14.9, None, "inside", None)
+    assert (body.volume - thin.volume) / body.volume < sk._SHELL_NOTHING_HOLLOWED
+    with pytest.raises(ValueError, match="hollowed next to nothing"):
+        sk.assert_the_deepest_point_was_hollowed(body, thin, (20.0, in_the_wall, 1e-3),
+                                                 14.9, "walls of 14.9 mm")
+    # no margin: the same point in the same place says nothing
+    sk.assert_the_deepest_point_was_hollowed(body, thin, (14.9005, in_the_wall, 1e-3),
+                                             14.9, "walls of 14.9 mm")
+    # a point in the CAVITY is never a refusal, however deep it claims to be
+    sk.assert_the_deepest_point_was_hollowed(body, thin, (99.0, (0.0, 0.0, 0.0), 1e-3),
+                                             14.9, "walls of 14.9 mm")
+    # ... nor is a point that is not in the body this result came from: a body
+    # that MOVED on the way to the worker would weigh the same, and a closed
+    # hollow has no picks whose marks would notice
+    sk.assert_the_deepest_point_was_hollowed(body, thin, (99.0, (0.0, 0.0, 400.0), 1e-3),
+                                             14.9, "walls of 14.9 mm")
+
+
+def test_the_pre_kernel_guard_hands_its_point_on_instead_of_dropping_it():
+    """`assert_something_would_be_hollowed` measured that point already; the
+    whole cost of the new check is that it now RETURNS it. A refusal still
+    raises, and a body with nothing to measure still answers None."""
+    found = sk.assert_something_would_be_hollowed(box(), 3.0, [], "walls of 3 mm")
+    depth, at, tol = found
+    # it stops at the FIRST station deep enough, so the number is somewhere
+    # between the wall it allowed and the truth — never past the truth
+    assert 3.0 <= depth <= 15.0 + 1e-6, depth
+    assert sk.deepest_material(box(), 1e9)[0] == pytest.approx(15.0, abs=1e-6), \
+        "half the 30 mm box, when nothing stops the search early"
+    assert len(at) == 3 and tol > 0
+    with pytest.raises(ValueError, match="nothing would be hollowed"):
+        sk.assert_something_would_be_hollowed(box(), 20.0, [], "walls of 20 mm")
 
 
 def test_the_skin_ceiling_cannot_be_made_to_mean_anything_outward():
@@ -1041,6 +1156,35 @@ def test_the_climb_spends_what_it_measurably_needs_and_no_more():
             spent[0] = 0
             sk.deepest_material(solid, 1e9)            # t = infinity: always climbs
             assert 0 < spent[0] <= sk._DEPTH_CLIMB_CALLS, spent[0]
+
+
+def test_a_climb_stopped_by_its_budget_reads_lower_and_never_deeper():
+    """Round two, 2026-09-18: the other half of the budget question. 200 is
+    what the climb SPENDS on every body measured so far — but a body nobody has
+    built yet can exhaust it, and the only thing that matters then is which way
+    the answer moves.
+
+    It moves DOWN, and that is structural rather than lucky: out of budget,
+    `spend` answers exactly as "nothing could be measured" does, and every
+    depth this function ever keeps came back from the same exact
+    `BRepExtrema`, so a starved climb keeps a point it really measured and a
+    shorter walk simply stops earlier. A lower reading is a SAFER refusal (the
+    guard refuses walls the kernel might have built), never a deeper one (which
+    would let a body the wall does not fit reach the kernel and crash it).
+
+    Measured here on the body the third ranking exists for, at four budgets
+    down to zero, and on the plateau repro at one."""
+    post, wedge = plateau_pair(), wedge_in_slab()
+    full = sk.deepest_material(post, 1e9)[0]
+    assert full == pytest.approx(17.2160, abs=0.01), "the shipped answer moved"
+    with pytest.MonkeyPatch.context() as mp:
+        for budget, solid, top in ((30, post, full), (3, post, full), (0, post, full),
+                                   (0, wedge, 12.4444)):
+            mp.setattr(sk, "_DEPTH_CLIMB_CALLS", budget)
+            got = sk.deepest_material(solid, 1e9)[0]
+            assert got <= top + 1e-9, \
+                f"a climb starved to {budget} calls read {got}, DEEPER than {top}"
+            assert got > 0.0, "a starved climb must still answer the sample's own best"
 
 
 def test_a_plateau_station_scores_the_lowest_room_there_is():

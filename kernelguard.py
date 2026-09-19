@@ -633,7 +633,8 @@ def _worker_main() -> None:
             elif job["call"] == "shell":
                 openings = take(part.faces(), job["picks"], job["marks"], "face")
                 out = sketch.shell_after_guards(
-                    part, job["thickness"], job["direction"], openings, job["walls"])
+                    part, job["thickness"], job["direction"], openings,
+                    job["walls"], job.get("deep"))
             else:
                 raise ValueError(f"unknown job {job['call']!r}")
             export_brep(out, job["out"])
@@ -641,8 +642,17 @@ def _worker_main() -> None:
                  "notes": sketch.drain_notes()})
         except Exception as e:                      # OCP errors ARE Exceptions
             sketch.drain_notes()
+            # OUR ValueError is a sentence and crosses word for word. PYTHON's
+            # own — `float("")`, unpacking, an int() of a word — is a Python
+            # fact, and it used to cross as one: the parent re-raises whatever
+            # arrives with a `raise` statement in THIS directory, which is
+            # exactly what `_python_raised_it` reads, so the marker that tells
+            # the two apart could not see through the worker boundary and the
+            # raw Python text reached the feature row. It is read HERE, where
+            # the real traceback still exists.
+            ours = isinstance(e, ValueError) and not blocks._python_raised_it(e)
             say({"seq": seq, "ok": False,
-                 "error": str(e) if isinstance(e, ValueError) else blocks.plain_cause(e)})
+                 "error": str(e) if ours else blocks.plain_cause(e)})
 
 
 if __name__ == "__main__":
