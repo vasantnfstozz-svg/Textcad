@@ -469,15 +469,25 @@ export function traceIntoSketch() {
       const i = out.trace_info || {};
       bus.emit('msg', 'bot',
         `Traced "${f.name}" into this sketch — ${i.width_mm}×${i.height_mm}mm` +
-        // face_mm is the FIT BOX, not the face: the biggest rectangle that
+        // fit_mm is the FIT BOX, not the face: the biggest rectangle that
         // fits inside this face. On a 60 mm disc it is 42×42, and calling
-        // that "the face" is a wrong measurement in the user's chat.
-        (i.face_mm ? `, auto-fitted into the ${i.face_mm.join('×')}mm ` +
-                     `rectangle that fits inside this face` : '') +
+        // that "the face" is a wrong measurement in the user's chat. The
+        // server still sends the old name `face_mm` beside it; nothing reads
+        // it any more, so it can go.
+        (i.fit_mm ? `, auto-fitted into the ${i.fit_mm.join('×')}mm ` +
+                    `rectangle that fits inside this face` : '') +
         (i.rotated ? `, rotated 90° to run along the face (Mirror ↔ then ` +
                      `Mirror ↕ turns it 180°)` : '') +
         `, ${i.contours} outline(s), ${i.holes} hole(s). Move / Scale it if ` +
         `needed, then Finish Sketch and Extrude.`);
+      // The tracer's own sentence about the PART, on its own line so a long
+      // success message cannot bury it. imgtrace writes `note` when the weld
+      // could not join the art into one piece, and when two parts of it pass
+      // within a hair of each other ("the sketch builds, but trace it taller
+      // if the extrude ever refuses") — both are things to know before
+      // cutting, and neither had ever reached a user: this was the only call
+      // site of /api/trace-png and it printed every other field but this one.
+      if (i.note) bus.emit('msg', 'bot', `⚠ ${i.note}`);
     }
   };
   inp.click();

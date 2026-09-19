@@ -110,3 +110,75 @@ def test_the_chat_does_not_call_the_fit_box_the_face(page, fresh_doc, server,
     assert not re.search(r"\d+(\.\d+)?×\d+(\.\d+)?mm face", text), \
         f"the chat calls the fit box a face: {text[-400:]}"
     assert page.errors == []
+
+
+# ---------------------------------------------------------------------------
+# Round two: the tracer's own SENTENCE about the part, and the key it reads.
+#
+# imgtrace puts a `note` on trace_info for the two things the user has to know
+# before they cut: art the weld could not join into one piece, and two parts of
+# the art that pass within microns of each other ("the sketch builds, but trace
+# it taller if the extrude ever refuses"). /api/trace-png is called from exactly
+# one place in the app — traceIntoSketch — and that sentence printed
+# width/height/fit/rotated/contours/holes and DROPPED the note, so no user has
+# ever seen either warning.
+#
+# The note is grafted onto the REAL server response here rather than coaxed out
+# of a picture: whether imgtrace produces it is its own file's tests (this
+# reviewer may not touch imgtrace.py), and the defect under test is that the
+# browser throws the field away.
+# ---------------------------------------------------------------------------
+
+NOTE = ("two parts of this artwork pass 3.21 microns apart — thinner than "
+        "the tracer can open. The sketch builds, but trace it taller if the "
+        "extrude ever refuses.")
+
+
+def _graft(page, mutate):
+    """Let /api/trace-png answer for real, then change its trace_info."""
+    import json
+
+    def handler(route):
+        resp = route.fetch()
+        body = resp.json()
+        if isinstance(body, dict) and body.get("trace_info") is not None:
+            mutate(body["trace_info"])
+        route.fulfill(status=resp.status, content_type="application/json",
+                      body=json.dumps(body))
+
+    page.route("**/api/trace-png", handler)
+
+
+def test_the_tracers_note_reaches_the_user(page, fresh_doc, server, tmp_path):
+    """A warning about the part they are about to cut must be IN THE CHAT."""
+    def add_note(info):
+        info["tight_mm"] = 0.00321
+        info["note"] = NOTE
+
+    _graft(page, add_note)
+    _trace_onto_the_disc(page, _square_png(tmp_path / "sq.png"))
+    text = page.evaluate(CHAT)
+    assert "microns apart" in text, \
+        f"the tracer's note never reached the chat: {text[-600:]}"
+    assert "trace it taller" in text, \
+        f"the note reached the chat cut short: {text[-600:]}"
+    assert page.errors == []
+
+
+def test_the_fit_sentence_reads_the_servers_fit_mm(page, fresh_doc, server,
+                                                   tmp_path):
+    """`fit_mm` is the key that means the FITTED RECTANGLE; `face_mm` is the
+    old name kept beside it only until the browser moved over. With face_mm
+    gone the sentence must be unchanged — that is what lets the server retire
+    the old key."""
+    def drop_old_key(info):
+        info.pop("face_mm", None)
+
+    _graft(page, drop_old_key)
+    _trace_onto_the_disc(page, _square_png(tmp_path / "sq.png"))
+    text = page.evaluate(CHAT)
+    assert "auto-fitted" in text, f"no trace message in the chat: {text[-400:]}"
+    # 42 x 42 is the inscribed box of a 30 mm disc (studio._inscribed_box)
+    assert "42" in text, \
+        f"the fit rectangle is missing from the sentence: {text[-400:]}"
+    assert page.errors == []
