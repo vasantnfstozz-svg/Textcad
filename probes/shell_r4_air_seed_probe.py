@@ -21,7 +21,6 @@ material — and print the two answers and how many seeds were air.
     C:\\Python314\\python.exe probes/shell_r4_air_seed_probe.py --library
 """
 import argparse
-import json
 import os
 import sys
 from pathlib import Path
@@ -75,20 +74,14 @@ def bodies(library: bool):
         except Exception as e:                                   # noqa: BLE001
             print(f"  (fixture {p.stem}: {e})", flush=True)
     if library:
-        from document import Document
-        for p in sorted((ROOT / "designs").glob("*.tcad.json")):
-            doc = Document.from_data(json.loads(p.read_text(encoding="utf-8")))
-            doc.rebuild()
-            best = None
-            for fid in doc.leaf_solid_ids():
-                part = doc._parts.get(fid)
-                if part is None:
-                    continue
-                v = float(part.volume)
-                if best is None or v > best[1]:
-                    best = (part, v)
-            if best:
-                yield p.name[:-len(".tcad.json")], best[0]
+        # the .brep cache the verdict probe wrote: no design is rebuilt here
+        cache = Path(os.environ.get("TEXTCAD_R4_BODIES")
+                     or (ROOT / "probes" / "_r4_bodies"))
+        for p in sorted(cache.glob("*.brep")):
+            try:
+                yield p.stem, b3d.Part(b3d.import_brep(str(p)).wrapped)
+            except Exception as e:                               # noqa: BLE001
+                print(f"  (library {p.stem}: {e})", flush=True)
 
 
 def main() -> int:

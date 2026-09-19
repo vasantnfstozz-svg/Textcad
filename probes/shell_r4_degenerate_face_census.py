@@ -31,7 +31,9 @@ sys.path.insert(0, str(ROOT / "tests"))
 os.environ.setdefault("TEXTCAD_HISTORY_ROOT",
                       str(Path(os.environ.get("TEMP", ".")) / "tcad-r4-hist"))
 
-TINY = 1e-6            # mm2: a face this small cannot carry a trustworthy normal
+TINY = float(os.environ.get("TEXTCAD_R4_TINY") or 1e-6)   # mm2: a face this
+# small cannot carry a trustworthy normal. Raised by the environment to ask the
+# same question of the smallest faces a body DOES carry.
 BODY_S = 300.0
 
 

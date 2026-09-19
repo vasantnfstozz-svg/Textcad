@@ -30,7 +30,7 @@ os.environ.setdefault("TEXTCAD_HISTORY_ROOT",
                       str(Path(os.environ.get("TEMP", ".")) / "tcad-r4-hist"))
 
 TS = (0.5, 1.0, 2.0, 3.0)
-CHILD_S = 900.0
+CHILD_S = 200.0
 
 
 def state_of(solid, at) -> str:
@@ -103,12 +103,14 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--design")
     ap.add_argument("--out", default=str(ROOT / "probes" / "_r4_open_point_census.jsonl"))
+    ap.add_argument("--only")
     a = ap.parse_args()
     out_path = Path(a.out)
     if a.design:
         one(a.design, out_path, load_done(out_path))
         return 0
-    stems = sorted(p.stem for p in bodies_dir().glob("*.brep"))
+    stems = ([x for x in a.only.split(",")] if a.only else
+             sorted(p.stem for p in bodies_dir().glob("*.brep")))
     for stem in stems:
         for _attempt in range(3):
             before = len(load_done(out_path))
