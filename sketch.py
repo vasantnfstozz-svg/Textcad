@@ -2799,6 +2799,25 @@ _DEPTH_CLIMB_STEPS = 40
 # because the step halves out. 200 covers every one of them with margin, and
 # measured on the 330-face body it costs nothing at all: its climb stops itself
 # at 106 either way.
+#
+# 2026-09-18, round two: the ridge step in `_climb_to_the_deepest` spends more
+# — a seed that used to die on the medial axis now walks along it — so the
+# unstopped spend is 166 to 516 and 200 really is BINDING. It is kept, because
+# what it binds is the spending and not the ANSWER: measured at 200 against
+# 10,000 (probes/shell_depth_budget_headroom_probe.py), all four plateau bodies
+# and a 19 x 19 drilled plate of 367 faces — more faces than anything this has
+# ever been run on — answer to the last digit either way (12.4499, 15.4997,
+# 12.7125, 17.2242, 5.0639), while the unstopped runs want 189, 516, 440, 166
+# and 291.
+#
+# And when a budget is not enough, the answer moves DOWN, which is the safe
+# direction: the same 367-face plate reads 5.0639 at 200, 4.4594 at 120, 4.4570
+# at 30 and 4.2501 at 0 — never deeper, because out of budget `spend` answers
+# exactly as "nothing could be measured" does and every depth this keeps came
+# back from the same exact BRepExtrema. A lower reading refuses walls the
+# kernel might have built; a deeper one would hand a body the wall does not fit
+# to a kernel that segfaults on it. That ladder is also why 120 was not enough:
+# on a body nobody had built, it was 0.6 mm short.
 _DEPTH_CLIMB_CALLS = 200
 
 

@@ -40,12 +40,9 @@ def drilled(L, H, n, r, p):
 
 
 def main() -> int:
+    sys.path.insert(0, str(ROOT / "probes"))
     import sketch as sk
-    t0 = time.perf_counter()
-    solid = drilled(90.0, 24.0, 19, 0.5, 4.0)
-    print(f"{len(solid.faces())} faces, {solid.volume:,.3f} mm3 "
-          f"[{time.perf_counter() - t0:.0f}s build]", flush=True)
-
+    from shell_depth_plateau_seeds_probe import BODIES
     stations, spent = [0], [0]
     real = sk._climb_to_the_deepest
 
@@ -57,16 +54,24 @@ def main() -> int:
             return measure(q)
         return real(s, m, seen, best, tol)
 
+    cases = [(f"{name}", make, (10_000, 200)) for name, make in BODIES.items()]
+    cases.append(("drilled 19x19", lambda: drilled(90.0, 24.0, 19, 0.5, 4.0),
+                  (10_000, 200, 120, 30, 0)))
     sk._climb_to_the_deepest = counting
     try:
-        for budget in (10_000, 200, 120, 30, 0):
-            spent[0] = 0
-            sk._DEPTH_CLIMB_CALLS = budget
-            t1 = time.perf_counter()
-            got = sk.deepest_material(solid, 1e9)
-            print(f"  budget {budget:>6} -> depth {got[0]:9.4f}   spent "
-                  f"{spent[0]:>5}   stations measured {stations[0]:>5}   "
-                  f"[{time.perf_counter() - t1:.0f}s]", flush=True)
+        for name, make, budgets in cases:
+            t0 = time.perf_counter()
+            solid = make()
+            print(f"{name}: {len(solid.faces())} faces, {solid.volume:,.3f} mm3 "
+                  f"[{time.perf_counter() - t0:.0f}s build]", flush=True)
+            for budget in budgets:
+                spent[0] = 0
+                sk._DEPTH_CLIMB_CALLS = budget
+                t1 = time.perf_counter()
+                got = sk.deepest_material(solid, 1e9)
+                print(f"  budget {budget:>6} -> depth {got[0]:9.4f}   spent "
+                      f"{spent[0]:>5}   stations measured {stations[0]:>5}   "
+                      f"[{time.perf_counter() - t1:.0f}s]", flush=True)
     finally:
         sk._climb_to_the_deepest = real
         sk._DEPTH_CLIMB_CALLS = 200

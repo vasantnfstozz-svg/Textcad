@@ -1178,7 +1178,14 @@ def test_the_climb_spends_what_it_measurably_needs_and_no_more():
     seeds terminate early when the step halves out
     (probes/shell_depth_seed_starvation_probe.py). On the 330-face body the
     climb stops itself at 106 whichever budget it is given, so the rise costs
-    nothing there. Counted, not timed — wall-clock on this box swings 3x."""
+    nothing there. Counted, not timed — wall-clock on this box swings 3x.
+
+    ROUND TWO, 2026-09-18: the ridge step spends more (a seed that used to die
+    on the medial axis now walks along it), so the unstopped spend is 166 to
+    516 and the budget really is BINDING. What it binds is the spending and not
+    the answer — at 200 against 10,000 the four plateau bodies and a 367-face
+    drilled plate answer to the last digit either way — and the number is
+    pinned here so that stays a measurement. See `_DEPTH_CLIMB_CALLS`."""
     assert sk._DEPTH_CLIMB_CALLS == 200
     assert sk._DEPTH_CLIMB_CALLS < sk._DEPTH_CLIMB_SEEDS * 3 * (sk._DEPTH_CLIMB_STEPS + 1), \
         "a budget that nine seeds could not reach is not a budget"
@@ -1213,8 +1220,12 @@ def test_a_climb_stopped_by_its_budget_reads_lower_and_never_deeper():
     guard refuses walls the kernel might have built), never a deeper one (which
     would let a body the wall does not fit reach the kernel and crash it).
 
-    Measured here on the body the third ranking exists for, at four budgets
-    down to zero, and on the plateau repro at one."""
+    Measured on the biggest body this has been run on, a 19 x 19 drilled plate
+    of 367 faces (probes/shell_depth_budget_headroom_probe.py): 5.0639 at a
+    budget of 200 — which is the same answer an unstopped climb reaches, though
+    that one wants 291 calls — then 4.4594 at 120, 4.4570 at 30 and 4.2501 at
+    0. Never once deeper. Repeated here on the two plateau bodies, which are
+    cheap enough for the fast tier."""
     post, wedge = plateau_pair(), wedge_in_slab()
     full = sk.deepest_material(post, 1e9)[0]
     assert full == pytest.approx(17.2242, abs=0.01), "the shipped answer moved"
