@@ -501,6 +501,12 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 .pmrow.bad .pmval { color: #ff5d5d; }
 .pmrow span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pmrow .pmname, .pmrow .pmexpr, .pmrow .pmcomment { cursor: text; }
+/* "click to add a note" needs something to click. A parameter created without
+   one has an EMPTY cell, and an empty grid item in a row that centres rather
+   than stretches has no height at all: measured 76.39 × 0.00 px at a 420 px
+   column and 124.94 × 0.00 at 234, so a note could only ever be typed in the
+   Add row when the parameter was created, never afterwards. */
+.pmrow .pmcomment:empty::before { content: '+ note'; opacity: .45; }
 .pmrow .pmname { font-weight: 600; }
 .pmrow .pmexpr { font-family: ui-monospace, Consolas, monospace; }
 .pmrow .pmval { color: var(--accent); }

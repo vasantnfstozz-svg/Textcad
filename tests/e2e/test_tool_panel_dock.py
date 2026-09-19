@@ -503,3 +503,39 @@ def test_the_parameters_table_keeps_every_column_in_a_narrow_one(
         assert m[c] > 30, f"{c} is {m[c]} px wide in a {m['col']} px column: {m}"
     page.set_viewport_size({"width": 1200, "height": 800})
     assert page.errors == []
+
+
+def test_three_panels_and_both_splitters_at_their_widest_still_fit(
+        page, fresh_doc, server):
+    """The worst case round two's fix has to survive, now with the column
+    holding three panels: both panes saved at the LIMITS maximum (640 each),
+    which is the widest a drag can ever store. The saved width is a preference,
+    so it gives way — and it is still there when the window is wide again."""
+    page.evaluate("() => { localStorage.setItem('split-tree', '640');"
+                  " localStorage.setItem('split-chat', '640'); }")
+    page.reload()
+    page.wait_for_function("() => !!window.__vp", timeout=20000)
+    page.wait_for_timeout(1000)
+    setup(page)
+    pick_top(page)
+    open_params(page)
+    open_section(page)
+    open_extrude(page)
+    for w in (1600, 1280, 1100, 1024):
+        page.set_viewport_size({"width": w, "height": 760})
+        page.wait_for_timeout(500)
+        m = page.evaluate(ONSCREEN)
+        assert m["off"] == {}, \
+            f"at {w} px with both splitters at 640 and three panels: {m['off']}"
+    page.set_viewport_size({"width": 1920, "height": 900})
+    page.wait_for_timeout(600)
+    saved = page.evaluate("() => [localStorage.getItem('split-tree'),"
+                          " localStorage.getItem('split-chat')]")
+    assert saved == ["640", "640"], \
+        f"giving way threw the user's own widths away: {saved}"
+    wide = page.evaluate(
+        "() => document.getElementById('treePane').getBoundingClientRect().width")
+    assert wide > 500, f"the tree did not grow back on a wide window: {wide}"
+    page.evaluate("() => localStorage.clear()")
+    page.set_viewport_size({"width": 1200, "height": 800})
+    assert page.errors == []

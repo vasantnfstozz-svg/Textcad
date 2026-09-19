@@ -218,3 +218,144 @@ def test_a_length_box_does_not_drift_further_on_every_reopen(page, fresh_doc,
         f"the first inch round trip moved it too far: {in_inches}"
     assert len(set(in_inches)) == 1, f"it drifts on every reopen: {in_inches}"
     assert page.errors == []
+
+
+# ---------------------------------------------------------------------------
+# Round three's attack on the walk above: it is `querySelectorAll` over the page
+# AT REST, and three numeric boxes do not exist then. They are built by JS while
+# the user is working:
+#
+#   placement.js:68     the place-a-primitive popup's dimension and position
+#                       boxes (Create ▸ Box, then a click on the ground)
+#   sketcher.js:1941    the sketch's dimension editor beside a selected shape
+#   sketcher.js:2017    the sketch's draw-time dimension box
+#
+# Measured with the app in inches: the walk at rest found 29 boxes and none of
+# these. The two sketch ones are right — `toMm()` in, `unitLabel()` on the
+# label. The placement popup hard-writes "(mm)" and reads the number as
+# millimetres, so it is TRUTHFUL but it is the one model dimension in the app
+# that does not follow Settings ▸ Length unit: with the app in inches, a plate
+# placed at "width (mm) 40" is 40 mm while every other box is inches. Recorded
+# as an open item rather than changed here — it needs its own `settings-changed`
+# handler, which is a fourth one, and it is the same class as the feature
+# tree's raw-millimetre rows.
+#
+# This test walks the page again with each of those boxes actually on screen,
+# so the next runtime box cannot hide the way Sweep and Section did.
+# ---------------------------------------------------------------------------
+
+OPEN_SKETCH = """
+async (tool) => {
+  const sk = await import('/static/js/sketcher.js');
+  sk.openSketchEditor('XY');
+  await new Promise(r => setTimeout(r, 900));
+  sk.setSketchTool(tool);
+}
+"""
+SK = """
+async (a) => {
+  const [kind, x, y] = a;
+  const { bus } = await import('/static/js/bus.js');
+  if (kind === 'down') { bus.emit('sk3d-down', { x, y, tol: 1 }); bus.emit('sk3d-up', {}); }
+  else bus.emit('sk3d-move', { x, y, tol: 1, down: false });
+  await new Promise(r => setTimeout(r, 150));
+}
+"""
+
+# Every numeric box on the page RIGHT NOW, named so an id-less one still has a
+# stable key, with the unit exactly as the user reads it beside the box.
+WALK = """
+() => {
+  const out = [];
+  for (const inp of document.querySelectorAll('input[type=number]')) {
+    const row = inp.closest('label') || inp.parentElement;
+    const text = (row ? row.textContent : '').replace(/\\s+/g, ' ').trim();
+    const host = inp.closest('[id]');
+    const key = inp.id || ((host ? host.id : '?') + ':' +
+                           (inp.dataset.dim || text.split(/[\\s(]/)[0] || '?'));
+    const span = row && (row.querySelector('[data-unit]') || row.querySelector('.dimunit'));
+    const paren = text.match(/\\(([^)]*)\\)/);
+    out.push({ key, text,
+               unit: span ? span.textContent.trim() : (paren ? paren[1].trim() : null) });
+  }
+  return out;
+}
+"""
+
+# the runtime boxes, by the key above, and what each one is
+RUNTIME_LENGTHS = {"skDimDraw:r", "skDimEdit3d:r"}          # read with toMm()
+RUNTIME_COUNTS = set()                                       # `sides`, when a polygon is drawn
+# the placement popup: millimetres, and it says so — the open item above. The
+# dimension boxes carry "(mm)" each; the three position boxes are labelled
+# plain x / y / z under one "Position (mm)" heading.
+RUNTIME_MM_DIMS = {"placePopup:width", "placePopup:depth", "placePopup:thickness"}
+RUNTIME_MM_POS = {"placePopup:x", "placePopup:y", "placePopup:z"}
+RUNTIME_ALWAYS_MM = RUNTIME_MM_DIMS | RUNTIME_MM_POS
+
+
+def test_the_walk_also_sees_the_boxes_that_are_built_while_you_work(
+        page, fresh_doc, server):
+    choose_unit(page, "in")
+    at_rest = {b["key"] for b in page.evaluate(WALK)}
+
+    # --- the placement popup: Create ▸ Box, then a click on the ground ---
+    page.locator("button.tab", has_text="Create").click()
+    page.wait_for_timeout(250)
+    page.click("#ribbon .rbtn[title='plate']")
+    page.wait_for_timeout(400)
+    cv = page.locator("#viewer canvas").bounding_box()
+    page.mouse.click(cv["x"] + cv["width"] * 0.5, cv["y"] + cv["height"] * 0.62)
+    page.wait_for_selector("#placePopup", state="visible", timeout=20000)
+    page.wait_for_timeout(600)
+    walked = page.evaluate(WALK)
+    place = {b["key"] for b in walked} - at_rest
+    assert place, "the placement popup put no numeric box on the page"
+    assert not place - RUNTIME_ALWAYS_MM, \
+        ("the placement popup has numeric boxes in no class — say what each is: "
+         f"{sorted(place - RUNTIME_ALWAYS_MM)}")
+    for b in walked:
+        if b["key"] in RUNTIME_MM_DIMS:
+            assert b["unit"] == "mm", \
+                (f"{b['key']} is read as millimetres by placement.js and must "
+                 f"say so: {b}")
+    assert "position (mm)" in page.inner_text("#placePopup").lower(), \
+        "the position boxes are labelled plain x / y / z — only this heading " \
+        "tells the user they are millimetres"
+    page.click("#placePopup .pp-foot button")
+    page.wait_for_timeout(400)
+
+    # --- the sketch's draw-time box and its dimension editor ---
+    page.evaluate(OPEN_SKETCH, "circle")
+    page.evaluate(SK, ["down", 0, 0])
+    page.evaluate(SK, ["move", 10, 0])
+    page.wait_for_selector("#skDimDraw", state="visible", timeout=10000)
+    drawing = page.evaluate(WALK)
+    drew = {b["key"] for b in drawing} - at_rest
+    assert drew, "the draw-time dimension box put no numeric box on the page"
+    assert not drew - RUNTIME_LENGTHS - RUNTIME_COUNTS, \
+        ("the sketch's draw-time boxes are in no class: "
+         f"{sorted(drew - RUNTIME_LENGTHS - RUNTIME_COUNTS)}")
+
+    page.keyboard.type("12.5")
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(300)
+    # setSketchTool toggles, so this puts the draw tool away; then a click on
+    # the circle SELECTS it and its dimension editor appears beside it
+    page.evaluate("async () => (await import('/static/js/sketcher.js'))"
+                  ".setSketchTool('circle')")
+    page.wait_for_timeout(250)
+    page.evaluate(SK, ["down", 0, 0])
+    page.wait_for_selector("#skDimEdit3d", state="visible", timeout=10000)
+    editing = page.evaluate(WALK)
+    edited = {b["key"] for b in editing} - at_rest
+    assert edited, "the dimension editor put no numeric box on the page"
+    assert not edited - RUNTIME_LENGTHS - RUNTIME_COUNTS, \
+        f"the sketch's dimension editor is in no class: {sorted(edited)}"
+
+    # every runtime LENGTH says the unit it is read in, like every other box
+    for b in drawing + editing:
+        if b["key"] in RUNTIME_LENGTHS:
+            assert b["unit"] == "in", \
+                (f"{b['key']} is read with toMm() while the app is in inches "
+                 f"and says {b['unit']!r}: {b}")
+    assert page.errors == []

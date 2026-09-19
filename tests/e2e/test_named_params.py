@@ -210,3 +210,102 @@ def test_a_document_change_does_not_wipe_a_half_typed_formula(page, fresh_doc,
     assert rows(page)[0]["expr"] == "4" and rows(page)[0]["val"] == "= 4"
     assert doc(server)["parameters"][0]["value"] == 4
     assert not page.errors, page.errors
+
+
+# ---------------------------------------------------------------------------
+# Round three's attack on the fix above. Deferring the redraw is right, but it
+# makes the row a SNAPSHOT for as long as the cell is open — and a row was
+# already a snapshot between two redraws, because the panel is non-modal.
+# `/api/parameters` requires the formula, and the NOTE cell sent the formula
+# its row remembered.
+#
+# Measured 2026-09-19: bore = 6, the note cell opened, the formula changed to
+# 12.5 from elsewhere (the AI designer, MCP, an undo or a version restore all
+# reach it), Enter on the note — and the document went back to bore = 6. Typing
+# a comment silently undid a dimension, and every feature using `bore` rebuilt
+# at the old size. The same snapshot re-created a parameter deleted under the
+# edit, so a delete from elsewhere was quietly undone too.
+# ---------------------------------------------------------------------------
+
+SET_PARAM = """
+async (a) => {
+  const { postJSON } = await import('/static/js/api.js');
+  return await postJSON('/api/parameters', a);
+}
+"""
+DROP_PARAM = """
+async (name) => {
+  const { postJSON } = await import('/static/js/api.js');
+  return await postJSON('/api/parameters/remove', { name });
+}
+"""
+
+
+def test_a_parameter_with_no_note_yet_can_still_be_given_one(page, fresh_doc,
+                                                             server):
+    """The cell's own tooltip is "click to add a note", and an EMPTY one is a
+    grid item with no content in a row that centres rather than stretches:
+    measured 76.39 x 0.00 px at a 420 px column. There was nothing to click, so
+    a note could only ever be typed in the Add row as the parameter was made."""
+    page.evaluate(BUILD)
+    page.wait_for_timeout(1200)
+    open_params(page)
+    add_param(page, "bore", "6")
+    box = page.evaluate("""() => { const r = document.querySelector(
+        '#pmRows .pmrow .pmcomment').getBoundingClientRect();
+      return { w: r.width, h: r.height }; }""")
+    assert box["h"] > 8 and box["w"] > 20, \
+        f"the empty note cell has no box to click: {box}"
+    page.locator("#pmRows .pmrow .pmcomment").click(timeout=8000)
+    inp = page.locator("#pmRows .pmrow .pmcomment input")
+    inp.fill("checked on the mill")
+    inp.press("Enter")
+    page.wait_for_timeout(1500)
+    assert doc(server)["parameters"][0]["comment"] == "checked on the mill"
+    assert not page.errors, page.errors
+
+
+def test_typing_a_note_never_writes_back_the_formula_the_row_remembers(
+        page, fresh_doc, server):
+    page.evaluate(BUILD)
+    page.wait_for_timeout(1200)
+    open_params(page)
+    add_param(page, "bore", "6")
+    page.locator("#pmRows .pmrow .pmcomment").click()
+    inp = page.locator("#pmRows .pmrow .pmcomment input")
+    inp.fill("checked on the mill")
+
+    page.evaluate(SET_PARAM, {"name": "bore", "expr": "12.5"})   # from elsewhere
+    page.wait_for_timeout(1500)
+    assert doc(server)["parameters"][0]["expr"] == "12.5"
+
+    inp.press("Enter")
+    page.wait_for_timeout(1800)
+    p = doc(server)["parameters"][0]
+    assert p["expr"] == "12.5" and p["value"] == pytest.approx(12.5), \
+        f"typing a note put the formula back to what the row remembered: {p}"
+    assert p["comment"] == "checked on the mill", f"the note was not saved: {p}"
+    assert not page.errors, page.errors
+
+
+def test_a_parameter_deleted_under_an_edit_is_not_re_created_by_it(
+        page, fresh_doc, server):
+    page.evaluate(BUILD)
+    page.wait_for_timeout(1200)
+    open_params(page)
+    add_param(page, "bore", "6")
+    page.locator("#pmRows .pmrow .pmexpr").click()
+    inp = page.locator("#pmRows .pmrow .pmexpr input")
+    inp.fill("9")
+
+    page.evaluate(DROP_PARAM, "bore")           # deleted from elsewhere
+    page.wait_for_timeout(1500)
+    assert doc(server)["parameters"] == []
+
+    inp.press("Enter")
+    page.wait_for_timeout(1500)
+    assert doc(server)["parameters"] == [], \
+        "the edit brought a deleted parameter back"
+    assert "not in this design any more" in page.text_content("#chatLog")
+    assert rows(page) == [], "the table still shows a parameter that is gone"
+    assert not page.errors, page.errors

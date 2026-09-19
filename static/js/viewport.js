@@ -1641,26 +1641,47 @@ export function beginSection(axis, offset, flip, onDrag, onCommit,
   section.plane.constant = sectionConstant(o);
   renderer.localClippingEnabled = true;
   for (const m of sectionMaterials()) applySectionTo(m);
-  const x = a === 'X' ? [0, 1, 0] : [1, 0, 0];
-  const y = a === 'Z' ? [0, 1, 0] : [0, 0, 1];
-  if (handles) {
-    const origin = fitCenter.toArray(); origin[idx] = o;
-    beginPlaneQuad({ origin, x_dir: x, y_dir: y, z_dir: SECTION_AXES[a] },
-      Math.max(fitRadius * 1.2, 20));
-    const O = fitCenter.toArray(); O[idx] = 0;     // the arrow rides: base = O + axis·offset
-    beginExtrudeArrow(O, SECTION_AXES[a], o,
-      v => { setSectionOffset(v); if (onDrag) onDrag(v); },
-      v => { setSectionOffset(v); if (onCommit) onCommit(v); },
-      v => v);
-  }
+  // the callbacks the panel gave us, kept so the handles can be built again
+  // when a tool that borrowed them lets go (retakeSectionHandles below)
+  section.handles = handles ? { onDrag, onCommit } : null;
   // which quad and which arrow are OURS — null when a tool already had them.
   // A tool that opens afterwards calls beginPlaneQuad / beginExtrudeArrow and
   // takes them for its session, and then these no longer match: that is how
   // endSection and setSectionOffset know not to reach into an open tool and
   // move or delete the handle it is being dragged by.
-  section.ownQuad = handles ? planeQuad : null;
-  section.ownArrow = handles ? exArrow : null;
+  section.ownQuad = null;
+  section.ownArrow = null;
+  if (handles) sectionHandles();
   return { offset: o };
+}
+/* the gold quad and the drag arrow, placed for the section as it now stands */
+function sectionHandles() {
+  const { axis: a, idx, offset: o, handles: cb } = section;
+  const x = a === 'X' ? [0, 1, 0] : [1, 0, 0];
+  const y = a === 'Z' ? [0, 1, 0] : [0, 0, 1];
+  const origin = fitCenter.toArray(); origin[idx] = o;
+  beginPlaneQuad({ origin, x_dir: x, y_dir: y, z_dir: SECTION_AXES[a] },
+    Math.max(fitRadius * 1.2, 20));
+  const O = fitCenter.toArray(); O[idx] = 0;       // the arrow rides: base = O + axis·offset
+  beginExtrudeArrow(O, SECTION_AXES[a], o,
+    v => { setSectionOffset(v); if (cb.onDrag) cb.onDrag(v); },
+    v => { setSectionOffset(v); if (cb.onCommit) cb.onCommit(v); },
+    v => v);
+  section.ownQuad = planeQuad;
+  section.ownArrow = exArrow;
+}
+/* ...and the other half of that ownership rule: when the tool lets the shared
+   gizmos GO they belong to the section again. The tool ends its own arrow, and
+   its own arrow IS the section's — measured 2026-09-19: Section on, Extrude
+   opened on a picked face and Cancelled, and the model stayed cut open with
+   the gold plane still there and NO arrow, which is what the section panel
+   tells you to drag. Only Axis or Flip brought one back. tool.js calls this
+   where it releases the modal lock, so every tool built on that framework is
+   covered without knowing the section exists. */
+export function retakeSectionHandles() {
+  if (!section || !section.handles) return;
+  if (planeQuad === section.ownQuad && exArrow === section.ownArrow) return;
+  sectionHandles();
 }
 /* the plane and the quad follow a new offset; the arrow rides by itself */
 export function setSectionOffset(o) {
