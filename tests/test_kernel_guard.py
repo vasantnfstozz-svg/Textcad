@@ -213,6 +213,59 @@ def test_a_shell_through_the_worker_opens_the_face_that_was_picked():
     assert skin(open_top, lo), "the BOTTOM was opened instead of the top"
 
 
+def _shell_job(**over) -> dict:
+    job = {"thickness": 14.9, "direction": "inside", "walls": "walls of 14.9 mm",
+           "deep": None, "picks": [], "marks": [],
+           "crashed": "crashed", "stopped": "stopped <minutes>"}
+    job.update(over)
+    return job
+
+
+def test_the_deep_point_travels_to_the_worker_and_is_asked_there():
+    """`assert_something_would_be_hollowed` measures a point of material deeper
+    than the wall BEFORE the kernel, and since 2026-09-18 the result is asked
+    about it afterwards — but the kernel half runs in the WORKER, so the point
+    has to cross with the job or the question is never put.
+
+    The same body, the same thickness, twice: without the point the worker
+    hollows a 50 x 50 x 30 box at 14.9 mm as it always has (a 20.2 x 20.2 x 0.2
+    cavity, 0.109 per cent of the body); with a point that is inside the walls
+    it must refuse. Nothing else differs, so a refusal here can only have come
+    from the point arriving."""
+    b = Part(Box(50, 50, 30).wrapped)
+    out, _notes = kernelguard.call("shell", b, _shell_job())
+    assert 50 * 50 * 30 - out.volume == pytest.approx(20.2 * 20.2 * 0.2, rel=1e-6)
+    # (0, 0, 14) is inside the top wall, which spans z 12..15
+    with pytest.raises(ValueError, match="hollowed next to nothing"):
+        kernelguard.call("shell", b, _shell_job(deep=[20.0, [0.0, 0.0, 14.0], 1e-3]))
+
+
+def test_a_python_valueerror_from_inside_the_worker_is_not_read_as_our_sentence():
+    """`_python_raised_it` tells OUR plain refusals from Python's own by the
+    bytecode at the innermost frame — a `raise` we wrote against a `CALL` or a
+    format that Python failed on. Across the worker that frame is GONE: the
+    parent re-raises whatever text arrives with a `raise` statement in this
+    directory, which reads as ours, so a Python fact used to reach the feature
+    row word for word. It is read in the worker now, where the real traceback
+    still exists.
+
+    The door: a blend value that is not a number. The kernel refuses it, and
+    the refusal's own sentence then formats it with `:g`, which is Python
+    raising `Unknown format code 'g' for object of type 'str'` from inside
+    blocks.py."""
+    b = box()
+    edges = b.edges()
+    job = {"kind": "fillet", "value": "big", "unit": "Radius",
+           "picks": kernelguard.indices(edges, [edges[0]]),
+           "marks": kernelguard._marks([edges[0]]),
+           "crashed": "crashed", "stopped": "stopped <minutes>"}
+    with pytest.raises(ValueError) as ei:
+        kernelguard.call("blend", b, job)
+    said = str(ei.value)
+    assert "format code" not in said, said
+    assert said == blocks.NOT_A_SENTENCE, said
+
+
 def test_a_pick_that_does_not_match_on_the_other_side_is_refused_not_guessed():
     """`take` is the check that the worker is holding the shape the parent
     picked. If it ever disagrees, the step must FAIL — never fall back to
@@ -437,7 +490,13 @@ def test_a_worker_printing_noise_cannot_hold_the_budget_open():
             kernelguard._Worker.answer(stub, 9, 0.4)
     finally:
         stop.set()
-    assert 0.4 <= time.perf_counter() - t0 < 3.0
+    # the budget is spent on the AWAKE clock and this is timed on
+    # `perf_counter`, and those are two different clocks: `_awake_s` reads
+    # QueryUnbiasedInterruptTime, which ticks 0.05 to 15.8 ms at a time (its
+    # own docstring), so a 0.4 s budget can read as 0.3976 s here and did on
+    # 2026-09-18. One tick of slack, or this test fails for the reason the
+    # clock exists.
+    assert 0.4 - 0.016 <= time.perf_counter() - t0 < 3.0
 
 
 def test_the_awake_clock_is_the_one_windows_stops_at_suspend():

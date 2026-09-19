@@ -2621,6 +2621,20 @@ _SHELL_SKIN_FACTOR = 1.35
 # below the lowest WRONG one — and because the gate is an AND, this can only
 # ever ALLOW more than the ratio alone did: no shell that builds today is
 # refused by adding it.
+#
+# 2026-09-18, round two of that review: the last sentence of the paragraph
+# above is the one to keep and the one before it is not. The lowest WRONG
+# reading on record is **1.4351**, not 2.7116 — the same 100-hole plate at
+# t = 3.0, where the kernel hands back all but 0.96 mm3 of a 77.4 mm3 cavity
+# (probes/shell_coarea_merge_probe.py, against a Monte Carlo oracle over the
+# analytic distance to a drilled box). That is UNDER this bound and ABOVE the
+# 1.3725 the sound population reaches, so these two populations overlap
+# exactly as the `area * t` ones do and no constant on either normaliser can
+# separate them. The number is left where it is — moving it to 1.43 would
+# refuse a sound 1.3725 with no margin at all, and as the second half of an
+# AND it can only ever allow — and the result that neither ratio can see is
+# refused by `assert_the_deepest_point_was_hollowed` instead, which asks about
+# the body in hand rather than about a population.
 _SHELL_COAREA_FACTOR = 1.5
 
 
@@ -2651,8 +2665,15 @@ def assert_walls_could_be_a_skin(solid, out, t: float, direction: str, walls: st
     one, which is why the first ratio alone cannot decide — measured, a
     perfectly correct shell of a deeply drilled plate reaches 1.8229 of
     `area * t`, past the lowest WRONG result on record, while its walls over
-    the mean of the two surfaces read 1.0155 where every wrong result reads
-    1.9183 or more.
+    the mean of the two surfaces read 1.0155 where the wrong results this pair
+    was built on read 1.9183 or more.
+
+    Neither question is a fence, and since round two of this review neither is
+    the last word: a wrong result can read UNDER both (0.7180 and 1.4351 on
+    the 100-hole plate at t = 3.0 — see `_SHELL_COAREA_FACTOR` and
+    `assert_the_deepest_point_was_hollowed`, which is the check that catches
+    it). These two stay because they are cheap and they own the cases they
+    were measured on.
 
     OUTSIDE shells are not judged here, and since 2026-09-17 that is a
     measurement and not an omission. The same corpus at the same nine
@@ -2778,6 +2799,25 @@ _DEPTH_CLIMB_STEPS = 40
 # because the step halves out. 200 covers every one of them with margin, and
 # measured on the 330-face body it costs nothing at all: its climb stops itself
 # at 106 either way.
+#
+# 2026-09-18, round two: the ridge step in `_climb_to_the_deepest` spends more
+# — a seed that used to die on the medial axis now walks along it — so the
+# unstopped spend is 166 to 516 and 200 really is BINDING. It is kept, because
+# what it binds is the spending and not the ANSWER: measured at 200 against
+# 10,000 (probes/shell_depth_budget_headroom_probe.py), all four plateau bodies
+# and a 19 x 19 drilled plate of 367 faces — more faces than anything this has
+# ever been run on — answer to the last digit either way (12.4499, 15.4997,
+# 12.7125, 17.2242, 5.0639), while the unstopped runs want 189, 516, 440, 166
+# and 291.
+#
+# And when a budget is not enough, the answer moves DOWN, which is the safe
+# direction: the same 367-face plate reads 5.0639 at 200, 4.4594 at 120, 4.4570
+# at 30 and 4.2501 at 0 — never deeper, because out of budget `spend` answers
+# exactly as "nothing could be measured" does and every depth this keeps came
+# back from the same exact BRepExtrema. A lower reading refuses walls the
+# kernel might have built; a deeper one would hand a body the wall does not fit
+# to a kernel that segfaults on it. That ladder is also why 120 was not enough:
+# on a body nobody had built, it was 0.6 mm short.
 _DEPTH_CLIMB_CALLS = 200
 
 
@@ -3002,19 +3042,18 @@ def _seeds_for_the_climb(seen: list, deepest: float, tol: float) -> list:
     17.2160 (17.2047), the 180 mm draft prism unchanged at 15.3405, the ramped
     plate unchanged at 12.2987 — that last one is the climb's own limit and not
     the seeding's: climbing all 160 of its stations reaches 12.2987 too. Those
-    numbers are what the SHIPPED code answers; they were first written down
-    from a run with no budget on the climb, and until 2026-09-17's review the
-    budget of 120 meant the shipped code answered 12.4156 and 17.0000 instead
-    (see `_DEPTH_CLIMB_CALLS`).
+    numbers are what the code answered until 2026-09-18; they were first
+    written down from a run with no budget on the climb, and until
+    2026-09-17's review the budget of 120 meant the shipped code answered
+    12.4156 and 17.0000 instead (see `_DEPTH_CLIMB_CALLS`).
 
-    The ramped plate is worth one more line, because it is the one live cost of
-    the residual: the kernel builds walls of 12.36, 12.43, 12.49, 12.56 and
-    12.62 mm on it SOUND — cavities of 42.9 down to 2.7 mm3, valid, watertight,
-    health clean — and this guard refuses all five, saying "walls must be under
-    12.2987 mm" (probes/shell_depth_residual_band_probe.py). Fixing it is not a
-    seeding change: the climb steps away from the ONE nearest point, which
-    stalls where the inscribed sphere touches on two sides at once, and that is
-    a different piece of work."""
+    The ramped plate was the one live cost of that residual — the kernel builds
+    walls of 12.36 to 12.62 mm on it SOUND while this guard refused all of them
+    — and it was NOT a seeding fault, exactly as this paragraph said: the climb
+    stalled where the inscribed sphere touches on two sides at once. Round two
+    of the review closed it in the climb itself, so the shipped answers are now
+    12.4499, 17.2242, 15.4997 and 12.7125 (the ramped plate's exact inscribed
+    radius is 12.713 by hand) — see `_climb_to_the_deepest`."""
     deep, room = [], []
     for d0, q0, bound in seen:
         deep.append((d0, d0, q0))
@@ -3060,6 +3099,30 @@ def _climb_to_the_deepest(solid, measure, seen: list, best: tuple, tol: float) -
     body is never taken. Several seeds because the field has one maximum per
     medial branch and the best sample need not sit on the right one —
     `_seeds_for_the_climb` says which, and why depth alone is not the question.
+
+    "Away from the face nearest it" is the gradient of this field wherever the
+    field is smooth, and it stops being smooth on the MEDIAL AXIS, where the
+    sphere touches on two sides at once: the step then walks into the second
+    wall, the distance does not rise, the step halves and the seed dies on the
+    ridge instead of walking along it. That was the residual the 2026-09-16
+    review declared and the 2026-09-17 one measured but did not close — the
+    ramped plate, where the guard answered 12.2987 and refused walls of 12.36,
+    12.43, 12.49, 12.56 and 12.62 mm that the kernel builds SOUND. Round two
+    closes it with the bisector step in the loop below, for no new machinery
+    and no new constant: the largest circle of that plate's section touches
+    three edges at a radius of 12.713 by hand, and the climb now answers
+    12.7125 (probes/shell_depth_ridge_climb_probe.py). The prism reads 15.4997
+    where it read 15.3405, the wedge in the slab 12.4499 where it read 12.4444.
+
+    A climb that reads DEEPER allows more, so every wall it newly allows was
+    put to the kernel (probes/shell_depth_ridge_allowed_probe.py) over the four
+    plateau bodies, the gauntlet corpus and the four committed crash fixtures:
+    **12 newly allowed walls BUILD and are sound** — the ramped plate's own
+    band at cavities of 33.934, 14.982 and 3.733 mm3 — **16 the kernel refuses
+    with a sentence, and nothing crashed or came back unsound.** The crash
+    fixtures do not move at all: the oneplus case, the impeller, the sliver
+    plate, my-part-5's mirror body and the clipped ball answer exactly what
+    they answered before, so a body that segfaults OCCT gains no new door.
 
     This can only ever RAISE the answer — it accepts a point only when that
     point measures deeper, by the same exact `BRepExtrema` the stations use —
@@ -3110,7 +3173,30 @@ def _climb_to_the_deepest(solid, measure, seen: list, best: tuple, tol: float) -
             got = (None, None) if outside(cand) else spend(cand)
             if got[0] is not None and got[0] > d:
                 q, d, near = cand, got[0], got[1]
-            else:
+                continue
+            # The step failed, which on this field usually means the inscribed
+            # sphere has reached a RIDGE and touches on two sides at once:
+            # walking away from one wall walks into the other. The way on is
+            # the bisector of the two, and both directions are already in hand
+            # — the failed candidate was measured, so its own nearest point
+            # came back with it. `u1 + u2` rises against BOTH walls to first
+            # order, since (u1+u2).u1 = 1 + u1.u2 > 0 unless they are exactly
+            # opposite, which is a slab and has no ridge to walk.
+            took = False
+            if got[1] is not None:
+                u1 = away * (1.0 / reach)
+                away2 = cand - got[1]
+                if away2.length > 1e-9:
+                    u2 = away2 * (1.0 / away2.length)
+                    ridge = u1 + u2
+                    # the same wall again would just repeat the step that failed
+                    if u1.dot(u2) < 0.99 and ridge.length > 1e-6:
+                        alt = q + ridge * (step / ridge.length)
+                        alt_got = (None, None) if outside(alt) else spend(alt)
+                        if alt_got[0] is not None and alt_got[0] > d:
+                            q, d, near = alt, alt_got[0], alt_got[1]
+                            took = True
+            if not took:
                 step *= 0.5
                 if step <= tol * 0.25:
                     break                 # the sphere touches on every side
@@ -3119,7 +3205,8 @@ def _climb_to_the_deepest(solid, measure, seen: list, best: tuple, tol: float) -
     return best
 
 
-def assert_something_would_be_hollowed(solid, t: float, openings: list, walls: str) -> None:
+def assert_something_would_be_hollowed(solid, t: float, openings: list,
+                                       walls: str) -> tuple | None:
     """An inward shell of a body that is thin EVERYWHERE — relative to the wall
     asked for — has nothing to hollow, and asking the kernel anyway CRASHES it.
 
@@ -3139,18 +3226,166 @@ def assert_something_would_be_hollowed(solid, t: float, openings: list, walls: s
     point among them is refused. Measured 2026-09-16 over the gauntlet corpus,
     the four committed crash bodies and both finding bodies at seven
     thicknesses, closed and open: zero refusals of a shell the kernel built
-    sound (probes/shell_thin_wall_corpus.py)."""
+    sound (probes/shell_thin_wall_corpus.py).
+
+    Returns the `(depth, point, tol)` it allowed on, because that point is also
+    a statement about the RESULT — see `assert_the_deepest_point_was_hollowed`,
+    which is the whole reason this measurement is no longer thrown away. None
+    when there was nothing to measure."""
     found = deepest_material(solid, t, openings)
     if found is None:
-        return
+        return None
     depth, at, tol = found
     if depth >= t - tol:
-        return
+        return found
     raise ValueError(
         f"shell: nothing would be hollowed — {walls} meet in the middle of this body "
         f"everywhere: no point of it is more than {depth:.4g} mm from the faces that "
         f"stay (near x {at[0]:.3g}, y {at[1]:.3g}, z {at[2]:.3g}), so walls must be "
         f"under {depth:.4g} mm; use a thinner wall or open a face")
+
+
+def assert_the_deepest_point_was_hollowed(solid, out, deep, t: float, walls: str) -> None:
+    """The point the guard ALREADY measured, put to the result the kernel
+    returned. This is a theorem about this one body, not a constant calibrated
+    on a corpus of other people's bodies.
+
+    An inward shell keeps exactly the material within `t` of the faces that
+    stay, so a point measured `d` mm from ALL of them, with `d > t`, lies
+    `d - t` mm inside the cavity and cannot be in the walls. Before the kernel,
+    `assert_something_would_be_hollowed` already finds such a point and its
+    exact `BRepExtrema` distance and then throws both away; keeping them costs
+    one solid classification and answers the one question the two ratios above
+    cannot, because it asks about THIS body instead of about a population.
+
+    The P0 it closes (round two of this review, 2026-09-18,
+    probes/shell_coarea_merge_probe.py, probes/shell_deep_point_survives_probe.py):
+    a ratio of `walls / (area * t)` is the body's own `volume / (area * t)`
+    when the kernel hands the body back, so the 1.35 ceiling only ever catches
+    a handback while `t < volume / (1.35 * area)` — every wrong result the
+    ceiling was calibrated on was measured at t <= 1.3 on bodies whose
+    volume/area is about 2.2. Walk the SAME plate past that thickness and the
+    same handback goes silent. Measured on the very plate the ceiling was
+    calibrated on, a 60 x 60 x 10 with 100 holes of r 1.0 at 6 mm pitch:
+
+        t = 1.3   32,858.3 of a true 20,400.6 +/- 12.1 — reads 1.6569, REFUSED
+        t = 2.5   32,846.4 of a true 31,886.6 +/-  4.1 — reads 0.8613, and the
+                  coarea question is never even asked. 959.8 mm3 of "walls"
+                  that are not there: the user asked for a 2.5 mm shell and got
+                  a body with a 12.0 mm3 hole in it where 971.8 mm3 had to go,
+                  valid, watertight, health clean, green in the tree
+        t = 3.0   32,857.4 of a true 32,781.0 +/- 1.2 — reads 0.7180, and the
+                  coarea reads 1.4351, UNDER its own bound: neither ratio can
+                  see it. 0.96 mm3 of cavity where 77.4 mm3 had to go
+
+    Both of those are caught here, from the point the guard had already paid
+    for: depth 3.2426 at (0, -18, -1), IN the walls both times. The oracle is
+    Monte Carlo against the ANALYTIC distance to a drilled box's boundary — no
+    OpenCASCADE, no closed form — and the t = 1.6 shell of the same plate is
+    SOUND (24,362.5 against 24,357.5 +/- 10.8) with that same point OUT of the
+    walls, so this does not fire on a correct result.
+
+    IN the walls is not on its own the verdict, and the corpus is what says so
+    (probes/shell_deep_point_corpus.py, 2026-09-18). A kernel that drops a thin
+    SLIVER of cavity — which is what it does where the walls nearly meet —
+    leaves the point just inside a surface it really did build, and the oneplus
+    case at t = 0.5 is exactly that: a point 0.1 mm past a 0.5 mm wall,
+    classified IN, on a result that still hollowed 30.7 per cent of the body.
+    Calibrating a margin between that 0.1 mm and the 0.2426 mm of a wrong
+    result would be the same mistake this function exists to stop making, and
+    so would a bound on how far the point sits from the RESULT's own surface
+    (measured, over `t`: 1.2000 on that sound oneplus against 1.0809 on the
+    wrong drilled plate — the same overlap again).
+
+    What separates them is not another distance. It is WHAT THE FEATURE DID:
+
+        the point proves material that had to go is still there
+        AND the kernel removed next to nothing at all
+
+    — and the second half is the check this file has always had, `abs(v_out -
+    v_in) <= 1e-6`, with a floor a person would recognise instead of one that
+    only catches a result identical to the last decimal. On its own a volume
+    fraction cannot judge a shell (a 12 mm plate at 5.9 mm walls leaves 1.09
+    per cent and is CORRECT), and on its own the point cannot either; together
+    they say "this feature did nothing, and here is the proof it should have
+    done something", which is a sentence the user can act on. The margins are
+    at `_SHELL_NOTHING_HOLLOWED`.
+
+    The point is also put to the INPUT body first. It was measured in the
+    parent process and the kernel half runs in the worker, which reads the body
+    back off a .brep; `same_weight` proves the weight survived that trip but a
+    body that MOVED would weigh the same, and with no openings there are no
+    picks whose marks would notice. A point that is not inside the body this
+    result came from is not a statement about it, so it decides nothing. Every
+    other branch fails open the same way: a classifier that will not run, a
+    volume that will not measure, a point with no margin all leave the verdict
+    to the two ratios above."""
+    if not deep:
+        return
+    try:
+        depth, at, tol = float(deep[0]), tuple(float(c) for c in deep[1]), float(deep[2])
+    except (TypeError, ValueError, IndexError):
+        return                            # nothing to judge against
+    if depth <= t + tol:
+        return                            # no margin: the point is ON the cavity wall
+    import inspector                                 # local: avoids an import cycle
+    v_in = inspector._try(lambda: float(solid.volume))
+    v_out = inspector._try(lambda: float(out.volume))
+    if not v_in or v_in <= 0 or v_out is None:
+        return                                       # nothing to judge against
+    if v_in - v_out > _SHELL_NOTHING_HOLLOWED * v_in:
+        return                            # a real cavity: a dropped sliver at worst
+    if point_is_inside(solid, at) is not True or point_is_inside(out, at) is not True:
+        return
+    raise ValueError(
+        f"shell: {walls} hollowed next to nothing — the kernel took "
+        f"{v_in - v_out:,.6g} mm3 out of {v_in:,.6g} and left material {depth:.4g} mm "
+        f"from every face that stays (near x {at[0]:.3g}, y {at[1]:.3g}, "
+        f"z {at[2]:.3g}), which a {t:g} mm wall cannot reach. Try a different "
+        f"thickness, or open a face")
+
+
+# What fraction of the body a shell may remove and still count as having
+# hollowed NOTHING — asked only once the deep point has proved that material
+# a `t` wall cannot reach came back inside the result, so it is the second half
+# of an AND and never a verdict on its own.
+#
+# Measured 2026-09-18 over the gauntlet corpus, the four committed crash
+# fixtures and three drilled blocks at nine thicknesses
+# (probes/shell_deep_point_corpus.py). Of the cells whose deep point came back
+# INSIDE the result:
+#
+#   WRONG — the kernel handed the body back, and every other check passed it:
+#       my-part-5's mirror body at t = 3      6.6e-6 of the body (2.709 mm3)
+#       the 81-hole block at t = 3            2.7e-5 (4.02 where ~207 had to go)
+#       the 100-hole plate at t = 3           2.9e-5 (0.96 where 77.4 had to go)
+#       the 49-hole block at t = 5            2.1e-5 (3.0 mm3)
+#       the 49-hole block at t = 3            1.4e-4 (20.3 mm3)
+#   SOUND, and reaching this question because the kernel dropped a sliver of
+#   cavity where the walls nearly meet:
+#       the oneplus case at t = 0.5           3.1e-1 of the body
+#           (13,918.990 mm3 of cavity out of 45,328.348)
+#
+# 1 per cent sits 70x above the highest wrong reading and 31x below the sound
+# one. It is also above the cavity of every SOUND result in the corpus that
+# comes anywhere near a block by volume (the 12 mm plate at 5.9 mm walls is
+# 1.09 per cent) — and those never reach this question at all, because their
+# deep point is properly gone.
+_SHELL_NOTHING_HOLLOWED = 0.01
+
+
+def point_is_inside(shape, at) -> bool | None:
+    """Is `at` inside `shape`? None when OCCT cannot say. Its own function so a
+    probe can ask without a refusal, and so both asks share one rule."""
+    from OCP.BRepClass3d import BRepClass3d_SolidClassifier
+    from OCP.gp import gp_Pnt
+    from OCP.TopAbs import TopAbs_State
+    try:
+        cls = BRepClass3d_SolidClassifier(shape.wrapped)
+        cls.Perform(gp_Pnt(*at), 1e-7)
+        return cls.State() == TopAbs_State.TopAbs_IN
+    except Exception:                     # OCP errors derive from Exception
+        return None
 
 
 def shell(solid, thickness: float = 0.0, faces=None, direction: str = "inside",
@@ -3177,12 +3412,15 @@ def shell(solid, thickness: float = 0.0, faces=None, direction: str = "inside",
     walls = f"walls of {t:g} mm"
     if d == "inside" and not openings:
         assert_wall_fits_every_lump(solid, t, walls)
+    deep = None
     if d == "inside":
-        assert_something_would_be_hollowed(solid, t, openings, walls)
+        # the deep point this measures is asked about again AFTER the kernel
+        # (`assert_the_deepest_point_was_hollowed`), so it travels with the job
+        deep = assert_something_would_be_hollowed(solid, t, openings, walls)
     import kernelguard                           # local: kernelguard reads sketch
     return kernelguard.guarded(
         "shell", solid,
-        {"thickness": t, "direction": d, "walls": walls,
+        {"thickness": t, "direction": d, "walls": walls, "deep": deep,
          "picks": kernelguard.indices(solid.faces(), openings),
          "marks": kernelguard._marks(openings),
          "crashed":
@@ -3196,10 +3434,11 @@ def shell(solid, thickness: float = 0.0, faces=None, direction: str = "inside",
              f"was changed. Hollowing a body with hundreds of faces can take "
              f"that long. Try a thinner wall, or shell the body before the "
              f"features that added those faces."},
-        lambda: shell_after_guards(solid, t, d, openings, walls))
+        lambda: shell_after_guards(solid, t, d, openings, walls, deep))
 
 
-def shell_after_guards(solid, t: float, d: str, openings: list, walls: str):
+def shell_after_guards(solid, t: float, d: str, openings: list, walls: str,
+                       deep=None):
     """The half of shell() that can kill the process — the kernel offset, the
     boolean that follows a closed hollow, and the four checks that judge what
     comes back.
@@ -3249,6 +3488,9 @@ def shell_after_guards(solid, t: float, d: str, openings: list, walls: str):
                          f"reports it invalid) — use a thinner wall")
     assert_walls_could_be_a_skin(solid, out, t, d, walls)
     assert_every_lump_hollowed(solid, out, d, walls)
+    # last, so the two sentences above keep the cases they already own — this
+    # one speaks for the results neither ratio can see
+    assert_the_deepest_point_was_hollowed(solid, out, deep, t, walls)
     return out
 
 
