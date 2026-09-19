@@ -244,11 +244,68 @@ def _pull_apart(loops, gap=_HAIR_MM):
                 block = _hair_cluster(arr[i], int(v), span)
                 if block is None:             # the whole loop is sub-hair
                     continue                  # — leave it as traced
+                if _walks_through_itself(arr[i], block, delta):
+                    continue                  # the loop's OWN far wall
                 arr[i][block] += delta
                 moved = True
         if not moved:
             break
     return [[(float(x), float(y)) for x, y in a] for a in arr]
+
+
+def _walks_through_itself(pts, block, delta) -> bool:
+    """True when nudging the run `block` of `pts` by `delta` would make the
+    loop meet its OWN outline — the half of the room test `_hair_cluster`
+    cannot ask.
+
+    `_hair_cluster` walks the loop's INDEX order: it proves the two edges
+    joined to the moved run are four times the move, so the run cannot be
+    turned inside out locally. A part of the same outline that lies a few
+    microns away with half the loop in between is invisible to it, and a
+    ribbon folded back on itself is exactly that — its two runs are
+    non-adjacent edges. Measured 2026-09-17 (round six,
+    probes/imgtrace_r6_self.py): a ribbon 0.005 mm thick with a bigger loop
+    0.0045 mm under it had its bottom edge pushed 0.0055 mm UP, straight
+    through its own far wall, and the 2 mm extrusion went from healthy to
+    "OpenCASCADE reports the solid is invalid". `_uncross` proves every loop
+    simple BEFORE the push; nothing re-asked after it.
+
+    Only the edges the move CHANGES can make a new crossing, so the test is
+    those edges against the rest of the outline — the same maths and the same
+    tolerance as `_first_crossing`, at O(n) a move instead of O(n**2) a loop.
+    A push that would do this is not made: a pair left a hair apart beats a
+    polygon that crosses itself."""
+    m = len(pts)
+    edges = sorted({(b - 1) % m for b in block} | {b % m for b in block})
+    cand = pts.copy()
+    cand[block] += delta
+    # only a crossing the MOVE makes counts. An outline can arrive here
+    # already touching itself — `_split_at_feet` rounds its inserted point
+    # onto the 0.001 mm grid, which is up to 0.0007 mm off the edge it split
+    # — and refusing then would block a push that is needed and fixes
+    # nothing.
+    return _edges_hit(cand, edges) and not _edges_hit(pts, edges)
+
+
+def _edges_hit(pts, edges) -> bool:
+    """True when one of the edges `edges` of the closed polyline `pts` crosses
+    or touches a NON-adjacent edge of it — `_first_crossing`'s maths and
+    `_first_crossing`'s tolerance, asked about a few edges instead of all."""
+    m = len(pts)
+    r = np.roll(pts, -1, axis=0) - pts
+    idx = np.arange(m)
+    tol = 1e-9
+    for i in edges:
+        adj = (np.abs(idx - i) <= 1) | (np.abs(idx - i) >= m - 1)
+        den = r[i, 0] * r[:, 1] - r[i, 1] * r[:, 0]
+        safe = np.where(np.abs(den) > 1e-15, den, 1.0)
+        d = pts - pts[i]
+        t = (d[:, 0] * r[:, 1] - d[:, 1] * r[:, 0]) / safe
+        u = (d[:, 0] * r[i, 1] - d[:, 1] * r[i, 0]) / safe
+        if ((np.abs(den) > 1e-15) & ~adj & (t >= -tol) & (t <= 1.0 + tol)
+                & (u >= -tol) & (u <= 1.0 + tol)).any():
+            return True
+    return False
 
 
 def _split_at_feet(pts, ring, gap):
