@@ -1112,10 +1112,17 @@ class Document:
 
     @staticmethod
     def param_refs(f: "Feature") -> list:
-        """The features `f` names in its PARAMS (a pattern's `seed`) -- see
-        REF_PARAMS. Every id here is as much a dependency as an input."""
-        return [str(f.params[k]) for k in REF_PARAMS.get(f.op, ())
-                if f.params.get(k)]
+        """The features `f` names in its PARAMS (a pattern's `seed`, a sweep's
+        `path`) -- see REF_PARAMS. Every id here is as much a dependency as an
+        input, which is why `_signature` folds their signatures in too.
+
+        `f.params` may be anything a foreign file held (`add` opens without
+        looking), and this runs on /api/doc and inside `_signature`, both
+        outside any try -- a list there answered `AttributeError: 'list'
+        object has no attribute 'get'`."""
+        params = f.params if isinstance(f.params, dict) else {}
+        return [str(params[k]) for k in REF_PARAMS.get(f.op, ())
+                if params.get(k)]
 
     def rename(self, old: str, new: str) -> None:
         """Rename a feature EVERYWHERE it is referenced (Fusion's browser
@@ -1458,6 +1465,17 @@ class Document:
             "suppressed": f.suppressed,
             "inputs": [sigs.get(dep, "?") for dep in f.inputs],
         }
+        # A feature this one NAMES is as much an input as one it consumes. A
+        # sweep does not consume its path (REF_PARAMS: "one path can serve
+        # several sweeps"), so the signature carried the STRING "rail" and
+        # nothing about the shape the solid follows: editing the rail from 20
+        # to 40 mm left the sweep on its old 1570.80 mm3 solid, green, and a
+        # second design whose rail differs was handed the FIRST one's solid
+        # (measured 2026-09-17, probes/s10_r4_cache_key.py). The key is added
+        # only when there IS a reference, so nothing else's signature moves.
+        refs = [sigs.get(r, "?") for r in Document.param_refs(f)]
+        if refs:
+            payload["refs"] = refs
         if f.op in FILE_BACKED_OPS:
             try:                       # the file IS part of the input
                 st = os.stat(str(f.params.get("file", "")))

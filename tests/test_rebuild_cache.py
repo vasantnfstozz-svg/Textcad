@@ -242,3 +242,66 @@ def test_the_cache_does_not_grow_without_bound():
         doc.edit("p2_tool", "amount", -(1 + (i % 7) * 0.001) * 3)
         doc.rebuild()
     assert len(doc._cache) <= D.CACHE_MAX
+
+
+# ---------------------------------------------------------------------------
+# A feature a signature NAMES is as much an input as one it consumes
+#
+# Round FOUR of the op-catalogue review, 2026-09-17. `_signature` covers
+# `f.inputs` by CONTENT and `f.params` by value. A sweep does not consume its
+# path: `REF_PARAMS` says the path sketch is NAMED ("one path can serve
+# several sweeps"), so all the signature carried was the string "rail" and
+# nothing at all about the shape the solid actually follows.
+#
+# Measured (probes/s10_r4_cache_key.py): a 20 mm rail swept a 5 mm circle to
+# 1570.80 mm3; the rail was then edited to 40 mm, which must give 3141.59, and
+# the tree kept 1570.80 and stayed GREEN. Two documents whose rails differ got
+# ONE solid, because the cache is shared by every tab in the process.
+# ---------------------------------------------------------------------------
+
+CIRCLE = [{"kind": "circle", "x": 0, "y": 0, "r": 5, "mode": "add"}]
+
+
+def _rail(mm):
+    return [{"kind": "path", "closed": False, "start": [0, 0],
+             "segments": [{"kind": "line", "to": [0, mm]}]}]
+
+
+def _swept(name, mm):
+    d = Document(name=name)
+    d.add("prof", "sketch", {"entities": CIRCLE, "plane": "XY", "offset": 0.0})
+    d.add("rail", "sketch", {"entities": _rail(mm), "plane": "XZ", "offset": 0.0})
+    d.add("sw", "sweep", {"path": "rail", "full": True}, inputs=["prof"])
+    return d
+
+
+def test_editing_the_path_a_sweep_follows_rebuilds_the_sweep():
+    doc = _swept("t-sweep-edit", 20)
+    doc.rebuild()
+    assert doc.get("sw").volume == pytest.approx(1570.80, abs=0.05)
+    doc.edit("rail", "entities", _rail(40))
+    doc.rebuild()
+    assert doc.get("sw").volume == pytest.approx(3141.59, abs=0.05), \
+        "the sweep kept the solid it built for the OLD path"
+
+
+def test_two_designs_with_different_paths_do_not_share_one_solid():
+    a, b = _swept("t-sweep-a", 20), _swept("t-sweep-b", 40)
+    a.rebuild()
+    b.rebuild()
+    assert a.get("sw").volume == pytest.approx(1570.80, abs=0.05)
+    assert b.get("sw").volume == pytest.approx(3141.59, abs=0.05), \
+        "the second design was handed the first design's swept solid"
+    assert a._sigs["sw"] != b._sigs["sw"]
+
+
+def test_a_sweep_whose_path_did_not_change_is_still_free():
+    """The other half: naming the path must not cost the cache. Two documents
+    with the SAME path build the sweep once."""
+    import document as D
+    a, b = _swept("t-sweep-same-1", 20), _swept("t-sweep-same-2", 20)
+    a.rebuild()
+    before = len(D._SHARED_CACHE)
+    b.rebuild()
+    assert len(D._SHARED_CACHE) == before
+    assert a._sigs["sw"] == b._sigs["sw"]
