@@ -27,11 +27,17 @@ const readOffset = () => toMm(Number(g('scOffset').value) || 0);
 function writeOffset(v) {
   g('scOffset').value = SETTINGS.unit === 'mm' ? Math.round(v * 100) / 100 : fmtLen(v, false);
 }
-/* (re)place the plane: null = the model's centre along the axis */
+/* (re)place the plane: null = the model's centre along the axis.
+   The gold quad and the arrow are SHARED with the tools, and a tool that is
+   open owns them (viewport: "a tool that opens takes them for its session").
+   So while one holds the modal lock this places the clipping only: Axis or
+   Flip pressed with Extrude open used to hand the section the arrow the user
+   was about to drag the extrude by. */
 function place(offset) {
   const r = beginSection(axis(), offset, flip(),
     v => writeOffset(v),                       // dragging: the box follows the arrow
-    v => writeOffset(v));                      // release: the plane already sits there
+    v => writeOffset(v),                       // release: the plane already sits there
+    !S.modalTool);
   writeOffset(r.offset);
   g('scStatus').textContent = `hiding the ${flip() ? 'low' : 'high'} side of ${axis()}`;
 }

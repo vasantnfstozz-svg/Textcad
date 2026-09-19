@@ -183,3 +183,78 @@ def test_a_wider_chat_column_still_pushes_the_panel_clear(page, fresh_doc, serve
     assert after < before - 20, f"the panel did not follow the pane: {before} -> {after}"
     check_docked(page, "extrudeDialog", "chat dragged wider")
     assert page.errors == []
+
+
+# ---------------------------------------------------------------------------
+# Round two's attack on the fix above. Lowering the CSS floors (tree 180, chat
+# 200) fixes the arithmetic only for a browser that has never touched a
+# splitter: splitters.js `apply()` wrote an INLINE `min-width` equal to the
+# width the user dragged to ("beat the CSS min-width"), and an inline style
+# beats a stylesheet. Once `split-tree` / `split-chat` are in localStorage —
+# which one drag, or one double-click reset, is enough for — the two panes
+# could no longer give way at all.
+#
+# Measured at 1024 px with ONE panel open and the saved widths left at their
+# own defaults (320 / 330): the chat ran 940..1270 and its send button sat at
+# 1214.7..1260 — 236 px outside the window, with body { overflow: hidden } and
+# no way to scroll to it. That is the same defect the test above locks out,
+# reached through the door the app's own splitters open.
+# ---------------------------------------------------------------------------
+
+def test_the_chat_stays_inside_the_window_after_a_splitter_has_been_dragged(
+        page, fresh_doc, server):
+    setup(page)
+    pick_top(page)
+    page.click("#ribbon .rbtn[title='extrude']")
+    page.wait_for_selector("#extrudeDialog", state="visible", timeout=15000)
+    page.wait_for_function("() => window.__vp.gizmos().arrow", timeout=15000)
+
+    # the user nudges the divider — the smallest possible use of the feature
+    bar = page.locator("#splitRight").bounding_box()
+    page.mouse.move(bar["x"] + bar["width"] / 2, bar["y"] + bar["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(bar["x"] + bar["width"] / 2 + 10,
+                    bar["y"] + bar["height"] / 2, steps=5)
+    page.mouse.up()
+    page.wait_for_timeout(400)
+    assert page.evaluate("() => !!localStorage.getItem('split-chat')"), \
+        "the drag did not register — this test would prove nothing"
+
+    for w, h in [(1120, 760), (1024, 720)]:
+        page.set_viewport_size({"width": w, "height": h})
+        page.wait_for_timeout(500)
+        m = page.evaluate(INSIDE)
+        assert m["chat"]["r"] <= m["win"] or m["scrollable"], \
+            (f"after one splitter drag the chat ends at {m['chat']['r']} on a "
+             f"{w} px window: {m}")
+        assert m["send"]["r"] <= m["win"] or m["scrollable"], \
+            f"after one splitter drag the send button is off the window at {w}: {m}"
+    page.set_viewport_size({"width": 1200, "height": 800})
+    assert page.errors == []
+
+
+def test_a_dragged_width_is_still_honoured_when_there_is_room(page, fresh_doc,
+                                                              server):
+    """The other half of the same rule: a pane may give way on a narrow window,
+    but on a wide one the width the user chose is exactly what they get back."""
+    setup(page)
+    page.set_viewport_size({"width": 1600, "height": 900})
+    page.wait_for_timeout(300)
+    bar = page.locator("#splitLeft").bounding_box()
+    page.mouse.move(bar["x"] + bar["width"] / 2, bar["y"] + bar["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(bar["x"] + bar["width"] / 2 + 60,
+                    bar["y"] + bar["height"] / 2, steps=8)
+    page.mouse.up()
+    page.wait_for_timeout(400)
+    wide = page.evaluate(
+        "() => document.getElementById('treePane').getBoundingClientRect().width")
+    assert wide > 360, f"the drag did not widen the tree: {wide}"
+    page.reload()
+    page.wait_for_function("() => !!window.__vp", timeout=20000)
+    page.wait_for_timeout(800)
+    back = page.evaluate(
+        "() => document.getElementById('treePane').getBoundingClientRect().width")
+    assert abs(back - wide) < 2, \
+        f"the saved tree width did not come back on reload: {wide} -> {back}"
+    page.set_viewport_size({"width": 1200, "height": 800})

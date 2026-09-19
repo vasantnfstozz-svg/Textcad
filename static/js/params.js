@@ -20,18 +20,33 @@ const say = t => bus.emit('msg', 'bot', t);
 
 const fmt = v => v == null ? '?' : Math.round(v * 10000) / 10000;
 
+/* A cell being edited OWNS the rows. The panel is non-modal on purpose, so the
+   document moves under it all the time and every 'doc-updated' redrew #pmRows
+   — taking the <input> the user was typing in with it, silently. Measured
+   2026-09-19: '3+ha' half typed into a formula cell, a feature added from
+   elsewhere, and the input was simply gone. A redraw that arrives during an
+   edit waits for it; Enter, Escape and blur all end the edit and then run it. */
+let editing = false;
+let staleRows = false;
+
 /* an inline edit of one cell: Enter commits the typed text, Escape / blur puts
    the old text back; a value equal to the old one is not posted */
 function inlineEdit(cell, oldVal, commit) {
   const input = document.createElement('input');
   input.value = oldVal;
   cell.replaceChildren(input); input.focus(); input.select();
+  editing = true;
   let done = false;
   const finish = async ok => {
     if (done) return; done = true;
     const raw = input.value.trim();
-    if (!ok || raw === '' || raw === String(oldVal)) { cell.textContent = oldVal; return; }
-    await commit(raw);
+    try {
+      if (!ok || raw === '' || raw === String(oldVal)) { cell.textContent = oldVal; return; }
+      await commit(raw);                 // its own doc-updated redraws the rows
+    } finally {
+      editing = false;
+      if (staleRows) { staleRows = false; render(); }
+    }
   };
   input.onclick = e => e.stopPropagation();
   input.onkeydown = e => {
@@ -45,6 +60,7 @@ function inlineEdit(cell, oldVal, commit) {
 function render() {
   const body = g('pmRows');
   if (!body) return;
+  if (editing) { staleRows = true; return; }   // see inlineEdit
   body.innerHTML = '';
   const params = (S.lastDoc && S.lastDoc.parameters) || [];
   for (const p of params) {
@@ -95,11 +111,16 @@ async function add() {
 export function isParamsOpen() { return on; }
 export function openParams() {
   on = true;
+  editing = staleRows = false;    // no cell of a closed panel is being edited
   g('paramsDialog').style.display = 'block';
   render();
   g('pmName').focus();
 }
-export function closeParams() { on = false; g('paramsDialog').style.display = 'none'; }
+export function closeParams() {
+  on = false;
+  editing = staleRows = false;
+  g('paramsDialog').style.display = 'none';
+}
 export function toggleParams() { if (on) closeParams(); else openParams(); }
 
 export function initParams() {

@@ -1625,7 +1625,13 @@ function applySectionTo(mat) {
 function sectionConstant(o) {
   return -section.plane.normal.getComponent(section.idx) * o;
 }
-export function beginSection(axis, offset, flip, onDrag, onCommit) {
+/* `handles` false = set the clipping only, and leave the gold quad and the
+   arrow to whoever has them. The section is the LOWER-priority owner of the
+   two shared gizmos: a tool that opens takes them for its session, and the
+   section moving its plane afterwards (Axis, Flip) may not take them back —
+   that would leave the open tool's panel with no handle to drag. */
+export function beginSection(axis, offset, flip, onDrag, onCommit,
+                             handles = true) {
   endSection();
   const a = SECTION_AXES[axis] ? axis : 'Z';
   const idx = { X: 0, Y: 1, Z: 2 }[a];
@@ -1637,14 +1643,23 @@ export function beginSection(axis, offset, flip, onDrag, onCommit) {
   for (const m of sectionMaterials()) applySectionTo(m);
   const x = a === 'X' ? [0, 1, 0] : [1, 0, 0];
   const y = a === 'Z' ? [0, 1, 0] : [0, 0, 1];
-  const origin = fitCenter.toArray(); origin[idx] = o;
-  beginPlaneQuad({ origin, x_dir: x, y_dir: y, z_dir: SECTION_AXES[a] },
-    Math.max(fitRadius * 1.2, 20));
-  const O = fitCenter.toArray(); O[idx] = 0;       // the arrow rides: base = O + axis·offset
-  beginExtrudeArrow(O, SECTION_AXES[a], o,
-    v => { setSectionOffset(v); if (onDrag) onDrag(v); },
-    v => { setSectionOffset(v); if (onCommit) onCommit(v); },
-    v => v);
+  if (handles) {
+    const origin = fitCenter.toArray(); origin[idx] = o;
+    beginPlaneQuad({ origin, x_dir: x, y_dir: y, z_dir: SECTION_AXES[a] },
+      Math.max(fitRadius * 1.2, 20));
+    const O = fitCenter.toArray(); O[idx] = 0;     // the arrow rides: base = O + axis·offset
+    beginExtrudeArrow(O, SECTION_AXES[a], o,
+      v => { setSectionOffset(v); if (onDrag) onDrag(v); },
+      v => { setSectionOffset(v); if (onCommit) onCommit(v); },
+      v => v);
+  }
+  // which quad and which arrow are OURS — null when a tool already had them.
+  // A tool that opens afterwards calls beginPlaneQuad / beginExtrudeArrow and
+  // takes them for its session, and then these no longer match: that is how
+  // endSection and setSectionOffset know not to reach into an open tool and
+  // move or delete the handle it is being dragged by.
+  section.ownQuad = handles ? planeQuad : null;
+  section.ownArrow = handles ? exArrow : null;
   return { offset: o };
 }
 /* the plane and the quad follow a new offset; the arrow rides by itself */
@@ -1652,7 +1667,7 @@ export function setSectionOffset(o) {
   if (!section) return;
   section.offset = Number(o) || 0;
   section.plane.constant = sectionConstant(section.offset);
-  if (planeQuad) {
+  if (planeQuad && planeQuad === section.ownQuad) {
     const pos = new THREE.Vector3().setFromMatrixPosition(planeQuad.mesh.matrix);
     pos.setComponent(section.idx, section.offset);
     for (const ob of [planeQuad.mesh, planeQuad.edge]) ob.matrix.setPosition(pos);
@@ -1660,9 +1675,17 @@ export function setSectionOffset(o) {
 }
 export function endSection() {
   if (!section) return;
+  const { ownQuad, ownArrow } = section;
   section = null;
   for (const m of sectionMaterials()) applySectionTo(m);
-  endPlaneQuad(); endExtrudeArrow();
+  // put back only what is still the SECTION's. Section takes no modal lock, so
+  // its Close button is reachable with a tool open, and this used to end the
+  // quad and the arrow whatever they now belonged to: measured 2026-09-19 —
+  // Section on, Extrude opened on a picked face, Close pressed, and the
+  // Extrude arrow vanished while its panel, ghost and taper ring stayed
+  // (parity rule 3 — the handle IS the tool).
+  if (planeQuad === ownQuad) endPlaneQuad();
+  if (exArrow === ownArrow) endExtrudeArrow();
 }
 /* test hook: the plane as applied, and how many body materials carry it */
 export function sectionInfo() {
@@ -1673,7 +1696,10 @@ export function sectionInfo() {
            constant: section.plane.constant, normal: section.plane.normal.toArray(),
            materials: mats.length,
            clipped: mats.filter(m => m.clippingPlanes && m.clippingPlanes.length).length,
-           quad: !!planeQuad, arrow: !!exArrow };
+           quad: !!planeQuad, arrow: !!exArrow,
+           // whether the two SHARED gizmos on screen are still the section's
+           ownsQuad: !!planeQuad && planeQuad === section.ownQuad,
+           ownsArrow: !!exArrow && exArrow === section.ownArrow };
 }
 
 /* ---------------- a tool's PLANE (Mirror: the mirror plane, a gold square) ----

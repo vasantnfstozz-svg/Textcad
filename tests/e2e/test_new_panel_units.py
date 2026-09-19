@@ -39,7 +39,9 @@ LABELS = """
   const out = {};
   for (const id of ids) {
     const el = document.getElementById(id);
-    const l = el && el.closest('label');
+    // the ROW the box lives in: its <label> where it has one, otherwise its
+    // parent — Measure's Set box is an input, a unit span and a button in a div
+    const l = el && (el.closest('label') || el.parentElement);
     out[id] = l ? l.textContent.trim().replace(/\\s+/g, ' ') : '(no label)';
   }
   return out;
@@ -48,10 +50,14 @@ LABELS = """
 SECTION = "async () => (await import('/static/js/viewport.js')).sectionInfo()"
 
 # every box that is read as a LENGTH in the display unit
+# `meInput` — Measure's Set box — belongs here too and was missing until the
+# round-two walk below enumerated the page and found it unclassified. Its own
+# markup was already right (a `punit` span with data-unit); only this list,
+# which is hand-kept, had the hole. That is the reason for the walk.
 LENGTH_BOXES = ["exDist", "exDist2", "flValue", "chValue", "hoDia", "hoDepth",
                 "hoCbDia", "hoCbDepth", "hoCsDia", "shThickness",
                 "mvX", "mvY", "mvZ", "rpDist", "rpDist2",
-                "swDist", "scOffset"]
+                "swDist", "scOffset", "meInput"]
 
 
 def choose_unit(page, unit):
@@ -65,12 +71,83 @@ def choose_unit(page, unit):
         timeout=10000)
 
 
+# ---------------------------------------------------------------------------
+# Round two: the WALK. The list above is hand-kept, so a length box added to a
+# new panel and left out of it is invisible again — which is exactly how Sweep
+# and Section view shipped saying "(mm)" while being read in inches. This walks
+# every <input type=number> the page actually has and insists each one is in a
+# named class here. A new numeric box fails the test until someone says which
+# kind it is, and a LENGTH fails unless settings.js writes its unit.
+#
+# (The spec editor's boxes are plain text inputs, not numbers, and say "mm" in
+# their own labels because a spec is stored in mm. The feature tree's editable
+# values and the Parameters panel's cells are neither — see the review report.)
+# ---------------------------------------------------------------------------
+
+DEGREES = {"exTaper", "rvAngle", "rvAngle2", "rtAngle", "cpAngle", "hoCsAngle"}
+COUNTS = {"cpCount", "rpCount", "rpCount2"}
+# a SETTING, in millimetres whatever the screen displays — the grid and the
+# snap are properties of the sketch, not readouts of the model
+ALWAYS_MM = {"setGrid", "setSnap"}
+
+CLASSIFY = """
+() => {
+  const out = [];
+  for (const inp of document.querySelectorAll('input[type=number]')) {
+    const row = inp.closest('label') || inp.parentElement;
+    const u = row && row.querySelector('[data-unit]');
+    out.push({ id: inp.id,
+               unitSpan: u ? u.textContent : null,
+               text: (row ? row.textContent : '').replace(/\\s+/g, ' ').trim() });
+  }
+  return out;
+}
+"""
+
+
+def test_every_numeric_box_in_the_page_is_classified(page, fresh_doc, server):
+    page.evaluate(BUILD_BOX)
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    choose_unit(page, "in")
+    found = page.evaluate(CLASSIFY)
+    ids = {b["id"] for b in found}
+    known = set(LENGTH_BOXES) | DEGREES | COUNTS | ALWAYS_MM
+    assert not ids - known, (
+        "these numeric boxes are in no class — say whether each is a length "
+        f"(data-unit), an angle, a count or always-mm: {sorted(ids - known)}")
+    assert not set(LENGTH_BOXES) - ids, \
+        f"LENGTH_BOXES names boxes the page does not have: {sorted(set(LENGTH_BOXES) - ids)}"
+
+    by_id = {b["id"]: b for b in found}
+    for i in LENGTH_BOXES:
+        b = by_id[i]
+        assert b["unitSpan"] == "in", \
+            f"{i} is read as a length but its unit reads {b['unitSpan']!r}: {b['text']}"
+    for i in DEGREES:
+        b = by_id[i]
+        assert b["unitSpan"] is None and "°" in b["text"], \
+            f"{i} is an angle in degrees: {b}"
+    for i in COUNTS:
+        b = by_id[i]
+        assert b["unitSpan"] is None and "(" not in b["text"], \
+            f"{i} is a count and must carry no unit at all: {b}"
+    for i in ALWAYS_MM:
+        b = by_id[i]
+        assert b["unitSpan"] is None and "mm" in b["text"], \
+            f"{i} is stored in mm whatever is displayed, and must say so: {b}"
+    assert page.errors == []
+
+
 def test_every_length_box_names_the_display_unit(page, fresh_doc, server):
     page.evaluate(BUILD_BOX)
     page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
     choose_unit(page, "in")
+    import re
     labels = page.evaluate(LABELS, LENGTH_BOXES)
-    wrong = {k: v for k, v in labels.items() if "(mm)" in v or "(in)" not in v}
+    # the unit as a WORD: most boxes say "Distance (in)", Measure's Set box
+    # puts the word beside the input instead. Either way it may not say mm.
+    wrong = {k: v for k, v in labels.items()
+             if re.search(r"\bmm\b", v) or not re.search(r"\bin\b", v)}
     assert not wrong, ("these length boxes do not name the unit they are read "
                        f"in while the app is in inches: {wrong}")
     assert page.errors == []
