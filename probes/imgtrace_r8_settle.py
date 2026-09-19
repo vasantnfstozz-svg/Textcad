@@ -35,6 +35,21 @@ settled in ONE. The "this artwork is too fine to scale onto this face"
 refusal never fired. What did fire, 30 times, is the MEET refusal — and 26 of
 those 30 build a healthy solid. `probes/imgtrace_r8_meet.py` says why.
 
+Seed 5150 is where the bound is really reached — `{1: 862, 3: 2}`, and one of
+those two ends in the "too fine" refusal — so the third round is not dead
+code, it is the last resort it was written to be.
+
+AFTER the overlap rule (`_interiors_overlap`, commit 02d86ce):
+
+    seed 82026: 30 refusals -> 19, and 4 of 4 open shells still refused
+    seed  5150: 36 refusals -> 21, and 5 of 5 open shells still refused
+
+27 of 63 refusals removed, 9 of 9 banned failures still caught. The 34 that
+remain all carry a real point contact; 20 of those would have built healthy,
+and refusing them is the deliberate, conservative half of the rule — there is
+no cheap test that tells which point contact OCCT survives, and a failed
+feature beats a corrupt body.
+
 Run:  C:/Python314/python.exe probes/imgtrace_r8_settle.py [n] [seed]
 """
 from __future__ import annotations
