@@ -137,6 +137,99 @@ def _ladder(radii=(30, 24, 20, 17, 14, 12, 10, 8, 7, 6), gap=130,
     return _png(img)
 
 
+@pytest.mark.parametrize("margin,art", [(0.9, 17.85), (0.5, 9.9)])
+def test_a_margin_inside_its_range_still_fits_the_art(margin, art):
+    client = _client()
+    info, w, h = _fit(client, _png(_disc_png()), (30.0, 20.0, 0, 0),
+                      fit_margin=margin)
+    assert w == pytest.approx(art, abs=0.6) and h == pytest.approx(art,
+                                                                  abs=0.6)
+
+
+@pytest.mark.parametrize("margin", [2.0, 1e9, 0.0, -0.5])
+def test_a_margin_outside_its_range_says_so(margin):
+    """`fit_margin` is the fraction of the face the artwork fills and nothing
+    checked it — the browser never sends it, so only a script can. Measured
+    2026-09-17 (round seven, probes/imgtrace_r7_doors.py): 2 put 39.72 mm of
+    art on a 30 x 20 mm box and 1e9 put 993.80 mm of it there, both green and
+    silent; a negative margin mirrored the art and rotated it."""
+    client = _client()
+    d = client.post("/api/trace-png", json={
+        "png_base64": base64.b64encode(_png(_disc_png())).decode(),
+        "entities_only": True, "fit_box": [30.0, 20.0, 0.0, 0.0],
+        "fit_margin": margin}).json()
+    assert "fit_margin" in (d.get("error") or ""), d
+
+
+def test_a_fit_box_that_is_not_four_numbers_says_so():
+    client = _client()
+    d = client.post("/api/trace-png", json={
+        "png_base64": base64.b64encode(_png(_disc_png())).decode(),
+        "entities_only": True, "fit_box": [30.0]}).json()
+    assert "four numbers" in (d.get("error") or ""), d
+
+
+def _slotted_ladder(slots=6):
+    """the same ladder, with hairline slots cut into the bar — art that is
+    fine enough for the 0.001 mm coordinate grid to matter once it is scaled"""
+    radii, gap, bar_w, bar_t = (30, 24, 20, 17, 14, 12, 10, 8, 7, 6), 130, \
+        1000, 40
+    h = bar_t + gap * (len(radii) + 1) + 80
+    img = np.zeros((h, bar_w + 200, 4), np.uint8)
+    y0 = h - 60
+    cv2.rectangle(img, (100, y0 - bar_t), (100 + bar_w, y0), (0, 0, 0, 255), -1)
+    for k, r in enumerate(radii):
+        cv2.circle(img, (600, y0 - bar_t - gap * (k + 1)), int(r),
+                   (0, 0, 0, 255), -1)
+    for k in range(slots):
+        x = 200 + k * 37
+        cv2.rectangle(img, (x, y0 - bar_t), (x + 1, y0 - 4), (0, 0, 0, 0), -1)
+    return _png(img)
+
+
+@pytest.mark.parametrize("box", [(5.0, 5.0), (4.0, 4.0), (6.0, 6.0)])
+def test_art_scaled_onto_a_small_face_still_keeps_both_promises(box):
+    """`imgtrace.image_to_entities` ends by proving no polygon crosses itself
+    and no two loops of the sketch meet. `_trace_fitted` then multiplies every
+    point by its residual `s` and rounds it back onto the 0.001 mm grid —
+    AFTER both proofs, and outside imgtrace entirely. The comment calls `s` a
+    hair; `_trace_fit_height`'s own fallback calls it "traced and then SHRUNK
+    by `_trace_fitted`'s residual rescale", and on a 5 x 5 mm face this
+    picture is traced at 50 mm and shrunk by s = 0.0902.
+
+    Measured 2026-09-17 (round seven, probes/imgtrace_r7_fit_pinch.py): one of
+    the eleven polygons the browser was handed crossed itself, and over the
+    corpus the same multiply left 287 polygons carrying a duplicate point, 22
+    really crossing and 32 traces of 240 with two loops at exactly
+    0.000000000 mm — the pinch that builds as an open shell."""
+    import inspector
+    import sketch as sk
+    client = _client()
+    d = client.post("/api/trace-png", json={
+        "png_base64": base64.b64encode(_slotted_ladder()).decode(),
+        "entities_only": True,
+        "fit_box": [box[0], box[1], 0.0, 0.0]}).json()
+    assert not d.get("error"), d.get("error")
+    ents = d["entities"]
+    bad = [n for n, e in enumerate(ents)
+           if imgtrace._first_crossing([tuple(p) for p in e["points"]])
+           is not None]
+    assert not bad, (f"on a {box[0]} x {box[1]} mm face, polygons {bad} of "
+                     f"{len(ents)} cross themselves")
+    rings = [[(e["x"] + x, e["y"] + y) for x, y in e["points"]] for e in ents]
+    worst = min(
+        [min(float(imgtrace._nearest_on_ring(np.asarray(rings[i], float),
+                                             np.asarray(rings[j], float))[0]
+                   .min()),
+             float(imgtrace._nearest_on_ring(np.asarray(rings[j], float),
+                                             np.asarray(rings[i], float))[0]
+                   .min()))
+         for i in range(len(rings)) for j in range(i + 1, len(rings))] or [9.0])
+    assert worst > 0.0, "two loops MEET once the art is scaled onto the face"
+    solid = sk.extrude_sketch(sk.make_sketch("XY", 0, ents), 2.0)
+    assert inspector.health(solid) == []
+
+
 @pytest.mark.parametrize("fw,fh", [(12.0, 14.0), (12.0, 10.0), (12.0, 18.0)])
 def test_art_whose_aspect_never_settles_is_not_shrunk_to_a_hairline(fw, fh):
     """When NO tried height fits, the fallback used to take the SMALLEST one

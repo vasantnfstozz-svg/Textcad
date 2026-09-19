@@ -343,6 +343,59 @@ def test_the_push_never_walks_a_loop_through_itself():
     assert inspector.health(solid) == []
 
 
+# ...and the same ribbon carrying ONE duplicate vertex, which is what
+# `_split_at_feet` leaves behind when its inserted foot rounds onto an
+# existing point of the 0.001 mm grid: 6 splits in 192 traces do exactly that
+# (probes/imgtrace_r7_selftouch.py). The zero-length edge is harmless in
+# itself — `_round_pts` drops it — but its two neighbours touch at that
+# point, so `_walks_through_itself` used to read "this loop already touches
+# itself" and waive EVERY push on that block. With the waiver in place the
+# bottom edge is pushed 0.006 mm up through the ribbon's own far wall and the
+# extrusion goes from healthy 0.019550 mm3 to
+# "OpenCASCADE reports the solid is invalid" at 0.016240, feature green
+# (measured 2026-09-17, round seven, probes/imgtrace_r7_escape.py).
+_RIBBON_DUP = [_RIBBON[0]] + list(_RIBBON)
+
+
+@pytest.mark.parametrize("at", [0, 1, 7])
+def test_a_duplicate_vertex_does_not_waive_the_far_wall_guard(at):
+    rib = list(_RIBBON[:at + 1]) + [_RIBBON[at]] + list(_RIBBON[at + 1:])
+    assert imgtrace._first_crossing(imgtrace._round_pts(rib)) is None
+    out = imgtrace._pull_apart([rib, list(_UNDER)])
+    final = imgtrace._round_pts(out[0])
+    assert imgtrace._first_crossing(final) is None, (
+        f"a duplicate vertex at {at} waived the guard and the loop walked "
+        f"through its own far wall")
+    ents = [imgtrace._poly_entity(final, "add"),
+            imgtrace._poly_entity(imgtrace._round_pts(out[1]), "subtract")]
+    solid = sk.extrude_sketch(sk.make_sketch("XY", 0, ents), 2.0)
+    assert solid.is_valid
+    assert inspector.health(solid) == []
+
+
+def test_a_duplicate_vertex_does_not_block_the_pushes_that_are_needed():
+    """The other half: refusing outright whenever a loop already touches
+    itself would stop pushes that are wanted — which is why round six asked
+    the yes/no question in the first place. Asking WHICH PAIRS touch keeps
+    them: a duplicate vertex changes nothing at all, on a loop the guard
+    refuses (the ribbon, whose far wall is in the way) and on one it opens (a
+    plain square a hair above a plate)."""
+    clean = imgtrace._pull_apart([list(_RIBBON), list(_UNDER)])
+    dup = imgtrace._pull_apart([list(_RIBBON_DUP), list(_UNDER)])
+    assert imgtrace._round_pts(dup[0]) == imgtrace._round_pts(clean[0])
+
+    square = [(0.0, 0.0), (0.4, 0.0), (0.4, 0.4), (0.0, 0.4)]
+    plate = [(-5.0, -5.0), (5.0, -5.0), (5.0, -0.004), (-5.0, -0.004)]
+    open_clean = imgtrace._pull_apart([list(square), list(plate)])
+    open_dup = imgtrace._pull_apart([[square[0]] + list(square), list(plate)])
+    assert imgtrace._round_pts(open_dup[0]) == imgtrace._round_pts(
+        open_clean[0])
+    d, _f = imgtrace._nearest_on_ring(np.asarray(open_dup[0], float),
+                                      np.asarray(open_dup[1], float))
+    assert float(d.min()) >= imgtrace._HAIR_MM - 1e-9, (
+        "the push a duplicate vertex must not block")
+
+
 # The guard gives way rather than turn a loop inside out, and it used to say
 # NOTHING when it did. A sliver squeezed between two bigger loops is a fixed
 # point for it: 8 of 960 ring traces end still inside the hair (round six,
@@ -389,6 +442,53 @@ def test_a_pair_the_guard_cannot_open_is_reported():
     away = [(x, y + 0.004) for x, y in _SPECK]
     out2 = imgtrace._pull_apart([list(away), list(_PLATE)], report=clear)
     assert imgtrace._worst_residual(out2, clear) == pytest.approx(0.004)
+
+
+# Everything above is proved at the size imgtrace traced the art. The FIT then
+# multiplies every point by a residual `s` and rounds it back onto the
+# 0.001 mm grid, outside imgtrace entirely — the same move round six stopped
+# the art-centring shift making. Measured 2026-09-17 (round seven,
+# probes/imgtrace_r7_rescale_kind.py): over 240 traces rescaled at
+# s = 0.9 … 0.02, 287 polygons came back carrying a DUPLICATE point, 22 came
+# back really CROSSING and 32 traces ended with two loops at exactly
+# 0.000000000 mm. `imgtrace.settle` asks both questions again afterwards.
+def _rescaled(ents, s):
+    return [{**e, "x": round(e["x"] * s, 3), "y": round(e["y"] * s, 3),
+             "points": [[round(px * s, 3), round(py * s, 3)]
+                        for px, py in e["points"]]} for e in ents]
+
+
+@pytest.mark.parametrize("s", [0.5, 0.25, 0.1, 0.05])
+def test_scaling_traced_art_down_keeps_both_promises(s):
+    m = _hairline_star(radius=560, n=11)
+    ents, _i = imgtrace.image_to_entities(_png(m), height_mm=8.0)
+    assert not _self_crossing(ents)
+    small = _rescaled(ents, s)
+    try:
+        out, _note = imgtrace.settle(small)
+    except ValueError as exc:            # a refusal beats a pinched solid
+        assert "meet at a point" in str(exc)
+        return
+    assert not _self_crossing(out), (
+        f"scaled by {s}, {len(_self_crossing(out))} of {len(out)} polygons "
+        f"cross themselves")
+    rings = [[(e["x"] + x, e["y"] + y) for x, y in e["points"]] for e in out]
+    assert _true_gap(rings) > 0.0, f"scaled by {s}, two loops MEET"
+
+
+def test_settling_leaves_art_that_is_already_clear_alone():
+    """The guard must not redraw art a rescale did not harm: a plain disc
+    scaled to a tenth keeps every polygon, every point and its size."""
+    m = np.zeros((400, 400), np.uint8)
+    cv2.circle(m, (200, 200), 150, 1, -1)
+    cv2.circle(m, (200, 200), 60, 0, -1)
+    ents, _i = imgtrace.image_to_entities(_png(m), height_mm=30.0)
+    for s in (0.9, 0.5, 0.1):
+        out, note = imgtrace.settle(_rescaled(ents, s))
+        assert note is None, f"s={s}: {note}"
+        assert len(out) == len(ents)
+        assert sum(len(e["points"]) for e in out) == sum(
+            len(e["points"]) for e in ents), f"s={s}"
 
 
 def test_artwork_whose_loops_still_meet_is_refused(monkeypatch):

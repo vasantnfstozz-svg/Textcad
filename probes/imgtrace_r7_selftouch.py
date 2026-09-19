@@ -106,9 +106,15 @@ def instrument():
     real_split = imgtrace._split_at_feet
 
     def walk(pts, block, delta):
-        before = imgtrace._edges_hit(
-            pts, sorted({(b - 1) % len(pts) for b in block}
-                        | {b % len(pts) for b in block}))
+        m = len(pts)
+        idx = np.arange(m)
+        r = np.roll(pts, -1, axis=0) - pts
+        before = any(
+            imgtrace._edge_hits(
+                pts, r, i,
+                (np.abs(idx - i) <= 1) | (np.abs(idx - i) >= m - 1)).any()
+            for i in sorted({(b - 1) % m for b in block}
+                            | {b % m for b in block}))
         out = real_walk(pts, block, delta)
         if before:
             cand = pts.copy()
