@@ -57,6 +57,27 @@ function inlineEdit(cell, oldVal, commit) {
   input.onblur = () => finish(false);
 }
 
+/* The parameter as the DOCUMENT has it NOW, or null with a sentence and a
+   redraw. A row is a SNAPSHOT: the panel is non-modal on purpose — the tree,
+   the AI designer, MCP, undo and a version restore all keep working beside
+   it — and a cell held open for editing stops the redraw as well, so `p` can
+   be minutes old by the time Enter is pressed.
+
+   The note cell is where that hurt, because `/api/parameters` requires the
+   formula and the note edit sent the one its row remembered. Measured
+   2026-09-19: bore = 6, the note cell opened, the formula changed to 12.5
+   from elsewhere, Enter on the note — and the document went back to 6, so
+   typing a comment silently undid a dimension and every feature using `bore`
+   rebuilt at the old size. The same snapshot re-created a parameter that had
+   been DELETED under the edit. */
+function current(name) {
+  const now = ((S.lastDoc && S.lastDoc.parameters) || []).find(q => q.name === name);
+  if (now) return now;
+  say(`⚠ Parameters: "${name}" is not in this design any more — nothing was changed.`);
+  staleRows = true;              // inlineEdit's finally puts the table back
+  return null;
+}
+
 function render() {
   const body = g('pmRows');
   if (!body) return;
@@ -71,13 +92,18 @@ function render() {
     name.onclick = () => inlineEdit(name, p.name, v => postJSON('/api/parameters/rename',
       { old: p.name, new: v }, 'renaming…'));
     const expr = cell('pmexpr', p.expr, 'click to change the formula');
-    expr.onclick = () => inlineEdit(expr, p.expr, v => postJSON('/api/parameters',
-      { name: p.name, expr: v }, 'changing…'));
+    expr.onclick = () => inlineEdit(expr, p.expr, v => current(p.name)
+      && postJSON('/api/parameters', { name: p.name, expr: v }, 'changing…'));
     const val = cell('pmval', p.problem ? '⚠' : `= ${fmt(p.value)}`,
       p.problem || 'the value the formula works out to');
     const comment = cell('pmcomment', p.comment || '', 'click to add a note');
-    comment.onclick = () => inlineEdit(comment, p.comment || '', v => postJSON('/api/parameters',
-      { name: p.name, expr: p.expr, comment: v }, 'noting…'));
+    // the FORMULA comes from the document as it is when the note is saved, not
+    // from the row — see current() below
+    comment.onclick = () => inlineEdit(comment, p.comment || '', v => {
+      const now = current(p.name);
+      return now && postJSON('/api/parameters',
+        { name: p.name, expr: now.expr, comment: v }, 'noting…');
+    });
     const n = (p.users || []).length + (p.used_by_parameters || []).length;
     const users = cell('pmusers', n ? `${n} use${n === 1 ? '' : 's'}` : 'unused',
       n ? `used by ${[...(p.users || []), ...(p.used_by_parameters || [])].join(', ')}`

@@ -24,7 +24,7 @@ import { postJSON, planRequest } from './api.js';
 import { SETTINGS, toMm, fmtLen } from './settings.js';
 import { holdViewport, cancelPlanePick, beginProfilePick, cancelProfilePick,
          beginEdgePick, endEdgePick, clearPick, pickWhat,
-         profilePickArmed } from './viewport.js';
+         profilePickArmed, retakeSectionHandles } from './viewport.js';
 
 const OPMAP = { join: 'fuse', cut: 'cut', intersect: 'intersect' };   // panel op -> tree op
 const COMBINER_LABEL = Object.fromEntries(Object.entries(OPMAP).map(([k, v]) => [v, k]));
@@ -370,7 +370,14 @@ export function tool(spec) {
     active = ctl;
   }
   function releaseModal() {
-    if (S.modalTool === spec.name) { S.modalTool = null; S.modalToolPanel = null; }
+    if (S.modalTool !== spec.name) return;
+    S.modalTool = null; S.modalToolPanel = null;
+    // the gold quad and the arrow are shared with Section view, which takes no
+    // modal lock and may have been open underneath the whole time. `hide()`
+    // ended THIS tool's arrow, and that object was the section's: give them
+    // back now the session is over, or the model stays cut open with nothing
+    // to drag (measured 2026-09-19).
+    retakeSectionHandles();
   }
   /* the panel and the gizmos go at once; the LOCK is released only when the
      session's last document change has landed (see ok / cancel) — a tool

@@ -29,6 +29,10 @@ export function modalGuard() {
   bus.emit('msg', 'bot', `⚠ Finish the ${S.modalTool} first — press OK or ` +
     `Cancel in its panel (flashing on the right).`);
   if (el) {
+    // The panels STACK in one column now, so the one we are pointing at may
+    // have been scrolled out of sight by a second panel below it — a flash
+    // nobody can see is the same as no answer at all.
+    el.scrollIntoView({ block: 'nearest' });
     el.classList.remove('modalflash');
     void el.offsetWidth;                    // restart the CSS animation
     el.classList.add('modalflash');

@@ -251,3 +251,87 @@ def test_closing_the_section_with_no_tool_open_takes_its_own_handles_away(
     assert not g["arrow"] and not g["plane"], f"the section left its handles up: {g}"
     assert not info(page)["on"]
     assert not page.errors, page.errors
+
+
+# ---------------------------------------------------------------------------
+# Round three's attack on the fix above: the ownership rule had only one half.
+# A tool that OPENS takes the shared arrow, and the fix stops the section
+# taking it back while the tool holds it — but when the tool ENDS its own
+# arrow, that object IS the section's, and nothing gave one back.
+#
+# Measured 2026-09-19 on the plate: Section on (quad + arrow, ownsArrow true),
+# top face picked, Extrude opened (ownsArrow false), Cancel pressed — the model
+# stayed cut open on 13 of 13 materials with the gold plane still there and
+# gizmos().arrow FALSE. Typing 3 in the offset box moved the plane and still
+# produced no arrow; only Axis or Flip, which re-run beginSection, brought one
+# back. The section panel's own first sentence is "drag the arrow ... to move
+# it" (parity rule 3 — the handle IS the tool).
+# ---------------------------------------------------------------------------
+
+def test_the_section_gets_its_handles_back_when_a_tool_lets_them_go(
+        page, fresh_doc, server):
+    setup(page)
+    page.evaluate(TOGGLE)
+    page.wait_for_timeout(400)
+    assert info(page)["ownsArrow"] and info(page)["ownsQuad"]
+
+    sp = page.evaluate(TO_SCREEN, [22.0, 15.0, 6.0])
+    page.mouse.click(sp["x"], sp["y"])
+    page.wait_for_timeout(700)
+    page.locator("button.tab", has_text="Create").click()
+    page.wait_for_timeout(200)
+    page.click("#ribbon .rbtn[title='extrude']")
+    page.wait_for_selector("#extrudeDialog", state="visible", timeout=15000)
+    page.wait_for_function("() => window.__vp.gizmos().arrow", timeout=15000)
+    assert not info(page)["ownsArrow"], "the tool did not take the arrow"
+
+    page.click("#exCancel")
+    page.wait_for_timeout(1200)
+    assert page.evaluate(
+        "async () => (await import('/static/js/state.js')).S.modalTool") is None
+    i = info(page)
+    assert i["on"] and i["clipped"] == i["materials"], f"the section came off: {i}"
+    assert page.evaluate("() => window.__vp.gizmos().arrow"), \
+        "the section was left cut open with nothing to drag"
+    assert i["ownsArrow"] and i["ownsQuad"], \
+        f"the handles on screen are not the section's: {i}"
+
+    # and the arrow it got back really drives the plane
+    before = i["offset"]
+    drag_arrow(page, 60)
+    page.wait_for_timeout(400)
+    j = info(page)
+    assert abs(j["offset"] - before) > 1, (before, j["offset"])
+    assert float(page.input_value("#scOffset")) == pytest.approx(j["offset"], abs=0.02)
+    assert not page.errors, page.errors
+
+
+def test_the_handles_come_back_where_the_plane_is_now_not_where_it_was(
+        page, fresh_doc, server):
+    """The retaken quad and arrow are built from the section as it stands, so
+    an offset typed while the tool was open is where they appear — the plane
+    never jumps back to where it was when the tool borrowed them."""
+    setup(page)
+    page.evaluate(TOGGLE)
+    page.wait_for_timeout(400)
+    sp = page.evaluate(TO_SCREEN, [22.0, 15.0, 6.0])
+    page.mouse.click(sp["x"], sp["y"])
+    page.wait_for_timeout(700)
+    page.locator("button.tab", has_text="Create").click()
+    page.wait_for_timeout(200)
+    page.click("#ribbon .rbtn[title='extrude']")
+    page.wait_for_selector("#extrudeDialog", state="visible", timeout=15000)
+    page.wait_for_function("() => window.__vp.gizmos().arrow", timeout=15000)
+
+    page.fill("#scOffset", "4")            # the section moves while Extrude is up
+    page.wait_for_timeout(500)
+    assert info(page)["offset"] == 4
+
+    page.click("#exCancel")
+    page.wait_for_timeout(1200)
+    i = info(page)
+    assert i["on"] and i["offset"] == 4 and i["ownsArrow"], i
+    q = page.evaluate("() => window.__vp.planeQuadInfo()")
+    assert q["origin"][2] == pytest.approx(4, abs=0.01), \
+        f"the gold plane came back at the old offset: {q}"
+    assert not page.errors, page.errors

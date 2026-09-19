@@ -415,10 +415,16 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 
 /* one-command-at-a-time: the open tool panel FLASHES when another tool is
    refused, so "I did not see it was open" can't happen again */
+/* INSET, because the panel it flashes is inside #panelCol and that column
+   scrolls: `overflow-y: auto` computes overflow-x to auto as well, so an outer
+   ring is clipped on the left and the right and only the top edge of the glow
+   survived — measured on a 1200 px window with Hole open. Painted inside the
+   panel's own box it is a whole ring again, wherever the column is scrolled. */
 @keyframes modalflash {
-  0%, 100% { box-shadow: 0 10px 30px rgba(0,0,0,.55); }
-  25%, 75% { box-shadow: 0 0 0 3px var(--accent), 0 0 22px var(--accent); }
-  50% { box-shadow: 0 0 0 5px var(--fail), 0 0 26px var(--fail); }
+  0%, 100% { box-shadow: inset 0 0 0 0 rgba(0,0,0,0); }
+  25%, 75% { box-shadow: inset 0 0 0 3px var(--accent),
+                         inset 0 0 22px var(--accent); }
+  50% { box-shadow: inset 0 0 0 5px var(--fail), inset 0 0 26px var(--fail); }
 }
 .modalflash { animation: modalflash 1.2s ease; }
 
@@ -439,13 +445,37 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
    wherever the splitters have been dragged. It shrinks to `min-width` before
    the viewport is squeezed, and scrolls rather than run past the status bar,
    so the tallest panel (Hole, counterbored) can always be scrolled to its OK
-   button. */
-.toolpanel, #measureDialog { flex: 0 1 250px; min-width: 210px;
-  overflow-y: auto; overscroll-behavior: contain;
+   button.
+
+   ONE column holds them all and they STACK inside it, because more than one
+   can be open at once — Section view and Parameters are view states, not
+   commands, so they take no modal lock and a tool opens on top of both. A
+   column each cost the row another 210 px floor: 1000 px with one panel open,
+   1210 with two, 1420 with three, and at 1024 px with two open the AI designer
+   was entirely off the screen. Stacked, the floor is the same 1000 px however
+   many are open, now and after more tools are built, and the column scrolls
+   when the panels together are taller than it (user's choice, 2026-09-19:
+   two panels that sat side by side on a wide screen now sit one above the
+   other). splitters.js toggles `open` and `wide` from what is visible. */
+#panelCol { display: none; flex-direction: column; flex: 0 1 250px;
+  /* so a panel can lay itself out for the column it actually got, not for the
+     window (the Parameters table below); the column's own width comes from
+     flex-basis and min-width, never from its contents, so containing its
+     inline size changes nothing about how wide it ends up */
+  container-type: inline-size;
+  min-width: 210px; overflow-y: auto; overscroll-behavior: contain;
   background: var(--panel); border-left: 1px solid var(--line);
-  padding: 12px 14px;
   /* so the refusal flash (below) paints over its neighbours, not under them */
   position: relative; z-index: 9; }
+#panelCol.open { display: flex; }
+/* Parameters is a table rather than a form and asks for a wider column; it
+   keeps it for as long as it is one of the panels on screen. */
+#panelCol.wide { flex-basis: 420px; max-width: 520px; }
+.toolpanel, #measureDialog { flex: 0 0 auto; padding: 12px 14px;
+  position: relative; }
+/* a hairline between two stacked panels. splitters.js marks every VISIBLE
+   panel but the first, so a hidden neighbour never draws one. */
+.toolpanel.stacked, #measureDialog.stacked { border-top: 1px solid var(--line); }
 .toolpanel .exhead { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
 .toolpanel label { display: block; margin: 8px 0 3px; color: var(--dim);
   font-size: 11.5px; }
@@ -461,8 +491,9 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
                     padding: 2px 4px; border-bottom: 1px solid var(--line); }
 .toolpanel .lfrow button { padding: 0 6px; }
 .toolpanel .exhint { font-size: 11px; opacity: 0.75; margin: 4px 0 6px; }
-/* Parameters: a small table — name · formula · value · note · used · ✕ */
-.toolpanel.pmpanel { flex-basis: 420px; max-width: 520px; }
+/* Parameters: a small table — name · formula · value · note · used · ✕
+   (its width preference lives on #panelCol.wide, because the column is what
+   holds the width now that the panels stack inside one) */
 .pmhead, .pmrow { display: grid; grid-template-columns: 1.1fr 1.4fr 0.8fr 1.2fr 0.7fr 22px;
                   gap: 6px; align-items: center; padding: 2px 4px; font-size: 12px; }
 .pmhead { color: var(--dim); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -470,14 +501,45 @@ dialog .row button.primary { background: var(--accent); color: #08111e;
 .pmrow.bad .pmval { color: #ff5d5d; }
 .pmrow span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pmrow .pmname, .pmrow .pmexpr, .pmrow .pmcomment { cursor: text; }
+/* "click to add a note" needs something to click. A parameter created without
+   one has an EMPTY cell, and an empty grid item in a row that centres rather
+   than stretches has no height at all: measured 76.39 × 0.00 px at a 420 px
+   column and 124.94 × 0.00 at 234, so a note could only ever be typed in the
+   Add row when the parameter was created, never afterwards. */
+.pmrow .pmcomment:empty::before { content: '+ note'; opacity: .45; }
 .pmrow .pmname { font-weight: 600; }
 .pmrow .pmexpr { font-family: ui-monospace, Consolas, monospace; }
 .pmrow .pmval { color: var(--accent); }
 .pmrow .pmcomment, .pmrow .pmusers { color: var(--dim); }
 .pmrow input { width: 100%; font: inherit; }
 .pmdel { padding: 0 5px; }
-.pmadd { display: flex; gap: 6px; margin: 8px 0 2px; }
-.pmadd input { flex: 1; min-width: 0; font: inherit; }
+/* A narrow column, which the stacked panels make ordinary: six columns leave
+   about 30 px each and every cell is an ellipsis — measured at a 234 px
+   column, name / formula / value were 30.67 / 39.03 / 22.31 px. The row wraps
+   onto two lines instead, and NOTHING is dropped: the note and the "used"
+   count keep a full half-row each, and the same click still edits them. After:
+   52.33 / 66.61 / 38.06, with the note 124.94. Six columns come back the
+   moment the column is wide enough for them. */
+@container (max-width: 320px) {
+  .pmhead, .pmrow { grid-template-columns: 1.1fr 1.4fr 0.8fr 22px; }
+  .pmhead span:nth-child(4), .pmrow .pmcomment { grid-column: 1 / 3; }
+  .pmhead span:nth-child(5), .pmrow .pmusers { grid-column: 3 / 5; }
+  .pmhead span:nth-child(6), .pmrow .pmdel { grid-column: 4; grid-row: 1; }
+}
+/* The Add row: three boxes and a button. `.exbtn` is the full-width button
+   every tool panel uses; inside this flex row its `width: 100%` became the
+   button's flex BASE, and the boxes are `flex: 1` — basis 0 — so they got
+   whatever was left, which was nothing. Measured at a 420 px column: "Add"
+   349 px and name / formula / note 8 px EACH, at every window size, so a
+   parameter name could not be read while it was typed. Now the button sizes
+   to its label (41.7 px) and the boxes are 110.4 each; at a 234 px column the
+   row wraps instead of collapsing — 99.5 / 99.5 / 157.3 against 8 / 8 / 8. */
+.pmadd { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
+.pmadd input { flex: 1 1 96px; min-width: 96px; font: inherit; }
+/* `button.exbtn` on purpose: `.toolpanel .exbtn { width: 100% }` is written
+   later in this file and ties on specificity, so a class-only selector here
+   loses and the button keeps the whole row. */
+.pmadd button.exbtn { flex: 0 0 auto; width: auto; }
 .toolpanel .excheck { display: flex; align-items: center; gap: 6px; }
 .toolpanel .excheck input { width: auto; }
 .toolpanel .exfoot { display: flex; justify-content: flex-end; gap: 8px;

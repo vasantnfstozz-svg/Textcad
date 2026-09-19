@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=47">
+<link rel="stylesheet" href="/static/css/studio.css?v=49">
 </head>
 <body>
 
@@ -99,8 +99,22 @@
        to drag was under it. As a column it takes its own space: the viewport
        narrows while a tool is open — and pulls its camera back by the same
        ratio, so the part stays in view (viewport.js, resize) — and nothing is
-       ever hidden behind anything. One command at a time, so at most one of
-       these is ever visible. -->
+       ever hidden behind anything.
+
+       They all live in ONE column and STACK inside it, one above the other,
+       because more than one can be open at a time: Section view and the
+       Parameters panel are view states, not commands, so they take no modal
+       lock and a tool opens on top of both. As separate columns of `main`
+       each open panel cost the row another 210 px floor — measured, the row
+       needed 1000 px with one panel, 1210 with two and 1420 with three, and
+       at 1024 px with two open the AI designer column was entirely off the
+       screen. Stacked, the floor is 1000 px whatever is open, now and after
+       more tools are built; the column scrolls when the panels are taller
+       than it. The price, which the user chose on 2026-09-19: two panels
+       that sat side by side on a wide screen now sit one above the other.
+       splitters.js keeps the column's `open`/`wide` classes in step with
+       whatever is visible — no tool has to know the column exists. -->
+  <div id="panelCol">
   <!-- ============ Extrude panel (non-modal, live preview) ============ -->
   <div id="extrudeDialog" class="toolpanel" style="display:none">
     <div class="exhead">↑ Extrude</div>
@@ -473,6 +487,7 @@
       <button class="primary" id="meCancel">Close</button>
     </div>
   </div>
+  </div><!-- /#panelCol -->
 
   <div class="splitter" id="splitRight" title="drag to resize · double-click to reset"></div>
 
@@ -622,6 +637,6 @@
     "three/addons/": "/static/vendor/three/0.160.0/addons/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=224"></script>
+<script type="module" src="/static/js/main.js?v=226"></script>
 </body>
 </html>
