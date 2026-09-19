@@ -7,6 +7,24 @@ move onto the 0.001 mm grid, `_walks_through_itself` per move, and the
 give-up report — so the question is asked again, against the module as it was
 at a chosen commit.
 
+Measured 2026-09-17, round six against c872910, after `_hair_cluster`'s walk
+and the push's arithmetic came out of numpy:
+
+    ordinary logo 900x600 @ 40 mm          0.04 s -> 0.04 s
+    ring with hairline spokes @ 12 mm      0.02 s -> 0.02 s
+    hatched 2400x3000, 100 holes @ 8 mm    0.43 s -> 0.52 s
+    _pull_apart alone
+      50 loops x 60 pts                    0.41 s -> 0.24 s
+      200 loops x 60 pts                   2.04 s -> 0.91 s
+      400 loops x 60 pts                   4.26 s -> 2.16 s
+      200 loops x 400 pts (80 000 points) 78.26 s -> 81.98 s
+      400 loops x 60 pts, clear of each other  0.05 s -> 0.05 s
+
+So: ordinary art is unchanged, the many-small-loops case is roughly twice as
+fast as it was, and the one case that is slower - every loop big AND touching
+its neighbours, which is art nobody would trace - costs 5% more. Before the
+two hot loops were taken out of numpy that same case was 169 s against 86 s.
+
 Run:  C:/Python314/python.exe probes/imgtrace_r6_cost.py [before.py]
       (default: probes/_imgtrace_r6_before.py)
 """
