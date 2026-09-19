@@ -1402,3 +1402,64 @@ def test_legacy_path_points_answers_in_sentences_not_in_python():
     # what worked still works, strings and all
     got = sk._path_point_list([["0", "0", "5"], (1, 2, 3)], "sweep")
     assert got == [(0.0, 0.0, 5.0), (1.0, 2.0, 3.0)]
+
+
+# ---------------------------------------------------------------------------
+# Round four, 2026-09-19: WHY classifying only the stations that would change
+# the answer is safe — it is an invariant, not a saving
+# ---------------------------------------------------------------------------
+
+def test_no_station_the_climb_could_believe_is_ever_outside_the_body():
+    """Round three classifies a station only when it is "about to change the
+    answer", and round four asked the obvious question of that: a station that
+    is AIR, does not improve `best` and does not end the loop still enters
+    `seen` unclassified, and `seen` is the list `_climb_to_the_deepest` seeds
+    from. Where does that matter?
+
+    Nowhere, and not by luck. `best` starts at 0.0 and a station is classified
+    the moment its measured distance would BEAT the current best, so an air
+    station whose reading is DANGEROUS — deeper than the truth, which is the
+    only kind that can hurt a guard whose job is refusing — is always the one
+    that gets classified and dropped. The only air station that can reach
+    `seen` unclassified is one already no deeper than a point the classifier
+    has confirmed, and such a station can neither become `best` nor be believed
+    by the climb, which classifies every seed itself.
+
+    That is what this locks, on the one body in the whole corpus whose
+    degenerate face produces an air ray at all: `sliver_intersect_plate`, whose
+    4.725e-08 mm2 face sends a ray 68.8 mm through nothing. Measured
+    2026-09-19 (probes/shell_r4_air_seed_probe.py) over the gauntlet corpus,
+    the four committed crash fixtures and four of the user's own designs at
+    seven thicknesses each: `seen` holds 18 to 1177 stations per cell and NOT
+    ONE is air, and running the climb again on a `seen` filtered to
+    classifier-confirmed material answers identically to the last digit in
+    every cell.
+
+    Green the day it was written, and what it locks is the SEEDS, not the
+    answer — the two are guarded separately, which the teeth-check made plain.
+    Disable the classifier (the fail-open branch: `cls = None`, which is
+    exactly the pre-round-three code) and this body's answer goes straight back
+    to the 24.3295 mm over-read on a body 1.9296 mm thick, while `seen` stays
+    air-free — because the over-read ENDS THE LOOP before the climb ever runs,
+    so there are no seeds to pollute. `in_material` is what guards the answer;
+    this guards the list the climb walks, which nothing else asserts."""
+    solid = sliver_plate()
+    real = sk._climb_to_the_deepest
+    caught = []
+
+    def spy(body, measure, seen, best, tol):
+        caught.append(list(seen))
+        return real(body, measure, seen, best, tol)
+
+    sk._climb_to_the_deepest = spy
+    try:
+        for t in (1.0, 3.0, 8.0):
+            sk.deepest_material(solid, t)
+    finally:
+        sk._climb_to_the_deepest = real
+    assert caught, "the climb must run: this body is thin everywhere"
+    for seen in caught:
+        assert seen, "the guard measured nothing at all"
+        for d, q, _bound in seen:
+            assert sk.point_is_inside(solid, (q.X, q.Y, q.Z)) is not False, \
+                f"a station {d:.4f} mm 'deep' at {q} is OUTSIDE the body"
