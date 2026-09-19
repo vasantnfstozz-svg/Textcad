@@ -3023,19 +3023,18 @@ def _seeds_for_the_climb(seen: list, deepest: float, tol: float) -> list:
     17.2160 (17.2047), the 180 mm draft prism unchanged at 15.3405, the ramped
     plate unchanged at 12.2987 — that last one is the climb's own limit and not
     the seeding's: climbing all 160 of its stations reaches 12.2987 too. Those
-    numbers are what the SHIPPED code answers; they were first written down
-    from a run with no budget on the climb, and until 2026-09-17's review the
-    budget of 120 meant the shipped code answered 12.4156 and 17.0000 instead
-    (see `_DEPTH_CLIMB_CALLS`).
+    numbers are what the code answered until 2026-09-18; they were first
+    written down from a run with no budget on the climb, and until
+    2026-09-17's review the budget of 120 meant the shipped code answered
+    12.4156 and 17.0000 instead (see `_DEPTH_CLIMB_CALLS`).
 
-    The ramped plate is worth one more line, because it is the one live cost of
-    the residual: the kernel builds walls of 12.36, 12.43, 12.49, 12.56 and
-    12.62 mm on it SOUND — cavities of 42.9 down to 2.7 mm3, valid, watertight,
-    health clean — and this guard refuses all five, saying "walls must be under
-    12.2987 mm" (probes/shell_depth_residual_band_probe.py). Fixing it is not a
-    seeding change: the climb steps away from the ONE nearest point, which
-    stalls where the inscribed sphere touches on two sides at once, and that is
-    a different piece of work."""
+    The ramped plate was the one live cost of that residual — the kernel builds
+    walls of 12.36 to 12.62 mm on it SOUND while this guard refused all of them
+    — and it was NOT a seeding fault, exactly as this paragraph said: the climb
+    stalled where the inscribed sphere touches on two sides at once. Round two
+    of the review closed it in the climb itself, so the shipped answers are now
+    12.4499, 17.2242, 15.4997 and 12.7125 (the ramped plate's exact inscribed
+    radius is 12.713 by hand) — see `_climb_to_the_deepest`."""
     deep, room = [], []
     for d0, q0, bound in seen:
         deep.append((d0, d0, q0))
@@ -3081,6 +3080,30 @@ def _climb_to_the_deepest(solid, measure, seen: list, best: tuple, tol: float) -
     body is never taken. Several seeds because the field has one maximum per
     medial branch and the best sample need not sit on the right one —
     `_seeds_for_the_climb` says which, and why depth alone is not the question.
+
+    "Away from the face nearest it" is the gradient of this field wherever the
+    field is smooth, and it stops being smooth on the MEDIAL AXIS, where the
+    sphere touches on two sides at once: the step then walks into the second
+    wall, the distance does not rise, the step halves and the seed dies on the
+    ridge instead of walking along it. That was the residual the 2026-09-16
+    review declared and the 2026-09-17 one measured but did not close — the
+    ramped plate, where the guard answered 12.2987 and refused walls of 12.36,
+    12.43, 12.49, 12.56 and 12.62 mm that the kernel builds SOUND. Round two
+    closes it with the bisector step in the loop below, for no new machinery
+    and no new constant: the largest circle of that plate's section touches
+    three edges at a radius of 12.713 by hand, and the climb now answers
+    12.7125 (probes/shell_depth_ridge_climb_probe.py). The prism reads 15.4997
+    where it read 15.3405, the wedge in the slab 12.4499 where it read 12.4444.
+
+    A climb that reads DEEPER allows more, so every wall it newly allows was
+    put to the kernel (probes/shell_depth_ridge_allowed_probe.py) over the four
+    plateau bodies, the gauntlet corpus and the four committed crash fixtures:
+    **12 newly allowed walls BUILD and are sound** — the ramped plate's own
+    band at cavities of 33.934, 14.982 and 3.733 mm3 — **16 the kernel refuses
+    with a sentence, and nothing crashed or came back unsound.** The crash
+    fixtures do not move at all: the oneplus case, the impeller, the sliver
+    plate, my-part-5's mirror body and the clipped ball answer exactly what
+    they answered before, so a body that segfaults OCCT gains no new door.
 
     This can only ever RAISE the answer — it accepts a point only when that
     point measures deeper, by the same exact `BRepExtrema` the stations use —
@@ -3131,7 +3154,30 @@ def _climb_to_the_deepest(solid, measure, seen: list, best: tuple, tol: float) -
             got = (None, None) if outside(cand) else spend(cand)
             if got[0] is not None and got[0] > d:
                 q, d, near = cand, got[0], got[1]
-            else:
+                continue
+            # The step failed, which on this field usually means the inscribed
+            # sphere has reached a RIDGE and touches on two sides at once:
+            # walking away from one wall walks into the other. The way on is
+            # the bisector of the two, and both directions are already in hand
+            # — the failed candidate was measured, so its own nearest point
+            # came back with it. `u1 + u2` rises against BOTH walls to first
+            # order, since (u1+u2).u1 = 1 + u1.u2 > 0 unless they are exactly
+            # opposite, which is a slab and has no ridge to walk.
+            took = False
+            if got[1] is not None:
+                u1 = away * (1.0 / reach)
+                away2 = cand - got[1]
+                if away2.length > 1e-9:
+                    u2 = away2 * (1.0 / away2.length)
+                    ridge = u1 + u2
+                    # the same wall again would just repeat the step that failed
+                    if u1.dot(u2) < 0.99 and ridge.length > 1e-6:
+                        alt = q + ridge * (step / ridge.length)
+                        alt_got = (None, None) if outside(alt) else spend(alt)
+                        if alt_got[0] is not None and alt_got[0] > d:
+                            q, d, near = alt, alt_got[0], alt_got[1]
+                            took = True
+            if not took:
                 step *= 0.5
                 if step <= tol * 0.25:
                     break                 # the sphere touches on every side
@@ -3225,7 +3271,7 @@ def assert_the_deepest_point_was_hollowed(solid, out, deep, t: float, walls: str
     SLIVER of cavity — which is what it does where the walls nearly meet —
     leaves the point just inside a surface it really did build, and the oneplus
     case at t = 0.5 is exactly that: a point 0.1 mm past a 0.5 mm wall,
-    classified IN, on a result that still hollowed 13 per cent of the body.
+    classified IN, on a result that still hollowed 30.7 per cent of the body.
     Calibrating a margin between that 0.1 mm and the 0.2426 mm of a wrong
     result would be the same mistake this function exists to stop making, and
     so would a bound on how far the point sits from the RESULT's own surface
@@ -3298,9 +3344,10 @@ def assert_the_deepest_point_was_hollowed(solid, out, deep, t: float, walls: str
 #       the 49-hole block at t = 3            1.4e-4 (20.3 mm3)
 #   SOUND, and reaching this question because the kernel dropped a sliver of
 #   cavity where the walls nearly meet:
-#       the oneplus case at t = 0.5           1.4e-1 of the body
+#       the oneplus case at t = 0.5           3.1e-1 of the body
+#           (13,918.990 mm3 of cavity out of 45,328.348)
 #
-# 1 per cent sits 70x above the highest wrong reading and 13x below the sound
+# 1 per cent sits 70x above the highest wrong reading and 31x below the sound
 # one. It is also above the cavity of every SOUND result in the corpus that
 # comes anywhere near a block by volume (the 12 mm plate at 5.9 mm walls is
 # 1.09 per cent) — and those never reach this question at all, because their

@@ -861,7 +861,7 @@ def test_the_deep_point_refuses_only_when_both_halves_say_so():
     is allowed to judge. A 3 mm wall hollows 62 per cent of it, and there the
     point decides nothing however deep it claims to be: a kernel that drops a
     sliver of cavity is not a kernel that handed the body back (the oneplus
-    case at t = 0.5 is a real one, 13 per cent hollowed with its deep point
+    case at t = 0.5 is a real one, 30.7 per cent hollowed with its deep point
     still inside)."""
     body = box()
     in_the_wall = (0.0, 0.0, 14.0)             # the top wall spans z 12..15
@@ -1039,15 +1039,56 @@ def test_a_flat_face_is_sampled_to_its_budget_not_to_its_triangle_count():
     cam-cover-lower from 3.2447 to 3.7189."""
     prism = long_draft_prism()
     assert prism.volume == pytest.approx(129600.0, rel=1e-6)
-    assert sk.deepest_material(prism, 1e9)[0] == pytest.approx(15.34, abs=0.05)
+    assert sk.deepest_material(prism, 1e9)[0] == pytest.approx(15.50, abs=0.05)
     for t, cavity in ((14.9, 49.795), (15.2, 11.742), (15.34, 3.255)):
         out = healthy(sk.shell(prism, t))
         assert prism.volume - out.volume == pytest.approx(cavity, rel=0.05)
     plate = ramped_plate()
-    assert sk.deepest_material(plate, 1e9)[0] == pytest.approx(12.30, abs=0.05)
+    assert sk.deepest_material(plate, 1e9)[0] == pytest.approx(12.71, abs=0.05)
     for t, cavity in ((11.9, 241.427), (12.29, 63.407)):
         out = healthy(sk.shell(plate, t))
         assert plate.volume - out.volume == pytest.approx(cavity, rel=0.05)
+
+
+def test_the_climb_walks_a_ridge_instead_of_dying_on_it():
+    """The residual two reviews declared and neither closed, and the reason it
+    was not a seeding fault.
+
+    "Away from the nearest face" is the gradient of the distance field where
+    the field is smooth, and it stops being smooth on the MEDIAL AXIS: the
+    inscribed sphere touches on two sides, the step walks into the second wall,
+    the distance does not rise, the step halves and the seed dies on the ridge
+    instead of walking along it. The ramped plate is that shape — the guard
+    answered 12.2987 and refused every wall from there up, while the kernel
+    builds them sound.
+
+    The way on costs no new machinery: the failed candidate was MEASURED, so
+    its own nearest point came back with it, and `u1 + u2` rises against both
+    walls to first order. The answer this reaches is not a matter of opinion —
+    the section of this plate is the polygon (-60,0) (60,0) (60,8) (10,26)
+    (-60,8), whose largest inscribed circle touches the bottom and both slopes
+    at r = 12.713 by hand, and 50 mm of extrusion cannot beat that. The climb
+    answers 12.7125.
+
+    THE RULE: a guard whose job is refusing proves nothing by reading a bigger
+    number. Every wall this newly allows was put to the kernel over the four
+    plateau bodies, the gauntlet corpus and the four committed crash fixtures
+    (probes/shell_depth_ridge_allowed_probe.py): 12 build and are SOUND, 16 the
+    kernel refuses with a sentence, none crashed and none came back unsound —
+    and the crash fixtures do not move at all. The three that matter most are
+    built here."""
+    plate = ramped_plate()
+    assert sk.deepest_material(plate, 1e9)[0] == pytest.approx(12.7125, abs=0.005), \
+        "the exact inscribed radius of this section is 12.713"
+    for t, cavity in ((12.4022, 33.934), (12.5056, 14.982), (12.6090, 3.733)):
+        out = healthy(sk.shell(plate, t))
+        assert bool(out.is_valid) and inspector.closed_shell(out)
+        assert plate.volume - out.volume == pytest.approx(cavity, rel=0.08, abs=0.02)
+    # ... and past the answer the refusal still stands, naming the new number.
+    # 12.9 and not 13.5: this plate is 26 mm at its thinnest, so from 13 mm up
+    # the bounding-box guard speaks first and this one is never reached
+    with pytest.raises(ValueError, match=r"more than 12\.7\d* mm from the faces"):
+        sk.shell(plate, 12.9)
 
 
 def wedge_in_slab():
@@ -1078,7 +1119,7 @@ def test_a_uniform_plateau_does_not_outrank_the_taper_it_is_fused_to():
     body = wedge_in_slab()
     assert len(body.solids()) == 1, "the repro is ONE solid, not two lumps"
     assert body.volume == pytest.approx(155657.143, rel=1e-6)
-    assert sk.deepest_material(body, 1e9)[0] == pytest.approx(12.4444, abs=0.01)
+    assert sk.deepest_material(body, 1e9)[0] == pytest.approx(12.4499, abs=0.01)
     for t, cavity in ((12.0416, 22.110), (12.1662, 10.524), (12.2909, 3.270),
                       (12.4222, 0.103)):
         out = healthy(sk.shell(body, t))
@@ -1111,7 +1152,7 @@ def test_the_third_ranking_gets_enough_budget_to_reach_the_post():
     does not help; the budget is the whole of it."""
     body = plateau_pair()
     assert body.volume == pytest.approx(219744.0, rel=1e-9)
-    assert sk.deepest_material(body, 1e9)[0] == pytest.approx(17.2160, abs=0.01)
+    assert sk.deepest_material(body, 1e9)[0] == pytest.approx(17.2242, abs=0.01)
     # the guard now steps out of the way over the whole band it used to refuse,
     # and the kernel's own refusal is a sentence, not a corrupt body
     for t in (17.0216, 17.1512, 17.2052):
@@ -1176,10 +1217,10 @@ def test_a_climb_stopped_by_its_budget_reads_lower_and_never_deeper():
     down to zero, and on the plateau repro at one."""
     post, wedge = plateau_pair(), wedge_in_slab()
     full = sk.deepest_material(post, 1e9)[0]
-    assert full == pytest.approx(17.2160, abs=0.01), "the shipped answer moved"
+    assert full == pytest.approx(17.2242, abs=0.01), "the shipped answer moved"
     with pytest.MonkeyPatch.context() as mp:
         for budget, solid, top in ((30, post, full), (3, post, full), (0, post, full),
-                                   (0, wedge, 12.4444)):
+                                   (0, wedge, 12.4499)):
             mp.setattr(sk, "_DEPTH_CLIMB_CALLS", budget)
             got = sk.deepest_material(solid, 1e9)[0]
             assert got <= top + 1e-9, \
