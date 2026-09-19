@@ -2961,7 +2961,12 @@ def deepest_material(solid, t: float, openings=()) -> tuple | None:
             far_stays = stays(inter.Face(hit))
             for f in _DEPTH_STATIONS + (() if far_stays else _DEPTH_STATIONS_TO_OPENING):
                 bound = min(f, 1 - f) * chord if far_stays else f * chord
-                stations.append((bound, p - nrm * (f * chord), None))
+                # at f = 1 the station sits exactly ON the opening the ray
+                # ended at, where the classifier answers ON and the theorem
+                # after the kernel is mute; the way back into the material is
+                # +nrm, the way the ray came
+                back = nrm if not far_stays and f >= 1.0 else None
+                stations.append((bound, p - nrm * (f * chord), back))
     if not stations:
         return None
     stations.sort(key=lambda st: -st[0])
@@ -3441,6 +3446,26 @@ def assert_the_deepest_point_was_hollowed(solid, out, deep, t: float, walls: str
 # comes anywhere near a block by volume (the 12 mm plate at 5.9 mm walls is
 # 1.09 per cent) — and those never reach this question at all, because their
 # deep point is properly gone.
+#
+# 2026-09-19, round three: that last sentence is the one that carries this, and
+# the "31x below the sound one" is not. The sound population does NOT stop at
+# 3.1e-1 — it reaches 4.1e-6, BELOW every wrong reading above. Measured
+# (probes/shell_r3_sound_under_the_floor_probe.py) on five shells the kernel
+# builds sound and every check calls sound: a 60 x 60 x 12 plate at 5.95 mm
+# walls removes 5.4e-3 of itself, a 20 x 20 x 100 bar with the top open at
+# 9.8 mm removes 3.6e-4, and a 50 mm box at 24.6 mm removes 4.1e-6 — 0.512 mm3
+# out of 125,000. So no number here separates the two populations either, and
+# this floor is not what makes the AND safe.
+#
+# What makes it safe is the OTHER half, and structurally rather than by
+# calibration: the point this is asked about is the DEEPEST material in the
+# body, so a correct shell is exactly the result that takes it away. All five
+# of those sound results have their point OUT of the walls and never reach this
+# question, at cavities four orders of magnitude under the floor. The floor's
+# job is only to spare the one shape that keeps the point honestly — a kernel
+# that drops a sliver where the walls nearly meet (the oneplus case at t = 0.5,
+# 3.1e-1) — and for that job "the kernel did next to nothing" is the right
+# question and 1 per cent is a number a person can read.
 _SHELL_NOTHING_HOLLOWED = 0.01
 
 
