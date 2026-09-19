@@ -683,8 +683,20 @@ def _fail_key(sig: str, f) -> str:
     null}` — the second row said "'boss_height' (extrude): amount must be a
     number", a feature that is not in that design at all, and the cache is
     shared by every tab in the process. Geometry stays shared; a refusal is
-    kept per name."""
-    return f"{sig}!{f.id}<{','.join(f.inputs)}"
+    kept per name.
+
+    JSON, not `f"{f.id}<{','.join(f.inputs)}"`, because that first form was two
+    bugs of its own (round four, measured 2026-09-17):
+
+      * `<` and `,` are separators a feature id may itself contain, so `'a<b'`
+        with input `'c'` and `'a'` with input `'b<c'` built ONE key and the
+        second design's row read the first design's name again — the very leak
+        this function exists to close;
+      * `','.join` is `rebuild`'s first look at a feature, ahead of the
+        per-feature try, so an input id a foreign file holds as a number took
+        the WHOLE rebuild down with `TypeError: sequence item 0: expected str
+        instance, int found`, though `rebuild` promises it never raises."""
+    return sig + "!" + json.dumps([str(f.id), [str(i) for i in f.inputs]])
 
 
 def _name_list(ids, cap: int = 6) -> str:
@@ -814,9 +826,27 @@ class Document:
         which is recoverable — refusing to open is not). The doors where the
         node is being AUTHORED — the API's /api/feature/add and the AI's
         _to_document — pass strict=True, so a hallucinated key is a sentence
-        now instead of a TypeError at the next rebuild."""
-        if op not in KNOWN_OPS:
+        now instead of a TypeError at the next rebuild.
+
+        The three SHAPE checks below are the same idea as `_params_dict`, one
+        level up: what a feature IS, before what it holds. All three answered
+        in Python before 2026-09-17 (probes/s10_r4_feature_shape.py) — a list
+        in `op` read `TypeError: cannot use 'list' as a set element`, a list in
+        `id` `... as a dict key` (an id is a dict key all through the rebuild),
+        and a number in `inputs` `TypeError: 'int' object is not iterable`."""
+        if not isinstance(op, str) or op not in KNOWN_OPS:
             raise ValueError(f"unknown op '{op}' — allowed: {sorted(KNOWN_OPS)}")
+        try:
+            hash(id)
+        except TypeError:
+            raise ValueError(
+                f"a feature's name has to be text, and this one reads {id!r} "
+                f"— the tree in this file is damaged") from None
+        if inputs is not None and not isinstance(inputs, (list, tuple)):
+            raise ValueError(
+                f"'{id}' ({op}): what it is built from has to be a list of "
+                f"feature names (it reads {inputs!r}) — the tree in this file "
+                f"is damaged")
         if any(f.id == id for f in self.features):
             raise ValueError(f"duplicate feature id '{id}'")
         if strict:
@@ -1730,7 +1760,11 @@ class Document:
             try:
                 spec_obj = self._spec_obj()
             except Exception as e:
-                self.spec_problems = [f"spec is malformed: {e!r}"]
+                # plain_cause, not repr(e): this string is painted straight
+                # into the design's status line, and `repr` of a sentence is
+                # "ValueError('...')" — Python's wrapper around our own words
+                # (measured 2026-09-17).
+                self.spec_problems = [f"spec is malformed: {blocks.plain_cause(e)}"]
                 return False
             self.spec_problems = inspector.verify(self.result_shape(), spec_obj)
             self._spec_cache = (spec_sig, list(self.spec_problems))
@@ -1970,6 +2004,17 @@ class Document:
         return out
 
     def _spec_obj(self) -> inspector.Spec:
+        # A spec a file holds as something other than a table of numbers is not
+        # one, and `spec_from_dict` answered `TypeError: object is not
+        # iterable` — which rebuild caught and repeated verbatim ("spec is
+        # malformed: TypeError('object is not iterable')") on a design whose
+        # features were all fine (measured 2026-09-17). It is not thrown away:
+        # `to_data` still writes back exactly what came in.
+        if not isinstance(self.spec, dict):
+            raise ValueError(
+                f"the target sizes saved with this design are damaged (they "
+                f"read {self.spec!r}, not a list of name = number) — set them "
+                f"again, or leave them off")
         return inspector.spec_from_dict(self.spec)
 
     def consumed_ids(self) -> set[str]:
@@ -2418,15 +2463,18 @@ class Document:
         for f in self.features:
             badge = {"ok": "[OK]", "failed": "[FAIL]", "stale": "[ ? ]"}[f.status]
             sup = " (suppressed)" if f.suppressed else ""
-            src = f" <- {','.join(f.inputs)}" if f.inputs else ""
+            # str() per id: a foreign file can hold one as a number, and a
+            # bare join answered `TypeError: sequence item 0: expected str
+            # instance, int found` where the tree is READ (measured 2026-09-17)
+            src = f" <- {','.join(str(i) for i in f.inputs)}" if f.inputs else ""
             ps = ", ".join(f"{k}={v}" for k, v in _param_items(f)
                            if not isinstance(v, list))
             lines.append(f"  {badge} {f.id}: {f.op}({ps}){src}{sup}")
             for p in f.problems:
                 if p != "(suppressed)":
                     lines.append(f"        ! {p}")
-        if self.spec:
-            badge = ("[--]" if not self.spec_checked else
+        if isinstance(self.spec, dict) and self.spec:   # a foreign file's may
+            badge = ("[--]" if not self.spec_checked else  # be anything at all
                      "[OK]" if not self.spec_problems else "[FAIL]")
             lines.append(f"  {badge} spec: " + ", ".join(
                 f"{k}={v}" for k, v in self.spec.items() if v is not None))
@@ -2450,6 +2498,30 @@ class Document:
 
     @classmethod
     def from_data(cls, data: dict) -> "Document":
+        # What a DESIGN FILE is, before what is in it. Every line below was a
+        # Python message in the user's face before 2026-09-17, and each one is
+        # the answer a design cannot recover from — it does not open at all
+        # (measured, probes/s10_r4_feature_shape.py): `KeyError: 'name'`,
+        # `KeyError: 'features'`, `TypeError: string indices must be integers`,
+        # `TypeError: list indices must be integers or slices, not str`.
+        if not isinstance(data, dict):
+            raise ValueError("this is not a TextCAD design — the file holds "
+                             f"{type(data).__name__} where a design should be")
+        if "name" not in data:
+            raise ValueError("this file has no design name — it is not a "
+                             "TextCAD design, or it was cut short")
+        feats = data.get("features")
+        if not isinstance(feats, list):
+            raise ValueError("this file has no list of features — it is not a "
+                             "TextCAD design, or it was cut short")
+        for i, f in enumerate(feats):
+            if not isinstance(f, dict):
+                raise ValueError(f"feature {i + 1} in this file is not a "
+                                 f"feature (it reads {f!r}) — the tree is damaged")
+            for key, what in (("id", "a name"), ("op", "an operation")):
+                if key not in f:
+                    raise ValueError(f"feature {i + 1} in this file has no "
+                                     f"{what} — the tree is damaged")
         doc = cls(name=data["name"], spec=data.get("spec", {}))
         # An op this build does not know is refused here, and that is the
         # SETTLED answer, not an oversight: a version restore says "cannot
@@ -2463,7 +2535,12 @@ class Document:
         # whose formula no longer works (a name gone, a loop) is carried as
         # written and flagged in param_problems; the features that use it go
         # red with the sentence at rebuild.
-        for name, spec in (data.get("parameters") or {}).items():
+        # ...and `parameters` that is not a table at all is no table of
+        # parameters: `AttributeError: 'list' object has no attribute 'items'`
+        # stopped a design whose FEATURES were all fine from opening, which is
+        # exactly what the paragraph above promises never happens.
+        stored = data.get("parameters")
+        for name, spec in (stored if isinstance(stored, dict) else {}).items():
             if isinstance(spec, dict):
                 doc.parameters[str(name)] = {"expr": str(spec.get("expr", "")),
                                              **({"comment": str(spec["comment"])}
@@ -2473,7 +2550,11 @@ class Document:
         doc._eval_parameters()
         for f in data["features"]:
             doc.add(f["id"], f["op"], f.get("params"), f.get("inputs"))
-            doc.features[-1].suppressed = f.get("suppressed", False)
+            # bool(), because `suppressed` decides whether a feature is in the
+            # model at all: a file holding a WORD there was read by Python
+            # truthiness and written straight back out, so the file and the
+            # tree could go on disagreeing about it for ever.
+            doc.features[-1].suppressed = bool(f.get("suppressed", False))
         return doc
 
     def save(self, path: str) -> str:

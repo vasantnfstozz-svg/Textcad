@@ -521,3 +521,161 @@ def test_the_evaluator_never_returns_a_value_the_ops_cannot_use():
     for expr in ("1e400", "-1e400", "0/0", "1/0", "10**10**10", "2**1000"):
         with pytest.raises(ValueError):
             paramexpr.evaluate(expr, {})
+
+
+# --- ROUND FOUR: the key the refusal itself is kept under ---------------------
+#
+# Round three keyed a refusal by `f"{sig}!{f.id}<{','.join(f.inputs)}"`, so a
+# second design's failing row could no longer read the FIRST design's feature
+# name. Two things that key does not survive, both measured 2026-09-17
+# (probes/s10_r4_cache_key.py, probes/s10_r4_fail_key_and_spec.py).
+
+def test_a_refusal_key_does_not_take_the_rebuild_down():
+    """MEASURED RED: `','.join(f.inputs)` is `rebuild`'s FIRST look at a
+    feature, before the per-feature try, so an input id a foreign file holds
+    as a number raised `TypeError: sequence item 0: expected str instance,
+    int found` out of `Document.rebuild()` — which promises it never raises.
+    Round three closed exactly this class for `params` and opened it here."""
+    d = Document.from_data({"name": "n", "features": [
+        {"id": 5, "op": "plate", "params": PLATE, "inputs": []},
+        {"id": "b", "op": "fillet", "params": {"radius": None}, "inputs": [5]},
+    ]})
+    d.rebuild()                                      # must not raise
+    assert d.get("b").status == "failed"
+    assert not _is_python(" ".join(d.get("b").problems)), d.get("b").problems
+    assert d.tree()                                  # /api/doc walks it too
+
+
+def test_two_feature_names_never_share_one_refusal():
+    """MEASURED RED: `<` and `,` are the key's own separators and a feature id
+    may hold either, so `'a<b'` with input `'c'` and `'a'` with input `'b<c'`
+    built the SAME key — and the second design's row read "'a<b' (extrude)",
+    a feature that is not in it. The same leak round three closed, through the
+    key that closed it."""
+    def failing(fid, sid):
+        d = Document(name="c-" + fid)
+        d.add(sid, "sketch", {"entities": CIRC, "plane": "XY", "offset": 0.0}, [])
+        d.add(fid, "extrude", {"amount": None}, [sid])
+        d.rebuild()
+        return " ".join(d.get(fid).problems)
+
+    first = failing("a<b", "c")
+    second = failing("a", "b<c")
+    assert "'a<b'" in first, first
+    assert "'a'" in second and "'a<b'" not in second, second
+
+
+# --- ROUND FOUR: the SHAPE of a feature, not just the values in it ------------
+#
+# Round three's census walked every PARAMETER of every op. A foreign file also
+# decides the shape of the feature AROUND those parameters — its id, its op,
+# what it is built from, whether it is switched off — and of the document
+# around that. Measured 2026-09-17 (probes/s10_r4_feature_shape.py): 35 shapes,
+# 16 of them answering in Python, most of them at OPEN, which is the one answer
+# a design cannot recover from.
+
+def _opens(payload):
+    """(the document or None, the sentence the user gets)"""
+    try:
+        return Document.from_data(payload), ""
+    except Exception as e:                           # noqa: BLE001 - that IS the test
+        return None, f"{type(e).__name__}: {e}"
+
+
+def test_a_file_whose_parameters_are_not_a_table_still_opens():
+    """MEASURED RED: `AttributeError: 'list' object has no attribute 'items'`
+    from `from_data` itself, so a design whose FEATURES are all fine could not
+    be opened at all — against the promise three lines above it ("parameters
+    FIRST and without refusal: a file must always open")."""
+    for bad in ([1, 2], "wall", 5):
+        d, said = _opens({"name": "n", "parameters": bad, "features": [
+            {"id": "a", "op": "plate", "params": PLATE, "inputs": []}]})
+        assert d is not None, (bad, said)
+        assert d.parameters == {}
+        assert d.rebuild() is True
+        assert d.get("a").volume == pytest.approx(2000.0)
+
+
+def test_a_damaged_feature_says_so_instead_of_answering_in_python():
+    """Every shape that CANNOT open must still be a sentence. Measured before
+    the fix: `TypeError: cannot use 'list' as a dict key`, `... as a set
+    element`, `KeyError: 'id'`, `KeyError: 'op'`, `'int' object is not
+    iterable`, `list indices must be integers`."""
+    cases = [
+        {"id": ["a"], "op": "plate", "params": PLATE},          # id unhashable
+        {"id": {"a": 1}, "op": "plate", "params": PLATE},
+        {"op": "plate", "params": PLATE},                       # no id
+        {"id": "a", "op": ["plate"], "params": PLATE},          # op unhashable
+        {"id": "a", "op": {"plate": 1}, "params": PLATE},
+        {"id": "a", "params": PLATE},                           # no op
+        {"id": "a", "op": "plate", "params": PLATE, "inputs": 5},
+        {"id": "a", "op": "plate", "params": PLATE, "inputs": True},
+        [1, 2],                                                 # not a feature
+        "plate",
+    ]
+    for bad in cases:
+        d, said = _opens({"name": "n", "features": [bad]})
+        assert d is None, (bad, "opened anyway")
+        assert said.startswith("ValueError"), (bad, said)
+        assert not _is_python(said), (bad, said)
+
+
+def test_a_file_that_is_not_a_design_says_so():
+    for bad in ({"features": [{"id": "a", "op": "plate", "params": PLATE}]},
+                {"name": "n"},
+                {"name": "n", "features": {"a": 1}},
+                {"name": "n", "features": "plate"},
+                [1, 2], "n"):
+        d, said = _opens(bad)
+        assert d is None, (bad, "opened anyway")
+        assert said.startswith("ValueError"), (bad, said)
+        assert not _is_python(said), (bad, said)
+
+
+def test_a_spec_that_is_not_a_table_does_not_stop_the_design_opening():
+    """MEASURED RED: `tree()` raised `AttributeError: 'list' object has no
+    attribute 'items'` and `_spec_obj()` `TypeError: object is not iterable`,
+    both on a design whose features are all fine. The spec is kept as written
+    (nothing a file holds is thrown away on the way in), and the two places
+    that READ it look first."""
+    d, said = _opens({"name": "n", "spec": [1, 2], "features": [
+        {"id": "a", "op": "plate", "params": PLATE, "inputs": []}]})
+    assert d is not None, said
+    d.rebuild()                                      # must not raise
+    assert d.get("a").status == "ok"                 # the GEOMETRY is fine
+    assert d.get("a").volume == pytest.approx(2000.0)
+    assert "a: plate" in d.tree()
+    assert d.to_data()["spec"] == [1, 2]             # not thrown away
+    # the spec itself cannot be checked, and says so in words
+    assert d.spec_problems and not _is_python(" ".join(d.spec_problems)), \
+        d.spec_problems
+
+
+def test_a_switch_that_is_not_a_switch_is_read_and_saved_as_one():
+    """`suppressed` decides whether a feature is in the model at all. A file
+    holding a word there was read by Python truthiness and written back out
+    the same way, so the tree and the file could disagree about it."""
+    for bad, want in (("yes", True), (1, True), (0, False), (None, False),
+                      ([], False), ({"a": 1}, True)):
+        d, said = _opens({"name": "n", "features": [
+            {"id": "a", "op": "plate", "params": PLATE, "inputs": [],
+             "suppressed": bad}]})
+        assert d is not None, said
+        assert d.get("a").suppressed is want, (bad, d.get("a").suppressed)
+        assert d.to_data()["features"][0]["suppressed"] is want
+
+
+def test_a_design_written_by_this_build_still_opens_byte_for_byte():
+    """The other direction, which matters more: none of the above may refuse
+    work that is correct. A full document round-trips unchanged."""
+    d = Document(name="round-trip")
+    d.set_parameter("wall", "3")
+    d.add("s1", "sketch", {"entities": CIRC, "plane": "XY", "offset": 0.0}, [])
+    d.add("b1", "extrude", {"amount": "wall*2"}, ["s1"])
+    d.add("f1", "fillet", {"radius": 1, "edges": "all"}, ["b1"])
+    d.get("f1").suppressed = True
+    data = d.to_data()
+    again = Document.from_data(data)
+    assert again.to_data() == data
+    assert again.rebuild() is True
+    assert again.get("b1").volume == pytest.approx(471.24, abs=0.01)
