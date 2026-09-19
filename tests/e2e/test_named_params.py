@@ -162,3 +162,51 @@ def test_renaming_a_parameter_rewrites_the_formula_in_the_tree(page, fresh_doc, 
     page.click("#pmClose")
     assert not page.is_visible("#paramsDialog")
     assert not page.errors, page.errors
+
+
+# ---------------------------------------------------------------------------
+# The panel is non-modal ON PURPOSE — "a formula is typed INTO a tree row, with
+# the panel open beside it" — so the document changes under it all the time,
+# and `bus.on('doc-updated', render)` rebuilt #pmRows every time. A cell in the
+# middle of an inline edit is an <input> inside those rows, so it went with
+# them: measured 2026-09-19 with '3+ha' typed into a formula cell and a feature
+# added from elsewhere, the input was simply gone, the typing lost and nothing
+# said so. A redraw has to wait for the edit to finish (Enter, Escape or blur —
+# each of which redraws anyway).
+# ---------------------------------------------------------------------------
+
+ADD_A_FEATURE = """
+async () => {
+  const { postJSON } = await import('/static/js/api.js');
+  await postJSON('/api/feature/add',
+    { id: 'z', op: 'disc', params: { radius: 5, thickness: 2 }, inputs: [] }, 'add');
+}
+"""
+
+
+def test_a_document_change_does_not_wipe_a_half_typed_formula(page, fresh_doc,
+                                                              server):
+    page.evaluate(BUILD)
+    page.wait_for_timeout(1200)
+    open_params(page)
+    add_param(page, "wall", "3")
+    page.locator("#pmRows .pmrow .pmexpr").click()
+    inp = page.locator("#pmRows .pmrow .pmexpr input")
+    inp.fill("3+ha")                       # mid-word, not a formula yet
+
+    page.evaluate(ADD_A_FEATURE)           # the document moves under the panel
+    page.wait_for_timeout(1800)
+    assert page.locator("#pmRows input").count() == 1, \
+        "the redraw took the cell being edited away"
+    assert page.input_value("#pmRows .pmrow .pmexpr input") == "3+ha", \
+        "the redraw wiped what was typed"
+
+    # ...and finishing it still lands, and the panel still catches up with the
+    # document change it deferred
+    inp = page.locator("#pmRows .pmrow .pmexpr input")
+    inp.fill("4")
+    inp.press("Enter")
+    page.wait_for_timeout(1800)
+    assert rows(page)[0]["expr"] == "4" and rows(page)[0]["val"] == "= 4"
+    assert doc(server)["parameters"][0]["value"] == 4
+    assert not page.errors, page.errors
