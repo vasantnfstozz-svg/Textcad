@@ -22,8 +22,6 @@ Pipeline (battle-proven on the rocky-keychain design series, 2026-08):
 """
 from __future__ import annotations
 
-import math
-
 import cv2
 import numpy as np
 
@@ -128,7 +126,7 @@ def _uncross(pts):
 _HAIR_MM = 0.01          # thinner than this, a wall is not geometry
 
 
-def _pull_apart(loops, gap=_HAIR_MM, report=None):
+def _pull_apart(loops, gap=_HAIR_MM):
     """Open a `gap` between loops of ONE sketch that come within a hair of
     each other. Returns the loops, the small ones moved.
 
@@ -179,18 +177,7 @@ def _pull_apart(loops, gap=_HAIR_MM, report=None):
     0.025739602 mm of clearance, and built 47.933 mm3 that `is_valid` calls
     True and `health` calls an open shell. `_split_at_feet` now asks the
     mirror question first and splits the smaller loop's edge at the contact,
-    so the push below has a vertex to move.
-
-    Those two are the only ways two polygons can TOUCH without their interiors
-    overlapping: two straight segments at zero distance either cross
-    transversally — which is an overlap, and an overlap is a union the kernel
-    is happy with — or they meet at a point that is an endpoint of one of
-    them, i.e. a vertex of one against the other's outline. Asked in both
-    directions, the test is complete for a PAIR (round six; the ground truth
-    is segment-to-segment in probes/imgtrace_r6_truth.py). What it never asked
-    is whether a loop meets ITSELF after the push — `_walks_through_itself`
-    — and what it never said is when it gave up; `report` collects that, and
-    `_worst_residual` reads it back off the final coordinates."""
+    so the push below has a vertex to move."""
     if len(loops) < 2:
         return loops
     arr = [np.asarray(p, dtype=float) for p in loops]
@@ -206,11 +193,8 @@ def _pull_apart(loops, gap=_HAIR_MM, report=None):
     pairs = [(int(i), int(j))
              for i in np.argsort(size, kind="stable")   # smallest gives way
              for j in np.flatnonzero(box[i] & (size >= size[i])) if i != j]
-    stuck: list = []
-    moved = False
     for _ in range(4):
         moved = False
-        stuck = []
         for i, j in pairs:
             d, foot = _nearest_on_ring(arr[i], arr[j])
             # ...and the mirror question, when it can possibly matter. If a
@@ -230,157 +214,26 @@ def _pull_apart(loops, gap=_HAIR_MM, report=None):
             if not len(near):
                 continue
             cij = arr[i].mean(axis=0) - arr[j].mean(axis=0)
-            # plain floats from here down: this runs once per vertex inside
-            # the hair, and on the pathological art (200 loops of 400 points,
-            # every one touching its neighbours) a two-element numpy call per
-            # step costs more than the whole pair scan — 169 s against 86 s
-            # before the arithmetic came out (probes/imgtrace_r6_cost.py)
-            cx, cy = float(cij[0]), float(cij[1])
-            cn = math.hypot(cx, cy)
             for v in near:
-                hx, hy = float(arr[i][v][0]), float(arr[i][v][1])
-                fx, fy = float(foot[v][0]), float(foot[v][1])
-                ax, ay = hx - fx, hy - fy
-                n = math.hypot(ax, ay)
+                home = arr[i][v].copy()
+                away = home - foot[v]
+                n = float(np.hypot(*away))
                 if n < 1e-9:                  # exactly on the other outline
-                    ax, ay, n = cx, cy, cn
+                    away, n = cij, float(np.hypot(*cij))
                     if n < 1e-9:
-                        stuck.append((i, j, float(d[v])))
                         continue
-                ux, uy = ax / n, ay / n
-                dx, dy = fx + ux * gap - hx, fy + uy * gap - hy
-                # ...ON the 0.001 mm grid the sketch is written on. Every
-                # point is on that grid by the time the push runs, so a move
-                # that is a whole number of grid steps keeps it there and the
-                # final `_round_pts` cannot eat any of the clearance the
-                # guard just opened. Un-snapped it did: with the art-centring
-                # shift put on the grid, round five's own ring case came out
-                # at 0.009837 mm where the push had measured 0.010000
-                # (measured 2026-09-17, round six). Step out until the
-                # SNAPPED point really clears the hair.
-                sx = sy = 0.0
-                for _ in range(4):
-                    sx, sy = round(dx, 3), round(dy, 3)
-                    if math.hypot(hx + sx - fx, hy + sy - fy) >= gap:
-                        break
-                    dx, dy = dx + ux * 0.0008, dy + uy * 0.0008
-                span = 4.0 * math.hypot(sx, sy)        # the old room test,
+                delta = foot[v] + away / n * gap - home
+                span = 4.0 * float(np.hypot(*delta))   # the old room test,
                 if span < 1e-12:                       # read the other way
-                    stuck.append((i, j, float(d[v])))
                     continue
                 block = _hair_cluster(arr[i], int(v), span)
                 if block is None:             # the whole loop is sub-hair
-                    stuck.append((i, j, float(d[v])))
                     continue                  # — leave it as traced
-                delta = np.array((sx, sy))
-                if _walks_through_itself(arr[i], block, delta):
-                    stuck.append((i, j, float(d[v])))
-                    continue                  # the loop's OWN far wall
                 arr[i][block] += delta
                 moved = True
         if not moved:
             break
-    if report is not None:
-        # In the round that moved NOTHING, every pair still inside the hair
-        # was one this pass gave up on, so `stuck` IS the residual and costs
-        # no extra pass. Only when the four rounds run out does it have to be
-        # measured, which is the rare case.
-        if moved:
-            stuck = []
-            for i, j in pairs:
-                d, _f = _nearest_on_ring(arr[i], arr[j])
-                if float(d.min()) < gap:
-                    stuck.append((i, j, float(d.min())))
-        report.extend(stuck)
     return [[(float(x), float(y)) for x, y in a] for a in arr]
-
-
-def _worst_residual(loops, stuck):
-    """How close the closest pair `_pull_apart` could NOT open really comes,
-    measured BOTH ways on the rounded coordinates `sketch.py` is handed.
-    `None` when it opened them all.
-
-    The guard gives way rather than turn a loop inside out, and when it does
-    it used to say nothing at all. A sliver squeezed between two bigger loops
-    is a fixed point for it: measured 2026-09-17 (round five), 2 of 960 ring
-    traces end still inside the hair by the guard's own test, the worst at
-    0.000259 mm, and running the pass eight more times does not improve them.
-    They build healthy today — and 0.000259 mm is exactly the pre-condition
-    that produced the pinch of round one. Reading it back off the FINAL
-    coordinates is the honest number: whatever the push measured, this is
-    what the sketch carries."""
-    if not stuck:
-        return None
-    rings: dict = {}
-    worst = None
-    for i, j, _d in stuck:
-        for k in (i, j):
-            if k not in rings:
-                p = _round_pts(loops[k])
-                rings[k] = np.asarray(p, float) if len(p) >= 3 else None
-        a, b = rings[i], rings[j]
-        if a is None or b is None:
-            continue
-        d1, _f = _nearest_on_ring(a, b)
-        d2, _f = _nearest_on_ring(b, a)
-        g = min(float(d1.min()), float(d2.min()))
-        worst = g if worst is None else min(worst, g)
-    return worst
-
-
-def _walks_through_itself(pts, block, delta) -> bool:
-    """True when nudging the run `block` of `pts` by `delta` would make the
-    loop meet its OWN outline — the half of the room test `_hair_cluster`
-    cannot ask.
-
-    `_hair_cluster` walks the loop's INDEX order: it proves the two edges
-    joined to the moved run are four times the move, so the run cannot be
-    turned inside out locally. A part of the same outline that lies a few
-    microns away with half the loop in between is invisible to it, and a
-    ribbon folded back on itself is exactly that — its two runs are
-    non-adjacent edges. Measured 2026-09-17 (round six,
-    probes/imgtrace_r6_self.py): a ribbon 0.005 mm thick with a bigger loop
-    0.0045 mm under it had its bottom edge pushed 0.0055 mm UP, straight
-    through its own far wall, and the 2 mm extrusion went from healthy to
-    "OpenCASCADE reports the solid is invalid". `_uncross` proves every loop
-    simple BEFORE the push; nothing re-asked after it.
-
-    Only the edges the move CHANGES can make a new crossing, so the test is
-    those edges against the rest of the outline — the same maths and the same
-    tolerance as `_first_crossing`, at O(n) a move instead of O(n**2) a loop.
-    A push that would do this is not made: a pair left a hair apart beats a
-    polygon that crosses itself."""
-    m = len(pts)
-    edges = sorted({(b - 1) % m for b in block} | {b % m for b in block})
-    cand = pts.copy()
-    cand[block] += delta
-    # only a crossing the MOVE makes counts. An outline can arrive here
-    # already touching itself — `_split_at_feet` rounds its inserted point
-    # onto the 0.001 mm grid, which is up to 0.0007 mm off the edge it split
-    # — and refusing then would block a push that is needed and fixes
-    # nothing.
-    return _edges_hit(cand, edges) and not _edges_hit(pts, edges)
-
-
-def _edges_hit(pts, edges) -> bool:
-    """True when one of the edges `edges` of the closed polyline `pts` crosses
-    or touches a NON-adjacent edge of it — `_first_crossing`'s maths and
-    `_first_crossing`'s tolerance, asked about a few edges instead of all."""
-    m = len(pts)
-    r = np.roll(pts, -1, axis=0) - pts
-    idx = np.arange(m)
-    tol = 1e-9
-    for i in edges:
-        adj = (np.abs(idx - i) <= 1) | (np.abs(idx - i) >= m - 1)
-        den = r[i, 0] * r[:, 1] - r[i, 1] * r[:, 0]
-        safe = np.where(np.abs(den) > 1e-15, den, 1.0)
-        d = pts - pts[i]
-        t = (d[:, 0] * r[:, 1] - d[:, 1] * r[:, 0]) / safe
-        u = (d[:, 0] * r[i, 1] - d[:, 1] * r[i, 0]) / safe
-        if ((np.abs(den) > 1e-15) & ~adj & (t >= -tol) & (t <= 1.0 + tol)
-                & (u >= -tol) & (u <= 1.0 + tol)).any():
-            return True
-    return False
 
 
 def _split_at_feet(pts, ring, gap):
@@ -423,8 +276,7 @@ def _split_at_feet(pts, ring, gap):
         run = float(np.sqrt(den[k]))
         if min(float(t[k]), 1.0 - float(t[k])) * run <= 1e-9:
             continue              # the foot IS an end of the edge — already
-        add.setdefault(k, []).append((float(t[k]),               # measured
-                                      np.round(proj[k], 3)))
+        add.setdefault(k, []).append((float(t[k]), proj[k]))   # measured
     if not add:
         return pts
     out = []
@@ -444,23 +296,19 @@ def _hair_cluster(pts, v, span):
     absorb the push is a sliver, and the caller leaves it as traced rather
     than turn it inside out."""
     m = len(pts)
-    # the edge lengths once, as plain floats: this walks per VERTEX inside the
-    # hair, and a two-element numpy call per STEP was four fifths of the
-    # guard's time on the pathological art once the push's grid snap made the
-    # span — and so the walk — longer (probes/imgtrace_r6_cost.py, round six)
-    e = np.hypot(*(np.roll(pts, -1, axis=0) - pts).T).tolist()
     lo = hi = int(v)
     for _ in range(m):
         prev = (lo - 1) % m
-        if e[prev] >= span:
+        if float(np.hypot(*(pts[lo] - pts[prev]))) >= span:
             break
         lo = prev
     else:
         return None
     for _ in range(m):
-        if e[hi] >= span:
+        nxt = (hi + 1) % m
+        if float(np.hypot(*(pts[hi] - pts[nxt]))) >= span:
             break
-        hi = (hi + 1) % m
+        hi = nxt
     else:
         return None
     n = (hi - lo) % m + 1
@@ -666,41 +514,7 @@ def _traceable(mask: np.ndarray, height_mm: float):
     return np.isin(labels, keep).astype(np.uint8), min_area
 
 
-def _traced_mask(data: bytes, height_mm: float, min_channel_mm: float = 0.0,
-                 connect_pieces: bool = False):
-    """The mask the contours are taken from — decode, polarity, speckle floor,
-    optional BRIDGES and optional CHANNEL ABSORB. -> (solid, min_area, mm_px,
-    welded).
-
-    Shared so `artwork_aspect` and `image_to_entities` cannot ask different
-    questions. Round five made them share `_traceable`, after a 620 px
-    hairline read aspect 2.15 for art really drawn at 0.50 — and left the two
-    passes BELOW it unshared. Both only ADD material, and adding material
-    changes which contours clear the area gate: measured 2026-09-17 (round
-    six, probes/imgtrace_r6_gates.py) a disc beside five loose 1 px hairlines
-    read aspect 1.0000 for art `connect_pieces` really draws at 2.1144, and
-    on a 20 x 60 mm face the fit laid it down at 18.00 x 8.50 mm — 153 mm2
-    where standing it up gives 684."""
-    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
-    solid, min_area = _traceable(_mask_from_image(img), height_mm)
-    ys, xs = np.where(solid)
-    mm_px = float(height_mm) / (int(ys.max()) - int(ys.min()) + 1)
-    welded = None
-    if connect_pieces:
-        solid, welded = _bridge_pieces(solid, max(3, int(0.6 / mm_px)))
-    if min_channel_mm and min_channel_mm > 0:
-        k = int(min_channel_mm / mm_px) | 1
-        field = 1 - solid
-        field = cv2.morphologyEx(
-            field, cv2.MORPH_OPEN,
-            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
-        solid = (1 - field).astype(np.uint8)
-    return solid, min_area, mm_px, welded
-
-
-def artwork_aspect(data: bytes, height_mm: float = 50.0,
-                   min_channel_mm: float = 0.0,
-                   connect_pieces: bool = False) -> float:
+def artwork_aspect(data: bytes, height_mm: float = 50.0) -> float:
     """width/height of the image's traceable artwork bbox — from the SAME mask
     (same polarity rules, same speckle floor) image_to_entities traces, so a
     fit computed from it matches what the trace will actually produce. Needed
@@ -723,8 +537,8 @@ def artwork_aspect(data: bytes, height_mm: float = 50.0,
     a 20 x 60 mm face the fit ROTATED that art and laid it down at
     17.95 x 8.96 mm instead of standing it up at 17.91 x 35.91 — a quarter of
     the area, over a hairline that is not in the sketch at all."""
-    solid, min_area, _mm, _w = _traced_mask(data, height_mm, min_channel_mm,
-                                            connect_pieces)
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
+    solid, min_area = _traceable(_mask_from_image(img), height_mm)
     cnts, _h = cv2.findContours(solid, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
     keep = [c for c in cnts if cv2.contourArea(c) >= min_area]
     _x, _y, w, h = cv2.boundingRect(np.vstack(keep or list(cnts)))
@@ -793,12 +607,28 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
     """
     if not (1.0 <= float(height_mm) <= 1000.0):
         raise ValueError("height_mm must be between 1 and 1000")
-    # drop only true speckles, KEEPING small ornaments and interior holes;
-    # then the bridges and the channel absorb. All of it shared with
-    # `artwork_aspect`, so the fit measures the artwork the trace draws.
-    solid, min_area, mm_px, welded = _traced_mask(data, height_mm,
-                                                  min_channel_mm,
-                                                  connect_pieces)
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
+    mask = _mask_from_image(img)
+
+    # drop only true speckles, KEEPING small ornaments and interior holes
+    # (shared with artwork_aspect so the fit matches the trace)
+    solid, min_area = _traceable(mask, height_mm)
+
+    ys, xs = np.where(solid)
+    x, y = int(xs.min()), int(ys.min())
+    w, h = int(xs.max()) - x + 1, int(ys.max()) - y + 1
+    mm_px = float(height_mm) / h
+    welded = None
+    if connect_pieces:
+        solid, welded = _bridge_pieces(solid, max(3, int(0.6 / mm_px)))
+
+    if min_channel_mm and min_channel_mm > 0:
+        k = int(min_channel_mm / mm_px) | 1
+        field = 1 - solid
+        field = cv2.morphologyEx(
+            field, cv2.MORPH_OPEN,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+        solid = (1 - field).astype(np.uint8)
 
     # final geometry: outer rings + their holes. Fidelity knobs are in SOURCE
     # PIXELS with hard caps — the sketch must look like the artwork at any
@@ -854,27 +684,12 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
     if drawn:
         ax = [p[0] for _o, pts in drawn for p in pts]
         ay = [p[1] for _o, pts in drawn for p in pts]
-        # ON the 0.001 mm grid, for the reason `_poly_entity` spells out: the
-        # points are on that grid when `_uncross` proves them simple, and a
-        # half-sum is on the HALF grid whenever max + min is an odd multiple
-        # of 0.001. Shifting by it and rounding again re-rounds every point
-        # onto a shifted grid, and two points 0.001 mm apart can land on the
-        # same one — which puts a crossing back into an outline `_uncross`
-        # had just cleaned. Measured 2026-09-17, round six
-        # (probes/imgtrace_r6_stage.py): a 1600 px disc with eleven 1 px
-        # spokes traced 8 mm tall (0.005 mm/px) centred by dx = -0.0025 and
-        # handed sketch.py TWO self-crossing hole loops, building 20.023 mm3
-        # that OpenCASCADE calls INVALID, with the feature green. Rounding
-        # the shift moves the art by at most half a micron and leaves every
-        # unmoved point exactly where `_uncross` measured it.
-        dx = round((max(ax) + min(ax)) / 2.0, 3)
-        dy = round((max(ay) + min(ay)) / 2.0, 3)
-        drawn = [(o, [(round(px - dx, 3), round(py - dy, 3))
-                      for px, py in pts]) for o, pts in drawn]
+        dx, dy = (max(ax) + min(ax)) / 2.0, (max(ay) + min(ay)) / 2.0
+        drawn = [(o, [(px - dx, py - dy) for px, py in pts])
+                 for o, pts in drawn]
     # no two loops of ONE sketch may meet: a pair that does pinches the face
     # into an open shell, valid and the right volume (REVIEW-QUEUE section 9)
-    stuck: list = []
-    apart = _pull_apart([pts for _outer, pts in drawn], report=stuck)
+    apart = _pull_apart([pts for _outer, pts in drawn])
     ents, n_holes = [], 0
     for (outer, _raw), pts in zip(drawn, apart):
         pts = _round_pts(pts)
@@ -897,31 +712,12 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
             "height_mm": round(max(ys) - min(ys), 2),
             "contours": len(ents) - n_holes, "holes": n_holes,
             "points": sum(len(e["points"]) for e in ents)}
-    # ...and when the guard could NOT open a pair, it says so instead of
-    # handing the sketch over as if it had. A pair that still MEETS is the
-    # banned failure — a pinched face that builds "successfully" as an open
-    # shell — so that one is refused; a pair merely inside the hair builds
-    # today and is reported, not refused.
-    tight = _worst_residual(apart, stuck)
-    if tight is not None and tight < _HAIR_MM:
-        if tight <= 0.0:
-            raise ValueError(
-                "two parts of this artwork meet at a point and the tracer "
-                "could not pull them apart — extruding it would make a "
-                "pinched, unusable solid. Trace it taller, or open the gap "
-                "in the picture where the two shapes touch")
-        info["tight_mm"] = round(tight, 6)
-        info["note"] = (
-            f"two parts of this artwork pass {tight * 1000:.2f} microns "
-            f"apart — thinner than the tracer can open. The sketch builds, "
-            f"but trace it taller if the extrude ever refuses."
-            + (" " + info["note"] if info.get("note") else ""))
     if welded is not None:
         # asked to weld the art into one piece, and it did not: say so rather
         # than hand back several pieces as if it had (LAUNCH-PLAN section 10)
         info["welded"] = bool(welded and info["contours"] == 1)
         if not info["welded"]:
-            info["note"] = (info.get("note", "") and info["note"] + " ") + (
+            info["note"] = (
                 f"the artwork is still {info['contours']} separate pieces — "
                 f"16 bridges were not enough to join it. Extrude it as it is, "
                 f"or close the gaps in the picture and trace it again.")

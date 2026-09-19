@@ -100,9 +100,9 @@ def test_the_fit_height_terminates_and_the_art_it_picks_fits():
     calls = []
     real = imgtrace.artwork_aspect
 
-    def counted(d, height_mm=50.0):
+    def counted(d, height_mm=50.0, *knobs, **kw):
         calls.append(height_mm)
-        return real(d, height_mm)
+        return real(d, height_mm, *knobs, **kw)
 
     studio.imgtrace.artwork_aspect = counted
     try:
@@ -368,3 +368,69 @@ def test_a_face_far_too_thin_for_art_says_so_instead():
     import studio
     box = studio._inscribed_box(_crescent(thick=0.05))
     assert box[0] <= 0 or box[1] <= 0
+
+
+def _blob_and_hairlines():
+    """A solid disc with five loose 1 px hairlines beside it. Each hairline is
+    hundreds of pixels and encloses nothing, so `image_to_entities`' contour
+    gate drops it — until `connect_pieces` bridges them all into ONE contour
+    that encloses plenty and the artwork is suddenly twice as wide as it is
+    tall."""
+    img = np.zeros((600, 900, 4), np.uint8)
+    cv2.circle(img, (200, 300), 130, (0, 0, 0, 255), -1)
+    for x in (420, 520, 620, 720, 820):
+        cv2.line(img, (x, 120), (x, 480), (0, 0, 0, 255), 1)
+    return _png(img)
+
+
+# Round five made `artwork_aspect` drop sub-min_area CONTOURS, matching the
+# trace. `image_to_entities` runs two MORE passes on the mask before it takes
+# contours — the bridges and the channel absorb — and the fit ran neither.
+# Measured 2026-09-17 (round six, probes/imgtrace_r6_gates.py): this picture
+# reads aspect 1.0000 for art `connect_pieces` really draws at 2.1144, and on
+# a 20 x 60 mm face the fit laid it down at 18.00 x 8.50 mm (rescaled by
+# 0.479) where standing it up gives 17.75 x 37.57.
+def test_the_fit_measures_the_artwork_the_knobs_will_really_draw():
+    import studio
+    data = _blob_and_hairlines()
+    assert imgtrace.artwork_aspect(data, 20.0) == pytest.approx(1.0, abs=0.01)
+    assert imgtrace.artwork_aspect(data, 20.0, 0.0, True) > 2.0
+    h, rot = studio._trace_fit_height(data, 18.0, 54.0, connect_pieces=True)
+    assert rot is True
+    _e, info = studio._trace_fitted(
+        data, studio.TracePngReq(png_base64="", connect_pieces=True),
+        (20.0, 60.0, 0.0, 0.0))
+    assert info["rotated"] is True
+    assert info["width_mm"] * info["height_mm"] > 600.0
+
+
+def _angled_sliver(length=400.0, t=0.5, deg=45.0):
+    """A face too thin to hold ANY rectangle on the fit grid — `_inscribed_box`
+    hands back a zero box, which is the honest answer."""
+    import math
+    c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+    return [[x * c - y * s, x * s + y * c]
+            for x, y in ([0, 0], [length, 0], [length, t], [0, t])]
+
+
+def test_a_face_that_holds_no_box_says_so_at_both_doors():
+    """The browser only has the SKETCHER door, and it used to answer "the fit
+    box needs a positive width and height" — an internal thing the user
+    cannot act on (round six, probes/imgtrace_r6_fitbox.py)."""
+    import studio
+    w, h, cx, cy = studio._inscribed_box(_angled_sliver())
+    assert (w, h) == (0.0, 0.0)
+    with pytest.raises(ValueError, match="too thin to fit artwork onto"):
+        studio._trace_fitted(b"", studio.TracePngReq(png_base64=""),
+                             (w, h, cx, cy))
+
+
+def test_the_fit_box_is_reported_under_its_own_name():
+    """`face_mm` carries the FIT BOX — on a 30 mm disc the face is 60 x 60 and
+    the box is 42 x 42 — so it is also reported as `fit_mm`. The old key stays
+    until static/js/sketcher.js follows."""
+    import studio
+    _e, info = studio._trace_fitted(_png(_disc_png()), studio.TracePngReq(
+        png_base64="", height_mm=20.0), (42.0, 42.0, 0.0, 0.0))
+    assert info["fit_mm"] == [42.0, 42.0]
+    assert info["face_mm"] == info["fit_mm"]
