@@ -273,3 +273,71 @@ def test_the_ring_whose_holes_touch_through_the_blind_spot():
                       for e in ents]) >= imgtrace._HAIR_MM * 0.99
     solid = sk.extrude_sketch(sk.make_sketch("XY", 0, ents), 2.0)
     assert inspector.health(solid) == []
+
+
+def _hairline_star(radius, n, thickness=120, size=1600, off=0.3):
+    """A ring with `n` ONE-PIXEL spokes on a 1600 px picture. Traced 8 mm tall
+    that is 0.005 mm per pixel, so the sector holes the spokes cut are
+    separated by walls a thousandth of a millimetre wide — the scale at which
+    the 0.001 mm coordinate grid decides the geometry."""
+    m = np.zeros((size, size), np.uint8)
+    c = size // 2
+    cv2.circle(m, (c, c), radius, 1, thickness)
+    for k in range(n):
+        a = off + k * 6.283185307179586 / n
+        cv2.line(m, (c, c),
+                 (int(c + size * np.cos(a)), int(c + size * np.sin(a))), 1, 1)
+    return m
+
+
+def _self_crossing(ents):
+    """the entities whose OWN outline crosses itself — `_uncross` promises
+    there are none, all the way to sketch.py"""
+    return [n for n, e in enumerate(ents)
+            if imgtrace._first_crossing([tuple(p) for p in e["points"]])
+            is not None]
+
+
+# Measured 2026-09-17 (round six, probes/imgtrace_r6_stage.py): the artwork is
+# centred by dx, dy = (max + min) / 2 of the DRAWN points, which is a HALF-grid
+# number whenever max + min is an odd multiple of 0.001 mm. The final
+# `_round_pts` then re-rounds every point onto a SHIFTED grid and merges two
+# distinct points — which puts a crossing back into an outline `_uncross` had
+# just cleaned. `_poly_entity` rounds its own centre onto the grid for exactly
+# this reason; the art-centring shift did not. This picture traced 8 mm tall
+# handed sketch.py TWO self-crossing hole loops and built 20.023 mm3 that
+# OpenCASCADE calls invalid.
+@pytest.mark.parametrize("radius,n,thick,height", [(520, 11, 120, 8.0),
+                                                   (600, 11, 120, 8.0),
+                                                   (600, 9, 100, 9.0)])
+def test_the_art_centring_shift_keeps_every_loop_simple(radius, n, thick,
+                                                        height):
+    ents, info = imgtrace.image_to_entities(
+        _png(_hairline_star(radius, n, thick)), height_mm=height)
+    assert info["holes"] == n
+    assert _self_crossing(ents) == []
+    solid = sk.extrude_sketch(sk.make_sketch("XY", 0, ents), 2.0)
+    assert solid.is_valid
+    assert inspector.health(solid) == []
+
+
+# A ribbon folded back on itself: its two runs are NON-adjacent edges of one
+# loop, so `_hair_cluster` — which walks the loop's index order — cannot see
+# that the far wall is a hair away. Measured 2026-09-17 (round six,
+# probes/imgtrace_r6_self.py): the push moved the bottom edge 0.0055 mm up
+# through a ribbon 0.005 mm thick, and the 2 mm extrusion went from healthy to
+# "OpenCASCADE reports the solid is invalid".
+_RIBBON = [(0.0, 0.0), (1.0, 0.0), (1.0, 0.015), (0.05, 0.015),
+           (0.05, 0.01), (0.995, 0.01), (0.995, 0.005), (0.0, 0.005)]
+_UNDER = [(0.2, -5.0), (5.0, -5.0), (5.0, -0.0045), (0.2, -0.0045)]
+
+
+def test_the_push_never_walks_a_loop_through_itself():
+    assert imgtrace._first_crossing(_RIBBON) is None
+    out = imgtrace._pull_apart([list(_RIBBON), list(_UNDER)])
+    assert imgtrace._first_crossing(imgtrace._round_pts(out[0])) is None
+    ents = [imgtrace._poly_entity(imgtrace._round_pts(out[0]), "add"),
+            imgtrace._poly_entity(imgtrace._round_pts(out[1]), "subtract")]
+    solid = sk.extrude_sketch(sk.make_sketch("XY", 0, ents), 2.0)
+    assert solid.is_valid
+    assert inspector.health(solid) == []

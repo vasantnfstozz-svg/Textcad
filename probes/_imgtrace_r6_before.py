@@ -223,21 +223,6 @@ def _pull_apart(loops, gap=_HAIR_MM):
                     if n < 1e-9:
                         continue
                 delta = foot[v] + away / n * gap - home
-                # ...ON the 0.001 mm grid the sketch is written on. Every
-                # point is on that grid by the time the push runs, so a move
-                # that is a whole number of grid steps keeps it there and the
-                # final `_round_pts` cannot eat any of the clearance the
-                # guard just opened. Un-snapped it did: with the art-centring
-                # shift put on the grid, round five's own ring case came out
-                # at 0.009837 mm where the push had measured 0.010000
-                # (measured 2026-09-17, round six). Step out until the
-                # SNAPPED point really clears the hair.
-                for _ in range(4):
-                    snapped = np.round(delta, 3)
-                    if float(np.hypot(*(home + snapped - foot[v]))) >= gap:
-                        break
-                    delta = delta + away / n * 0.0008
-                delta = snapped
                 span = 4.0 * float(np.hypot(*delta))   # the old room test,
                 if span < 1e-12:                       # read the other way
                     continue
@@ -291,8 +276,7 @@ def _split_at_feet(pts, ring, gap):
         run = float(np.sqrt(den[k]))
         if min(float(t[k]), 1.0 - float(t[k])) * run <= 1e-9:
             continue              # the foot IS an end of the edge — already
-        add.setdefault(k, []).append((float(t[k]),               # measured
-                                      np.round(proj[k], 3)))
+        add.setdefault(k, []).append((float(t[k]), proj[k]))   # measured
     if not add:
         return pts
     out = []
@@ -700,23 +684,9 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
     if drawn:
         ax = [p[0] for _o, pts in drawn for p in pts]
         ay = [p[1] for _o, pts in drawn for p in pts]
-        # ON the 0.001 mm grid, for the reason `_poly_entity` spells out: the
-        # points are on that grid when `_uncross` proves them simple, and a
-        # half-sum is on the HALF grid whenever max + min is an odd multiple
-        # of 0.001. Shifting by it and rounding again re-rounds every point
-        # onto a shifted grid, and two points 0.001 mm apart can land on the
-        # same one — which puts a crossing back into an outline `_uncross`
-        # had just cleaned. Measured 2026-09-17, round six
-        # (probes/imgtrace_r6_stage.py): a 1600 px disc with eleven 1 px
-        # spokes traced 8 mm tall (0.005 mm/px) centred by dx = -0.0025 and
-        # handed sketch.py TWO self-crossing hole loops, building 20.023 mm3
-        # that OpenCASCADE calls INVALID, with the feature green. Rounding
-        # the shift moves the art by at most half a micron and leaves every
-        # unmoved point exactly where `_uncross` measured it.
-        dx = round((max(ax) + min(ax)) / 2.0, 3)
-        dy = round((max(ay) + min(ay)) / 2.0, 3)
-        drawn = [(o, [(round(px - dx, 3), round(py - dy, 3))
-                      for px, py in pts]) for o, pts in drawn]
+        dx, dy = (max(ax) + min(ax)) / 2.0, (max(ay) + min(ay)) / 2.0
+        drawn = [(o, [(px - dx, py - dy) for px, py in pts])
+                 for o, pts in drawn]
     # no two loops of ONE sketch may meet: a pair that does pinches the face
     # into an open shell, valid and the right volume (REVIEW-QUEUE section 9)
     apart = _pull_apart([pts for _outer, pts in drawn])
