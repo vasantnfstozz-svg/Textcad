@@ -472,8 +472,27 @@ def test_scaling_traced_art_down_keeps_both_promises(s):
     assert not _self_crossing(out), (
         f"scaled by {s}, {len(_self_crossing(out))} of {len(out)} polygons "
         f"cross themselves")
-    rings = [[(e["x"] + x, e["y"] + y) for x, y in e["points"]] for e in out]
-    assert _true_gap(rings) > 0.0, f"scaled by {s}, two loops MEET"
+    # The promise is that no two loops TOUCH, not that none measure zero
+    # apart. Two loops that SHARE AREA measure zero too, and that is an
+    # ordinary union — `_split_at_feet`'s own docstring says so. Measured
+    # 2026-09-19 (round eight, probes/imgtrace_r8_meet.py): over 1728 settle
+    # runs, 37 refusals carried nothing but overlaps and ALL 37 built healthy,
+    # while every one of the 9 open shells carried a real point contact. At
+    # s = 0.05 THIS picture is one of them — two overlapping pairs, gap
+    # 0.000000000 mm, and 0.070337 mm3 the kernel calls healthy.
+    rings = [np.asarray([(e["x"] + x, e["y"] + y) for x, y in e["points"]],
+                        float) for e in out]
+    for i in range(len(rings)):
+        for j in range(i + 1, len(rings)):
+            d1, _f = imgtrace._nearest_on_ring(rings[i], rings[j])
+            d2, _f = imgtrace._nearest_on_ring(rings[j], rings[i])
+            if min(float(d1.min()), float(d2.min())) > 0.0:
+                continue
+            assert imgtrace._interiors_overlap(rings[i], rings[j]), (
+                f"scaled by {s}, loops {i} and {j} MEET at a point")
+    # ...and the judge of a pinch is the kernel, not the arithmetic
+    solid = sk.extrude_sketch(sk.make_sketch("XY", 0, out), 2.0)
+    assert inspector.health(solid) == [], f"scaled by {s}"
 
 
 def test_a_pair_that_meets_by_a_rounding_error_is_still_a_pinch():
@@ -540,3 +559,74 @@ def test_artwork_whose_loops_still_meet_is_refused(monkeypatch):
                                       (4.6218438148683765, 2)])
     with pytest.raises(ValueError, match="meet at a point"):
         imgtrace.image_to_entities(_png(m), height_mm=9.5)
+
+
+def _square(half=2.5):
+    return [(-half, -half), (half, -half), (half, half), (-half, half)]
+
+
+def _wedge_on_the_wall(inward, x=2.5, h=0.006):
+    """A sub-hair triangle whose TIP sits exactly on the wall x = `x`.
+
+    With `inward` it straddles the wall — half of it is inside the square, so
+    the two loops SHARE AREA. Without, it lies wholly on one side and only
+    touches at the tip. Both measure 0.000000000 mm apart, and every edge of
+    it is under `4 x the push`, so `_hair_cluster` gives up and the pair is
+    left as traced — the state `_worst_residual` reports."""
+    return ([(x, 0.0), (x + h, h), (x - h, h)] if inward else
+            [(x, 0.0), (x + h, h), (x + h, -h)])
+
+
+def _ents(loops_and_modes):
+    return [imgtrace._poly_entity([(round(px, 3), round(py, 3))
+                                   for px, py in pts], mode)
+            for pts, mode in loops_and_modes]
+
+
+def test_two_loops_that_merely_OVERLAP_are_not_a_pinch():
+    """`_worst_residual` measures a DISTANCE, and two loops of one sketch
+    measure zero apart in two situations that are nothing alike: they TOUCH at
+    a point with their interiors disjoint — the pinch, an open shell — or
+    their interiors OVERLAP, which `_split_at_feet`'s own docstring already
+    calls "a union the kernel is happy with".
+
+    The fit's rescale is what makes overlaps: two loops 0.0004 mm apart,
+    multiplied by s = 0.02 in `studio._trace_fitted` and re-rounded onto the
+    0.001 mm grid, land on each other. Measured 2026-09-19 (round eight,
+    `probes/imgtrace_r8_meet.py`, two seeds, 1728 `settle` runs): 67 traces
+    were refused for meeting and **37 of them carried no touching pair at all
+    — every zero pair was an overlap — and all 37 build HEALTHY**."""
+    ents = _ents([(_square(), "add"),
+                  (_wedge_on_the_wall(inward=True), "add")])
+    out, note = imgtrace.settle(ents)          # must not refuse
+    assert note is None, note
+    solid = sk.extrude_sketch(sk.make_sketch("XY", 0, out), 2.0)
+    assert inspector.health(solid) == []
+    assert solid.volume == pytest.approx(50.0, abs=0.01)
+
+
+@pytest.mark.parametrize("x", [2.5, 2.494])
+def test_a_loop_that_only_TOUCHES_another_is_still_refused(x):
+    """The other half of the same rule, and the reason it is kept: of the 30
+    refusals that DO carry a real point contact, 9 build the banned failure —
+    a solid OCCT calls valid, with the right volume, that `inspector.health`
+    calls "not manifold/watertight (open shell)". A point contact is refused
+    whether the small loop lies outside the wall or nested inside it."""
+    ents = _ents([(_square(), "add"),
+                  (_wedge_on_the_wall(inward=False, x=x), "add")])
+    with pytest.raises(ValueError, match="meet at a point"):
+        imgtrace.settle(ents)
+
+
+def test_the_overlap_rule_does_not_call_a_NESTED_loop_an_overlap():
+    """`_interiors_overlap` requires an inside midpoint AND an outside one, so
+    a loop wholly within another is not an overlap — a hole tangent to the
+    inside of its own outer is a pinch like any other."""
+    big = np.asarray(_square(), float)
+    small = np.asarray(_square(0.5), float)
+    assert not imgtrace._interiors_overlap(big, small)
+    assert not imgtrace._interiors_overlap(small, big)
+    # ...while a square pushed half-way out of it really is one
+    off = small + np.array([2.4, 0.0])
+    assert imgtrace._interiors_overlap(big, off)
+    assert imgtrace._interiors_overlap(off, big)

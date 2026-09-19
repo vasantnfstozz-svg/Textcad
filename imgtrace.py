@@ -144,6 +144,11 @@ _HAIR_MM = 0.01          # thinner than this, a wall is not geometry
 # two to five orders BELOW it. `_first_crossing`'s own 1e-9 was not used:
 # two grid points either side of a long slanted edge can sit that close for
 # real.
+#
+# What lands under the line is not always a contact, though: two loops that
+# SHARE AREA measure zero apart as surely as two that touch, and an overlap is
+# a union the kernel is happy with. `_worst_residual` asks
+# `_interiors_overlap` before counting one.
 _MEET_MM = 1e-12
 
 
@@ -314,6 +319,73 @@ def _pull_apart(loops, gap=_HAIR_MM, report=None):
     return [[(float(x), float(y)) for x, y in a] for a in arr]
 
 
+def _inside_ring(pts, ring, chunk=256):
+    """Even-odd ray test: which of `pts` lie inside the closed polyline
+    `ring`. A point ON the outline has no answer here and the caller drops it
+    before asking."""
+    a = ring
+    b = np.roll(ring, -1, axis=0)
+    dy = b[:, 1] - a[:, 1]
+    safe = np.where(np.abs(dy) > 1e-18, dy, 1.0)
+    out = np.zeros(len(pts), bool)
+    for s in range(0, len(pts), chunk):
+        p = pts[s:s + chunk]
+        y = p[:, 1:2]
+        straddle = (a[None, :, 1] > y) != (b[None, :, 1] > y)
+        t = (y - a[None, :, 1]) / safe[None]
+        xc = a[None, :, 0] + t * (b[None, :, 0] - a[None, :, 0])
+        out[s:s + chunk] = ((straddle & (xc > p[:, 0:1])).sum(axis=1) % 2) == 1
+    return out
+
+
+def _interiors_overlap(a, b) -> bool:
+    """True when two simple loops really share AREA — their outlines cross
+    transversally — as opposed to only TOUCHING.
+
+    `_worst_residual` measures a DISTANCE, and two loops of one sketch measure
+    zero apart in two situations that are nothing alike:
+
+      * they touch at a point with their interiors disjoint, or one nested in
+        the other. That is the PINCH this module refuses: a face with a
+        zero-width neck, which OCCT calls valid and the right volume and
+        `inspector.health` calls "not manifold/watertight (open shell)".
+      * their interiors OVERLAP. `_split_at_feet`'s docstring already says
+        what that is — "either cross transversally, which is an overlap, and
+        an overlap is a union the kernel is happy with".
+
+    Round seven cleared overlaps as a state that does not arise ("`_uncross`
+    returned 0 interior-overlapping pairs in 600 traces"), and on traces at
+    their OWN size that holds — measured again over 1200 ordinary traces,
+    round eight, `probes/imgtrace_r8_ordinary.py`: not one. It is the FIT's
+    rescale that makes them. Two loops 0.0004 mm apart, multiplied by
+    `s = 0.02` in `studio._trace_fitted` and re-rounded onto the 0.001 mm
+    grid, land on each other. Measured 2026-09-17 (round eight,
+    `probes/imgtrace_r8_meet.py`, two seeds, 1728 `settle` runs): 67 traces
+    were refused for meeting, and **37 of them carried no touching pair at
+    all — every zero pair was an overlap — and all 37 build HEALTHY**. The
+    other 30 do carry a point contact, and 9 of those really are the open
+    shell, so those stay refused.
+
+    MIDPOINTS of the edges, not vertices: a contact puts a VERTEX of one loop
+    exactly on the other's outline, where inside-or-outside says nothing.
+    Anything within half a grid step of the other outline is dropped for the
+    same reason. And BOTH an inside and an outside midpoint are required, so
+    nesting is not an overlap for this question — a hole tangent to the
+    inside of its own outer is a pinch like any other."""
+    for p, q in ((a, b), (b, a)):
+        if len(p) < 3 or len(q) < 3:
+            continue
+        mid = (p + np.roll(p, -1, axis=0)) / 2.0
+        d, _f = _nearest_on_ring(mid, q)
+        free = mid[d > 5e-4]
+        if len(free) < 2:
+            continue
+        ins = _inside_ring(free, q)
+        if ins.any() and not ins.all():
+            return True
+    return False
+
+
 def _worst_residual(loops, stuck):
     """How close the closest pair `_pull_apart` could NOT open really comes,
     measured BOTH ways on the rounded coordinates `sketch.py` is handed.
@@ -343,6 +415,12 @@ def _worst_residual(loops, stuck):
         d1, _f = _nearest_on_ring(a, b)
         d2, _f = _nearest_on_ring(b, a)
         g = min(float(d1.min()), float(d2.min()))
+        # ...and a pair that measures zero because its two loops SHARE AREA is
+        # not a clearance at all, so it is not this number. It is asked only
+        # of the pairs that would trip the refusal, which costs 0.12 s on the
+        # worst corpus trace (301 such pairs, probes/imgtrace_r8_cost.py).
+        if g <= _MEET_MM and _interiors_overlap(a, b):
+            continue
         worst = g if worst is None else min(worst, g)
     return worst
 
