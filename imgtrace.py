@@ -22,6 +22,8 @@ Pipeline (battle-proven on the rocky-keychain design series, 2026-08):
 """
 from __future__ import annotations
 
+import math
+
 import cv2
 import numpy as np
 
@@ -177,7 +179,18 @@ def _pull_apart(loops, gap=_HAIR_MM, report=None):
     0.025739602 mm of clearance, and built 47.933 mm3 that `is_valid` calls
     True and `health` calls an open shell. `_split_at_feet` now asks the
     mirror question first and splits the smaller loop's edge at the contact,
-    so the push below has a vertex to move."""
+    so the push below has a vertex to move.
+
+    Those two are the only ways two polygons can TOUCH without their interiors
+    overlapping: two straight segments at zero distance either cross
+    transversally — which is an overlap, and an overlap is a union the kernel
+    is happy with — or they meet at a point that is an endpoint of one of
+    them, i.e. a vertex of one against the other's outline. Asked in both
+    directions, the test is complete for a PAIR (round six; the ground truth
+    is segment-to-segment in probes/imgtrace_r6_truth.py). What it never asked
+    is whether a loop meets ITSELF after the push — `_walks_through_itself`
+    — and what it never said is when it gave up; `report` collects that, and
+    `_worst_residual` reads it back off the final coordinates."""
     if len(loops) < 2:
         return loops
     arr = [np.asarray(p, dtype=float) for p in loops]
@@ -217,16 +230,25 @@ def _pull_apart(loops, gap=_HAIR_MM, report=None):
             if not len(near):
                 continue
             cij = arr[i].mean(axis=0) - arr[j].mean(axis=0)
+            # plain floats from here down: this runs once per vertex inside
+            # the hair, and on the pathological art (200 loops of 400 points,
+            # every one touching its neighbours) a two-element numpy call per
+            # step costs more than the whole pair scan — 169 s against 86 s
+            # before the arithmetic came out (probes/imgtrace_r6_cost.py)
+            cx, cy = float(cij[0]), float(cij[1])
+            cn = math.hypot(cx, cy)
             for v in near:
-                home = arr[i][v].copy()
-                away = home - foot[v]
-                n = float(np.hypot(*away))
+                hx, hy = float(arr[i][v][0]), float(arr[i][v][1])
+                fx, fy = float(foot[v][0]), float(foot[v][1])
+                ax, ay = hx - fx, hy - fy
+                n = math.hypot(ax, ay)
                 if n < 1e-9:                  # exactly on the other outline
-                    away, n = cij, float(np.hypot(*cij))
+                    ax, ay, n = cx, cy, cn
                     if n < 1e-9:
                         stuck.append((i, j, float(d[v])))
                         continue
-                delta = foot[v] + away / n * gap - home
+                ux, uy = ax / n, ay / n
+                dx, dy = fx + ux * gap - hx, fy + uy * gap - hy
                 # ...ON the 0.001 mm grid the sketch is written on. Every
                 # point is on that grid by the time the push runs, so a move
                 # that is a whole number of grid steps keeps it there and the
@@ -236,13 +258,13 @@ def _pull_apart(loops, gap=_HAIR_MM, report=None):
                 # at 0.009837 mm where the push had measured 0.010000
                 # (measured 2026-09-17, round six). Step out until the
                 # SNAPPED point really clears the hair.
+                sx = sy = 0.0
                 for _ in range(4):
-                    snapped = np.round(delta, 3)
-                    if float(np.hypot(*(home + snapped - foot[v]))) >= gap:
+                    sx, sy = round(dx, 3), round(dy, 3)
+                    if math.hypot(hx + sx - fx, hy + sy - fy) >= gap:
                         break
-                    delta = delta + away / n * 0.0008
-                delta = snapped
-                span = 4.0 * float(np.hypot(*delta))   # the old room test,
+                    dx, dy = dx + ux * 0.0008, dy + uy * 0.0008
+                span = 4.0 * math.hypot(sx, sy)        # the old room test,
                 if span < 1e-12:                       # read the other way
                     stuck.append((i, j, float(d[v])))
                     continue
@@ -250,6 +272,7 @@ def _pull_apart(loops, gap=_HAIR_MM, report=None):
                 if block is None:             # the whole loop is sub-hair
                     stuck.append((i, j, float(d[v])))
                     continue                  # — leave it as traced
+                delta = np.array((sx, sy))
                 if _walks_through_itself(arr[i], block, delta):
                     stuck.append((i, j, float(d[v])))
                     continue                  # the loop's OWN far wall
@@ -421,19 +444,23 @@ def _hair_cluster(pts, v, span):
     absorb the push is a sliver, and the caller leaves it as traced rather
     than turn it inside out."""
     m = len(pts)
+    # the edge lengths once, as plain floats: this walks per VERTEX inside the
+    # hair, and a two-element numpy call per STEP was four fifths of the
+    # guard's time on the pathological art once the push's grid snap made the
+    # span — and so the walk — longer (probes/imgtrace_r6_cost.py, round six)
+    e = np.hypot(*(np.roll(pts, -1, axis=0) - pts).T).tolist()
     lo = hi = int(v)
     for _ in range(m):
         prev = (lo - 1) % m
-        if float(np.hypot(*(pts[lo] - pts[prev]))) >= span:
+        if e[prev] >= span:
             break
         lo = prev
     else:
         return None
     for _ in range(m):
-        nxt = (hi + 1) % m
-        if float(np.hypot(*(pts[hi] - pts[nxt]))) >= span:
+        if e[hi] >= span:
             break
-        hi = nxt
+        hi = (hi + 1) % m
     else:
         return None
     n = (hi - lo) % m + 1
