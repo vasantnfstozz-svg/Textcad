@@ -725,3 +725,152 @@ def test_a_design_written_by_this_build_still_opens_byte_for_byte():
     assert again.to_data() == data
     assert again.rebuild() is True
     assert again.get("b1").volume == pytest.approx(471.24, abs=0.01)
+
+
+# --- ROUND FIVE: the reads of `f.params` that round four's own fix left -------
+#
+# Round four's F1 commit put the rule in `param_refs`' docstring: "`f.params`
+# may be anything a foreign file held (`add` opens without looking), and this
+# runs on /api/doc and inside `_signature`, both outside any try". It guarded
+# that ONE read. Five siblings kept the old assumption, measured 2026-09-19
+# (probes/s10_r5_params_not_a_table.py, probes/s10_r5_signature_never_raises.py)
+# -- and the worst of them is nine lines below the one that was fixed, in the
+# same function.
+
+def _reb(doc):
+    """rebuild, answering with the exception instead of letting it escape"""
+    try:
+        doc.rebuild()
+        return None
+    except Exception as e:                           # noqa: BLE001 - that IS the test
+        return f"{type(e).__name__}: {e}"
+
+
+def test_a_damaged_import_feature_does_not_stop_the_design_opening():
+    """MEASURED RED: `_signature`'s file-stamp branch reads
+    `f.params.get("file", "")` and catches OSError only, so an `import_step`
+    whose params a file holds as a list answered `AttributeError: 'list'
+    object has no attribute 'get'` -- from the signing loop at the top of
+    `rebuild`, ahead of the per-feature try. The design did not open at all,
+    and the sound `plate` beside it was never even reached."""
+    for op in ("import_stl", "import_step"):
+        for bad in ([1, 2], "nowhere.step", 7):
+            d = Document.from_data({"name": "n", "features": [
+                {"id": "base", "op": "plate", "params": PLATE, "inputs": []},
+                {"id": "imp", "op": op, "params": bad, "inputs": []}]})
+            assert _reb(d) is None, (op, bad)
+            assert d.get("base").volume == pytest.approx(2000.0), (op, bad)
+            f = d.get("imp")
+            assert f.status == "failed"
+            assert not _is_python(" ".join(f.problems)), (op, bad, f.problems)
+
+
+def test_an_import_whose_file_name_is_not_a_file_name_is_a_row_not_a_crash():
+    """The same line, the other way in: `os.stat` raises ValueError -- not
+    OSError -- on a path holding a NUL, so `stat: embedded null character in
+    path` came out of `_signature` and took the whole rebuild with it."""
+    d = Document.from_data({"name": "n", "features": [
+        {"id": "base", "op": "plate", "params": PLATE, "inputs": []},
+        {"id": "imp", "op": "import_step",
+         "params": {"file": "a\x00b", "scale": 1.0}, "inputs": []}]})
+    assert _reb(d) is None
+    assert d.get("base").volume == pytest.approx(2000.0)
+    assert not _is_python(" ".join(d.get("imp").problems))
+
+
+def test_an_import_still_carries_its_file_in_its_signature(tmp_path):
+    """The other direction: the file IS part of the input, so a signature has
+    to move when the file does. The guard must not cost that."""
+    p = tmp_path / "part.step"
+    p.write_text("one", encoding="utf-8")
+    d = Document(name="n")
+    d.add("imp", "import_step", {"file": str(p), "scale": 1.0}, [])
+    first = d._signature(d.get("imp"), {})
+    assert d._signature(d.get("imp"), {}) == first
+    p.write_text("one and a half", encoding="utf-8")
+    assert d._signature(d.get("imp"), {}) != first, \
+        "the signature did not notice the file changing"
+    d.get("imp").params = [1, 2]                     # ...and still no crash
+    assert isinstance(d._signature(d.get("imp"), {}), str)
+
+
+def test_a_damaged_mirror_says_what_is_damaged_instead_of_answering_in_python():
+    """MEASURED RED: `AttributeError: 'list' object has no attribute 'get'` in
+    the feature row. `_eval` asks the KIND question before the numeric one on
+    purpose ("a sketch fed to fillet is not fixed by typing a radius"), and
+    `_check_modifier_input` reads `params.get("seed")` / `params.get("join")`
+    to decide whether a mirror joins -- so for the ONE op that reads its params
+    there, the kind check got in ahead of `_params_dict`'s sentence."""
+    for bad in ([1, 2], "YZ", 7):
+        d = Document.from_data({"name": "n", "features": [
+            {"id": "b1", "op": "plate", "params": PLATE, "inputs": []},
+            {"id": "m1", "op": "mirror", "params": bad, "inputs": ["b1"]}]})
+        assert _reb(d) is None, bad
+        f = d.get("m1")
+        assert f.status == "failed", bad
+        assert "settings are damaged" in " ".join(f.problems), (bad, f.problems)
+        assert not _is_python(" ".join(f.problems)), (bad, f.problems)
+
+
+def test_a_mirror_that_really_joins_is_still_refused_on_a_sketch():
+    """The other direction: the kind check's own job survives the guard."""
+    d = Document(name="n")
+    d.add("s1", "sketch", {"entities": CIRC, "plane": "XY", "offset": 0.0}, [])
+    d.add("m1", "mirror", {"plane": "YZ", "join": True}, ["s1"])
+    d.rebuild()
+    said = " ".join(d.get("m1").problems)
+    assert "is a sketch" in said, said
+    d.edit("m1", "join", False)                      # without join it is fine
+    assert d.rebuild() is True, d.get("m1").problems
+
+
+def test_renaming_a_feature_works_beside_a_damaged_pattern_or_sweep():
+    """MEASURED RED: `rename` walks REF_PARAMS to follow a seed or a path and
+    read `x.params.get(k)` on every feature of such an op -- so renaming ANY
+    feature in a design that also holds a damaged pattern, mirror or sweep
+    answered `AttributeError` from /api/feature/rename."""
+    for op in ("linear_pattern", "polar_pattern", "mirror", "sweep", "sweep_face"):
+        d = Document.from_data({"name": "n", "features": [
+            {"id": "b1", "op": "plate", "params": PLATE, "inputs": []},
+            {"id": "x1", "op": op, "params": [1, 2], "inputs": ["b1"]}]})
+        d.rename("b1", "stock")                      # must not raise
+        assert [f.id for f in d.features] == ["stock", "x1"]
+        assert _reb(d) is None, op
+
+
+def test_renaming_still_follows_a_real_seed_and_a_real_path():
+    """The other direction: the walk this guard protects still does its job."""
+    d = Document(name="n")
+    d.add("b1", "plate", PLATE, [])
+    d.add("h1", "with_center_hole", {"radius": 2}, ["b1"])
+    d.add("p1", "linear_pattern", {"count": 3, "dx": 3, "seed": "h1"}, ["h1"])
+    d.rename("h1", "bore")
+    assert d.get("p1").params["seed"] == "bore"
+    assert d.rebuild() is True, d.get("p1").problems
+
+
+def test_editing_a_move_works_beside_a_damaged_rotate():
+    """MEASURED RED: dragging a body calls `_carry_face_picks`, which asks
+    `_hands_on_the_move` (`f.params.get("pivot")` on every `rotate`) and then
+    `_shift_face_picks` (`(params or {}).items()`) -- both on whatever the file
+    held. /api/feature/edit answered `AttributeError` on a design carrying a
+    damaged `rotate` downstream of the body being moved."""
+    d = Document.from_data({"name": "n", "features": [
+        {"id": "b1", "op": "plate", "params": PLATE, "inputs": []},
+        {"id": "mv", "op": "move", "params": {"x": 0}, "inputs": ["b1"]},
+        {"id": "rt", "op": "rotate", "params": [1, 2], "inputs": ["mv"]}]})
+    d.edit("mv", "x", 8)                             # must not raise
+    assert d.get("mv").params["x"] == 8
+    assert _reb(d) is None
+
+
+def test_a_move_still_carries_a_real_face_pick():
+    """The other direction: the pick really does travel with the body."""
+    d = Document(name="n")
+    d.add("b1", "plate", PLATE, [])
+    d.add("mv", "move", {"x": 0}, ["b1"])
+    d.add("sf", "sketch_on_face",
+          {"face_center": [0, 0, 5], "face_normal": [0, 0, 1],
+           "entities": CIRC, "offset": 0.0}, ["mv"])
+    d.edit("mv", "x", 8)
+    assert d.get("sf").params["face_center"] == [8.0, 0.0, 5.0]

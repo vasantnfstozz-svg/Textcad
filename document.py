@@ -256,7 +256,7 @@ def _check_modifier_input(op: str, fid: str, part, params: dict | None = None) -
     # as `pattern.mirror` reads it — plain truthiness, under `if not seed`,
     # because a SEEDED mirror ignores join and already has its own sentence
     # ("a sketch is not a feature to repeat") — so the two cannot disagree.
-    _p = params or {}
+    _p = _param_view(params)
     joins = op == "mirror" and not _p.get("seed") and _p.get("join")
     if ((op in SOLID_REPEATING_MODIFIERS or op in SOLID_ONLY_MODIFIERS or joins)
             and (n_solids(part) or 0) == 0
@@ -303,6 +303,26 @@ def _param_items(f):
     'items'` — and the first two are on `/api/doc`, so the design could not be
     opened at all."""
     return f.params.items() if isinstance(f.params, dict) else ()
+
+
+def _param_view(params) -> dict:
+    """One feature's parameters to READ ONE KEY out of — `{}` when the file
+    holds no table there.
+
+    The third form of the same rule (`_params_dict` says it out loud,
+    `_param_items` walks what there is). This one is for the places that ask
+    a single question of the params — "does this mirror join?", "which sketch
+    does this sweep follow?", "which file does this import read?" — and that
+    cannot say anything sensible about a list.
+
+    Round four guarded `param_refs` with this rule inline and left its five
+    siblings, one of them NINE LINES BELOW IT in `_signature` (measured
+    2026-09-19, probes/s10_r5_params_not_a_table.py). That one was the worst:
+    the signing loop runs ahead of `rebuild`'s per-feature try, so a design
+    holding an `import_step` whose params are a list did not OPEN AT ALL —
+    `AttributeError: 'list' object has no attribute 'get'` — and the sound
+    features beside it were never reached."""
+    return params if isinstance(params, dict) else {}
 
 
 def _check_numeric_params(op: str, params: dict, feature_id: str,
@@ -528,7 +548,7 @@ def _shift_face_picks(params: dict, delta: tuple) -> bool:
         return out if hit else None
 
     moved = False
-    for key, val in list((params or {}).items()):
+    for key, val in list(_param_view(params).items()):
         if key == "face_center":
             new = shift(val)
             if new is not None:
@@ -573,7 +593,7 @@ def _hands_on_the_move(f: "Feature") -> bool:
     if f.suppressed:
         return True
     if f.op == "rotate":
-        return f.params.get("pivot") == "center"
+        return _param_view(f.params).get("pivot") == "center"
     return f.op not in _WORLD_PLACED_OPS and not Document.param_refs(f)
 
 
@@ -914,7 +934,8 @@ class Document:
                              "sketch tools) — click a hole, a boss, or a body")
         placed = f.op in self.PLACEMENT
         if f.op == "mirror":                     # only the legacy copy-only form
-            placed = not (f.params.get("seed") or f.params.get("join"))
+            _mp = _param_view(f.params)
+            placed = not (_mp.get("seed") or _mp.get("join"))
         if placed:
             # A placement's "before − after" is the body in its old spot and
             # its "after − before" the body in the new one, so repeating that
@@ -1161,7 +1182,7 @@ class Document:
         looking), and this runs on /api/doc and inside `_signature`, both
         outside any try -- a list there answered `AttributeError: 'list'
         object has no attribute 'get'`."""
-        params = f.params if isinstance(f.params, dict) else {}
+        params = _param_view(f.params)
         return [str(params[k]) for k in REF_PARAMS.get(f.op, ())
                 if params.get(k)]
 
@@ -1186,7 +1207,7 @@ class Document:
         for x in self.features:
             x.inputs = [new if d == old else d for d in x.inputs]
             for k in REF_PARAMS.get(x.op, ()):    # a pattern's seed is a reference too
-                if x.params.get(k) == old:
+                if _param_view(x.params).get(k) == old:
                     x.params[k] = new
         if self.rollback == old:
             self.rollback = new
@@ -1518,10 +1539,20 @@ class Document:
         if refs:
             payload["refs"] = refs
         if f.op in FILE_BACKED_OPS:
+            # `_param_view`, and ValueError beside OSError: this is the LAST
+            # thing in the file that still read `f.params` as a table, nine
+            # lines below the read round four guarded. The signing loop runs
+            # ahead of rebuild's per-feature try, so both of these took the
+            # WHOLE design down rather than reddening one row (measured
+            # 2026-09-19, probes/s10_r5_signature_never_raises.py): params a
+            # file holds as a list answered `AttributeError: 'list' object has
+            # no attribute 'get'`, and a `file` holding a NUL answered
+            # `ValueError: stat: embedded null character in path`, which is
+            # not an OSError.
             try:                       # the file IS part of the input
-                st = os.stat(str(f.params.get("file", "")))
+                st = os.stat(str(_param_view(f.params).get("file", "")))
                 payload["file_stamp"] = [st.st_mtime_ns, st.st_size]
-            except OSError:
+            except (OSError, ValueError):
                 payload["file_stamp"] = None
         blob = json.dumps(payload, sort_keys=True, default=str)
         return hashlib.sha1(blob.encode("utf-8")).hexdigest()
@@ -2214,7 +2245,7 @@ class Document:
             # exact false signal the exclusion above exists to prevent. With
             # a seed the op edits ONE body, so it keeps the check.
             if (f.op in ("linear_pattern", "polar_pattern")
-                    and not f.params.get("seed")):
+                    and not _param_view(f.params).get("seed")):
                 continue
             base = None
             for dep in f.inputs:                # the body it was built from
