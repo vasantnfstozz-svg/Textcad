@@ -126,6 +126,25 @@ def _uncross(pts):
 
 
 _HAIR_MM = 0.01          # thinner than this, a wall is not geometry
+# ...and closer than THIS, two loops are not near each other, they MEET. The
+# refusal used to read `<= 0.0` exactly, and a contact does not come out of
+# the arithmetic as an exact zero: two loops that share a point of the
+# 0.001 mm grid measure 3.469446951953614e-18 or 2.220446049250313e-16 mm
+# apart once `_nearest_on_ring` has projected one onto the other's edge. So
+# the refusal round six wrote stood down every time, and the sketch went out
+# with a sentence reading "two parts of this artwork pass 0.00 microns apart
+# — the sketch builds" about a pair that does not pass at all (measured
+# 2026-09-17, round seven, probes/imgtrace_r7_report_gap.py: 3 of 474
+# hard-scaled traces, and 1 of 479 ordinary ones).
+#
+# A THOUSANDTH OF A NANOMETRE is the line. It is a billion times finer than
+# the 0.001 mm grid the points are written on, so no clearance a sketch can
+# really carry lands under it — the tightest the corpus reports is
+# 0.000255 mm, nine orders above — and every contact measured so far lands
+# two to five orders BELOW it. `_first_crossing`'s own 1e-9 was not used:
+# two grid points either side of a long slanted edge can sit that close for
+# real.
+_MEET_MM = 1e-12
 
 
 def _pull_apart(loops, gap=_HAIR_MM, report=None):
@@ -354,33 +373,55 @@ def _walks_through_itself(pts, block, delta) -> bool:
     edges = sorted({(b - 1) % m for b in block} | {b % m for b in block})
     cand = pts.copy()
     cand[block] += delta
-    # only a crossing the MOVE makes counts. An outline can arrive here
+    # Only a crossing the MOVE makes counts. An outline can arrive here
     # already touching itself — `_split_at_feet` rounds its inserted point
-    # onto the 0.001 mm grid, which is up to 0.0007 mm off the edge it split
-    # — and refusing then would block a push that is needed and fixes
-    # nothing.
-    return _edges_hit(cand, edges) and not _edges_hit(pts, edges)
-
-
-def _edges_hit(pts, edges) -> bool:
-    """True when one of the edges `edges` of the closed polyline `pts` crosses
-    or touches a NON-adjacent edge of it — `_first_crossing`'s maths and
-    `_first_crossing`'s tolerance, asked about a few edges instead of all."""
+    # onto the 0.001 mm grid, which is up to 0.0007 mm off the edge it split,
+    # and when that lands ON an existing vertex the loop carries a
+    # ZERO-LENGTH edge, whose two neighbours touch at that point. Refusing
+    # every push on such a block fixes nothing (the duplicate is dropped by
+    # `_round_pts`), so round six asked a yes/no question — "does it touch
+    # itself at all" — and waived the whole block when the answer was yes.
+    #
+    # That waiver is a blanket one, and it fires: 8 pushes in 192 traces
+    # (probes/imgtrace_r7_selftouch.py), every one of them because of that
+    # duplicate. What it lets through is round six's own P0: the SAME ribbon
+    # with one duplicate vertex in the block has its bottom edge pushed
+    # 0.006 mm up through its own far wall, and the 2 mm extrusion goes from
+    # healthy 0.019550 mm3 to "OpenCASCADE reports the solid is invalid" at
+    # 0.016240 (measured 2026-09-17, round seven, probes/imgtrace_r7_escape.py).
+    #
+    # So the question is which PAIRS touch, not whether any do: a push that
+    # adds none is allowed however many were there already, and one that adds
+    # a pair is refused. The duplicate's own pair is there before and after,
+    # so the pushes round six needed are still made.
     m = len(pts)
-    r = np.roll(pts, -1, axis=0) - pts
     idx = np.arange(m)
-    tol = 1e-9
+    rc = np.roll(cand, -1, axis=0) - cand
+    rp = None
     for i in edges:
         adj = (np.abs(idx - i) <= 1) | (np.abs(idx - i) >= m - 1)
-        den = r[i, 0] * r[:, 1] - r[i, 1] * r[:, 0]
-        safe = np.where(np.abs(den) > 1e-15, den, 1.0)
-        d = pts - pts[i]
-        t = (d[:, 0] * r[:, 1] - d[:, 1] * r[:, 0]) / safe
-        u = (d[:, 0] * r[i, 1] - d[:, 1] * r[i, 0]) / safe
-        if ((np.abs(den) > 1e-15) & ~adj & (t >= -tol) & (t <= 1.0 + tol)
-                & (u >= -tol) & (u <= 1.0 + tol)).any():
+        now = _edge_hits(cand, rc, i, adj)
+        if not now.any():                 # the ordinary case, and the same
+            continue                      # work the yes/no question did
+        if rp is None:
+            rp = np.roll(pts, -1, axis=0) - pts
+        if (now & ~_edge_hits(pts, rp, i, adj)).any():
             return True
     return False
+
+
+def _edge_hits(pts, r, i, adj):
+    """Which NON-adjacent edges of the closed polyline `pts` the edge `i`
+    crosses or touches, as a boolean row — `_first_crossing`'s maths and
+    `_first_crossing`'s tolerance, asked about one edge instead of all."""
+    tol = 1e-9
+    den = r[i, 0] * r[:, 1] - r[i, 1] * r[:, 0]
+    safe = np.where(np.abs(den) > 1e-15, den, 1.0)
+    d = pts - pts[i]
+    t = (d[:, 0] * r[:, 1] - d[:, 1] * r[:, 0]) / safe
+    u = (d[:, 0] * r[i, 1] - d[:, 1] * r[i, 0]) / safe
+    return ((np.abs(den) > 1e-15) & ~adj & (t >= -tol) & (t <= 1.0 + tol)
+            & (u >= -tol) & (u <= 1.0 + tol))
 
 
 def _split_at_feet(pts, ring, gap):
@@ -610,11 +651,25 @@ def _mask_from_image(img) -> np.ndarray:
 
     `_border_bright` reads that border PAST a thin shell of INK, because a
     scan's platen edge or a printed rule box fills it without being the
-    ground. A thin shell of PAPER is left alone: that is a margin."""
+    ground. A thin shell of PAPER is left alone: that is a margin.
+
+    An alpha channel only wins when it really CUTS the picture in two. The
+    test used to be `min(alpha) < 250` alone, and one flat opacity passes it:
+    a picture saved at 95% has alpha 242 everywhere, every pixel then reads
+    "foreground", and the tracer drew the picture's own frame and threw the
+    art away — a 90 px disc traced as a 26.60 x 19.93 mm rectangle where the
+    logo is 19.86 mm across, one piece, status ok, nothing said. Read from
+    the other end, 15% opacity put every pixel under the 128 cut and the
+    trace refused "no artwork found in the image" for a picture that plainly
+    has a logo in it (measured 2026-09-17, round seven). A channel with
+    nothing on one side of the cut carries no silhouette; the luminance does.
+    """
     if img is None:
         raise ValueError("could not decode the image — is it a PNG/JPG?")
     if img.ndim == 3 and img.shape[2] == 4 and int(img[:, :, 3].min()) < 250:
-        return (img[:, :, 3] > 128).astype(np.uint8)
+        cut = (img[:, :, 3] > 128).astype(np.uint8)
+        if 0 < int(cut.sum()) < cut.size:
+            return cut
     gray = (cv2.cvtColor(img[:, :, :3], cv2.COLOR_BGR2GRAY)
             if img.ndim == 3 else img)
     _, m = cv2.threshold(gray, 0, 1, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -680,8 +735,29 @@ def _traced_mask(data: bytes, height_mm: float, min_channel_mm: float = 0.0,
     six, probes/imgtrace_r6_gates.py) a disc beside five loose 1 px hairlines
     read aspect 1.0000 for art `connect_pieces` really draws at 2.1144, and
     on a 20 x 60 mm face the fit laid it down at 18.00 x 8.50 mm — 153 mm2
-    where standing it up gives 684."""
-    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
+    where standing it up gives 684.
+
+    `min_channel_mm` is the one knob with no bound on it, and the browser
+    never sends it — only the HTTP door and a script do. Unbounded it fails
+    both ways at once (measured 2026-09-17, round seven,
+    probes/imgtrace_r7_channel.py): the open erases the space AROUND the art
+    as readily as the recesses IN it, so a 30 mm channel on artwork 19.9 mm
+    across traced the picture's own 24.98 x 19.98 mm rectangle, one piece, no
+    holes, status ok and nothing said; and the cost is k**2 a pixel, so the
+    same knob at 60 mm on a 1500 x 1200 picture took 119.56 SECONDS for one
+    trace. So a channel that cannot be a recess in this artwork is refused
+    before the morphology runs, and a fill that spilled past the artwork's
+    own boundary is refused after it."""
+    try:
+        img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
+    except cv2.error:
+        # an empty or unreadable buffer makes OpenCV ASSERT, and its assertion
+        # is not a ValueError: a zero-byte file dragged into Trace Image put
+        # "OpenCV(5.0.0) ... (-215:Assertion failed) !buf.empty()" straight
+        # into the user's chat (measured 2026-09-17, round seven). The
+        # browser's own reader hands a 0-byte .png through as
+        # "data:image/png;base64," with nothing after the comma.
+        img = None
     solid, min_area = _traceable(_mask_from_image(img), height_mm)
     ys, xs = np.where(solid)
     mm_px = float(height_mm) / (int(ys.max()) - int(ys.min()) + 1)
@@ -689,13 +765,37 @@ def _traced_mask(data: bytes, height_mm: float, min_channel_mm: float = 0.0,
     if connect_pieces:
         solid, welded = _bridge_pieces(solid, max(3, int(0.6 / mm_px)))
     if min_channel_mm and min_channel_mm > 0:
+        box = _art_box(solid)
+        wide = min(box[1] - box[0] + 1, box[3] - box[2] + 1) * mm_px
+        if float(min_channel_mm) >= wide:
+            raise ValueError(
+                f"a {float(min_channel_mm):g} mm channel is as wide as this "
+                f"artwork, which measures {wide:.1f} mm across at "
+                f"{float(height_mm):g} mm tall — filling it would leave a "
+                f"plain rectangle. Set the channel to your end-mill diameter")
         k = int(min_channel_mm / mm_px) | 1
         field = 1 - solid
         field = cv2.morphologyEx(
             field, cv2.MORPH_OPEN,
             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
         solid = (1 - field).astype(np.uint8)
+        grew = _art_box(solid)
+        if (grew[0] < box[0] - 2 or grew[1] > box[1] + 2
+                or grew[2] < box[2] - 2 or grew[3] > box[3] + 2):
+            raise ValueError(
+                f"filling channels narrower than {float(min_channel_mm):g} mm "
+                f"swallowed the space AROUND this artwork, not just the "
+                f"recesses in it — the trace would come back as a plain "
+                f"rectangle. Use a smaller channel, or trace it bigger")
     return solid, min_area, mm_px, welded
+
+
+def _art_box(solid):
+    """(y0, y1, x0, x1) of the set pixels — the artwork's own bounding box"""
+    ys, xs = np.where(solid)
+    if not len(ys):
+        raise ValueError("no artwork found in the image")
+    return int(ys.min()), int(ys.max()), int(xs.min()), int(xs.max())
 
 
 def artwork_aspect(data: bytes, height_mm: float = 50.0,
@@ -772,6 +872,87 @@ def _chaikin(pts: np.ndarray, cut_px: float) -> np.ndarray:
         out.append(p + t * edge)
         out.append(q - t * edge)
     return np.array(out)
+
+
+def settle(ents):
+    """Re-prove, on coordinates SOMETHING ELSE has moved, the two promises
+    `image_to_entities` ends with: no polygon crosses itself, and no two loops
+    of the sketch come within a hair of each other. -> (entities, note or None)
+    — and the same refusal when a pair still MEETS.
+
+    `studio._trace_fitted` fits traced art into a face by multiplying every
+    point by a residual `s` and rounding it back onto the 0.001 mm grid. The
+    comment calls `s` a hair ("the traced bbox can differ a hair from the mask
+    bbox"), and `_trace_fit_height`'s own docstring calls it something else:
+    when no tried height fits, "one of them has to be traced and then SHRUNK
+    by `_trace_fitted`'s residual rescale".
+
+    It is not a hair, and the multiply undoes exactly what round six went to
+    the trouble of protecting. Measured 2026-09-17 (round seven,
+    probes/imgtrace_r7_rescale.py and imgtrace_r7_fit_shrink.py): over 240
+    traces rescaled at s = 0.9 … 0.02, 287 polygons came back carrying a
+    DUPLICATE point (two grid points merged into one — a zero-length edge,
+    which studio never cleans because it does not call `_round_pts` after its
+    own rescale), 22 came back really CROSSING, and 32 traces ended with two
+    loops at exactly 0.000000000 mm — the pinch that builds as an open shell.
+    At the door, tests/test_trace_fit.py's own "aspect never settles" picture
+    on a 5 x 5 mm face is traced at 50 mm and shrunk by s = 0.0902, and one of
+    its eleven polygons reaches `sketch.py` crossing itself.
+
+    So whatever moved the points, this is asked again afterwards, at the size
+    the sketch really carries."""
+    flat = [_round_pts([(float(e["x"] + px), float(e["y"] + py))
+                        for px, py in e["points"]]) for e in ents]
+    kinds = [e.get("mode", "add") for e in ents]
+    stuck: list = []
+    apart: list = []
+    for _ in range(3):
+        # a point merged by the rescale is a zero-length edge, and a loop that
+        # really crosses is several loops — the same answer `to_mm` gives
+        split, marks = [], []
+        for mode, pts in zip(kinds, flat):
+            for p in _uncross(pts):
+                if len(p) >= 3 and abs(_area2(p)) > 1e-9:
+                    split.append(p)
+                    marks.append(mode)
+        if not split:
+            raise ValueError("tracing produced no usable outline")
+        flat, kinds = split, marks
+        stuck = []
+        apart = _pull_apart(flat, report=stuck)
+        flat = [_round_pts(p) for p in apart]
+        # ...and ask AGAIN, because the push is not only a move: it inserts a
+        # vertex at each contact (`_split_at_feet`) and rounds it onto the
+        # 0.001 mm grid, up to 0.0007 mm off the edge it split. On art scaled
+        # to a tenth that is the size of the art's own features, and a loop
+        # `_uncross` had just proved simple came back crossing (measured
+        # 2026-09-17, round seven). Splitting again makes two loops that share
+        # a point, which the next pull opens; it settles in two rounds.
+        if not any(_first_crossing(p) is not None for p in flat):
+            break
+    else:
+        raise ValueError(
+            "this artwork is too fine to scale onto this face — its own "
+            "outline folds over itself at that size. Pick a bigger face, or "
+            "simplify the picture")
+    out = [_poly_entity(p, m) for m, p in zip(kinds, flat) if len(p) >= 3]
+    if not out or out[0]["mode"] != "add":
+        raise ValueError("tracing produced no usable outline")
+    tight = _worst_residual(apart, stuck)
+    if tight is not None and tight <= _MEET_MM:
+        raise ValueError(
+            "two parts of this artwork meet at a point once it is scaled to "
+            "fit this face — extruding it would make a pinched, unusable "
+            "solid. Pick a bigger face, or open the gap in the picture where "
+            "the two shapes touch")
+    note = None
+    if tight is not None and tight < _HAIR_MM:
+        note = ("scaled onto this face, two parts of the artwork pass "
+                + (f"{tight * 1000:.2f} microns" if tight * 1000 >= 0.005
+                   else "under 0.01 microns")
+                + " apart — thinner than the tracer can open. The sketch "
+                "builds, but a bigger face gives it room.")
+    return out, note
 
 
 def image_to_entities(data: bytes, height_mm: float = 50.0,
@@ -904,17 +1085,23 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
     # today and is reported, not refused.
     tight = _worst_residual(apart, stuck)
     if tight is not None and tight < _HAIR_MM:
-        if tight <= 0.0:
+        if tight <= _MEET_MM:
             raise ValueError(
                 "two parts of this artwork meet at a point and the tracer "
                 "could not pull them apart — extruding it would make a "
                 "pinched, unusable solid. Trace it taller, or open the gap "
                 "in the picture where the two shapes touch")
-        info["tight_mm"] = round(tight, 6)
+        # 9 decimals, and "under 0.01 microns" rather than "0.00": at 6 the
+        # number a nanometre-wide residual reports is 0.0, and a sentence
+        # that says two parts pass ZERO apart AND that the sketch builds is
+        # the one that hid the pinch (round seven)
+        info["tight_mm"] = round(tight, 9)
         info["note"] = (
-            f"two parts of this artwork pass {tight * 1000:.2f} microns "
-            f"apart — thinner than the tracer can open. The sketch builds, "
-            f"but trace it taller if the extrude ever refuses."
+            "two parts of this artwork pass "
+            + (f"{tight * 1000:.2f} microns" if tight * 1000 >= 0.005
+               else "under 0.01 microns")
+            + " apart — thinner than the tracer can open. The sketch "
+            "builds, but trace it taller if the extrude ever refuses."
             + (" " + info["note"] if info.get("note") else ""))
     if welded is not None:
         # asked to weld the art into one piece, and it did not: say so rather

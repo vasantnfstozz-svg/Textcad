@@ -2443,6 +2443,23 @@ def _trace_fitted(data: bytes, req: TracePngReq,
     height = req.height_mm
     rotated = False
     if box:
+        # the browser never sends either of these — it sends the server's own
+        # `fit_box` and leaves `fit_margin` at its default — so nothing had
+        # ever checked them. A script that does gets art off the material
+        # rather than a sentence: measured 2026-09-17 (round seven,
+        # probes/imgtrace_r7_doors.py) fit_margin 2 put 39.72 mm of art on a
+        # 30 x 20 mm box and 1e9 put 993.80 mm of it there, both green; a
+        # NEGATIVE margin mirrored the art and rotated it; and a fit box of
+        # one number answered "not enough values to unpack (expected 4,
+        # got 1)" in the user's chat.
+        if len(box) != 4:
+            raise ValueError("the fit box needs four numbers — the width and "
+                             "height of the face's rectangle and its centre")
+        if not 0.0 < float(req.fit_margin) <= 1.0:
+            raise ValueError(
+                f"fit_margin is the fraction of the face the artwork fills, "
+                f"so it has to be above 0 and at most 1 — "
+                f"{float(req.fit_margin):g} would put the art off the face")
         fw, fh, fcx, fcy = (float(v) for v in box)
         if fw <= 0 or fh <= 0:
             # the SAME sentence `_trace_face_fit` gives, because this is the
@@ -2494,8 +2511,37 @@ def _trace_fitted(data: bytes, req: TracePngReq,
                                for px, py in e["points"]]
             e["x"] = round(e["x"] + fcx, 3)
             e["y"] = round(e["y"] + fcy, 3)
-        info["width_mm"] = round(info["width_mm"] * s, 2)
-        info["height_mm"] = round(info["height_mm"] * s, 2)
+        if s < 1.0:
+            # imgtrace ends by proving no polygon crosses itself and no two
+            # loops meet; the multiply above happens AFTER both, and rounds
+            # every point back onto the 0.001 mm grid, which is exactly what
+            # round six stopped the art-centring shift doing. It is not a
+            # hair: `_trace_fit_height`'s own fallback says "traced and then
+            # SHRUNK by `_trace_fitted`'s residual rescale", and on a
+            # 5 x 5 mm face that is s = 0.0902 (measured 2026-09-17, round
+            # seven, probes/imgtrace_r7_fit_shrink.py) — one of eleven
+            # polygons reached sketch.py crossing itself, and across the
+            # corpus 32 traces of 240 ended with two loops at exactly
+            # 0.000000000 mm, the pinch that builds as an open shell. So the
+            # promises are re-proved at the size the sketch really carries.
+            ents, note = imgtrace.settle(ents)
+            info["contours"] = sum(1 for e in ents if e["mode"] == "add")
+            info["holes"] = len(ents) - info["contours"]
+            info["points"] = sum(len(e["points"]) for e in ents)
+            if note:
+                info["note"] = (info.get("note", "") and info["note"] + " "
+                                ) + note
+            # ...and the size is read back off what is DRAWN, for the reason
+            # imgtrace reads it back off its own entities: the settle can drop
+            # a sliver or open a wall, and a size the sketch does not carry is
+            # a wrong measurement in the user's chat
+            xs = [e["x"] + p[0] for e in ents for p in e["points"]]
+            ys = [e["y"] + p[1] for e in ents for p in e["points"]]
+            info["width_mm"] = round(max(xs) - min(xs), 2)
+            info["height_mm"] = round(max(ys) - min(ys), 2)
+        else:
+            info["width_mm"] = round(info["width_mm"] * s, 2)
+            info["height_mm"] = round(info["height_mm"] * s, 2)
         # the FIT BOX, not the face: on a 30 mm disc the face is 60 x 60 and
         # this is 42 x 42. `face_mm` is kept beside it so a browser mid-flight
         # keeps working; static/js/sketcher.js must move to `fit_mm` and the
@@ -2519,7 +2565,13 @@ def trace_png(req: TracePngReq):
             ents, info = _trace_fitted(data, req, tuple(req.fit_box)
                                        if req.fit_box else None)
         except Exception as e:
-            return {"error": str(e)}
+            # 400, not 200: a route that answers a refusal with 200 tells a
+            # script the opposite of what happened (REVIEW-QUEUE section 12).
+            # The document is NOT sent with it — this door takes no snapshot
+            # and changes nothing, and a `features` key here would fire the
+            # browser's 'doc-updated' under an open sketch. `api.js` reads the
+            # body whatever the status, so the chat says the same sentence.
+            return JSONResponse(status_code=400, content={"error": str(e)})
         return {"entities": ents, "trace_info": info}
     _snapshot()
     try:
