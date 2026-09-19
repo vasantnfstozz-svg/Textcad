@@ -128,14 +128,23 @@ def _uncross(pts):
 _HAIR_MM = 0.01          # thinner than this, a wall is not geometry
 # ...and closer than THIS, two loops are not near each other, they MEET. The
 # refusal used to read `<= 0.0` exactly, and a contact does not come out of
-# the arithmetic as an exact zero: two loops that share a grid point measured
-# 3.469446951953614e-18 mm apart through `_nearest_on_ring`'s projection, so
-# the refusal stood down and the sketch was handed over with a note reading
-# "two parts of this artwork pass 0.00 microns apart" (measured 2026-09-17,
-# round seven, probes/imgtrace_r7_report_gap.py). 1e-9 mm is the same
-# tolerance `_first_crossing` calls a touch, and nine orders below the
-# 0.000255 mm the corpus really reports.
-_MEET_MM = 1e-9
+# the arithmetic as an exact zero: two loops that share a point of the
+# 0.001 mm grid measure 3.469446951953614e-18 or 2.220446049250313e-16 mm
+# apart once `_nearest_on_ring` has projected one onto the other's edge. So
+# the refusal round six wrote stood down every time, and the sketch went out
+# with a sentence reading "two parts of this artwork pass 0.00 microns apart
+# — the sketch builds" about a pair that does not pass at all (measured
+# 2026-09-17, round seven, probes/imgtrace_r7_report_gap.py: 3 of 474
+# hard-scaled traces, and 1 of 479 ordinary ones).
+#
+# A THOUSANDTH OF A NANOMETRE is the line. It is a billion times finer than
+# the 0.001 mm grid the points are written on, so no clearance a sketch can
+# really carry lands under it — the tightest the corpus reports is
+# 0.000255 mm, nine orders above — and every contact measured so far lands
+# two to five orders BELOW it. `_first_crossing`'s own 1e-9 was not used:
+# two grid points either side of a long slanted edge can sit that close for
+# real.
+_MEET_MM = 1e-12
 
 
 def _pull_apart(loops, gap=_HAIR_MM, report=None):
@@ -938,10 +947,11 @@ def settle(ents):
             "the two shapes touch")
     note = None
     if tight is not None and tight < _HAIR_MM:
-        note = (f"scaled onto this face, two parts of the artwork pass "
-                f"{tight * 1000:.2f} microns apart — thinner than the tracer "
-                f"can open. The sketch builds, but a bigger face gives it "
-                f"room.")
+        note = ("scaled onto this face, two parts of the artwork pass "
+                + (f"{tight * 1000:.2f} microns" if tight * 1000 >= 0.005
+                   else "under 0.01 microns")
+                + " apart — thinner than the tracer can open. The sketch "
+                "builds, but a bigger face gives it room.")
     return out, note
 
 
@@ -1081,11 +1091,17 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
                 "could not pull them apart — extruding it would make a "
                 "pinched, unusable solid. Trace it taller, or open the gap "
                 "in the picture where the two shapes touch")
-        info["tight_mm"] = round(tight, 6)
+        # 9 decimals, and "under 0.01 microns" rather than "0.00": at 6 the
+        # number a nanometre-wide residual reports is 0.0, and a sentence
+        # that says two parts pass ZERO apart AND that the sketch builds is
+        # the one that hid the pinch (round seven)
+        info["tight_mm"] = round(tight, 9)
         info["note"] = (
-            f"two parts of this artwork pass {tight * 1000:.2f} microns "
-            f"apart — thinner than the tracer can open. The sketch builds, "
-            f"but trace it taller if the extrude ever refuses."
+            "two parts of this artwork pass "
+            + (f"{tight * 1000:.2f} microns" if tight * 1000 >= 0.005
+               else "under 0.01 microns")
+            + " apart — thinner than the tracer can open. The sketch "
+            "builds, but trace it taller if the extrude ever refuses."
             + (" " + info["note"] if info.get("note") else ""))
     if welded is not None:
         # asked to weld the art into one piece, and it did not: say so rather

@@ -486,7 +486,8 @@ def test_a_pair_that_meets_by_a_rounding_error_is_still_a_pinch():
     probes/imgtrace_r7_report_gap.py)."""
     m = _ring_with_mixed_spokes(131, [(5.825232830329833, 1),
                                       (4.6218438148683765, 2)])
-    for residual in (0.0, 3.469446951953614e-18, 1e-12, 1e-9):
+    for residual in (0.0, 3.469446951953614e-18, 2.220446049250313e-16,
+                     1e-13):
         real = imgtrace._worst_residual
         imgtrace._worst_residual = lambda loops, stuck, r=residual: r
         try:
@@ -498,6 +499,20 @@ def test_a_pair_that_meets_by_a_rounding_error_is_still_a_pinch():
                 imgtrace.settle(ents)
         finally:
             imgtrace._worst_residual = real
+    # ...and a residual a sketch can really carry is NOT a pinch: two grid
+    # points either side of a long slanted edge can sit a nanometre apart,
+    # which is why the line is a thousandth of one
+    real = imgtrace._worst_residual
+    imgtrace._worst_residual = lambda loops, stuck: 1e-9
+    try:
+        _e, info = imgtrace.image_to_entities(_png(m), height_mm=9.5)
+        assert info["tight_mm"] == pytest.approx(1e-9, abs=1e-12)
+        # ...and the sentence never says a pair passes ZERO apart while
+        # telling the user the sketch builds
+        assert "0.00 microns" not in info["note"], info["note"]
+        assert "under 0.01 microns" in info["note"]
+    finally:
+        imgtrace._worst_residual = real
 
 
 def test_settling_leaves_art_that_is_already_clear_alone():
