@@ -665,6 +665,52 @@ def test_a_switch_that_is_not_a_switch_is_read_and_saved_as_one():
         assert d.to_data()["features"][0]["suppressed"] is want
 
 
+def _centre(params):
+    d = Document(name="m")
+    d.add("b1", "plate", PLATE, [])
+    d.add("m1", "move", params, ["b1"])
+    d.rebuild()
+    part = d._parts.get("m1")
+    if part is None:
+        return None, d.get("m1").problems
+    c = part.bounding_box().center()
+    return (round(c.X, 4), round(c.Y, 4), round(c.Z, 4)), d.get("m1").problems
+
+
+def test_a_flag_in_a_move_is_not_a_distance():
+    """MEASURED RED: `move` is the ONE op outside the numeric door, left there
+    because it reads a MISSING offset as 0 on purpose (`_move_offsets`). A
+    missing offset and a `true` one are not the same thing, and `float(True)`
+    is 1.0 — so `move {"x": true}` slid the body 1 mm, the row stayed GREEN,
+    and no volume anywhere changed to show it. This is round three's own P0
+    (`sketch {"offset": true}` at Z = 1) in the op that door skips
+    (probes/s10_r4_move_door.py)."""
+    assert _centre({})[0] == (0.0, 0.0, 0.0)
+    for params, axis in (({"x": True}, "x"), ({"y": True}, "y"),
+                         ({"z": True}, "z"), ({"x": False}, "x")):
+        centre, problems = _centre(params)
+        assert centre is None, (params, centre, "the body moved")
+        assert axis in " ".join(problems), problems
+        assert not _is_python(" ".join(problems)), problems
+
+
+def test_a_move_still_moves_by_every_number_it_used_to():
+    """The other direction. `None` reads as 0 on purpose, a numeric string
+    from an older file still builds as the number it says (the pinned Named
+    parameters rule), and a formula drives it."""
+    assert _centre({"x": 7})[0] == (7.0, 0.0, 0.0)
+    assert _centre({"x": -4})[0] == (-4.0, 0.0, 0.0)
+    assert _centre({"x": "7"})[0] == (7.0, 0.0, 0.0)
+    assert _centre({"x": None})[0] == (0.0, 0.0, 0.0)
+    assert _centre({"x": 0})[0] == (0.0, 0.0, 0.0)
+    d = Document(name="m")
+    d.set_parameter("shift", "3")
+    d.add("b1", "plate", PLATE, [])
+    d.add("m1", "move", {"x": "shift*2"}, ["b1"])
+    assert d.rebuild() is True, d.get("m1").problems
+    assert round(d._parts["m1"].bounding_box().center().X, 4) == 6.0
+
+
 def test_a_design_written_by_this_build_still_opens_byte_for_byte():
     """The other direction, which matters more: none of the above may refuse
     work that is correct. A full document round-trips unchanged."""

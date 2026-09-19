@@ -433,6 +433,17 @@ def _move_offsets(params: dict) -> tuple[float, float, float]:
     for k in ("x", "y", "z"):
         v = (params or {}).get(k, 0)
         try:
+            # A FLAG is not a distance. `move` is the one op outside
+            # `_check_numeric_params` — it reads a MISSING offset as 0 on
+            # purpose — and a missing offset and a `true` one are not the
+            # same thing: `float(True)` is 1.0, so `{"x": true}` slid the body
+            # 1 mm with the row green and no volume anywhere to show it
+            # (measured 2026-09-17, probes/s10_r4_move_door.py). That is round
+            # three's own P0 (`sketch {"offset": true}` at Z = 1) in the op
+            # its door skips. 7464 numeric values across the library, every
+            # one an int or a float, so nothing anybody has saved is refused.
+            if isinstance(v, bool):
+                raise ValueError
             n = float(0 if v is None else v)
             if not math.isfinite(n):
                 raise ValueError
