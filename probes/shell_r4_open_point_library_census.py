@@ -12,8 +12,9 @@ user's own bodies, closed and with the top open.
     C:\\Python314\\python.exe probes/shell_r4_open_point_library_census.py
     C:\\Python314\\python.exe probes/shell_r4_open_point_library_census.py --design bit-tray
 
-One child per design (the parent restarts after a segfault), one JSON line per
-cell, flushed as it lands.
+The bodies are the .brep cache the verdict probe writes (`probes/_r4_bodies`),
+so no design is rebuilt here. One child per body (the parent restarts after a
+segfault), one JSON line per cell, flushed as it lands.
 """
 import argparse
 import json
@@ -45,23 +46,15 @@ def state_of(solid, at) -> str:
         return "ERR:" + str(e)[:40]
 
 
+def bodies_dir() -> Path:
+    return Path(os.environ.get("TEXTCAD_R4_BODIES") or (ROOT / "probes" / "_r4_bodies"))
+
+
 def one(stem: str, out_path: Path, done: set) -> None:
+    import build123d as b3d
     import sketch as sk
-    from document import Document
-    doc = Document.from_data(json.loads(
-        (ROOT / "designs" / f"{stem}.tcad.json").read_text(encoding="utf-8")))
-    doc.rebuild()
-    best = None
-    for fid in doc.leaf_solid_ids():
-        part = doc._parts.get(fid)
-        if part is None:
-            continue
-        v = float(part.volume)
-        if best is None or v > best[2]:
-            best = (fid, part, v)
-    if best is None:
-        return
-    fid, part, _v = best
+    part = b3d.Part(b3d.import_brep(str(bodies_dir() / f"{stem}.brep")).wrapped)
+    fid = stem
     fh = out_path.open("a", encoding="utf-8")
     for mode in ("closed", "top-open"):
         try:
@@ -115,7 +108,7 @@ def main() -> int:
     if a.design:
         one(a.design, out_path, load_done(out_path))
         return 0
-    stems = sorted(p.name[:-len(".tcad.json")] for p in (ROOT / "designs").glob("*.tcad.json"))
+    stems = sorted(p.stem for p in bodies_dir().glob("*.brep"))
     for stem in stems:
         for _attempt in range(3):
             before = len(load_done(out_path))

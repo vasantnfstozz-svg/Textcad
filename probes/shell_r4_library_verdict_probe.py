@@ -39,7 +39,8 @@ os.environ.setdefault("TEXTCAD_HISTORY_ROOT",
                       str(Path(os.environ.get("TEMP", ".")) / "tcad-r4-hist"))
 
 FIXED_TS = (0.5, 1.0, 2.0, 3.0)
-CELL_S = 130.0                 # one cell's whole wall clock, enforced by the OS
+CELL_S = 130.0                 # one cell alone (--cell), enforced by the OS
+DESIGN_S = 420.0               # one attempt at a design's remaining cells
 BUILD_S = 900.0                # one design's rebuild + export
 
 
@@ -70,9 +71,21 @@ def ladder(part) -> list:
 
 
 def export_one(stem: str) -> None:
-    """build the design ONCE and cache its largest leaf body"""
+    """build the design ONCE and cache its largest leaf body.
+
+    A cached .brep is REUSED, and that is what lets the pre-sweep checkout be
+    asked about exactly the same bodies without rebuilding a single design —
+    point both runs at one `TEXTCAD_R4_BODIES` and the two answers differ only
+    by the code under test."""
     import build123d as b3d
     from document import Document
+    cached = bodies_dir() / f"{stem}.brep"
+    if cached.exists():
+        part = load_body(stem)
+        print(json.dumps({"design": stem, "fid": "(cached)",
+                          "v_in": float(part.volume), "faces": len(part.faces()),
+                          "lumps": len(part.solids()), "ts": ladder(part)}), flush=True)
+        return
     doc = Document.from_data(json.loads(
         (designs_dir() / f"{stem}.tcad.json").read_text(encoding="utf-8")))
     doc.rebuild()
@@ -100,10 +113,7 @@ def export_one(stem: str) -> None:
                       "ts": ladder(part)}), flush=True)
 
 
-def cell(stem: str, t: float, mode: str) -> None:
-    """ONE cell, in its own child: the whole of `sketch.shell`, verdict on stdout"""
-    import sketch
-    part = load_body(stem)
+def one_cell(sketch, part, stem: str, t: float, mode: str) -> dict:
     rec = {"design": stem, "t": t, "mode": mode}
     t0 = time.perf_counter()
     try:
@@ -115,7 +125,38 @@ def cell(stem: str, t: float, mode: str) -> None:
         rec["verdict"] = "REFUSED"
         rec["why"] = str(e)[:240]
     rec["s"] = round(time.perf_counter() - t0, 2)
-    print(json.dumps(rec), flush=True)
+    return rec
+
+
+def cell(stem: str, t: float, mode: str) -> None:
+    """ONE cell, in its own child: the whole of `sketch.shell`, verdict on stdout"""
+    import sketch
+    print(json.dumps(one_cell(sketch, load_body(stem), stem, t, mode)), flush=True)
+
+
+def design_cells(stem: str, out_path: Path) -> None:
+    """every cell of one design still missing from `out_path`, in THIS child,
+    each appended and fsynced the moment it lands.
+
+    One child per design and not one per cell, because a cell child costs about
+    twelve seconds of interpreter and worker start-up and most cells are shorter
+    than that. The OS timeout belongs to the parent's `subprocess.run`, so a cell
+    that will not end costs this child and the parent resumes at the next one."""
+    import sketch
+    part = load_body(stem)
+    done = load_done(out_path)
+    with out_path.open("a", encoding="utf-8") as fh:
+        for t in ladder(part):
+            for mode in ("closed", "top-open"):
+                if (stem, t, mode) in done:
+                    continue
+                rec = one_cell(sketch, part, stem, t, mode)
+                fh.write(json.dumps(rec) + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+                print(f"   t={t:<7g} {mode:9s} {rec['verdict']:9s} {rec['s']:7.1f}s  "
+                      f"{(rec.get('why') or '')[:80]}", flush=True)
+    print(json.dumps({"design": stem, "finished": True}), flush=True)
 
 
 def load_done(out_path: Path) -> dict:
@@ -154,51 +195,57 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--export")
     ap.add_argument("--cell", nargs=3, metavar=("DESIGN", "T", "MODE"))
+    ap.add_argument("--design")
     ap.add_argument("--out", default=str(ROOT / "probes" / "_r4_library_verdicts.jsonl"))
     ap.add_argument("--only", help="comma-separated stems")
     a = ap.parse_args()
+    out_path = Path(a.out)
     if a.export:
         export_one(a.export)
         return 0
     if a.cell:
         cell(a.cell[0], float(a.cell[1]), a.cell[2])
         return 0
+    if a.design:
+        design_cells(a.design, out_path)
+        return 0
 
-    out_path = Path(a.out)
-    done = load_done(out_path)
     stems = sorted(p.name[:-len(".tcad.json")] for p in designs_dir().glob("*.tcad.json"))
     if a.only:
         want = set(a.only.split(","))
         stems = [s for s in stems if s in want]
-    fh = out_path.open("a", encoding="utf-8")
-
-    def put(rec: dict) -> None:
-        fh.write(json.dumps(rec) + "\n")
-        fh.flush()
-        os.fsync(fh.fileno())
-
     for stem in stems:
         info, err, tail = run_child(["--export", stem], BUILD_S)
         if info is None or not info.get("ts"):
             print(f"{stem}: NO BODY ({err or 'empty'}) {tail}", flush=True)
             continue
+        want_n = 2 * len(info["ts"])
         print(f"{stem}: {info['faces']} faces, {info['lumps']} lumps, "
               f"ts {info['ts']}", flush=True)
-        for t in info["ts"]:
-            for mode in ("closed", "top-open"):
-                if (stem, t, mode) in done:
-                    continue
-                t0 = time.perf_counter()
-                got, err, tail = run_child(["--cell", stem, repr(t), mode], CELL_S)
-                if got is None:
-                    got = {"design": stem, "t": t, "mode": mode, "verdict": err,
-                           "why": tail}
-                got.update(faces=info["faces"], lumps=info["lumps"],
-                           v_in=info["v_in"], fid=info["fid"],
-                           wall_s=round(time.perf_counter() - t0, 2))
-                put(got)
-                print(f"   t={t:<7g} {mode:9s} {got['verdict']:14s} "
-                      f"{got['wall_s']:7.1f}s  {(got.get('why') or '')[:80]}", flush=True)
+        for attempt in range(5):
+            here = [k for k in load_done(out_path) if k[0] == stem]
+            if len(here) >= want_n:
+                break
+            t0 = time.perf_counter()
+            _got, err, tail = run_child(["--design", stem, "--out", str(out_path)],
+                                        DESIGN_S)
+            after = [k for k in load_done(out_path) if k[0] == stem]
+            print(f"   [attempt {attempt}: {err or 'ok'} "
+                  f"{len(after)}/{want_n} cells, "
+                  f"{time.perf_counter() - t0:.0f}s] {tail}", flush=True)
+            if len(after) == len(here):
+                # this attempt landed nothing: the cell it died on would kill
+                # every retry the same way, so it is written off and named
+                missing = [(t, m) for t in info["ts"] for m in ("closed", "top-open")
+                           if (stem, t, m) not in load_done(out_path)]
+                if missing:
+                    t, m = missing[0]
+                    with out_path.open("a", encoding="utf-8") as fh:
+                        fh.write(json.dumps({"design": stem, "t": t, "mode": m,
+                                             "verdict": err or "PROBE-TIMEOUT",
+                                             "why": tail}) + "\n")
+                    print(f"   t={t:<7g} {m:9s} {err or 'PROBE-TIMEOUT'} "
+                          f"(written off)", flush=True)
     print(f"\ncells recorded: {len(load_done(out_path))}", flush=True)
     return 0
 

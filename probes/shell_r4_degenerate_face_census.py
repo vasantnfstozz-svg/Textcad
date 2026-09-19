@@ -2,22 +2,26 @@
 ray; it does not stop CASTING it. Two questions it left unmeasured:
 
   1. Do the user's own bodies carry such a face at all?
-  2. Does a ray from one ever reach a station that the classifier calls
-     material — i.e. is "stop believing it" enough, or does a degenerate face
-     also hand `deepest_material` a station it cannot tell from a good one?
+  2. Does a ray from one ever reach a station the classifier calls material —
+     i.e. is "stop believing it" enough, or does a degenerate face also hand
+     `deepest_material` a station it cannot tell from a good one?
 
 A face is degenerate here when its own area is a vanishing fraction of the
 body's: `sliver_intersect_plate` carries one of 4.725e-08 mm2 against a body
-area of about 7,600 mm2, which is 6e-12. The census prints the smallest faces
-of every body, the fraction they are, and — for the smallest — whether the ray
-the sampler would cast from it runs through AIR.
+area of about 7,600 mm2. The census prints the smallest faces of every body,
+the fraction they are, and — for every face under the threshold — what the ray
+the sampler would cast from it does.
+
+The user's bodies are read from the .brep cache the verdict probe writes
+(`probes/_r4_bodies`), so no design is rebuilt here.
 
     C:\\Python314\\python.exe probes/shell_r4_degenerate_face_census.py
-    C:\\Python314\\python.exe probes/shell_r4_degenerate_face_census.py --design bit-tray
+    C:\\Python314\\python.exe probes/shell_r4_degenerate_face_census.py --body bit-tray
 """
 import argparse
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -28,9 +32,14 @@ os.environ.setdefault("TEXTCAD_HISTORY_ROOT",
                       str(Path(os.environ.get("TEMP", ".")) / "tcad-r4-hist"))
 
 TINY = 1e-6            # mm2: a face this small cannot carry a trustworthy normal
+BODY_S = 300.0
 
 
-def ray_report(solid, face, tol):
+def bodies_dir() -> Path:
+    return Path(os.environ.get("TEXTCAD_R4_BODIES") or (ROOT / "probes" / "_r4_bodies"))
+
+
+def ray_report(solid, face, tol) -> dict:
     """what the sampler's own ray from this face's first sample does: how far it
     runs, and whether the point at half of it is material"""
     from OCP.gp import gp_Dir, gp_Lin, gp_Pnt
@@ -39,7 +48,7 @@ def ray_report(solid, face, tol):
     try:
         verts, tris = face.tessellate(tol)
         if not tris:
-            return None
+            return {"tris": 0}
         a, b, c = (verts[i] for i in tris[0])
         p = (a + b + c) * (1 / 3)
         nrm = face.normal_at(p)
@@ -51,17 +60,19 @@ def ray_report(solid, face, tol):
     if not inter.IsDone() or inter.NbPnt() == 0:
         return {"chord": None}
     hit = min(range(1, inter.NbPnt() + 1), key=inter.WParameter)
-    chord = inter.WParameter(hit) + 2 * tol
+    chord = float(inter.WParameter(hit)) + 2 * tol
     mid = p - nrm * (0.5 * chord)
-    return {"chord": float(chord),
-            "mid_material": sk.point_is_inside(solid, (mid.X, mid.Y, mid.Z))}
+    return {"chord": chord,
+            "mid_material": sk.point_is_inside(solid, (mid.X, mid.Y, mid.Z)),
+            "mid_depth_over_thin": None}
 
 
 def census(name: str, solid) -> dict:
-    import sketch as sk                                          # noqa: F401
     faces = solid.faces()
     total = float(solid.area)
-    diag = float(solid.bounding_box().diagonal)
+    bb = solid.bounding_box()
+    diag = float(bb.diagonal)
+    thin = min(bb.size.X, bb.size.Y, bb.size.Z)
     tol = max(1e-3, 1e-4 * diag)
     areas = []
     for f in faces:
@@ -70,50 +81,57 @@ def census(name: str, solid) -> dict:
         except Exception:                                        # noqa: BLE001
             areas.append((0.0, f))
     areas.sort(key=lambda x: x[0])
-    tiny = [a for a, _f in areas if a < TINY]
+    tiny = [(a, f) for a, f in areas if a < TINY]
     smallest, sf = areas[0]
-    rep = ray_report(solid, sf, tol) if smallest < TINY else None
-    row = {"body": name, "faces": len(faces), "area": total, "diag": diag,
+    rays = [ray_report(solid, f, tol) for _a, f in tiny[:6]]
+    air = sum(1 for r in rays if r.get("mid_material") is False)
+    row = {"body": name, "faces": len(faces), "area": total, "thinnest": thin,
            "smallest": smallest, "frac": (smallest / total) if total else None,
-           "tiny_faces": len(tiny), "ray": rep}
-    print(f"{name:34s} {len(faces):4d} faces  area {total:12,.2f}  smallest "
-          f"{smallest:.6g} mm2 ({row['frac']:.2e} of it)  faces < {TINY:g}: {len(tiny)}"
-          + (f"   RAY {rep}" if rep else ""), flush=True)
+           "tiny_faces": len(tiny), "rays": rays, "air_rays": air}
+    print(f"{name:32s} {len(faces):5d} faces  area {total:12,.2f}  thinnest "
+          f"{thin:8.4f}  smallest face {smallest:.6g} mm2 ({row['frac']:.2e})  "
+          f"faces < {TINY:g}: {len(tiny)}"
+          + (f"  RAYS {rays}" if tiny else ""), flush=True)
     return row
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--design")
+    ap.add_argument("--body", help="one cached .brep stem, or a corpus/fixture name")
     ap.add_argument("--out", default=str(ROOT / "probes" / "_r4_degenerate_faces.jsonl"))
     a = ap.parse_args()
-    import build123d as b3d
-    rows = []
-    if a.design:
-        from document import Document
-        doc = Document.from_data(json.loads(
-            (ROOT / "designs" / f"{a.design}.tcad.json").read_text(encoding="utf-8")))
-        doc.rebuild()
-        best = None
-        for fid in doc.leaf_solid_ids():
-            part = doc._parts.get(fid)
-            if part is None:
-                continue
-            v = float(part.volume)
-            if best is None or v > best[1]:
-                best = (part, v)
-        if best:
-            rows.append(census(a.design, best[0]))
-    else:
-        import gauntlet
-        for nm, make in sorted(gauntlet.BODIES.items()):
-            rows.append(census("corpus/" + nm, make()))
-        for p in sorted((ROOT / "tests" / "fixtures").glob("*.brep")):
-            rows.append(census("fixture/" + p.stem,
-                               b3d.Part(b3d.import_brep(str(p)).wrapped)))
-    with Path(a.out).open("a", encoding="utf-8") as fh:
-        for r in rows:
-            fh.write(json.dumps(r) + "\n")
+    out = Path(a.out)
+    if a.body:
+        import build123d as b3d
+        if a.body.startswith("corpus/"):
+            import gauntlet
+            solid = gauntlet.BODIES[a.body[len("corpus/"):]]()
+        elif a.body.startswith("fixture/"):
+            solid = b3d.Part(b3d.import_brep(str(
+                ROOT / "tests" / "fixtures" / (a.body[len("fixture/"):] + ".brep"))).wrapped)
+        else:
+            solid = b3d.Part(b3d.import_brep(str(bodies_dir() / f"{a.body}.brep")).wrapped)
+        with out.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(census(a.body, solid)) + "\n")
+        return 0
+    import gauntlet
+    names = ["corpus/" + n for n in sorted(gauntlet.BODIES)]
+    names += ["fixture/" + p.stem for p in sorted((ROOT / "tests" / "fixtures").glob("*.brep"))]
+    names += [p.stem for p in sorted(bodies_dir().glob("*.brep"))]
+    for n in names:
+        try:
+            p = subprocess.run([sys.executable, __file__, "--body", n, "--out", str(out)],
+                               capture_output=True, text=True, cwd=str(ROOT),
+                               timeout=BODY_S,
+                               env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+        except subprocess.TimeoutExpired:
+            print(f"{n}: TIMED OUT - not covered", flush=True)
+            continue
+        if p.stdout.strip():
+            print(p.stdout.strip(), flush=True)
+        elif p.stderr.strip():
+            print(f"{n}: died 0x{p.returncode & 0xFFFFFFFF:08X} "
+                  f"{p.stderr.strip().splitlines()[-1][:120]}", flush=True)
     return 0
 
 
