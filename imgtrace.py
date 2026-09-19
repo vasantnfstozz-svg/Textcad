@@ -639,7 +639,41 @@ def _traceable(mask: np.ndarray, height_mm: float):
     return np.isin(labels, keep).astype(np.uint8), min_area
 
 
-def artwork_aspect(data: bytes, height_mm: float = 50.0) -> float:
+def _traced_mask(data: bytes, height_mm: float, min_channel_mm: float = 0.0,
+                 connect_pieces: bool = False):
+    """The mask the contours are taken from — decode, polarity, speckle floor,
+    optional BRIDGES and optional CHANNEL ABSORB. -> (solid, min_area, mm_px,
+    welded).
+
+    Shared so `artwork_aspect` and `image_to_entities` cannot ask different
+    questions. Round five made them share `_traceable`, after a 620 px
+    hairline read aspect 2.15 for art really drawn at 0.50 — and left the two
+    passes BELOW it unshared. Both only ADD material, and adding material
+    changes which contours clear the area gate: measured 2026-09-17 (round
+    six, probes/imgtrace_r6_gates.py) a disc beside five loose 1 px hairlines
+    read aspect 1.0000 for art `connect_pieces` really draws at 2.1144, and
+    on a 20 x 60 mm face the fit laid it down at 18.00 x 8.50 mm — 153 mm2
+    where standing it up gives 684."""
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
+    solid, min_area = _traceable(_mask_from_image(img), height_mm)
+    ys, xs = np.where(solid)
+    mm_px = float(height_mm) / (int(ys.max()) - int(ys.min()) + 1)
+    welded = None
+    if connect_pieces:
+        solid, welded = _bridge_pieces(solid, max(3, int(0.6 / mm_px)))
+    if min_channel_mm and min_channel_mm > 0:
+        k = int(min_channel_mm / mm_px) | 1
+        field = 1 - solid
+        field = cv2.morphologyEx(
+            field, cv2.MORPH_OPEN,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
+        solid = (1 - field).astype(np.uint8)
+    return solid, min_area, mm_px, welded
+
+
+def artwork_aspect(data: bytes, height_mm: float = 50.0,
+                   min_channel_mm: float = 0.0,
+                   connect_pieces: bool = False) -> float:
     """width/height of the image's traceable artwork bbox — from the SAME mask
     (same polarity rules, same speckle floor) image_to_entities traces, so a
     fit computed from it matches what the trace will actually produce. Needed
@@ -662,8 +696,8 @@ def artwork_aspect(data: bytes, height_mm: float = 50.0) -> float:
     a 20 x 60 mm face the fit ROTATED that art and laid it down at
     17.95 x 8.96 mm instead of standing it up at 17.91 x 35.91 — a quarter of
     the area, over a hairline that is not in the sketch at all."""
-    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
-    solid, min_area = _traceable(_mask_from_image(img), height_mm)
+    solid, min_area, _mm, _w = _traced_mask(data, height_mm, min_channel_mm,
+                                            connect_pieces)
     cnts, _h = cv2.findContours(solid, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
     keep = [c for c in cnts if cv2.contourArea(c) >= min_area]
     _x, _y, w, h = cv2.boundingRect(np.vstack(keep or list(cnts)))
@@ -732,28 +766,12 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
     """
     if not (1.0 <= float(height_mm) <= 1000.0):
         raise ValueError("height_mm must be between 1 and 1000")
-    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_UNCHANGED)
-    mask = _mask_from_image(img)
-
-    # drop only true speckles, KEEPING small ornaments and interior holes
-    # (shared with artwork_aspect so the fit matches the trace)
-    solid, min_area = _traceable(mask, height_mm)
-
-    ys, xs = np.where(solid)
-    x, y = int(xs.min()), int(ys.min())
-    w, h = int(xs.max()) - x + 1, int(ys.max()) - y + 1
-    mm_px = float(height_mm) / h
-    welded = None
-    if connect_pieces:
-        solid, welded = _bridge_pieces(solid, max(3, int(0.6 / mm_px)))
-
-    if min_channel_mm and min_channel_mm > 0:
-        k = int(min_channel_mm / mm_px) | 1
-        field = 1 - solid
-        field = cv2.morphologyEx(
-            field, cv2.MORPH_OPEN,
-            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k)))
-        solid = (1 - field).astype(np.uint8)
+    # drop only true speckles, KEEPING small ornaments and interior holes;
+    # then the bridges and the channel absorb. All of it shared with
+    # `artwork_aspect`, so the fit measures the artwork the trace draws.
+    solid, min_area, mm_px, welded = _traced_mask(data, height_mm,
+                                                  min_channel_mm,
+                                                  connect_pieces)
 
     # final geometry: outer rings + their holes. Fidelity knobs are in SOURCE
     # PIXELS with hard caps — the sketch must look like the artwork at any
