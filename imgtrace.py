@@ -126,6 +126,16 @@ def _uncross(pts):
 
 
 _HAIR_MM = 0.01          # thinner than this, a wall is not geometry
+# ...and closer than THIS, two loops are not near each other, they MEET. The
+# refusal used to read `<= 0.0` exactly, and a contact does not come out of
+# the arithmetic as an exact zero: two loops that share a grid point measured
+# 3.469446951953614e-18 mm apart through `_nearest_on_ring`'s projection, so
+# the refusal stood down and the sketch was handed over with a note reading
+# "two parts of this artwork pass 0.00 microns apart" (measured 2026-09-17,
+# round seven, probes/imgtrace_r7_report_gap.py). 1e-9 mm is the same
+# tolerance `_first_crossing` calls a touch, and nine orders below the
+# 0.000255 mm the corpus really reports.
+_MEET_MM = 1e-9
 
 
 def _pull_apart(loops, gap=_HAIR_MM, report=None):
@@ -920,7 +930,7 @@ def settle(ents):
     if not out or out[0]["mode"] != "add":
         raise ValueError("tracing produced no usable outline")
     tight = _worst_residual(apart, stuck)
-    if tight is not None and tight <= 0.0:
+    if tight is not None and tight <= _MEET_MM:
         raise ValueError(
             "two parts of this artwork meet at a point once it is scaled to "
             "fit this face — extruding it would make a pinched, unusable "
@@ -1065,7 +1075,7 @@ def image_to_entities(data: bytes, height_mm: float = 50.0,
     # today and is reported, not refused.
     tight = _worst_residual(apart, stuck)
     if tight is not None and tight < _HAIR_MM:
-        if tight <= 0.0:
+        if tight <= _MEET_MM:
             raise ValueError(
                 "two parts of this artwork meet at a point and the tracer "
                 "could not pull them apart — extruding it would make a "

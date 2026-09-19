@@ -476,6 +476,30 @@ def test_scaling_traced_art_down_keeps_both_promises(s):
     assert _true_gap(rings) > 0.0, f"scaled by {s}, two loops MEET"
 
 
+def test_a_pair_that_meets_by_a_rounding_error_is_still_a_pinch():
+    """The refusal used to read `tight <= 0.0` exactly, and a contact does not
+    come out of the arithmetic as an exact zero: two loops that share a grid
+    point measure 3.469446951953614e-18 mm apart through `_nearest_on_ring`'s
+    projection. So the refusal stood down and the sketch went out with a note
+    reading "two parts of this artwork pass 0.00 microns apart" — measured
+    2026-09-17 on 3 of 474 hard-scaled traces (round seven,
+    probes/imgtrace_r7_report_gap.py)."""
+    m = _ring_with_mixed_spokes(131, [(5.825232830329833, 1),
+                                      (4.6218438148683765, 2)])
+    for residual in (0.0, 3.469446951953614e-18, 1e-12, 1e-9):
+        real = imgtrace._worst_residual
+        imgtrace._worst_residual = lambda loops, stuck, r=residual: r
+        try:
+            with pytest.raises(ValueError, match="meet at a point"):
+                imgtrace.image_to_entities(_png(m), height_mm=9.5)
+            ents = [imgtrace._poly_entity(
+                [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)], "add")]
+            with pytest.raises(ValueError, match="meet at a point"):
+                imgtrace.settle(ents)
+        finally:
+            imgtrace._worst_residual = real
+
+
 def test_settling_leaves_art_that_is_already_clear_alone():
     """The guard must not redraw art a rescale did not harm: a plain disc
     scaled to a tenth keeps every polygon, every point and its size."""
