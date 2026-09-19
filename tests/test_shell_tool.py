@@ -1271,3 +1271,134 @@ def test_the_extra_samples_cost_a_body_with_hundreds_of_faces_nothing():
         assert len(got) == k
         assert all(abs(sum(w) - 1.0) < 1e-12 for w in got), "barycentric"
         assert all(all(0.0 < x < 1.0 for x in w) for w in got), "strictly inside"
+
+
+# ---------------------------------------------------------------------------
+# Round three, 2026-09-19: a station that is not material, and an opening's
+# point that the theorem cannot speak about
+# ---------------------------------------------------------------------------
+
+def sliver_plate():
+    """the committed crash fixture whose bounding box is 1.9296 mm thick, and
+    which carries a face of 4.725e-08 mm2"""
+    from pathlib import Path
+    p = Path(__file__).resolve().parent / "fixtures" / "sliver_intersect_plate.brep"
+    return b3d.Part(b3d.import_brep(str(p)).wrapped)
+
+
+def test_a_station_in_the_air_is_not_a_measurement_of_the_material():
+    """The over-read round three found. A station is `p - normal * (f * chord)`
+    and nothing ever classifies it, so it is material only while the normal it
+    came from means something. On `sliver_intersect_plate` one face measures
+    4.725e-08 mm2 — its normal points ALONG the plate — so the ray ran 68.8 mm
+    through AIR, the station at half of it landed at (37.4966, 37.5, 18.4702),
+    and its exact distance to the faces that stay is 24.3295 mm.
+
+    That is 25 times the most a body 1.9296 mm thick can possibly hold, and it
+    is the number `assert_something_would_be_hollowed` ALLOWS on: measured
+    2026-09-19 (probes/shell_r3_over_read_probe.py, probes/
+    shell_r3_inert_census.py) the guard was switched off at every thickness
+    from 0.2 to 8 on this body. A guard whose job is refusing must never read
+    deeper than the truth — the reading that is too deep hands a body the wall
+    does not fit to a kernel that segfaults on it, and with a face OPEN the
+    bounding-box bound of `assert_wall_fits_every_lump` does not run at all:
+    the 1 mm open shell this let through did not answer in 600 s
+    (probes/shell_r3_sliver_open_probe.py).
+
+    `_climb_to_the_deepest` has always classified every candidate it takes,
+    which is why the climb could not do this and the sampling could."""
+    solid = sliver_plate()
+    thin = min(solid.bounding_box().size.X, solid.bounding_box().size.Y,
+               solid.bounding_box().size.Z)
+    ceiling = thin / 2.0
+    assert ceiling < 1.0, "the fixture changed; this test is about a SLIVER"
+    for t in (0.2, 1.0, 3.0, 8.0):
+        depth, at, _tol = sk.deepest_material(solid, t)
+        assert depth <= ceiling + 1e-6, \
+            f"t={t}: read {depth:.4f} mm where {thin:.4f} mm of body allows {ceiling:.4f}"
+        assert sk.point_is_inside(solid, at) is not False, \
+            f"t={t}: the guard answered from a point OUTSIDE the body: {at}"
+
+
+def test_the_deepest_point_of_an_open_shell_is_material_not_a_point_on_the_skin():
+    """`deepest_material` gives every sample of an OPENING face a bound of
+    `inf`, so those are measured first and the loop breaks on one of them — and
+    they lie ON the surface, where the solid classifier answers ON and not IN.
+    `assert_the_deepest_point_was_hollowed` asks `point_is_inside(solid, at) is
+    True` and so returned without judging anything.
+
+    Measured 2026-09-19 over the gauntlet corpus, the four committed crash
+    fixtures and three drilled blocks at nine thicknesses
+    (probes/shell_r3_inert_census.py): with the top open, 104 of the 109 cells
+    that reach the theorem were inert for exactly this reason and 3 were live,
+    against 109 of 125 live and NONE of them inert for this reason when the
+    shell is closed. The round-two P0 guard was therefore switched off for the
+    shell the tool is normally used with.
+
+    The material just inside the opening makes the same statement from a point
+    the classifier calls IN, and distance is 1-Lipschitz so it moves by at most
+    the nudge."""
+    solid = b3d.Part() + b3d.Box(50.0, 50.0, 50.0)
+    for t in (1.0, 2.5, 3.0):
+        openings = sk.shell_openings(solid, None, "top")
+        deep = sk.assert_something_would_be_hollowed(solid, t, openings,
+                                                     f"walls of {t:g} mm")
+        depth, at, tol = deep
+        assert depth > t + tol, "this cell must have margin, or it proves nothing"
+        assert sk.point_is_inside(solid, at) is True, \
+            f"t={t}: the opening's point is not material, so the theorem is mute"
+
+
+def test_an_open_shell_that_hollows_next_to_nothing_is_refused_too():
+    """The theorem, with a face open, on a result that kept the material a `t`
+    wall cannot reach. The body is a 50 mm box with the top open at 3 mm walls;
+    the result is that box with 1000 mm3 taken out of a corner — 0.8 per cent,
+    under `_SHELL_NOTHING_HOLLOWED`, and every ratio calls it walls.
+
+    Before the opening's point was made material this raised nothing at all,
+    because the point it was given lay ON the box's top face."""
+    solid = b3d.Part() + b3d.Box(50.0, 50.0, 50.0)
+    t = 3.0
+    walls = f"walls of {t:g} mm"
+    openings = sk.shell_openings(solid, None, "top")
+    deep = sk.assert_something_would_be_hollowed(solid, t, openings, walls)
+    handback = solid - b3d.Pos(-20, -20, -20) * b3d.Box(10, 10, 10)
+    took = solid.volume - handback.volume
+    assert took / solid.volume < sk._SHELL_NOTHING_HOLLOWED, "the setup must be a handback"
+    assert sk.point_is_inside(handback, deep[1]) is True, "the point must survive it"
+    with pytest.raises(ValueError, match="hollowed next to nothing"):
+        sk.assert_the_deepest_point_was_hollowed(solid, handback, deep, t, walls)
+
+
+def test_a_sound_open_shell_is_not_refused_by_the_point_it_was_allowed_on():
+    """The other direction, against the kernel: the same box and the same wall,
+    shelled for real. The cavity reaches the opening, so the point the guard
+    allowed on is gone from the result and the theorem says nothing."""
+    solid = b3d.Part() + b3d.Box(50.0, 50.0, 50.0)
+    out = healthy(sk.shell(solid, 3.0, open_face="top"))
+    # 50^3 minus the 44 x 44 x 47 cavity
+    assert float(out.volume) == pytest.approx(125000.0 - 44 * 44 * 47, rel=1e-9)
+
+
+def test_legacy_path_points_answers_in_sentences_not_in_python():
+    """Not shell, but the same door, handed over by another reviewer of this
+    sweep: `sweep`'s legacy `path_points` was `[(float(p[0]), float(p[1]),
+    float(p[2])) for p in path_points]`, so a tree holding anything else
+    answered in raw Python — `[1, 2]` as `'int' object is not subscriptable`,
+    `true` as `'bool' object is not iterable`, and `"abc"` and a table as
+    `could not convert string to float: 'a'`.
+
+    As WIDE as what worked before: any sequence of three values `float()`
+    accepts still resolves."""
+    for bad in ([1, 2], True, "abc", {"x": 1, "y": 2}, 7, [[0, 0, 0], [1, 2]],
+                [[0, 0, 0], "abc"]):
+        with pytest.raises(ValueError) as e:
+            sk._sweep_path(None, bad, False, None)
+        said = str(e.value)
+        assert said.startswith("sweep: "), said
+        assert "path_points" in said, said
+        for python in ("object is not", "could not convert", "unpack"):
+            assert python not in said, said
+    # what worked still works, strings and all
+    got = sk._path_point_list([["0", "0", "5"], (1, 2, 3)], "sweep")
+    assert got == [(0.0, 0.0, 5.0), (1.0, 2.0, 3.0)]

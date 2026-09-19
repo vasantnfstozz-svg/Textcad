@@ -2874,9 +2874,11 @@ def deepest_material(solid, t: float, openings=()) -> tuple | None:
     at 0.003 mm."""
     from OCP.BRep import BRep_Builder
     from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
+    from OCP.BRepClass3d import BRepClass3d_SolidClassifier
     from OCP.BRepExtrema import BRepExtrema_DistShapeShape
     from OCP.gp import gp_Dir, gp_Lin, gp_Pnt
     from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
+    from OCP.TopAbs import TopAbs_State
     from OCP.TopoDS import TopoDS_Compound
     from build123d import Vector
     faces = solid.faces()
@@ -2940,9 +2942,14 @@ def deepest_material(solid, t: float, openings=()) -> tuple | None:
     for face in faces:
         if not stays(face.wrapped):
             # the material AT an opening counts to the faces that stay; its
-            # centre is the deepest such point on a convex opening
+            # centre is the deepest such point on a convex opening. Its INWARD
+            # direction travels with it: the point itself lies ON the surface,
+            # where the solid classifier answers ON and not IN, and
+            # `assert_the_deepest_point_was_hollowed` can then say nothing
+            # about it — see the nudge at the end of this function.
+            inward = -face.normal_at(face.center())
             for q in samples(face):
-                stations.append((float("inf"), q))
+                stations.append((float("inf"), q, inward))
             continue
         for p in samples(face):
             nrm = face.normal_at(p)
@@ -2954,12 +2961,49 @@ def deepest_material(solid, t: float, openings=()) -> tuple | None:
             far_stays = stays(inter.Face(hit))
             for f in _DEPTH_STATIONS + (() if far_stays else _DEPTH_STATIONS_TO_OPENING):
                 bound = min(f, 1 - f) * chord if far_stays else f * chord
-                stations.append((bound, p - nrm * (f * chord)))
+                stations.append((bound, p - nrm * (f * chord), None))
     if not stations:
         return None
     stations.sort(key=lambda st: -st[0])
     ext = BRepExtrema_DistShapeShape()
     ext.LoadS1(staying)
+    try:
+        cls = BRepClass3d_SolidClassifier(solid.wrapped)
+    except Exception:                     # OCP errors derive from Exception
+        cls = None                        # cannot ask: every station is believed,
+        # exactly as before this existed
+
+    def in_material(q) -> bool:
+        """Is this station MATERIAL? A station is arithmetic on a face normal
+        and a chord, and neither means anything on a DEGENERATE face: the
+        committed `sliver_intersect_plate` fixture carries a face of
+        4.725e-08 mm2 whose normal points along the plate, so the ray ran
+        68.8 mm through AIR and the station at half of it measured 24.3295 mm
+        from a body whose bounding box is 1.9296 mm thick — 25x the most that
+        body can possibly hold (probes/shell_r3_over_read_probe.py, the 2026-
+        09-19 review). A guard whose job is REFUSING must never read deeper
+        than the truth; that reading switched this guard off at every
+        thickness, and the open shell it then let through hung the kernel for
+        more than 600 s (probes/shell_r3_sliver_open_probe.py).
+
+        `_climb_to_the_deepest` has always classified every candidate it
+        takes, which is why the climb could not do this and the sampling
+        could. Asked ONLY of a station that is about to change the answer —
+        become the best, or end the loop — because a classification costs
+        0.33x to 1.04x of a distance measurement and the refusal path measures
+        every station (probes/shell_r3_station_classify_cost.py); the answer
+        changes a handful of times, so this is a handful of calls.
+
+        Fails OPEN like every other branch of this guard: a classifier that
+        will not run believes the station, which is what happened before this
+        existed."""
+        if cls is None:
+            return True
+        try:
+            cls.Perform(gp_Pnt(q.X, q.Y, q.Z), 1e-7)
+            return cls.State() != TopAbs_State.TopAbs_OUT
+        except Exception:                 # OCP errors derive from Exception
+            return True
 
     def measure(q):
         """distance from `q` to the faces that stay, and the nearest point on
@@ -2972,20 +3016,40 @@ def deepest_material(solid, t: float, openings=()) -> tuple | None:
         return float(ext.Value()), Vector(near.X(), near.Y(), near.Z())
 
     best = (0.0, stations[0][1])
+    best_in = None                        # the winner's way INTO the material
     seen = []                             # every station actually measured
-    for bound, q in stations:
+    for bound, q, inward in stations:
         if bound < t - tol and bound <= best[0]:
             break                         # nothing left can be deep enough, or deeper
         d, _near = measure(q)
         if d is None:
             continue
+        if (d > best[0] or d >= t - tol) and not in_material(q):
+            continue                      # a station in the AIR measures nothing
         seen.append((d, q, bound))        # the bound travels: the climb ranks on it
         if d > best[0]:
-            best = (d, q)
+            best, best_in = (d, q), inward
         if d >= t - tol:
             break                         # one deep point is all a cavity needs
     if best[0] < t - tol:
-        best = _climb_to_the_deepest(solid, measure, seen, best, tol)
+        climbed = _climb_to_the_deepest(solid, measure, seen, best, tol)
+        if climbed[0] > best[0]:
+            best, best_in = climbed, None
+    if best_in is not None:
+        # The winner is a sample of an OPENING face, so it lies ON the body and
+        # `assert_the_deepest_point_was_hollowed` returns without judging
+        # anything — measured over the corpus, that is 104 of the 109 open
+        # cells that reach it, against 0 of 125 closed ones
+        # (probes/shell_r3_inert_census.py, 2026-09-19). The material just
+        # inside the opening makes the same statement from a point the
+        # classifier calls IN, and distance is 1-Lipschitz so it moves by at
+        # most the nudge. It is MEASURED rather than assumed, and taken only
+        # when it leaves this function's own verdict unchanged, so no shell
+        # that builds today is refused for it.
+        q = best[1] + best_in * (2 * tol)
+        d, _near = measure(q)
+        if d is not None and d >= t - tol and in_material(q):
+            best = (d, q)
     return best[0], (best[1].X, best[1].Y, best[1].Z), tol
 
 
@@ -3155,6 +3219,12 @@ def _climb_to_the_deepest(solid, measure, seen: list, best: tuple, tol: float) -
     for d0, q0 in seeds:
         if left[0] <= 0:
             break
+        # `deepest_material` classifies a station only when it would change the
+        # answer, so a station in the AIR can still reach this list — and a
+        # seed that never improves is handed back as `best` at the end of this
+        # loop, which would make the climb a second door to the same over-read
+        if outside(q0):
+            continue
         q, d = q0, d0
         step, near = max(d0, tol), None
         for _ in range(_DEPTH_CLIMB_STEPS):
@@ -3767,6 +3837,45 @@ def _sweep_solid(faces: list, wire, distance, full, label: str = "sweep"):
     return out
 
 
+def _path_point_list(path_points, label: str) -> list:
+    """The legacy `path_points` as points, or a sentence naming what is wrong.
+
+    `[(float(p[0]), float(p[1]), float(p[2])) for p in path_points]` was the
+    whole of it, so a tree holding anything else answered in raw Python.
+    Measured 2026-09-19: `[1, 2]` reached the feature row as `'int' object is
+    not subscriptable`, `true` as `'bool' object is not iterable`, and `"abc"`
+    and a table as `could not convert string to float: 'a'` — not one of them
+    naming the thing to change.
+
+    Same shape as `blocks._pick_point`, and as WIDE as what works today: any
+    sequence of three or more values `float()` accepts, so ["0", "0", "5"]
+    resolves exactly as it did. The only new refusals are a word, a mapping, a
+    flag and anything that is not three numbers, and none of those builds a
+    path today."""
+    if isinstance(path_points, (str, bytes, bytearray, dict, bool)) \
+            or not hasattr(path_points, "__iter__"):
+        raise ValueError(
+            f"{label}: path_points must be a list of points, each [x, y, z] in mm "
+            f"(got {path_points!r}) — or give `path` = the id of a sketch holding "
+            f"an open path drawn with the Path tool")
+    out = []
+    for p in path_points:
+        if isinstance(p, (str, bytes, bytearray, dict, bool)):
+            vals = None
+        else:
+            try:
+                vals = [float(x) for x in p]
+            except (TypeError, ValueError):
+                vals = None
+        if vals is None or len(vals) < 3:
+            raise ValueError(
+                f"{label}: every point of path_points must be three numbers "
+                f"[x, y, z] in mm (got {p!r}) — or give `path` = the id of a "
+                f"sketch holding an open path drawn with the Path tool")
+        out.append((vals[0], vals[1], vals[2]))
+    return out
+
+
 def _sweep_path(path, path_points, smooth, _path_sketch, label: str = "sweep"):
     """The wire a sweep follows: the path sketch the document handed over
     (`path`, a reference the document resolves — see Document._path_part), or
@@ -3785,7 +3894,7 @@ def _sweep_path(path, path_points, smooth, _path_sketch, label: str = "sweep"):
                          f"through the document, which hands the path sketch over")
     if path_points:
         smooth = _to_bool(smooth, "smooth")
-        pts = [(float(p[0]), float(p[1]), float(p[2])) for p in path_points]
+        pts = _path_point_list(path_points, label)
         if len(pts) < 2:
             raise ValueError(f"{label}: path_points needs at least 2 points")
         with BuildLine() as bl:
