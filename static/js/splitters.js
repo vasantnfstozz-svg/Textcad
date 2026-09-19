@@ -1,7 +1,8 @@
-// splitters.js — draggable dividers between the three panes (feature tree |
-// viewport | AI designer). Drag to resize, double-click to reset. Sizes are
-// remembered in localStorage. The viewport re-fits itself automatically via
-// its ResizeObserver.
+// splitters.js — the geometry of `main`: the draggable dividers between the
+// three panes (feature tree | viewport | AI designer) and the tool-panel
+// column between the viewport and the chat. Drag to resize, double-click to
+// reset. Sizes are remembered in localStorage. The viewport re-fits itself
+// automatically via its ResizeObserver.
 
 const LIMITS = { tree: [180, 640], chat: [220, 640] };
 const DEFAULTS = { tree: 320, chat: 330 };
@@ -64,7 +65,43 @@ function wire(splitId, paneId, key, growsRight) {
   });
 }
 
+/* ---------------- the tool-panel column ----------------
+   Every tool panel lives in #panelCol and they STACK inside it, so the row's
+   floor is the same whether one panel is open or three (a column each cost
+   210 px apiece: 1000 / 1210 / 1420 px, and at 1024 with two open the AI
+   designer was entirely off the screen).
+
+   Nothing else has to know the column exists. The panels are shown and hidden
+   by four different modules (tool.js, measure.js, section.js, params.js) and
+   more tools will be built, so this WALKS the column after every change
+   instead of keeping a list — the same reason the units guard walks the page.
+   A MutationObserver callback is a microtask, so the class lands before the
+   browser paints and there is no flash of an empty column. */
+function syncPanelColumn(col, shown) {
+  const vis = [...col.children].filter(p => p.style.display !== 'none');
+  col.classList.toggle('open', vis.length > 0);
+  // Parameters is a table and asks for a wider column while it is on screen
+  col.classList.toggle('wide', vis.some(p => p.id === 'paramsDialog'));
+  for (const p of col.children) p.classList.toggle('stacked', vis.indexOf(p) > 0);
+  // A panel that opens BELOW one already open must not open out of sight: the
+  // whole point of the dock is that a click is never answered somewhere the
+  // user cannot see. `nearest` moves nothing when it is already visible.
+  for (const p of vis) if (!shown.has(p)) p.scrollIntoView({ block: 'nearest' });
+  return new Set(vis);
+}
+
+function wirePanelColumn() {
+  const col = document.getElementById('panelCol');
+  if (!col) return;
+  let shown = new Set();
+  const sync = () => { shown = syncPanelColumn(col, shown); };
+  new MutationObserver(sync).observe(col, {
+    attributes: true, attributeFilter: ['style'], subtree: true, childList: true });
+  sync();
+}
+
 export function initSplitters() {
   wire('splitLeft', 'treePane', 'tree', true);    // drag right = wider tree
   wire('splitRight', 'chatPane', 'chat', false);  // drag right = narrower chat
+  wirePanelColumn();
 }

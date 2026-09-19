@@ -258,3 +258,248 @@ def test_a_dragged_width_is_still_honoured_when_there_is_room(page, fresh_doc,
     assert abs(back - wide) < 2, \
         f"the saved tree width did not come back on reload: {wide} -> {back}"
     page.set_viewport_size({"width": 1200, "height": 800})
+
+
+# ---------------------------------------------------------------------------
+# Round three: the panels STACK in ONE column (the user's choice, 2026-09-19).
+#
+# More than one panel can be open at a time — Section view and the Parameters
+# panel are view states, not commands, so they take no modal lock and a tool
+# opens on top of both. As a column each, every open panel cost the row another
+# 210 px floor: measured 1000 px with one panel, 1210 with two, 1420 with
+# three, and at 1024 px with two open the AI designer column was entirely off
+# the screen. Stacked, the floor is 1000 px however many are open.
+# ---------------------------------------------------------------------------
+
+COL = """
+() => {
+  const col = document.getElementById('panelCol');
+  const cs = getComputedStyle(col);
+  const vis = [...col.children].filter(p => p.style.display !== 'none');
+  return { display: cs.display, dir: cs.flexDirection,
+           open: col.classList.contains('open'),
+           wide: col.classList.contains('wide'),
+           l: +col.getBoundingClientRect().left.toFixed(2),
+           w: +col.getBoundingClientRect().width.toFixed(2),
+           scrollH: col.scrollHeight, clientH: col.clientHeight,
+           scrollW: col.scrollWidth, clientW: col.clientWidth,
+           panels: vis.map(p => { const r = p.getBoundingClientRect();
+             return { id: p.id, stacked: p.classList.contains('stacked'),
+                      l: +r.left.toFixed(2), r: +r.right.toFixed(2),
+                      t: +r.top.toFixed(2), b: +r.bottom.toFixed(2) }; }) };
+}
+"""
+
+# every cell that has to stay on the screen, named in one place
+ONSCREEN = """
+() => {
+  const ids = ['menubar', 'tabstrip', 'ribbon', 'doctabs', 'statusbar',
+               'treePane', 'tree', 'viewportPane', 'panelCol', 'chatPane',
+               'chatInput', 'chatSend', 'sBuild'];
+  const out = { win: window.innerWidth, off: {} };
+  for (const id of ids) {
+    const e = document.getElementById(id);
+    if (!e) continue;
+    const r = e.getBoundingClientRect();
+    if (r.width === 0) continue;
+    if (r.right - window.innerWidth > 0.5)
+      out.off[id] = +(r.right - window.innerWidth).toFixed(2);
+  }
+  return out;
+}
+"""
+
+
+def open_params(page):
+    page.locator("button.tab", has_text="Modify").click()
+    page.wait_for_timeout(200)
+    page.click("#ribbon .rbtn[title='Parameters']")
+    page.wait_for_selector("#paramsDialog", state="visible", timeout=15000)
+    page.fill("#pmName", "wall")
+    page.fill("#pmExpr", "3")
+    page.fill("#pmComment", "outer wall thickness")
+    page.click("#pmAdd")
+    page.wait_for_timeout(900)
+
+
+def open_section(page):
+    page.locator("button.tab", has_text="Inspect").click()
+    page.wait_for_timeout(200)
+    page.click("#ribbon .rbtn[title='Section']")
+    page.wait_for_selector("#sectionDialog", state="visible", timeout=15000)
+    page.wait_for_timeout(400)
+
+
+def open_extrude(page):
+    page.locator("button.tab", has_text="Create").click()
+    page.wait_for_timeout(200)
+    page.click("#ribbon .rbtn[title='extrude']")
+    page.wait_for_selector("#extrudeDialog", state="visible", timeout=20000)
+    page.wait_for_timeout(400)
+
+
+def test_three_open_panels_stack_in_one_column(page, fresh_doc, server):
+    """One above the other, all at the column's left edge, and the column
+    scrolls when they are taller than it. The `flex-direction` assertion is not
+    decoration: an unterminated comment above the rule dropped it during
+    development and the three panels went straight back to standing side by
+    side, which every arithmetic assertion in this file still passed."""
+    setup(page)
+    open_params(page)
+    open_section(page)
+    pick_top(page)
+    open_extrude(page)
+    c = page.evaluate(COL)
+    assert c["display"] == "flex" and c["dir"] == "column", \
+        f"#panelCol is not a column: {c['display']} / {c['dir']}"
+    assert c["open"] and c["wide"], f"the column's classes are wrong: {c}"
+    ids = [p["id"] for p in c["panels"]]
+    assert ids == ["extrudeDialog", "sectionDialog", "paramsDialog"], ids
+    for a, b in zip(c["panels"], c["panels"][1:]):
+        assert b["t"] >= a["b"] - 0.5, f"{b['id']} is not below {a['id']}: {c}"
+        assert abs(b["l"] - a["l"]) < 0.5, f"{b['id']} is not in the column: {c}"
+    assert [p["stacked"] for p in c["panels"]] == [False, True, True], c
+    assert c["scrollH"] > c["clientH"], \
+        f"three panels should be taller than the column: {c}"
+    assert c["scrollW"] <= c["clientW"] + 0.5, \
+        f"the column scrolls sideways — something is too wide for it: {c}"
+    assert page.errors == []
+
+
+def test_the_window_needs_no_more_room_for_three_panels_than_for_one(
+        page, fresh_doc, server):
+    """The measured reason for stacking. With a column each, 1024 px was not
+    enough for two panels: the chat ran 247 px past the right edge and its send
+    button with it, under `body { overflow: hidden }` and no way to scroll."""
+    setup(page)
+    pick_top(page)
+    for n, opener in ((1, open_params), (2, open_section), (3, open_extrude)):
+        opener(page)
+        for w in (1024, 1100, 1200, 1280, 1600):
+            page.set_viewport_size({"width": w, "height": 760})
+            page.wait_for_timeout(450)
+            m = page.evaluate(ONSCREEN)
+            assert m["off"] == {}, \
+                f"with {n} panel(s) open at {w} px, off the right edge: {m['off']}"
+        page.set_viewport_size({"width": 1600, "height": 900})
+        page.wait_for_timeout(300)
+    page.set_viewport_size({"width": 1200, "height": 800})
+    assert page.errors == []
+
+
+def test_opening_a_panel_never_closes_another_one(page, fresh_doc, server):
+    """Nothing closes itself: a panel the user opened stays open. Closing
+    Parameters when a tool opens was one of the rejected candidates — it fixed
+    only one of the three combinations anyway."""
+    setup(page)
+    open_params(page)
+    open_section(page)
+    pick_top(page)
+    open_extrude(page)
+    for pid in ("paramsDialog", "sectionDialog", "extrudeDialog"):
+        assert page.locator(f"#{pid}").is_visible(), f"#{pid} closed itself"
+    page.click("#exCancel")
+    page.wait_for_timeout(800)
+    for pid in ("paramsDialog", "sectionDialog"):
+        assert page.locator(f"#{pid}").is_visible(), \
+            f"#{pid} went away when the tool was cancelled"
+    assert page.errors == []
+
+
+def test_the_column_is_gone_again_when_the_last_panel_closes(
+        page, fresh_doc, server):
+    setup(page)
+    open_params(page)
+    open_section(page)
+    page.click("#scClose")
+    page.wait_for_timeout(400)
+    page.click("#pmClose")
+    page.wait_for_timeout(400)
+    c = page.evaluate(COL)
+    assert c["w"] == 0 and not c["open"] and not c["wide"], \
+        f"the empty column is still taking room: {c}"
+    assert page.errors == []
+
+
+def test_the_refusal_flash_is_scrolled_to_before_it_flashes(
+        page, fresh_doc, server):
+    """`modalGuard` says "flashing on the right". Stacked, the panel holding
+    the lock can be scrolled out of sight under another one, and a flash nobody
+    can see is the same as no answer at all."""
+    setup(page)
+    open_params(page)
+    pick_top(page)
+    page.locator("button.tab", has_text="Create").click()
+    page.wait_for_timeout(200)
+    page.click("#ribbon .rbtn[title='hole']")           # sits below Parameters
+    page.wait_for_selector("#holeDialog", state="visible", timeout=20000)
+    page.select_option("#hoKind", "counterbore")
+    page.wait_for_timeout(500)
+    page.evaluate("() => { document.getElementById('panelCol').scrollTop = 0; }")
+    page.wait_for_timeout(300)
+    col_b = page.evaluate(
+        "() => document.getElementById('panelCol').getBoundingClientRect().bottom")
+    hole = [p for p in page.evaluate(COL)["panels"] if p["id"] == "holeDialog"][0]
+    assert hole["b"] > col_b + 1, \
+        f"the hole panel is already fully visible — this proves nothing: {hole}"
+    page.click("#ribbon .rbtn[title='extrude']")        # refused: Hole holds it
+    page.wait_for_timeout(350)
+    after = page.evaluate(COL)
+    hole = [p for p in after["panels"] if p["id"] == "holeDialog"][0]
+    assert hole["b"] <= col_b + 1, \
+        f"the flashing panel was never scrolled to: {hole} in {after}"
+    assert page.locator("#holeDialog.modalflash").count() == 1, \
+        "the panel did not flash"
+    page.click("#hoCancel")
+    page.wait_for_timeout(700)
+    assert page.errors == []
+
+
+def test_a_parameter_can_still_be_typed_into_the_add_row(page, fresh_doc, server):
+    """`.exbtn` is the full-width button every tool panel uses, and inside the
+    Add row its `width: 100%` became the button's flex BASE while the three
+    boxes are `flex: 1` — basis 0, so they got what was left, which was
+    nothing. Measured at a 420 px column: Add 349 px and name / formula / note
+    8 px EACH, at every window size."""
+    setup(page)
+    page.set_viewport_size({"width": 1600, "height": 900})
+    page.wait_for_timeout(300)
+    open_params(page)
+    w = page.evaluate("""
+    () => { const b = id => +document.getElementById(id)
+              .getBoundingClientRect().width.toFixed(2);
+      return { name: b('pmName'), expr: b('pmExpr'),
+               comment: b('pmComment'), add: b('pmAdd') }; }""")
+    for k in ("name", "expr", "comment"):
+        assert w[k] >= 60, f"the {k} box is {w[k]} px wide — unusable: {w}"
+    assert w["add"] < 120, f"the Add button is taking the whole row: {w}"
+    page.set_viewport_size({"width": 1200, "height": 800})
+    assert page.errors == []
+
+
+def test_the_parameters_table_keeps_every_column_in_a_narrow_one(
+        page, fresh_doc, server):
+    """At the column's floor six columns leave about 30 px each and every cell
+    is an ellipsis. The row wraps onto two lines instead — and nothing is
+    dropped: the note and the "used" count are still there, still editable by
+    the same click."""
+    setup(page)
+    open_params(page)
+    open_section(page)
+    page.set_viewport_size({"width": 1024, "height": 760})
+    page.wait_for_timeout(600)
+    m = page.evaluate("""
+    () => { const r = document.querySelector('#pmRows .pmrow');
+      const out = { col: +document.getElementById('panelCol')
+                          .getBoundingClientRect().width.toFixed(2) };
+      for (const c of ['pmname', 'pmexpr', 'pmval', 'pmcomment', 'pmusers']) {
+        const e = r.querySelector('.' + c);
+        const b = e && e.getBoundingClientRect();
+        out[c] = b ? +b.width.toFixed(2) : 0;
+      }
+      return out; }""")
+    assert m["col"] < 320, f"this is not the narrow case: {m}"
+    for c in ("pmname", "pmexpr", "pmval", "pmcomment", "pmusers"):
+        assert m[c] > 30, f"{c} is {m[c]} px wide in a {m['col']} px column: {m}"
+    page.set_viewport_size({"width": 1200, "height": 800})
+    assert page.errors == []
