@@ -19,7 +19,7 @@ import { modalGuard } from './dialogs.js';
 import { pickedBody } from './tool.js';
 import { loadMesh, modelExtent } from './viewport.js';
 import { enterSketch3D, exitSketch3D, renderSketch3D,
-         planeToScreen, gridStep } from './sketch3d.js';
+         planeToScreen, gridStep, setSketchPointerPaused } from './sketch3d.js';
 import { SETTINGS, unitLabel, fmtLen, toMm } from './settings.js';
 
 /* ---------------- state ---------------- */
@@ -304,6 +304,7 @@ export async function editSketch(feature) {
     ? { center: feature.params.face_center || null,
         normal: feature.params.face_normal || null,
         area: feature.params.face_area ?? null,
+        face: feature.params.face || null,          // a NAMED face (authored: "top")
         inputId: feature.inputs?.[0] || null, frame }
     : null;
   if (skOnFace) skOnFace.offset = Number(feature.params.offset) || 0;
@@ -374,6 +375,62 @@ export async function openSketchOnFace(faceInfo, offset = 0) {
     'Create → Extrude to raise a boss or cut a pocket.');
 }
 bus.on('sketch-on-face', info => openSketchOnFace(info));
+
+/* ---------------- the open sketch's plane (Move Plane, sketchplane.js) ------
+   The user (2026-09-21): "when I draw some shapes in the sketch tab and then
+   want to move the plane in the same sketch" — the entities are plane-local,
+   so re-planing the sketch keeps every shape where it was drawn ON the plane
+   and moves the plane under them. */
+export function currentSketchPlane() {
+  if (!sketchActive) return null;
+  return skOnFace
+    ? { kind: 'face', offset: skOnFace.offset || 0,
+        face: { center: skOnFace.center, normal: skOnFace.normal,
+                area: skOnFace.area ?? null, face: skOnFace.face || null,
+                inputId: skOnFace.inputId } }
+    : { kind: 'plane', plane: skPlaneName, offset: skPlaneOffset };
+}
+
+/* while the step is open no draw tool is armed and the sketch takes no
+   pointer input (see sketch3d.setSketchPointerPaused) */
+export function pauseSketchInput(on) {
+  if (on) { setTool(null); clicks = []; ghost = null; draw(); }
+  setSketchPointerPaused(on);
+}
+
+/* re-plane the OPEN sketch at `offset`: the frame comes from the server at
+   that offset (R1), the 3D plane is rebuilt under the same entities, the
+   model snaps are fetched again for the new plane */
+export async function setSketchPlaneOffset(offset) {
+  if (!sketchActive) return false;
+  offset = Number(offset) || 0;
+  let frame;
+  if (skOnFace) {
+    const out = await fetchFaceOutline({ center: skOnFace.center, normal: skOnFace.normal,
+      area: skOnFace.area ?? null, face: skOnFace.face || null, offset,
+      featureId: skOnFace.inputId });
+    if (!out?.planar || !out.frame) {
+      bus.emit('msg', 'bot', '⚠ Could not move the sketch plane' +
+        (out?.error ? `: ${out.error}` : '.'));
+      return false;
+    }
+    frame = out.frame; skOnFace.frame = frame; skOnFace.offset = offset;
+  } else {
+    frame = await fetchPlaneFrame(skPlaneName, offset);
+    if (!frame) return false;
+    skPlaneOffset = offset;
+  }
+  skFrame = frame;
+  enterSketch3D(frame, { gridMm: SETTINGS.gridMm,
+    focus: focusOnPoints(skEnts.flatMap(entSamplePts))
+           || focusOnPoints(faceRef?.outer) || focusOnModel(frame) });
+  draw();
+  if (skOnFace) loadModelSnaps('XY', 0, frame);
+  else loadModelSnaps(skPlaneName, offset);
+  bus.emit('msg', 'bot', `Sketch plane moved to offset ${offset} mm — ` +
+    `${skEnts.length ? 'the shapes came along' : 'nothing drawn yet'}.`);
+  return true;
+}
 
 /* The picked face's plane frame + boundary (in the plane's own 2D coords),
    resolved on the body it was picked from — by geometry (center/normal) or
@@ -2183,7 +2240,7 @@ async function create() {
     // editing an existing sketch: replace its entities in place FIRST (a
     // fast rebuild up to the rollback bar), THEN exit — releasing the
     // edit-isolation triggers the one full rebuild with the new entities
-    const params = skOnFace ? { entities }
+    const params = skOnFace ? { entities, offset: skOnFace.offset || 0 }
       : { plane: skPlaneName, offset: skPlaneOffset, entities };
     // NOTHING CHANGED? Then do not touch the document at all: no rebuild of
     // everything downstream, and no pointless entry on the undo stack. Opening

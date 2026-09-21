@@ -12,7 +12,7 @@ import { openSettings } from './settings.js';
 import { startPlacement, PLACEABLE } from './placement.js';
 import { beginPlanePick } from './viewport.js';
 import { lookAtSketch } from './sketch3d.js';
-import { stageSketchPlane } from './sketchplane.js';
+import { stageSketchPlane, moveSketchPlane } from './sketchplane.js';
 import { openExtrude, openPressPull } from './extrude.js';
 import { openRevolve } from './revolve.js';
 import { openFillet, openChamfer } from './fillet.js';
@@ -83,6 +83,8 @@ const ACTIONS = {
   finish_sketch: { icon: '✓', name: 'Finish Sketch', fn: finishSketch },
   cancel_sketch: { icon: '✕', name: 'Cancel Sketch', fn: cancelSketch },
   look_at: { icon: '⌖', name: 'Look At', fn: lookAtSketch },
+  // move the OPEN sketch's plane along its normal — the shapes ride along
+  sk_plane: { icon: '⇕', name: 'Move Plane', fn: () => moveSketchPlane() },
   // sketch Modify tools (were side-panel buttons of the retired 2D editor)
   sk_mirror_v: { icon: '⇋', name: 'Mirror ↔', fn: () => sketchModify('mirror_v') },
   sk_mirror_h: { icon: '⇅', name: 'Mirror ↕', fn: () => sketchModify('mirror_h') },
@@ -146,6 +148,7 @@ const SKETCH_CONTEXT = [
   // Fusion's Insert group: traced art becomes entities of THIS sketch —
   // auto-fitted to the face when the sketch sits on one
   ['Insert', [{ a: 'trace_png' }]],
+  ['Plane', [{ a: 'sk_plane' }]],
   ['View', [{ a: 'look_at' }]],
   ['Finish', [{ a: 'finish_sketch' }, { a: 'cancel_sketch' }]],
 ];

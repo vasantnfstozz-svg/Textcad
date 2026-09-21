@@ -133,7 +133,11 @@ export function endEdgePick() {} export function clearPick() {}
 export function pickWhat() { return 'a sketch'; } export function profilePickArmed() { return false; }
 """
 _SKETCHER_STUB = """
-export const opened = [];
+export const opened = [], moved = [], paused = [];
+export const cur = { value: null };
+export function currentSketchPlane() { return cur.value; }
+export async function setSketchPlaneOffset(off) { moved.push(off); return true; }
+export function pauseSketchInput(on) { paused.push(on); }
 export async function openSketchEditor(plane, offset) { opened.push(['plane', plane, offset]); }
 export async function openSketchOnFace(info, offset) { opened.push(['face', info.center, offset]); }
 export async function fetchFaceOutline(req) {
@@ -157,7 +161,7 @@ S.lastDoc = { features: [{ id: 'b', op: 'plate', params: {}, inputs: [], volume:
                             status: 'ok' }] };
 const said = []; bus.on('msg', (_w, t) => said.push(t));
 const { gizmo } = await import('./viewport.js');
-const { opened } = await import('./sketcher.js');
+const { opened, moved, paused, cur } = await import('./sketcher.js');
 const sp = await import('./sketchplane.js');
 const base = keyHandlers.length;   // tool.js's own Esc listener, registered at import
 const mine = () => keyHandlers.length - base;
@@ -206,6 +210,32 @@ await sp.stageSketchPlane('plane', 'YZ'); await tick();
 bus.emit('doc-updated', S.lastDoc);
 out.doc_changed = { modal: S.modalTool, panel: el('planeDialog').style.display,
   stage: sp.sketchPlaneStage() };
+
+// 5. Move Plane with no sketch open: refused, nothing opens
+await sp.moveSketchPlane(); await tick();
+out.move_no_sketch = { panel: el('planeDialog').style.display, said: said.at(-1) };
+
+// 6. Move Plane over an open FACE sketch at -2: opens at -2 on the base frame,
+//    pauses the sketch's input; typing -6 + OK re-planes and resumes
+opened.length = 0;
+cur.value = { kind: 'face', offset: -2,
+  face: { center: [0, 0, 10], normal: [0, 0, 1], area: 2400, inputId: 'b' } };
+await sp.moveSketchPlane(); await tick();
+out.move_open = { header: el('planeDialog').firstElementChild.textContent,
+  box: el('plOffset').value, arrowO: gizmo.arrow.o, arrowA: gizmo.arrow.a,
+  ghostAt: gizmo.ghostAt, paused: paused.slice(), modal: S.modalTool,
+  stage: sp.sketchPlaneStage() };
+el('plOffset').value = '-6'; el('plOffset').oninput();
+el('plOk').onclick(); await tick();
+out.move_ok = { moved: moved.slice(), paused: paused.slice(), opened: opened.length,
+  modal: S.modalTool, panel: el('planeDialog').style.display };
+
+// 7. a Move Plane step open when the sketch is finished: it closes with it
+paused.length = 0;
+await sp.moveSketchPlane(); await tick();
+bus.emit('sketch-mode', { active: false });
+out.move_sketch_ended = { panel: el('planeDialog').style.display, modal: S.modalTool,
+  paused: paused.slice(), stage: sp.sketchPlaneStage() };
 console.log(JSON.stringify(out));
 """
 
@@ -257,3 +287,22 @@ def test_the_shipped_offset_step_escape_face_and_document_change(tmp_path):
     assert out["face_ok"] == {"opened": [["face", [0, 0, 10], -3]], "modal": None}, out["face_ok"]
     c = out["doc_changed"]
     assert c["modal"] is None and c["panel"] == "none" and c["stage"] is None, c
+
+
+@pytest.mark.skipif(not shutil.which("node"), reason="node is not on PATH")
+def test_the_shipped_move_plane_re_planes_the_open_sketch(tmp_path):
+    out = _run_sketchplane_js(tmp_path)
+    n = out["move_no_sketch"]
+    assert n["panel"] == "none" and "Create Sketch first" in n["said"], n
+    m = out["move_open"]
+    assert m["header"] == "✎ Move sketch plane" and float(m["box"]) == -2.0, m
+    assert m["arrowO"] == [0, 0, 10] and m["arrowA"] == -2 and m["ghostAt"] == -2, m
+    assert m["paused"] == [True] and m["modal"] == "Sketch plane", m
+    assert m["stage"]["mode"] == "move" and m["stage"]["owner"] == "b", m
+    k = out["move_ok"]
+    assert k["moved"] == [-6] and k["paused"] == [True, False], k
+    assert k["opened"] == 0, "Move Plane must not open a NEW sketch"
+    assert k["modal"] is None and k["panel"] == "none", k
+    e = out["move_sketch_ended"]
+    assert e["panel"] == "none" and e["modal"] is None and e["stage"] is None, e
+    assert e["paused"] == [True, False], e

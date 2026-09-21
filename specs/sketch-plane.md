@@ -25,6 +25,22 @@ person set it, and a face sketch made by hand did not even send the key.
 The pick panel's own "✎ Sketch on this face" button still opens at 0 — it is
 the shortcut; Create Sketch is the way with the offset.
 
+### Move Plane — inside an open sketch (second session, same day)
+
+The user's follow-up: *"when I draw some shapes in the sketch tab and then
+want to move the plane in the same sketch, how can I do that?"* The SKETCH
+tab has a **Plane → Move Plane** button. It opens the same step over the OPEN
+sketch, starting at its current offset (header *Move sketch plane*); OK
+re-planes the sketch: the frame is fetched from the server at the new offset,
+the 3D plane is rebuilt under the SAME entities (they are plane-local, so they
+ride along), the model snaps are fetched again. Finish stores the new offset
+— also when the sketch was reopened from the tree (the face-sketch edit path
+now resends `offset`). While the step is open the sketch takes no pointer
+input (`sketch3d.setSketchPointerPaused`), because the arrow's grab is a
+pointerdown on the same canvas and would otherwise also drop a point. Leaving
+sketch mode closes the step. A sketch authored by NAME (`face: "top"`) carries
+that name into the lookup — it has no picked centre.
+
 ## Why an offset on the sketch and not a construction plane
 
 Fusion makes an **Offset Plane** feature and sketches on it. Here the number
@@ -54,8 +70,10 @@ added later without undoing any of this.
 - `static/js/sketcher.js` — `openSketchEditor(plane, offset)`,
   `openSketchOnFace(info, offset)`, `fetchFaceOutline` exported, a new face
   sketch sends `offset`, edit keeps it.
-- `static/js/ribbon.js` — Create Sketch's pick goes to `stageSketchPlane`.
-- `static/index.html` — the `planeDialog` panel; `main.js?v=228`.
+- `static/js/ribbon.js` — Create Sketch's pick goes to `stageSketchPlane`;
+  the SKETCH tab's `Plane → Move Plane` calls `moveSketchPlane`.
+- `static/js/sketch3d.js` — `setSketchPointerPaused`.
+- `static/index.html` — the `planeDialog` panel; `main.js?v=229`.
 - `sketch.py` — `face_outline_2d` returns `into_sign`.
 
 ## Tests
@@ -66,18 +84,21 @@ added later without undoing any of this.
   that rebuilds, two XY sketches at 0 and 20 (the loft case); and two **node**
   tests running the SHIPPED `sketchplane.js` against stubs (plane → typed 20 →
   OK opens at 20 and releases everything; Esc; face carries −3; doc change
-  lets go).
+  lets go; Move Plane over a face sketch at −2 → −6 re-planes, pauses and
+  resumes the sketch's input, closes when the sketch ends).
 - `tests/e2e/test_sketch_plane_offset.py` — real browser: typing moves ghost
   and arrow, Enter opens with the grid at z = 20, Finish stores 20; a face
-  sketch at −5 with the outline ghost; Esc releases the modal lock.
+  sketch at −5 with the outline ghost; Esc releases the modal lock; Move Plane
+  inside an open sketch keeps the drawn rectangle and stores 15; Move Plane
+  while editing a NAMED face sketch stores −4.
 
 ## Loose ends, deliberately not built
 
 - (a) No **tilted** planes (a construction-plane feature).
 - (b) The arrow is Extrude's shared arrow, so the Section view's arrow goes
   with it and is handed back on close (`retakeSectionHandles`), as tools do.
-- (c) Re-opening a sketch (tree ✎) does not show the arrow; the offset is
-  changed in the tree row.
+- (c) Re-opening a sketch (tree ✎) does not show the arrow by itself; the
+  offset is changed in the tree row, or with Move Plane once the sketch is open.
 - (d) A plane sketch with a nonzero offset once a body exists is exactly what
   the offset method warns against (it hardcodes the base thickness). The AI
   lint (`author.py`) refuses it for authored trees; the UI lets the user do

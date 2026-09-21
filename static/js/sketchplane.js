@@ -27,53 +27,94 @@ import { g, mm, setLen, say, pickedBody } from './tool.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          beginPlaneGhost, setPlaneGhost, endPlaneGhost,
          retakeSectionHandles } from './viewport.js';
-import { openSketchEditor, openSketchOnFace, fetchFaceOutline } from './sketcher.js';
+import { openSketchEditor, openSketchOnFace, fetchFaceOutline,
+         currentSketchPlane, setSketchPlaneOffset, pauseSketchInput } from './sketcher.js';
 
 const NAME = 'Sketch plane';
 const PANEL = 'planeDialog';
-let stage = null;      // { kind, data, frame, owner, intoSign } while the step is open
+// { mode: 'new' | 'move', kind, what, frame, loops, intoSign, owner, onOk } while open
+let stage = null;
 
 /* for tests and other modules: is the offset step open, and on what */
 export const sketchPlaneStage = () => stage
-  ? { kind: stage.kind, plane: stage.kind === 'plane' ? stage.data : null,
+  ? { mode: stage.mode, kind: stage.kind, plane: stage.kind === 'plane' ? stage.plane : null,
       owner: stage.owner, offset: mm('plOffset'), intoSign: stage.intoSign }
   : null;
 
-/* Create Sketch's pick landed: kind 'plane' (data = 'XY' | 'XZ' | 'YZ') or
-   'face' (data = the viewport's face info). Fetch the frame, then show the
-   plane, the arrow and the box. */
-export async function stageSketchPlane(kind, data) {
-  let frame, loops = null, owner = null, intoSign = null, what;
+/* The plane's frame at offset 0 — the base the arrow and the ghost measure
+   from — fetched from the server: kind 'plane' (plane = 'XY' | 'XZ' | 'YZ')
+   or 'face' (face = {center, normal, area}, owner = the body it is on).
+   null when it cannot be had; the reason has been said. */
+async function baseFrame(kind, plane, face, owner) {
   if (kind === 'face') {
-    owner = pickedBody(data);
-    if (!owner) { say('⚠ No solid to sketch on yet.'); return; }
-    const out = await fetchFaceOutline({ center: data.center, normal: data.normal || null,
-                                         area: data.area ?? null, featureId: owner });
+    // by geometry (a pick's centre) or by NAME (an authored face: "top") — both
+    // are how sketch_on_face itself names its face
+    const out = await fetchFaceOutline({ center: face.center || null, normal: face.normal || null,
+                                         area: face.area ?? null, face: face.face || null,
+                                         featureId: owner });
     if (!out?.planar || !out.frame) {
       say('⚠ ' + (out?.error || 'That face is curved — a sketch needs a FLAT face. ' +
                                 'Pick a planar face, or sketch on an origin plane instead.'));
-      return;
+      return null;
     }
-    frame = out.frame;
-    loops = [{ outer: out.outer || [], holes: out.holes || [] }];
-    intoSign = out.into_sign ?? null;
-    what = `a face of "${owner}"`;
-  } else {
-    const p = await planRequest({ tool: 'sketch', plane: data, offset: 0 });
-    if (!p.ok) { say(`⚠ Cannot open the sketch: ${p.error}.`); return; }
-    frame = p.frame;
-    what = `the ${data} plane`;
+    return { kind, owner, frame: out.frame, intoSign: out.into_sign ?? null,
+             loops: [{ outer: out.outer || [], holes: out.holes || [] }],
+             what: `a face of "${owner}"` };
   }
+  const p = await planRequest({ tool: 'sketch', plane, offset: 0 });
+  if (!p.ok) { say(`⚠ Cannot open the sketch: ${p.error}.`); return null; }
+  return { kind, plane, owner: null, frame: p.frame, intoSign: null, loops: null,
+           what: `the ${plane} plane` };
+}
+
+/* Create Sketch's pick landed: kind 'plane' (data = 'XY' | 'XZ' | 'YZ') or
+   'face' (data = the viewport's face info). Fetch the frame, then show the
+   plane, the arrow and the box; OK opens the sketch at the offset. */
+export async function stageSketchPlane(kind, data) {
+  let owner = null;
+  if (kind === 'face') {
+    owner = pickedBody(data);
+    if (!owner) { say('⚠ No solid to sketch on yet.'); return; }
+  }
+  const base = await baseFrame(kind, kind === 'plane' ? data : null,
+                               kind === 'face' ? data : null, owner);
+  if (!base) return;
+  open({ ...base, mode: 'new', offset: 0,
+         onOk: off => (kind === 'face' ? openSketchOnFace(data, off)
+                                       : openSketchEditor(data, off)) });
+}
+
+/* The SKETCH tab's Move Plane: the same step over the OPEN sketch, starting
+   at its current offset; OK re-planes the sketch with its shapes on it. */
+export async function moveSketchPlane() {
+  const cur = currentSketchPlane();
+  if (!cur) { say('⚠ Move Plane works inside an open sketch — Create Sketch first.'); return; }
+  if (S.modalTool && !(stage && stage.mode === 'move')) {
+    say(`⚠ Finish the ${S.modalTool} first — press OK or Cancel in its panel.`);
+    return;
+  }
+  const base = await baseFrame(cur.kind, cur.plane || null, cur.face || null,
+                               cur.face ? cur.face.inputId : null);
+  if (!base) return;
+  open({ ...base, mode: 'move', offset: cur.offset,
+         onOk: off => setSketchPlaneOffset(off) });
+}
+
+function open(o) {
   if (stage) close();                       // a pick while a step is open replaces it
-  stage = { kind, data, frame, owner, intoSign };
+  stage = o;
   S.modalTool = NAME; S.modalToolPanel = PANEL;
-  g('plWhat').textContent = what;
-  g('plInto').textContent = intoSign == null ? ''
-    : `${intoSign < 0 ? 'negative' : 'positive'} = into the material`;
-  setLen('plOffset', 0);
+  g(PANEL).firstElementChild.textContent =
+    o.mode === 'move' ? '✎ Move sketch plane' : '✎ Sketch plane';
+  g('plWhat').textContent = o.what;
+  g('plInto').textContent = o.intoSign == null ? ''
+    : `${o.intoSign < 0 ? 'negative' : 'positive'} = into the material`;
+  setLen('plOffset', o.offset);
   g(PANEL).style.display = 'block';
-  beginPlaneGhost(frame, loops);
-  beginExtrudeArrow(frame.origin, frame.z_dir, 0, follow, follow, null);
+  beginPlaneGhost(o.frame, o.loops);
+  setPlaneGhost(o.offset);
+  beginExtrudeArrow(o.frame.origin, o.frame.z_dir, o.offset, follow, follow, null);
+  if (o.mode === 'move') pauseSketchInput(true);
   window.addEventListener('keydown', onKey, true);
   bus.on('doc-updated', onDoc);
   const box = g('plOffset');
@@ -105,7 +146,9 @@ function onDoc() { if (stage) close(); }
 
 function close() {
   if (!stage) return;
+  const wasMove = stage.mode === 'move';
   stage = null;
+  if (wasMove) pauseSketchInput(false);
   endExtrudeArrow();
   endPlaneGhost();
   retakeSectionHandles();                   // the arrow is shared with Section view
@@ -118,22 +161,28 @@ function close() {
 export function cancelSketchPlane() { cancel(); }
 function cancel() {
   if (!stage) return;
+  const wasMove = stage.mode === 'move';
   close();
-  say('Sketch cancelled — nothing was drawn.');
+  say(wasMove ? 'Plane not moved — the sketch stays where it was.'
+              : 'Sketch cancelled — nothing was drawn.');
 }
 
 /* OK / Enter: the step closes FIRST (it holds the modal lock the sketch
-   editor's own guard would refuse on), then the sketch opens at the offset */
+   editor's own guard would refuse on), then the sketch opens — or is
+   re-planed — at the offset */
 function ok() {
   if (!stage) return;
   const st = stage;
   const off = mm('plOffset');
   close();
-  if (st.kind === 'face') openSketchOnFace(st.data, off);
-  else openSketchEditor(st.data, off);
+  st.onOk(off);
 }
 
 export function initSketchPlane() {
+  // leaving sketch mode (Finish / Cancel Sketch) ends a Move Plane step
+  bus.on('sketch-mode', ({ active }) => {
+    if (!active && stage && stage.mode === 'move') close();
+  });
   g('plOk').onclick = ok;
   g('plCancel').onclick = cancel;
   const box = g('plOffset');

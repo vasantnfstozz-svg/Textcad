@@ -133,6 +133,90 @@ def test_face_sketch_carries_the_offset_into_the_material(plate):
     assert page.errors == []
 
 
+MOVE = "async () => (await import('/static/js/sketchplane.js')).moveSketchPlane()"
+ENTS = "async () => (await import('/static/js/sketcher.js')).sketchEntities()"
+
+
+def test_move_plane_inside_an_open_sketch_keeps_the_shapes(plate):
+    """The user's follow-up: shapes drawn, THEN the plane has to move. The
+    SKETCH tab's Move Plane re-planes the open sketch at the new offset; the
+    entities are plane-local so they ride along, and Finish stores the new
+    offset."""
+    page = plate
+    page.evaluate("async () => (await import('/static/js/sketcher.js')).openSketchEditor('XY')")
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.wait_for_timeout(200)
+    page.evaluate(DRAW_RECT, [-10, -5, 10, 5])
+    assert len(page.evaluate(ENTS)) == 1
+
+    page.evaluate(MOVE)
+    page.wait_for_function(STAGE_OPEN, timeout=15000)
+    assert page.evaluate("document.getElementById('planeDialog').firstElementChild.textContent") \
+        == "✎ Move sketch plane"
+    assert page.evaluate(IS_ACTIVE) is True, "the sketch stays open under the step"
+    page.fill("#plOffset", "15")
+    assert page.evaluate("window.__vp.planeGhostInfo()")["position"][2] == pytest.approx(15, abs=1e-6)
+    page.press("#plOffset", "Enter")
+    page.wait_for_function(STAGE_SHUT, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    assert page.evaluate(IS_ACTIVE) is True
+    target = page.evaluate("window.__vp.getControls().target.toArray()")
+    assert target[2] == pytest.approx(15, abs=1e-6), f"grid must now sit at z=15: {target}"
+    ents = page.evaluate(ENTS)
+    assert len(ents) == 1 and ents[0]["w"] == pytest.approx(20) and ents[0]["h"] == pytest.approx(10), ents
+
+    page.evaluate(FINISH)
+    page.wait_for_function(NOT_ACTIVE, timeout=15000)
+    page.wait_for_timeout(600)
+    doc = page.evaluate("async () => (await fetch('/api/doc')).json()")
+    s = [f for f in doc["features"] if f["op"] == "sketch"]
+    assert len(s) == 1 and s[0]["status"] == "ok", s
+    assert s[0]["params"]["offset"] == 15, s[0]["params"]
+    assert page.errors == []
+
+
+def test_move_plane_while_editing_a_face_sketch_updates_its_offset(plate):
+    """An existing face sketch reopened from the tree, its plane moved 4 mm
+    into the plate, Finish: the feature's offset changes and it rebuilds."""
+    page = plate
+    page.evaluate("""async () => {
+      const { postJSON } = await import('/static/js/api.js');
+      const { loadMesh } = await import('/static/js/viewport.js');
+      await postJSON('/api/feature/add', { id: 'fs', op: 'sketch_on_face',
+        params: { face: 'top', offset: 0,
+                  entities: [{ kind: 'rectangle', x: 0, y: 0, w: 20, h: 10, mode: 'add' }] },
+        inputs: ['b'] }, 'add');
+      await loadMesh(true);
+    }""")
+    page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      const { S } = await import('/static/js/state.js');
+      const doc = await (await fetch('/api/doc')).json();
+      S.lastDoc = doc;
+      await sk.editSketch(doc.features.find(f => f.id === 'fs'));
+    }""")
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.evaluate(MOVE)
+    page.wait_for_function(STAGE_OPEN, timeout=15000)
+    assert page.evaluate("document.getElementById('plInto').textContent") == \
+        "negative = into the material"
+    page.fill("#plOffset", "-4")
+    page.click("#plOk")
+    page.wait_for_function(STAGE_SHUT, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.evaluate(FINISH)
+    page.wait_for_function(NOT_ACTIVE, timeout=15000)
+    page.wait_for_timeout(800)
+    doc = page.evaluate("async () => (await fetch('/api/doc')).json()")
+    fs = next(f for f in doc["features"] if f["id"] == "fs")
+    assert fs["status"] == "ok", fs
+    assert fs["params"]["offset"] == -4, fs["params"]
+    assert len(fs["params"]["entities"]) == 1, fs["params"]
+    assert page.errors == []
+
+
 def test_escape_closes_the_step_and_releases_the_lock(plate):
     page = plate
     page.evaluate(STAGE, ["plane", "XZ"])
