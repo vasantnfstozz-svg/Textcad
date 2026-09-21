@@ -5,13 +5,14 @@ import { S } from './state.js';
 import { bus } from './bus.js';
 import { OP_ICONS, TOOL_NAMES } from './icons.js';
 import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport, actionUndo, actionRedo, actionSpec, actionImportStl, loadSample, modalGuard, actionExamples } from './dialogs.js';
-import { openSketchEditor, finishSketch, cancelSketch,
+import { finishSketch, cancelSketch,
          setSketchTool, sketchModify, editSketch,
          traceIntoSketch } from './sketcher.js';
 import { openSettings } from './settings.js';
 import { startPlacement, PLACEABLE } from './placement.js';
 import { beginPlanePick } from './viewport.js';
 import { lookAtSketch } from './sketch3d.js';
+import { stageSketchPlane } from './sketchplane.js';
 import { openExtrude, openPressPull } from './extrude.js';
 import { openRevolve } from './revolve.js';
 import { openFillet, openChamfer } from './fillet.js';
@@ -49,10 +50,9 @@ let curSketchTool = null;      // which draw tool is active (for ribbon highligh
 function startSketch() {
   cancelTool();                          // don't leave extrude gizmos eating clicks
   cancelMeasure();                          // nor a measure panel floating
-  beginPlanePick((kind, data) => {
-    if (kind === 'face') bus.emit('sketch-on-face', data);
-    else openSketchEditor(data);            // data = 'XY' | 'XZ' | 'YZ'
-  });
+  // the pick lands in the Offset step (sketchplane.js): the plane is shown
+  // where the sketch will open, with an arrow and an Offset box; OK opens it
+  beginPlanePick((kind, data) => stageSketchPlane(kind, data));
 }
 
 // the drag-handle tools (born on tool.js): pressed with the current selection

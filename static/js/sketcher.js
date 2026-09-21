@@ -251,20 +251,25 @@ export async function cancelSketch() {
   exitMode();
 }
 
-export async function openSketchEditor(plane = 'XY') {
-  const frame = await fetchPlaneFrame(plane, 0);   // where the kernel will build
+/* `offset` (mm along the plane's own normal) is the Offset step of Create
+   Sketch (sketchplane.js) — the frame is fetched FROM the server at that
+   offset, so the grid lands where make_sketch will build (R1). */
+export async function openSketchEditor(plane = 'XY', offset = 0) {
+  offset = Number(offset) || 0;
+  const frame = await fetchPlaneFrame(plane, offset);   // where the kernel will build
   if (!frame) return;
   skOnFace = null; skEditId = null;
   resetEditor();
   skName = nextName();
   skPlaneName = plane;               // chosen in the viewport
-  skPlaneOffset = 0;
+  skPlaneOffset = offset;
   skFrame = frame;
   pendingFocus = focusOnModel(frame);
   enterMode();
   updateHint();
   draw();
-  loadModelSnaps(plane, 0);          // the part's own corners/centres to snap to
+  loadModelSnaps(plane, offset);     // the part's own corners/centres to snap to
+  if (offset) bus.emit('msg', 'bot', `Sketching on the ${plane} plane, offset ${offset} mm.`);
 }
 
 /* Reopen a committed sketch to edit its entities (the alternative to
@@ -301,6 +306,7 @@ export async function editSketch(feature) {
         area: feature.params.face_area ?? null,
         inputId: feature.inputs?.[0] || null, frame }
     : null;
+  if (skOnFace) skOnFace.offset = Number(feature.params.offset) || 0;
   skFrame = frame;
   skEditId = feature.id;
   resetEditor();
@@ -327,7 +333,11 @@ export async function editSketch(feature) {
 }
 bus.on('edit-sketch', editSketch);
 
-export async function openSketchOnFace(faceInfo) {
+/* `offset` (mm along the face sketch's frame z — the offset method, its sign
+   the server's `into_sign`) comes from Create Sketch's Offset step; the pick
+   panel's own "Sketch on this face" button opens at 0. */
+export async function openSketchOnFace(faceInfo, offset = 0) {
+  offset = Number(offset) || 0;
   if (modalGuard()) return;         // finish the open tool (OK/Cancel) first
   // sketch on the body the face was PICKED FROM (several bodies are visible
   // and clickable); the newest solid is only a fallback — one rule, shared
@@ -338,7 +348,7 @@ export async function openSketchOnFace(faceInfo) {
   // can open — same fetch also brings the boundary shown as reference
   const data = await fetchFaceOutline({ center: faceInfo.center,
     normal: faceInfo.normal || null, area: faceInfo.area ?? null,
-    featureId: owner });
+    offset, featureId: owner });
   if (!data?.planar || !data.frame) {
     bus.emit('msg', 'bot', '⚠ ' + (data?.error ||
       'That face is curved — a sketch needs a FLAT face. Pick a planar face, ' +
@@ -346,7 +356,8 @@ export async function openSketchOnFace(faceInfo) {
     return;
   }
   skOnFace = { center: faceInfo.center, normal: faceInfo.normal || null,
-               area: faceInfo.area ?? null, inputId: owner, frame: data.frame };
+               area: faceInfo.area ?? null, inputId: owner, frame: data.frame,
+               offset };
   skEditId = null;
   resetEditor();
   skName = nextName();
@@ -357,17 +368,18 @@ export async function openSketchOnFace(faceInfo) {
   updateHint();
   draw();
   loadModelSnaps('XY', 0, data.frame);   // model corners/centres on THIS face
-  bus.emit('msg', 'bot', `Sketching on a face of "${owner}" — the grey dashed ` +
+  bus.emit('msg', 'bot', `Sketching on a face of "${owner}"` +
+    (offset ? `, offset ${offset} mm` : '') + ' — the grey dashed ' +
     'outline is that surface. Draw your profile, Finish Sketch, then ' +
     'Create → Extrude to raise a boss or cut a pocket.');
 }
-bus.on('sketch-on-face', openSketchOnFace);
+bus.on('sketch-on-face', info => openSketchOnFace(info));
 
 /* The picked face's plane frame + boundary (in the plane's own 2D coords),
    resolved on the body it was picked from — by geometry (center/normal) or
    by name (face: "top"), plus the sketch plane's offset off that face. */
-async function fetchFaceOutline({ center = null, normal = null, area = null,
-                                  face = null, offset = 0, featureId = null }) {
+export async function fetchFaceOutline({ center = null, normal = null, area = null,
+                                         face = null, offset = 0, featureId = null }) {
   try {
     const r = await fetch('/api/face-outline', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2203,7 +2215,8 @@ async function create() {
     const added = [];
     const problem = await addChecked({ id, op: 'sketch_on_face',
       params: { face_center: skOnFace.center, face_normal: skOnFace.normal,
-                face_area: skOnFace.area ?? null, entities },
+                face_area: skOnFace.area ?? null, offset: skOnFace.offset || 0,
+                entities },
       inputs: [skOnFace.inputId] }, added);
     loadMesh(true);          // the sketch now shows in the viewport (green)
     bus.emit('msg', 'bot', problem

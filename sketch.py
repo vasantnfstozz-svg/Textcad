@@ -1255,8 +1255,15 @@ def face_outline_2d(solid, face_center: list | None = None,
     # the plane's world frame, so a UI can draw ghost geometry in place
     frame = {"origin": vec(pl.origin), "x_dir": vec(pl.x_dir),
              "y_dir": vec(pl.y_dir), "z_dir": vec(pl.z_dir)}
+    # which SIGN of `offset` moves the plane INTO the material: the frame is
+    # canonicalised (see face_sketch_plane), so on a top / +x / +y face its z
+    # points OUT of the body and a negative offset goes in, on a bottom / -x /
+    # -y face the opposite. A server fact for the sketch-plane handle (R1);
+    # the same rule sketch_on_face's docstring states in words.
+    outward = picked.normal_at(picked.center())
+    into_sign = -1 if outward.dot(pl.z_dir) > 0 else 1
     return {"outer": project(outer), "holes": holes, "planar": True,
-            "frame": frame}
+            "frame": frame, "into_sign": into_sign}
 
 
 def pick_face(solid, face_center: list | None = None,

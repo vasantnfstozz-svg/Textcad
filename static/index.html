@@ -337,6 +337,20 @@
     </div>
   </div>
 
+  <!-- Create Sketch's Offset step (sketchplane.js): the picked plane or face is
+       shown where the sketch will open; drag the arrow or type to move it -->
+  <div id="planeDialog" class="toolpanel" style="display:none">
+    <div class="exhead">✎ Sketch plane</div>
+    <label>On <span id="plWhat" class="pro"></span></label>
+    <label>Offset (<span data-unit>mm</span>) <input id="plOffset" type="number" step="any" value="0"
+      title="How far the sketch plane moves along its normal: drag the arrow in the viewport or type. 0 = on the plane or face itself"></label>
+    <div id="plInto" style="font-size:12px;color:var(--dim)"></div>
+    <div class="exfoot">
+      <button id="plCancel">Cancel</button>
+      <button class="primary" id="plOk">OK</button>
+    </div>
+  </div>
+
   <div id="shellDialog" class="toolpanel" style="display:none">
     <div class="exhead">▢ Shell</div>
     <label>Faces <select id="shProfile" disabled></select></label>
@@ -637,6 +651,6 @@
     "three/addons/": "/static/vendor/three/0.160.0/addons/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=227"></script>
+<script type="module" src="/static/js/main.js?v=228"></script>
 </body>
 </html>

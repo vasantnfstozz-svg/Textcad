@@ -283,6 +283,8 @@ export function initViewport() {
     originPlaneInfo: () => originPlanes.filter(o => o.userData.plane).map(o => ({
       plane: o.userData.plane, position: o.position.toArray(),
       size: o.geometry.parameters.width })),
+    /* the sketch-plane ghost of Create Sketch's Offset step */
+    planeGhostInfo,
     /* the adaptive ground grid actually in the scene (step/half/clip) */
     groundGridInfo: () => groundState ? { step: groundState.step,
       half: groundState.half, clip: { ...groundState.clip } } : null,
@@ -1142,6 +1144,69 @@ function disposeParts(parts) {
     scene.remove(P.mesh); scene.remove(P.edges);
     P.mesh.geometry.dispose(); P.edges.geometry.dispose();
   }
+}
+
+/* ---------------- sketch-plane GHOST (the Offset step of Create Sketch) ----
+   The picked plane drawn where the sketch WILL open: a translucent quad in
+   the plane's frame plus, for a face, the face's outline — moved along the
+   frame's z by the dragged offset, the same move Plane.offset makes on the
+   server, whose frame the sketch then reopens AT that offset (R1).
+   frame = {origin, x_dir, y_dir, z_dir}; loops as for the extrude ghost. */
+let plGhost = null;
+
+export function beginPlaneGhost(frame, loops = null) {
+  endPlaneGhost();
+  const O = new THREE.Vector3(...frame.origin);
+  const X = new THREE.Vector3(...frame.x_dir).normalize();
+  const Y = new THREE.Vector3(...frame.y_dir).normalize();
+  const Z = new THREE.Vector3(...frame.z_dir).normalize();
+  const s = Math.max(fitRadius * 1.15, 55);         // the origin quads' size
+  const parts = [ghostPart(new THREE.PlaneGeometry(2 * s, 2 * s))];
+  const lines = [];
+  for (const L of loops || []) {
+    for (const ring of [L.outer, ...(L.holes || [])]) {
+      if (!ring || ring.length < 2) continue;
+      const pts = [];
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length];
+        pts.push(a[0], a[1], 0, b[0], b[1], 0);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      const ln = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false }));
+      ln.renderOrder = 992; ln.matrixAutoUpdate = false;
+      scene.add(ln); lines.push(ln);
+    }
+  }
+  plGhost = { parts, lines, O, Z, basis: new THREE.Matrix4().makeBasis(X, Y, Z), offset: 0 };
+  setPlaneGhost(0);
+}
+
+export function setPlaneGhost(offset) {
+  if (!plGhost) return;
+  plGhost.offset = Number(offset) || 0;
+  const m = plGhost.basis.clone().setPosition(
+    plGhost.O.clone().add(plGhost.Z.clone().multiplyScalar(plGhost.offset)));
+  for (const P of plGhost.parts) { P.mesh.matrix.copy(m); P.edges.matrix.copy(m); }
+  for (const ln of plGhost.lines) ln.matrix.copy(m);
+}
+
+export function endPlaneGhost() {
+  if (!plGhost) return;
+  disposeParts(plGhost.parts);
+  for (const ln of plGhost.lines) {
+    scene.remove(ln); ln.geometry.dispose(); ln.material.dispose();
+  }
+  plGhost = null;
+}
+
+/* where the ghost plane sits (tests): its offset, world position and normal */
+export function planeGhostInfo() {
+  if (!plGhost) return null;
+  return { offset: plGhost.offset,
+           position: new THREE.Vector3().setFromMatrixPosition(plGhost.parts[0].mesh.matrix).toArray(),
+           normal: plGhost.Z.toArray(), lines: plGhost.lines.length };
 }
 
 export function beginExtrudeGhost(frame, loops) {

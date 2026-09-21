@@ -11,6 +11,7 @@ import './doctabs.js';         // subscribes to doc-updated
 import { initChat, addMsg } from './chat.js';
 import { initDialogs, actionUndo, actionRedo } from './dialogs.js';
 import { initSketcher } from './sketcher.js';
+import { initSketchPlane } from './sketchplane.js';
 import { initRibbon } from './ribbon.js';
 import { initSplitters } from './splitters.js';
 import { initSettings } from './settings.js';
@@ -36,6 +37,7 @@ initViewport();
 initChat();
 initDialogs();
 initSketcher();
+initSketchPlane();   // Create Sketch's Offset step: move the sketch plane before drawing
 initExtrude();
 initRevolve();
 initSweep();      // Sweep: a profile along a path sketch (Tier 2, specs/sweep.md)
