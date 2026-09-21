@@ -5,115 +5,91 @@
 > stays short and the review chat pays for one small read. Ship-check step 6
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
+>
+> **Status: PENDING** — ONE code commit waits: **Sketch plane offset
+> `ee102b1`** (range `1c77d9f..ee102b1`, on master, `specs/sketch-plane.md`).
+> Built on Fable 2026-09-21 at the user's request ("we need a feature where I
+> can move the plane ... when I am drawing or using loft I cannot draw any
+> shapes on top of them"), no review yet. Small: one new frontend module, a
+> ghost in `viewport.js`, two openers in `sketcher.js` gaining an `offset`
+> argument, one new field on `/api/face-outline`. Strike this when it is done.
 
-> **Status: NOTHING PENDING for a review chat — the work below was already
-> reviewed as it was built.** 2026-09-17/19, at the user's explicit direction
-> ("fix all p1s to p3s, fix all of them, using agents ... and again review
-> until we running out of bugs"), LAUNCH-PLAN section 10 was worked by
-> file-fenced agents in worktrees, and **every fix pass was re-read by a fresh
-> reviewer before it was merged**. 112 commits, base `337f947`.
+## Sketch plane offset — `ee102b1`
 
-## What the sweep did
+**What it is.** Create Sketch's pick (an origin plane or a flat face) no longer
+opens the sketch at once. It lands in an **Offset step** (`static/js/
+sketchplane.js`): the picked plane is drawn where the sketch will open
+(translucent quad; for a face also its outline), with ONE arrow along the
+plane's normal and an **Offset** box. Drag or type, OK / Enter opens sketch
+mode on the shifted plane, Esc / Cancel goes back. The value is the sketch
+feature's own `offset` parameter (`sketch` AND `sketch_on_face`), so it shows
+in the tree as a number row and rebuilds downstream when edited. Enter with 0
+is the old flow. The AI always used `offset`; the UI never exposed it, and a
+hand-made face sketch did not even send the key — now it sends `offset: 0`.
 
-Six streams, each fixed then re-reviewed to exhaustion:
+**Where the risk is, ranked:**
 
-| stream | files | rounds | stopped because |
-|---|---|---|---|
-| picture tracing | `imgtrace.py`, `studio.py` | 4 + one running | still finding; round 5 in flight |
-| shell guards | `sketch.py`, `kernelguard.py` | 3 + one running | still finding; round 4 in flight |
-| op catalogue / document core | `blocks.py`, `document.py`, `author.py`, `pattern.py` | 5 | round 5 found no P0; severity trending down |
-| compressor meanline | `meanline.py`, `impeller.py`, `samples.py` | 4 | a P0 in each of rounds 1-3, none in 4 |
-| tool panels / browser | `static/**` | 4 | yield 8, 4, 4, 2 - round 4 recommended stopping |
-| trim speed | `sketch_trim.py` | 2 | identity proved structurally, not empirically |
+1. **`into_sign` on `/api/face-outline`** (`sketch.face_outline_2d`):
+   `-1 if outward.dot(pl.z_dir) > 0 else 1`. Measured on the six faces of a
+   box (`tests/test_sketch_plane_offset.py`, moving the frame 3 mm and reading
+   where it lands). Not measured: a face whose outward normal is NOT parallel
+   to the canonical frame's z — a tilted flat face (a loft wall, a tapered
+   extrude's side). `face_sketch_plane` snaps to a principal plane only within
+   some tolerance; past it the frame follows the face and the dot product is
+   still well-signed, but the sentence in the panel ("negative = into the
+   material") is only true for the component along the frame's z. Also
+   `picked.normal_at(picked.center())` on a face with a hole through its
+   centre (a ring): `center()` is the centre of mass, which may lie in the
+   hole — does `normal_at` still answer for a planar face? Probably (planar
+   surface, any point), but a probe would settle it.
+2. **The ghost is browser math on the plan's frame** (`viewport.beginPlaneGhost`):
+   `Matrix4.makeBasis(x, y, z)` + `setPosition(origin + offset * z)`. Probed
+   with a right-handed frame (`probes/plane_ghost_matrix_probe.mjs`). Not
+   probed: a LEFT-handed frame — can `face_sketch_plane` ever hand back one
+   (x × y ≠ z)? If yes the quad is mirrored, which is invisible for a square
+   quad but shows on the face OUTLINE (the L-shaped or off-centre face would
+   draw flipped). The sketch itself is unaffected: it reopens its frame from
+   the server at the chosen offset.
+3. **`openSketchOnFace(faceInfo, offset)` and the bus.** The bus event
+   `sketch-on-face` (the pick panel's "✎ Sketch on this face" button and
+   `tests/e2e/test_face_sketch_in_viewport.py`) is now wrapped as
+   `info => openSketchOnFace(info)` so an extra bus argument can never land in
+   `offset`. Check no other caller passed a second positional argument.
+4. **Edit path keeps the offset:** `editSketch` sets `skOnFace.offset` from
+   `feature.params.offset` and the edit `params` for a face sketch stay
+   `{ entities }` (the offset is NOT resent), while a plane sketch's edit
+   resends `{ plane, offset, entities }`. Both fine today; the asymmetry is
+   worth one look — `sameSketch` compares `offset` only when `next.offset !==
+   undefined`, so a face-sketch edit never trips on it.
+5. **Modal lock and the shared arrow.** The step sets `S.modalTool = 'Sketch
+   plane'` and uses Extrude's arrow slot (`beginExtrudeArrow`), as Shell does;
+   `close()` calls `retakeSectionHandles()` as `tool.js releaseModal` does.
+   Cases: Section view open, then Create Sketch → pick → Esc — does the
+   section's arrow come back? `tool.js endPending()` cancels a plane PICK but
+   knows nothing of the STEP; the step holds the lock so `modalGuard` refuses
+   other tools first (ribbon buttons are wrapped) — but `tree.js` row actions
+   (✎ edit sketch, `editSketch` guards; delete/strike do not) and the chat's
+   AI edits are not guarded, hence the `doc-updated` let-go. Undo (Ctrl+Z, if
+   bound outside the ribbon) while the step is open: guarded?
+6. **Units.** The box uses `setLen` / `mm` (display units). `follow()` rounds
+   to 0.1 **mm** before `setLen`, so in inches the box shows a rounded-mm
+   value converted; cosmetic.
+7. **Author lint.** `author.py` refuses a `sketch` with a nonzero absolute
+   offset once a body exists (the offset method). The UI now lets the user
+   make exactly that, silently. Deliberate (plan §10 P3 row); a hint would be
+   the next step, not a review fix.
 
-## The ten P0s, and the one thing they have in common
+**Do not report** (known, decided or recorded):
+- No tilted planes / construction-plane feature; no arrow on tree re-edit;
+  the pick panel's own button opens at 0 — plan §10 P3 row, `specs/sketch-plane.md`.
+- The `sketch_on_face` docstring says "top / +x / +y face offset < 0 INTO";
+  for +y that is wrong (frame z points −Y). `into_sign` is the measured truth
+  and the six-face test locks it; the docstring is text.
+- Line delta: +770 / −19 — a new feature with two test files, not a phase.
+- The node tests stub `viewport.js`, `sketcher.js`, `api.js` and run the real
+  `tool.js`; the key-listener count subtracts `tool.js`'s own Esc listener.
 
-Every one was found by a **reviewer re-reading a fix pass that was already
-written, tested and green** - never by the agent that wrote it. That is the
-whole argument for the re-read rule and it now has ten data points.
-
-1. The compressor's shaft bore was not a hole - blades fused over it, 67.266
-   mm3 inside a 2 mm bore, `ok=True`, watertight, `health []`, symmetric. The
-   commit an hour earlier had turned that band's loud crash into this quiet
-   wrong body.
-2. A wheel published an `exit_width` it did not have - 17.29 mm against a
-   measured 12.480, 39% wrong on the number that sets what the machine flows,
-   handed to an AI through MCP.
-3. A wheel published an inlet eye that is solid metal - a 112.30 mm2 ring
-   where the passage is 3.51 mm2, on an ordinary 5 g/s blower (Mach 3.4).
-4. The published blade angle is not the angle in the metal - up to 77.6 deg
-   out; at one blessed backsweep the blade leans the other way.
-5. `sketch {"offset": null}` built silently at Z = 0 and `{"offset": true}` at
-   Z = 1, both green.
-6. `move {"x": true}` moved the body 1 mm, green - invisible to every census
-   because a move does not change a volume.
-7. A sweep's path was not in the rebuild signature: editing the rail left the
-   solid at 1570.80 where it must be 3141.59, and **two documents were served
-   one solid** - one design handed another design's geometry.
-8. `_pull_apart` measured in one direction only: a vertex of the BIGGER loop
-   landing mid-edge on a smaller one walked through, giving `is_valid` True
-   with `health` "not manifold/watertight (open shell)".
-9. The art-centring shift landed off the 0.001 mm grid, so the final rounding
-   re-crossed an outline `_uncross` had just cleaned - **reachable with every
-   default**: a 1600 px picture at 8 mm builds 20.023 mm3 OCCT calls invalid.
-10. The skin ceiling could only see a handback while the wall was THIN
-    (`walls/(area.t)` IS `volume/(area.t)` when the body comes back whole): at
-    t = 2.5 a perforated plate came back with 12.0 mm3 removed where 971.8 had
-    to go - valid, watertight, health clean, green, saved.
-
-## Two guards were caught REFUSING correct geometry
-
-The opposite error, and just as bad: `_R2_MAX_MM` 2000 refused a 4-pole-motor
-wheel the kernel builds sound; Trim refused **every word of two or more
-letters** (32 of 90 printable characters) and died on any sketch containing an
-`O`. Both fixed.
-
-## The lesson worth keeping, in one line
-
-**Every constant in a guard was calibrated on a corpus somebody chose. Ask
-what that corpus held constant, and vary it.** That question alone found
-findings 10, the plateau residual, and the coarea overlap. Both skin constants
-are now documented as *overlapping populations no constant can separate*; what
-makes the shell guard safe is a theorem (the deepest material must end up in
-the cavity), not a calibrated number.
-
-## What must NOT be re-reported
-
-- The trace ground rule (`probes/imgtrace_r4_corpus.py`: old 55, r1 42, r2 54,
-  shipped 58 of 74). Four rounds left it untouched on purpose.
-- `_SHELL_NOTHING_HOLLOWED` = 1% and both skin factors: measured from both
-  sides, populations overlap, do not re-tune.
-- The fit box ignoring holes: the threshold-free alternative was built and
-  picks the shipped box on all seven test faces.
-- Closing Parameters when a tool opens: fixes one of three cases and takes
-  away a panel the user opened.
-- The frozen Parameters row while a cell is open: the deliberate trade that
-  fixed the lost-typing bug.
-- Everything else already carried in LAUNCH-PLAN section 10.
-
-## What the next review should take
-
-1. **The two rounds still in flight** when this was written - trace round five
-   (`c30b2d9..46fc32d`: `imgtrace.settle`, the rewritten `_walks_through_itself`,
-   and `_MEET_MM`, a refusal costing about 1 trace in 500) and shell round four
-   (whose job one is rebuilding the user's 50 designs to prove none is newly
-   refused). Read their reports first; neither had reported when this was written.
-2. **The Sweep/Loft crash gap (P2, section 10).** `kernelguard` answers exactly
-   two job kinds, `blend` and `shell`, so `BRepOffsetAPI_ThruSections` and
-   `MakePipeShell` run in the LISTENER process, where an access violation takes
-   the request, the tab and the process. Measured twice. `REVIEW-QUEUE.md`
-   section 4 already records a loft doing exactly that (exit 139).
-3. **A unit on every parameter in `author.op_catalog()`.** Two surfaces are
-   blocked on it and both are recorded in section 10: the feature tree's
-   editable rows and the Add Feature dialog both show raw millimetres, in an
-   app whose status bar prints inches. The catalogue carries units on 48 of 122
-   parameters, and the 74 without include real lengths sitting beside ones that
-   have them. Fixing either surface in the browser without it would be an R1
-   violation.
-4. Otherwise the ranked remainder of section 10, which is now mostly Fusion
-   parity features and polish.
-
-## How the review starts
-
-The user opens a fresh chat on Opus (`/model claude-opus-5[1m]`) and types only
-`code review`. CLAUDE.md's "The review chat" section routes it.
+**Ground rules** (as always): reproduce by measurement or a red test before
+fixing; smallest fix; tests with it; commit; restart the user's server if
+`sketch.py` / `studio.py` changed; then this file → `Status: NOTHING PENDING`,
+a plan §10 row for anything deferred, memory. Never `--fix`.
