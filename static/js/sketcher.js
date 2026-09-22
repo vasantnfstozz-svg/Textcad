@@ -420,9 +420,13 @@ export async function setSketchPlaneOffset(offset) {
   // Only a REAL move replaces a formula with the number it resolved to. The
   // box opens at that number, so OK without touching it is a no-op — and a
   // no-op must not change the document, the same rule `sameSketch` states for
-  // opening a sketch and pressing Finish.
-  if (offset !== (skOnFace ? skOnFace.offset || 0 : skPlaneOffset))
-    skOffsetRaw = offset;
+  // opening a sketch and pressing Finish. Read where the plane is NOW, before
+  // the fetch below moves it; the formula is only given up once that fetch has
+  // actually landed (round two: it used to be given up here, so a move the
+  // server REFUSED — "⚠ Could not move the sketch plane" — still replaced
+  // "-wall" with -4 on the next Finish. The plane had not moved, the volume
+  // was identical, and the parameter link was gone with nothing said).
+  const wasAt = skOnFace ? skOnFace.offset || 0 : skPlaneOffset;
   let frame;
   if (skOnFace) {
     const out = await fetchFaceOutline({ center: skOnFace.center, normal: skOnFace.normal,
@@ -439,6 +443,7 @@ export async function setSketchPlaneOffset(offset) {
     if (!frame) return false;
     skPlaneOffset = offset;
   }
+  if (offset !== wasAt) skOffsetRaw = offset;   // the move HAPPENED
   skFrame = frame;
   enterSketch3D(frame, { gridMm: SETTINGS.gridMm,
     focus: focusOnPoints(skEnts.flatMap(entSamplePts))

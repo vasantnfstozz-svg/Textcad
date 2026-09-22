@@ -469,3 +469,145 @@ def test_move_plane_ok_without_a_change_keeps_the_formula(page, fresh_doc):
     after = [f for f in _doc(page)["features"] if f["id"] == "fs"][0]
     assert after["params"]["offset"] == "-wall", after["params"]
     assert page.errors == []
+
+
+# ---------------------------------------------------------------------------
+# Review round two: the formula survives a move that FAILED and a box that
+# speaks another unit, and the two round trips round one never drove.
+# ---------------------------------------------------------------------------
+
+LEGACY_BUILD = """
+async () => {
+  const { postJSON } = await import('/static/js/api.js');
+  const { loadMesh } = await import('/static/js/viewport.js');
+  await postJSON('/api/feature/add',
+    { id: 'b', op: 'plate', params: { width: 60, depth: 40, thickness: 20 },
+      inputs: [] }, 'add');
+  await postJSON('/api/feature/add',
+    { id: 'fs', op: 'sketch_on_face',
+      params: { face: 'top',
+                entities: [{ kind: 'circle', mode: 'add', x: 0, y: 0, r: 6 }] },
+      inputs: ['b'] }, 'add');
+  await loadMesh(true);
+}
+"""
+PLANE_FORMULA_BUILD = """
+async () => {
+  const { postJSON } = await import('/static/js/api.js');
+  const { loadMesh } = await import('/static/js/viewport.js');
+  await postJSON('/api/parameters', { name: 'lift', expr: 12 }, 'param');
+  await postJSON('/api/feature/add',
+    { id: 'ps', op: 'sketch',
+      params: { plane: 'XY', offset: 'lift',
+                entities: [{ kind: 'circle', mode: 'add', x: 0, y: 0, r: 6 }] },
+      inputs: [] }, 'add');
+  await postJSON('/api/feature/add',
+    { id: 'col', op: 'extrude', params: { amount: 5 }, inputs: ['ps'] }, 'add');
+  await loadMesh(true);
+}
+"""
+
+
+def _open_sketch(page, fid):
+    page.evaluate(EDIT, fid)
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.wait_for_timeout(300)
+
+
+def _finish(page):
+    page.evaluate(FINISH)
+    page.wait_for_function(NOT_ACTIVE, timeout=15000)
+    page.wait_for_timeout(800)
+
+
+def test_a_sketch_with_no_offset_key_is_left_alone(page, fresh_doc):
+    """Every one of the user's 47 designs is this sketch: no `offset` key at
+    all. Opening it and pressing Finish must write NOTHING — not even the 0
+    the editor drew at, which would rebuild the whole tree under it."""
+    page.evaluate(LEGACY_BUILD)
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    before = [f for f in _doc(page)["features"] if f["id"] == "fs"][0]
+    assert "offset" not in before["params"], before["params"]
+    _open_sketch(page, "fs")
+    _finish(page)
+    after = [f for f in _doc(page)["features"] if f["id"] == "fs"][0]
+    assert "offset" not in after["params"], (
+        f"a no-op Finish wrote offset={after['params'].get('offset')!r}")
+    assert page.errors == []
+
+
+def test_a_plane_sketch_keeps_its_formula_offset(page, fresh_doc):
+    """The PLANE half of the same rule: `sketch` on XY at offset "lift"."""
+    page.evaluate(PLANE_FORMULA_BUILD)
+    page.wait_for_timeout(800)
+    doc0 = _doc(page)
+    assert [f for f in doc0["features"] if f["id"] == "ps"][0]["params"]["offset"] == "lift"
+    vol0 = doc0["result_volume"]
+    _open_sketch(page, "ps")
+    _finish(page)
+    doc1 = _doc(page)
+    after = [f for f in doc1["features"] if f["id"] == "ps"][0]
+    assert after["params"]["offset"] == "lift", after["params"]
+    assert doc1["result_volume"] == pytest.approx(vol0, rel=1e-9), (
+        f"the part changed shape: {vol0} -> {doc1['result_volume']} mm3")
+    assert page.errors == []
+
+
+def test_a_move_the_server_refused_does_not_eat_the_formula(page, fresh_doc):
+    """Move Plane whose face-outline call never lands: the sketch stays where
+    it was and says so — so the formula it was written with must stay too.
+    Round two: the formula was given up BEFORE the fetch, so a move that never
+    happened still replaced "-wall" with -4 on the next Finish."""
+    page.evaluate(FORMULA_BUILD)
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    vol0 = _doc(page)["result_volume"]
+    _open_sketch(page, "fs")
+    page.evaluate(MOVE)
+    page.wait_for_function(STAGE_OPEN, timeout=15000)
+
+    page.route("**/api/face-outline", lambda r: r.abort())
+    page.fill("#plOffset", "-8")
+    page.dispatch_event("#plOffset", "input")
+    _ok(page)
+    page.wait_for_timeout(600)
+    page.unroute("**/api/face-outline")
+
+    _finish(page)
+    doc1 = _doc(page)
+    after = [f for f in doc1["features"] if f["id"] == "fs"][0]
+    assert doc1["result_volume"] == pytest.approx(vol0, rel=1e-9), (
+        f"the part changed shape: {vol0} -> {doc1['result_volume']} mm3")
+    assert after["params"]["offset"] == "-wall", (
+        f"a move the server refused replaced the formula with "
+        f"{after['params']['offset']!r}")
+
+
+def test_ok_without_a_change_is_a_no_op_in_another_unit(page, fresh_doc):
+    """The Offset box speaks the DISPLAY unit; the offset is millimetres. In
+    inches -4 mm is shown as -0.1575 in, which reads back as -4.0005 mm — so
+    OK without touching the box used to move the plane half a micron, rebuild
+    everything under it, and write -4.0005 where the formula had been."""
+    page.evaluate(FORMULA_BUILD)
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    vol0 = _doc(page)["result_volume"]
+    page.evaluate("async () => { const s = await import('/static/js/settings.js');"
+                  " s.SETTINGS.unit = 'in'; }")
+    try:
+        _open_sketch(page, "fs")
+        page.evaluate(MOVE)
+        page.wait_for_function(STAGE_OPEN, timeout=15000)
+        assert page.input_value("#plOffset") == "-0.1575", "not the inch view"
+        _ok(page)
+        page.wait_for_function(IS_ACTIVE, timeout=15000)
+        page.wait_for_timeout(600)
+        _finish(page)
+    finally:
+        page.evaluate("async () => { const s = await import('/static/js/settings.js');"
+                      " s.SETTINGS.unit = 'mm'; }")
+    doc1 = _doc(page)
+    after = [f for f in doc1["features"] if f["id"] == "fs"][0]
+    assert after["params"]["offset"] == "-wall", (
+        f"a no-op OK wrote {after['params']['offset']!r}")
+    assert doc1["result_volume"] == pytest.approx(vol0, rel=1e-9), (
+        f"the part changed shape: {vol0} -> {doc1['result_volume']} mm3")

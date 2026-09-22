@@ -118,6 +118,14 @@ function open(o) {
   g('plInto').textContent = o.intoSign == null ? ''
     : `${o.intoSign < 0 ? 'negative' : 'positive'} = into the material`;
   setLen('plOffset', o.offset);
+  // what the box READS as, the moment it was filled. The box speaks the
+  // DISPLAY unit and the offset is millimetres, so in inches the round trip
+  // mm -> "-0.1575" -> mm comes back as -4.0005, not -4: pressing OK without
+  // touching anything was a 0.0005 mm move of the sketch plane, a full rebuild
+  // of everything under it, and — because a move that really happens gives up
+  // the formula — "-wall" written back as -4.0005 (round two, measured).
+  // Untouched means untouched: `ok` then passes the offset we opened with.
+  o.shown = g('plOffset').value;
   g(PANEL).style.display = 'block';
   beginPlaneGhost(o.frame, o.loops);
   setPlaneGhost(o.offset);
@@ -181,7 +189,10 @@ function cancel() {
 function ok() {
   if (!stage) return;
   const st = stage;
-  const off = mm('plOffset');
+  // the box untouched (still the exact string `open` filled it with) means the
+  // offset it was opened with, not that string read back through the display
+  // unit — see `open`
+  const off = g('plOffset').value === st.shown ? st.offset : mm('plOffset');
   close();
   st.onOk(off);
 }
