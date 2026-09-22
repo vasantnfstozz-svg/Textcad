@@ -39,6 +39,12 @@ let sketchActive = false; // true while in sketch MODE (in-viewport, non-modal)
 let skName = 'sketch1';   // feature id the sketch will be created/saved as
 let skPlaneName = 'XY';   // origin plane for plane sketches (unused on a face)
 let skPlaneOffset = 0;    // plane offset in mm (kept when re-editing)
+/* WHAT TO WRITE BACK for `offset`. A named parameter makes it a FORMULA
+   string ("-wall"): the editor needs a number to draw the grid at — the
+   server's own resolved value (R1) — but writing that number back would
+   silently replace the formula and MOVE the sketch plane. So the value as
+   WRITTEN is kept beside the number, and only Move Plane replaces it. */
+let skOffsetRaw = 0;
 let tool = null;          // active drawing tool (entity kind) or null = select
 let clicks = [];          // world-space clicks collected for the current tool
 let ghost = null;         // preview entity while placing
@@ -263,6 +269,7 @@ export async function openSketchEditor(plane = 'XY', offset = 0) {
   skName = nextName();
   skPlaneName = plane;               // chosen in the viewport
   skPlaneOffset = offset;
+  skOffsetRaw = offset;
   skFrame = frame;
   pendingFocus = focusOnModel(frame);
   enterMode();
@@ -278,6 +285,11 @@ export async function openSketchEditor(plane = 'XY', offset = 0) {
 export async function editSketch(feature) {
   if (modalGuard()) return;         // finish the open tool (OK/Cancel) first
   const onFace = feature.op === 'sketch_on_face';
+  // the offset AS WRITTEN (a formula string when it names a parameter) and the
+  // NUMBER to draw at — the server resolves the formula and says so in
+  // `resolved`, which is the only place this browser may learn it (R1)
+  const rawOffset = feature.params.offset ?? 0;
+  const offNum = Number(feature.resolved?.offset ?? rawOffset) || 0;
   let outline = null;
   if (onFace) {
     // a face sketch names its face by geometry (face_center, a real pick) OR
@@ -288,7 +300,7 @@ export async function editSketch(feature) {
       normal: feature.params.face_normal || null,
       area: feature.params.face_area ?? null,
       face: feature.params.face || null,
-      offset: Number(feature.params.offset) || 0,
+      offset: offNum,
       featureId: feature.inputs?.[0] || null });
     if (!outline?.planar || !outline.frame) {
       bus.emit('msg', 'bot', '⚠ Could not re-resolve the face this sketch ' +
@@ -297,8 +309,7 @@ export async function editSketch(feature) {
     }
   }
   const frame = onFace ? outline.frame
-    : await fetchPlaneFrame(feature.params.plane || 'XY',
-                            Number(feature.params.offset) || 0);
+    : await fetchPlaneFrame(feature.params.plane || 'XY', offNum);
   if (!frame) return;
   skOnFace = onFace
     ? { center: feature.params.face_center || null,
@@ -307,14 +318,15 @@ export async function editSketch(feature) {
         face: feature.params.face || null,          // a NAMED face (authored: "top")
         inputId: feature.inputs?.[0] || null, frame }
     : null;
-  if (skOnFace) skOnFace.offset = Number(feature.params.offset) || 0;
+  if (skOnFace) skOnFace.offset = offNum;
+  skOffsetRaw = rawOffset;
   skFrame = frame;
   skEditId = feature.id;
   resetEditor();
   skEnts = (feature.params.entities || []).map(e => ({ ...e }));
   skName = feature.id;
   skPlaneName = feature.params.plane || 'XY';
-  skPlaneOffset = Number(feature.params.offset) || 0;
+  skPlaneOffset = offNum;
   if (onFace) faceRef = { outer: outline.outer, holes: outline.holes || [],
                           fit_box: outline.fit_box || null };
   // frame the existing geometry (fall back to the face outline, then origin).
@@ -359,6 +371,7 @@ export async function openSketchOnFace(faceInfo, offset = 0) {
   skOnFace = { center: faceInfo.center, normal: faceInfo.normal || null,
                area: faceInfo.area ?? null, inputId: owner, frame: data.frame,
                offset };
+  skOffsetRaw = offset;
   skEditId = null;
   resetEditor();
   skName = nextName();
@@ -404,6 +417,12 @@ export function pauseSketchInput(on) {
 export async function setSketchPlaneOffset(offset) {
   if (!sketchActive) return false;
   offset = Number(offset) || 0;
+  // Only a REAL move replaces a formula with the number it resolved to. The
+  // box opens at that number, so OK without touching it is a no-op — and a
+  // no-op must not change the document, the same rule `sameSketch` states for
+  // opening a sketch and pressing Finish.
+  if (offset !== (skOnFace ? skOnFace.offset || 0 : skPlaneOffset))
+    skOffsetRaw = offset;
   let frame;
   if (skOnFace) {
     const out = await fetchFaceOutline({ center: skOnFace.center, normal: skOnFace.normal,
@@ -2240,8 +2259,8 @@ async function create() {
     // editing an existing sketch: replace its entities in place FIRST (a
     // fast rebuild up to the rollback bar), THEN exit — releasing the
     // edit-isolation triggers the one full rebuild with the new entities
-    const params = skOnFace ? { entities, offset: skOnFace.offset || 0 }
-      : { plane: skPlaneName, offset: skPlaneOffset, entities };
+    const params = skOnFace ? { entities, offset: offsetParam(skOnFace.offset || 0) }
+      : { plane: skPlaneName, offset: offsetParam(skPlaneOffset), entities };
     // NOTHING CHANGED? Then do not touch the document at all: no rebuild of
     // everything downstream, and no pointless entry on the undo stack. Opening
     // a sketch to look at it and pressing Finish is not an edit.
@@ -2299,6 +2318,12 @@ async function create() {
   }
 }
 
+/* The `offset` to WRITE: the formula the sketch was opened with, unless Move
+   Plane has since put a number there. `num` is what the editor drew at. */
+function offsetParam(num) {
+  return typeof skOffsetRaw === 'string' ? skOffsetRaw : num;
+}
+
 /* Is what the editor holds the same sketch that is already saved? Compared
    with key order normalised (the editor rebuilds each entity object, so its
    keys come out in a different order than they went in) and numbers compared
@@ -2317,8 +2342,12 @@ function sameSketch(saved, next) {
   if (stableJson(saved.entities || []) !== stableJson(next.entities || []))
     return false;
   if (next.plane !== undefined && saved.plane !== next.plane) return false;
+  // the offset as WRITTEN, not as a number: a formula ("-wall") and the number
+  // it happens to resolve to are not the same sketch — one of them survives a
+  // change to the parameter and the other does not. stableJson makes -25 and
+  // -25.0 the same place, as it does for every entity.
   if (next.offset !== undefined
-      && Number(saved.offset || 0) !== Number(next.offset || 0)) return false;
+      && stableJson(saved.offset ?? 0) !== stableJson(next.offset ?? 0)) return false;
   return true;
 }
 

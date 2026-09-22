@@ -145,6 +145,16 @@ export async function fetchFaceOutline(req) {
            frame: { origin: [0, 0, 10], x_dir: [1, 0, 0], y_dir: [0, 1, 0], z_dir: [0, 0, 1] },
            into_sign: -1, req }; }
 """
+_DIALOGS_STUB = """
+import { S } from './state.js';
+export const guarded = [];
+export function modalGuard() {
+  if (!S.modalTool) return false;
+  guarded.push(S.modalTool);
+  return true;
+}
+export function openFeatDialog() {}
+"""
 _BOOT = """
 const els = new Map();
 const el = id => { if (!els.has(id)) els.set(id, { id, value: '', textContent: '',
@@ -162,6 +172,7 @@ S.lastDoc = { features: [{ id: 'b', op: 'plate', params: {}, inputs: [], volume:
 const said = []; bus.on('msg', (_w, t) => said.push(t));
 const { gizmo } = await import('./viewport.js');
 const { opened, moved, paused, cur } = await import('./sketcher.js');
+const { guarded } = await import('./dialogs.js');
 const sp = await import('./sketchplane.js');
 const base = keyHandlers.length;   // tool.js's own Esc listener, registered at import
 const mine = () => keyHandlers.length - base;
@@ -230,7 +241,16 @@ el('plOk').onclick(); await tick();
 out.move_ok = { moved: moved.slice(), paused: paused.slice(), opened: opened.length,
   modal: S.modalTool, panel: el('planeDialog').style.display };
 
-// 7. a Move Plane step open when the sketch is finished: it closes with it
+// 7. the pick lands while ANOTHER tool holds the lock (Create Sketch leaves a
+//    plane pick pending and Measure does not end it): the step must refuse
+opened.length = 0;
+S.modalTool = 'Measure'; S.modalToolPanel = 'measureDialog';
+await sp.stageSketchPlane('plane', 'XY'); await tick();
+out.locked = { panel: el('planeDialog').style.display, modal: S.modalTool,
+  opened: opened.length, stage: sp.sketchPlaneStage(), guarded: guarded.slice() };
+S.modalTool = null; S.modalToolPanel = null;
+
+// 8. a Move Plane step open when the sketch is finished: it closes with it
 paused.length = 0;
 await sp.moveSketchPlane(); await tick();
 bus.emit('sketch-mode', { active: false });
@@ -246,6 +266,7 @@ def _run_sketchplane_js(tmp_path):
     (tmp_path / "api.js").write_text(_API_STUB, encoding="utf-8")
     (tmp_path / "viewport.js").write_text(_VIEWPORT_STUB, encoding="utf-8")
     (tmp_path / "sketcher.js").write_text(_SKETCHER_STUB, encoding="utf-8")
+    (tmp_path / "dialogs.js").write_text(_DIALOGS_STUB, encoding="utf-8")
     (tmp_path / "boot.mjs").write_text(_BOOT, encoding="utf-8")
     r = subprocess.run([shutil.which("node"), str(tmp_path / "boot.mjs")],
                        capture_output=True, text=True, encoding="utf-8",
@@ -287,6 +308,12 @@ def test_the_shipped_offset_step_escape_face_and_document_change(tmp_path):
     assert out["face_ok"] == {"opened": [["face", [0, 0, 10], -3]], "modal": None}, out["face_ok"]
     c = out["doc_changed"]
     assert c["modal"] is None and c["panel"] == "none" and c["stage"] is None, c
+    # a pick that lands while ANOTHER tool holds the one-command lock: the step
+    # refuses instead of taking the lock and later handing it back as null
+    # (Create Sketch leaves the pick pending; Measure does not end it)
+    lk = out["locked"]
+    assert lk["panel"] == "none" and lk["opened"] == 0 and lk["stage"] is None, lk
+    assert lk["modal"] == "Measure" and lk["guarded"] == ["Measure"], lk
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node is not on PATH")

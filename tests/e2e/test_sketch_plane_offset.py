@@ -231,3 +231,241 @@ def test_escape_closes_the_step_and_releases_the_lock(plate):
     assert page.evaluate("window.__vp.planeGhostInfo()") is None
     assert page.evaluate(ARROW) is None
     assert page.errors == []
+
+
+# ---- the review pass of 2026-09-22 (range 1c77d9f..bc136be) added from here:
+# the flows the build's own tests did not drive, and the two findings it made
+GHOST = "() => window.__vp.planeGhostInfo()"
+SECTION = "async () => (await import('/static/js/viewport.js')).sectionInfo()"
+
+
+def _ok(page):
+    page.click("#plOk")
+    page.wait_for_function(STAGE_SHUT, timeout=15000)
+
+
+def _doc(page):
+    return page.evaluate("async () => (await fetch('/api/doc')).json()")
+
+
+def test_move_plane_on_a_new_face_sketch(plate):
+    """Create Sketch on the top face at 0, draw, then Move Plane to -6: the
+    sketch that is CREATED must carry offset -6."""
+    page = plate
+    page.evaluate(STAGE, ["face", TOP_FACE])
+    page.wait_for_function(STAGE_OPEN, timeout=15000)
+    _ok(page)                                   # open it at 0, the old flow
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.wait_for_timeout(200)
+    page.evaluate(DRAW_RECT, [-10, -5, 10, 5])
+    assert len(page.evaluate(ENTS)) == 1
+
+    page.evaluate(MOVE)
+    page.wait_for_function(STAGE_OPEN, timeout=15000)
+    assert page.evaluate("document.getElementById('plWhat').textContent") == 'a face of "b"'
+    assert page.evaluate("document.getElementById('plInto').textContent") == \
+        "negative = into the material"
+    page.fill("#plOffset", "-6")
+    page.dispatch_event("#plOffset", "input")
+    assert page.evaluate(GHOST)["position"][2] == pytest.approx(4, abs=1e-6)
+    _ok(page)
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.wait_for_timeout(300)
+    assert len(page.evaluate(ENTS)) == 1, "the rectangle must ride along"
+
+    page.evaluate(FINISH)
+    page.wait_for_function(NOT_ACTIVE, timeout=15000)
+    page.wait_for_timeout(600)
+    doc = _doc(page)
+    fs = [f for f in doc["features"] if f["op"] == "sketch_on_face"]
+    assert len(fs) == 1, [(f["id"], f["op"]) for f in doc["features"]]
+    assert fs[0]["params"]["offset"] == -6, fs[0]["params"]
+    assert fs[0]["status"] == "ok", fs[0]
+    assert page.errors == []
+
+
+def test_move_plane_twice_in_one_sketch(plate):
+    page = plate
+    page.evaluate(STAGE, ["plane", "XY"])
+    page.wait_for_function(STAGE_OPEN, timeout=15000)
+    _ok(page)
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.wait_for_timeout(200)
+    page.evaluate(DRAW_RECT, [-10, -5, 10, 5])
+
+    for value in ("12", "4"):
+        page.evaluate(MOVE)
+        page.wait_for_function(STAGE_OPEN, timeout=15000)
+        page.fill("#plOffset", value)
+        page.dispatch_event("#plOffset", "input")
+        _ok(page)
+        page.wait_for_function(IS_ACTIVE, timeout=15000)
+        page.wait_for_function(TWEEN_DONE, timeout=15000)
+        page.wait_for_timeout(300)
+        assert len(page.evaluate(ENTS)) == 1, f"shapes lost at {value}"
+
+    page.evaluate(FINISH)
+    page.wait_for_function(NOT_ACTIVE, timeout=15000)
+    page.wait_for_timeout(600)
+    sk = [f for f in _doc(page)["features"] if f["op"] == "sketch"]
+    assert len(sk) == 1 and sk[0]["params"]["offset"] == 4, sk
+    assert page.errors == []
+
+
+def test_section_view_gets_its_arrow_back_after_the_step(plate):
+    page = plate
+    page.evaluate("async () => (await import('/static/js/section.js')).openSection()")
+    page.wait_for_timeout(400)
+    before = page.evaluate(SECTION)
+    assert before and before["ownsArrow"], before
+
+    page.evaluate(STAGE, ["plane", "XY"])
+    page.wait_for_function(STAGE_OPEN, timeout=15000)
+    during = page.evaluate(SECTION)
+    page.keyboard.press("Escape")
+    page.wait_for_function(STAGE_SHUT, timeout=15000)
+    page.wait_for_timeout(300)
+    after = page.evaluate(SECTION)
+    assert page.evaluate(MODAL) is None
+    assert after and after["ownsArrow"], f"before={before} during={during} after={after}"
+    assert page.evaluate(
+        "async () => (await import('/static/js/section.js')).isSectionOn()") is True
+    assert page.errors == []
+
+
+def test_the_arrow_is_draggable_and_its_value_is_what_is_stored(plate):
+    page = plate
+    page.evaluate(STAGE, ["plane", "XY"])
+    page.wait_for_function(STAGE_OPEN, timeout=15000)
+    axis = page.evaluate(
+        "async () => (await import('/static/js/viewport.js')).extrudeArrowAxisScreen()")
+    assert axis, "no arrow to grab"
+    mid = {"x": (axis["base"]["x"] + axis["tip"]["x"]) / 2,
+           "y": (axis["base"]["y"] + axis["tip"]["y"]) / 2}
+    page.mouse.move(mid["x"], mid["y"])
+    page.mouse.down()
+    page.mouse.move(mid["x"] + (axis["tip"]["x"] - axis["base"]["x"]) * 1.5,
+                    mid["y"] + (axis["tip"]["y"] - axis["base"]["y"]) * 1.5, steps=8)
+    page.mouse.up()
+    box = float(page.input_value("#plOffset"))
+    ghost = page.evaluate(GHOST)
+    assert box != 0, "the drag moved nothing"
+    assert ghost["position"][2] == pytest.approx(box, abs=1e-6), (box, ghost)
+    _ok(page)
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.wait_for_timeout(200)
+    page.evaluate(DRAW_RECT, [-10, -5, 10, 5])
+    page.evaluate(FINISH)
+    page.wait_for_function(NOT_ACTIVE, timeout=15000)
+    page.wait_for_timeout(600)
+    sk = [f for f in _doc(page)["features"] if f["op"] == "sketch"]
+    assert sk[0]["params"]["offset"] == pytest.approx(box, abs=1e-9), (sk[0]["params"], box)
+    assert page.errors == []
+
+
+FORMULA_BUILD = """
+async () => {
+  const { postJSON } = await import('/static/js/api.js');
+  const { loadMesh } = await import('/static/js/viewport.js');
+  await postJSON('/api/feature/add',
+    { id: 'b', op: 'plate', params: { width: 60, depth: 40, thickness: 20 },
+      inputs: [] }, 'add');
+  await postJSON('/api/parameters', { name: 'wall', expr: 4 }, 'param');
+  await postJSON('/api/feature/add',
+    { id: 'fs', op: 'sketch_on_face',
+      params: { face: 'top', offset: '-wall',
+                entities: [{ kind: 'circle', mode: 'add', x: 0, y: 0, r: 6 }] },
+      inputs: ['b'] }, 'add');
+  await postJSON('/api/feature/add',
+    { id: 'boss', op: 'extrude', params: { amount: 6 }, inputs: ['fs'] }, 'add');
+  await postJSON('/api/feature/add',
+    { id: 'j', op: 'fuse', params: {}, inputs: ['b', 'boss'] }, 'add');
+  await loadMesh(true);
+}
+"""
+EDIT = """
+async (fid) => {
+  const { bus } = await import('/static/js/bus.js');
+  const doc = await (await fetch('/api/doc')).json();
+  bus.emit('edit-sketch', doc.features.find(f => f.id === fid));
+}
+"""
+
+
+def test_finishing_a_formula_offset_sketch_keeps_the_formula(page, fresh_doc):
+    """A sketch whose `offset` is a NAMED-PARAMETER formula ("-wall"): opening
+    it to look at it and pressing Finish Sketch must not turn the formula into
+    a number, and must not move the sketch plane."""
+    page.evaluate(FORMULA_BUILD)
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    doc0 = _doc(page)
+    before = [f for f in doc0["features"] if f["id"] == "fs"][0]
+    assert before["params"]["offset"] == "-wall", before["params"]
+    vol0 = doc0["result_volume"]
+
+    page.evaluate(EDIT, "fs")
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.wait_for_timeout(300)
+    page.evaluate(FINISH)                      # nothing changed
+    page.wait_for_function(NOT_ACTIVE, timeout=15000)
+    page.wait_for_timeout(800)
+
+    doc1 = _doc(page)
+    after = [f for f in doc1["features"] if f["id"] == "fs"][0]
+    assert doc1["result_volume"] == pytest.approx(vol0, rel=1e-9), (
+        f"the part changed shape: {vol0} -> {doc1['result_volume']} mm3")
+    assert after["params"]["offset"] == "-wall", (
+        f"the formula was replaced by {after['params']['offset']!r} — "
+        f"the sketch plane moved from -4 mm to that")
+    assert page.errors == []
+
+
+def test_the_offset_step_refuses_while_another_tool_holds_the_lock(plate):
+    """Create Sketch leaves a plane PICK pending; opening Measure does not
+    cancel it (and the viewport routes a click to the pick before its own
+    picking), so the pick can land while Measure holds the one-command lock.
+    The step must refuse, not take the lock off the tool that owns it."""
+    page = plate
+    page.evaluate("async () => (await import('/static/js/measure.js')).openMeasure()")
+    page.wait_for_timeout(200)
+    assert page.evaluate(MODAL) == "Measure"
+
+    page.evaluate(STAGE, ["plane", "XY"])
+    page.wait_for_timeout(400)
+    assert page.evaluate(STAGE_SHUT), "the Offset step opened over Measure"
+    assert page.evaluate(MODAL) == "Measure", "Measure lost its lock"
+    assert page.evaluate(
+        "() => document.getElementById('measureDialog').style.display") == "block"
+    assert page.errors == []
+
+
+def test_move_plane_ok_without_a_change_keeps_the_formula(page, fresh_doc):
+    """Move Plane opened on a formula-offset sketch shows the RESOLVED number
+    (-4). Pressing OK without touching it is a no-op, and a no-op must not
+    turn the formula into that number."""
+    page.evaluate(FORMULA_BUILD)
+    page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
+    page.evaluate(EDIT, "fs")
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.wait_for_timeout(300)
+
+    page.evaluate(MOVE)
+    page.wait_for_function(STAGE_OPEN, timeout=15000)
+    assert float(page.input_value("#plOffset")) == pytest.approx(-4),         "the box must open at the RESOLVED value of the formula"
+    _ok(page)                                   # OK, nothing changed
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.wait_for_timeout(300)
+    page.evaluate(FINISH)
+    page.wait_for_function(NOT_ACTIVE, timeout=15000)
+    page.wait_for_timeout(800)
+
+    after = [f for f in _doc(page)["features"] if f["id"] == "fs"][0]
+    assert after["params"]["offset"] == "-wall", after["params"]
+    assert page.errors == []

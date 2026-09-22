@@ -23,6 +23,7 @@
 import { bus } from './bus.js';
 import { S } from './state.js';
 import { planRequest } from './api.js';
+import { modalGuard } from './dialogs.js';
 import { g, mm, setLen, say, pickedBody } from './tool.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
          beginPlaneGhost, setPlaneGhost, endPlaneGhost,
@@ -71,6 +72,13 @@ async function baseFrame(kind, plane, face, owner) {
    'face' (data = the viewport's face info). Fetch the frame, then show the
    plane, the arrow and the box; OK opens the sketch at the offset. */
 export async function stageSketchPlane(kind, data) {
+  // ONE COMMAND AT A TIME, on the way IN too. The pick that lands here is a
+  // viewport CLICK, not a ribbon press, so the ribbon's guard never saw it:
+  // Create Sketch leaves the pick pending and Measure (the one tool that takes
+  // the lock without ending a pending pick) can be opened on top of it. The
+  // face path already asked — openSketchOnFace's own modalGuard — and without
+  // this the plane path took the lock off Measure and handed it back as null.
+  if (modalGuard()) return;
   let owner = null;
   if (kind === 'face') {
     owner = pickedBody(data);
