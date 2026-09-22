@@ -205,8 +205,17 @@ def _default_target(doc, profile_id: str) -> str | None:
     that default cut the raw stock instead of the user's panel)."""
     bods = _solids(doc)
     prof = _feature(doc, profile_id)
+    parent = None
     if prof is not None and prof.op == "sketch_on_face" and prof.inputs:
-        cur = _latest_descendant(doc, prof.inputs[0])
+        parent = prof.inputs[0]
+    elif prof is not None and prof.op == "sketch":
+        # a sketch on an offset plane that was measured off a body's FACE
+        # lives on that body, exactly as a face sketch does
+        pf = _feature(doc, str((prof.params or {}).get("plane") or "XY"))
+        if pf is not None and pf.op in sk.PLANE_PRODUCERS and pf.inputs:
+            parent = pf.inputs[0]
+    if parent is not None:
+        cur = _latest_descendant(doc, parent)
         if any(b.id == cur for b in bods):
             return cur
     return bods[-1].id if bods else None
@@ -863,11 +872,18 @@ def plan_sketch(doc, req: dict) -> dict:
     kernel will build, and nowhere else is that fact written down."""
     plane = str(req.get("plane") or "XY")
     off = float(req.get("offset") or 0)
-    pl = sk.sketch_plane(plane, off)            # raises the op's own sentence
+    # a principal plane by name, or an `offset_plane` feature by id — the
+    # document's one rule (Document.plane_of), so the grid the browser draws
+    # and the plane make_sketch builds on are the same object
+    pl = doc.plane_of(plane)                    # raises the op's own sentence
+    if off:
+        pl = pl.offset(off)
+    named = plane in sk.PRINCIPAL_PLANES
     return {
         "ok": True, "tool": "sketch", "plane": plane, "offset": off,
         "frame": _frame(pl),
-        "will_build": f"a sketch on the {plane} plane"
+        "will_build": (f"a sketch on the {plane} plane" if named
+                       else f"a sketch on the offset plane '{plane}'")
                       + (f", offset {off:g} mm along {_axis_name(_vec(pl.z_dir))}"
                          if off else ""),
     }

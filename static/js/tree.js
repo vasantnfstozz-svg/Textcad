@@ -14,6 +14,7 @@ import { openRevolve } from './revolve.js';
 import { openSweep } from './sweep.js';
 import { openLoft } from './loft.js';
 import { activeToolFeature, canEdit, editFeature, humanProblem } from './tool.js';
+import { editOffsetPlane } from './sketchplane.js';
 import { fmtVol } from './settings.js';
 
 const treeEl = () => document.getElementById('tree');
@@ -363,6 +364,10 @@ function buildRow(doc, f, chip = null) {
       addAct(acts, '✎', 'edit this sketch (reopens on its plane in the viewport)',
         () => bus.emit('edit-sketch', f));
     }
+    if (f.op === 'offset_plane') {
+      addAct(acts, '✎', 'move this plane (the arrow and Offset box reopen; every ' +
+        'sketch on it follows)', () => editOffsetPlane(f));
+    }
     // a PATH sketch (open lines, area 0 — the server says so: `path_sketch`)
     // is what Sweep FOLLOWS, never a profile: no pull buttons on its row
     if ((f.op === 'sketch' || f.op === 'sketch_on_face') && !f.path_sketch) {
@@ -397,10 +402,19 @@ function buildRow(doc, f, chip = null) {
     if (modalGuard()) return;
     if (f.suppressed) { restoreFeature(f.id); return; }   // dblclick = bring it back
     if (f.op === 'sketch' || f.op === 'sketch_on_face') bus.emit('edit-sketch', f);
+    else if (f.op === 'offset_plane') editOffsetPlane(f);
     else if (canEdit(f.op)) editFeature(f.id);
   };
   return row;
 }
+
+// a tool that just MADE a feature makes it the selection (Offset Plane: the
+// next Create Sketch lands on the new plane) — through selectFeature, so the
+// row, the overlay and the one selection set all agree
+bus.on('select-feature', fid => {
+  if (fid == null) { if (S.selected) selectFeature(S.selected); }   // null = clear
+  else if (S.selected !== fid) selectFeature(fid);
+});
 
 /* Soft delete (the tree's ✕): geometry removed, rows kept struck-out. No
    confirm dialog on purpose — the whole point is that it is one click to do

@@ -134,6 +134,13 @@ def _check_combiner_inputs(op: str, ids: list, parts: list) -> None:
 
     The Add Feature dialog offers a checkbox for every feature, sketches
     included, so both are one mis-click away."""
+    planes = [i for i, p in zip(ids, parts) if sk.is_plane(p)]
+    if planes:
+        raise ValueError(
+            f"{_name_list(planes)} " + ("is a construction plane" if len(planes) == 1
+                                       else "are construction planes")
+            + f" — {op} works on bodies" + (" and sketches" if op == "loft" else "")
+            + "; sketch on the plane first")
     flat = [i for i, p in zip(ids, parts) if sk.is_sketch(p)]
     if op == "loft":
         solids = [i for i, p in zip(ids, parts) if not sk.is_sketch(p)]
@@ -223,6 +230,10 @@ def _check_modifier_input(op: str, fid: str, part, params: dict | None = None) -
     into a Compound that is not a Sketch instance (rebuild() classifies 2D
     results by op as well as by type), and refusing those would take away
     designs that work today."""
+    if sk.is_plane(part):
+        raise ValueError(
+            f"'{fid}' is a construction plane, not a body or a sketch — Create "
+            f"Sketch on it (click the plane), then {op} that sketch")
     if op in SKETCH_CONSUMING_MODIFIERS and (n_solids(part) or 0) > 0:
         raise ValueError(
             f"{op} pulls a SKETCH profile, and '{fid}' is a solid body — "
@@ -368,7 +379,8 @@ def _check_numeric_params(op: str, params: dict, feature_id: str,
                 f"{v!r}) — type just the number, without units")
 
 
-KNOWN_OPS = set(CREATORS) | set(MODIFIERS) | set(COMBINERS) | {"move"}
+KNOWN_OPS = (set(CREATORS) | set(MODIFIERS) | set(COMBINERS) | {"move"}
+             | sk.PLANE_PRODUCERS)     # a construction plane: neither creator nor modifier
 
 
 class _RequiredParam:
@@ -411,11 +423,13 @@ def op_params(op: str) -> tuple:
     if op == "loft":                     # the one combiner with a parameter (specs/loft.md)
         return (("ruled", False),)
     fn = CREATORS.get(op) or MODIFIERS.get(op)
+    if op in sk.PLANE_PRODUCERS:
+        fn = sk.offset_plane
     if fn is None:
         return ()
     sig = list(inspect.signature(fn).parameters.values())
-    if op in MODIFIERS:
-        sig = sig[1:]                    # the upstream part
+    if op in MODIFIERS or op in sk.PLANE_PRODUCERS:
+        sig = sig[1:]                    # the upstream part (a plane's is optional)
     # an underscored parameter is the document's, not the user's: the pattern
     # ops take the seed's before / after bodies that way (Document._eval)
     return tuple((p.name, REQUIRED if p.default is inspect._empty else p.default)
@@ -442,6 +456,8 @@ def _min_inputs(op: str) -> int:
 # A sketch and a solid are NOT interchangeable, so a delete may never silently
 # reconnect one to the other.
 def _kind_of(op: str) -> str:
+    if op in sk.PLANE_PRODUCERS:
+        return "plane"
     return "sketch" if op in sk.SKETCH_PRODUCERS else "solid"
 
 
@@ -610,6 +626,11 @@ REF_PARAMS = {op: ("seed",) for op in pattern.SEEDED_OPS}
 # path can serve several sweeps), so rename follows it and deleting the path
 # sketch takes the sweep along — exactly a pattern's seed (specs/sweep.md)
 REF_PARAMS.update({"sweep": ("path",), "sweep_face": ("path",)})
+# ...and a sketch's PLANE when it names an `offset_plane` feature: the plane
+# is named, never consumed (many sketches share one), so editing the plane's
+# offset rebuilds every sketch on it, and deleting the plane takes them along.
+# "XY" / "XZ" / "YZ" are not features — param_refs leaves those out.
+REF_PARAMS.update({"sketch": ("plane",)})
 SWEEP_OPS = ("sweep", "sweep_face")
 
 # ---------------------------------------------------------------------------
@@ -981,6 +1002,35 @@ class Document:
             raise ValueError(f"{f.op}: the seed '{seed}' is not built (failed upstream?)")
         return {"_before": before, "_after": after}
 
+    def _plane_part(self, f: Feature, plane_id: str):
+        """The built construction plane a sketch names in `plane` (an
+        `offset_plane` feature), with a sentence for each way it can fail."""
+        pf = next((x for x in self.features if x.id == plane_id), None)
+        if pf is None:
+            raise ValueError(f"{f.op}: plane must be \"XY\", \"XZ\", \"YZ\" or the name of "
+                             f"an offset plane — there is no '{plane_id}' in this tree")
+        if pf.op not in sk.PLANE_PRODUCERS:
+            raise ValueError(f"{f.op}: '{plane_id}' is a {pf.op}, not a plane — sketch on "
+                             f"a principal plane, an offset plane or a face")
+        if pf.suppressed:
+            raise ValueError(f"{f.op}: the plane '{plane_id}' is struck out — restore it "
+                             f"(↩) or sketch on another plane")
+        part = self._parts.get(plane_id)
+        if not sk.is_plane(part):
+            raise ValueError(f"{f.op}: the plane '{plane_id}' did not build"
+                             + (f" ({pf.problems[0]})" if pf.problems else "")
+                             + " — fix it first")
+        return part
+
+    def plane_of(self, name: str):
+        """The Plane a `sketch` with `plane` = `name` is drawn on: a principal
+        plane by name, or a built offset plane by feature id. ONE home for the
+        browser's grid (toolplan.plan_sketch) and the kernel's build."""
+        name = str(name or "XY")
+        if name in sk.PRINCIPAL_PLANES:
+            return sk.sketch_plane(name, 0.0)
+        return self._plane_part(Feature(id="?", op="sketch", params={}, inputs=[]), name)
+
     def _path_part(self, f: Feature, path_id: str):
         """The built PATH sketch a sweep names in `path` (specs/sweep.md): a
         sketch feature that holds at least one open path, with a sentence for
@@ -1120,6 +1170,8 @@ class Document:
         no annotation or a compound one, and they legitimately hold words,
         lists and dicts — type-checking those would refuse `edges="all"`."""
         fn = CREATORS.get(op) or MODIFIERS.get(op)
+        if op in sk.PLANE_PRODUCERS:
+            fn = sk.offset_plane          # `offset: float` — a formula ("-wall") resolves here too
         if op == "move":
             return {"x", "y", "z"}
         if fn is None:
@@ -1184,7 +1236,7 @@ class Document:
         object has no attribute 'get'`."""
         params = _param_view(f.params)
         return [str(params[k]) for k in REF_PARAMS.get(f.op, ())
-                if params.get(k)]
+                if params.get(k) and str(params[k]) not in sk.PRINCIPAL_PLANES]
 
     def rename(self, old: str, new: str) -> None:
         """Rename a feature EVERYWHERE it is referenced (Fusion's browser
@@ -1652,7 +1704,13 @@ class Document:
                 # well as type — disjoint entities compose into a Compound that
                 # is not a Sketch instance, and solid-checking a 2D profile
                 # produced false "empty solid" failures on correct designs.
-                if f.op in sk.SKETCH_PRODUCERS or sk.is_sketch(part):
+                if f.op in sk.PLANE_PRODUCERS:
+                    # a construction plane is a frame: nothing to measure
+                    f.problems = [] if sk.is_plane(part) else ["not a plane"]
+                    f.volume = None
+                    f.pieces = None
+                    f.status = "ok" if not f.problems else "failed"
+                elif f.op in sk.SKETCH_PRODUCERS or sk.is_sketch(part):
                     area = getattr(part, "area", 0.0)
                     # a PATH sketch (open lines for Sweep) has no area and is
                     # not empty: it carries its wires (specs/sweep.md)
@@ -1846,7 +1904,22 @@ class Document:
             # wrong PLACEMENT is the worst class there is, so the file door
             # now says what the authoring door has always said.
             _check_numeric_params(f.op, f.params, f.id, self.param_values)
-            return CREATORS[f.op](**self._clean(self._resolved(f)))
+            kw = self._clean(self._resolved(f))
+            if f.op == "sketch" and str(kw.get("plane") or "XY") not in sk.PRINCIPAL_PLANES:
+                kw["_plane"] = self._plane_part(f, str(kw["plane"]))   # the offset plane's frame
+            return CREATORS[f.op](**kw)
+        if f.op in sk.PLANE_PRODUCERS:
+            # a construction plane: from a principal plane (no input) or off a
+            # flat face of ONE body (the input is a reference, never consumed)
+            if len(ins) > 1:
+                raise ValueError(f"'{f.op}' takes one body at most (the face it is offset from)")
+            if ins and (sk.is_sketch(ins[0]) or sk.is_plane(ins[0])
+                        or (n_solids(ins[0]) or 0) == 0):
+                raise ValueError(f"'{f.op}': '{f.inputs[0]}' is not a solid body — an "
+                                 f"offset plane is measured from a body's face or from "
+                                 f"a principal plane")
+            _check_numeric_params(f.op, f.params, f.id, self.param_values)
+            return sk.offset_plane(ins[0] if ins else None, **self._clean(self._resolved(f)))
         if f.op in MODIFIERS:
             if len(ins) != 1:
                 raise ValueError(f"'{f.op}' needs exactly 1 input")
@@ -2134,8 +2207,9 @@ class Document:
             if f.suppressed or f.id in consumed:
                 continue
             part = self._parts.get(f.id)
-            if part is None or f.op in sk.SKETCH_PRODUCERS or sk.is_sketch(part):
-                continue    # sketches render separately; failed parts flag themselves
+            if (part is None or f.op in sk.SKETCH_PRODUCERS or sk.is_sketch(part)
+                    or f.op in sk.PLANE_PRODUCERS):
+                continue    # sketches and planes render separately; failed parts flag themselves
             out.append(f.id)
         return out
 
@@ -2384,7 +2458,7 @@ class Document:
             g = by_id.get(self._live_source(f.id, by_id), f)
             part = self._parts.get(g.id)
             if (not g.suppressed and part is not None
-                    and g.op not in sk.SKETCH_PRODUCERS
+                    and g.op not in sk.SKETCH_PRODUCERS and g.op not in sk.PLANE_PRODUCERS
                     and not sk.is_sketch(part)):
                 return g
         return None
@@ -2461,7 +2535,7 @@ class Document:
         blockers = []
         for f in self.features:
             if (f.suppressed or f.id in consumed
-                    or f.op in sk.SKETCH_PRODUCERS):
+                    or f.op in sk.SKETCH_PRODUCERS or f.op in sk.PLANE_PRODUCERS):
                 continue
             part = self._parts.get(f.id)
             if part is not None and sk.is_sketch(part):

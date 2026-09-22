@@ -35,6 +35,8 @@ let pickMode = true;
 let placeCb = null;              // when set, the next viewport click places a shape
 let planePickCb = null;          // when set, click an origin plane / face to sketch on
 const originPlanes = [];         // the 3 clickable origin planes during plane-pick
+const constrPlanes = [];         // the document's offset_plane features, drawn from `plane_frame`
+let planesDoc = null;            // the document they were drawn from (re-sized with the model)
 let exArrow = null;              // the draggable Extrude manipulator arrow
 let exArrow2 = null;             // a SECOND arrow (Rectangular Pattern's direction 2), same mechanics
 let dragArrow = null;            // whichever arrow the pointer is dragging
@@ -283,8 +285,11 @@ export function initViewport() {
     originPlaneInfo: () => originPlanes.filter(o => o.userData.plane).map(o => ({
       plane: o.userData.plane, position: o.position.toArray(),
       size: o.geometry.parameters.width })),
-    /* the sketch-plane ghost of Create Sketch's Offset step */
+    /* the ghost plane of the Offset Plane step */
     planeGhostInfo,
+    /* the document's construction planes as drawn */
+    constructionPlaneInfo,
+    planeQuadsAt,
     /* the adaptive ground grid actually in the scene (step/half/clip) */
     groundGridInfo: () => groundState ? { step: groundState.step,
       half: groundState.half, clip: { ...groundState.clip } } : null,
@@ -475,6 +480,7 @@ export function initViewport() {
     // doing and may have removed the very feature the pick would move.
     if (profilePickCb && !(profilePickOpts.sticky && holds)) cancelProfilePick();
     follow(doc);                  // R3: the scene follows the document
+    drawConstructionPlanes(doc);  // the offset planes too, from the server's frames
   });
 
   // Extrude gizmo drags (arrow + taper ring) — capture phase so we grab them
@@ -865,7 +871,7 @@ export function beginPlanePick(onPick) {
   planePickCb = onPick;
   renderer.domElement.style.cursor = 'pointer';
   const h = document.getElementById('placeHint');
-  h.textContent = 'Select a plane or planar face · Esc to cancel';
+  h.textContent = 'Select a plane, an offset plane or a planar face · Esc to cancel';
   h.style.display = 'block';
   buildOriginPlanes();
 }
@@ -948,6 +954,73 @@ function clearOriginPlanes() {
   originPlanes.length = 0;
 }
 
+/* ---------------- construction planes (offset_plane features) ----------------
+   Drawn from the document (R1: `plane_frame` is the server's frame at the
+   feature's offset), always on screen like Fusion's construction planes, and
+   pickable as a sketch plane beside the origin quads (userData.planeId is the
+   pick). Each quad is centred on the model's fit centre PROJECTED into its
+   plane — the same rule as the origin quads — so it sits under the part and
+   not off at the frame's origin. */
+function drawConstructionPlanes(doc) {
+  clearConstructionPlanes();
+  planesDoc = doc;
+  const s = Math.max(fitRadius * 0.9, 45);       // a little smaller than the origin quads
+  for (const f of (doc && doc.features) || []) {
+    const fr = f.plane_frame;
+    if (!fr || f.suppressed) continue;
+    const O = new THREE.Vector3(...fr.origin);
+    const X = new THREE.Vector3(...fr.x_dir).normalize();
+    const Y = new THREE.Vector3(...fr.y_dir).normalize();
+    const Z = new THREE.Vector3(...fr.z_dir).normalize();
+    const d = fitCenter.clone().sub(O);
+    const at = O.clone().add(X.clone().multiplyScalar(d.dot(X)))
+                        .add(Y.clone().multiplyScalar(d.dot(Y)));
+    const m4 = new THREE.Matrix4().makeBasis(X, Y, Z).setPosition(at);
+    const geo = new THREE.PlaneGeometry(2 * s, 2 * s);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xd9a441,
+      transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false }));
+    mesh.matrixAutoUpdate = false; mesh.matrix.copy(m4);
+    mesh.userData.planeId = f.id; mesh.userData.base = 0.1;
+    mesh.renderOrder = 997;
+    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo),
+      new THREE.LineBasicMaterial({ color: 0xd9a441, transparent: true, opacity: 0.7 }));
+    edges.matrixAutoUpdate = false; edges.matrix.copy(m4);
+    edges.renderOrder = 998;
+    const label = makeLabelSprite(f.id, 0xd9a441);
+    label.position.copy(at).add(X.clone().multiplyScalar(s * 0.72))
+                           .add(Y.clone().multiplyScalar(s * 0.72));
+    scene.add(mesh); scene.add(edges); scene.add(label);
+    constrPlanes.push({ id: f.id, mesh, edges, label, at, Z });
+  }
+}
+
+function clearConstructionPlanes() {
+  for (const p of constrPlanes) {
+    for (const o of [p.mesh, p.edges, p.label]) {
+      scene.remove(o);
+      if (o.geometry) o.geometry.dispose();
+      if (o.material && o.material.map) o.material.map.dispose();
+      if (o.material) o.material.dispose();
+    }
+  }
+  constrPlanes.length = 0;
+}
+
+/* where each construction plane is drawn (tests): id, centre, normal */
+export function constructionPlaneInfo() {
+  return constrPlanes.map(p => ({ id: p.id, position: p.at.toArray(), normal: p.Z.toArray(),
+    // what is actually on screen: the quad's world position, and that it is in the scene
+    world: new THREE.Vector3().setFromMatrixPosition(p.mesh.matrixWorld).toArray(),
+    inScene: p.mesh.parent === scene, visible: p.mesh.visible }));
+}
+
+/* which sketch-plane quads a screen point would pick (tests) */
+export function planeQuadsAt(clientX, clientY) {
+  raycaster.setFromCamera(ndcFrom({ clientX, clientY }), camera);
+  return pickableQuads().map(q => ({ id: q.userData.plane || q.userData.planeId,
+    hits: raycaster.intersectObject(q, false).length }));
+}
+
 function ndcFrom(e) {
   const rect = renderer.domElement.getBoundingClientRect();
   return new THREE.Vector2(
@@ -972,9 +1045,14 @@ function faceInfoAt(hit) {
   return (entry && entry.data.faces.find(f => f.id === fid)) || null;
 }
 
+/* what a sketch-plane pick can land on: the 3 origin quads and every
+   construction plane of the document (its feature id is the pick) */
+const pickableQuads = () => [...originPlanes.filter(o => o.userData.plane),
+                             ...constrPlanes.map(p => p.mesh)];
+
 function planePickHover(e) {
   raycaster.setFromCamera(ndcFrom(e), camera);
-  const quads = originPlanes.filter(o => o.userData.plane);
+  const quads = pickableQuads();
   for (const q of quads) q.material.opacity = q.userData.base;
   renderer.domElement.style.cursor = 'pointer';
   const fHit = raycaster.intersectObjects(bodyMeshes(), false)[0];
@@ -992,7 +1070,7 @@ function planePickHover(e) {
 
 function planePickAt(e) {
   raycaster.setFromCamera(ndcFrom(e), camera);
-  const quads = originPlanes.filter(o => o.userData.plane);
+  const quads = pickableQuads();
   const pHit = raycaster.intersectObjects(quads, false)[0];
   const fHit = raycaster.intersectObjects(bodyMeshes(), false)[0];   // any body
   const cb = planePickCb;
@@ -1021,7 +1099,10 @@ function planePickAt(e) {
       'face. Pick a planar face, or an origin plane outside the part.');
     return;
   }
-  if (pHit) { const pl = pHit.object.userData.plane; endPlanePick(); cb('plane', pl); return; }
+  if (pHit) {
+    const pl = pHit.object.userData.plane || pHit.object.userData.planeId;
+    endPlanePick(); cb('plane', pl); return;
+  }
   // clicked empty space — keep waiting (don't cancel)
 }
 
@@ -2292,6 +2373,7 @@ async function loadModel(job, force) {
       // them (the sketch tool's, Mirror's) they follow the body, or a plate that
       // doubled across a plane sits over quads built for half of it (P4 review)
       if (originPlanes.length) buildOriginPlanes();
+      if (constrPlanes.length) drawConstructionPlanes(planesDoc);
     }
     if (fit) {
       camera.near = fitRadius / 100; camera.far = fitRadius * 100;
@@ -2375,6 +2457,18 @@ export async function showFeatureOverlay(fid) {
       grp.traverse(o => { o.renderOrder = 5; });
       hlMesh = grp;
       scene.add(grp);
+      return;
+    }
+    if (f && f.op === 'offset_plane') {
+      // a construction plane has no mesh to fetch: glow the quad it is drawn as
+      const p = constrPlanes.find(x => x.id === fid);
+      if (!p) return;
+      hlMesh = new THREE.Mesh(p.mesh.geometry.clone(), new THREE.MeshBasicMaterial({
+        color: 0xffb85c, transparent: true, opacity: 0.35, side: THREE.DoubleSide,
+        depthWrite: false, depthTest: false }));
+      hlMesh.matrixAutoUpdate = false; hlMesh.matrix.copy(p.mesh.matrix);
+      hlMesh.renderOrder = 5;
+      scene.add(hlMesh);
       return;
     }
     const geo = await new STLLoader()

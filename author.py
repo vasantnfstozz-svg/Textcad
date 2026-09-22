@@ -201,6 +201,9 @@ def op_catalog() -> list[dict]:
                 "params": _annotate(name, params), "note": OP_NOTES.get(name)}
 
     cat = [entry(name, "creator", 0) for name in CREATORS]
+    # a construction plane: no input off a principal plane, one body off a face
+    import sketch as _sk
+    cat += [entry(name, "plane", 0) for name in sorted(_sk.PLANE_PRODUCERS)]
     cat += [entry(name, "modifier", 1) for name in MODIFIERS]
     cat.append(entry("move", "modifier", 1))
     from document import COMBINERS
@@ -229,7 +232,8 @@ def _catalog_text() -> str:
     for c in op_catalog():
         ps = ", ".join(shown(p) for p in c["params"])
         need = {"creator": "no inputs", "modifier": "1 input",
-                "combiner": "2+ inputs"}[c["kind"]]
+                "combiner": "2+ inputs",
+                "plane": "no inputs off a principal plane, 1 body off its face"}[c["kind"]]
         lines.append(f"  {c['op']}({ps})  [{c['kind']}, {need}]")
     return "\n".join(lines)
 

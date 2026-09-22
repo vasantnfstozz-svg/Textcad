@@ -38,7 +38,7 @@ export function initSketch3D(context) {
   ctx.dom.addEventListener('pointerdown', e => {
     // Shift+left is PAN (viewport.setLeftButton): without this guard the same
     // gesture would pan AND drop a sketch point
-    if (!active || paused || e.button !== 0 || e.shiftKey || tween) return;
+    if (!active || e.button !== 0 || e.shiftKey || tween) return;
     const p = planePoint(e);
     if (!p) return;
     leftDown = true;
@@ -46,13 +46,13 @@ export function initSketch3D(context) {
   });
   // move/up on window so drags survive leaving the canvas (gizmo pattern)
   window.addEventListener('pointermove', e => {
-    if (!active || paused || tween) return;
+    if (!active || tween) return;
     const p = planePoint(e);
     if (!p) return;
     bus.emit('sk3d-move', { ...p, tol: tolMm(p), down: leftDown });
   });
   window.addEventListener('pointerup', e => {
-    if (!active || paused || e.button !== 0) return;
+    if (!active || e.button !== 0) return;
     leftDown = false;
     bus.emit('sk3d-up', {});
   });
@@ -72,12 +72,6 @@ export function initSketch3D(context) {
 
 export function sketch3DActive() { return active; }
 
-/* While the Move Plane step is open (sketchplane.js) the sketch takes NO
-   pointer input: the arrow's grab is a pointerdown on this same canvas, and
-   stopPropagation in the viewport's capture listener does not stop the other
-   listeners on the same element — a grab would also drop a sketch point. */
-let paused = false;
-export function setSketchPointerPaused(on) { paused = !!on; }
 
 /* ---------------- enter / exit ---------------- */
 

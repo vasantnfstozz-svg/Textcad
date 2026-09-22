@@ -384,6 +384,9 @@ def edge_feature(doc, fid):
     if f.op in sk.SKETCH_PRODUCERS:
         raise ValueError("a sketch has no edges — click the row of what it was extruded "
                          "into, a face, or an edge")
+    if f.op in sk.PLANE_PRODUCERS:
+        raise ValueError("a construction plane has no edges — click the row of a body, "
+                         "a face, or an edge")
     return f
 
 
@@ -455,7 +458,7 @@ def _solid_features(doc, upto=None):
     for f in doc.features:
         part = doc._parts.get(f.id)
         if part is not None and f.op not in sk.SKETCH_PRODUCERS \
-                and not sk.is_sketch(part):
+                and f.op not in sk.PLANE_PRODUCERS and not sk.is_sketch(part):
             out.append(f.id)
         if upto is not None and f.id == upto:
             break

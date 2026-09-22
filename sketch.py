@@ -969,14 +969,48 @@ def _as_sketch(shape):
 
 
 def make_sketch(plane: str = "XY", offset: float = 0.0,
-                entities: list | None = None):
-    """Compose entities into one Sketch placed on a principal plane.
+                entities: list | None = None, _plane=None):
+    """Compose entities into one Sketch placed on a principal plane — or on an
+    `offset_plane` feature the document hands in as `_plane` (the sketch's
+    `plane` then names that feature, the way a sweep's `path` names a sketch).
 
-    plane: "XY", "XZ" or "YZ".  offset: shift the plane along its normal.
-    entities: list of {"kind":..., ...params, "mode":"add"|"subtract"}.
-    The first entity must be additive."""
-    pl = sketch_plane(plane, offset)
+    plane: "XY", "XZ" or "YZ", or the id of an offset plane.  offset: shift
+    the plane along its normal.  entities: list of {"kind":..., ...params,
+    "mode":"add"|"subtract"}. The first entity must be additive."""
+    if _plane is not None:
+        pl = _plane.offset(float(offset)) if offset else _plane
+    else:
+        pl = sketch_plane(plane, offset)
     return _place_sketch(pl, entities)
+
+
+def offset_plane(solid=None, plane: str = "XY", offset: float = 0.0,
+                 face: str | None = None, face_center: list | None = None,
+                 face_normal: list | None = None, face_area: float | None = None):
+    """Fusion's Construct > Offset Plane: a construction plane a distance
+    `offset` from a principal plane (no input) or from a flat FACE of `solid`
+    (the input body, named the two ways sketch_on_face names a face). The
+    result is a build123d Plane — not a solid, not a sketch: sketches are
+    drawn on it (`sketch` with `plane` = this feature's id) and move with it
+    when its offset changes. The face frame is `face_sketch_plane`'s, so which
+    sign goes INTO the material is that frame's (face_outline_2d.into_sign),
+    never one rule for every face."""
+    off = float(offset or 0.0)
+    if solid is not None:
+        picked = pick_face(solid, face_center, face_normal, face, face_area)
+        pl = face_sketch_plane(picked)
+        if pl is None:
+            raise ValueError(
+                f"offset_plane: the picked face is {picked.geom_type.name} and not "
+                f"flat — an offset plane needs a PLANAR face or a principal plane")
+    else:
+        pl = sketch_plane(plane, 0.0)            # the op's own sentence on a bad name
+    return pl.offset(off) if off else pl
+
+
+def is_plane(obj) -> bool:
+    """A construction plane (an `offset_plane` feature's result)."""
+    return isinstance(obj, Plane)
 
 
 def _on_plane(sketch, pl: Plane):
@@ -3975,6 +4009,12 @@ def sweep_face(solid, face_center: list, face_normal: list | None = None,
 # for area, not solid health
 SKETCH_PRODUCERS = {"sketch", "sketch_on_face"}
 
+# ops that produce a construction PLANE (Fusion's Construct menu): neither a
+# solid nor a sketch — a place to sketch on. Checked for nothing at rebuild
+# (a Plane is a frame); sketches name one in their `plane` (specs/offset-plane.md)
+PLANE_PRODUCERS = {"offset_plane"}
+PRINCIPAL_PLANES = tuple(_PLANES)        # "XY", "XZ", "YZ": a `plane` that is not a feature
+
 # ops whose solid input is only a FACE REFERENCE (where to work), never
 # geometric consumption: a sketch drawn on a box's face does not eat the box,
 # and extrude_face outputs a separate boss solid while the source body lives
@@ -3982,7 +4022,8 @@ SKETCH_PRODUCERS = {"sketch", "sketch_on_face"}
 # referenced body vanishes from the viewport the moment the sketch is used
 # (reported: "after finishing the sketch and extruding, the main body
 # vanishes").
-FACE_REFERENCE_OPS = {"sketch_on_face", "extrude_face", "revolve_face", "sweep_face"}
+FACE_REFERENCE_OPS = {"sketch_on_face", "extrude_face", "revolve_face", "sweep_face",
+                      "offset_plane"}      # a plane off a face does not eat the body
 
 
 def is_sketch(obj) -> bool:

@@ -12,6 +12,7 @@ export const OP_ICONS = {
   sketch: '✎', extrude: '⬆', revolve: '↻', loft: '⏢', sweep: '〜',
   sketch_on_face: '✎', extrude_face: '⬆', revolve_face: '↻', sweep_face: '〜', import_stl: '▲',
   import_step: '◈',
+  offset_plane: '▱',                    // a construction plane (Fusion's Construct menu)
   // not an op: the Modify tab's router button (Fusion's Press Pull) — the
   // feature it makes is Extrude's or Fillet's, so no tree row ever carries it
   press_pull: '⇕',
@@ -33,5 +34,6 @@ export const TOOL_NAMES = {
   mirror: 'Mirror', polar_pattern: 'Circular', linear_pattern: 'Rectangular',   // …Pattern (the group's name)
   fuse: 'Join', cut: 'Cut', intersect: 'Intersect',
   import_stl: 'Import STL', import_step: 'Import STEP',
+  offset_plane: 'Offset Plane',
   press_pull: 'Press Pull',                 // Fusion's name; a router, see OP_ICONS
 };

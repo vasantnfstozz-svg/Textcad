@@ -19,7 +19,7 @@ import { modalGuard } from './dialogs.js';
 import { pickedBody } from './tool.js';
 import { loadMesh, modelExtent } from './viewport.js';
 import { enterSketch3D, exitSketch3D, renderSketch3D,
-         planeToScreen, gridStep, setSketchPointerPaused } from './sketch3d.js';
+         planeToScreen, gridStep } from './sketch3d.js';
 import { SETTINGS, unitLabel, fmtLen, toMm } from './settings.js';
 
 /* ---------------- state ---------------- */
@@ -37,7 +37,8 @@ let skEditId = null;      // feature id when EDITING an existing committed sketc
 let faceRef = null;
 let sketchActive = false; // true while in sketch MODE (in-viewport, non-modal)
 let skName = 'sketch1';   // feature id the sketch will be created/saved as
-let skPlaneName = 'XY';   // origin plane for plane sketches (unused on a face)
+let skPlaneName = 'XY';   // origin plane OR offset_plane id for plane sketches (unused on a face)
+const PRINCIPAL = ['XY', 'XZ', 'YZ'];
 let skPlaneOffset = 0;    // plane offset in mm (kept when re-editing)
 /* WHAT TO WRITE BACK for `offset`. A named parameter makes it a FORMULA
    string ("-wall"): the editor needs a number to draw the grid at — the
@@ -275,8 +276,12 @@ export async function openSketchEditor(plane = 'XY', offset = 0) {
   enterMode();
   updateHint();
   draw();
-  loadModelSnaps(plane, offset);     // the part's own corners/centres to snap to
-  if (offset) bus.emit('msg', 'bot', `Sketching on the ${plane} plane, offset ${offset} mm.`);
+  // the part's own corners/centres to snap to — an offset plane (named by its
+  // feature id) snaps through its frame, the way a face sketch does
+  if (PRINCIPAL.includes(plane)) loadModelSnaps(plane, offset);
+  else loadModelSnaps('XY', 0, frame);
+  if (!PRINCIPAL.includes(plane)) bus.emit('msg', 'bot', `Sketching on the offset plane "${plane}".`);
+  else if (offset) bus.emit('msg', 'bot', `Sketching on the ${plane} plane, offset ${offset} mm.`);
 }
 
 /* Reopen a committed sketch to edit its entities (the alternative to
@@ -341,7 +346,7 @@ export async function editSketch(feature) {
   renderEnts();
   // AFTER isolateAt, so the snaps reflect the rolled-back bodies. A face
   // sketch snaps via its frame (offset baked in by face_outline_2d).
-  if (onFace) loadModelSnaps('XY', 0, outline.frame);
+  if (onFace || !PRINCIPAL.includes(skPlaneName)) loadModelSnaps('XY', 0, frame);
   else loadModelSnaps(skPlaneName, skPlaneOffset);
 }
 bus.on('edit-sketch', editSketch);
@@ -388,73 +393,6 @@ export async function openSketchOnFace(faceInfo, offset = 0) {
     'Create → Extrude to raise a boss or cut a pocket.');
 }
 bus.on('sketch-on-face', info => openSketchOnFace(info));
-
-/* ---------------- the open sketch's plane (Move Plane, sketchplane.js) ------
-   The user (2026-09-21): "when I draw some shapes in the sketch tab and then
-   want to move the plane in the same sketch" — the entities are plane-local,
-   so re-planing the sketch keeps every shape where it was drawn ON the plane
-   and moves the plane under them. */
-export function currentSketchPlane() {
-  if (!sketchActive) return null;
-  return skOnFace
-    ? { kind: 'face', offset: skOnFace.offset || 0,
-        face: { center: skOnFace.center, normal: skOnFace.normal,
-                area: skOnFace.area ?? null, face: skOnFace.face || null,
-                inputId: skOnFace.inputId } }
-    : { kind: 'plane', plane: skPlaneName, offset: skPlaneOffset };
-}
-
-/* while the step is open no draw tool is armed and the sketch takes no
-   pointer input (see sketch3d.setSketchPointerPaused) */
-export function pauseSketchInput(on) {
-  if (on) { setTool(null); clicks = []; ghost = null; draw(); }
-  setSketchPointerPaused(on);
-}
-
-/* re-plane the OPEN sketch at `offset`: the frame comes from the server at
-   that offset (R1), the 3D plane is rebuilt under the same entities, the
-   model snaps are fetched again for the new plane */
-export async function setSketchPlaneOffset(offset) {
-  if (!sketchActive) return false;
-  offset = Number(offset) || 0;
-  // Only a REAL move replaces a formula with the number it resolved to. The
-  // box opens at that number, so OK without touching it is a no-op — and a
-  // no-op must not change the document, the same rule `sameSketch` states for
-  // opening a sketch and pressing Finish. Read where the plane is NOW, before
-  // the fetch below moves it; the formula is only given up once that fetch has
-  // actually landed (round two: it used to be given up here, so a move the
-  // server REFUSED — "⚠ Could not move the sketch plane" — still replaced
-  // "-wall" with -4 on the next Finish. The plane had not moved, the volume
-  // was identical, and the parameter link was gone with nothing said).
-  const wasAt = skOnFace ? skOnFace.offset || 0 : skPlaneOffset;
-  let frame;
-  if (skOnFace) {
-    const out = await fetchFaceOutline({ center: skOnFace.center, normal: skOnFace.normal,
-      area: skOnFace.area ?? null, face: skOnFace.face || null, offset,
-      featureId: skOnFace.inputId });
-    if (!out?.planar || !out.frame) {
-      bus.emit('msg', 'bot', '⚠ Could not move the sketch plane' +
-        (out?.error ? `: ${out.error}` : '.'));
-      return false;
-    }
-    frame = out.frame; skOnFace.frame = frame; skOnFace.offset = offset;
-  } else {
-    frame = await fetchPlaneFrame(skPlaneName, offset);
-    if (!frame) return false;
-    skPlaneOffset = offset;
-  }
-  if (offset !== wasAt) skOffsetRaw = offset;   // the move HAPPENED
-  skFrame = frame;
-  enterSketch3D(frame, { gridMm: SETTINGS.gridMm,
-    focus: focusOnPoints(skEnts.flatMap(entSamplePts))
-           || focusOnPoints(faceRef?.outer) || focusOnModel(frame) });
-  draw();
-  if (skOnFace) loadModelSnaps('XY', 0, frame);
-  else loadModelSnaps(skPlaneName, offset);
-  bus.emit('msg', 'bot', `Sketch plane moved to offset ${offset} mm — ` +
-    `${skEnts.length ? 'the shapes came along' : 'nothing drawn yet'}.`);
-  return true;
-}
 
 /* The picked face's plane frame + boundary (in the plane's own 2D coords),
    resolved on the body it was picked from — by geometry (center/normal) or

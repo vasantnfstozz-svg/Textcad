@@ -7,12 +7,12 @@ import { OP_ICONS, TOOL_NAMES } from './icons.js';
 import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport, actionUndo, actionRedo, actionSpec, actionImportStl, loadSample, modalGuard, actionExamples } from './dialogs.js';
 import { finishSketch, cancelSketch,
          setSketchTool, sketchModify, editSketch,
-         traceIntoSketch } from './sketcher.js';
+         traceIntoSketch, openSketchEditor, openSketchOnFace } from './sketcher.js';
 import { openSettings } from './settings.js';
 import { startPlacement, PLACEABLE } from './placement.js';
 import { beginPlanePick } from './viewport.js';
 import { lookAtSketch } from './sketch3d.js';
-import { stageSketchPlane, moveSketchPlane } from './sketchplane.js';
+import { openOffsetPlane } from './sketchplane.js';
 import { openExtrude, openPressPull } from './extrude.js';
 import { openRevolve } from './revolve.js';
 import { openFillet, openChamfer } from './fillet.js';
@@ -50,9 +50,18 @@ let curSketchTool = null;      // which draw tool is active (for ribbon highligh
 function startSketch() {
   cancelTool();                          // don't leave extrude gizmos eating clicks
   cancelMeasure();                          // nor a measure panel floating
-  // the pick lands in the Offset step (sketchplane.js): the plane is shown
-  // where the sketch will open, with an arrow and an Offset box; OK opens it
-  beginPlanePick((kind, data) => stageSketchPlane(kind, data));
+  // select-then-command (fusion-parity rule 2): a selected offset plane row IS
+  // the pick — Offset Plane selects the plane it just made, so Create Sketch
+  // right after it opens there with no second click
+  const sel = (S.lastDoc?.features || []).find(f => f.id === S.selected);
+  if (sel && sel.op === 'offset_plane' && !sel.suppressed && sel.status === 'ok') {
+    openSketchEditor(sel.id);
+    bus.emit('select-feature', null);   // used up: the next Create Sketch picks again
+    return;
+  }
+  // the pick: an origin plane, an offset plane (by its id) or a flat face
+  beginPlanePick((kind, data) => (kind === 'face' ? openSketchOnFace(data)
+                                                  : openSketchEditor(data)));
 }
 
 // the drag-handle tools (born on tool.js): pressed with the current selection
@@ -83,8 +92,10 @@ const ACTIONS = {
   finish_sketch: { icon: '✓', name: 'Finish Sketch', fn: finishSketch },
   cancel_sketch: { icon: '✕', name: 'Cancel Sketch', fn: cancelSketch },
   look_at: { icon: '⌖', name: 'Look At', fn: lookAtSketch },
-  // move the OPEN sketch's plane along its normal — the shapes ride along
-  sk_plane: { icon: '⇕', name: 'Move Plane', fn: () => moveSketchPlane() },
+  // Fusion's Construct > Offset Plane: a plane to sketch on, a distance from
+  // an origin plane or a flat face (sketchplane.js)
+  offset_plane: { icon: OP_ICONS.offset_plane, name: TOOL_NAMES.offset_plane,
+                  fn: () => openOffsetPlane() },
   // sketch Modify tools (were side-panel buttons of the retired 2D editor)
   sk_mirror_v: { icon: '⇋', name: 'Mirror ↔', fn: () => sketchModify('mirror_v') },
   sk_mirror_h: { icon: '⇅', name: 'Mirror ↕', fn: () => sketchModify('mirror_h') },
@@ -114,6 +125,7 @@ const TABS = {
     ['Create', [{ a: 'newsketch' },
                 { a: 'import_stl_file' },
                 'extrude', 'revolve', 'loft', 'sweep', 'hole']],
+    ['Construct', [{ a: 'offset_plane' }]],
     ['Primitives', ['plate', 'disc', 'ball', 'cone', 'tube', 'polygon_plate',
                     'hex_plate']],
     ['Advanced', ['revolve_profile', 'curved_blade']],
@@ -148,7 +160,6 @@ const SKETCH_CONTEXT = [
   // Fusion's Insert group: traced art becomes entities of THIS sketch —
   // auto-fitted to the face when the sketch sits on one
   ['Insert', [{ a: 'trace_png' }]],
-  ['Plane', [{ a: 'sk_plane' }]],
   ['View', [{ a: 'look_at' }]],
   ['Finish', [{ a: 'finish_sketch' }, { a: 'cancel_sketch' }]],
 ];

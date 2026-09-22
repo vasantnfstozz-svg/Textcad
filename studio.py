@@ -974,6 +974,12 @@ def _doc_json() -> dict:
             # as a path and never as a profile — a fact the server states (R1)
             "path_sketch": (f.op in sketchlib.SKETCH_PRODUCERS
                             and sketchlib.is_path_sketch((f.params or {}).get("entities"))),
+            # a construction plane's frame, so the viewport draws it where the
+            # kernel put it and Create Sketch can land on it (R1); null for
+            # everything else and for a plane that did not build
+            "plane_frame": (toolplan._frame(doc._parts[f.id])
+                            if f.op in sketchlib.PLANE_PRODUCERS
+                            and sketchlib.is_plane(doc._parts.get(f.id)) else None),
             # {param: value} for every FORMULA this feature holds, so the tree
             # can show `wall*2 = 6` (a formula that does not work out: null)
             "resolved": doc.resolved_json(f),

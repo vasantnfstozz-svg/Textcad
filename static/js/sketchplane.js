@@ -1,61 +1,66 @@
-// sketchplane.js — the OFFSET step of Create Sketch: "move the sketch plane".
+// sketchplane.js — Fusion's Construct > Offset Plane (specs/offset-plane.md).
 //
-// Create Sketch picks an origin plane or a flat face in the viewport. Before
-// the sketch opens, the picked plane is drawn where the sketch WILL land, with
-// ONE arrow along its normal and an Offset box; drag or type, OK (or Enter)
-// opens sketch mode on the shifted plane, Esc / Cancel goes back. The offset
-// is the sketch feature's own `offset` parameter — a `sketch` on XY at z = 20
-// for a loft section, a face sketch 3 mm INTO the material (the offset
-// method) — and stays editable in the tree afterwards. Enter with 0 is exactly
-// the old flow, so nothing changes for a plain sketch.
+// The user (2026-09-22): "offset plane only: I can just move the plane and
+// draw sketch whatever I want". A construction plane is its OWN feature
+// (`offset_plane`) a distance from an origin plane or a flat face; sketches
+// are drawn ON it (Create Sketch, click the plane — or press Create Sketch
+// with the plane's row selected) and move with it when its offset changes.
+// This replaces the first design (2026-09-21), where the number lived on the
+// sketch and a "Move Plane" button inside the sketch dragged the drawn shapes
+// along with the plane — the user tried it and found it the wrong tool.
 //
-// EVERY geometric fact is the server's (LAUNCH-PLAN R1): the frame comes from
-// /api/tool/plan (plane) or /api/face-outline (face), which SIGN of the offset
-// goes into the material is that response's `into_sign`, the ghost moves along
-// the frame's z by the dragged amount exactly as Plane.offset does on the
-// server, and the sketch reopens its frame FROM the server at the chosen
-// offset — the grid is drawn where the kernel will build, never where this
-// module thinks it will.
+// The step: Offset Plane → pick an origin plane or a flat face in the viewport
+// → the plane is drawn where it will land, ONE arrow along its normal and an
+// Offset box → drag or type → OK adds the feature, Esc / Cancel adds nothing.
+// The tree's ✎ on a plane row reopens the same step at the plane's offset.
+//
+// EVERY geometric fact is the server's (LAUNCH-PLAN R1): the base frame comes
+// from /api/tool/plan (plane) or /api/face-outline (face), which SIGN goes
+// into the material is that response's `into_sign`, the ghost moves along the
+// frame's z by the dragged amount exactly as Plane.offset does on the server,
+// and the plane the document draws afterwards is the feature's `plane_frame`.
 //
 // ONE COMMAND AT A TIME (fusion-parity rule 9): the step takes the modal lock
 // like a tool panel, so Extrude & co. refuse until OK or Cancel.
 
 import { bus } from './bus.js';
 import { S } from './state.js';
-import { planRequest } from './api.js';
+import { planRequest, postJSON } from './api.js';
 import { modalGuard } from './dialogs.js';
 import { g, mm, setLen, say, pickedBody } from './tool.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
-         beginPlaneGhost, setPlaneGhost, endPlaneGhost,
+         beginPlaneGhost, setPlaneGhost, endPlaneGhost, beginPlanePick,
          retakeSectionHandles } from './viewport.js';
-import { openSketchEditor, openSketchOnFace, fetchFaceOutline,
-         currentSketchPlane, setSketchPlaneOffset, pauseSketchInput } from './sketcher.js';
+import { fetchFaceOutline } from './sketcher.js';
 
-const NAME = 'Sketch plane';
+const NAME = 'Offset Plane';
 const PANEL = 'planeDialog';
-// { mode: 'new' | 'move', kind, what, frame, loops, intoSign, owner, onOk } while open
+const PRINCIPAL = ['XY', 'XZ', 'YZ'];
+// { mode: 'new' | 'edit', kind, what, frame, loops, intoSign, owner, plane,
+//   pick, offset, shown, featureId } while open
 let stage = null;
 
-/* for tests and other modules: is the offset step open, and on what */
-export const sketchPlaneStage = () => stage
+/* for tests and other modules: is the step open, and on what */
+export const offsetPlaneStage = () => stage
   ? { mode: stage.mode, kind: stage.kind, plane: stage.kind === 'plane' ? stage.plane : null,
-      owner: stage.owner, offset: mm('plOffset'), intoSign: stage.intoSign }
+      owner: stage.owner, offset: mm('plOffset'), intoSign: stage.intoSign,
+      featureId: stage.featureId || null }
   : null;
 
 /* The plane's frame at offset 0 — the base the arrow and the ghost measure
    from — fetched from the server: kind 'plane' (plane = 'XY' | 'XZ' | 'YZ')
-   or 'face' (face = {center, normal, area}, owner = the body it is on).
+   or 'face' (face = {center, normal, area, face}, owner = the body it is on).
    null when it cannot be had; the reason has been said. */
 async function baseFrame(kind, plane, face, owner) {
   if (kind === 'face') {
     // by geometry (a pick's centre) or by NAME (an authored face: "top") — both
-    // are how sketch_on_face itself names its face
+    // are how offset_plane itself names its face
     const out = await fetchFaceOutline({ center: face.center || null, normal: face.normal || null,
                                          area: face.area ?? null, face: face.face || null,
                                          featureId: owner });
     if (!out?.planar || !out.frame) {
-      say('⚠ ' + (out?.error || 'That face is curved — a sketch needs a FLAT face. ' +
-                                'Pick a planar face, or sketch on an origin plane instead.'));
+      say('⚠ ' + (out?.error || 'That face is curved — an offset plane needs a FLAT face. ' +
+                                'Pick a planar face, or an origin plane instead.'));
       return null;
     }
     return { kind, owner, frame: out.frame, intoSign: out.into_sign ?? null,
@@ -63,49 +68,58 @@ async function baseFrame(kind, plane, face, owner) {
              what: `a face of "${owner}"` };
   }
   const p = await planRequest({ tool: 'sketch', plane, offset: 0 });
-  if (!p.ok) { say(`⚠ Cannot open the sketch: ${p.error}.`); return null; }
+  if (!p.ok) { say(`⚠ Cannot place the plane: ${p.error}.`); return null; }
   return { kind, plane, owner: null, frame: p.frame, intoSign: null, loops: null,
            what: `the ${plane} plane` };
 }
 
-/* Create Sketch's pick landed: kind 'plane' (data = 'XY' | 'XZ' | 'YZ') or
-   'face' (data = the viewport's face info). Fetch the frame, then show the
-   plane, the arrow and the box; OK opens the sketch at the offset. */
-export async function stageSketchPlane(kind, data) {
-  // ONE COMMAND AT A TIME, on the way IN too. The pick that lands here is a
-  // viewport CLICK, not a ribbon press, so the ribbon's guard never saw it:
-  // Create Sketch leaves the pick pending and Measure (the one tool that takes
-  // the lock without ending a pending pick) can be opened on top of it. The
-  // face path already asked — openSketchOnFace's own modalGuard — and without
-  // this the plane path took the lock off Measure and handed it back as null.
+/* The ribbon's Offset Plane: pick what the plane is measured from, then the
+   step. The pick is the shared sketch-plane pick (origin quads + flat faces +
+   existing planes); an existing plane is refused — the op measures from an
+   origin plane or a face. */
+export function openOffsetPlane() {
   if (modalGuard()) return;
+  beginPlanePick((kind, data) => stageNew(kind, data));
+}
+
+/* the pick landed (exported for the browser tests, which stage a pick directly) */
+export async function stageOffsetPlane(kind, data) { return stageNew(kind, data); }
+
+async function stageNew(kind, data) {
+  if (modalGuard()) return;             // the pick is a viewport CLICK — guard here too
+  if (kind === 'plane' && !PRINCIPAL.includes(data)) {
+    say('⚠ An offset plane is measured from an origin plane or a flat face — ' +
+        'pick one of those (to move an existing plane, press ✎ on its row).');
+    beginPlanePick((k, d) => stageNew(k, d));
+    return;
+  }
   let owner = null;
   if (kind === 'face') {
     owner = pickedBody(data);
-    if (!owner) { say('⚠ No solid to sketch on yet.'); return; }
+    if (!owner) { say('⚠ No solid to measure from yet.'); return; }
   }
   const base = await baseFrame(kind, kind === 'plane' ? data : null,
                                kind === 'face' ? data : null, owner);
   if (!base) return;
-  open({ ...base, mode: 'new', offset: 0,
-         onOk: off => (kind === 'face' ? openSketchOnFace(data, off)
-                                       : openSketchEditor(data, off)) });
+  open({ ...base, mode: 'new', offset: 0, pick: data });
 }
 
-/* The SKETCH tab's Move Plane: the same step over the OPEN sketch, starting
-   at its current offset; OK re-planes the sketch with its shapes on it. */
-export async function moveSketchPlane() {
-  const cur = currentSketchPlane();
-  if (!cur) { say('⚠ Move Plane works inside an open sketch — Create Sketch first.'); return; }
-  if (S.modalTool && !(stage && stage.mode === 'move')) {
-    say(`⚠ Finish the ${S.modalTool} first — press OK or Cancel in its panel.`);
-    return;
-  }
-  const base = await baseFrame(cur.kind, cur.plane || null, cur.face || null,
-                               cur.face ? cur.face.inputId : null);
+/* The tree's ✎ on an offset_plane row: the same step at the plane's current
+   offset; OK writes the new offset (the plane and every sketch on it move). */
+export async function editOffsetPlane(f) {
+  if (modalGuard()) return;
+  const p = f.params || {};
+  const onFace = !!(f.inputs && f.inputs.length);
+  const base = await baseFrame(onFace ? 'face' : 'plane', p.plane || 'XY',
+    onFace ? { center: p.face_center || null, normal: p.face_normal || null,
+               area: p.face_area ?? null, face: p.face || null } : null,
+    onFace ? f.inputs[0] : null);
   if (!base) return;
-  open({ ...base, mode: 'move', offset: cur.offset,
-         onOk: off => setSketchPlaneOffset(off) });
+  // the number to DRAW at is the server's resolved value; a FORMULA offset
+  // ("-wall") is only replaced when the user really moves the plane (the
+  // rule the sketch-plane review proved, 2026-09-22)
+  const num = Number(f.resolved?.offset ?? p.offset ?? 0) || 0;
+  open({ ...base, mode: 'edit', offset: num, featureId: f.id });
 }
 
 function open(o) {
@@ -113,24 +127,20 @@ function open(o) {
   stage = o;
   S.modalTool = NAME; S.modalToolPanel = PANEL;
   g(PANEL).firstElementChild.textContent =
-    o.mode === 'move' ? '✎ Move sketch plane' : '✎ Sketch plane';
+    o.mode === 'edit' ? `▱ Edit offset plane "${o.featureId}"` : '▱ Offset Plane';
   g('plWhat').textContent = o.what;
   g('plInto').textContent = o.intoSign == null ? ''
     : `${o.intoSign < 0 ? 'negative' : 'positive'} = into the material`;
   setLen('plOffset', o.offset);
   // what the box READS as, the moment it was filled. The box speaks the
   // DISPLAY unit and the offset is millimetres, so in inches the round trip
-  // mm -> "-0.1575" -> mm comes back as -4.0005, not -4: pressing OK without
-  // touching anything was a 0.0005 mm move of the sketch plane, a full rebuild
-  // of everything under it, and — because a move that really happens gives up
-  // the formula — "-wall" written back as -4.0005 (round two, measured).
-  // Untouched means untouched: `ok` then passes the offset we opened with.
+  // mm -> "-0.1575" -> mm comes back as -4.0005, not -4. Untouched means
+  // untouched: `ok` then uses the offset the step opened with.
   o.shown = g('plOffset').value;
   g(PANEL).style.display = 'block';
   beginPlaneGhost(o.frame, o.loops);
   setPlaneGhost(o.offset);
   beginExtrudeArrow(o.frame.origin, o.frame.z_dir, o.offset, follow, follow, null);
-  if (o.mode === 'move') pauseSketchInput(true);
   window.addEventListener('keydown', onKey, true);
   bus.on('doc-updated', onDoc);
   const box = g('plOffset');
@@ -162,9 +172,7 @@ function onDoc() { if (stage) close(); }
 
 function close() {
   if (!stage) return;
-  const wasMove = stage.mode === 'move';
   stage = null;
-  if (wasMove) pauseSketchInput(false);
   endExtrudeArrow();
   endPlaneGhost();
   retakeSectionHandles();                   // the arrow is shared with Section view
@@ -174,34 +182,66 @@ function close() {
   bus.off('doc-updated', onDoc);
 }
 
-export function cancelSketchPlane() { cancel(); }
+export function cancelOffsetPlane() { cancel(); }
 function cancel() {
   if (!stage) return;
-  const wasMove = stage.mode === 'move';
+  const wasEdit = stage.mode === 'edit';
   close();
-  say(wasMove ? 'Plane not moved — the sketch stays where it was.'
-              : 'Sketch cancelled — nothing was drawn.');
+  say(wasEdit ? 'Plane not moved.' : 'Offset Plane cancelled — nothing was added.');
 }
 
-/* OK / Enter: the step closes FIRST (it holds the modal lock the sketch
-   editor's own guard would refuse on), then the sketch opens — or is
-   re-planed — at the offset */
-function ok() {
+/* plane1, plane2, … — the first name not in the tree */
+function nextPlaneName() {
+  const ids = new Set((S.lastDoc?.features || []).map(f => f.id));
+  let n = 1;
+  while (ids.has(`plane${n}`)) n++;
+  return `plane${n}`;
+}
+
+/* OK / Enter: the step closes FIRST (it holds the modal lock), then the
+   feature is added — or its offset written */
+async function ok() {
   if (!stage) return;
   const st = stage;
   // the box untouched (still the exact string `open` filled it with) means the
   // offset it was opened with, not that string read back through the display
   // unit — see `open`
-  const off = g('plOffset').value === st.shown ? st.offset : mm('plOffset');
+  const untouched = g('plOffset').value === st.shown;
+  const off = untouched ? st.offset : mm('plOffset');
   close();
-  st.onOk(off);
+  if (st.mode === 'edit') {
+    // NOTHING CHANGED? Then the document is not touched: no rebuild, no undo
+    // entry, and a formula offset keeps its formula.
+    if (untouched) { say(`Offset plane "${st.featureId}" unchanged.`); return; }
+    const doc = await postJSON('/api/feature/params',
+      { feature_id: st.featureId, params: { offset: off } }, 'moving the plane…');
+    const f = (doc.features || []).find(x => x.id === st.featureId);
+    say(doc.error || (f && f.status === 'failed')
+      ? `⚠ Offset plane "${st.featureId}" problem: ${doc.error || f.problems.join('; ')}`
+      : `Offset plane "${st.featureId}" moved to ${off} mm — every sketch on it followed.`);
+    return;
+  }
+  const id = nextPlaneName();
+  const params = st.kind === 'face'
+    ? { face_center: st.pick.center, face_normal: st.pick.normal || null,
+        face_area: st.pick.area ?? null, offset: off }
+    : { plane: st.plane, offset: off };
+  const doc = await postJSON('/api/feature/add',
+    { id, op: 'offset_plane', params, inputs: st.kind === 'face' ? [st.owner] : [] },
+    'adding the plane…');
+  const f = (doc.features || []).find(x => x.id === id);
+  if (doc.error || (f && f.status === 'failed')) {
+    say(`⚠ Offset plane failed: ${doc.error || f.problems.join('; ')}`);
+    return;
+  }
+  // select-then-command (fusion-parity rule 2): the new plane is the
+  // selection, so Create Sketch lands on it without another pick
+  bus.emit('select-feature', id);
+  say(`Offset plane "${id}" placed ${off} mm from ${st.what}. Press Create Sketch ` +
+      'to draw on it now, or click the plane in the viewport any time.');
 }
 
-export function initSketchPlane() {
-  // leaving sketch mode (Finish / Cancel Sketch) ends a Move Plane step
-  bus.on('sketch-mode', ({ active }) => {
-    if (!active && stage && stage.mode === 'move') close();
-  });
+export function initOffsetPlane() {
   g('plOk').onclick = ok;
   g('plCancel').onclick = cancel;
   const box = g('plOffset');

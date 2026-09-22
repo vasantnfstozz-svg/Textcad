@@ -6,90 +6,96 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: NOTHING PENDING.** The sketch-plane review is CLOSED in two
-> rounds. Round one read `1c77d9f..bc136be` (Sketch plane offset `ee102b1` +
-> Move Plane `bc136be`) and fixed 2 in `cdc833a`; round two read `cdc833a`
-> — the fix itself, because it changed what every Finish Sketch writes —
-> and fixed 2 more in `a1e3483`. The next `code review` takes the first TODO
-> row of `REVIEW-QUEUE.md`.
+> **Status: PENDING.** Review the range `e551a3d..HEAD` — **Offset Plane**,
+> Fusion's construction plane as a feature (`specs/offset-plane.md`). ONE
+> commit on top of `e551a3d`. Built on Fable 2026-09-22, no review yet.
 
-## Round two, in one paragraph
+## What was built, in one paragraph
 
-Reviewed on Opus 5 (1M) 2026-09-22, one reviewer, no subagents. Round one's
-fix was right about what to write; round two found that it decided WHEN to
-write it one step too early, and that the box it trusts does not always give
-back the number it was handed. Both findings are the same shape as the P1
-round one fixed — a formula silently replaced by the number it happened to
-resolve to — reached by two doors round one did not open: a move the server
-REFUSED, and a display unit that is not millimetres. Both reproduced in a
-real browser before the fix, both red-then-green. 4 new browser tests (2 for
-the findings, 2 for round trips nobody had driven) and one probe that lifts the
-three functions straight out of `sketcher.js`; fast tier **2610 green**, the
-sketch-plane browser file 16 green, ruff and eslint zero; ui v231. No design file touched.
+The user tried the 2026-09-21 sketch-plane design (Create Sketch's Offset step
++ the SKETCH tab's Move Plane, reviewed and closed in `cdc833a` / `a1e3483`)
+and found it the wrong tool: moving the plane took the drawn circle with it
+(Fusion's *Redefine Sketch Plane*). What they meant is Fusion's **Construct >
+Offset Plane**, and that is what this commit builds — and it DELETES the old
+design: the Offset step, Move Plane, `setSketchPlaneOffset` /
+`currentSketchPlane` / `pauseSketchInput` / `setSketchPointerPaused`, the 16
+browser tests and 3 node tests that pinned them. `offset_plane` is a feature of
+a **third kind, `plane`** (neither creator nor modifier; result a build123d
+`Plane`), from a principal plane or a flat face of a body (a REFERENCE input,
+never consumed). A sketch names the plane in `plane` (`REF_PARAMS["sketch"]`),
+so the plane's offset rebuilds every sketch on it and deleting it cascades.
+Create Sketch right after Offset Plane lands on the new plane
+(select-then-command); any later Create Sketch clicks the orange quad. Line
+delta **+1069 / −1175**; fast tier **2621 green**, the offset-plane
+browser file 8 green, ruff and eslint zero; ui v232. No design file touched
+(the sketch's own `offset` param stays, 310 saved offsets untouched).
 
-## What round two found (both fixed)
+## Where the risk is (ranked — start at the top)
 
-- **P2 — a move the server REFUSED still ate the formula.**
-  `setSketchPlaneOffset` gave up `skOffsetRaw` at the TOP of the function,
-  before the `/api/face-outline` (or plane-frame) call that can fail. When
-  that call does not land the sketch stays exactly where it was and says so
-  ("⚠ Could not move the sketch plane"), but the formula had already been
-  dropped: the next Finish Sketch wrote `-4` where `"-wall"` had been.
-  Measured on the plate + boss with the call aborted: volume identical to
-  1e-9, `offset` `"-wall"` -> `-4`, nothing said. The plane is now given up
-  only after the frame has arrived.
-- **P2 — in inches, OK without touching anything was a move.** The Offset box
-  speaks the DISPLAY unit; the offset is millimetres. `setLen` renders -4 mm
-  as `-0.1575` in (4 dp) and `mm()` reads that back as **-4.0005 mm**, so the
-  guard round one added ("the box opens at that number, so OK without
-  touching it is a no-op") was false in any unit but mm: pressing OK moved the
-  sketch plane 0.0005 mm, rebuilt everything under it, and wrote `-4.0005`
-  over the formula. `ok()` now passes the offset the step OPENED with whenever
-  the box still reads the exact string `open()` filled it with.
+1. **A third kind of part flowing through code written for two.** Every site
+   that sorted `_parts` into sketch | solid was touched (`document.py`:
+   rebuild loop, `leaf_solid_ids`, `_result_feature`, the blockers,
+   `_kind_of`, `_check_modifier_input`, `_check_combiner_inputs`;
+   `provenance.py` twice; `studio.py` `/api/model` goes through
+   `leaf_solid_ids`). The question for the review: **is there a site I did
+   not find?** Candidates: `document.py:2261` (pieces warnings — skipped by
+   the COMBINERS/MODIFIERS filter), `consumed_ids` (a plane is in
+   `FACE_REFERENCE_OPS`, so its body input is not consumed), the delete plan's
+   `_passthrough` (kind "plane" never matches, so dependents cascade — is
+   that the right answer when the BODY under a face-based plane is deleted?),
+   export (`exported_bodies`), the spec checker, journeys, the MCP doorbell's
+   op list. Measured: `tests/test_offset_plane.py` covers the first six sites.
+2. **`REF_PARAMS["sketch"] = ("plane",)` changes `param_refs` for EVERY
+   sketch.** The principal names are filtered out, so an ordinary sketch's
+   refs stay `[]` and its cache signature does not move — but `param_refs`
+   feeds the delete plan (1356/1388/1415/1478), `_signature` and the
+   "rides a move" rule at 597. A sketch on an offset plane now answers "does
+   not ride" there. Check what that means for `move` of a body whose face the
+   plane is measured from (the plane rebuilds from the moved face anyway).
+3. **The formula door.** `numeric_params` had to learn the op (the browser
+   test found `"-wall"` refused as "a value it cannot use"). The same lookup
+   pattern (`CREATORS.get(op) or MODIFIERS.get(op)`) exists in `op_params`
+   (fixed), `numeric_params` (fixed) — and possibly elsewhere: `_params_dict`,
+   `required_params`, `author._annotate`, the Add Feature dialog's catalog
+   consumer. One grep, please.
+4. **`plane_of` builds a throwaway `Feature("?")` to reuse `_plane_part`'s
+   sentences.** Cheap but ugly; a sentence from the plan reads "sketch: plane
+   must be …" — fine for the sketch plan, wrong wording if any other caller
+   arrives.
+5. **The viewport draws planes on `doc-updated` AND re-draws inside
+   `loadModel` (sized with the model).** `fitRadius` at the first draw is the
+   previous model's; the redraw fixes the size. A plane that did not build has
+   `plane_frame: null` and is simply not drawn — the tree row says why.
+6. **The pick: a plane quad is only pickable OUTSIDE the body's silhouette**
+   (the origin-quad rule: a body face under the cursor wins). A plane sitting
+   inside the part's outline from the current view is reachable only through
+   its row. Documented as plan §10 P3 (c), not fixed.
+7. **Select-then-command through a bus event.** `select-feature` → tree
+   `selectFeature` (which also `clearPick`s and shows the overlay); `null`
+   clears. `startSketch` consumes a selected plane only when its status is
+   `ok`. Check that a plane selected minutes ago does not silently hijack a
+   Create Sketch the user meant for a face — that is exactly the
+   fusion-parity rule 2 caveat (the tree row ranks last for tools; here it
+   ranks FIRST, on purpose, because Create Sketch has no other selection).
+8. **The `/api/doc` payload grew** by one key per feature (`plane_frame`,
+   null for all but planes). `_doc_json` runs on every request.
 
-## Cleared by MEASUREMENT (do not re-report)
+## Do not report
 
-- **The `offsetParam` table holds — all nine rows.**
-  `probes/sketch_offset_table.py` lifts `offsetParam`, `stableJson` and
-  `sameSketch` VERBATIM out of `sketcher.js` and runs every shape an `offset`
-  can have through them: a number, a numeric STRING, `-0`, `20.0`, a formula,
-  a formula that does NOT resolve, **no `offset` key at all**, `offset: null`,
-  and a feature with no `resolved`. Every row writes back what was saved and
-  every row calls an untouched Finish no change at all. The two that mattered
-  were also driven in a real browser: a sketch with no `offset` key — which is
-  all 47 of the user's designs, 310 sketches — writes nothing, not even the 0
-  the editor drew at; and a **plane** sketch's formula (`offset: "lift"`)
-  survives, volume identical, where round one only ever drove the face half.
-- **`modalGuard()` in `stageSketchPlane` refuses nothing legitimate.** Every
-  ribbon button is already guarded (`ribbon.js renderRibbon`), and
-  `planePickAt` calls `endPlanePick()` BEFORE the callback, so a pick cannot
-  land while the step it would replace is open. The only door it closes is the
-  one round one found (Measure holding the lock over a pending pick).
-- **No design is affected by either finding.** 47 designs, 310 sketches with
-  an `offset`: zero formulas, and the only three offsets with more than two
-  decimals (8.899999999999999 twice, 10.700000000000001) are generator float
-  arithmetic, not an inch round trip.
+- The sketch's own `offset` parameter and the offset method (rule 11) are
+  unchanged on purpose: the AI author and 310 saved offsets use them.
+- `into_sign` is measured per face (+y: positive goes in) — reviewed twice.
+- The tool.js inch round-trip on an untouched OK (Extrude 12 → 11.99896) is
+  plan §10 P2, not this range; the plane panel handles it with the `shown`
+  string compare, tested in mm and inches.
+- A plane off another plane, an angled plane, a midplane, hiding a plane —
+  plan §10 P3, listed in the spec's "Not built".
+- The "body disappeared" report of 2026-09-22 was not a bug: the user's
+  active tab held one sketch and no body (7 tabs named my-part-6).
 
-## Also do not report (known, decided or recorded)
+## Ground rules for the reviewer
 
-- Everything on round one's list: no tilted planes / construction planes, no
-  arrow on tree re-edit, the face-pick panel's own button opens at 0,
-  `sketch_on_face`'s docstring, the drag's 0.1 mm rounding, `author.py`
-  refusing an absolute-offset plane sketch, and the node harness's stubs — all
-  still true, all plan §10 P3 or `specs/sketch-plane.md`.
-- **Move Plane replaces a formula only when the NUMBER changed**, so dragging
-  away and back to the same value keeps the literal the first drag wrote.
-  Round one's deliberate choice, unchanged.
-- **The same unit round trip is in `tool.js` for every OTHER tool panel, for
-  NUMBERS.** Measured in the same browser: Extrude's edit panel in inches,
-  OK pressed untouched, `amount` 12 -> **11.99896** and the solid 7200 ->
-  7199.38 mm3. A FORMULA is safe there (`"h"` came back `"h"` — a formula
-  cannot seed a number box, so it seeds 0 and an untouched OK writes
-  nothing), which is why round one's "the sibling door is sound" still
-  stands. Deferred as a plan §10 P2 row: it is `okSession` doing what its own
-  comment says on purpose, so it is a framework pass, not this step's.
-
-**Ground rules** (as always): reproduce by measurement or a red test before
-fixing; smallest fix; tests with it; commit; restart the user's server if
-`sketch.py` / `studio.py` changed; then this file -> `Status: NOTHING
-PENDING`, a plan §10 row for anything deferred, memory. Never `--fix`.
+One reviewer, no subagents. Reproduce by measurement or a red test before
+fixing; smallest fix; tests beside the code; commit, push, restart the user's
+server (the backend changed). Then this file → `Status: NOTHING PENDING`, a
+plan §10 row for anything deferred, memory. Never `--fix`.
