@@ -6,7 +6,7 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING.** Review the range `6a4da57..HEAD` — the **fix pass of
+> **Status: PENDING.** Review the commit `9be77d7` (`6a4da57..9be77d7`) — the **fix pass of
 > the Offset Plane review** (round one). ONE commit. The Offset Plane build
 > itself (`6a4da57`, `specs/offset-plane.md`) has now been reviewed; what is
 > left to read is the fix, because it changed the DELETE PLAN, which every
