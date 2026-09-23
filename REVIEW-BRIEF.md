@@ -6,11 +6,13 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING.** Review the commit `9be77d7` (`6a4da57..9be77d7`) — the **fix pass of
-> the Offset Plane review** (round one). ONE commit. The Offset Plane build
-> itself (`6a4da57`, `specs/offset-plane.md`) has now been reviewed; what is
-> left to read is the fix, because it changed the DELETE PLAN, which every
-> op in the tree goes through.
+> **Status: PENDING.** Review `6a4da57..HEAD` — the **two fix passes of the
+> Offset Plane review**, `9be77d7` (round one) and `68b1a8a` (round two, the
+> bug the USER found). The Offset Plane build itself (`6a4da57`,
+> `specs/offset-plane.md`) has been read. What is left is the fixes: round one
+> changed the DELETE PLAN, which every op in the tree goes through, and round
+> two changed how the ONE question "which plane was this sketch drawn on?" is
+> answered in `toolplan` and `measure`.
 
 ## What round one found, in one paragraph
 
@@ -35,7 +37,37 @@ counted an `offset_plane` as "a body already exists". Line delta **+69 / −6**
 in source, +105 in tests; fast tier green, ruff zero. No design file uses
 `offset_plane` yet (0 of 50), so no stored work was damaged.
 
+## Round TWO, in one paragraph (the user found it, 2026-09-23)
+
+*"I draw something on xz or yz plane, I cannot extrude that shape, but revolve
+is working."* It was never the principal plane — it was the **offset plane
+under the sketch**, and it failed for XY just as much. `toolplan._profile`
+asked `sk.sketch_plane` for the plane a profile was drawn on, and that helper
+only knows the three principal names, so **both** of its callers — **Extrude
+and Sweep** — refused every sketch on a plane row with `sketch: plane must be
+"XY", "XZ" or "YZ"` and their panels never opened, while the KERNEL built the
+same solid happily and Revolve worked because it reads the plane off the built
+sketch. `measure._build_plane` held its own copy of the same mistake
+(`sk._PLANES.get("plane1")` → None), so every such sketch silently had no
+dimension for Measure to drive — and fixing it exposed a second defect: the
+per-Document plane cache is keyed on the SKETCH's params, which do not move
+when the plane row under it does, so it answered the plane's OLD position
+after an edit (measured: still 30 after a move to 50). Both fixed;
+`measure._plane_base` now follows the plane part the way a face sketch's entry
+follows its body. **The eight browser tests missed all of it because the one
+that extrudes a plane sketch calls `/api/feature/add` — the op, not the tool.**
+The new browser test presses `openExtrude` and takes it to a body.
+
 ## Where the risk is (ranked — start at the top)
+
+0. **"Which plane was this sketch drawn on?" was answered in THREE places and
+   round two fixed two of them.** `Document.plane_of` is meant to be the one
+   home. Still separate: `sk.sketch_plane_of(profile)` (Revolve, reads the
+   plane the built sketch carries) and `measure._build_plane`'s
+   `sketch_on_face` branch. The question for the review: **is there a fourth?**
+   Grepped `sketch_plane(` across the repo — the remaining hits are
+   `document.plane_of` itself and `sketch.py`'s own two. The JS all routes
+   through `/api/tool/plan`. Say so if a grep finds more.
 
 1. **`_min_inputs` is no longer a function of the op alone.** It now takes the
    FEATURE (`_min_inputs(op, f)`) and answers `0` for a plane with no inputs,
@@ -92,6 +124,10 @@ in source, +105 in tests; fast tier green, ruff zero. No design file uses
   §10 P3 (e), not fixed.
 - The tool.js inch round trip, `into_sign`, the sketch's own `offset`, and the
   Construct entries that do not exist yet: unchanged, plan §10.
+- Round two: `sketch_snap` is NOT affected — the browser hands it an explicit
+  `frame` for a plane-row sketch, never the name. Checked.
+- Round two: Hole answers "Hole needs a flat face" for a sketch, and Loft
+  planned a plane-row sketch correctly all along. Measured.
 
 ## Ground rules for the reviewer
 
