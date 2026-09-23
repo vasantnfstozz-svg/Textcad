@@ -3683,16 +3683,42 @@ def loft_geometry(sections: list, ids: list | None = None) -> dict:
                          "— turn one of the sketch planes")
     axis = axis.normalized()
     stations = [float((c - centroids[0]).dot(axis)) for c in centroids]
+
+    def same_plane(i: int, j: int) -> bool:
+        """ONE plane, by the planes themselves. The stations along the mean
+        normal cannot say it: with a third section tilting that axis, two
+        profiles side by side on one plane read as 8.94 mm apart, and the
+        loft built green through a flat segment (review, 2026-09-23 —
+        probes/loft_reorder_probe.py: a U-bend picked A, B, C was re-sorted
+        to A, C, B, and A and C are both on XY)."""
+        return (abs(abs(normals[i].dot(normals[j])) - 1.0) < 1e-6
+                and abs((centroids[j] - centroids[i]).dot(normals[i])) < LOFT_STEP_TOL)
+
     for i, (a, b) in enumerate(zip(stations, stations[1:]), start=1):
-        if abs(b - a) < LOFT_STEP_TOL:
+        if same_plane(i - 1, i):
             raise ValueError(
                 f"loft produced no solid — '{names[i - 1]}' and '{names[i]}' are on the same "
                 f"plane; a loft needs them on DIFFERENT planes")
+        if abs(b - a) < LOFT_STEP_TOL:
+            raise ValueError(
+                f"loft: '{names[i - 1]}' and '{names[i]}' are level with each other along the "
+                f"loft — neither is further along it; a loft runs from one profile to the "
+                f"next, so move one of them further along")
     steps = [b - a for a, b in zip(stations, stations[1:])]
     if any(s > 0 for s in steps) and any(s < 0 for s in steps):
-        order = [names[i] for i in sorted(range(len(names)), key=lambda i: stations[i])]
-        if order[0] != names[0]:
-            order.reverse()
+        rank = sorted(range(len(names)), key=lambda i: stations[i])
+        if rank[0] != 0:
+            rank.reverse()
+        order = [names[i] for i in rank]
+        # the order they lie in is only a remedy when IT can be lofted: a
+        # U-turn (up, across, back down) sorts two profiles of one plane next
+        # to each other, and that order was offered — and built — too
+        if any(same_plane(a, b) for a, b in zip(rank, rank[1:])):
+            raise ValueError(
+                "loft: " + ", ".join(names) + " turn back on themselves (a U-turn), and "
+                "the loft would fold through itself in the order you gave; in the order "
+                "they lie, two of them are side by side on one plane. A loft runs one "
+                "way — loft fewer of them at once")
         raise ValueError(
             "loft: the profiles do not run one way along the loft — "
             + ", ".join(names) + " would fold the solid back through itself (the kernel "
@@ -3718,9 +3744,14 @@ def loft_sketches(sketches: list, ruled: bool = False, ids: list | None = None):
     import inspector                                 # local: avoids an import cycle
     vol = inspector._try(lambda: out.volume) or 0
     if not vol > 0:
+        # (loft_geometry has already refused two profiles on one plane, so
+        # this is not that: a 4 x 4 square on XY lofted to one on the YZ
+        # plane comes back 0.0 mm3 "valid" — flip the second plane's normal
+        # and it is 160 — and the old sentence said "the same plane")
         raise ValueError(
-            "loft produced no solid — the profiles are on the same plane; a "
-            "loft needs them on DIFFERENT planes")
+            "loft: the kernel's blend of these profiles has no volume — it turns "
+            "through itself between two of them; add a profile between them, or "
+            "change the shape or the angle of one")
     problems = inspector.health(out, check_valid=False)
     if problems:
         raise ValueError(
