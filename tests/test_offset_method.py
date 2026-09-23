@@ -310,6 +310,36 @@ def test_lint_survives_a_sketch_offset_driven_by_a_named_parameter():
     assert author.lint_baseline(doc.features)          # no raise: the point
 
 
+def test_lint_still_catches_an_absolute_offset_written_as_a_string():
+    """Crash-proofing the rule must not narrow it: "9" is the hardcoded form
+    spelled with quotes, and only a name it cannot evaluate is a formula."""
+    probs = _lint(_BASE + [
+        {"id": "pocket_sketch", "op": "sketch",
+         "params": {"plane": "XY", "offset": "9",
+                    "entities": [{"kind": "circle", "r": 5}]}},
+    ])
+    assert probs and "floats at absolute Z" in probs[0], probs
+
+
+def test_a_design_that_already_floats_a_plane_does_not_refuse_the_AI_a_job():
+    """`lint_baseline` runs on the USER's document: a rule about history they
+    wrote is a wall the job can never get past, so the new plane rule has to
+    be forgiven there exactly as the sketch rule is."""
+    tree = _BASE + [
+        {"id": "lid_plane", "op": "offset_plane",
+         "params": {"plane": "XY", "offset": 30.0}},
+        {"id": "lid_sketch", "op": "sketch",
+         "params": {"plane": "lid_plane",
+                    "entities": [{"kind": "circle", "r": 5}]}},
+    ]
+    doc = Document(name="lint")
+    for f in tree:
+        doc.add(f["id"], f["op"], f.get("params") or {}, f.get("inputs") or [])
+    assert author.lint_tree(doc.features), "the fixture must break the new rule"
+    baseline = author.lint_baseline(doc.features)
+    assert author._lint_since(doc.features, baseline) == []
+
+
 def test_the_authoring_prompt_teaches_the_method():
     """A rule nothing states is a rule that gets forgotten next design."""
     p = author.AUTHOR_PROMPT
