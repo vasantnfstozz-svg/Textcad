@@ -139,13 +139,17 @@ def test_a_slanted_start_builds_thinner_and_says_so():
     assert any("45°" in n for n in sk.drain_notes())
 
 
-def test_a_path_starting_off_centre_on_the_plane_sweeps_from_the_centre():
+def test_a_straight_path_starting_off_centre_sweeps_the_profile_where_it_is():
+    # (the note that stood here said "the sweep runs from the centre", which
+    # is only true of a STRAIGHT path: the kernel turns the profile about the
+    # path's start - see test_sweep_review.py - so a straight path is the one
+    # case where the start makes no difference, and it says nothing now)
     sk.drain_notes()
     out = sweep(circle(), path_sketch([line((10, 20))], start=(10, 0)), full=True)
     bb = out.bounding_box()
     assert bb.min.X == pytest.approx(-R, abs=1e-6) and bb.max.X == pytest.approx(R, abs=1e-6)
     assert out.volume == pytest.approx(A * 20, rel=1e-6)
-    assert any("from the centre" in n for n in sk.drain_notes())
+    assert not any("from the profile's centre" in n for n in sk.drain_notes())
 
 
 def test_two_profiles_sweep_into_two_bodies():

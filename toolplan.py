@@ -636,15 +636,16 @@ def _path_label(f) -> str:
 
 
 def _sweep_stations(geo: dict, frame_pl: Plane, n: int = SWEEP_STATIONS) -> list[dict]:
-    """Points along the path AS IT WILL BE SWEPT — moved so it starts at the
-    profile's centre, the kernel's own placement (probes/sweep_api_probe4.py)
-    — each with its arc length `s`, tangent `t` and the profile frame carried
+    """Points along the path AS IT WILL BE SWEPT — where it is drawn: the
+    kernel turns the profile about the path's own start, not the profile's
+    centre (probes/sweep_pivot_probe.py; the ghost was moved to the centre
+    and parted from the solid on any bend) — each with its arc length `s`,
+    tangent `t` and the profile frame carried
     there: the frame turns with the tangent, step by step, about the axis the
     two neighbouring tangents span (a planar path turns about its plane's
     normal; the incremental form survives a turn past 180°). Even fractions
     plus the end of every edge, so a corner is a station of its own."""
     w, length = geo["wire"], geo["length"]
-    shift = geo["centre"] - geo["start"]
     fr = {i / n for i in range(n + 1)}
     s = 0.0
     for e in w.edges()[:-1]:
@@ -662,7 +663,7 @@ def _sweep_stations(geo: dict, frame_pl: Plane, n: int = SWEEP_STATIONS) -> list
             ang = math.degrees(math.acos(dot))
             x, y = x.rotate(ax, ang), y.rotate(ax, ang)
         prev_t = t
-        out.append({"s": round(f * length, 4), "p": _vec(w.position_at(f) + shift),
+        out.append({"s": round(f * length, 4), "p": _vec(w.position_at(f)),
                     "t": _vec(t), "x": _vec(x), "y": _vec(y)})
     return out
 
@@ -740,7 +741,8 @@ def plan_sweep(doc, req: dict) -> dict:
     if not wires:
         raise ValueError(f"the path sketch '{chosen.id}' has not been built — fix it first")
     geo = sk.sweep_geometry(faces, wires[0])    # the op's own verdict, or its sentence
-    frame_pl = Plane(origin=geo["centre"], x_dir=pl.x_dir, z_dir=pl.z_dir)
+    # the profile's loops are carried about the PIVOT, the path's start
+    frame_pl = Plane(origin=geo["start"], x_dir=pl.x_dir, z_dir=pl.z_dir)
     stations = _sweep_stations(geo, frame_pl)
     length = geo["length"]
     return {

@@ -3756,16 +3756,56 @@ def _reverse_wire(wire):
     return b3d.Wire([e.reversed() for e in reversed(wire.edges())])
 
 
-def _profile_reach(faces, centre) -> float:
-    """How far the profile extends from its centre (its outline sampled — a
-    circle has one vertex, so vertices alone would say 0)."""
-    reach = 0.0
+def _profile_points(faces) -> list:
+    """The profile's outline, sampled (a circle has one vertex, so vertices
+    alone would say it has no extent at all)."""
+    pts = []
     for f in faces:
         for e in f.edges():
             n = 2 if e.geom_type == b3d.GeomType.LINE else 16
-            for i in range(n + 1):
-                reach = max(reach, (e @ (i / n) - centre).length)
-    return reach
+            pts.extend(e @ (i / n) for i in range(n + 1))
+    return pts
+
+
+def _path_normal(wire):
+    """The normal of the plane a path lies in — None for a straight path and
+    for one that is not planar (a legacy 3D `path_points`)."""
+    p0, t0 = wire.start_point(), wire.tangent_at(0)
+    pts = [wire @ (i / 64) for i in range(65)] + [v.center() for v in wire.vertices()]
+    far = max(pts, key=lambda p: t0.cross(p - p0).length)
+    eps = 1e-6 * max(1.0, wire.length)
+    if t0.cross(far - p0).length <= eps:
+        return None
+    n = t0.cross(far - p0).normalized()
+    return n if all(abs((p - p0).dot(n)) <= eps for p in pts) else None
+
+
+def _turning(edge, n, steps: int = 32) -> float:
+    """How far an edge's tangent turns, in radians, signed about `n`: positive
+    turning toward +m, where m = n x t is the in-plane direction across the
+    path (0 for a line)."""
+    if edge.geom_type == b3d.GeomType.LINE:
+        return 0.0
+    tot, prev = 0.0, edge.tangent_at(0)
+    for i in range(1, steps + 1):
+        t = edge.tangent_at(i / steps)
+        tot += math.atan2(prev.cross(t).dot(n), prev.dot(t))
+        prev = t
+    return tot
+
+
+def _pivot_length(wire, n, c: float) -> float:
+    """The length a point `c` mm across the path (along m) travels when the
+    kernel carries the profile along it: a bend is shorter on its inside and
+    longer on its outside, and a mitred corner by 2c tan(turn/2). With c = 0
+    it is the path's own length (Pappus: a centroid ON the path sweeps A·L)."""
+    edges = wire.edges()
+    total = wire.length - c * sum(_turning(e, n) for e in edges)
+    for a, b in zip(edges, edges[1:]):
+        ta, tb = a.tangent_at(1), b.tangent_at(0)
+        turn = math.atan2(ta.cross(tb).dot(n), ta.dot(tb))
+        total -= 2.0 * c * math.tan(turn / 2)
+    return total
 
 
 def sweep_geometry(faces: list, wire) -> dict:
@@ -3814,23 +3854,52 @@ def sweep_geometry(faces: list, wire) -> dict:
         notes.append(f"the path leaves the profile at {angle:.0f}° — the section is "
                      f"thinner by that angle; a path perpendicular to the profile keeps "
                      f"the profile's true shape")
-    reach = _profile_reach(faces, centre)
+    # THE PIVOT IS THE PATH'S START, not the profile's centre. The kernel
+    # carries the profile rigidly along the path, turning it about the point
+    # where the path starts — measured 2026-09-23 (probes/sweep_pivot_probe.py):
+    # a 4 x 4 square on a bend of 10 swept from a start 1.5 mm off-centre came
+    # out 1.066 x A·L (exactly the longer arc its centroid travels), and a
+    # circle r2 started 1 mm off-centre reaches 3 mm toward a 2.5 mm bend —
+    # past the bend's centre, a fold OCCT calls valid — while the guards below
+    # measured from the centre and let it through. (Every earlier probe used
+    # straight paths, where the pivot cannot show.) So everything here is
+    # measured from the start, and ACROSS the path in its plane: a fold needs
+    # the profile to reach the bend's centre, which is one direction — a flat
+    # 20 x 2 strip bent across its thin side builds valid and exact at a bend
+    # of 1.0, and reach-in-every-direction refused it at 10.
+    pts = _profile_points(faces)
+    reach = max((p - start).length for p in pts)
+    n = _path_normal(wire)
+    m0 = n.cross(t0) if n is not None else None        # across the path at its start
+    across = [(p - start).dot(m0) for p in pts] if m0 is not None else None
+
+    def inner(turn: float) -> float:
+        """How far the profile reaches toward the inside of a turn (signed:
+        + toward +m); a path that is not planar is judged by its full reach."""
+        if across is None:
+            return reach
+        return max(across) if turn > 0 else max(-a for a in across)
+
     off = (start - centre).length
-    if off > reach + tol:
-        notes.append(f"the path starts {off:.3g} mm from the profile's centre — the sweep "
-                     f"runs from the centre, following the path's shape")
-    # bends: an arc tighter than the reach folds the inside of the bend
+    straight = wire.length - (wire.end_point() - start).length <= 1e-6 * max(1.0, length)
+    if off > tol and not straight:                     # a straight sweep is the same from anywhere
+        notes.append(f"the path starts {off:.3g} mm from the profile's centre — the profile "
+                     f"is carried at that distance from the path, so it swings round every "
+                     f"bend on that radius")
+    # bends: an arc the profile reaches the centre of folds its inside
     min_bend = None
     for e in wire.edges():
         if e.geom_type == b3d.GeomType.CIRCLE:
             r = float(e.radius)
             min_bend = r if min_bend is None else min(min_bend, r)
-            if r <= reach + 1e-6:
+            side = _turning(e, n) if n is not None else 1.0
+            if r <= inner(side) + 1e-6:
                 raise ValueError(
                     f"sweep: the bend of radius {r:.3g} mm is tighter than the profile "
-                    f"reaches ({reach:.3g} mm) — the inside of the bend folds over itself; "
-                    f"widen the bend or shrink the profile")
-    # corners: a mitre needs reach·tan(turn/2) of straight path on each side
+                    f"reaches toward its inside ({inner(side):.3g} mm from the path) — the "
+                    f"inside of the bend folds over itself; widen the bend or shrink the "
+                    f"profile")
+    # corners: a mitre needs inner·tan(turn/2) of straight path on each side
     edges = wire.edges()
     s = 0.0
     for i, (a, b) in enumerate(zip(edges, edges[1:]), start=1):
@@ -3844,7 +3913,8 @@ def sweep_geometry(faces: list, wire) -> dict:
             raise ValueError(
                 f"sweep: the path turns straight back on itself at corner {i} — a "
                 f"profile cannot be swept through a hairpin; round the corner")
-        mitre = reach * math.tan(math.radians(turn / 2))
+        side = ta.cross(tb).dot(n) if n is not None else 1.0
+        mitre = max(0.0, inner(side)) * math.tan(math.radians(turn / 2))
         for leg, word in ((a.length, "before"), (b.length, "after")):
             if leg < mitre - 1e-6:
                 raise ValueError(
@@ -3854,7 +3924,9 @@ def sweep_geometry(faces: list, wire) -> dict:
                     f"the profile")
     return {"wire": wire, "reversed": was_reversed, "centre": centre, "normal": normal,
             "start": start, "angle_deg": angle, "reach": reach, "length": length,
-            "min_bend": min_bend, "notes": notes}
+            "min_bend": min_bend, "notes": notes, "path_normal": n,
+            "centroid_across": (centre - start).dot(m0) if m0 is not None else None,
+            "centred": off <= tol, "straight": straight}
 
 
 def sweep_length(distance, full, length: float, label: str = "sweep") -> float:
@@ -3898,11 +3970,18 @@ def _sweep_solid(faces: list, wire, distance, full, label: str = "sweep"):
         raise ValueError(f"{label}: the sweep produced no material — the path leaves "
                          f"within the profile's plane; draw it on a perpendicular plane")
     # Pappus: a section carried perpendicularly along a planar path sweeps
-    # exactly area × length. Off by more, it folded over itself somewhere the
-    # bend and corner checks could not see (one face only: a second face off
-    # the path follows a longer or shorter trajectory of its own).
-    if len(faces) == 1 and geo["angle_deg"] <= SWEEP_SLANT_DEG:
-        expected = float(faces[0].area) * used.length
+    # area × the length its CENTROID travels — the path's own length when the
+    # path starts at the centroid, longer or shorter round each bend when it
+    # starts off it (the pivot: see sweep_geometry; a correct sweep from a
+    # start 1.5 mm off-centre read 107 % and was refused as "folded"). Off by
+    # more, it folded over itself somewhere the bend and corner checks could
+    # not see (one face only: a second face follows a trajectory of its own).
+    # A path that is not planar is judged only when it starts at the centroid.
+    c = geo["centroid_across"]
+    if len(faces) == 1 and geo["angle_deg"] <= SWEEP_SLANT_DEG and (
+            c is not None or geo["centred"] or geo["straight"]):
+        travel = used.length if c is None else _pivot_length(used, geo["path_normal"], c)
+        expected = float(faces[0].area) * travel
         if abs(vol - expected) > SWEEP_VOLUME_TOL * expected:
             raise ValueError(
                 f"{label}: the swept solid folded over itself (its volume is "
