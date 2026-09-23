@@ -421,3 +421,48 @@ def test_an_axis_change_under_a_tool_does_not_cost_them_either(
     assert i["ownsArrow"] and i["ownsQuad"], \
         f"an axis change under the tool cost the section its handles: {i}"
     assert not page.errors, page.errors
+
+
+def test_esc_cancels_a_pending_plane_pick_and_leaves_the_section(page, fresh_doc, server):
+    """Review, 2026-09-23: the section's Escape stood down only for a tool
+    holding the modal lock. Create Sketch's plane pick and a half-drawn
+    sketch shape own Escape WITHOUT that lock, so one key cancelled the pick
+    AND closed the section - the panel's own rule is one Esc, one thing."""
+    page.evaluate(BUILD)
+    page.wait_for_timeout(1500)
+    page.evaluate(TOGGLE)
+    page.wait_for_timeout(300)
+    assert info(page)["on"]
+    page.evaluate("async () => (await import('/static/js/viewport.js')).beginPlanePick(() => {})")
+    page.wait_for_timeout(200)
+    assert page.is_visible("#placeHint")
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    assert not page.is_visible("#placeHint"), "the pick is cancelled"
+    assert info(page)["on"], "one Esc closed the section too"
+    page.keyboard.press("Escape")                 # nothing else open: now it closes
+    page.wait_for_timeout(300)
+    assert not info(page)["on"]
+    assert not page.errors, page.errors
+
+
+def test_esc_ends_a_half_drawn_sketch_shape_and_leaves_the_section(page, fresh_doc, server):
+    page.evaluate(BUILD)
+    page.wait_for_timeout(1500)
+    page.evaluate(TOGGLE)
+    page.wait_for_timeout(300)
+    page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      sk.openSketchEditor('XY');
+      await new Promise(r => setTimeout(r, 900));
+      sk.setSketchTool('rect');
+      const { bus } = await import('/static/js/bus.js');
+      bus.emit('sk3d-move', { x: 0, y: 0, tol: 1, down: false });
+      bus.emit('sk3d-down', { x: 0, y: 0, tol: 1 }); bus.emit('sk3d-up', {});
+      await new Promise(r => setTimeout(r, 200));
+    }""")
+    page.mouse.click(5, 5)                          # focus off the draw box
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    assert info(page)["on"], "the Esc that dropped the half-drawn rectangle closed the section"
+    assert not page.errors, page.errors

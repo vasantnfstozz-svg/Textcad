@@ -636,6 +636,10 @@ export function beginProfilePick(onPick, opts = {}) {
    arming, so it re-arms after anything that cancelled it (an external document
    change) instead of trusting a flag of its own. */
 export const profilePickArmed = () => !!profilePickCb;
+/* ANY pick waiting for its click — they all own Escape without taking the
+   modal lock (Create Sketch's plane pick, a placement, a profile pick), and
+   Section view's Escape must stand down for them (section.js) */
+export const pickPending = () => !!(placeCb || planePickCb || profilePickCb || edgePickCb);
 
 export function cancelProfilePick() {
   if (!profilePickCb) return;

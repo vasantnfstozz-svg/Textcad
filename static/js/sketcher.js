@@ -237,6 +237,9 @@ async function releaseIsolation() {
    snap targets in play. Tests must be able to assert that a sloppy click landed
    on an EXACT coordinate — that is the whole point of snapping. */
 export function sketchEntities() { return skEnts.map(e => ({ ...e })); }
+/* does the next Escape belong to the sketch — a tool armed, a shape half
+   drawn, a scale drag? (Section view asks, section.js) */
+export const sketchOwnsEscape = () => sketchActive && !!(tool || clicks.length || scaleDrag);
 export function sketchSnapTargets() {
   return { model: modelSnaps.map(m => ({ ...m })), edges: modelEdges.length };
 }

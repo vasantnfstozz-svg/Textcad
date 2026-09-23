@@ -14,7 +14,8 @@
 
 import { S } from './state.js';
 import { bus } from './bus.js';
-import { beginSection, setSectionOffset, endSection, sectionInfo } from './viewport.js';
+import { beginSection, setSectionOffset, endSection, sectionInfo, pickPending } from './viewport.js';
+import { sketchOwnsEscape } from './sketcher.js';
 import { SETTINGS, toMm, fmtLen } from './settings.js';
 
 const g = id => document.getElementById(id);
@@ -73,8 +74,16 @@ export function initSection() {
   // open tool and leaves the section; the next Esc, with nothing open,
   // closes the section. (Registered after them in the bubble phase, it saw
   // the lock already released by the same key and closed both at once.)
+  // ...and it stands down for everything ELSE that owns Escape without the
+  // lock: a pick waiting for its click (Create Sketch's plane pick), a sketch
+  // tool with a shape half drawn, a text box being typed in (a tree rename, a
+  // Parameters cell). One key cancelled the pick AND closed the section
+  // (review, 2026-09-23) — the rule is one Esc, one thing.
   window.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && !e.repeat && on && !S.modalTool) closeSection();
+    if (e.key !== 'Escape' || e.repeat || !on || S.modalTool) return;
+    if (pickPending() || sketchOwnsEscape()) return;
+    if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    closeSection();
   }, true);
   // The display unit changed under an OPEN section panel. Every tool panel is
   // safe from this (Settings is a ribbon action and modalGuard refuses those
