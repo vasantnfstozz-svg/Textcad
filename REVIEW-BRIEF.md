@@ -5,67 +5,348 @@
 > stays short and the review chat pays for one small read. Ship-check step 6
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
+> **A rewrite must carry over every PENDING range it did not review** - this
+> brief exists because one did not.
 >
-> **Status: NOTHING PENDING.** The Offset Plane review is CLOSED after four
-> rounds (`6a4da57..2f97abf`). Round four read `692c6f5..2cba4e3` - the
-> round-three fix pass and its two follow-ups - found ONE defect, reproduced
-> it by measurement, fixed it in `2f97abf`, and re-measured the whole saved
-> library. The next `code review` takes the first TODO row of
-> `REVIEW-QUEUE.md`.
+> **Status: PENDING** - the FIVE Tier 2 tools built on 2026-09-17, which were
+> **never reviewed**. Their brief (`0670f58`) was overwritten on 2026-09-19 by
+> the P1-P3 sweep's paperwork (`3e03181`), which said NOTHING PENDING although
+> the sweep was a bug-fix pass over LAUNCH-PLAN section 10, not a read of these
+> diffs; the sketch-plane and Offset Plane briefs after it never restored them.
+> Found and restored 2026-09-23. The sections below are the 2026-09-17 brief,
+> unchanged. Ranges, oldest first:
+>
+> | # | Tool | Range | Merged at |
+> |---|---|---|---|
+> | 1 | Sweep `36ee69c` | `6b9fa0e..36ee69c` | `97a6aea` |
+> | 2 | Loft `ec45cf1` | `97a6aea..ec45cf1` | `559c342` |
+> | 3 | Text entity `d3c8c85` | `559c342..d3c8c85` | `a0d8761` |
+> | 4 | Section view `60e64b0` (frontend only, smallest) | `a0d8761..60e64b0` | `41dc99b` |
+> | 5 | Named parameters `127f350` + `4343f30` (biggest; every design's load path: **START HERE**) | `41dc99b..4343f30` | master |
+>
+> One section per chat is fine; Sweep and Loft share `tool.js` and suit one
+> chat. Strike a section here when it is done; the brief goes to NOTHING
+> PENDING only when all five are struck.
+>
+> **Read the tool's code AS IT IS NOW, not only its build diff** - later
+> commits already changed parts of it. Fixed since, do not re-report:
+> - Sweep: the path was not in the rebuild signature (editing the rail kept
+>   the old solid; two documents served one solid) - `ba076b8`, 3 tests.
+>   Sweep can reach a sketch on a construction plane - `68b1a8a`.
+> - Section view: risk 4 below (Close removing an open tool's arrow/quad) -
+>   `06b62f0`, 3 browser journeys; Flip keeps the handles - `62eb851`.
+> - Named parameters: risk 8's lost inline edit (the panel redrew a cell
+>   mid-typing) - `e20ad7f`, 1 browser journey.
+> - The Sweep/Loft kernel-crash gap (`ThruSections` / `MakePipeShell` run in
+>   the listener, not `kernelguard`) is a known P2 row in LAUNCH-PLAN
+>   section 10.
+> Find anything else with `git log 0670f58..HEAD -- <the tool's files>`.
 
-## What round four found
+## 1. Sweep tool — `36ee69c` (`specs/sweep.md`)
 
-**P1 - the absolute-Z rule could still be walked around, with the number one
-row further down.** Round three closed the case where the construction plane
-holds the hardcoded height (`offset_plane(XY, 30)` + a sketch on it). It keyed
-the sketch rule's exemption on "is this sketch drawn on a plane row?", so the
-same distance written in the SKETCH's own `offset`, with the plane left at 0,
-passed BOTH rules - the plane rule read the plane's 0, the sketch rule read
-"plane row" and waved it through. Measured before the fix: a 40x30x12 base,
-`offset_plane(XY, 0)`, `sketch(plane=that, offset=12)`, extrude 3. It builds
-green with the boss on the base's top face at z 12..15, and changing the base
-12 -> 20 BURIES it. That is the exact failure the offset method exists to
-prevent. The exemption now turns on **"does this plane ride a face?"** (it has
-a body input), never on "is this sketch on a plane row?" - two logic lines.
+**What it is.** The first Tier 2 tool: a profile (sketch or flat face) swept
+along a PATH sketch. New concepts: an OPEN `path` entity (`closed: false`,
+drawn by the sketch ribbon's new Path tool), a PATH SKETCH (a Sketch of edges,
+area 0, carrying its wires on `_tc_paths`), and a `path` parameter that is a
+REFERENCE (`document.REF_PARAMS`, like a pattern's seed).
 
-Each row still answers for the number IT holds, with its own key, so the
-baseline keeps telling the user's history from the job's: the user's floating
-plane and their own sketch on it are forgiven, and a sketch the JOB then draws
-on that plane at its own hardcoded height is the job's and is refused.
+**Where the risk is, ranked:**
 
-Re-measured after: all **47 saved designs** go through `lint_baseline` with no
-refusal and no crash. A plane that rides a face still exempts a sketch offset
-measured from it; a formula offset is still a named number. 4 new tests, 38 in
-`tests/test_offset_method.py`. Source **+12 / -2**, tests +72.
+1. **`sketch._place_sketch` now sits under EVERY sketch and sketch_on_face.**
+   Measured: all 47 live designs (50 leaf bodies) rebuild to identical volumes
+   and warnings against master (`probes/sweep_library_drift.py`, two runs, diff
+   ignores timings). But `compose()` now filters open paths and raises a new
+   sentence for an all-open list; `_as_sketch(pl * compose(...))` is unchanged
+   for the closed case. A Sketch built as `Sketch(children=[*faces, *edges])`
+   (closed shapes AND an open path in one sketch) is a new kernel shape: probe
+   6 showed extrude ignores the loose edges; revolve, hole, trim
+   (`/api/sketch/trim/pieces`), the tree's entity editor and `cornerlib` were
+   NOT measured with one. Worth one probe each.
+2. **`sweep_geometry`'s bend and mitre guards refuse BEFORE the kernel.** The
+   rule this project keeps relearning: a guard that refuses correct geometry
+   is a bug. The bend rule (arc radius ≤ profile reach → refuse) is exact for a
+   profile centred on the path; a profile OFFSET from the path (the path
+   starts off-centre but on the plane) is judged by the same reach from the
+   centre, which over-refuses on the outer side and — check this — may
+   UNDER-refuse on the inner side, because the kernel moves the path to the
+   centre anyway (probe 4), so the geometry it sweeps IS centred. The mitre
+   rule (`leg < reach·tan(turn/2)`) was measured on 90° corners only (legs 1,
+   2, 3 invalid; 4+ fine with reach 3). Obtuse and acute turns: a probe.
+3. **The Pappus check** (`|V − A·L| > 2 %` refuses) runs for ONE-face profiles
+   whose start slant ≤ 2°. Could a correct sweep fail it? A closed LOOP path
+   (probe 2: exact), an arc path (exact), a spline path — `path_points` with
+   `smooth` — was NOT measured against A·L (probe 1's spline was slanted at
+   the start, so it was excluded by the angle). A legacy smooth `path_points`
+   tree that starts perpendicular and whose volume is honestly ≠ A·L would be
+   refused; no design in `designs/` uses `sweep` at all.
+4. **The frontend `onRow` hook** (tool.js): `waitForRow` is armed in `begin()`
+   and `openEdit()`; `dropRowWait` runs in `hide()`. Pattern's edges/feature
+   modes already had their own waiters — check no tool ends up with TWO waiters
+   (waitForRow drops the previous one, so the last armed wins; is that ever the
+   wrong one?).
+5. **`_check_modifier_input`'s new branch** calls `part.faces()` on any
+   `is_sketch(part)` for extrude/revolve/sweep — a Compound of disjoint islands
+   is not a Sketch instance and takes the old path; fine. A sketch with faces
+   AND paths passes (faces non-empty). A sketch of paths only fed to `sweep` as
+   the PROFILE: the gate says "path sketch … needs a closed profile" before the
+   op's own sentence — two sentences for one case, the gate's wins.
+6. **The kernel placement rule** (probe 3/4): the swept solid starts at the
+   profile's CENTRE OF MASS. A profile with holes (a ring) — is `Sketch.center()`
+   the mass centre of the face-with-hole (yes for one face) — and does the
+   kernel use the same point? Measured on a circle and an off-centre rectangle
+   only.
+7. **`_reverse_wire`** rebuilds `Wire([e.reversed() for e in reversed(edges)])`
+   — measured on lines and one arc. A reversed wire's `tangent_at(0)` is the
+   old end's tangent negated; the code reads it after reversal, fine.
 
-## What round four checked and cleared
+**Ground rules for the review:** one reviewer, medium effort, read the diff of
+`36ee69c` and probe; fix in the same chat; browser tier only
+`tests/e2e/test_sweep_tool.py`; never the full suite "to see".
 
-- **The brief's risk 0 - the unmeasured baseline case.** A job that ADDS a
-  face-based plane to a design that already carries a floating one: measured,
-  two keys, no collision, `_lint_since` stays empty. And the new sentence IS
-  followable - `offset_plane` is in `op_catalog()` as a `plane` kind with its
-  full signature and the line "no inputs off a principal plane, 1 body off its
-  face", so the author sees it even though `OP_NOTES` has no prose for it. No
-  prompt note is needed.
-- **Risk 1 - `_literal`.** Two callers, both asking "is this a hardcoded
-  number?", which is what it answers. `9` and `"9"` flagged, `"lid_z"` and
-  `True` clean, a list or None clean. Correct for both.
-- **Risk 2 - `fetchPlaneFrame` now hits the server on every plane-sketch
-  open.** No loop reaches it: the journeys runner and the replay path drive the
-  API, not the sketcher. One awaited request on a path that already awaited one.
-- **Risk 3 - the second feature's params.** Not made worse by this pass; the
-  `_param_view` fix is the plan §10 P3 row, with its measurement in it.
-- **The browser fix itself.** `planeFrames` is the only frame cache in
-  `static/js`; `sketchplane.js` asks `planRequest` every time, and `textCache`
-  / `arcKinds` are keyed on the values they describe. The e2e test is genuinely
-  red on the old code (the cache returns the z=20 frame, `focusOnModel` puts
-  the controls target there, the assert wants 50).
+**Do not re-report** (known, deliberate, in LAUNCH-PLAN §10 P3 "Sweep's
+loose ends"): the Add Feature dialog's `path` text box; the arrow sliding
+along the local tangent during a drag; no Pappus check for multi-face
+profiles; the corner-radius editor untested on open paths; no
+orientation/taper/twist. Also deliberate: `SWEEP_SLANT_DEG = 2` is a NOTE
+threshold, not a refusal (8° costs 1 % of the volume — measured on the
+gauntlet's tapered wall); the in-plane refusal starts at 80°.
 
-## Test state at this commit
+## 2. Loft tool — `ec45cf1` (`specs/loft.md`)
 
-Fast tier: **2634 passed**, and four memory-pressure failures in the full-tier
-run only - `tests/test_imgtrace_loops.py` (2) and `tests/test_import_stl.py`
-(2), one reporting `MemoryError` outright. Re-run alone: **75 passed**. Both
-suites are mesh-heavy and unrelated to the author lint; this is the known
-"never two OCCT workloads at once" box limit, not a regression. Ruff zero.
-Frontend untouched by round four, so `ui v233` stands.
+**What it is.** The second Tier 2 tool and the framework's FIRST MULTI-INPUT
+tool. `loft` stays a combiner (inputs = the sections, in order) and gains its
+first parameter, `ruled`. New: `sketch.loft_geometry` (the one verdict),
+`toolplan.plan_loft`, `static/js/loft.js`, three small `tool.js` changes
+(`spec.inputs(st)`; a profile tool with `onRepick` takes sketch picks while
+open; a multi-input tool's preview is UNBUILT and re-created when its input
+list changes), `viewport.beginLoftGhost`.
+
+**Where the risk is, ranked:**
+
+1. **The order guard refuses BEFORE the kernel** (`loft_geometry`: the
+   sections' centroids must step one way along the mean normal). Measured on
+   parallel XY planes and one perpendicular pair. Could a CORRECT loft fail
+   it? Sections whose normals differ a lot (a 90° fan of planes) project onto
+   the mean normal in an order that may not be the loft's — the kernel builds
+   such lofts (probe: XY + YZ planes, 785 mm3, valid). Sections whose
+   centroids are laterally far apart but at the same height along the axis
+   (a horizontal loft between two vertical profiles — the planes are
+   parallel, so the mean normal is horizontal and the stations are fine; but
+   two profiles on PERPENDICULAR planes with centroids at equal projection
+   would be called coplanar). Worth a probe on tilted planes: `LOFT_STEP_TOL`
+   is 1e-3 mm absolute.
+2. **The plan REORDERS silently-ish**: the tool puts out-of-order picks in
+   axis order and says so once in chat; the stored feature has the sorted
+   order. A user who WANTS a fold-back (they never do — the kernel's result is
+   self-intersecting) cannot get one. The AI path gets the refusal sentence
+   instead. Two behaviours for one rule: intended, but check the sentence
+   names the order the plan actually stored.
+3. **`tool.js` applyOnce now UNBUILDS a built preview** when
+   `JSON.stringify(spec.inputs(st)) !== st.inputsPushed` — only when
+   `spec.inputs` exists, so every other tool is untouched (Sweep's four and
+   Revolve's journeys were re-run: green, except one Revolve ring-drag flake
+   also seen on master — see below). Check: `unbuild` inside `applyOnce`
+   inside `holdViewport` — the combiner (`st.opId`) goes with it and
+   `applyOp` re-adds it; `st.lastGood` is kept from the previous feature and
+   `settle` would push it into the NEW feature — same params shape, fine, but
+   worth a look.
+4. **`document._eval` now passes `**params` for loft only** (`_loft(ins,
+   ids=..., ruled=...)`). `op_params("loft")` returns `(("ruled", False),)`
+   and `check_params` accepts it; an OLD saved loft with no params still
+   builds (six in autonomiq-panel / autonomiq-sat-panel — drift zero). A
+   design saved by a NEWER build with an unknown loft param would refuse at
+   `check_params` on edit, not on load — the existing rule.
+5. **`loft_sketches` health uses `check_valid=False`** (the rebuild's policy),
+   so a self-intersecting loft in a CORRECT order (a twisted pair of squares
+   beyond some angle?) would pass health and only the deep check at the end
+   of rebuild flags the body. The 45° twist measured valid; 90° is the same
+   square. Probe 60°–80°.
+6. **Candidates exclude consumed sketches** — but a sketch consumed by THIS
+   loft's own preview is in `taken`, so it stays listed as a section; a
+   sketch consumed by a struck-out feature is offered (suppressed consumers
+   are skipped), matching the framework's profile list.
+
+**Do not re-report** (LAUNCH-PLAN §10 P3 "Loft's loose ends"): no face
+sections, no rails / end conditions / seam control, no viewport highlight of
+picked profiles, smooth-vs-ruled volume difference, ghost seam twist. Also
+deliberate: the sections list is locked in an edit (the framework never
+rewires a combiner mid-edit); a single-profile OK says "Nothing lofted".
+
+**A timing flake, not this range's:** `tests/e2e/test_revolve_tool.py::
+test_open_from_the_tree_row_and_drag_the_ring` read the angle box as 0 at the
+37.3° drag step once, when run in one process after the four Sweep journeys.
+Re-run alone twice on this branch and twice on master: four passes. The ring
+drag's 40 ms move steps are the likely edge; not touched here.
+
+## 3. Text sketch entity — `d3c8c85` (`specs/text-entity.md`)
+
+**What it is.** A new entity kind, `text`: a word as build123d `Text` faces,
+centred on x / y, composing like any shape. New: `sketch._text_faces`,
+`ENTITY_STRINGS`, `entity_outlines`, `POST /api/sketch/outline`, the
+sketcher's Text tool (one click + a text field in the draw-time box), the
+server-outline render cache, `tree.entTextRow`.
+
+**Where the risk is, ranked:**
+
+1. **`entity_schema()` gained two keys** (`strings`, `server_outline`) and the
+   tree reads `cat.strings[kind]`. An OLD page against this server is fine
+   (extra keys); THIS page against an old server (no `strings`) renders no
+   word row — the fallback path (`cat.ok === false`) shows generic numeric
+   fields only, so a text entity's word would be uneditable there. Deliberate
+   (the server and page ship together) but worth one look at `shapeList`.
+2. **`_text_faces` returns a Sketch of several faces** — `compose()` treats it
+   as ONE shape: `_containment` / `_overlaps` / `_area_of` run on the whole
+   word. A word drawn OVER the edge of a rectangle (half in, half out) with
+   mode add: measured nothing. The even-odd rule in the sketcher uses the
+   word's BOX; the kernel composes the real glyphs. A letter straddling a hole
+   edge is the shape to probe (`compose` with a subtract word partly outside
+   the plate: does the outside part vanish silently, as any subtract does?).
+3. **The sketcher draws nothing for a word until the server answers**, and
+   caches `[]` on an error — after an error the word never draws again in
+   that session (the cache key has no retry). The error IS said in chat. A
+   word whose glyphs fail (an emoji, say) would sit invisible but present in
+   `skEnts`; the tree shows it. Probe an emoji / a non-Latin word: the kernel
+   may shape it with Arial's fallback glyphs or produce nothing.
+4. **The draw-time box now holds a TEXT input** and `routeDigitToDrawBox`
+   focuses the FIRST input when a digit is typed anywhere in sketch mode —
+   for the Text tool that first input IS the word field (a digit typed
+   before the box exists goes nowhere; after it exists the field is already
+   focused). Escape in the word field calls `updateDrawDimBox` which
+   re-focuses it (`!el.contains(document.activeElement)` is false while
+   focused, so no loop) — check Escape still leaves the tool as it does for
+   other shapes.
+5. **`_validate_dims` runs on `size` only**; `text` and `font` are validated
+   in `_text_faces` (empty, non-string). A `text` that is a NUMBER (the AI
+   writing `"text": 2026`) is refused as "needs a word" — arguably it should
+   be shaped as "2026". Deliberate? No: a cheap improvement (str() a number).
+6. **Extrude of a word gives N solids** and `_check_pieces` exempts extrude by
+   name, but a **Cut** made of the word's prisms is judged too: the engraving
+   journey (plate − 'AB' prisms) passed with no pieces warning because the
+   RESULT is one body. A word cut THROUGH a thin plate would split it — the
+   existing "falls into pieces" warning covers that.
+
+**Do not re-report** (LAUNCH-PLAN §10 P3 "Text entity's loose ends"): the
+silent Arial fallback for an unknown font; no bold / italic / spacing / text
+on a curve; the font row shown only when present; the brief invisible moment
+before the loops arrive; box-based hit-test and mode rule; no resize handles.
+
+## 4. Section view — `60e64b0` (`specs/section-view.md`)
+
+**What it is.** Display only: `viewport.beginSection` puts one `THREE.Plane`
+on every body mesh and edge material (`clippingPlanes`, `side = DoubleSide`,
+`renderer.localClippingEnabled`), `section.js` is the panel (Axis / Offset /
+Flip / Close), an Inspect-tab button toggles it. No document change, no plan
+request, nothing saved.
+
+**Where the risk is, ranked:**
+
+1. **`applySectionTo` flips `material.side` to DoubleSide while cut and back
+   to FrontSide after.** Every body material is created FrontSide today
+   (`addBodies`), so the restore is right — but if a body material is ever
+   made DoubleSide on purpose elsewhere, `endSection` would silently turn it
+   FrontSide. One grep.
+2. **`sectionMaterials()` reads `bodyObjs` and `edgeLines` at call time.**
+   `loadMesh` disposes and re-adds bodies; the new ones are clipped in
+   `addBodies` (`if (section) applySectionTo(...)`) — but the face-highlight
+   mesh (`hlMesh`) and the hover face are not, so a highlighted face on the
+   hidden side shows through the cut (§10). Also `renderer.localClippingEnabled`
+   is never turned back off (harmless: no material carries planes after
+   `endSection`).
+3. **The Escape listener is in the CAPTURE phase** so it sees `S.modalTool`
+   before tool.js / measure.js release it. A tool that sets no modal lock but
+   owns Escape (the viewport's plane pick, profile pick — `viewport.js:455`)
+   would be cancelled AND the section closed by one key. Measured only with
+   Measure. Worth one check with a pending Create Sketch plane pick.
+4. **Shared gizmos**: `beginExtrudeArrow` / `beginPlaneQuad` — Extrude or
+   Mirror opening over a section takes them; `endSection` then calls
+   `endExtrudeArrow` / `endPlaneQuad`, which would remove the TOOL's arrow if
+   the section is closed while the tool is open (Close button, or Esc after
+   the tool… no: Esc with a tool open cancels the tool first). The Close
+   button while Extrude is open is the door: it removes Extrude's arrow.
+   Cheap fix: `endSection` only ends the gizmos it still owns (compare
+   against a token), or the panel's Close is guarded by `S.modalTool`.
+5. **`fitCenter` / `fitRadius`** size the quad and set the default offset;
+   after a big model change with the section on they are stale until
+   `place()` is called again (Axis / Flip / Offset touch). Cosmetic.
+
+**Do not re-report** (LAUNCH-PLAN §10 P3 "Section view's loose ends"): no
+capped cut face; shared gizmos taken by a tool; one plane for all bodies; not
+saved across reloads; highlight / hover faces unclipped.
+
+## 5. Named parameters — `127f350` + `4343f30` (`specs/named-parameters.md`)
+
+**What it is.** `paramexpr.py` (a hand-walked `ast` evaluator),
+`Document.parameters` with set / rename / remove / users, formulas allowed in
+any NUMERIC feature param (`_resolved`, `_check_numeric_params`, `_signature`
+on resolved values), `to_data` / `from_data`, three endpoints, `params.js`,
+tree rows `wall*2 = 6`, the AI note and the MCP door.
+
+**Where the risk is, ranked:**
+
+1. **`_check_numeric_params` now lets a STRING through when
+   `paramexpr.is_expression(v)`** — and a bare word IS an expression (a
+   name). So `edges: "vertical"` is untouched (not numeric), but any numeric
+   param given a word gets "no parameter named 'abc'" instead of "must be a
+   number". Two pinned sentences moved (`4343f30`): `test_move_tool` and
+   `test_primitive_guards` — the second is a BEHAVIOUR change: a numeric
+   string in an old file (`"width": "40"`) now BUILDS at 40 where it used to
+   fail. The number is exactly what the file says, so nothing silent; judge
+   whether that is the rule wanted.
+2. **`_resolved` runs for EVERY feature on every rebuild and every
+   `_signature`** — a `paramexpr.evaluate` per string param (rare: only
+   formulas are strings in numeric slots). `is_expression` parses with `ast`
+   — cheap, but it is called on every string numeric param at every
+   `check_params`. Measured: the fast tier's time did not move (8:11 → 8:22
+   with 87 more tests). Not measured: a design with hundreds of formulas.
+3. **The evaluator's whitelist**: `ast.walk` is breadth-first and the Call
+   check marks its `func` Name as allowed BEFORE the Name is visited — correct
+   for `min(...)`, and `min` alone is refused. `round(x, 2)` is allowed
+   (two args). `**` caps the EXPONENT at 64 but a base of 1e8**64 raises
+   OverflowError → caught → sentence; `MAX_VALUE` 1e9 refuses results a
+   design cannot hold. Probe the corpus in `tests/test_named_params.py`
+   yourself with anything you distrust; `2 ** 65` and `1e12` are refused,
+   `1e400` parses to `inf` → "no finite value".
+4. **`rename_in` splices by tokenizer column on ONE line** — a formula with a
+   tab or odd Unicode spacing? `tokenize` columns are character offsets, so
+   it holds; a multi-line string returns unchanged (parse refuses those
+   anyway). `names_in` drops FUNCS names because a parameter can never be
+   named like one (`name_problem`).
+5. **`set_parameter` is all-or-nothing** by snapshotting three dicts and
+   restoring on a problem — but `_mark_stale()` is not called on the
+   refusal path (nothing changed). `remove_parameter` and `rename_parameter`
+   do not snapshot: `rename` validates everything BEFORE it writes; `remove`
+   refuses before it writes. Check `rename_parameter` when `new` collides
+   with a feature id AFTER the parameter check passes (it checks both).
+6. **`from_data` sets `doc.parameters` directly** (no refusal, by design) and
+   `_eval_parameters` marks problems; a duplicate feature id equal to a
+   parameter name in a FILE is not refused at load (`add()` is called
+   without strict) — the feature adds, and `add` raises "'x' is the name of a
+   parameter" → from_data would FAIL to open such a file. Probe: is that
+   the right door? (A file cannot be made that way through the API, only by
+   hand.)
+7. **Undo**: `_snapshot` uses `to_data` → parameters are in the undo stack ✓.
+   The version tree, the session file and the MCP export all go through
+   `to_data` too — and a design WITH parameters saved by this build cannot
+   open in an older build (the `parameters` key is ignored there and the
+   formula strings fail as "must be a number"). Deliberate: a format
+   addition, absent when empty.
+8. **Frontend**: `tree.js` `buildBody` shows `formula = value` only when the
+   server's `resolved` carries the key — a plain number never gets the
+   suffix. `params.js` inline edits post on Enter; the panel re-renders on
+   every `doc-updated` (a drag in a tool re-renders the panel's rows — cheap,
+   but it loses an inline edit in progress if a rebuild lands mid-typing).
+
+**Do not re-report** (LAUNCH-PLAN §10 P3 "Named parameters' loose ends"):
+numeric tool boxes; no units; no measure-to-parameter; sketch entity numbers
+cannot hold formulas; 4-decimal display; the two changed sentences above.
+
+**Merge note.** The build session merges the branch into master only if the
+main checkout has no modified tracked files at that moment (the user's Opus
+bug-fix chat shares the checkout). If the bottom of this file says a branch
+is unmerged, review it on the branch: `git log master..worktree-<name>`.
+
+**How the review starts.** The user opens a fresh chat on Opus
+(`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
+"The review chat" tells that chat to read this status line: PENDING means
+review the range named here; NOTHING PENDING means go to the queue (which is
+empty since 2026-09-17).
