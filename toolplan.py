@@ -389,9 +389,19 @@ def _profile(doc, sketch_id: str):
         if offset:
             pl = pl.offset(offset)
     else:
-        # the very plane make_sketch() built the profile on — one home; it
-        # refuses exactly what the kernel refuses (no upper(), no fallback)
-        pl = sk.sketch_plane(str(p.get("plane") or "XY"), offset)
+        # the very plane make_sketch() built the profile on — `Document.plane_of`
+        # is that one home (a principal plane by NAME, or an `offset_plane`
+        # feature by its id), and the sketch's own offset rides on top exactly
+        # as make_sketch stacks it. It refuses what the kernel refuses (no
+        # upper(), no fallback). Asking `sk.sketch_plane` instead, which only
+        # knows "XY"/"XZ"/"YZ", made Extrude and Sweep — this helper's two
+        # callers — refuse EVERY sketch drawn on a construction plane with
+        # `sketch: plane must be "XY", "XZ" or "YZ"`, while the kernel built
+        # the same solid happily and Revolve (which reads the plane off the
+        # built sketch) worked. Reported by the user 2026-09-23.
+        pl = doc.plane_of(str(p.get("plane") or "XY"))
+        if offset:
+            pl = pl.offset(offset)
     return profile, pl, into_sign
 
 

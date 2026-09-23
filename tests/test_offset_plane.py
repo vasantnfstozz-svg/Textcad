@@ -262,3 +262,96 @@ def test_the_offset_method_lint_does_not_fire_on_a_sketch_on_a_plane_row():
         Feature(id="s", op="sketch", params={"plane": "XY", "offset": 20, "entities": CIRCLE}, inputs=[]),
     ]
     assert [w for w in author.lint_tree(still) if "floats at absolute Z" in w]
+
+
+# an open path drawn on XZ that STARTS on a profile sitting at z = 30 (world
+# (0,0,30) is local (0,30) there) and LEAVES along that profile's +Z normal —
+# both of Sweep's own rules, so the plan can only fail on the plane lookup
+PATH = [{"kind": "path", "start": [0, 30], "closed": False,
+         "segments": [{"to": [0, 70]}, {"to": [40, 70]}], "mode": "add"}]
+
+
+def test_extrude_and_sweep_plan_a_sketch_that_sits_on_a_plane_row():
+    """The user (2026-09-23): "I draw something on xz or yz plane, I cannot
+    extrude that shape, but revolve is working". It was never the principal
+    plane — it was the offset plane under the sketch. `toolplan._profile`
+    asked `sk.sketch_plane` for the plane the profile was drawn on, which only
+    knows "XY"/"XZ"/"YZ", so Extrude and Sweep (its two callers) refused every
+    sketch on a plane row with `sketch: plane must be "XY", "XZ" or "YZ"` —
+    while the KERNEL built the same extrude happily, and Revolve worked
+    because it reads the plane off the built sketch instead."""
+    d = Document(name="t")
+    d.add("p1", "offset_plane", {"plane": "XZ", "offset": 20}, [])
+    d.add("s1", "sketch", {"plane": "p1", "entities": CIRCLE}, [])
+    assert d.rebuild(), [(f.id, f.problems) for f in d.features]
+
+    plan = toolplan.plan(d, {"tool": "extrude", "sketch_id": "s1"})
+    assert plan["ok"], plan.get("error")
+    # the plan's frame IS the plane's — XZ's normal points -Y, so the plane
+    # sits at y = -20 and the extrude runs -Y from there (R1: one source)
+    assert plan["frame"]["origin"] == [0.0, -20.0, 0.0]
+    assert plan["frame"]["z_dir"] == [0.0, -1.0, 0.0]
+
+    # and the kernel puts the solid exactly where the plan said it would
+    d.add("e1", "extrude", {"amount": 5}, ["s1"])
+    assert d.rebuild(), [(f.id, f.problems) for f in d.features]
+    bb = d._parts["e1"].bounding_box()
+    assert (bb.min.Y, bb.max.Y) == (pytest.approx(-25), pytest.approx(-20))
+
+    # Sweep is the other caller of the same helper: a profile on a plane row,
+    # with a path that starts on it
+    w = Document(name="t2")
+    w.add("p2", "offset_plane", {"plane": "XY", "offset": 30}, [])
+    w.add("prof", "sketch", {"plane": "p2", "entities": CIRCLE}, [])
+    w.add("rail", "sketch", {"plane": "XZ", "entities": PATH}, [])
+    assert w.rebuild(), [(f.id, f.problems) for f in w.features]
+    sw = toolplan.plan(w, {"tool": "sweep", "sketch_id": "prof", "path_id": "rail"})
+    assert sw["ok"], sw.get("error")
+
+
+def test_a_sketch_on_a_plane_row_stacks_its_own_offset_in_the_extrude_plan():
+    """The sketch's own `offset` rides ON TOP of the plane's, in the plan
+    exactly as `make_sketch` stacks it on the build."""
+    d = Document(name="t")
+    d.add("p1", "offset_plane", {"plane": "XY", "offset": 30}, [])
+    d.add("s1", "sketch", {"plane": "p1", "offset": 4, "entities": CIRCLE}, [])
+    assert d.rebuild()
+    plan = toolplan.plan(d, {"tool": "extrude", "sketch_id": "s1"})
+    assert plan["ok"], plan.get("error")
+    assert plan["frame"]["origin"][2] == pytest.approx(34)
+    assert d._parts["s1"].faces()[0].center().Z == pytest.approx(34), "plan and build agree"
+
+
+def test_measure_finds_the_plane_of_a_sketch_on_a_plane_row_and_follows_it():
+    """Measure derives a sketch's plane from the CURRENT geometry so it can
+    drive a dimension back to the entity that made it. It read the plane out
+    of `sketch._PLANES`, which only holds "XY"/"XZ"/"YZ", so every sketch on a
+    construction plane answered None and quietly lost its drive link — the
+    same circle drawn on `XY offset 30` kept it.
+
+    And its cache is keyed on the SKETCH's own params, which do not move when
+    the PLANE does: the entry has to follow the plane part the same way a face
+    sketch's entry follows its body."""
+    import measure
+    d = Document(name="t")
+    d.add("p1", "offset_plane", {"plane": "XY", "offset": 30}, [])
+    d.add("s1", "sketch", {"plane": "p1", "entities": CIRCLE}, [])
+    d.add("s0", "sketch", {"plane": "XY", "offset": 30, "entities": CIRCLE}, [])
+    assert d.rebuild(), [(f.id, f.problems) for f in d.features]
+
+    pl = measure._sketch_plane(d, d.get("s1"))
+    assert pl is not None, "a sketch on a plane row has a plane like any other"
+    ref = measure._sketch_plane(d, d.get("s0"))
+    assert list(tuple(pl.origin)) == pytest.approx(list(tuple(ref.origin)))
+    assert pl.origin.Z == pytest.approx(30)
+    # the sketch's own offset still stacks on the plane's
+    d.add("s2", "sketch", {"plane": "p1", "offset": 5, "entities": CIRCLE}, [])
+    d.rebuild()
+    assert measure._sketch_plane(d, d.get("s2")).origin.Z == pytest.approx(35)
+
+    # move the plane: the cached answer must move with it, not stay at 30
+    d.edit_many("p1", {"offset": 50})
+    assert d.rebuild()
+    assert d._parts["s1"].faces()[0].center().Z == pytest.approx(50), "the build moved"
+    assert measure._sketch_plane(d, d.get("s1")).origin.Z == pytest.approx(50), \
+        "measure's cached plane is stale — it keys on the sketch, which did not change"

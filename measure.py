@@ -512,6 +512,22 @@ def _plane_sig(feat) -> tuple:
             p.get("face_area"))
 
 
+def _plane_base(doc, feat):
+    """The built part a sketch's plane is derived FROM — the body under a face
+    sketch, or the CONSTRUCTION PLANE it names in `plane`.
+
+    `_plane_sig` reads the sketch's own params, and those do not change when
+    the plane row under it moves ("p1" stays "p1"), so without this the cached
+    entry answered the plane's OLD position after an edit. A rebuild puts a new
+    Part object in `_parts` for anything whose signature moved, so identity is
+    the freshness test — the same one a face sketch's body already uses."""
+    import sketch as sk
+    if feat.inputs:
+        return doc._parts.get(feat.inputs[0])
+    name = str((feat.params or {}).get("plane") or "XY")
+    return None if name in sk.PRINCIPAL_PLANES else doc._parts.get(name)
+
+
 def _sketch_plane(doc, feat):
     """The Plane a sketch feature's entity coordinates live in — the same plane
     sketch.make_sketch / sketch_on_face place them on.
@@ -519,7 +535,7 @@ def _sketch_plane(doc, feat):
     Derived from the CURRENT geometry, never stored on the feature: under the
     offset method a sketch plane is stated as a depth from a face, so it moves
     when the base changes. The cache above keys on that base, so it follows."""
-    base = doc._parts.get(feat.inputs[0]) if feat.inputs else None
+    base = _plane_base(doc, feat)
     sig = _plane_sig(feat)
     cache = _plane_cache(doc)
     hit = cache.get(feat.id)
@@ -535,7 +551,13 @@ def _build_plane(doc, feat, base):
     p = feat.params or {}
     try:
         if feat.op == "sketch":
-            pl = sk._PLANES.get(p.get("plane", "XY"))
+            # Document.plane_of, not sk._PLANES: the name is a principal plane
+            # OR an `offset_plane` feature's id, and only the document knows the
+            # second. Reading the dict alone answered None for every sketch on a
+            # construction plane, so Measure silently had no dimension to drive
+            # (user report 2026-09-23). A name it cannot place raises, and the
+            # except below turns that into the same None as before.
+            pl = doc.plane_of(p.get("plane") or "XY")
         elif feat.op == "sketch_on_face":
             if base is None:
                 return None

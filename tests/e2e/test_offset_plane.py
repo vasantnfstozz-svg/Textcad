@@ -331,3 +331,51 @@ def test_the_sketch_tab_has_no_move_plane_and_the_create_tab_has_offset_plane(pl
     assert "Move Plane" not in titles and "Finish Sketch" in titles, titles
     page.keyboard.press("Escape")
     assert page.errors == []
+
+
+def test_the_extrude_TOOL_opens_on_a_sketch_drawn_on_a_plane(plate):
+    """The user (2026-09-23): "I draw something on xz or yz plane, I cannot
+    extrude that shape, but revolve is working". `toolplan._profile` asked
+    `sketch.sketch_plane` for the profile's plane, which only knows the three
+    principal names, so the Extrude TOOL refused every sketch on a plane row
+    with `sketch: plane must be "XY", "XZ" or "YZ"`.
+
+    The eight tests above never caught it because the one that extrudes does
+    it through `/api/feature/add` — the op, not the tool. This one presses the
+    tool the user presses, and takes it all the way to a body."""
+    page = plate
+    page.evaluate(OPEN)
+    page.wait_for_function(PICK_ARMED, timeout=15000)
+    page.evaluate(STAGE, ["plane", "XZ"])          # the plane the user named
+    page.wait_for_function(STAGE_OPEN, timeout=15000)
+    _type(page, "20")
+    _ok(page)
+    page.evaluate(CREATE_SKETCH)
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.wait_for_timeout(200)
+    page.evaluate(DRAW_RECT, [-10, -5, 10, 5])
+    page.evaluate(FINISH)
+    page.wait_for_function(NOT_ACTIVE, timeout=15000)
+    page.wait_for_timeout(600)
+    sid = [f for f in _doc(page)["features"] if f["op"] == "sketch"][0]["id"]
+
+    # the TOOL, not the op: this is the press that used to answer a sentence
+    page.evaluate("""async (sid) => {
+      const m = await import('/static/js/extrude.js');
+      await m.openExtrude(sid);
+    }""", sid)
+    page.wait_for_selector("#exOk", state="visible", timeout=15000)
+    page.wait_for_timeout(800)
+    page.fill("#exDist", "5")
+    page.dispatch_event("#exDist", "input")
+    page.wait_for_timeout(400)
+    page.click("#exOk")
+    page.wait_for_timeout(1500)
+
+    doc = _doc(page)
+    ext = [f for f in doc["features"] if f["op"] == "extrude"]
+    assert len(ext) == 1, doc["features"]
+    assert ext[0]["status"] == "ok", ext[0]["problems"]
+    assert ext[0]["volume"] == pytest.approx(20 * 10 * 5, rel=1e-3), ext[0]["volume"]
+    assert page.errors == []
