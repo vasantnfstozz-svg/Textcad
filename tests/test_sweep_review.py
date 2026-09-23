@@ -162,3 +162,26 @@ def test_a_slanted_profile_folds_sooner_and_is_refused(toward):
         with pytest.raises(ValueError, match="toward its inside"):
             sk._sweep_solid(faces, _slant_bend(R, toward), 0, True)
     assert sk._sweep_solid(faces, _slant_bend(4.5, toward), 0, True).volume > 0
+
+
+@pytest.mark.parametrize("x0", [1.0, -1.0, 2.0])
+def test_a_loop_path_from_an_off_centre_start_counts_its_closing_corner(x0):
+    """Final re-read: a closed path turns where it closes too, and the kernel
+    mitres that corner; the volume check left it out and refused a correct
+    30 x 40 frame swept from 2 mm off-centre as 'folded' (103 %)."""
+    p = path([{"type": "line", "to": [x0, 30]}, {"type": "line", "to": [x0 + 40, 30]},
+              {"type": "line", "to": [x0 + 40, 0]}, {"type": "line", "to": [x0, 0]}],
+             start=(x0, 0))
+    out = sweep(rect(4, 4), p)
+    assert out.volume == pytest.approx(kernel(rect(4, 4), p).volume, rel=1e-9)
+    assert out.volume == pytest.approx(16 * (140 + 4 * 2 * x0), rel=1e-6)
+
+
+def test_a_loop_path_checks_the_leg_at_its_closing_corner():
+    """...and the corner guard skipped that corner: a loop whose closing leg
+    is shorter than the mitre went to the kernel unjudged."""
+    p = path([{"type": "line", "to": [0, 30]}, {"type": "line", "to": [40, 30]},
+              {"type": "line", "to": [40, 0]}, {"type": "line", "to": [1, 0]},
+              {"type": "line", "to": [0, 0]}])
+    with pytest.raises(ValueError, match="shorter than"):
+        sweep(rect(4, 4), p)

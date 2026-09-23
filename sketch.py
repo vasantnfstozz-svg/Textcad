@@ -3886,7 +3886,12 @@ def _pivot_length(wire, n, c: float) -> float:
     it is the path's own length (Pappus: a centroid ON the path sweeps A·L)."""
     edges = wire.edges()
     total = wire.length - c * sum(_turning(e, n) for e in edges)
-    for a, b in zip(edges, edges[1:]):
+    # ...and a LOOP's closing corner, which the kernel mitres as well:
+    # measured on a 30 x 40 frame from a start 2 mm off-centre, 2496 mm3
+    # where the open-path sum said 2432, and it was refused as folded
+    pairs = list(zip(edges, edges[1:])) + (
+        [(edges[-1], edges[0])] if wire.is_closed and len(edges) > 1 else [])
+    for a, b in pairs:
         ta, tb = a.tangent_at(1), b.tangent_at(0)
         turn = math.atan2(ta.cross(tb).dot(n), ta.dot(tb))
         total -= 2.0 * c * math.tan(turn / 2)
@@ -3997,11 +4002,15 @@ def sweep_geometry(faces: list, wire) -> dict:
                     f"profile")
     # corners: a mitre needs inner·tan(turn/2) of straight path on each side
     edges = wire.edges()
-    s = 0.0
-    for i, (a, b) in enumerate(zip(edges, edges[1:]), start=1):
+    corners, s = [], 0.0
+    for a, b in zip(edges, edges[1:]):
         s += a.length
-        ta = wire.tangent_at(max(0.0, (s - 1e-4) / length))
-        tb = wire.tangent_at(min(1.0, (s + 1e-4) / length))
+        corners.append((a, b, wire.tangent_at(max(0.0, (s - 1e-4) / length)),
+                        wire.tangent_at(min(1.0, (s + 1e-4) / length))))
+    if wire.is_closed and len(edges) > 1:      # a loop turns where it closes, too
+        corners.append((edges[-1], edges[0], wire.tangent_at(1.0 - 1e-4 / length),
+                        wire.tangent_at(1e-4 / length)))
+    for i, (a, b, ta, tb) in enumerate(corners, start=1):
         turn = math.degrees(math.acos(max(-1.0, min(1.0, ta.dot(tb)))))
         if turn < 1.0:
             continue
