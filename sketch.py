@@ -229,9 +229,16 @@ def _text_faces(e: dict):
     Times New Roman, Courier New and Consolas on this box; letters stay valid
     faces down to 0.1 mm, so the only floor is the positive-size rule."""
     txt = e.get("text")
-    if not isinstance(txt, str) or not txt.strip():
+    # a NUMBER is a word too: the AI writes "text": 2026, and that was refused
+    # as "its text is empty" (review, 2026-09-23)
+    if isinstance(txt, (int, float)) and not isinstance(txt, bool):
+        txt = f"{txt:g}" if isinstance(txt, float) else str(txt)
+    if txt is None or (isinstance(txt, str) and not txt.strip()):
         raise ValueError("text entity needs a word — its `text` is empty; type the "
                          "word to write, or remove the entity")
+    if not isinstance(txt, str):
+        raise ValueError(f"text entity: `text` is the word to write, such as 'LOGO' "
+                         f"(got {txt!r})")
     size = float(e.get("size") or 0.0)
     if size <= 0:
         raise ValueError(f"text height must be greater than 0, got {size:g}")
@@ -249,7 +256,52 @@ def _text_faces(e: dict):
     if s is None or not s.faces():
         raise ValueError(f"text entity: {txt!r} has no printable letters — spaces and "
                          f"punctuation alone make no shape")
+    missing = [c for c in dict.fromkeys(txt) if ord(c) > 127 and not c.isspace()
+               and _is_placeholder(c, size, font)]
+    if missing:
+        raise ValueError(
+            f"text entity: the font {font!r} has no letter for {''.join(missing)!r} — it "
+            f"would be cut as a plain box, the font's stand-in for a letter it lacks; "
+            f"leave it out, or pick a font that has it")
     return s
+
+
+_PLACEHOLDER: dict = {}         # (font, size) -> the stand-in glyph's signature, or None
+
+
+def _glyph_signature(ch: str, size: float, font: str):
+    with BuildSketch() as bs:
+        b3d.Text(ch, size, font=font, align=(b3d.Align.CENTER, b3d.Align.CENTER))
+    s = bs.sketch
+    if s is None or not s.faces():
+        return None
+    bb = s.bounding_box()
+    return (float(s.area), float(bb.size.X), float(bb.size.Y),
+            sum(len(f.inner_wires()) for f in s.faces()))
+
+
+def _is_placeholder(ch: str, size: float, font: str) -> bool:
+    """Is `ch` drawn as the font's STAND-IN box? A letter the font lacks is not
+    an error to the kernel: an emoji, a snowman or a Devanagari word came
+    back as the same 5 x 6.25 box with a hole at size 10, in Arial and in
+    Times alike, and was cut as that box with the row green (review,
+    2026-09-23, probes/text_review_probe.py). The stand-in is found by
+    shaping a code point no font has (U+10FFFF) once per font and size."""
+    key = (font, size)
+    if key not in _PLACEHOLDER:
+        try:
+            _PLACEHOLDER[key] = _glyph_signature("\U0010FFFF", size, font)
+        except Exception:                           # noqa: BLE001 - no stand-in to compare with
+            _PLACEHOLDER[key] = None
+    ref = _PLACEHOLDER[key]
+    if ref is None:
+        return False
+    try:
+        sig = _glyph_signature(ch, size, font)
+    except Exception:                               # noqa: BLE001
+        return False
+    return sig is not None and sig[3] == ref[3] and all(
+        abs(a - b) <= 1e-6 * max(1.0, abs(b)) for a, b in zip(sig[:3], ref[:3]))
 
 
 def entity_outlines(e: dict) -> list[list[list[float]]]:

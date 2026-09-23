@@ -1741,11 +1741,16 @@ function outlinePts(e) {
    `entToSketch` places every other entity. Until the answer lands the word
    draws nothing; when it lands the sketch redraws and the even-odd modes are
    assigned again (a word inside a plate is a cut). */
-const textCache = new Map();                    // key -> loops in the entity's frame | 'pending'
+// key -> loops in the entity's frame | 'pending' | { retryAt } after a request
+// that never got an answer (the server restarting): cached as [] it was never
+// asked again and the word stayed invisible for the session (review, 2026-09-23)
+const textCache = new Map();
 const textKey = e => `${e.text}|${e.size}|${e.font || ''}`;
 function textLoops(e) {
   const k = textKey(e), got = textCache.get(k);
-  if (got === undefined) { textCache.set(k, 'pending'); fetchTextLoops(e, k); return []; }
+  if (got === undefined || (got && got.retryAt && Date.now() > got.retryAt)) {
+    textCache.set(k, 'pending'); fetchTextLoops(e, k); return [];
+  }
   if (!Array.isArray(got)) return [];
   return got.map(L => L.map(([px, py]) => { const q = entToSketch(e, px, py); return [q.x, q.y]; }));
 }
@@ -1758,7 +1763,7 @@ async function fetchTextLoops(e, k) {
     const err = res.errors && res.errors['0'];
     if (err) bus.emit('msg', 'bot', '⚠ ' + err);
     textCache.set(k, (res.outlines && res.outlines[0]) || []);
-  } catch { textCache.set(k, []); }
+  } catch { textCache.set(k, { retryAt: Date.now() + 3000 }); }
   if (sketchActive) { assignModes(); draw(); }
 }
 /* the word's bounding box in its own frame, once its loops are known */
@@ -2014,6 +2019,10 @@ let lastText = 'TEXT', lastTextSize = 10;       // the Text tool remembers its l
 let lastMove = null;         // latest snapped cursor point (plane coords)
 let drawDimKey = '';         // state signature — rebuild fields on change
 let drawLocked = {};         // field key -> user typed (stop live overwrite)
+// the word field let go by an Escape: not taken back until the next click or
+// tool. It re-focused itself on every redraw, so the Escape that leaves the
+// tool always landed in the field again (review of the Text entity, 2026-09-23)
+let wordLetGo = false;
 
 function drawDimFields() {
   if (!sketchActive || !tool || edgeOnView) return null;
@@ -2046,7 +2055,7 @@ function updateDrawDimBox() {
   }
   const sig = `${tool}|${clicks.length}|${pathSegs.length}|${pathStart ? 1 : 0}`;
   if (sig !== drawDimKey) {
-    drawDimKey = sig; drawLocked = {};
+    drawDimKey = sig; drawLocked = {}; wordLetGo = false;
     el.innerHTML = '';
     for (const [key, label] of fields) {
       const w = document.createElement('label');
@@ -2060,7 +2069,7 @@ function updateDrawDimBox() {
         ev.stopPropagation();
         if (ev.key === 'Enter') { ev.preventDefault(); commitDrawDims(); }
         if (ev.key === 'Escape') {           // back to live values, keep tool
-          ev.preventDefault(); drawLocked = {}; inp.blur(); updateDrawDimBox();
+          ev.preventDefault(); drawLocked = {}; wordLetGo = true; inp.blur(); updateDrawDimBox();
         }
       };
       w.appendChild(inp);
@@ -2092,7 +2101,7 @@ function updateDrawDimBox() {
   // the Text tool: the word is what the user types next, so the word field
   // takes the keys as soon as the box is up (never stealing from a field
   // the user has already tabbed into)
-  if (tool === 'text' && !el.contains(document.activeElement)) {
+  if (tool === 'text' && !wordLetGo && !el.contains(document.activeElement)) {
     const t = el.querySelector('input[data-dim="text"]');
     if (t) { t.focus(); t.select(); }
   }

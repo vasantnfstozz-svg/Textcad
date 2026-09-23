@@ -166,3 +166,45 @@ def test_editing_the_sketch_draws_the_glyphs_from_the_server(page, fresh_doc, se
     ents = page.evaluate(ENTS)
     assert ents[0]["kind"] == "text" and ents[0]["text"] == "AB"
     assert not page.errors, page.errors
+
+
+def test_escape_leaves_the_text_tool_as_it_does_every_other_shape(page, fresh_doc, server):
+    """Review, 2026-09-23: the first Escape in the draw box puts the live
+    values back and keeps the tool; the second leaves it. For Text the box
+    re-focused its word field after the first, so every later Escape landed
+    in the field again and the tool could not be left from the keyboard."""
+    page.evaluate(OPEN_SKETCH)
+    page.evaluate(CLICK, [0, 0])
+    box = page.locator("#skDimDraw")
+    assert box.is_visible()
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(200)
+    assert box.is_visible(), "the first Escape keeps the tool"
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(200)
+    assert not box.is_visible(), "the second Escape leaves the tool"
+    assert page.evaluate(ENTS) == []
+    assert not page.errors, page.errors
+
+
+def test_a_word_whose_outline_request_failed_is_asked_again(page, fresh_doc, server):
+    """Review, 2026-09-23: a failed /api/sketch/outline (the server
+    restarting) cached the word as NO loops and it was never asked again —
+    the word stayed invisible for the whole session."""
+    asked = []
+
+    def handle(route):
+        asked.append(1)
+        if len(asked) == 1:
+            route.abort()
+        else:
+            route.continue_()
+    page.route("**/api/sketch/outline", handle)
+    page.evaluate(OPEN_SKETCH)
+    page.evaluate(CLICK, [0, 0])
+    page.keyboard.type("HI")
+    page.keyboard.press("Enter")
+    page.wait_for_timeout(3500)
+    page.evaluate(CLICK, [30, 30])              # anything that redraws the sketch
+    page.wait_for_timeout(800)
+    assert len(asked) >= 2, "the failed word was never asked for again"
