@@ -16,6 +16,7 @@ here is confirmed against build123d 0.11.1.
 """
 
 from __future__ import annotations
+import functools
 import math
 import re
 import build123d as b3d
@@ -280,6 +281,7 @@ def _glyph_signature(ch: str, size: float, font: str):
             sum(len(f.inner_wires()) for f in s.faces()))
 
 
+@functools.lru_cache(maxsize=4096)       # a letter is asked once per font and size
 def _is_placeholder(ch: str, size: float, font: str) -> bool:
     """Is `ch` drawn as the font's STAND-IN box? A letter the font lacks is not
     an error to the kernel: an emoji, a snowman or a Devanagari word came
