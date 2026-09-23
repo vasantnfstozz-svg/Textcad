@@ -169,10 +169,10 @@ classes and known items, a status board, the fix-pass steps and a done log.
 
 Two kinds of chat exist on this project. **Building** happens in a fresh chat
 on Fable 5.1, one per tool. **Reviewing** happens in a separate fresh chat on
-Opus 5. The user types `code review` and nothing else; that chat does the rest:
+Opus 5.5 (since 2026-09-23; Opus 5 before). The user types `code review` and nothing else; that chat does the rest:
 
-1. **Model check.** Not running on Opus 5? Answer with ONE line — "Type
-   `/model claude-opus-5[1m]`, then `code review` again." — and stop.
+1. **Model check.** Not running on Opus 5.5? Answer with ONE line — "Type
+   `/model claude-opus-5-5[1m]`, then `code review` again." — and stop.
    (The `[1m]` is the review seat's, decided 2026-09-10: a review reads a
    diff, probes, fixes and writes the paperwork in one chat, and the user
    would rather it never compact mid-pass. Effort is pinned to xhigh for

@@ -346,7 +346,7 @@ bug-fix chat shares the checkout). If the bottom of this file says a branch
 is unmerged, review it on the branch: `git log master..worktree-<name>`.
 
 **How the review starts.** The user opens a fresh chat on Opus
-(`/model claude-opus-5[1m]`) and types only `code review`. CLAUDE.md's section
+(`/model claude-opus-5-5[1m]`) and types only `code review`. CLAUDE.md's section
 "The review chat" tells that chat to read this status line: PENDING means
 review the range named here; NOTHING PENDING means go to the queue (which is
 empty since 2026-09-17).

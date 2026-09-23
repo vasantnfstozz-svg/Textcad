@@ -17,13 +17,13 @@ description: The pre-commit shipping routine for TextCAD — full test suite, se
    the private backup at https://github.com/Vasan0021/textcad only protects
    what actually gets pushed (gh CLI is authenticated via keyring).
 6. **Refresh `REVIEW-BRIEF.md`, then hand over — every time.** The review
-   runs in a SEPARATE fresh chat on Opus 5 that starts with no context, so
+   runs in a SEPARATE fresh chat on Opus 5.5 that starts with no context, so
    the brief is the handoff. **Rewrite it (never append):** first the line
    `Status: PENDING`, then the commit range and its base, one line per
    commit, where the risk is concentrated, this repo's ground rules for what
    counts as a finding, and the known-and-deferred list so nothing is
    re-reported. Then say in one line: "Open a new chat, type
-   `/model claude-opus-5`, then type `code review`." CLAUDE.md's section
+   `/model claude-opus-5-5[1m]`, then type `code review`." CLAUDE.md's section
    "The review chat" tells that chat what to do: ONE reviewer, fixes in the
    same chat, brief back to NOTHING PENDING. Do this right after the CODE
    commit, before any docs/plan follow-up, and stamp the plan after the
