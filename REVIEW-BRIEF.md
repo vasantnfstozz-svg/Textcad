@@ -7,7 +7,7 @@
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
 > **Status: PENDING.** Review `692c6f5..HEAD` — the **round-three fix pass of
-> the Offset Plane review** (`692c6f5`) and its follow-up (`19ee23f`). Rounds
+> the Offset Plane review** (`692c6f5`) and its two follow-ups (`19ee23f`, `6a86fa9`). Rounds
 > one and two (`6a4da57..68b1a8a`) have now been read and are CLOSED. What is
 > left is this pass, and the reason it is not closed is the second half of it:
 > it put a NEW RULE into the author's history lint, and `lint_baseline` runs
