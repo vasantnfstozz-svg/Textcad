@@ -3871,7 +3871,18 @@ def sweep_geometry(faces: list, wire) -> dict:
     reach = max((p - start).length for p in pts)
     n = _path_normal(wire)
     m0 = n.cross(t0) if n is not None else None        # across the path at its start
-    across = [(p - start).dot(m0) for p in pts] if m0 is not None else None
+    # A point q of the profile moves along the profile's normal N at
+    # (1 - k·a)(t·N) + k·b(m·N) per unit of path (a = q·m across, b = q·t
+    # along, k the bend's curvature): it sweeps BACKWARDS, folding the solid,
+    # once a - b(m·N)/(t·N) >= R. Face-on (N = t) that is a >= R; a profile
+    # the path leaves at 45° in its plane folds at s >= R·cos45 across it —
+    # sooner than a >= R, which round two of the review found this rule
+    # letting through (probes/sweep_slant_probe.py: the kernel calls every
+    # one of those valid at exactly A·L·cos45, so only the rule can see it).
+    face_n = normal if normal.dot(t0) > 0 else -normal
+    lean = m0.dot(face_n) / t0.dot(face_n) if m0 is not None else 0.0
+    across = ([(p - start).dot(m0) - (p - start).dot(t0) * lean for p in pts]
+              if m0 is not None else None)
 
     def inner(turn: float) -> float:
         """How far the profile reaches toward the inside of a turn (signed:

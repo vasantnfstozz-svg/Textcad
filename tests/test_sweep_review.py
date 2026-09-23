@@ -131,3 +131,34 @@ def test_the_plan_turns_the_ghost_about_the_same_pivot():
     assert plan["frame"]["origin"] == pytest.approx([1.5, 0, 0], abs=1e-6)
     xs = [q[0] for loop in plan["loops"] for q in loop["outer"]]
     assert min(xs) == pytest.approx(-3.5, abs=1e-6) and max(xs) == pytest.approx(0.5, abs=1e-6)
+
+
+def _slant_bend(R, toward=+1, deg=45.0, leg=10.0, turn=60.0, run=30.0):
+    """XZ plane: a first leg at `deg` from +Z, then an arc of `turn` degrees
+    and radius R turning further toward +X (toward=+1) or back (-1)."""
+    a = math.radians(deg)
+    p1 = (leg * math.sin(a), leg * math.cos(a))
+    nrm = (math.cos(a) * toward, -math.sin(a) * toward)
+    c = (p1[0] + R * nrm[0], p1[1] + R * nrm[1])
+    b = math.radians(turn) * toward
+    a0 = math.atan2(p1[1] - c[1], p1[0] - c[0])
+
+    def on(t):
+        return (c[0] + R * math.cos(a0 - t), 0, c[1] + R * math.sin(a0 - t))
+    mid, end = on(b / 2), on(b)
+    far = (end[0] + run * math.sin(a + b), 0, end[2] + run * math.cos(a + b))
+    return b3d.Wire([b3d.Line((0, 0, 0), (p1[0], 0, p1[1])),
+                     b3d.ThreePointArc((p1[0], 0, p1[1]), mid, end), b3d.Line(end, far)])
+
+
+@pytest.mark.parametrize("toward", [+1, -1])
+def test_a_slanted_profile_folds_sooner_and_is_refused(toward):
+    """Round two: a circle r3 the path leaves at 45 deg folds on any bend up to
+    3/cos45 = 4.24 (its far side sweeps backwards through the profile's
+    plane). The kernel calls every one valid at exactly A*L*cos45; round
+    one's rule measured 3*cos45 = 2.12 across the path and built R = 2.2."""
+    faces = circ(3).faces()
+    for R in (2.2, 3.0, 4.0):
+        with pytest.raises(ValueError, match="toward its inside"):
+            sk._sweep_solid(faces, _slant_bend(R, toward), 0, True)
+    assert sk._sweep_solid(faces, _slant_bend(4.5, toward), 0, True).volume > 0
