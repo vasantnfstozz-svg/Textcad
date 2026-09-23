@@ -86,16 +86,24 @@ let modelEdges = [];      // [{body, pts:[[x,y]..]}] in plane-local mm
    that fact — sketch.sketch_plane — is the only way it stays true). Fetched
    from /api/tool/plan {tool: "sketch"} when the sketch opens. */
 let skFrame = null;
-const planeFrames = new Map();     // `${plane}|${offset}` -> frame: a pure function of both
+// `${plane}|${offset}` -> frame. Cacheable ONLY for the three origin planes,
+// where the key really does decide the answer. A construction plane is named
+// by its FEATURE ID, and its ✎ moves it without changing that id — so the
+// second sketch opened on it drew on the frame from before the edit: grid,
+// model snaps and every click (the pointer ray is cast at that plane) at the
+// old height while make_sketch built at the new one. Same defect as the
+// server's plane cache keyed on the sketch's own params, fixed in the
+// round-two review; this was the browser's copy (code review 2026-09-23).
+const planeFrames = new Map();
 
 async function fetchPlaneFrame(plane, offset) {
   const key = `${plane}|${offset}`;
-  if (!planeFrames.has(key)) {
-    const p = await planRequest({ tool: 'sketch', plane, offset });
-    if (!p.ok) { bus.emit('msg', 'bot', `⚠ Cannot open the sketch: ${p.error}.`); return null; }
-    planeFrames.set(key, p.frame);
-  }
-  return planeFrames.get(key);
+  const fixed = PRINCIPAL.includes(plane);          // an origin plane never moves
+  if (fixed && planeFrames.has(key)) return planeFrames.get(key);
+  const p = await planRequest({ tool: 'sketch', plane, offset });
+  if (!p.ok) { bus.emit('msg', 'bot', `⚠ Cannot open the sketch: ${p.error}.`); return null; }
+  if (fixed) planeFrames.set(key, p.frame);
+  return p.frame;
 }
 
 /* Pull in the model geometry that lies ON this sketch plane, so the part's own

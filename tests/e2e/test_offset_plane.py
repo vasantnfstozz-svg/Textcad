@@ -379,3 +379,54 @@ def test_the_extrude_TOOL_opens_on_a_sketch_drawn_on_a_plane(plate):
     assert ext[0]["status"] == "ok", ext[0]["problems"]
     assert ext[0]["volume"] == pytest.approx(20 * 10 * 5, rel=1e-3), ext[0]["volume"]
     assert page.errors == []
+
+
+def test_a_sketch_opened_after_the_plane_moved_draws_at_its_NEW_height(plate):
+    """The browser caches a plane's frame under `${plane}|${offset}`, and that
+    key was a pure function of the frame only while `plane` could name nothing
+    but XY / XZ / YZ. A construction plane MOVES: open a sketch on it once,
+    press ✎ on its row, and the second sketch opened on it drew on the frame
+    the plane had BEFORE the edit — the grid, the model snaps and every click
+    (the pointer ray is cast at that plane) 30 mm away from where make_sketch
+    would build. Server-side the same cache keyed on a name that no longer
+    decides the answer was the second half of the round-two review; this is the
+    browser's copy of it (code review 2026-09-23)."""
+    page = plate
+    page.evaluate(ADD_PLANE, ["lid", {"plane": "XY", "offset": 20}, []])
+    page.wait_for_function("() => window.__vp.constructionPlaneInfo().length === 1", timeout=15000)
+
+    # open a sketch on the plane once — this is what fills the browser's cache
+    page.evaluate("async () => (await import('/static/js/sketcher.js')).openSketchEditor('lid', 0)")
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    assert page.evaluate("window.__vp.getControls().target.toArray()")[2] == pytest.approx(20, abs=1e-6)
+    page.evaluate("async () => (await import('/static/js/sketcher.js')).cancelSketch()")
+    page.wait_for_function(NOT_ACTIVE, timeout=15000)
+
+    # move the plane with its own ✎, the way the user does
+    page.evaluate(EDIT, "lid")
+    page.wait_for_function(STAGE_OPEN, timeout=15000)
+    _type(page, "50")
+    _ok(page)
+    assert _planes(_doc(page))[0]["plane_frame"]["origin"][2] == pytest.approx(50)
+    page.wait_for_function(
+        "() => Math.abs(window.__vp.constructionPlaneInfo()[0].position[2] - 50) < 1e-6",
+        timeout=15000)
+
+    # open a sketch on it again: the grid must be at 50, where the kernel builds
+    page.evaluate("async () => (await import('/static/js/sketcher.js')).openSketchEditor('lid', 0)")
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    target = page.evaluate("window.__vp.getControls().target.toArray()")
+    assert target[2] == pytest.approx(50, abs=1e-6), \
+        f"the sketch grid is at z {target[2]} but the plane it names is at 50"
+
+    # and what is drawn on it lands there
+    page.wait_for_timeout(200)
+    page.evaluate(DRAW_RECT, [-10, -5, 10, 5])
+    page.evaluate(FINISH)
+    page.wait_for_function(NOT_ACTIVE, timeout=15000)
+    page.wait_for_timeout(600)
+    s = [f for f in _doc(page)["features"] if f["op"] == "sketch"]
+    assert len(s) == 1 and s[0]["params"]["plane"] == "lid" and s[0]["status"] == "ok", s
+    assert page.errors == []

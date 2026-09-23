@@ -258,6 +258,58 @@ def test_lint_still_allows_the_base_sketch_to_carry_an_offset():
     ]) == []
 
 
+def test_lint_rejects_an_absolute_Z_routed_through_a_construction_plane():
+    """The banned form with one row in between. A construction plane off a
+    PRINCIPAL plane is a hardcoded absolute Z exactly as a floating sketch is —
+    it rides nothing — so a sketch drawn on it once a body exists is the same
+    old habit, and the exemption that keeps a plane-row sketch out of this rule
+    must not cover it (code review 2026-09-23)."""
+    probs = _lint(_BASE + [
+        {"id": "lid_plane", "op": "offset_plane",
+         "params": {"plane": "XY", "offset": 9.0}},
+        {"id": "pocket_sketch", "op": "sketch",
+         "params": {"plane": "lid_plane",
+                    "entities": [{"kind": "circle", "r": 5}]}},
+        {"id": "pocket_tool", "op": "extrude", "inputs": ["pocket_sketch"],
+         "params": {"amount": 3}},
+        {"id": "pocket", "op": "cut", "inputs": ["base", "pocket_tool"]},
+    ])
+    assert probs, "an offset_plane off XY is an absolute Z with an extra row"
+    assert "lid_plane" in probs[0] and "absolute Z" in probs[0], probs
+    assert "offset_plane" in probs[0] and "face" in probs[0], "say the fix"
+
+
+def test_lint_passes_a_sketch_on_a_plane_measured_from_a_face():
+    """The plane the exemption was written for: it has a body input, so it
+    rides that face exactly as sketch_on_face does."""
+    assert _lint(_BASE + [
+        {"id": "floor", "op": "offset_plane", "inputs": ["base"],
+         "params": {"face": "top", "offset": -3.0}},
+        {"id": "pocket_sketch", "op": "sketch",
+         "params": {"plane": "floor",
+                    "entities": [{"kind": "circle", "r": 5}]}},
+    ]) == []
+
+
+def test_lint_survives_a_sketch_offset_driven_by_a_named_parameter():
+    """`float("lid_z")` raised ValueError straight out of the lint, and
+    `lint_baseline` runs on the USER's own document before an AI job starts —
+    so asking the AI to change a design that drives a sketch offset from a
+    named parameter answered "the model failed: could not convert string to
+    float". A formula is a named number, not a hardcoded one (2026-09-23)."""
+    doc = Document(name="lint")
+    doc.set_parameter("lid_z", 9)
+    for f in _BASE + [
+        {"id": "pocket_sketch", "op": "sketch",
+         "params": {"plane": "XY", "offset": "lid_z",
+                    "entities": [{"kind": "circle", "r": 5}]}},
+    ]:
+        doc.add(f["id"], f["op"], f.get("params") or {}, f.get("inputs") or [])
+    assert doc.rebuild(), [(f.id, f.problems) for f in doc.features]
+    assert author.lint_tree(doc.features) == []
+    assert author.lint_baseline(doc.features)          # no raise: the point
+
+
 def test_the_authoring_prompt_teaches_the_method():
     """A rule nothing states is a rule that gets forgotten next design."""
     p = author.AUTHOR_PROMPT

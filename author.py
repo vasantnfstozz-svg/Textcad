@@ -508,6 +508,17 @@ def _parse(raw: str) -> dict:
 _GENERIC_ID = re.compile(r"^(feature|node|item|part|f)_?\d*$", re.I)
 
 
+def _literal(value) -> float:
+    """A hardcoded NUMBER, or 0.0 for anything that is not one.
+
+    A formula ("lid_z", "wall*2") is a named number the design can be steered
+    by, so it is not what the absolute-Z rule is about — and it must never
+    reach `float()`, which raises out of the whole lint (2026-09-23)."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0.0
+    return float(value)
+
+
 def _lint_items(features, final: bool = True) -> list[tuple]:
     """Every history-lint problem as (key, rank, sentence).
 
@@ -545,19 +556,44 @@ def _lint_items(features, final: bool = True) -> list[tuple]:
     # legitimate reason left to write the absolute form.
     # The OFFSET VALUE is part of the key: a number the model puts there is
     # the model's, even in a sketch that was already floating.
-    # A sketch on a CONSTRUCTION PLANE is not the banned form: its offset is
-    # measured from that plane's row, which itself rides a face or a named
-    # number, so it moves with the design exactly as face+offset does. And an
-    # `offset_plane` is not a body — it must not be what makes `body_yet` true
-    # (code review 2026-09-23).
+    # A sketch on a CONSTRUCTION PLANE measured from a FACE is not the banned
+    # form: the plane row rides that face, so the sketch moves with the design
+    # exactly as face+offset does. A plane off a PRINCIPAL plane rides nothing
+    # — it is the same hardcoded absolute Z with one row in between, and the
+    # first version of this exemption waved it through (a second code review,
+    # 2026-09-23). An `offset_plane` is not a body either, so it must not be
+    # what makes `body_yet` true.
+    # A FORMULA offset ("lid_z") is a NAMED number, not a hardcoded one — and
+    # `float()` on it raised ValueError out of `lint_baseline`, which runs on
+    # the USER's own document when an AI job starts: asking the AI to change a
+    # design that drives a sketch offset from a parameter answered "the model
+    # failed: could not convert string to float".
     import sketch as _sk
+    # the construction planes, and which of them ride a face (they have a body
+    # input) rather than a hardcoded distance from a principal plane
+    planes = {f.id: f for f in features if f.op in _sk.PLANE_PRODUCERS}
+    said = set()                       # one sentence per plane, not per sketch on it
     body_yet = False
     for f in features:
-        on_plane_row = (f.op == "sketch"
-                        and str((f.params.get("plane") or "XY")) not in _sk.PRINCIPAL_PLANES)
+        plane_row = (str((f.params.get("plane") or "XY")) if f.op == "sketch"
+                     else "XY")
+        on_plane_row = plane_row not in _sk.PRINCIPAL_PLANES
+        pf = planes.get(plane_row) if on_plane_row else None
+        floats = _literal(pf.params.get("offset")) if pf is not None and not pf.inputs else 0.0
+        if f.op == "sketch" and body_yet and floats and plane_row not in said:
+            said.add(plane_row)
+            items.append((("plane_offset", plane_row, floats), 0,
+                          f"the construction plane '{plane_row}' that sketch "
+                          f"'{f.id}' is drawn on floats at absolute Z (offset "
+                          f"{floats:g}) even though a body already "
+                          f"exists — an offset_plane off a principal plane "
+                          f"hardcodes a Z exactly as a floating sketch does. "
+                          f"Measure it from a FACE instead: offset_plane with "
+                          f'inputs [the current body] and {{"face":"top",'
+                          f'"offset":<depth from that face>}}'))
         if (f.op == "sketch" and body_yet and not on_plane_row
-                and float(f.params.get("offset") or 0)):
-            items.append((("offset", f.id, float(f.params["offset"])), 0,
+                and _literal(f.params.get("offset"))):
+            items.append((("offset", f.id, _literal(f.params["offset"])), 0,
                           f"sketch '{f.id}' floats at absolute Z (offset "
                           f"{f.params['offset']}) even though a body already "
                           f"exists — that hardcodes the base thickness and "
