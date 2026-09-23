@@ -22,7 +22,7 @@
 > | 2 | Loft `ec45cf1` | `97a6aea..ec45cf1` | `559c342` |
 > | 3 | Text entity `d3c8c85` | `559c342..d3c8c85` | `a0d8761` |
 > | 4 | Section view `60e64b0` (frontend only, smallest) | `a0d8761..60e64b0` | `41dc99b` |
-> | 5 | Named parameters `127f350` + `4343f30` (biggest; every design's load path: **START HERE**) | `41dc99b..4343f30` | master |
+> | 5 | ~~Named parameters~~ **DONE** `cc0ff03` + `767f95b` | `41dc99b..4343f30` | master |
 >
 > One section per chat is fine; Sweep and Loft share `tool.js` and suit one
 > chat. Strike a section here when it is done; the brief goes to NOTHING
@@ -273,72 +273,14 @@ request, nothing saved.
 capped cut face; shared gizmos taken by a tool; one plane for all bodies; not
 saved across reloads; highlight / hover faces unclipped.
 
-## 5. Named parameters — `127f350` + `4343f30` (`specs/named-parameters.md`)
+## 5. Named parameters — DONE (`cc0ff03`, round two `767f95b`)
 
-**What it is.** `paramexpr.py` (a hand-walked `ast` evaluator),
-`Document.parameters` with set / rename / remove / users, formulas allowed in
-any NUMERIC feature param (`_resolved`, `_check_numeric_params`, `_signature`
-on resolved values), `to_data` / `from_data`, three endpoints, `params.js`,
-tree rows `wall*2 = 6`, the AI note and the MCP door.
-
-**Where the risk is, ranked:**
-
-1. **`_check_numeric_params` now lets a STRING through when
-   `paramexpr.is_expression(v)`** — and a bare word IS an expression (a
-   name). So `edges: "vertical"` is untouched (not numeric), but any numeric
-   param given a word gets "no parameter named 'abc'" instead of "must be a
-   number". Two pinned sentences moved (`4343f30`): `test_move_tool` and
-   `test_primitive_guards` — the second is a BEHAVIOUR change: a numeric
-   string in an old file (`"width": "40"`) now BUILDS at 40 where it used to
-   fail. The number is exactly what the file says, so nothing silent; judge
-   whether that is the rule wanted.
-2. **`_resolved` runs for EVERY feature on every rebuild and every
-   `_signature`** — a `paramexpr.evaluate` per string param (rare: only
-   formulas are strings in numeric slots). `is_expression` parses with `ast`
-   — cheap, but it is called on every string numeric param at every
-   `check_params`. Measured: the fast tier's time did not move (8:11 → 8:22
-   with 87 more tests). Not measured: a design with hundreds of formulas.
-3. **The evaluator's whitelist**: `ast.walk` is breadth-first and the Call
-   check marks its `func` Name as allowed BEFORE the Name is visited — correct
-   for `min(...)`, and `min` alone is refused. `round(x, 2)` is allowed
-   (two args). `**` caps the EXPONENT at 64 but a base of 1e8**64 raises
-   OverflowError → caught → sentence; `MAX_VALUE` 1e9 refuses results a
-   design cannot hold. Probe the corpus in `tests/test_named_params.py`
-   yourself with anything you distrust; `2 ** 65` and `1e12` are refused,
-   `1e400` parses to `inf` → "no finite value".
-4. **`rename_in` splices by tokenizer column on ONE line** — a formula with a
-   tab or odd Unicode spacing? `tokenize` columns are character offsets, so
-   it holds; a multi-line string returns unchanged (parse refuses those
-   anyway). `names_in` drops FUNCS names because a parameter can never be
-   named like one (`name_problem`).
-5. **`set_parameter` is all-or-nothing** by snapshotting three dicts and
-   restoring on a problem — but `_mark_stale()` is not called on the
-   refusal path (nothing changed). `remove_parameter` and `rename_parameter`
-   do not snapshot: `rename` validates everything BEFORE it writes; `remove`
-   refuses before it writes. Check `rename_parameter` when `new` collides
-   with a feature id AFTER the parameter check passes (it checks both).
-6. **`from_data` sets `doc.parameters` directly** (no refusal, by design) and
-   `_eval_parameters` marks problems; a duplicate feature id equal to a
-   parameter name in a FILE is not refused at load (`add()` is called
-   without strict) — the feature adds, and `add` raises "'x' is the name of a
-   parameter" → from_data would FAIL to open such a file. Probe: is that
-   the right door? (A file cannot be made that way through the API, only by
-   hand.)
-7. **Undo**: `_snapshot` uses `to_data` → parameters are in the undo stack ✓.
-   The version tree, the session file and the MCP export all go through
-   `to_data` too — and a design WITH parameters saved by this build cannot
-   open in an older build (the `parameters` key is ignored there and the
-   formula strings fail as "must be a number"). Deliberate: a format
-   addition, absent when empty.
-8. **Frontend**: `tree.js` `buildBody` shows `formula = value` only when the
-   server's `resolved` carries the key — a plain number never gets the
-   suffix. `params.js` inline edits post on Enter; the panel re-renders on
-   every `doc-updated` (a drag in a tool re-renders the panel's rows — cheap,
-   but it loses an inline edit in progress if a rebuild lands mid-typing).
-
-**Do not re-report** (LAUNCH-PLAN §10 P3 "Named parameters' loose ends"):
-numeric tool boxes; no units; no measure-to-parameter; sketch entity numbers
-cannot hold formulas; 4-decimal display; the two changed sentences above.
+Reviewed 2026-09-23 on Opus 5.5: 10 findings, all 10 fixed, 18 tests + 1
+browser journey; round two read `cc0ff03` and found 1 (fixed). The P0s: a
+parameter driving a MOVE left the face picks behind (14010.62 -> 18000.0
+mm3, all green); `floor(1e400)` wrote a parameter the file could not reopen
+with; every tool's edit panel turned a formula into 0 and OK wrote it back.
+No saved design uses parameters, so no design was affected.
 
 **Merge note.** The build session merges the branch into master only if the
 main checkout has no modified tracked files at that moment (the user's Opus
