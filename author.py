@@ -511,12 +511,17 @@ _GENERIC_ID = re.compile(r"^(feature|node|item|part|f)_?\d*$", re.I)
 def _literal(value) -> float:
     """A hardcoded NUMBER, or 0.0 for anything that is not one.
 
-    A formula ("lid_z", "wall*2") is a named number the design can be steered
+    A FORMULA ("lid_z", "wall*2") is a named number the design can be steered
     by, so it is not what the absolute-Z rule is about — and it must never
-    reach `float()`, which raises out of the whole lint (2026-09-23)."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    reach a bare `float()`, which raises out of the whole lint and out of
+    `lint_baseline` with it (2026-09-23). A numeric string ("9") is still the
+    hardcoded form, so the rule keeps exactly the reach it had."""
+    if isinstance(value, bool):
         return 0.0
-    return float(value)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _lint_items(features, final: bool = True) -> list[tuple]:
