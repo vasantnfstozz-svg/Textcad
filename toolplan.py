@@ -1800,7 +1800,10 @@ def _place_input(doc, req: dict, tool: str):
     if fid:
         f = _edit_input(doc, fid, (tool,))
         body_id = (f.inputs or [None])[0]
-        params = doc.values(f)          # `z: "lift"` by its value, not float("lift")
+        # `z: "lift"` by its value, not float("lift") — and a formula that
+        # does not work out says so ("no parameter named 'lift_typo' — did
+        # you mean 'lift'?"), not "could not convert string to float"
+        params = doc._resolved(f)
     part, body_id = _pick_body(doc, body_id, tool)
     # A body ANOTHER feature is built from is not a body to place. The tree is
     # a selection surface (parity rule 2) and `solids()` offers every solid ROW,

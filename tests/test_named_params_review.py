@@ -203,3 +203,19 @@ def test_the_ai_door_takes_parameters_in_any_order():
     with pytest.raises(ValueError, match="no parameter named 'wal'"):
         author._to_document({"name": "x", "features": feats, "parameters": {
             "depth": "wal*2", "wall": "3"}})
+
+
+def test_a_move_or_rotate_whose_formula_is_broken_says_the_formula_problem():
+    """Round two: the edit plan read `float("lift_typo")` and the panel said
+    "could not convert string to float" instead of the formula's problem."""
+    import toolplan
+    d = Document(name="x")
+    d.set_parameter("lift", "0")
+    d.add("b", "plate", {"width": 10, "depth": 10, "thickness": 10})
+    d.add("m", "move", {"x": 0, "y": 0, "z": "lift_typo"}, inputs=["b"])
+    d.add("b2", "plate", {"width": 10, "depth": 10, "thickness": 10})
+    d.add("r", "rotate", {"axis": "Z", "angle_deg": "lift_typo"}, inputs=["b2"])
+    d.rebuild()
+    for tool, fid in (("move", "m"), ("rotate", "r")):
+        err = toolplan.plan(d, {"tool": tool, "feature_id": fid}).get("error") or ""
+        assert "could not convert" not in err and "did you mean 'lift'" in err, err
