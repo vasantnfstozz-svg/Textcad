@@ -736,10 +736,24 @@ def _to_document(data: dict) -> Document:
     params = data.get("parameters") or {}
     if not isinstance(params, dict):
         raise ValueError("'parameters' must be an object: {\"wall\": {\"expr\": \"3\"}}")
-    for name, spec in params.items():
-        expr = spec.get("expr") if isinstance(spec, dict) else spec
-        comment = spec.get("comment") if isinstance(spec, dict) else None
-        doc.set_parameter(str(name), expr, comment)
+    # in ANY order, as a saved file loads them: `depth = wall*2` written above
+    # `wall = 3` was refused as "no parameter named 'wall'" (review of Named
+    # parameters, 2026-09-23). Round after round, until a round sets nothing;
+    # then the first sentence left is the real one (a loop, a typo).
+    pending = list(params.items())
+    while pending:
+        left, first = [], None
+        for name, spec in pending:
+            expr = spec.get("expr") if isinstance(spec, dict) else spec
+            comment = spec.get("comment") if isinstance(spec, dict) else None
+            try:
+                doc.set_parameter(str(name), expr, comment)
+            except ValueError as e:
+                left.append((name, spec))
+                first = first or e
+        if len(left) == len(pending):
+            raise first
+        pending = left
     for f in data["features"]:
         doc.add(f["id"], f["op"], f.get("params") or {}, f.get("inputs") or [],
                 strict=True)          # a hallucinated key is named, not stored

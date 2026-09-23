@@ -372,7 +372,7 @@ def _profile(doc, sketch_id: str):
     face for that; Revolve reads the plane the sketch carries instead)."""
     prof, profile = _sketch_part(doc, sketch_id)
     p = prof.params or {}
-    offset = float(p.get("offset") or 0.0)
+    offset = float(doc.values(prof).get("offset") or 0.0)   # a formula ("h") by its value
     into_sign = None
     if prof.op == "sketch_on_face":
         host = (prof.inputs or [None])[0]
@@ -1800,7 +1800,7 @@ def _place_input(doc, req: dict, tool: str):
     if fid:
         f = _edit_input(doc, fid, (tool,))
         body_id = (f.inputs or [None])[0]
-        params = f.params or {}
+        params = doc.values(f)          # `z: "lift"` by its value, not float("lift")
     part, body_id = _pick_body(doc, body_id, tool)
     # A body ANOTHER feature is built from is not a body to place. The tree is
     # a selection surface (parity rule 2) and `solids()` offers every solid ROW,

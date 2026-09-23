@@ -336,8 +336,32 @@ def _param_view(params) -> dict:
     return params if isinstance(params, dict) else {}
 
 
+def _loop_through(start: str, graph: dict) -> list | None:
+    """A path start -> ... -> start through `graph` (name -> the names it
+    needs), or None when `start` only waits on a loop it is not part of."""
+    stack, seen = [(start, [start])], set()
+    while stack:
+        node, path = stack.pop()
+        for nxt in graph.get(node, ()):
+            if nxt == start:
+                return path + [start]
+            if nxt not in seen:
+                seen.add(nxt)
+                stack.append((nxt, path + [nxt]))
+    return None
+
+
+def _formula_why(v: str, e: Exception, problems: dict | None) -> str:
+    """Why a formula does not work out. A parameter it names that is THERE
+    but broken says its own problem — "no parameter named 'a'" with 'a' in
+    the panel was the old sentence (review, 2026-09-23)."""
+    held = ([n for n in paramexpr.names_in(v) if n in problems]
+            if problems and paramexpr.is_expression(v) else [])
+    return f"parameter '{held[0]}' has a problem — {problems[held[0]]}" if held else str(e)
+
+
 def _check_numeric_params(op: str, params: dict, feature_id: str,
-                          values: dict | None = None) -> None:
+                          values: dict | None = None, problems: dict | None = None) -> None:
     """A NUMBER that is not a number, named — at BOTH doors, in ONE sentence.
 
     "8mm" is what a CAD user types, and the tree's text edit passes any
@@ -370,7 +394,8 @@ def _check_numeric_params(op: str, params: dict, feature_id: str,
             try:
                 paramexpr.evaluate(v, values or {})
             except ValueError as e:
-                raise ValueError(f"'{feature_id}' ({op}): {k} = {v!r} — {e}") from None
+                raise ValueError(f"'{feature_id}' ({op}): {k} = {v!r} — "
+                                 f"{_formula_why(v, e, problems)}") from None
             continue
         # ("8mm", "" and other text that is no formula keep the sentence below)
         if isinstance(v, bool) or not isinstance(v, (int, float)):
@@ -1085,22 +1110,48 @@ class Document:
             self._carry_face_picks(f.id, delta)
         self._mark_stale()
 
-    @staticmethod
-    def _move_delta(f: Feature, params: dict) -> tuple | None:
+    def _move_delta(self, f: Feature, params: dict) -> tuple | None:
         """How far this edit of a `move` node shifts the body it carries, or
         None when it shifts nothing. Never raises: a value that is not a
-        number is check_params' business, and it has already spoken."""
+        number is check_params' business, and it has already spoken.
+
+        By VALUE, not by what is written: `z: "lift+3"` is 3 mm when lift is
+        0. Reading the text with float() made every formula "not a number",
+        so typing one into a move carried no pick and the riser on a boss
+        top landed on the plate (review of Named parameters, 2026-09-23)."""
         if f.op != "move" or f.suppressed:
             return None
+        was = self._move_at(f.params)
+        now = self._move_at({**_param_view(f.params), **params})
+        if was is None or now is None:
+            return None
+        out = tuple(n - w for n, w in zip(now, was))
+        return out if any(out) else None
+
+    def _move_at(self, params) -> tuple | None:
+        """A move's (x, y, z) under the current parameters, or None when one
+        of them does not work out (the rebuild says why)."""
+        view = _param_view(params)
         out = []
         for axis in ("x", "y", "z"):
+            v = view.get(axis, 0)
             try:
-                was = float(f.params.get(axis, 0) or 0)
-                now = float(params[axis]) if axis in params else was
+                out.append(paramexpr.evaluate(v, self.param_values) if isinstance(v, str)
+                           else float(v or 0))
             except (TypeError, ValueError):
                 return None
-            out.append(now - was)
-        return tuple(out) if any(out) else None
+        return tuple(out)
+
+    def _moves_at(self) -> dict:
+        """Every live move's (x, y, z) now — taken before a parameter change,
+        so the ones it slides can carry their face picks (see set_parameter)."""
+        out = {}
+        for f in self.features:
+            if f.op == "move" and not f.suppressed:
+                at = self._move_at(f.params)
+                if at is not None:
+                    out[f.id] = at
+        return out
 
     def _carry_face_picks(self, moved_id: str, delta: tuple) -> list[str]:
         """Move every stored FACE PICK that sits on the body `moved_id` carries.
@@ -1168,10 +1219,11 @@ class Document:
         return {name for name, _ in op_params(op)}
 
     @staticmethod
-    def numeric_params(op: str) -> set:
+    def numeric_params(op: str, whole: bool = False) -> set:
         """The parameters of `op` that are numbers — read from the type
         ANNOTATION on the function the rebuild unpacks into, so it is the same
-        one source `op_params` uses and cannot drift.
+        one source `op_params` uses and cannot drift. `whole=True`: only the
+        `int` ones (a count, a number of sides).
 
         Deliberately narrow: only a bare `float` or `int` counts. The shape
         parameters (`edges`, `plane`, `axis`, `at`, a pattern's `count`) carry
@@ -1181,9 +1233,10 @@ class Document:
         if op in sk.PLANE_PRODUCERS:
             fn = sk.offset_plane          # `offset: float` — a formula ("-wall") resolves here too
         if op == "move":
-            return {"x", "y", "z"}
+            return set() if whole else {"x", "y", "z"}
         if fn is None:
             return set()
+        kinds = ("int",) if whole else ("float", "int")
         out = set()
         for p in inspect.signature(fn).parameters.values():
             if p.name.startswith("_") or p.kind in (p.VAR_KEYWORD,
@@ -1191,9 +1244,9 @@ class Document:
                 continue
             ann = p.annotation
             # `from __future__ import annotations` makes these strings
-            if isinstance(ann, str) and ann.strip() in ("float", "int"):
+            if isinstance(ann, str) and ann.strip() in kinds:
                 out.add(p.name)
-            elif ann in (float, int):
+            elif ann in ((int,) if whole else (float, int)):
                 out.add(p.name)
         return out
 
@@ -1911,7 +1964,7 @@ class Document:
             # argument must be …` (probes/s10_r3_creator_door.py). A silent
             # wrong PLACEMENT is the worst class there is, so the file door
             # now says what the authoring door has always said.
-            _check_numeric_params(f.op, f.params, f.id, self.param_values)
+            _check_numeric_params(f.op, f.params, f.id, self.param_values, self.param_problems)
             kw = self._clean(self._resolved(f))
             if f.op == "sketch" and str(kw.get("plane") or "XY") not in sk.PRINCIPAL_PLANES:
                 kw["_plane"] = self._plane_part(f, str(kw["plane"]))   # the offset plane's frame
@@ -1926,7 +1979,7 @@ class Document:
                 raise ValueError(f"'{f.op}': '{f.inputs[0]}' is not a solid body — an "
                                  f"offset plane is measured from a body's face or from "
                                  f"a principal plane")
-            _check_numeric_params(f.op, f.params, f.id, self.param_values)
+            _check_numeric_params(f.op, f.params, f.id, self.param_values, self.param_problems)
             return sk.offset_plane(ins[0] if ins else None, **self._clean(self._resolved(f)))
         if f.op in MODIFIERS:
             if len(ins) != 1:
@@ -1936,7 +1989,7 @@ class Document:
             # fact, and a sketch fed to fillet is not fixed by typing a radius.
             # (`move` is the one op left out: it reads a missing offset as 0 on
             # purpose — _move_offsets.)
-            _check_numeric_params(f.op, f.params, f.id, self.param_values)
+            _check_numeric_params(f.op, f.params, f.id, self.param_values, self.param_problems)
             kw = self._clean(self._resolved(f))
             if f.op in pattern.SEEDED_OPS and kw.get("seed"):
                 # str(), the same as the path below and the same as
@@ -1985,6 +2038,7 @@ class Document:
         a string. A formula that does not work out is a sentence naming the
         feature and the parameter."""
         numeric = Document.numeric_params(f.op)
+        whole = Document.numeric_params(f.op, whole=True)
         params = _params_dict(f.op, f.params, f.id)
         out = dict(params)
         for k, v in params.items():
@@ -1992,8 +2046,29 @@ class Document:
                 try:
                     out[k] = paramexpr.evaluate(v, self.param_values)
                 except ValueError as e:
-                    raise ValueError(f"'{f.id}' ({f.op}): {k} = {v!r} — {e}") from None
+                    raise ValueError(f"'{f.id}' ({f.op}): {k} = {v!r} — "
+                                     f"{_formula_why(v, e, self.param_problems)}") from None
+                # a formula always comes to a float, and an `int` parameter
+                # handed 6.0 answered "TypeError: 'float' object cannot be
+                # interpreted as an integer" (with_bolt_circle's count)
+                if k in whole:
+                    if not out[k].is_integer():
+                        raise ValueError(f"'{f.id}' ({f.op}): {k} = {v!r} comes to "
+                                         f"{out[k]:g} — {k} has to be a whole number")
+                    out[k] = int(out[k])
         return out
+
+    def values(self, f: Feature) -> dict:
+        """`_resolved`, or the params as written when a formula does not work
+        out — for the READERS that want numbers and must not raise (Measure,
+        the tool plans); the rebuild is where a failure is said. Each of them
+        read `float(params["offset"])` and a formula there answered "could not
+        convert string to float: 'h'" as the reason Extrude and Sweep could
+        not start (review of Named parameters, 2026-09-23)."""
+        try:
+            return self._resolved(f)
+        except ValueError:
+            return _param_view(f.params)
 
     # -- named parameters (specs/named-parameters.md) --------------------------
     def _eval_parameters(self) -> None:
@@ -2004,6 +2079,12 @@ class Document:
         values: dict = {}
         problems: dict = {}
         pending = dict(self.parameters)
+        ids = {f.id for f in self.features}
+        for name in [n for n in pending if n in ids]:   # only a hand-made file (see from_data)
+            problems[name] = (f"'{name}' is also the name of a feature — rename the parameter "
+                              f"or the feature")
+            del pending[name]
+        graph: dict = {}                                # name -> the pending names it needs
         while pending:
             progressed = False
             for name, spec in list(pending.items()):
@@ -2015,19 +2096,35 @@ class Document:
                     del pending[name]
                     progressed = True
                     continue
-                if any(n in pending for n in needs if n != name):
+                graph[name] = [n for n in needs if n in pending and n != name]
+                if graph[name]:
                     continue                            # wait for what it needs
-                try:
-                    values[name] = paramexpr.evaluate(expr, values)
-                except ValueError as e:
-                    problems[name] = str(e)
+                # a name that IS a parameter but has no value is not "no
+                # parameter named 'a'" — 'a' is right there in the panel
+                broken = [n for n in needs if n in problems]
+                if name in needs:
+                    problems[name] = f"'{name}' cannot be defined by itself"
+                elif broken:
+                    problems[name] = (f"'{broken[0]}' has a problem of its own — fix that "
+                                      f"one first")
+                else:
+                    try:
+                        values[name] = paramexpr.evaluate(expr, values)
+                    except ValueError as e:
+                        problems[name] = str(e)
                 del pending[name]
                 progressed = True
-            if not progressed:                          # what is left only waits on itself
-                cycle = " -> ".join(pending) + f" -> {next(iter(pending))}"
+            if not progressed:
+                # what is left is a loop or waits on one; only the first are
+                # IN it (`c = p + 1` beside p <-> q was named a loop member)
                 for name in pending:
-                    problems[name] = (f"'{name}' is in a loop of parameters that need each "
-                                      f"other ({cycle}) — one of them must be a plain number")
+                    loop = _loop_through(name, graph)
+                    problems[name] = (
+                        f"'{name}' is in a loop of parameters that need each other "
+                        f"({' -> '.join(loop)}) — one of them must be a plain number"
+                        if loop else
+                        f"'{name}' needs '{graph[name][0]}', which waits on a loop of "
+                        f"parameters — make one of that loop a plain number")
                 break
         self.param_values, self.param_problems = values, problems
 
@@ -2070,6 +2167,7 @@ class Document:
         if name in paramexpr.names_in(text):            # (parse: its own sentence)
             raise ValueError(f"{name} = {text!r} — a parameter cannot be defined by itself")
         before = (dict(self.parameters), dict(self.param_values), dict(self.param_problems))
+        moves = self._moves_at()
         entry = dict(self.parameters.get(name, {}))
         entry["expr"] = text
         if comment is not None:
@@ -2080,6 +2178,16 @@ class Document:
             problem = self.param_problems[name]
             self.parameters, self.param_values, self.param_problems = before
             raise ValueError(f"{name} = {text!r} — {problem}")
+        # A parameter that a MOVE names slides that body exactly as the Move
+        # tool's own edit does, so its face picks go with it (the same carry
+        # edit_many makes). Without it a riser on a boss top moved by
+        # `z: "lift"` landed on the PLATE when lift went 0 -> 3: 14010.62
+        # became 18000.0 mm3, every row ok (review, 2026-09-23).
+        after = self._moves_at()
+        for fid, was in moves.items():
+            now = after.get(fid)
+            if now is not None and now != was:
+                self._carry_face_picks(fid, tuple(n - w for n, w in zip(now, was)))
         self._mark_stale()
 
     def remove_parameter(self, name: str) -> None:
@@ -2699,6 +2807,17 @@ class Document:
         # parameters: `AttributeError: 'list' object has no attribute 'items'`
         # stopped a design whose FEATURES were all fine from opening, which is
         # exactly what the paragraph above promises never happens.
+        # (The features go in BEFORE the parameters: `add` refuses an id that
+        # is a parameter's name, so a hand-made file where the two clash did
+        # not open at all. Loaded this way round the clash is the
+        # PARAMETER's problem, said in its row — review, 2026-09-23.)
+        for f in data["features"]:
+            doc.add(f["id"], f["op"], f.get("params"), f.get("inputs"))
+            # bool(), because `suppressed` decides whether a feature is in the
+            # model at all: a file holding a WORD there was read by Python
+            # truthiness and written straight back out, so the file and the
+            # tree could go on disagreeing about it for ever.
+            doc.features[-1].suppressed = bool(f.get("suppressed", False))
         stored = data.get("parameters")
         for name, spec in (stored if isinstance(stored, dict) else {}).items():
             if isinstance(spec, dict):
@@ -2708,13 +2827,6 @@ class Document:
             else:                                       # a bare number or formula
                 doc.parameters[str(name)] = {"expr": str(spec)}
         doc._eval_parameters()
-        for f in data["features"]:
-            doc.add(f["id"], f["op"], f.get("params"), f.get("inputs"))
-            # bool(), because `suppressed` decides whether a feature is in the
-            # model at all: a file holding a WORD there was read by Python
-            # truthiness and written straight back out, so the file and the
-            # tree could go on disagreeing about it for ever.
-            doc.features[-1].suppressed = bool(f.get("suppressed", False))
         return doc
 
     def save(self, path: str) -> str:

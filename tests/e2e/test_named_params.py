@@ -309,3 +309,60 @@ def test_a_parameter_deleted_under_an_edit_is_not_re_created_by_it(
     assert "not in this design any more" in page.text_content("#chatLog")
     assert rows(page) == [], "the table still shows a parameter that is gone"
     assert not page.errors, page.errors
+
+
+BUILD_TAPERED = """
+async () => {
+  const { postJSON } = await import('/static/js/api.js');
+  const { loadMesh } = await import('/static/js/viewport.js');
+  await postJSON('/api/parameters', { name: 't', expr: '3' }, 'add');
+  await postJSON('/api/feature/add',
+    { id: 's', op: 'sketch', params: { plane: 'XY', offset: 0,
+        entities: [{ kind: 'rectangle', w: 20, h: 10, mode: 'add' }] }, inputs: [] }, 'add');
+  await postJSON('/api/feature/add',
+    { id: 'e', op: 'extrude', params: { amount: 5, taper: 't' }, inputs: ['s'] }, 'add');
+  await loadMesh(true);
+}
+"""
+EDIT = """
+async (fid) => {
+  const { editFeature } = await import('/static/js/tool.js');
+  editFeature(fid);
+}
+"""
+
+
+def test_reopening_a_feature_in_its_tool_keeps_its_formulas(page, fresh_doc, server):
+    """Review of Named parameters (2026-09-23): every tool's snapshot read
+    `Number("t") || 0`, so the panel showed a formula as 0 — and OK in an edit
+    pushes every box, so an extrude of 5 with taper `t` came back with taper
+    0: the solid changed and the formula was gone, from OK alone."""
+    page.evaluate(BUILD_TAPERED)
+    page.wait_for_timeout(1200)
+    before = feature(server, "e")
+    assert before["params"]["taper"] == "t" and before["status"] == "ok"
+    # open, look, OK: the box shows the formula's VALUE and the formula stays
+    page.evaluate(EDIT, "e")
+    page.wait_for_selector("#extrudeDialog", state="visible", timeout=15000)
+    page.wait_for_timeout(1500)
+    assert float(page.input_value("#exTaper")) == pytest.approx(3)
+    page.click("#exOk")
+    page.wait_for_timeout(1500)
+    f = feature(server, "e")
+    assert f["params"]["taper"] == "t", f["params"]
+    assert f["volume"] == pytest.approx(before["volume"])
+    # a box the user DOES change is theirs: the distance goes to 8, the taper
+    # they left alone still follows t
+    page.evaluate(EDIT, "e")
+    page.wait_for_selector("#extrudeDialog", state="visible", timeout=15000)
+    page.wait_for_timeout(1500)
+    page.fill("#exDist", "8")
+    page.wait_for_timeout(1500)
+    page.click("#exOk")
+    page.wait_for_timeout(1500)
+    f = feature(server, "e")
+    assert f["params"]["amount"] == 8 and f["params"]["taper"] == "t", f["params"]
+    r = httpx.post(f"{server}/api/parameters", json={"name": "t", "expr": "1"}, timeout=60)
+    assert r.status_code == 200
+    assert feature(server, "e")["resolved"] == {"taper": 1.0}
+    assert not page.errors, page.errors

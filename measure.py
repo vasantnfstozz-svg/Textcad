@@ -504,10 +504,19 @@ def _plane_cache(doc) -> dict:
     return cache
 
 
-def _plane_sig(feat) -> tuple:
-    """Everything about a sketch feature that changes where its plane sits."""
+def _values(doc, feat) -> dict:
+    """A feature's params with every FORMULA as its number (`Document.values`).
+    `float("h")` on a sketch whose offset is `h` fell into the catch-all
+    below, so the plane was None and every circle on it silently read-only
+    — and a hole whose diameter is a formula the same (review, 2026-09-23)."""
+    return doc.values(feat)
+
+
+def _plane_sig(doc, feat) -> tuple:
+    """Everything about a sketch feature that changes where its plane sits —
+    the offset by VALUE, so a parameter change is a new plane."""
     p = feat.params or {}
-    return (feat.op, p.get("plane"), p.get("offset"), p.get("face"),
+    return (feat.op, p.get("plane"), _values(doc, feat).get("offset"), p.get("face"),
             tuple(p.get("face_center") or ()), tuple(p.get("face_normal") or ()),
             p.get("face_area"))
 
@@ -536,7 +545,7 @@ def _sketch_plane(doc, feat):
     offset method a sketch plane is stated as a depth from a face, so it moves
     when the base changes. The cache above keys on that base, so it follows."""
     base = _plane_base(doc, feat)
-    sig = _plane_sig(feat)
+    sig = _plane_sig(doc, feat)
     cache = _plane_cache(doc)
     hit = cache.get(feat.id)
     if hit is not None and hit[0] is base and hit[1] == sig:
@@ -574,7 +583,7 @@ def _build_plane(doc, feat, base):
             return None
         if pl is None:
             return None
-        off = float(p.get("offset") or 0.0)
+        off = float(_values(doc, feat).get("offset") or 0.0)
         return pl.offset(off) if off else pl
     except Exception:          # a sketch whose base failed to build
         return None
@@ -655,7 +664,7 @@ def _hole_driver(doc, att: dict, radius: float):
     except KeyError:
         return None
     for key, what in _HOLE_BORES:
-        cur = float(feat.params.get(key) or 0.0)
+        cur = float(_values(doc, feat).get(key) or 0.0)
         if cur > 0 and abs(cur / 2.0 - radius) <= MATCH_TOL:
             return {"feature": feat.id, "path": [key], "current": cur,
                     "transform": "value",      # a hole stores the DIAMETER itself

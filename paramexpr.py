@@ -175,9 +175,21 @@ def evaluate(expr, values: dict) -> float:
             return r
         if isinstance(node, ast.Call):
             args = [walk(a) for a in node.args]
+            # every value here is a float, and Python's round() takes its
+            # digits as an INT only: `round(x, 2)` read "'float' object cannot
+            # be interpreted as an integer" (review, 2026-09-23)
+            if node.func.id == "round" and len(args) == 2:
+                if not args[1].is_integer():
+                    raise ValueError(f"'{text}': round() takes a whole number of digits "
+                                     f"(got {args[1]:g})")
+                args[1] = int(args[1])
             try:
                 return float(FUNCS[node.func.id](*args))
-            except (ValueError, TypeError, ZeroDivisionError) as e:
+            # OverflowError is not a ValueError: floor/ceil/round of an
+            # infinite value (`floor(1e400)`) raised it straight through, and
+            # set_parameter had already written the formula, so the design
+            # stopped opening (review, 2026-09-23)
+            except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
                 raise ValueError(f"'{text}': {node.func.id}({', '.join(f'{a:g}' for a in args)})"
                                  f" cannot be worked out ({e})") from None
         raise ValueError(f"'{text}' holds a piece a formula cannot ({type(node).__name__})")

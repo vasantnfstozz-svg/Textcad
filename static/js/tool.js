@@ -851,7 +851,17 @@ export function tool(spec) {
           : { kind: 'profile', id: f.inputs[0] });
     st.editing = true;
     st.featureId = f.id;
-    st.original = spec.snapshot(f);
+    // A FORMULA stays a formula (Named parameters). Every tool's snapshot
+    // read `Number("t") || 0`, so the boxes showed a formula as 0 — and OK in
+    // an edit pushes every box, so an extrude with taper `t` came back with
+    // taper 0 from OK alone (review, 2026-09-23: 1039.76 -> 1000 mm3). The
+    // panel shows the server's VALUE (`resolved`, R1) and a box the user
+    // leaves alone goes back as the formula it came from (see keepFormulas).
+    st.formulas = {};
+    const shown = { ...p };
+    for (const [k, v] of Object.entries(f.resolved || {}))
+      if (v != null && typeof p[k] === 'string') { st.formulas[k] = p[k]; shown[k] = v; }
+    st.original = spec.snapshot({ ...f, params: shown });
     st.lastGood = st.original;
     if (edges) { clearPick(); beginEdgePick(onEdgePick, { name: spec.name }); waitForRow(onRow); }
     // a tool whose SECOND input is a tree row (Sweep's path) listens in an edit too
@@ -863,6 +873,10 @@ export function tool(spec) {
     el('Profile').disabled = true;
     el('Profile').title = `changing the profile of an existing ${lower} comes later`;
     spec.show(st, st.original);
+    // ...and what those boxes READ BACK as before anyone touches them (a
+    // length in inches is rounded to the unit, so it need not equal the
+    // value exactly — an untouched box always reads back the same)
+    try { st.shownBack = spec.params(st); } catch (e) { st.shownBack = null; }
     // Operation row: show what the tree ACTUALLY does with this feature (the
     // downstream combiner, if any) — honest but locked in edit mode
     const comb = boolOf(f.id);
@@ -954,10 +968,21 @@ export function tool(spec) {
       id: st.featureId, op: spec.ops[i.kind === 'profile' ? 'profile' : i.kind],
       params: pr, inputs });
   }
+  /* a value the user never changed goes back as the FORMULA it came from: the
+     number the panel opened on (original — also what a revert pushes) or
+     what its untouched box reads back as (see openEdit) */
+  function keepFormulas(pr, s = st) {
+    const fm = (s && s.formulas) || {};
+    const out = { ...pr };
+    for (const [k, formula] of Object.entries(fm))
+      if (k in out && (out[k] === s.original[k] || (s.shownBack && out[k] === s.shownBack[k])))
+        out[k] = formula;
+    return out;
+  }
   async function push(pr) {             // one param set → the feature's health
     st.touched = true;                  // the ONLY writer in edit mode (see cancelSession)
     const doc = await post('/api/feature/params',
-      { feature_id: st.featureId, params: pr });
+      { feature_id: st.featureId, params: st.editing ? keepFormulas(pr) : pr });
     warnIfSplit(doc);
     if (spec.afterPush) spec.afterPush(st, doc);
     return { doc, f: featOf(doc) };
@@ -1166,7 +1191,8 @@ export function tool(spec) {
     clearTimeout(timer); timer = null;  // a typed value on its way is dropped
     await settled();                    // a rebuild in flight finishes first
     if (st && st.editing) {             // the feature stays — put its
-      const { featureId, original, touched } = st;   // ORIGINAL params back verbatim
+      const { featureId, touched } = st;   // ORIGINAL params back verbatim,
+      const original = keepFormulas(st.original);   // formulas as formulas
       hide();
       await holdViewport(async () => {
         // ...but only if the session ever wrote. `push` is the only writer in
