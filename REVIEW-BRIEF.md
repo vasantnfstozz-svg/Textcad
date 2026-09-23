@@ -6,104 +6,66 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING.** Review `692c6f5..HEAD` — the **round-three fix pass of
-> the Offset Plane review** (`692c6f5`) and its two follow-ups (`19ee23f`, `6a86fa9`). Rounds
-> one and two (`6a4da57..68b1a8a`) have now been read and are CLOSED. What is
-> left is this pass, and the reason it is not closed is the second half of it:
-> it put a NEW RULE into the author's history lint, and `lint_baseline` runs
-> that lint over the USER's own document every time an AI job starts.
+> **Status: NOTHING PENDING.** The Offset Plane review is CLOSED after four
+> rounds (`6a4da57..2f97abf`). Round four read `692c6f5..2cba4e3` - the
+> round-three fix pass and its two follow-ups - found ONE defect, reproduced
+> it by measurement, fixed it in `2f97abf`, and re-measured the whole saved
+> library. The next `code review` takes the first TODO row of
+> `REVIEW-QUEUE.md`.
 
-## What round three found, in one paragraph
+## What round four found
 
-Three findings, each reproduced before it was fixed. **(1) P1 — the browser
-drew on the plane's OLD position after the plane was moved.** `sketcher.js`
-caches a sketch plane's frame under `` `${plane}|${offset}` `` and called that
-key "a pure function of both" — true while `plane` could only name XY / XZ /
-YZ, false now that it names an `offset_plane` FEATURE, whose id does not change
-when its offset does. This is the browser's copy of the very defect round two
-fixed in `measure._plane_sig`. Measured in a real browser: open a sketch on a
-plane at 20, press ✎ on its row and move it to 50, open a sketch on it again —
-grid, model snaps and the plane every pointer ray is cast at were all still at
-20 while `make_sketch` built at 50. Only the three origin planes are cached
-now. **(2) P2 — the lint exemption was too broad.** Round one exempted every
-sketch on a construction plane from the offset-method rule because the plane
-row "rides a face or a named number"; a plane off a PRINCIPAL plane rides
-nothing, so `offset_plane(XY, 30)` + `sketch(plane=that)` was the banned
-absolute-Z form with one row in between, and the lint said nothing (measured
-CLEAN). The exemption now requires the plane to have a body input. **(3) P1 —
-the same lint line crashed on a formula.** `float(f.params["offset"])` on a
-sketch whose offset names a parameter raised `ValueError` straight out of
-`lint_baseline`, so asking the AI to change a design that drives a sketch
-offset from a named parameter answered *"the model failed: could not convert
-string to float: 'lid_z'"* — measured on a design that builds green. `_literal`
-now converts what converts and treats only a real name as a named number.
-Line delta **+61 / −17** in source, +103 in tests; fast tier 2632 green, ruff
-and eslint zero, ui v233. No design file uses `offset_plane` (0 of 50) and no
-design drives a sketch offset from a parameter, so no stored work was affected.
+**P1 - the absolute-Z rule could still be walked around, with the number one
+row further down.** Round three closed the case where the construction plane
+holds the hardcoded height (`offset_plane(XY, 30)` + a sketch on it). It keyed
+the sketch rule's exemption on "is this sketch drawn on a plane row?", so the
+same distance written in the SKETCH's own `offset`, with the plane left at 0,
+passed BOTH rules - the plane rule read the plane's 0, the sketch rule read
+"plane row" and waved it through. Measured before the fix: a 40x30x12 base,
+`offset_plane(XY, 0)`, `sketch(plane=that, offset=12)`, extrude 3. It builds
+green with the boss on the base's top face at z 12..15, and changing the base
+12 -> 20 BURIES it. That is the exact failure the offset method exists to
+prevent. The exemption now turns on **"does this plane ride a face?"** (it has
+a body input), never on "is this sketch on a plane row?" - two logic lines.
 
-## Where the risk is (ranked — start at the top)
+Each row still answers for the number IT holds, with its own key, so the
+baseline keeps telling the user's history from the job's: the user's floating
+plane and their own sketch on it are forgiven, and a sketch the JOB then draws
+on that plane at its own hardcoded height is the job's and is refused.
 
-0. **The new lint rule can REFUSE an authoring step**, and a false refusal on
-   the user's own design is the exact failure `lint_baseline` exists to
-   prevent (27 of 50 designs once refused the AI's first correct step). The
-   question for the review: is `("plane_offset", <plane id>, <offset>)` a key
-   that BEHAVES like the rule beside it? Measured here: a tree that already
-   carries the routed form puts that key in the baseline at rank 0, so
-   `_lint_since` forgives it and a job on that design is not refused. Not
-   measured: a job that ADDS a face-based plane to a design that already has a
-   floating one (two planes, two keys — they do not collide, but nobody has
-   run it), and what the repair loop does with the new sentence, which names
-   an op (`offset_plane`) the AUTHOR PROMPT never mentions. A note in the
-   prompt or `OP_NOTES` was deliberately NOT added — say so if you think the
-   model needs it before it can obey.
-1. **`_literal` is a new one-line door every numeric lint value goes through.**
-   It answers 0.0 for anything it cannot convert, so a rule written later that
-   means "is this present?" would read 0.0 as absent. Only two callers today,
-   both asking "is this a hardcoded number?", which is what it answers.
-   Measured: `9` flagged, `"9"` flagged (the reach the old `float()` had),
-   `"lid_z"` clean, `True` clean.
-2. **`fetchPlaneFrame` now hits `/api/tool/plan` on every sketch open on a
-   construction plane.** One request where there used to be a cached read; the
-   call was already awaited on that path, so nothing new blocks. The question
-   for the review: is there a path that opens a plane sketch in a LOOP (the
-   journeys runner, a replay) where that request is not free?
-3. **The plane lint reads a SECOND feature's params** (`planes[plane_row]
-   .params.get("offset")`). That is a new instance of the module's known
-   list-params exposure, now a plan §10 P3 row with the measurement in it. It
-   is not newly reachable — the first loop of `_lint_items` has always asked
-   `f.params.get("entities")` unguarded — but the fix is the same `_param_view`
-   for all three sites, and it was deliberately left out of this pass.
+Re-measured after: all **47 saved designs** go through `lint_baseline` with no
+refusal and no crash. A plane that rides a face still exempts a sketch offset
+measured from it; a formula offset is still a named number. 4 new tests, 38 in
+`tests/test_offset_method.py`. Source **+12 / -2**, tests +72.
 
-## Do not report (rounds one to three read these and decided)
+## What round four checked and cleared
 
-- The "is there a fourth copy of which-plane-was-this-sketch-drawn-on?" that
-  round two's brief asked about: the answer was YES, in the browser, and it is
-  fixed here. The remaining ones are `sk.sketch_plane_of` (Revolve, reads the
-  BUILT sketch) and `measure._build_plane`'s `sketch_on_face` branch, both
-  correct. `sketch_snap.plane_of` only ever sees XY/XZ/YZ — measured: the
-  sketcher passes an explicit `frame` for a plane-row sketch on both its
-  doors (`openSketchEditor` and `editSketch`).
-- `_min_inputs(op, f)` and the delete plan: re-measured this round. Deleting an
-  unrelated feature leaves the plane alone; deleting the plane takes its
-  sketches and their bodies; strike and unstrike round-trip clean; a face-based
-  plane whose body is deleted cascades; `b = fillet(box)` then delete `b`
-  rewires the plane to `box` and re-resolves the face there (the rule every
-  face op lives under — round two flagged it, round three agrees).
-- `offset_plane` with a body input and NO face params: refused with a sentence
-  naming the four ways to say which face. Measured.
-- The `move` guard, and the other doors a Plane could reach:
-  `_check_modifier_input` and `_check_combiner_inputs` both refuse a plane by
-  name. Measured, all three.
-- `toolplan._profile` stacking: a plane-row sketch with its own non-zero
-  `offset` puts the profile exactly where the kernel built it (measured, XZ at
-  12 + 7). Extrude plans it; Revolve and Sweep answer their own true
-  sentences about the profile.
-- Measure follows a plane that moves AND a plane whose body changed thickness
-  (measured 30 -> 50 and 4 -> 9).
+- **The brief's risk 0 - the unmeasured baseline case.** A job that ADDS a
+  face-based plane to a design that already carries a floating one: measured,
+  two keys, no collision, `_lint_since` stays empty. And the new sentence IS
+  followable - `offset_plane` is in `op_catalog()` as a `plane` kind with its
+  full signature and the line "no inputs off a principal plane, 1 body off its
+  face", so the author sees it even though `OP_NOTES` has no prose for it. No
+  prompt note is needed.
+- **Risk 1 - `_literal`.** Two callers, both asking "is this a hardcoded
+  number?", which is what it answers. `9` and `"9"` flagged, `"lid_z"` and
+  `True` clean, a list or None clean. Correct for both.
+- **Risk 2 - `fetchPlaneFrame` now hits the server on every plane-sketch
+  open.** No loop reaches it: the journeys runner and the replay path drive the
+  API, not the sketcher. One awaited request on a path that already awaited one.
+- **Risk 3 - the second feature's params.** Not made worse by this pass; the
+  `_param_view` fix is the plan §10 P3 row, with its measurement in it.
+- **The browser fix itself.** `planeFrames` is the only frame cache in
+  `static/js`; `sketchplane.js` asks `planRequest` every time, and `textCache`
+  / `arcKinds` are keyed on the values they describe. The e2e test is genuinely
+  red on the old code (the cache returns the z=20 frame, `focusOnModel` puts
+  the controls target there, the assert wants 50).
 
-## Ground rules for the reviewer
+## Test state at this commit
 
-One reviewer, no subagents. Reproduce by measurement or a red test before
-fixing; smallest fix; tests beside the code; commit, push, restart the user's
-server if the backend changed. Then this file -> `Status: NOTHING PENDING`, a
-plan §10 row for anything deferred, memory. Never `--fix`.
+Fast tier: **2634 passed**, and four memory-pressure failures in the full-tier
+run only - `tests/test_imgtrace_loops.py` (2) and `tests/test_import_stl.py`
+(2), one reporting `MemoryError` outright. Re-run alone: **75 passed**. Both
+suites are mesh-heavy and unrelated to the author lint; this is the known
+"never two OCCT workloads at once" box limit, not a regression. Ruff zero.
+Frontend untouched by round four, so `ui v233` stands.
