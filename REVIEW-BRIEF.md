@@ -6,92 +6,92 @@
 > refreshes it. (The from-scratch reviews of the OLD modules live in
 > `REVIEW-QUEUE.md`, one section each; this file is for NEW code.)
 >
-> **Status: PENDING.** Review the range `e551a3d..HEAD` — **Offset Plane**,
-> Fusion's construction plane as a feature (`specs/offset-plane.md`). ONE
-> commit on top of `e551a3d`. Built on Fable 2026-09-22, no review yet.
+> **Status: PENDING.** Review the range `6a4da57..HEAD` — the **fix pass of
+> the Offset Plane review** (round one). ONE commit. The Offset Plane build
+> itself (`6a4da57`, `specs/offset-plane.md`) has now been reviewed; what is
+> left to read is the fix, because it changed the DELETE PLAN, which every
+> op in the tree goes through.
 
-## What was built, in one paragraph
+## What round one found, in one paragraph
 
-The user tried the 2026-09-21 sketch-plane design (Create Sketch's Offset step
-+ the SKETCH tab's Move Plane, reviewed and closed in `cdc833a` / `a1e3483`)
-and found it the wrong tool: moving the plane took the drawn circle with it
-(Fusion's *Redefine Sketch Plane*). What they meant is Fusion's **Construct >
-Offset Plane**, and that is what this commit builds — and it DELETES the old
-design: the Offset step, Move Plane, `setSketchPlaneOffset` /
-`currentSketchPlane` / `pauseSketchInput` / `setSketchPointerPaused`, the 16
-browser tests and 3 node tests that pinned them. `offset_plane` is a feature of
-a **third kind, `plane`** (neither creator nor modifier; result a build123d
-`Plane`), from a principal plane or a flat face of a body (a REFERENCE input,
-never consumed). A sketch names the plane in `plane` (`REF_PARAMS["sketch"]`),
-so the plane's offset rebuilds every sketch on it and deleting it cascades.
-Create Sketch right after Offset Plane lands on the new plane
-(select-then-command); any later Create Sketch clicks the orange quad. Line
-delta **+1069 / −1175**; fast tier **2621 green**, the offset-plane
-browser file 8 green, ruff and eslint zero; ui v232. No design file touched
-(the sketch's own `offset` param stays, 310 saved offsets untouched).
+Four findings, all reproduced by measurement first and all fixed in the same
+chat. **(1) P0 — any delete or ✕ silently swept every offset plane away.** The
+delete plan's "does this feature still have enough inputs?" rule answered `1`
+for every op that is not a creator. An `offset_plane` off a principal plane
+has NO inputs, so it failed that test on every pass: deleting one unrelated
+feature removed the plane, every sketch on it and every body built from those
+— measured as 4 rows deleted for a delete of 1, with the summary calling them
+"3 dependent features that cannot be kept without it". `Document.strike` runs
+the same plan, so the ✕ struck them out too. **(2) P0 — a face named without a
+body built quietly off XY.** `offset_plane` with `face: "top"` and no input
+ignored the face and measured from the principal plane at the same number,
+status `ok` — a plane at z −6 where the user asked for one 6 mm into a top
+face at z 20. Reachable from the Add Feature dialog, which hides the inputs
+box for this op (`inputs: 0` in the catalog). **(3)** `move` of a plane put
+`AttributeError: 'Plane' object has no attribute 'volume'` in the feature row:
+`move` is the one modifier that skips `_check_modifier_input`. **(4)** The
+offset-method lint called a sketch on a plane row "floats at absolute Z", and
+counted an `offset_plane` as "a body already exists". Line delta **+69 / −6**
+in source, +105 in tests; fast tier green, ruff zero. No design file uses
+`offset_plane` yet (0 of 50), so no stored work was damaged.
 
 ## Where the risk is (ranked — start at the top)
 
-1. **A third kind of part flowing through code written for two.** Every site
-   that sorted `_parts` into sketch | solid was touched (`document.py`:
-   rebuild loop, `leaf_solid_ids`, `_result_feature`, the blockers,
-   `_kind_of`, `_check_modifier_input`, `_check_combiner_inputs`;
-   `provenance.py` twice; `studio.py` `/api/model` goes through
-   `leaf_solid_ids`). The question for the review: **is there a site I did
-   not find?** Candidates: `document.py:2261` (pieces warnings — skipped by
-   the COMBINERS/MODIFIERS filter), `consumed_ids` (a plane is in
-   `FACE_REFERENCE_OPS`, so its body input is not consumed), the delete plan's
-   `_passthrough` (kind "plane" never matches, so dependents cascade — is
-   that the right answer when the BODY under a face-based plane is deleted?),
-   export (`exported_bodies`), the spec checker, journeys, the MCP doorbell's
-   op list. Measured: `tests/test_offset_plane.py` covers the first six sites.
-2. **`REF_PARAMS["sketch"] = ("plane",)` changes `param_refs` for EVERY
-   sketch.** The principal names are filtered out, so an ordinary sketch's
-   refs stay `[]` and its cache signature does not move — but `param_refs`
-   feeds the delete plan (1356/1388/1415/1478), `_signature` and the
-   "rides a move" rule at 597. A sketch on an offset plane now answers "does
-   not ride" there. Check what that means for `move` of a body whose face the
-   plane is measured from (the plane rebuilds from the moved face anyway).
-3. **The formula door.** `numeric_params` had to learn the op (the browser
-   test found `"-wall"` refused as "a value it cannot use"). The same lookup
-   pattern (`CREATORS.get(op) or MODIFIERS.get(op)`) exists in `op_params`
-   (fixed), `numeric_params` (fixed) — and possibly elsewhere: `_params_dict`,
-   `required_params`, `author._annotate`, the Add Feature dialog's catalog
-   consumer. One grep, please.
-4. **`plane_of` builds a throwaway `Feature("?")` to reuse `_plane_part`'s
-   sentences.** Cheap but ugly; a sentence from the plan reads "sketch: plane
-   must be …" — fine for the sketch plan, wrong wording if any other caller
-   arrives.
-5. **The viewport draws planes on `doc-updated` AND re-draws inside
-   `loadModel` (sized with the model).** `fitRadius` at the first draw is the
-   previous model's; the redraw fixes the size. A plane that did not build has
-   `plane_frame: null` and is simply not drawn — the tree row says why.
-6. **The pick: a plane quad is only pickable OUTSIDE the body's silhouette**
-   (the origin-quad rule: a body face under the cursor wins). A plane sitting
-   inside the part's outline from the current view is reachable only through
-   its row. Documented as plan §10 P3 (c), not fixed.
-7. **Select-then-command through a bus event.** `select-feature` → tree
-   `selectFeature` (which also `clearPick`s and shows the overlay); `null`
-   clears. `startSketch` consumes a selected plane only when its status is
-   `ok`. Check that a plane selected minutes ago does not silently hijack a
-   Create Sketch the user meant for a face — that is exactly the
-   fusion-parity rule 2 caveat (the tree row ranks last for tools; here it
-   ranks FIRST, on purpose, because Create Sketch has no other selection).
-8. **The `/api/doc` payload grew** by one key per feature (`plane_frame`,
-   null for all but planes). `_doc_json` runs on every request.
+1. **`_min_inputs` is no longer a function of the op alone.** It now takes the
+   FEATURE (`_min_inputs(op, f)`) and answers `0` for a plane with no inputs,
+   `1` for a plane that has one. One caller, `remove_plan`'s healing loop at
+   `document.py:1476`. The question for the review: does any delete of a
+   feature that a plane depends on now heal where it should cascade? Measured:
+   deleting the body under a face-based plane still takes the plane and its
+   sketches (`test_deleting_the_body_under_a_face_plane_takes_the_plane_along`),
+   and `_passthrough` still refuses to reconnect across a kind change
+   (`_kind_of` answers "plane"). Not measured: a face-based plane whose body is
+   deleted but whose UPSTREAM survives (`b = fillet(box)`, delete `b`) — the
+   plane rewires to `box` and re-resolves its face there. That is the right
+   answer for a pick that still exists on `box`, and the wrong one for a face
+   the fillet created. It is the same rule every face op already lives under,
+   so it was left alone; say so if you disagree.
+2. **The new refusal in `sketch.offset_plane` is at the OP's door**, so it
+   applies to the UI, the MCP, the AI author and the file loader at once. It
+   fires on `face or face_center or face_normal` with no `solid`. Check that no
+   caller legitimately passes a face name with no body — the browser's `ok()`
+   always sends `inputs: [owner]` for a face pick, and `editOffsetPlane` writes
+   only `offset`.
+3. **The author lint now reads a sketch's `plane`.** `_lint_items` computes
+   `on_plane_row` for every sketch feature in an authored tree. `f.params.get`
+   on params a file holds as a LIST would raise — but the line directly below
+   it has always done the same, so this is the module's existing exposure, not
+   a new one. Worth one look anyway.
+4. **The `move` guard is in `_eval`, not `_check_modifier_input`.** `move`
+   deliberately stays out of that helper (it reads a missing offset as 0), so
+   the plane check sits inline in the move branch. Anything else that will ever
+   skip `_check_modifier_input` needs its own.
 
-## Do not report
+## Do not report (round one read these and decided)
 
-- The sketch's own `offset` parameter and the offset method (rule 11) are
-  unchanged on purpose: the AI author and 310 saved offsets use them.
-- `into_sign` is measured per face (+y: positive goes in) — reviewed twice.
-- The tool.js inch round-trip on an untouched OK (Extrude 12 → 11.99896) is
-  plan §10 P2, not this range; the plane panel handles it with the `shown`
-  string compare, tested in mm and inches.
-- A plane off another plane, an angled plane, a midplane, hiding a plane —
-  plan §10 P3, listed in the spec's "Not built".
-- The "body disappeared" report of 2026-09-22 was not a bug: the user's
-  active tab held one sketch and no body (7 tabs named my-part-6).
+- The three sites the brief asked about are clean: `document.py:2337` (pieces
+  warnings — planes have `pieces = None` AND are filtered by the
+  COMBINERS/MODIFIERS test), `document.py:1817` (deep validity — walks
+  `leaf_solid_ids`, which excludes planes), `_orphan_sweep` (a plane is in
+  `FACE_REFERENCE_OPS`, so its body edge is skipped).
+- The formula door: `CREATORS.get(op) or MODIFIERS.get(op)` exists in exactly
+  two places outside `probes/`, `op_params` and `numeric_params`, and both
+  learned the op. Grepped.
+- `sketch_snap.py:132` (a Plane has no `.edges()`; the try/except takes it),
+  `provenance._sketch_behind`, `_loft_candidates`, `tool.js solids()` (filters
+  `volume != null`), the tree's sketch-nesting: all already exclude planes.
+- `_carry_face_picks`: a sketch on a plane has no inputs, so the `param_refs`
+  change cannot reach `_hands_on_the_move`. A face-based plane's own pick DOES
+  ride the move, correctly.
+- A plane behind the rollback bar: `_parts` is cleared, so `plane_frame` is
+  null and the quad is not drawn. Measured.
+- Tool plans with a plane selected (shell, fillet, pattern, mirror, extrude):
+  every one answers a plain sentence. Measured.
+- The two cosmetic viewport lags (a quad not re-sized in a body-less document;
+  a quad keeping its hover brightness after a pick ends on a face) are plan
+  §10 P3 (e), not fixed.
+- The tool.js inch round trip, `into_sign`, the sketch's own `offset`, and the
+  Construct entries that do not exist yet: unchanged, plan §10.
 
 ## Ground rules for the reviewer
 

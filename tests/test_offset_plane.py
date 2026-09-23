@@ -116,11 +116,12 @@ def test_rename_and_delete_follow_the_reference():
     d.rename("p1", "lid_plane")
     assert d.get("s1").params["plane"] == "lid_plane"
     assert d.rebuild()
-    # deleting the plane takes the sketch on it along (the delete plan lists it)
-    plan = d.remove_plan("lid_plane") if hasattr(d, "remove_plan") else None
-    if plan is not None:
-        gone = set(plan.get("removed") or plan.get("gone") or plan.get("delete") or [])
-        assert "s1" in gone or "s1" in str(plan), plan
+    # deleting the plane takes the sketch on it along, and leaves the sketch on
+    # the PRINCIPAL plane where it is (the plan's own key, `deleted` — reading
+    # keys that do not exist made this assertion pass on the summary text)
+    plan = d.remove_plan("lid_plane", "auto")
+    assert set(plan["deleted"]) == {"lid_plane", "s1"}, plan
+    assert "s0" not in plan["deleted"]
 
 
 def test_a_formula_offset_resolves_and_rides_the_parameter():
@@ -167,3 +168,97 @@ def test_the_catalog_and_the_doc_json_know_the_plane():
     assert doc["bodies"] == 1, "the plane is not a body"
     plan = c.post("/api/tool/plan", json={"tool": "sketch", "plane": "p2", "offset": 0}).json()
     assert plan["ok"] and plan["frame"]["origin"][2] == pytest.approx(4)
+
+
+def test_deleting_something_else_leaves_the_plane_and_its_sketches_alone():
+    """A plane off a PRINCIPAL plane has no inputs and never loses one, so no
+    other delete may sweep it up. The delete plan's "does this feature still
+    have enough inputs?" rule read 1 for every op that is not a creator, so a
+    plane, every sketch on it and everything built from those went with the
+    first unrelated ✕ — 4 rows removed for a delete of 1, silently."""
+    d = _plate()
+    d.add("tool", "plate", {"width": 10, "depth": 10, "thickness": 10}, [])
+    d.add("p1", "offset_plane", {"plane": "XY", "offset": 30}, [])
+    d.add("s1", "sketch", {"plane": "p1", "entities": CIRCLE}, [])
+    d.add("e1", "extrude", {"amount": 5}, ["s1"])
+    assert d.rebuild(), [(f.id, f.problems) for f in d.features]
+    plan = d.remove_plan("tool", "auto")
+    assert plan["deleted"] == ["tool"], plan["summary"]
+    assert plan["cascaded"] == []
+    # the ✕ (soft delete) is the same plan, so it struck them out too
+    d.strike("tool")
+    assert [f.id for f in d.features if f.suppressed] == ["tool"]
+    assert d.rebuild()
+    assert d._parts["s1"].faces()[0].center().Z == pytest.approx(30)
+
+
+def test_deleting_the_body_under_a_face_plane_takes_the_plane_along():
+    """The other half of the same rule: a plane measured off a FACE cannot
+    survive without its body (it would silently fall back to the XY plane),
+    so it cascades — and so do the sketches on it."""
+    d = _plate()
+    d.add("p2", "offset_plane", {"face": "top", "offset": -6}, ["b"])
+    d.add("s2", "sketch", {"plane": "p2", "entities": RECT}, [])
+    assert d.rebuild()
+    plan = d.remove_plan("b", "auto")
+    assert set(plan["deleted"]) == {"b", "p2", "s2"}
+    assert set(plan["cascaded"]) == {"p2", "s2"}
+
+
+def test_a_face_named_without_a_body_is_refused_not_quietly_measured_from_xy():
+    """`face: "top"` with no input used to build a plane off XY at the same
+    number — a plane 20 mm below the stock where the user asked for one 6 mm
+    into its top face, status ok. Wrong placement, said by nothing."""
+    d = _plate()
+    d.add("p", "offset_plane", {"face": "top", "offset": -6}, [])
+    d.rebuild()
+    f = d.get("p")
+    assert f.status == "failed", f"built at {d._parts.get('p')}"
+    assert "no body" in f.problems[0] and "Traceback" not in f.problems[0], f.problems
+    # a plane with no face named and no input is the ordinary principal plane
+    d.add("q", "offset_plane", {"plane": "XY", "offset": -6}, [])
+    d.rebuild()
+    assert d.get("q").status == "ok"
+
+
+def test_moving_a_construction_plane_is_a_sentence_not_python_wording():
+    """`move` is the one modifier that skips the kind check, so a plane fed to
+    it answered `AttributeError: 'Plane' object has no attribute 'volume'`."""
+    d = _plate()
+    d.add("p1", "offset_plane", {"plane": "XY", "offset": 30}, [])
+    d.add("m", "move", {"x": 10}, ["p1"])
+    d.rebuild()
+    f = d.get("m")
+    assert f.status == "failed"
+    assert "construction plane" in f.problems[0], f.problems
+    assert "AttributeError" not in f.problems[0] and "Traceback" not in f.problems[0]
+
+
+def test_the_offset_method_lint_does_not_fire_on_a_sketch_on_a_plane_row():
+    """The offset-method rule bans a sketch at an ABSOLUTE Z once a body
+    exists. A sketch on a construction plane is the opposite: its number is
+    measured from a row that rides the geometry. And a plane is not a body,
+    so it must not be what starts the rule either."""
+    import author
+    from document import Feature
+    tree = [
+        Feature(id="base", op="plate", params={"width": 60, "depth": 40, "thickness": 20}, inputs=[]),
+        Feature(id="lid", op="offset_plane", params={"face": "top", "offset": -6}, inputs=["base"]),
+        Feature(id="pocket_sketch", op="sketch", params={"plane": "lid", "offset": 2,
+                                                         "entities": CIRCLE}, inputs=[]),
+    ]
+    assert not [w for w in author.lint_tree(tree) if "floats at absolute Z" in w], \
+        author.lint_tree(tree)
+    # a plane BEFORE any body does not make the rule think one exists
+    early = [
+        Feature(id="lid", op="offset_plane", params={"plane": "XY", "offset": 10}, inputs=[]),
+        Feature(id="s", op="sketch", params={"plane": "XY", "offset": 3, "entities": CIRCLE}, inputs=[]),
+    ]
+    assert not [w for w in author.lint_tree(early) if "floats at absolute Z" in w], \
+        author.lint_tree(early)
+    # the rule itself is untouched: a body, then a floating absolute sketch
+    still = [
+        Feature(id="base", op="plate", params={"width": 60, "depth": 40, "thickness": 20}, inputs=[]),
+        Feature(id="s", op="sketch", params={"plane": "XY", "offset": 20, "entities": CIRCLE}, inputs=[]),
+    ]
+    assert [w for w in author.lint_tree(still) if "floats at absolute Z" in w]

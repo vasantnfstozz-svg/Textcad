@@ -545,10 +545,18 @@ def _lint_items(features, final: bool = True) -> list[tuple]:
     # legitimate reason left to write the absolute form.
     # The OFFSET VALUE is part of the key: a number the model puts there is
     # the model's, even in a sketch that was already floating.
+    # A sketch on a CONSTRUCTION PLANE is not the banned form: its offset is
+    # measured from that plane's row, which itself rides a face or a named
+    # number, so it moves with the design exactly as face+offset does. And an
+    # `offset_plane` is not a body — it must not be what makes `body_yet` true
+    # (code review 2026-09-23).
     import sketch as _sk
     body_yet = False
     for f in features:
-        if f.op == "sketch" and body_yet and float(f.params.get("offset") or 0):
+        on_plane_row = (f.op == "sketch"
+                        and str((f.params.get("plane") or "XY")) not in _sk.PRINCIPAL_PLANES)
+        if (f.op == "sketch" and body_yet and not on_plane_row
+                and float(f.params.get("offset") or 0)):
             items.append((("offset", f.id, float(f.params["offset"])), 0,
                           f"sketch '{f.id}' floats at absolute Z (offset "
                           f"{f.params['offset']}) even though a body already "
@@ -558,7 +566,7 @@ def _lint_items(features, final: bool = True) -> list[tuple]:
                           f'{{"face":"top","offset":<depth from that face, '
                           f'negative = into the material>}}, then extrude '
                           f"with flip/through and cut or fuse"))
-        if f.op not in _sk.SKETCH_PRODUCERS:
+        if f.op not in _sk.SKETCH_PRODUCERS and f.op not in _sk.PLANE_PRODUCERS:
             body_yet = True
     for f in features:
         if _GENERIC_ID.match(f.id):

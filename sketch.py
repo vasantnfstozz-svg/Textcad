@@ -996,6 +996,16 @@ def offset_plane(solid=None, plane: str = "XY", offset: float = 0.0,
     sign goes INTO the material is that frame's (face_outline_2d.into_sign),
     never one rule for every face."""
     off = float(offset or 0.0)
+    if solid is None and (face or face_center or face_normal):
+        # A named face with no body used to be IGNORED: the plane was quietly
+        # measured from the principal plane instead, at the same number, and
+        # the row said "ok" (code review 2026-09-23). Wrong placement is the
+        # worst class there is, so the face wins the argument and the op says
+        # what is missing.
+        raise ValueError(
+            "offset_plane: a face is named but no body was given — an offset "
+            "plane off a face takes that body as its input; give the body, or "
+            "drop the face to measure from the {} plane".format(plane))
     if solid is not None:
         picked = pick_face(solid, face_center, face_normal, face, face_area)
         pl = face_sketch_plane(picked)

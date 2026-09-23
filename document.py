@@ -443,13 +443,21 @@ def required_params(op: str) -> tuple:
     `op_params` carries, for anyone who only wants the names."""
     return tuple(n for n, d in op_params(op) if d is REQUIRED)
 
-# how many inputs an op NEEDS to still mean something (used when a delete
-# takes one of its inputs away: a modifier with none left cannot survive)
-def _min_inputs(op: str) -> int:
+# how many inputs a FEATURE needs to still mean something (used when a delete
+# takes one of its inputs away: a modifier with none left cannot survive).
+# The feature, not just the op: a construction plane is the one op whose input
+# is optional — off a principal plane it has none and never loses one, off a
+# FACE it cannot live without that body (it would quietly fall back to XY).
+# Reading 1 for every non-creator swept every principal-plane `offset_plane`,
+# every sketch on it and everything built from those away with the FIRST
+# unrelated delete or strike-out (code review 2026-09-23).
+def _min_inputs(op: str, f: "Feature | None" = None) -> int:
     if op in CREATORS:
         return 0
     if op in COMBINERS:
         return 2
+    if op in sk.PLANE_PRODUCERS:
+        return 1 if (f is not None and f.inputs) else 0
     return 1                    # modifiers + move
 
 
@@ -1465,7 +1473,7 @@ class Document:
                 # a pattern whose SEED is going cannot be healed: rewiring it to
                 # the seed's upstream would repeat a different feature, so it goes
                 lost_seed = any(r in gone for r in self.param_refs(f))
-                if (lost_seed or len(ins) < _min_inputs(f.op)
+                if (lost_seed or len(ins) < _min_inputs(f.op, f)
                         or (f.op == "cut" and not base_ok)):
                     newly.add(f.id)
                 elif ins != f.inputs:
@@ -1950,6 +1958,17 @@ class Document:
         if f.op == "move":
             if len(ins) != 1:
                 raise ValueError("'move' needs exactly 1 input")
+            # `move` is the one modifier that skips _check_modifier_input (it
+            # reads a missing offset as 0 on purpose), so it was also the one
+            # door a construction plane reached: `Pos * Plane` answered
+            # `AttributeError: 'Plane' object has no attribute 'volume'` in the
+            # feature row — Python wording in the user's tree, the banned class
+            # (code review 2026-09-23).
+            if sk.is_plane(ins[0]):
+                raise ValueError(
+                    f"'{f.inputs[0]}' is a construction plane, not a body — move it "
+                    f"with the ✎ on its own row (its Offset), which takes every "
+                    f"sketch on it along")
             return Pos(*_move_offsets(self._resolved(f))) * ins[0]
         if f.op in COMBINERS:
             if len(ins) < 2:
