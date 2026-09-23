@@ -321,6 +321,78 @@ def test_lint_still_catches_an_absolute_offset_written_as_a_string():
     assert probs and "floats at absolute Z" in probs[0], probs
 
 
+def test_lint_rejects_the_absolute_Z_when_the_PLANE_row_holds_none_of_it():
+    """The same walk-around one row further down. Round three keyed the plane
+    rule on the PLANE's own offset, so `offset_plane(XY, 0)` — a plane that
+    rides nothing and moves nothing — with the whole distance written in the
+    sketch's own `offset` slipped past BOTH rules: the plane rule saw 0, and
+    the sketch rule exempted every sketch drawn on a plane row. Measured
+    2026-09-23: it builds green with the boss sitting on the base's top face
+    at z 12..15, and changing the base 12 -> 20 BURIES it, which is the exact
+    failure the offset method exists to prevent (code review 2026-09-23)."""
+    probs = _lint(_BASE + [
+        {"id": "lid_plane", "op": "offset_plane",
+         "params": {"plane": "XY", "offset": 0}},
+        {"id": "pocket_sketch", "op": "sketch",
+         "params": {"plane": "lid_plane", "offset": 12,
+                    "entities": [{"kind": "circle", "r": 5}]}},
+    ])
+    assert probs, "a plane at 0 does not launder the sketch's own absolute Z"
+    assert "pocket_sketch" in probs[0] and "absolute Z" in probs[0], probs
+
+
+def test_lint_names_BOTH_rows_when_the_distance_is_split_between_them():
+    """A plane at 5 with a sketch at 25 is a hardcoded z of 30 written in two
+    places. Each row answers for the number IT holds: two sentences, one per
+    row, each with its own key so the baseline forgives them one at a time."""
+    probs = _lint(_BASE + [
+        {"id": "lid_plane", "op": "offset_plane",
+         "params": {"plane": "XY", "offset": 5}},
+        {"id": "pocket_sketch", "op": "sketch",
+         "params": {"plane": "lid_plane", "offset": 25,
+                    "entities": [{"kind": "circle", "r": 5}]}},
+    ])
+    assert len(probs) == 2, probs
+    assert any("lid_plane" in t and "offset 5" in t for t in probs), probs
+    assert any("pocket_sketch" in t and "offset 25" in t for t in probs), probs
+
+
+def test_lint_still_passes_a_sketch_OFFSET_from_a_plane_that_rides_a_face():
+    """The exemption keeps its whole job: a plane with a body input rides that
+    face, so a sketch drawn 3 mm off it rides the face too."""
+    assert _lint(_BASE + [
+        {"id": "floor", "op": "offset_plane", "inputs": ["base"],
+         "params": {"face": "top", "offset": -3.0}},
+        {"id": "pocket_sketch", "op": "sketch",
+         "params": {"plane": "floor", "offset": 2.0,
+                    "entities": [{"kind": "circle", "r": 5}]}},
+    ]) == []
+
+
+def test_the_job_answers_for_ITS_sketch_on_a_plane_the_user_already_floated():
+    """The two numbers have two owners. The user's floating plane and the
+    user's sketch on it are theirs — forgiven. A sketch the JOB then draws on
+    that same plane at its OWN hardcoded height is the job's, and keying the
+    sketch rule on the sketch id (not on the plane) is what tells them apart."""
+    user_tree = _BASE + [
+        {"id": "lid_plane", "op": "offset_plane",
+         "params": {"plane": "XY", "offset": 0}},
+        {"id": "lid_sketch", "op": "sketch",
+         "params": {"plane": "lid_plane", "offset": 12,
+                    "entities": [{"kind": "circle", "r": 5}]}},
+    ]
+    doc = Document(name="lint")
+    for f in user_tree:
+        doc.add(f["id"], f["op"], f.get("params") or {}, f.get("inputs") or [])
+    baseline = author.lint_baseline(doc.features)
+    assert author._lint_since(doc.features, baseline) == [], "the user's own history"
+    doc.add("boss_sketch", "sketch",
+            {"plane": "lid_plane", "offset": 40,
+             "entities": [{"kind": "circle", "r": 3}]})
+    said = author._lint_since(doc.features, baseline)
+    assert said and "boss_sketch" in said[0], said
+
+
 def test_a_design_that_already_floats_a_plane_does_not_refuse_the_AI_a_job():
     """`lint_baseline` runs on the USER's document: a rule about history they
     wrote is a wall the job can never get past, so the new plane rule has to

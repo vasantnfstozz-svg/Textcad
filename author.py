@@ -568,6 +568,15 @@ def _lint_items(features, final: bool = True) -> list[tuple]:
     # first version of this exemption waved it through (a second code review,
     # 2026-09-23). An `offset_plane` is not a body either, so it must not be
     # what makes `body_yet` true.
+    # The distance can sit in EITHER row, or be split between them, and each
+    # row answers for the number IT holds — so the exemption turns on "does
+    # this plane ride a face?", NEVER on "is this sketch on a plane row?".
+    # Written the second way it had a door left: `offset_plane(XY, 0)` +
+    # `sketch(plane=that, offset=12)` passed BOTH rules, because the plane rule
+    # saw 0 and the sketch rule saw a plane row. Measured (a third code review,
+    # 2026-09-23): it builds green with the boss on the base's top face at
+    # z 12..15, and changing the base 12 -> 20 BURIES it — the exact failure
+    # this rule exists to prevent.
     # A FORMULA offset ("lid_z") is a NAMED number, not a hardcoded one — and
     # `float()` on it raised ValueError out of `lint_baseline`, which runs on
     # the USER's own document when an AI job starts: asking the AI to change a
@@ -584,7 +593,8 @@ def _lint_items(features, final: bool = True) -> list[tuple]:
                      else "XY")
         on_plane_row = plane_row not in _sk.PRINCIPAL_PLANES
         pf = planes.get(plane_row) if on_plane_row else None
-        floats = _literal(pf.params.get("offset")) if pf is not None and not pf.inputs else 0.0
+        rides_face = pf is not None and bool(pf.inputs)
+        floats = _literal(pf.params.get("offset")) if pf is not None and not rides_face else 0.0
         if f.op == "sketch" and body_yet and floats and plane_row not in said:
             said.add(plane_row)
             items.append((("plane_offset", plane_row, floats), 0,
@@ -596,7 +606,7 @@ def _lint_items(features, final: bool = True) -> list[tuple]:
                           f"Measure it from a FACE instead: offset_plane with "
                           f'inputs [the current body] and {{"face":"top",'
                           f'"offset":<depth from that face>}}'))
-        if (f.op == "sketch" and body_yet and not on_plane_row
+        if (f.op == "sketch" and body_yet and not rides_face
                 and _literal(f.params.get("offset"))):
             items.append((("offset", f.id, _literal(f.params["offset"])), 0,
                           f"sketch '{f.id}' floats at absolute Z (offset "
