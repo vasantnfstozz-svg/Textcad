@@ -9,6 +9,7 @@ count, rebuild_ms and `ok` all unchanged, the banner was never spoken, and the
 marker sat owed for its whole ten minutes.
 """
 import pytest
+from fixture_docs import flange
 
 pytest.importorskip("playwright.sync_api")
 
@@ -30,7 +31,7 @@ def _rings(page):
 def saved(fresh_doc):
     """A real design file in the library, cleaned up afterwards."""
     import studio
-    doc = studio.sample_flange()
+    doc = flange()
     doc.name = NAME
     path = studio.DESIGNS / f"{NAME}.tcad.json"
     doc.save(str(path))

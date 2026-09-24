@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import studio
+from fixture_docs import flange
 
 ROOT = Path(studio.__file__).parent
 PNG_1x1 = base64.b64decode(
@@ -22,7 +23,7 @@ def client(tmp_path, monkeypatch):
     studio.STATE["docs"].clear()
     studio.STATE["active"] = None
     studio.STATE["seq"] = 0
-    studio._new_tab(studio.sample_flange(), source="sample:flange")
+    studio._new_tab(flange())
     studio._rebuild_and_mesh()
     return TestClient(studio.app)
 

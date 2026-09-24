@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 import studio
 from document import Document
+from fixture_docs import flange
 
 
 @pytest.fixture()
@@ -162,18 +163,12 @@ def test_a_restored_tab_matching_its_file_reads_clean(client):
         (studio.DESIGNS / "_test-nohist.tcad.json").unlink(missing_ok=True)
 
 
-def test_a_restored_sample_tab_keeps_its_unsaved_edits_visible(client):
-    pristine = studio.SAMPLES["flange"]()
-    edited = studio.SAMPLES["flange"]()
-    edited.edit(edited.features[1].id, "radius", 99)
+def test_a_restored_tab_from_a_retired_sample_reads_dirty(client):
+    """File > Examples > Flange/Impeller/Compressor were deleted 2026-09-24,
+    but a session file written before then still names "sample:flange". With
+    no sample left to compare against, the tab is treated like an untitled
+    design: dirty while it holds features, so closing it asks first."""
+    doc = flange()
     assert _session_with(client, [
-        {"doc": edited.to_data(), "source": "sample:flange", "active": True}]) == 1
-    assert _dirty_by_name(pristine.name) is True, \
-        "an edited sample read as clean after a restart"
-
-
-def test_an_untouched_restored_sample_reads_clean(client):
-    pristine = studio.SAMPLES["flange"]()
-    _session_with(client, [
-        {"doc": pristine.to_data(), "source": "sample:flange", "active": True}])
-    assert _dirty_by_name(pristine.name) is False
+        {"doc": doc.to_data(), "source": "sample:flange", "active": True}]) == 1
+    assert _dirty_by_name(doc.name) is True

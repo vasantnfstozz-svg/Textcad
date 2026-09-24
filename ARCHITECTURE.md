@@ -150,7 +150,7 @@ Route groups (51 routes): tabs (`/api/tabs*`, `/api/new`) · document
 `/api/spec`, `/api/undo`, `/api/redo`, `/api/rollback`, `/api/face-feature`)
 · measure (`/api/measure`, `/measure/probe`, `/measure/set`) · versions
 (`/api/save`, `/api/versions*`) · library (`/api/designs`, `/api/open/{file}`,
-`/api/sample/{name}`, `/api/examples`, `/api/design-preview/{file}`) · import
+`/api/examples`, `/api/design-preview/{file}`) · import
 and export (`/api/trace-png`, `/api/import-stl`, `/api/import-step`,
 `/api/export`) · AI (`/api/chat`) · catalogs (`/api/ops`, `/api/sketch/kinds`).
 
@@ -245,9 +245,9 @@ browser follows `GET /api/chat/job/<id>` and prints every step as it lands.
 a whole tree for the MCP `build_design` door. Model access is OpenRouter via
 `generate.OpenRouterModel`, key from the user registry.
 
-**MCP** (`mcp_server.py`): six tools for external Claude sessions
-(`build_design`, `design_part`, `design_compressor`, `verify_step`,
-`measure_step`, `list_operations`); stdout IS the protocol, so geometry runs
+**MCP** (`mcp_server.py`): five tools for external Claude sessions
+(`build_design`, `design_part`, `verify_step`, `measure_step`,
+`list_operations`); stdout IS the protocol, so geometry runs
 inside `_quiet()`. A built design is announced to a running Studio, which
 opens it in a tab (the "doorbell"; its re-fire on page load is an open item).
 

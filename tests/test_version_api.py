@@ -19,6 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import studio
+from fixture_docs import flange
 from history import History
 
 TMP = "_test-versions"
@@ -33,7 +34,7 @@ def client():
     studio.STATE["docs"].clear()
     studio.STATE["active"] = None
     studio.STATE["seq"] = 0
-    studio._new_tab(studio.sample_flange())
+    studio._new_tab(flange())
     studio._rebuild_and_mesh()
     yield TestClient(studio.app)
     # designs/ is tracked user work; the history root is redirected by the
@@ -47,7 +48,7 @@ def client():
 @pytest.fixture()
 def saved(client):
     """A design in the library, opened in a tab, with v1 already recorded."""
-    doc = studio.sample_flange()
+    doc = flange()
     doc.name = TMP
     doc.save(str(_design_path()))
     client.post(f"/api/open/{TMP}")

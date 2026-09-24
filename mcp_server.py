@@ -35,7 +35,6 @@ def _quiet():
 
 import author
 import inspector
-import meanline
 from document import Document
 
 ROOT = Path(__file__).parent
@@ -287,62 +286,6 @@ def verify_step(step_path: str, spec: dict) -> dict:
         fails = inspector.verify(step_path, spec_obj)
         return {"matches_spec": not fails, "mismatches": fails,
                 "measured": inspector.measure(step_path)}
-
-
-@mcp.tool()
-def design_compressor(mass_flow_kg_s: float, pressure_ratio: float,
-                      rpm: float, backsweep_deg: float = 35.0) -> dict:
-    """Design a centrifugal compressor impeller from its DUTY using first-order
-    meanline physics (Euler work, Wiesner slip, velocity triangles), build the
-    geometry, independently verify it (blade count symmetry, tip radius,
-    watertight), and export STEP. Slow: the build takes 1-2 minutes."""
-    with _quiet():
-        return _design_compressor(mass_flow_kg_s, pressure_ratio, rpm,
-                                  backsweep_deg)
-
-
-def _design_compressor(mass_flow_kg_s, pressure_ratio, rpm, backsweep_deg):
-    duty = meanline.Duty(mass_flow=mass_flow_kg_s,
-                         pressure_ratio=pressure_ratio, rpm=rpm,
-                         backsweep_deg=backsweep_deg)
-    try:
-        # A duty the physics cannot answer used to come back as a Python
-        # traceback through the MCP protocol: rpm 0 and pressure ratio 1 both
-        # divide by zero, a ratio below 1 and a backsweep of 90 or more take
-        # the square root of a negative number (measured 2026-09-16).
-        d = meanline.design(duty)
-    except ValueError as e:
-        return {"verified": False, "error": str(e)}
-    rep_design = {
-        "tip_radius_mm": d.tip_radius, "tip_speed_m_s": round(d.tip_speed, 1),
-        "blade_count": d.blade_count, "exit_width_mm": d.exit_width,
-        "beta1_deg": d.beta1_deg, "beta2_deg": d.beta2_deg,
-        "inducer_shroud_radius_mm": d.inducer_shroud_radius,
-        "axial_length_mm": d.axial_length, "power_kw": round(d.power_kw, 1),
-        "slip_factor": round(d.slip_factor, 3),
-        # The design's own plain sentences - the machinable exit-width floor
-        # and the inducer angle the metal does not carry.  Built by hand here,
-        # so a note added to CompressorDesign reached every OTHER door and not
-        # this one: the AI read numbers it had no way to know were qualified.
-        "notes": list(d.notes),
-    }
-    build = meanline.build_from_design(d)
-    if not build.ok or build.part is None:
-        return {"verified": False, "design": rep_design,
-                "problems": build.all_problems()}
-    import build123d as b3d
-    m = inspector.measure(build.part)
-    sym_ok = inspector.is_rotationally_symmetric(build.part, d.blade_count)
-    step = OUT / (_free_name(f"compressor-PR{pressure_ratio}-"
-                             f"{d.blade_count}blades") + ".step")
-    b3d.export_step(build.part, str(step))
-    return {"verified": sym_ok and m.get("is_manifold", False),
-            "design": rep_design,
-            "measured": {"volume": m["volume"], "size": m["size"],
-                         "tip_radius": m.get("max_radius"),
-                         "blade_symmetry_confirmed": sym_ok,
-                         "watertight": m.get("is_manifold")},
-            "step_path": str(step)}
 
 
 if __name__ == "__main__":

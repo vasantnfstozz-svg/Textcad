@@ -14,10 +14,7 @@ import { SETTINGS, toMm, fmtLen, unitLabel } from './settings.js';
 const DEFAULTS = {
   plate: { width: 40, depth: 40, thickness: 10 },
   disc: { radius: 20, thickness: 10 },
-  ball: { radius: 20 },
-  cone: { bottom_radius: 20, top_radius: 10, height: 30 },
   tube: { outer_radius: 20, inner_radius: 10, height: 30 },
-  polygon_plate: { sides: 6, circumradius: 20, thickness: 10 },
   hex_plate: { across_flats: 30, thickness: 10 },
 };
 export const PLACEABLE = Object.keys(DEFAULTS);
@@ -59,9 +56,10 @@ function debounce(key, fn) {
   timers[key] = setTimeout(fn, 250);
 }
 
-/* Which of a primitive's params is a LENGTH. Everything in DEFAULTS above is
-   a millimetre except polygon_plate's `sides`, which is a COUNT — and the
-   popup labelled every box "(mm)", `sides` included, until 2026-09-19. */
+/* Which of a primitive's params is a COUNT, not a length. None of DEFAULTS
+   has one since Polygon lost its button (2026-09-24); the set stays so a
+   count added later is not read through the unit — Polygon's `sides` was
+   labelled "(mm)" until 2026-09-19. */
 const COUNTS = new Set(['sides']);
 
 /* The LENGTH boxes of the popup that is open, so the display unit can be

@@ -281,8 +281,8 @@ RULES AND CONVENTIONS:
   CENTERED at the origin — they span Z from -thickness/2 to +thickness/2.
   polygon_plate and hex_plate are NOT: they stand on Z=0 and run up to
   +thickness, so a hex nut's mid-plane is at +thickness/2, not at 0.
-  revolve_profile spans EXACTLY the z values in its points. curved_blade
-  stands on Z=0 up to its height. Use "move" to align pieces BEFORE booleans.
+  revolve_profile spans EXACTLY the z values in its points. Use "move" to
+  align pieces BEFORE booleans.
 - The spec encodes the USER's requirement. If verification fails, fix the
   GEOMETRY to meet the spec — NEVER weaken or change the spec to match wrong
   geometry.
@@ -292,8 +292,6 @@ RULES AND CONVENTIONS:
   (cut = first input minus the rest).
 - revolve_profile points are [radius, z] pairs (radius >= 0), auto-closed —
   use it for any axisymmetric body (hubs, pulleys, shafts, bottles).
-- curved_blade makes ONE turbomachinery-style backswept blade standing on the
-  XY plane; combine with polar_pattern for impellers/fans; angles from radial.
 - polar_pattern copies its input N times evenly around Z — features meant to
   fuse with a body MUST physically overlap it (touching is not enough). To
   repeat a FEATURE of a body (a bolt circle of one hole, teeth from one boss)

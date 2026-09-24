@@ -17,6 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import studio
+from fixture_docs import flange
 
 TMP_NAME = "_test-mcp-arrival"
 TMP_NAME_2 = "_test-mcp-arrival-two"
@@ -28,7 +29,7 @@ def client():
     studio.STATE["active"] = None
     studio.STATE["seq"] = 0
     studio.ARRIVAL = None                 # no doorbell left over from a peer
-    studio._new_tab(studio.sample_flange())
+    studio._new_tab(flange())
     studio._rebuild_and_mesh()
     yield TestClient(studio.app)
     studio.ARRIVAL = None
@@ -42,7 +43,7 @@ def client():
 @pytest.fixture()
 def saved(client):
     """A real design file in the library, cleaned up afterwards."""
-    doc = studio.sample_flange()
+    doc = flange()
     doc.name = TMP_NAME
     doc.save(str(studio.DESIGNS / f"{TMP_NAME}.tcad.json"))
     return TMP_NAME
@@ -50,7 +51,7 @@ def saved(client):
 
 @pytest.fixture()
 def saved2(client):
-    doc = studio.sample_flange()
+    doc = flange()
     doc.name = TMP_NAME_2
     doc.save(str(studio.DESIGNS / f"{TMP_NAME_2}.tcad.json"))
     return TMP_NAME_2

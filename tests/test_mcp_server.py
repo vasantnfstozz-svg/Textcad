@@ -204,40 +204,6 @@ def test_verify_step_still_answers_a_spec_it_can_check(out):
     assert rep["measured"]["volume"] == pytest.approx(600, rel=1e-3)
 
 
-def test_a_degenerate_duty_is_a_sentence_not_a_traceback():
-    for duty in ({"mass_flow_kg_s": 0.5, "pressure_ratio": 3.0, "rpm": 0},
-                 {"mass_flow_kg_s": 0.5, "pressure_ratio": 1.0, "rpm": 45000},
-                 {"mass_flow_kg_s": 0.5, "pressure_ratio": 3.0, "rpm": 45000,
-                  "backsweep_deg": 95.0},
-                 {"mass_flow_kg_s": 0.0, "pressure_ratio": 3.0, "rpm": 45000}):
-        rep = mcp_server._design_compressor(
-            duty["mass_flow_kg_s"], duty["pressure_ratio"], duty["rpm"],
-            duty.get("backsweep_deg", 35.0))
-        assert rep["verified"] is False, duty
-        assert "error" in rep and "Error" not in rep["error"], rep
-        assert "division" not in rep["error"], rep
-
-
-def test_a_backsweep_the_euler_relation_cannot_answer_is_a_sentence_too():
-    """ROUND TWO. `_check`'s window is -90 < beta2 < 90, but the tip speed is
-    sqrt(dh0 / (sigma * (1 - phi*tan(beta2)))) — so the equation runs out at
-    atan(1/phi), 74.36 degrees at the default flow coefficient, not at 90.
-    Measured 2026-09-17: every backsweep from 74.36 to 89.99 answered the MCP
-    caller "expected a nonnegative input, got -1037485500.38" — math's
-    sentence, not one in words, from the guard that exists to stop exactly
-    that."""
-    for beta in (74.36, 75.0, 80.0, 89.9):
-        rep = mcp_server._design_compressor(1.0, 3.0, 40000, beta)
-        assert rep["verified"] is False, beta
-        assert "nonnegative" not in rep["error"], rep
-        assert "backsweep" in rep["error"], rep
-    # ...and the duties either side of it are untouched
-    import meanline
-    for beta in (-60.0, 0.0, 25.0, 35.0, 45.0, 60.0, 70.0, 74.0):
-        meanline.design(meanline.Duty(mass_flow=1.0, pressure_ratio=3.0,
-                                      rpm=40000, backsweep_deg=beta))
-
-
 # -------------------------------------------- the catalogue the AI reads ----
 
 def test_every_enum_the_catalogue_offers_is_a_value_the_op_accepts():
@@ -251,34 +217,3 @@ def test_every_enum_the_catalogue_offers_is_a_value_the_op_accepts():
     for v in axis["enum"]:
         assert v.strip().lower() in sk.FACE_DIRS, \
             f"polar_pattern refuses axis {v!r}"
-
-
-def test_the_design_notes_reach_the_ai_door(monkeypatch):
-    """`rep_design` is built BY HAND, so a note added to CompressorDesign
-    reached every other door and not this one.
-
-    Two notes exist today - the machinable exit-width floor (a 59 micrometre
-    width built at the 1.00 mm floor, 17x what the flow needs) and the
-    inducer angle the metal does not carry.  Both say the wheel BUILDS and is
-    the right size, so nothing refuses and nothing else warns: without this
-    the AI reads `exit_width_mm` and `beta1_deg` with no way to know they are
-    qualified.  The build is stubbed because the door's WIRING is what is
-    under test, and a real 13-blade build costs 14-168 s.
-    """
-    import mcp_server, meanline
-
-    class _Refused:
-        ok = False
-        part = None
-        def all_problems(self):
-            return ["stubbed: the kernel is not the subject of this test"]
-
-    monkeypatch.setattr(meanline, "build_from_design", lambda d: _Refused())
-    duty = meanline.Duty(mass_flow=0.5, pressure_ratio=3.0, rpm=1000,
-                         backsweep_deg=30)
-    want = list(meanline.design(duty).notes)
-    assert want, "this duty is meant to carry notes; pick another if it stops"
-
-    out = mcp_server._design_compressor(0.5, 3.0, 1000, 30)
-    assert out["design"]["notes"] == want
-    assert any("floor" in n for n in out["design"]["notes"])

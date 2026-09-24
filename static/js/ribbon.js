@@ -4,7 +4,7 @@
 import { S } from './state.js';
 import { bus } from './bus.js';
 import { OP_ICONS, TOOL_NAMES } from './icons.js';
-import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport, actionUndo, actionRedo, actionSpec, actionImportStl, loadSample, modalGuard, actionExamples } from './dialogs.js';
+import { openFeatDialog, actionNew, actionOpen, actionSave, actionExport, actionUndo, actionRedo, actionSpec, actionImportStl, modalGuard, actionExamples } from './dialogs.js';
 import { finishSketch, cancelSketch,
          setSketchTool, sketchModify, editSketch,
          traceIntoSketch, openSketchEditor, openSketchOnFace } from './sketcher.js';
@@ -105,9 +105,6 @@ const ACTIONS = {
   versions:      { icon: '⏱', name: 'Versions',
                    fn: () => bus.emit('versions-open') },
   examples:      { icon: '🗂', name: 'Examples',   fn: actionExamples },
-  ex_flange:     { icon: '⚙', name: 'Flange',     fn: () => loadSample('flange') },
-  ex_impeller:   { icon: '🌀', name: 'Impeller',   fn: () => loadSample('impeller') },
-  ex_compressor: { icon: '💨', name: 'Compressor', fn: () => loadSample('compressor') },
 };
 
 // each tab -> list of [group-label, items]; an item is an op name or {a:action}.
@@ -117,8 +114,7 @@ const TABS = {
   File: [
     ['Design', [{ a: 'new' }, { a: 'open' }, { a: 'save' },
                 { a: 'import_stl_file' }, { a: 'export' }]],
-    ['Examples', [{ a: 'examples' }, { a: 'ex_flange' },
-                  { a: 'ex_impeller' }, { a: 'ex_compressor' }]],
+    ['Examples', [{ a: 'examples' }]],
     ['Preferences', [{ a: 'settings' }]],
   ],
   Create: [
@@ -126,9 +122,10 @@ const TABS = {
                 { a: 'import_stl_file' },
                 'extrude', 'revolve', 'loft', 'sweep', 'hole']],
     ['Construct', [{ a: 'offset_plane' }]],
-    ['Primitives', ['plate', 'disc', 'ball', 'cone', 'tube', 'polygon_plate',
-                    'hex_plate']],
-    ['Advanced', ['revolve_profile', 'curved_blade']],
+    // Sphere, Cone, Polygon and Turn profile have no button (user, 2026-09-24:
+    // none of the 47 saved designs used the first three). Their ops stay, so
+    // a design or an AI tree holding one still builds.
+    ['Primitives', ['plate', 'disc', 'tube', 'hex_plate']],
   ],
   Modify: [
     // Press Pull first, as in Fusion: a router, not an op — the pick decides

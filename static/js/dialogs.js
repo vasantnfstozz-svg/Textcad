@@ -295,14 +295,6 @@ function exampleCard(d, dlg) {
   return card;
 }
 
-export async function loadSample(name) {
-  const doc = await postJSON('/api/sample/' + name, {},
-    name === 'compressor' ? 'building compressor (slow)…' : 'building…');
-  loadMesh(true);
-  openedMsg(doc, 'Expand a feature and click a blue value to edit, or tell ' +
-                 'me what to change.');
-}
-
 /* ---------------- Add Feature dialog ---------------- */
 
 export async function openFeatDialog(preselect, preInputs) {

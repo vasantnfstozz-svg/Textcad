@@ -12,7 +12,7 @@ strongest anti-hallucination move yet:
     verified blocks, and nothing else CAN change.
 
 A design is a Document: an ordered list of Features. Each Feature is either
-  * a CREATOR   — a verified block call (disc, revolve_profile, curved_blade..),
+  * a CREATOR   — a verified block call (disc, plate, revolve_profile..),
   * a MODIFIER  — takes one upstream feature (with_center_hole, polar_pattern..),
   * a COMBINER  — fuse / cut / intersect / move on upstream features.
 
@@ -54,7 +54,7 @@ import sketch as sk
 # creators: no geometric inputs, params only  (from the verified block library)
 CREATORS = {name: blocks.EXPORTS[name] for name in
             ("plate", "disc", "ball", "cone", "tube", "polygon_plate",
-             "hex_plate", "revolve_profile", "curved_blade")}
+             "hex_plate", "revolve_profile")}
 CREATORS["sketch"] = sk.make_sketch     # produces a 2D Sketch, not a solid
 CREATORS["import_stl"] = blocks.import_stl   # external mesh file -> solid body
 CREATORS["import_step"] = blocks.import_step  # exact BREP import (incl. our own exports)

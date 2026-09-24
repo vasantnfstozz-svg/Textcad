@@ -1,13 +1,12 @@
-"""Studio HTTP API (via FastAPI TestClient — no server process) + MCP tools
-+ meanline design math."""
+"""Studio HTTP API (via FastAPI TestClient — no server process) + MCP tools."""
 import pathlib
 
 import pytest
 from fastapi.testclient import TestClient
 
 import studio
+from fixture_docs import flange
 import mcp_server
-import meanline
 
 
 @pytest.fixture(autouse=True)
@@ -37,7 +36,7 @@ def client():
     studio.STATE["docs"].clear()
     studio.STATE["active"] = None
     studio.STATE["seq"] = 0
-    studio._new_tab(studio.sample_flange())
+    studio._new_tab(flange())
     studio._rebuild_and_mesh()
     return TestClient(studio.app)
 
@@ -245,21 +244,6 @@ def test_mcp_rejects_unknown_op():
     rep = mcp_server.build_design(
         {"name": "x", "features": [{"id": "a", "op": "sphere", "params": {}}]})
     assert not rep["verified"] and "unknown op" in rep["rejected_before_build"]
-
-
-# ---------------------------------------------------------------- meanline ----
-
-def test_meanline_reference_duty():
-    d = meanline.design(meanline.Duty(mass_flow=0.5, pressure_ratio=3.0,
-                                      rpm=45000))
-    assert 85 < d.tip_radius < 105          # ~93.8mm
-    assert 400 < d.tip_speed < 480          # ~442 m/s
-    assert 10 <= d.blade_count <= 16        # ~13
-    assert 0.8 < d.slip_factor < 0.9
-    assert d.exit_width >= 1.0
-    spec = meanline.to_spec(d)
-    assert spec.symmetry == d.blade_count
-    assert spec.tip_radius == d.tip_radius
 
 
 # ------------------------------------------ refusals are refusals (P0) --------

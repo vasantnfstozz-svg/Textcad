@@ -3,6 +3,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import studio
+from fixture_docs import flange
 
 
 @pytest.fixture()
@@ -10,7 +11,7 @@ def client():
     studio.STATE["docs"].clear()
     studio.STATE["active"] = None
     studio.STATE["seq"] = 0
-    studio._new_tab(studio.sample_flange())
+    studio._new_tab(flange())
     studio._rebuild_and_mesh()
     return TestClient(studio.app)
 

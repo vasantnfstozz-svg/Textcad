@@ -12,6 +12,7 @@ import pytest
 import imgtrace
 import inspector
 import sketch as sk
+from fixture_docs import flange
 
 
 def _png(canvas):
@@ -122,7 +123,7 @@ def test_api_trace_png_endpoint():
     studio.STATE["docs"].clear()
     studio.STATE["active"] = None
     studio.STATE["seq"] = 0
-    studio._new_tab(studio.sample_flange())
+    studio._new_tab(flange())
     studio._rebuild_and_mesh()
     client = TestClient(studio.app)
     b64 = base64.b64encode(_png(_donut_rgba())).decode()
@@ -715,7 +716,7 @@ def test_the_empty_file_reaches_the_user_as_a_sentence():
     studio.STATE["docs"].clear()
     studio.STATE["active"] = None
     studio.STATE["seq"] = 0
-    studio._new_tab(studio.sample_flange())
+    studio._new_tab(flange())
     studio._rebuild_and_mesh()
     client = TestClient(studio.app)
     assert base64.b64decode("") == b""          # the browser's own payload

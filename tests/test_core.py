@@ -4,6 +4,7 @@ import time
 import engine
 import inspector
 import blocks
+from build123d import Box, Pos
 
 
 # ---------------------------------------------------------------- engine ----
@@ -115,22 +116,16 @@ def test_every_block_is_healthy():
         blocks.polygon_plate(5, 25, 8),
         blocks.hex_plate(30, 8),
         blocks.revolve_profile([(0, 0), (30, 0), (30, 6), (18, 12), (0, 12)]),
-        blocks.curved_blade(10, 40, 25, 55, 20, 2.5),
         blocks.with_center_hole(blocks.disc(20, 8), 6),
         blocks.with_bolt_circle(blocks.disc(50, 10), 6, 4, 76),
-        blocks.polar_pattern(blocks.curved_blade(10, 40, 25, 55, 20, 2.5), 5),
+        blocks.polar_pattern(Pos(20, 3, 0) * Box(24, 3, 10), 5),
     ]
     for part in cases:
         assert inspector.health(part) == [], f"unhealthy: {part}"
 
 
-def test_curved_blade_tip_radius_exact():
-    blade = blocks.curved_blade(10, 40, 25, 55, 20, 2.5)
-    assert abs(inspector.measure(blade)["max_radius"] - 40.0) < 0.01
-
-
 def test_polar_pattern_symmetry_by_construction():
-    part = blocks.polar_pattern(blocks.curved_blade(10, 40, 25, 55, 20, 2.5), 7)
+    part = blocks.polar_pattern(Pos(20, 3, 0) * Box(24, 3, 10), 7)
     assert inspector.is_rotationally_symmetric(part, 7)
 
 
@@ -140,8 +135,6 @@ def test_block_input_validation():
         blocks.tube(10, 12, 5)          # inner >= outer
     with pytest.raises(ValueError):
         blocks.polar_pattern(blocks.disc(5, 2), 0)
-    with pytest.raises(ValueError):
-        blocks.curved_blade(40, 10, 25, 55, 20, 2.5)   # inner >= outer
 
 
 # ---------------------------------------------------------------------------

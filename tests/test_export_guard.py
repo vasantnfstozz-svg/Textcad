@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 import document
 import studio
+from fixture_docs import flange
 
 # A test that CHANGES the sample is no longer the library's flange-100, and
 # since the section 12 review (2026-09-16) /api/export refuses to write over
@@ -32,7 +33,7 @@ def client(library_steps_untouched):
     studio.STATE["docs"].clear()
     studio.STATE["active"] = None
     studio.STATE["seq"] = 0
-    studio._new_tab(studio.sample_flange())
+    studio._new_tab(flange())
     studio._rebuild_and_mesh()
     yield TestClient(studio.app)
     step = studio.DESIGNS / f"{OWN_NAME}.step"   # keep the library clean

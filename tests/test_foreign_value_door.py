@@ -114,9 +114,6 @@ def test_every_creator_now_answers_a_null_number_in_words():
         "tube": {"outer_radius": 10, "inner_radius": 5, "height": 10},
         "polygon_plate": {"sides": 6, "circumradius": 10, "thickness": 5},
         "hex_plate": {"across_flats": 20, "thickness": 5},
-        "curved_blade": {"inner_radius": 5, "outer_radius": 12,
-                         "inlet_angle_deg": 30, "exit_angle_deg": 50,
-                         "height": 6, "thickness": 1.5},
         "sketch": {"entities": CIRC, "plane": "XY", "offset": 0.0},
     }
     for op, base in bases.items():
@@ -139,41 +136,6 @@ def test_a_creator_that_names_its_own_unit_keeps_that_sentence():
     assert f.problems == [
         "plate: width must be more than 0 (got -5) — there is no such shape, "
         "so type the size you want instead"]
-
-
-# --- curved_blade: its own guard, for every caller ----------------------------
-
-BLADE = dict(inner_radius=5, outer_radius=12, inlet_angle_deg=30,
-             exit_angle_deg=50, height=6, thickness=1.5)
-
-
-def test_curved_blade_refuses_a_value_that_is_not_a_number_by_name():
-    """MEASURED RED: `TypeError: unsupported operand type(s) for -: 'int' and
-    'NoneType'` and five more, straight out of the camber arithmetic."""
-    for k in BLADE:
-        for bad in (None, "8mm", [1, 2], True):
-            with pytest.raises(ValueError) as e:
-                blocks.curved_blade(**{**BLADE, k: bad})
-            assert k in str(e.value), (k, bad, str(e.value))
-            assert not _is_python(str(e.value)), (k, bad, str(e.value))
-
-
-def test_curved_blade_refuses_a_zero_inner_radius_instead_of_dividing_by_it():
-    """MEASURED RED: `ZeroDivisionError: division by zero` — a number, so the
-    numeric door lets it past; the camber integral divides by r."""
-    with pytest.raises(ValueError) as e:
-        blocks.curved_blade(**{**BLADE, "inner_radius": 0})
-    assert "inner_radius" in str(e.value)
-    assert not _is_python(str(e.value)), str(e.value)
-
-
-def test_curved_blade_still_builds_every_blade_it_built_before():
-    """A blade angle of 0 is a straight radial blade and a negative one is
-    forward-swept: neither may be refused."""
-    for inlet, exit_ in ((30, 50), (0, 0), (-20, 40), (60, -10)):
-        b = blocks.curved_blade(**{**BLADE, "inlet_angle_deg": inlet,
-                                   "exit_angle_deg": exit_})
-        assert b.volume > 0, (inlet, exit_)
 
 
 # --- scale ---------------------------------------------------------------------
@@ -326,7 +288,6 @@ def test_our_own_refusals_still_reach_the_user_word_for_word():
         lambda: blocks.tube(5, 10, 10),
         lambda: blocks.polygon_plate(2, 10, 5),
         lambda: blocks.revolve_profile([(0, 0), (1, 0)]),
-        lambda: blocks.curved_blade(12, 5, 20, 40, 6, 1),
         lambda: blocks.rotate(blocks.plate(10, 10, 2), [1]),
         lambda: blocks.scale_uniform(blocks.plate(10, 10, 2), 0),
         lambda: blocks.edges_for(blocks.plate(10, 10, 2), []),

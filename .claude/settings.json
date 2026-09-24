@@ -6,9 +6,6 @@
       "PowerShell(python inspector.py)",
       "PowerShell(python blocks.py)",
       "PowerShell(python assembly.py)",
-      "PowerShell(python impeller.py *)",
-      "PowerShell(python impeller.py)",
-      "PowerShell(python meanline.py)",
       "PowerShell(python document.py)",
       "PowerShell(python author.py)",
       "PowerShell(python check.py)",
@@ -29,8 +26,7 @@
       "mcp__textcad__measure_step",
       "mcp__textcad__verify_step",
       "mcp__textcad__build_design",
-      "mcp__textcad__design_part",
-      "mcp__textcad__design_compressor"
+      "mcp__textcad__design_part"
     ]
   },
   "hooks": {

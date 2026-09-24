@@ -31,6 +31,7 @@ from fastapi.testclient import TestClient
 
 import inspector
 import studio
+from fixture_docs import flange
 from document import Document
 
 TMP = "_test-server-layer"
@@ -38,15 +39,15 @@ TMP = "_test-server-layer"
 
 @pytest.fixture()
 def client(library_steps_untouched):
-    """`library_steps_untouched` (tests/conftest.py) is the cure for the
-    sample-export test below, which writes designs/flange-100.step into the
-    user's own library. Round one left it there; round two deleted it
+    """`library_steps_untouched` (tests/conftest.py) is the cure for an
+    export test writing designs/flange-100.step into the user's own
+    library. Round one left it there; round two deleted it
     unconditionally, which removes the user's own export of a gallery design
     (measured, round three). It is restored byte for byte instead."""
     studio.STATE["docs"].clear()
     studio.STATE["active"] = None
     studio.STATE["seq"] = 0
-    studio._new_tab(studio.sample_flange())
+    studio._new_tab(flange())
     studio._rebuild_and_mesh()
     yield TestClient(studio.app)
     for p in list(studio.DESIGNS.glob("_test-server-layer*")):
@@ -441,7 +442,7 @@ def test_every_open_tab_comes_back_after_a_restart(client, tmp_path):
     studio.STATE["active"] = None
     n = studio.MAX_TABS + 1
     for i in range(n):
-        d = studio.sample_flange()
+        d = flange()
         d.name = f"_test-tabs-{i}"
         d.save(str(studio.DESIGNS / f"_test-tabs-{i}.tcad.json"))
         client.post(f"/api/open/_test-tabs-{i}")
@@ -550,7 +551,6 @@ def test_spec_still_takes_everything_the_dialog_sends(client):
 # ---------------------------------------------------------------------- F6 ---
 
 def test_refusals_of_this_layer_answer_400(client):
-    assert client.post("/api/sample/nope").status_code == 400
     assert client.post("/api/tabs/switch",
                        json={"id": "t999"}).status_code == 400
     assert client.post("/api/tabs/close",
@@ -561,23 +561,10 @@ def test_refusals_of_this_layer_answer_400(client):
     assert r.status_code == 400 and "too many open tabs" in r.json()["error"]
 
 
-def test_a_known_sample_and_a_real_tab_still_answer_200(client):
-    assert client.post("/api/sample/flange").status_code == 200
+def test_a_real_tab_still_answers_200(client):
+    assert client.post("/api/new", json={"name": "real"}).status_code == 200
     tid = studio.STATE["active"]
     assert client.post("/api/tabs/switch", json={"id": tid}).status_code == 200
-
-
-def test_an_untouched_sample_can_still_be_exported(client):
-    """The clash guard's content escape, the one save already has: a sample
-    tab whose content IS the library file's may write beside it. (Once it has
-    been EDITED it is a different design, and it is told so — the same answer
-    /api/save gives.)"""
-    lib = studio.DESIGNS / "flange-100.tcad.json"
-    if not lib.exists():
-        pytest.skip("designs/flange-100.tcad.json is not in this library")
-    r = client.post("/api/sample/flange")
-    assert r.status_code == 200
-    assert not client.post("/api/export").json().get("error")
 
 
 # ------------------------------------------ round four, ONE TAB PER REQUEST --
@@ -756,15 +743,15 @@ def test_the_tab_a_request_is_addressed_to_does_not_leak_to_the_next(client):
 
 def test_a_request_that_opens_a_tab_is_addressed_to_the_tab_it_opened(client):
     """The pin must never outrank a DELIBERATE switch inside the same
-    request: new, open, switch, close and sample all move the tab on purpose
-    and everything after must talk about the new one."""
+    request: new, open, switch and close all move the tab on purpose and
+    everything after must talk about the new one."""
     mine, other = _two_tabs(client)
     assert client.post(f"/api/open/{TMP}-two").json()["name"] == f"{TMP}-two"
-    sample = client.post("/api/sample/flange").json()
-    assert sample["name"] != f"{TMP}-two"
+    third = client.post("/api/new", json={"name": "third"}).json()
+    assert third["name"] == "third"
     assert client.post("/api/tabs/close",
                        json={"id": studio.STATE["active"]}).json()[
-                           "name"] != sample["name"]
+                           "name"] != third["name"]
     assert client.post("/api/new", json={"name": "fresh"}).json()[
         "name"] == "fresh"
 

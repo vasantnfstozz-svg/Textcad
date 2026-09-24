@@ -289,12 +289,9 @@ WALK = """
 # numbers as millimetres — truthful, but with the app in inches a plate placed
 # at "width (mm) 40" was 40 mm while every other box on the screen was inches.
 RUNTIME_LENGTHS = {"skDimDraw:r", "skDimEdit3d:r",                  # toMm()
-                   "placePopup:width", "placePopup:depth", "placePopup:thickness",
-                   "placePopup:circumradius"}
-# `sides` is polygon_plate's side COUNT and the popup labelled it "sides (mm)",
-# which is the same lie the other way round — and reading 6 as 6 inches would
-# have made a 152-sided plate.
-RUNTIME_COUNTS = {"placePopup:sides"}
+                   "placePopup:width", "placePopup:depth", "placePopup:thickness"}
+# Polygon's `sides` was the one count here; its button went on 2026-09-24
+RUNTIME_COUNTS = set()
 # the three position boxes are labelled plain x / y / z under ONE heading, so
 # the heading is what has to name the unit
 RUNTIME_HEADED_LENGTHS = {"placePopup:x", "placePopup:y", "placePopup:z"}
@@ -329,27 +326,6 @@ def test_the_walk_also_sees_the_boxes_that_are_built_while_you_work(
     assert "position (in)" in page.inner_text("#placePopup").lower(), \
         "the position boxes are labelled plain x / y / z — only this heading " \
         "tells the user which unit they are typed in"
-    page.click("#placePopup .pp-foot button")
-    page.wait_for_timeout(400)
-
-    # --- the polygon's SIDE COUNT is not a length and must carry no unit ---
-    page.locator("button.tab", has_text="Create").click()
-    page.wait_for_timeout(250)
-    page.click("#ribbon .rbtn[title='polygon_plate']")
-    page.wait_for_timeout(400)
-    cv = page.locator("#viewer canvas").bounding_box()
-    page.mouse.click(cv["x"] + cv["width"] * 0.5, cv["y"] + cv["height"] * 0.42)
-    page.wait_for_selector("#placePopup", state="visible", timeout=20000)
-    page.wait_for_timeout(600)
-    poly = page.evaluate(WALK)
-    got = {b["key"] for b in poly} - at_rest
-    assert not got - known, f"the polygon popup has boxes in no class: {sorted(got - known)}"
-    for b in poly:
-        if b["key"] in RUNTIME_COUNTS:
-            assert b["unit"] is None and "(" not in b["text"], \
-                f"{b['key']} is a count and must carry no unit at all: {b}"
-        if b["key"] in RUNTIME_LENGTHS:
-            assert b["unit"] == "in", f"{b['key']} does not name the display unit: {b}"
     page.click("#placePopup .pp-foot button")
     page.wait_for_timeout(400)
 
@@ -473,27 +449,3 @@ def test_the_open_placement_popup_follows_a_unit_change(page, fresh_doc, server)
     assert page.errors == []
 
 
-def test_the_polygons_side_count_is_never_converted(page, fresh_doc, server):
-    """`sides` is the one param in DEFAULTS that is not a length. Read as a
-    length in inches, 6 would become 152."""
-    choose_unit(page, "in")
-    page.locator("button.tab", has_text="Create").click()
-    page.wait_for_timeout(250)
-    page.click("#ribbon .rbtn[title='polygon_plate']")
-    page.wait_for_timeout(400)
-    cv = page.locator("#viewer canvas").bounding_box()
-    page.mouse.click(cv["x"] + cv["width"] * 0.5, cv["y"] + cv["height"] * 0.62)
-    page.wait_for_selector("#placePopup", state="visible", timeout=20000)
-    page.wait_for_timeout(600)
-    assert params_of(page, "polygon_plate")["sides"] == 6
-    page.evaluate("""
-      () => { const f = [...document.querySelectorAll('#placePopup .pp-field')]
-                .find(f => f.textContent.trim().startsWith('sides'));
-              const i = f.querySelector('input');
-              i.value = '8'; i.dispatchEvent(new Event('input', { bubbles: true })); }""")
-    page.wait_for_timeout(1500)
-    p = params_of(page, "polygon_plate")
-    assert p["sides"] == 8, f"the side count went through the unit: {p}"
-    assert abs(p["circumradius"] - 20) < 1e-6, p
-    page.click("#placePopup .pp-foot button")
-    assert page.errors == []

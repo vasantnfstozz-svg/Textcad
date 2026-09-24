@@ -4,7 +4,7 @@
 export const OP_ICONS = {
   plate: '▭', disc: '●', ball: '⚪', cone: '△', tube: '◎',
   polygon_plate: '⬡', hex_plate: '⬡',
-  revolve_profile: '↻', curved_blade: '⤳', with_center_hole: '⊙',
+  revolve_profile: '↻', with_center_hole: '⊙',
   with_bolt_circle: '⁘', polar_pattern: '✳', move: '↗',
   rotate: '⟳', mirror: '⇋', scale: '⤢', linear_pattern: '⋯',
   fillet: '◠', chamfer: '◣', shell: '▢', hole: '◎',
@@ -28,7 +28,7 @@ export const TOOL_NAMES = {
   // `with_center_hole` bores the CENTRE of a body with no face and no
   // handles; the Hole TOOL (`hole`, Create tab) is the one the spec means.
   // Two buttons named "Hole" sent the user to the wrong one.
-  curved_blade: 'Blade', with_center_hole: 'Centre bore',
+  with_center_hole: 'Centre bore',
   with_bolt_circle: 'Bolt circle', fillet: 'Fillet', chamfer: 'Chamfer', hole: 'Hole',
   shell: 'Shell', move: 'Move', rotate: 'Rotate', scale: 'Scale',
   mirror: 'Mirror', polar_pattern: 'Circular', linear_pattern: 'Rectangular',   // …Pattern (the group's name)

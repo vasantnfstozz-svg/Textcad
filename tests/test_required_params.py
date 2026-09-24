@@ -57,12 +57,13 @@ def test_required_params_names_them():
 
 
 def test_every_op_the_signature_calls_required_is_marked():
-    """The census: 22 of the 29 ops have at least one, and the sentinel is
-    read from the signature, so it can never disagree with the function."""
+    """The census: 21 ops have at least one (22 until `curved_blade` was
+    deleted, 2026-09-24), and the sentinel is read from the signature, so it
+    can never disagree with the function."""
     marked = {op for op in document.KNOWN_OPS if required_params(op)}
     assert "extrude" in marked and "plate" in marked and "fillet" in marked
     assert "hole" not in marked and "shell" not in marked and "move" not in marked
-    assert len(marked) == 22, sorted(marked)
+    assert len(marked) == 21, sorted(marked)
 
 
 # --- what the AI reads --------------------------------------------------------

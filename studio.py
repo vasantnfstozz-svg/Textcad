@@ -5,7 +5,7 @@ Run:  python studio.py   ->  opens http://127.0.0.1:8123 in your browser.
 
 The UI lives in static/ (index.html + css/ + js/ modules). This file is the
 HTTP API only; the CAD brains live in the core modules (document, blocks,
-sketch, inspector, author, meanline, samples).
+sketch, inspector, author).
 
 MULTI-DOCUMENT: the server holds many open designs at once — one per UI tab.
 STATE["docs"] maps tab-id -> {doc, ok, rebuild_ms, history}; STATE["active"]
@@ -78,7 +78,6 @@ import sketch_snap as snaplib
 from document import Document
 from history import History, HistoryError, diff_snapshots, content_hash
 import provenance
-from samples import SAMPLES, sample_flange, sample_impeller, sample_compressor  # noqa: F401 (re-export for tests)
 
 ROOT = Path(__file__).parent
 STATIC = ROOT / "static"
@@ -230,7 +229,7 @@ def _new_tab(doc: Document, source: str | None = None,
     """Open a document in a new tab and make it active.
 
     `source` records WHERE the design came from ("file:esp32-remote",
-    "sample:flange") so a later open of the same thing can reuse this tab
+    "file:hole-box") so a later open of the same thing can reuse this tab
     instead of cloning it. Keyed on origin rather than doc.name on purpose:
     two designs can carry the same name, and renaming one must not orphan
     its tab."""
@@ -294,8 +293,8 @@ def _active_tid() -> str:
 def _activate(tid: str) -> None:
     """Switch to `tid` — and address the REST of this request to it.
 
-    The five routes that move the active tab on purpose (new, switch, close,
-    open, sample) go through here, so a deliberate move is never mistaken for
+    The four routes that move the active tab on purpose (new, switch, close,
+    open) go through here, so a deliberate move is never mistaken for
     the doorbell's."""
     STATE["active"] = tid
     if _REQ_TAB.get() is not None:    # only inside a request; never at startup
@@ -414,17 +413,16 @@ def _persist_session() -> None:
 def _restored_baseline(src: str) -> str | None:
     """The content hash a restored tab's unsaved edits are measured against.
 
-    Three sources, in order of authority, because the first two can both be
-    absent: the design's CURRENT VERSION, else the design FILE on disk (a
-    design that was never versioned still has a baseline), else — for a
-    built-in sample, which has no file at all — the pristine sample.
+    Two sources, in order of authority: the design's CURRENT VERSION, else
+    the design FILE on disk (a design that was never versioned still has a
+    baseline).
 
     None means "nothing to compare against", which `_dirty` reads as DIRTY.
     That is deliberate: the cost of a needless ● is a question the user
     answers in one click, and the cost of a wrong "clean" is their work.
-    Both fallbacks were missing (section 3 review, 2026-09-10) — a design
-    with no .history/ and every sample tab kept the ALREADY-EDITED restored
-    content as their own baseline, so they read clean after a restart and
+    The file fallback was missing (section 3 review, 2026-09-10) — a design
+    with no .history/ kept the ALREADY-EDITED restored content as its own
+    baseline, so they read clean after a restart and
     closing the tab discarded the edits without asking."""
     if src.startswith("file:"):
         slug = src[5:]
@@ -438,11 +436,6 @@ def _restored_baseline(src: str) -> str | None:
         try:                                       # normalised through Document
             return content_hash(
                 Document.load(str(DESIGNS / f"{slug}.tcad.json")).to_data())
-        except Exception:
-            return None
-    if src.startswith("sample:"):
-        try:
-            return content_hash(SAMPLES[src[7:]]().to_data())
         except Exception:
             return None
     return None
@@ -487,7 +480,7 @@ def _restore_session(rebuild: bool = True) -> int:
             # read clean after every restart and the close prompt would let
             # those edits vanish silently. A None baseline reads DIRTY, which
             # is the safe direction when nothing can be compared against.
-            if src and src.startswith(("file:", "sample:")):
+            if src and src.startswith("file:"):
                 e = STATE["docs"][tid]
                 e["clean_hash"] = _restored_baseline(src)
                 e["dirty"] = None
@@ -842,7 +835,7 @@ def _dirty(e: dict) -> bool:
     never pay for it. A design that never had a file (untitled, AI-created) is
     dirty the moment it has any features: closing that tab loses them."""
     src = e.get("source") or ""
-    if not src.startswith(("file:", "sample:")):
+    if not src.startswith("file:"):
         return bool(e["doc"].features)
     if e.get("dirty") is None:
         e["dirty"] = content_hash(e["doc"].to_data()) != e.get("clean_hash")
@@ -3175,7 +3168,7 @@ def _name_clash(slug: str, deed: str) -> str | None:
     if path.exists():
         # 2. a DIFFERENT design already holds the name. Content that is
         # exactly what the file holds is still fine — nothing can be lost that
-        # way, and that is how a sample tab writes itself into the library.
+        # way.
         try:
             same = content_hash(json.loads(
                 path.read_text(encoding="utf-8"))) == content_hash(
@@ -3681,26 +3674,6 @@ def open_design(file: str, external: bool = False):
             **_record_version("reloaded from disk", "open"), **_doc_json()}
 
 
-@app.post("/api/sample/{name}")
-def load_sample(name: str):
-    """Open a built-in example, reusing its tab if it is already open.
-
-    No reload branch here, unlike a library design: a sample has no file that
-    can move on, so an already-open one is simply switched to, edits and all.
-    Clicking Flange twice must not give you two flanges, and must not throw
-    away what you did to the first one either. File > New gets a clean one."""
-    if name not in SAMPLES:
-        return _refused(None, f"unknown sample '{name}'")
-    tid = _find_tab(f"sample:{name}")
-    if tid is not None:
-        _activate(tid)
-        STATE["docs"][tid]["mesh_stale"] = True
-        return {"tab_reused": True, **_doc_json()}
-    _new_tab(SAMPLES[name](), source=f"sample:{name}")
-    _rebuild_and_mesh()
-    return {"tab_reused": False, **_doc_json()}
-
-
 @app.get("/api/sketch/kinds")
 def sketch_kinds():
     """Which dimensions each sketch shape has, so the feature tree can offer
@@ -3754,8 +3727,8 @@ def export_step():
     doc = e["doc"]
     # The FILE this design already lives in, when it has one. A design opened
     # from the library is bound to designs/<stem>.tcad.json and its one .step
-    # belongs beside it; only a tab with no file of its own (untitled, a
-    # sample, an AI's new design) is named by what it is CALLED.
+    # belongs beside it; only a tab with no file of its own (untitled, an
+    # AI's new design) is named by what it is CALLED.
     #
     # Round one of this review keyed it off doc.name alone, and the two drift:
     # measured over the user's own 50 designs (round two, 2026-09-16,

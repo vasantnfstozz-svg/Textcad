@@ -74,10 +74,13 @@ def test_clicking_a_design_opens_it_in_a_new_tab(page, server, fresh_doc):
     assert not page.errors, page.errors
 
 
-def test_the_built_in_starters_are_still_there(page, server, fresh_doc):
-    """The three code samples stay available beside the gallery button."""
+def test_only_the_gallery_is_left_in_examples(page, server, fresh_doc):
+    """The three code samples were deleted (user, 2026-09-24: "delete
+    impeller, flange and compressor, we do not need them"); the gallery of
+    the user's own designs stays."""
     page.click("#tabstrip >> text=File")
     page.wait_for_timeout(250)
+    assert page.locator("#ribbon .rbtn[title='Examples']").count() == 1
     for name in ("Flange", "Impeller", "Compressor"):
-        assert page.locator(f"#ribbon >> text={name}").count() >= 1, name
+        assert page.locator(f"#ribbon .rbtn[title='{name}']").count() == 0, name
     assert not page.errors, page.errors

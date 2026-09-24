@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 import author
 import studio
+from fixture_docs import flange
 from document import Document
 
 
@@ -214,7 +215,7 @@ def test_a_success_resets_the_failure_count():
 
 
 def test_adding_to_an_existing_design_shows_the_model_the_tree_first():
-    doc = studio.sample_flange()
+    doc = flange()
     doc.rebuild()
     hole = {"add": {"id": "side_hole", "op": "hole",
                     "params": {"face": "top", "at": [0, 25], "diameter": 6,
@@ -451,7 +452,7 @@ def client(monkeypatch):
     studio.STATE["docs"].clear()
     studio.STATE["active"] = None
     studio.STATE["seq"] = 0
-    studio._new_tab(studio.sample_flange())
+    studio._new_tab(flange())
     studio._rebuild_and_mesh()
     monkeypatch.setattr(studio, "JOB_THREADS", False)
     return TestClient(studio.app)

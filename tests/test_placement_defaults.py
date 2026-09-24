@@ -9,10 +9,7 @@ from document import Document
 PLACEMENT_DEFAULTS = {
     "plate": {"width": 40, "depth": 40, "thickness": 10},
     "disc": {"radius": 20, "thickness": 10},
-    "ball": {"radius": 20},
-    "cone": {"bottom_radius": 20, "top_radius": 10, "height": 30},
     "tube": {"outer_radius": 20, "inner_radius": 10, "height": 30},
-    "polygon_plate": {"sides": 6, "circumradius": 20, "thickness": 10},
     "hex_plate": {"across_flats": 30, "thickness": 10},
 }
 

@@ -124,8 +124,9 @@ def test_zoom_does_not_explode_when_devicepixelratio_is_below_one(
     "the whole screen goes grey" report: with no floor, one click put the
     camera exactly ON the target, inside the solid.
     """
-    import httpx
-    httpx.post(f"{server}/api/sample/flange", timeout=180)
+    from fixture_docs import flange
+    fresh_doc._new_tab(flange())          # fresh_doc is the studio module
+    fresh_doc._rebuild_and_mesh()
     ctx = browser.new_context(viewport={"width": 1100, "height": 760},
                               device_scale_factor=0.8)
     page = ctx.new_page()

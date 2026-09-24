@@ -18,7 +18,7 @@ Convention: parts are built centered on the origin, extruded along +/-Z, so the
 hole/pattern helpers (which cut tall cutters along Z) work regardless of scale.
 TWO EXCEPTIONS, measured 2026-09-10 and load-bearing for saved designs:
 `polygon_plate` and `hex_plate` STAND ON Z=0 and run up to +thickness (they are
-extruded one way from a BuildSketch on Plane.XY), as `curved_blade` does. The
+extruded one way from a BuildSketch on Plane.XY). The
 AI's positioning rule in author.AUTHOR_PROMPT says so; it used to call them
 centred, which put every hex body it placed half a thickness out.
 """
@@ -34,8 +34,8 @@ import tempfile
 from collections import OrderedDict
 from pathlib import Path
 from build123d import (
-    Box, Cylinder, Sphere, Cone, Pos, PolarLocations, BuildSketch, RegularPolygon, BuildLine, Polyline, Spline, make_face,
-    trace, extrude, revolve, Axis, Plane, Part, Mesher, Solid, Compound, Face,
+    Box, Cylinder, Sphere, Cone, Pos, PolarLocations, BuildSketch, RegularPolygon, BuildLine, Polyline, make_face,
+    extrude, revolve, Axis, Plane, Part, Mesher, Solid, Compound, Face,
     scale as _b3d_scale,
     fillet as _b3d_fillet, chamfer as _b3d_chamfer,
     import_step as b3d_import_step,
@@ -223,59 +223,6 @@ def revolve_profile(points: list[tuple[float, float]]) -> Part:
             Polyline(*pts, close=True)
         make_face()
     return revolve(sk.sketch, axis=Axis.Z)
-
-
-def curved_blade(inner_radius: float, outer_radius: float,
-                 inlet_angle_deg: float, exit_angle_deg: float,
-                 height: float, thickness: float) -> Part:
-    """A real turbomachinery-style curved (backswept) blade, standing on the XY
-    plane and extruded up +Z by `height`.
-
-    The blade follows a CAMBER LINE computed by integrating the blade-angle law
-    d(theta) = tan(beta)/r * dr, with beta varying linearly from
-    `inlet_angle_deg` (at inner_radius) to `exit_angle_deg` (at outer_radius).
-    Angles are measured from the radial direction; 0 = straight radial blade,
-    positive = backswept. Typical centrifugal impeller: inlet 20-40, exit 40-60.
-
-    The result is intersected with a cylinder of `outer_radius`, so the tip
-    radius is EXACT by construction. The inner end sits at `inner_radius` —
-    make that SMALLER than the hub's local radius so the blade overlaps into
-    the hub and fuses (touching is not enough).
-    """
-    # BEFORE the comparisons below: they are arithmetic, and arithmetic on a
-    # value a file holds as null, as a list or as true answers in Python, not
-    # in words — this was the ONE creator that still did (measured 2026-09-17,
-    # probes/s10_r3_creator_door.py). `_positive` for the four that must be
-    # positive (an inner_radius of 0 divides by zero in the camber integral
-    # below — `ZeroDivisionError: division by zero` in the row), `_numbers` for
-    # the two angles, where 0 is a straight radial blade and a negative one is
-    # forward-swept and neither may be refused.
-    _positive("curved_blade", inner_radius=inner_radius,
-              outer_radius=outer_radius, height=height, thickness=thickness)
-    _numbers("curved_blade", "degrees", inlet_angle_deg=inlet_angle_deg,
-             exit_angle_deg=exit_angle_deg)
-    if inner_radius >= outer_radius:
-        raise ValueError("curved_blade: inner_radius must be < outer_radius")
-
-    # camber line: beta(r) linear, theta integrated with tan(beta)/r
-    n = 16
-    pts, theta = [], 0.0
-    for i in range(n + 1):
-        t = i / n
-        r = inner_radius + (outer_radius - inner_radius) * t
-        pts.append((r * math.cos(theta), r * math.sin(theta)))
-        if i < n:
-            beta = math.radians(inlet_angle_deg
-                                + (exit_angle_deg - inlet_angle_deg) * t)
-            theta += math.tan(beta) / r * ((outer_radius - inner_radius) / n)
-
-    with BuildSketch() as sk:
-        with BuildLine():
-            Spline(*pts)
-        trace(line_width=thickness)
-    blade = extrude(sk.sketch, amount=height)
-    # trim to the exact tip radius (trace() overshoots at the rounded tip)
-    return blade & Cylinder(radius=outer_radius, height=4 * height)
 
 
 # ---------------------------------------------------------------------------
@@ -1888,7 +1835,6 @@ EXPORTS = {
     "polygon_plate": polygon_plate,
     "hex_plate": hex_plate,
     "revolve_profile": revolve_profile,
-    "curved_blade": curved_blade,
     "with_center_hole": with_center_hole,
     "with_bolt_circle": with_bolt_circle,
     "polar_pattern": polar_pattern,
@@ -1944,10 +1890,6 @@ if __name__ == "__main__":
         "revolve_profile (pulley)":
             revolve_profile([(0, 0), (30, 0), (30, 6), (18, 12),
                              (18, 20), (0, 20)]),
-        "curved_blade (backswept)":
-            curved_blade(inner_radius=10, outer_radius=40,
-                         inlet_angle_deg=25, exit_angle_deg=55,
-                         height=20, thickness=2.5),
         "with_center_hole": with_center_hole(disc(20, 8), 6),
         "with_bolt_circle (6)":
             with_bolt_circle(disc(50, 10), count=6, bolt_radius=4,

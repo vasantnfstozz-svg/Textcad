@@ -44,10 +44,8 @@ discipline applies to developing it. Follow these rules on every change.
 - `document.py` — feature-tree engine: CREATORS/MODIFIERS/COMBINERS registries,
   rebuild, undo data, rollback.
 - `author.py` — AI authoring of feature trees (validation gates + repair loop).
-- `meanline.py` — compressor physics calculator (domain-plugin pattern).
-- `samples.py` — example designs.
 - `studio.py` — HTTP API ONLY (multi-tab STATE). UI lives in `static/`.
-- `mcp_server.py` — MCP doorbell (6 tools). stdout is protocol — keep _quiet().
+- `mcp_server.py` — MCP doorbell (5 tools). stdout is protocol — keep _quiet().
 - `static/js/*.js` — one module, one job; modules talk via `bus.js` events
   ('doc-updated', 'msg', 'sketch-on-face'), shared state in `state.js`.
 
