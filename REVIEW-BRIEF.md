@@ -8,43 +8,81 @@
 > **A rewrite must carry over every PENDING range it did not review** - this
 > brief exists because one did not.
 >
-> **Status: NOTHING PENDING** - `1294f7a` (Create Sketch's fixed pick view,
-> offset planes hidden outside the pick) was reviewed on 2026-09-24 by ONE
-> Opus 5.5 reviewer and fixed in the same chat at `23a7b4c`: 4 findings, all
-> P3, all fixed, 0 rejected. No P0, so REVIEW-QUEUE's step 8 asks for no
-> second round. The next `code review` has nothing queued here, and
-> `REVIEW-QUEUE.md` is empty too (all 13 sections closed 2026-09-17).
+> **Status: PENDING** - review `fbc3a50..e96ceb7` (three commits, all built
+> on 2026-09-24 in one chat at the user's request). Nothing else is pending:
+> `1294f7a` was reviewed and fixed at `23a7b4c`, and `REVIEW-QUEUE.md` is
+> empty.
 
-## What was reviewed and fixed (base `e6c291c`)
+## The commits (base `fbc3a50`)
 
-| Finding | What went wrong | The fix |
-|---|---|---|
-| F1 P3 | A waiting Create Sketch pick outlived the command that took over. A sketch opened from the plane's tree row kept the pick's hint, the squares and the plane behind it. The row's ✎ opened the Offset Plane step over it, and a click on a square then opened a sketch under the step's lock. Measure lost its first click to it. | `sketcher.enterMode`, `sketchplane.open` and `measure.openMeasure` call `cancelPlanePick` |
-| F2 P3 | A selected plane was shown nowhere after a model reload: hidden outside a pick, its row's glow is its only trace, and the reload wiped it with the row still selected. | `viewport.glowSelectedPlane`, after every redraw of the planes and on the nothing-to-fetch reload |
-| F3 P3 | Under Mirror's pick, the hover lit a HIDDEN plane in front of an origin square (a raycast ignores `visible`). | `planePickHover` raycasts the visible quads only |
-| F4 P3 | After a fit on a tiny sketch (fit radius about 2 mm), the pick view clipped the squares' far corners. | `framePlanePick` raises the far plane when the corner furthest back passes it |
+- `3b26057` Quieter screen. The face pick box shows "Face N" and its size
+  rows only (area only when a face has no other size); an edge shows its
+  diameter and length; a profile its name. The status bar keeps only
+  "Report a bug" and "ui vN". Sketch mode lost its mouse legend, every
+  per-tool click hint, the chat tip on entering, and "Esc cancel / Del
+  delete". Frontend only, +68 -163.
+- `a3f5427` Face sketches no longer DRAW the model's snap points (corners,
+  edge midpoints, arc and hole centres, design and sketch centre); they
+  still snap. Every remaining sketch marker is sized from `snapTol3d`
+  (12 px in plane mm) with no millimetre floor, so none grows on zoom-in.
+  +9 -26.
+- `e96ceb7` Deleted the Flange / Impeller / Compressor examples: samples.py,
+  meanline.py, impeller.py, `/api/sample/{name}`, MCP `design_compressor`,
+  the `curved_blade` op, and their tests. Turn profile, Sphere, Cone and
+  Polygon lost their ribbon buttons; their ops still build. +129 -2885.
 
-Checked and found sound, not to be re-derived: the framing maths; navigation
-is never left off (only `endPlanePick` clears the pick and it ends the
-flight, and OrbitControls' pointer-up ignores `enabled`); every reader of
-`fitRadius` has a floor; the folded-in `fitToObjects`; Create Sketch's click
-path raycasts the hidden planes only while they are shown.
+## Where the risk is
 
-Not judged (needs the app in hand): whether a click made during the 350 ms
-flight lands where the user aimed, since the camera moves under a still
-cursor.
+- **A deleted op or route still named somewhere.** The sweep at commit time
+  found none in code; the author prompt, `document.CREATORS`,
+  `blocks.EXPORTS`, the self-test, icons and the ribbon were all edited.
+  Check `author.op_catalog` and the AI's validation gates list nothing
+  that no longer exists.
+- **Old session files.** A tab restored with source `sample:<name>` is now
+  treated like an untitled design (`studio._dirty`: dirty while it holds
+  features). `test_a_restored_tab_from_a_retired_sample_reads_dirty` holds
+  it. Is there any other reader of a `sample:` source?
+- **Saved designs.** None of the 47 `designs/*.tcad.json`, their
+  `.history/` versions or `tests/fixtures/` uses `curved_blade` (grepped).
+  `revolve_profile` is used by thread-case, bottle_cap_28mm and
+  water_bottle_750ml and was KEPT.
+- **Snap without dots.** `sketcher.draw3D` no longer pushes `modelSnaps`,
+  face hole centres or the sketch centre into `dots`; `collectSnapPoints`
+  and `smartSnap` are unchanged. The orange cross is the only sign of a
+  model snap now.
+- **`sketcher.updateHint`** (commit 1) is tiny: the edge-on warning (kept,
+  because clicks are refused while `edgeOnView`) and the path tool's
+  Line/Arc switch.
+- `settings.js` lost `paintUnit`; `paintUnitLabels` runs at init and on
+  `settings-changed`.
+
+## Ground rules
+
+- The user chose what each box and bar shows and what to delete; do not
+  report a removed row, button or example as a lost feature. Something
+  that was load-bearing (a test, a debugging recipe, a failure that must
+  speak, a design that no longer opens) is a real finding.
+- Proven by the fast tier (see the commit), the browser tests of the
+  changed UI (`test_camera_zup`, `test_bodies_visible`,
+  `test_tool_panel_units`, `test_new_panel_units`, `test_user_workflow`,
+  `test_face_to_feature`, `test_small_face_and_fold`, `test_tool_panel_dock`,
+  `test_zoom_limits`, `test_doorbell`, `test_examples_tab`,
+  `test_face_sketch_in_viewport`, `test_model_snap`) and one headless
+  screenshot pass.
 
 ## Do not re-report
 
-- The pick moving the camera at all diverges from Fusion: the user asked for
-  it (fusion-parity rule 14).
-- The "plane1" / "XZ" label overlap in the pick view (plan s10 P3 row).
-- `test_adaptive_grid.py::test_zoom_subdivides_and_stops_at_the_floor` is
-  red on `e6c291c` too (plan s10 P3 row).
-- A selected BODY or SKETCH row loses its glow at a model reload (plan s10
-  P3 row, added by this review; an offset plane re-glows).
-- A model load that lands while the pick waits re-frames the view: that is
-  deliberate ("an open pick's view follows its quads").
+- The "Sketch on this face" button stays in the pick box (an action, not
+  information).
+- The other tools' pick prompts (Extrude, Fillet, Create Sketch's "Select a
+  plane...", placement) and the chat's welcome message still speak; the
+  user kept the welcome text when asked.
+- `plOffset` joining `LENGTH_BOXES` in `test_new_panel_units.py`: that test
+  was red before commit 1 (Offset Plane added the box without listing it).
+- `placement.js` keeps an empty-in-practice `COUNTS` set on purpose, so a
+  count param added later is not read through the length unit.
+- `blocks._numbers` stays: `scale` uses it too.
+- The pick box staying open when a sketch starts is older than this range.
 
 **How the review starts.** The user opens a fresh chat on Opus
 (`/model claude-opus-5-5[1m]`) and types only `code review`. CLAUDE.md's
