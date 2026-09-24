@@ -8,7 +8,7 @@
 > **A rewrite must carry over every PENDING range it did not review** - this
 > brief exists because one did not.
 >
-> **Status: PENDING** - review `fbc3a50..e96ceb7` (three commits, all built
+> **Status: PENDING** - review `fbc3a50..58ab54f` (four code commits, all built
 > on 2026-09-24 in one chat at the user's request). Nothing else is pending:
 > `1294f7a` was reviewed and fixed at `23a7b4c`, and `REVIEW-QUEUE.md` is
 > empty.
@@ -30,6 +30,10 @@
   meanline.py, impeller.py, `/api/sample/{name}`, MCP `design_compressor`,
   the `curved_blade` op, and their tests. Turn profile, Sphere, Cone and
   Polygon lost their ribbon buttons; their ops still build. +129 -2885.
+- `58ab54f` Sketch chat says no how-to: the face-sketch "Draw your
+  profile, Finish Sketch, then Extrude" line is gone and "Sketch created"
+  no longer adds "Use Create > Extrude". Status and warning lines stay.
+  +4 -8.
 
 ## Where the risk is
 
@@ -76,7 +80,9 @@
   information).
 - The other tools' pick prompts (Extrude, Fillet, Create Sketch's "Select a
   plane...", placement) and the chat's welcome message still speak; the
-  user kept the welcome text when asked.
+  user kept the welcome text when asked, and the one-line pick prompts were
+  kept on purpose (they say what a tool is waiting for). Sketch Scale's
+  chat how-to ("GRAB one of the amber arrows...") is also still there.
 - `plOffset` joining `LENGTH_BOXES` in `test_new_panel_units.py`: that test
   was red before commit 1 (Offset Plane added the box without listing it).
 - `placement.js` keeps an empty-in-practice `COUNTS` set on purpose, so a
