@@ -86,8 +86,10 @@ non-plane — each is a sentence, never kernel wording (`tests/test_offset_plane
   `stageOffsetPlane` (the pick landed), `editOffsetPlane` (tree ✎),
   `offsetPlaneStage` (tests). Takes the modal lock as `Offset Plane`.
 - `static/js/viewport.js` — `drawConstructionPlanes` on `doc-updated` and on
-  every model load (sized with the model); `pickableQuads` = origin quads +
-  construction planes; the overlay glows a selected plane's quad;
+  every model load (sized with the model), HIDDEN except while a plane pick
+  waits (user, 2026-09-24: not in the background after the sketch; the tree
+  row is the plane); `pickableQuads` = origin quads + construction planes;
+  the overlay glows a selected plane's quad;
   `constructionPlaneInfo` / `planeQuadsAt` for tests.
 - `static/js/ribbon.js` — Create tab `Construct` group; `startSketch` takes a
   selected plane row, else the pick opens the sketch directly (the Offset

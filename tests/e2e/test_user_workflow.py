@@ -78,7 +78,7 @@ def face_sketch_via_real_click(page, fresh_doc):
     page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
     page.wait_for_timeout(800)
     page.click("#ribbon .rbtn[title='Create Sketch']")
-    page.wait_for_timeout(500)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)   # the pick's own view landed
     top = page.evaluate(TO_SCREEN, [5, 3, 10])       # a point on the TOP face
     page.mouse.click(top["x"], top["y"], button="left")
     page.wait_for_function(IS_ACTIVE, timeout=15000)

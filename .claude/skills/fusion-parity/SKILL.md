@@ -126,6 +126,18 @@ were each learned from a correction — do not regress them.
    One mapping app-wide, set only in viewport.buildControls. Locked in by
    tests/e2e/test_camera_zup.py::test_navigation_mapping_is_the_same_in_both_tabs.
 
+14. **Create Sketch's plane pick opens on ONE fixed view; construction planes
+   show only while it waits (user mandate 2026-09-24, diverges from Fusion).**
+   "It has to go to a proper fixed position, a correct zoomed mid position,
+   every time": the pick flies the camera to the home (iso) direction, aimed at
+   the middle of the origin squares + construction planes + bodies, backed off
+   just far enough to fit them (viewport.framePlanePick). An empty design's fit
+   is the ORIGIN, never the last design's. Offset planes are hidden the rest of
+   the time ("after finishing the sketch it should not be in the background —
+   it is there in the tree"); the tree row is the plane, and selecting it glows
+   the quad. Locked in by tests/e2e/test_create_sketch_view.py and
+   test_offset_plane.py::test_the_plane_is_on_screen_only_while_a_pick_waits_for_it.
+
 ## Gizmo/drag mechanics (hard-won, in viewport.js)
 
 - Grab in a CAPTURE-phase pointerdown + `controls.enabled=false` so

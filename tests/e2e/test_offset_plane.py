@@ -195,7 +195,8 @@ def test_a_plane_off_a_face_goes_into_the_material_and_keeps_the_body(plate):
 def test_clicking_the_plane_during_create_sketch_opens_a_sketch_on_it(plate):
     """The later path: a plane made earlier is clicked in the viewport during
     Create Sketch's pick (outside the body's silhouette, as the origin quads
-    are — a body face under the cursor wins)."""
+    are — a body face under the cursor wins), from the view the pick flies to
+    by itself. The view before it is irrelevant (it starts from the top)."""
     page = plate
     page.evaluate(ADD_PLANE, ["lid", {"plane": "XY", "offset": 20}, []])
     page.wait_for_function("() => window.__vp.constructionPlaneInfo().length === 1", timeout=15000)
@@ -203,9 +204,11 @@ def test_clicking_the_plane_during_create_sketch_opens_a_sketch_on_it(plate):
     page.wait_for_timeout(500)
     page.evaluate(CREATE_SKETCH)
     page.wait_for_function(PICK_ARMED, timeout=15000)
-    # a point ON the plane, clear of the 60 x 40 plate seen from above (beyond
-    # its 20 mm half-depth), and inside the canvas
-    pt = page.evaluate("window.__vp.worldToScreen([0, 28, 20])")
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    # a point ON the plane, seen from the pick's iso view: past the plate's +y
+    # side (so the ray behind it misses the body) and far enough along +x that
+    # the ray in front of it passes outside the XZ origin quad
+    pt = page.evaluate("window.__vp.worldToScreen([42, 40, 20])")
     rect = page.evaluate("document.querySelector('#viewer canvas').getBoundingClientRect().toJSON()")
     assert pt and 0 < pt["cx"] < rect["width"] and 0 < pt["cy"] < rect["height"], (pt, rect)
     hits = {q["id"]: q["hits"] for q in page.evaluate("([x, y]) => window.__vp.planeQuadsAt(x, y)",
@@ -223,6 +226,42 @@ def test_clicking_the_plane_during_create_sketch_opens_a_sketch_on_it(plate):
     page.wait_for_timeout(600)
     s = [f for f in _doc(page)["features"] if f["op"] == "sketch"]
     assert len(s) == 1 and s[0]["params"]["plane"] == "lid" and s[0]["status"] == "ok", s
+    assert page.errors == []
+
+
+def test_the_plane_is_on_screen_only_while_a_pick_waits_for_it(plate):
+    """The user (2026-09-24): "when I am drawing a sketch on an offset plane,
+    the plane stays in the background — it should be removed after finishing
+    the sketch; it is there in the tree, and I can click it there". The quad
+    stays in the scene (the pick and the row's glow need it) but is hidden
+    except while Create Sketch's pick is waiting for a click."""
+    page = plate
+    shown = "() => window.__vp.constructionPlaneInfo().map(p => p.visible)"
+    page.evaluate(ADD_PLANE, ["lid", {"plane": "XY", "offset": 20}, []])
+    page.wait_for_function("() => window.__vp.constructionPlaneInfo().length === 1", timeout=15000)
+    assert page.evaluate(shown) == [False], "a plane nobody is picking is not drawn"
+    assert page.evaluate(PLANES)[0]["inScene"], "...but it is still there for the pick"
+
+    page.evaluate(CREATE_SKETCH)
+    page.wait_for_function(PICK_ARMED, timeout=15000)
+    assert page.evaluate(shown) == [True], "Create Sketch's pick shows it to click"
+    page.keyboard.press("Escape")
+    page.wait_for_function("() => document.getElementById('placeHint').style.display === 'none'",
+                           timeout=15000)
+    assert page.evaluate(shown) == [False], "Esc put it away again"
+
+    page.evaluate("async () => (await import('/static/js/sketcher.js')).openSketchEditor('lid', 0)")
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    assert page.evaluate(shown) == [False], "not behind the sketch being drawn"
+    page.wait_for_timeout(200)
+    page.evaluate(DRAW_RECT, [-10, -5, 10, 5])
+    page.evaluate(FINISH)
+    page.wait_for_function(NOT_ACTIVE, timeout=15000)
+    page.wait_for_timeout(600)
+    assert page.evaluate(shown) == [False], "not in the background after Finish Sketch"
+    assert page.evaluate("() => !!document.querySelector('.node[data-fid=\"lid\"]')"), \
+        "the plane is still a row of the tree"
     assert page.errors == []
 
 

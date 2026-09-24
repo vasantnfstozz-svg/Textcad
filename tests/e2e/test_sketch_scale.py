@@ -80,7 +80,7 @@ def top_face_sketch(page, fresh_doc):
     page.wait_for_function("() => window.__vp.bodyCount() === 1", timeout=20000)
     page.wait_for_timeout(800)
     page.click("#ribbon .rbtn[title='Create Sketch']")
-    page.wait_for_timeout(500)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)   # the pick's own view landed
     top = page.evaluate(TO_SCREEN, [5, 3, 20])
     page.mouse.click(top["x"], top["y"], button="left")
     page.wait_for_function(IS_ACTIVE, timeout=15000)
@@ -91,7 +91,12 @@ def top_face_sketch(page, fresh_doc):
 
 def _entities(server):
     doc = httpx.get(f"{server}/api/doc", timeout=30).json()
-    sk = [f for f in doc["features"] if f["op"] == "sketch"][-1]
+    # the newest sketch, on a plane or a face. The top_face_sketch click at
+    # [5, 3, 20] used to MISS the top face from the old close-up camera and
+    # start a sketch on the XZ origin plane (measured 2026-09-24), which is
+    # the only reason a plain `sketch` was ever found here; from Create
+    # Sketch's framed view it lands on the face the fixture is named for.
+    sk = [f for f in doc["features"] if f["op"] in ("sketch", "sketch_on_face")][-1]
     return {e["kind"]: e for e in sk["params"]["entities"]}
 
 
@@ -156,7 +161,7 @@ def test_scale_in_empty_new_sketch_jumps_to_the_real_one(page, fresh_doc,
     page.reload(wait_until="domcontentloaded")
     page.wait_for_timeout(2000)
     page.click("#ribbon .rbtn[title='Create Sketch']")
-    page.wait_for_timeout(800)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)   # the pick's own view landed
     q = page.evaluate("""() => {
       const vp = window.__vp;
       const info = vp.originPlaneInfo().find(x => x.plane === 'XY');

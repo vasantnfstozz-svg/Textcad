@@ -262,7 +262,7 @@ def test_plane_pick_refuses_curved_face_out_loud(page, fresh_doc):
     page.locator('#tabstrip button', has_text="Create").click()
     page.wait_for_timeout(200)
     page.locator('#ribbon button[title="Create Sketch"]').click()
-    page.wait_for_timeout(400)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)   # the pick's own view landed
     # look flat-on from the front so the click surely lands on the barrel
     page.click("#vFront")
     page.wait_for_timeout(900)

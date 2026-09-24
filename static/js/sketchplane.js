@@ -238,7 +238,8 @@ async function ok() {
   // selection, so Create Sketch lands on it without another pick
   bus.emit('select-feature', id);
   say(`Offset plane "${id}" placed ${off} mm from ${st.what}. Press Create Sketch ` +
-      'to draw on it now, or click the plane in the viewport any time.');
+      'to draw on it now. It stays out of the way until then: Create Sketch shows it ' +
+      'again to click, and its row in the tree selects it.');
 }
 
 export function initOffsetPlane() {

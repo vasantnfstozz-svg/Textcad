@@ -878,6 +878,8 @@ export function beginPlanePick(onPick) {
   h.textContent = 'Select a plane, an offset plane or a planar face · Esc to cancel';
   h.style.display = 'block';
   buildOriginPlanes();
+  showConstructionPlanes(true);
+  framePlanePick();
 }
 
 function endPlanePick() {
@@ -885,6 +887,81 @@ function endPlanePick() {
   renderer.domElement.style.cursor = pickMode ? 'crosshair' : '';
   document.getElementById('placeHint').style.display = 'none';
   clearOriginPlanes();
+  showConstructionPlanes(false);
+  endViewTween();          // a sketch opened by the pick flies the camera itself
+}
+
+/* The pick opens on ONE fixed view (user, 2026-09-24: "when I click Create
+   Sketch it has to go to a proper fixed position, a correct zoomed mid
+   position, every time"). It used to open wherever the camera happened to be —
+   zoomed into a corner, or turned so a plane stood edge-on — so the plane
+   squares came up somewhere different each time. The camera now flies to the
+   home (iso) direction, aimed at the middle of everything the pick can choose
+   — the origin squares, the construction planes, the bodies — and backs off
+   exactly as far as it takes for all of it to fit on screen. */
+const PICK_MARGIN = 0.88;                    // share of the half-view the scene may fill
+function framePlanePick() {
+  const pts = [];
+  const corner = new THREE.Vector3();
+  for (const q of pickableQuads()) {
+    q.updateMatrixWorld(true);               // fresh quads have not been rendered yet
+    const pos = q.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++)
+      pts.push(corner.fromBufferAttribute(pos, i).applyMatrix4(q.matrixWorld).clone());
+  }
+  const bodies = new THREE.Box3();
+  for (const m of bodyMeshes()) bodies.expandByObject(m);
+  if (!bodies.isEmpty())
+    for (const x of [bodies.min.x, bodies.max.x]) for (const y of [bodies.min.y, bodies.max.y])
+      for (const z of [bodies.min.z, bodies.max.z]) pts.push(new THREE.Vector3(x, y, z));
+  if (!pts.length) return;
+  const target = new THREE.Box3().setFromPoints(pts).getCenter(new THREE.Vector3());
+  const back = new THREE.Vector3(...ISO_DIR).normalize();         // target -> camera
+  const right = new THREE.Vector3().crossVectors(back.clone().negate(), WORLD_UP).normalize();
+  const up = new THREE.Vector3().crossVectors(right, back.clone().negate());
+  const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * PICK_MARGIN;
+  const tanH = tanV * camera.aspect;
+  // each point fits when |sideways| <= depth * tan(half-view); depth is the
+  // distance minus how far the point stands out toward the camera
+  let dist = 0;
+  for (const p of pts) {
+    const q = p.sub(target);
+    const toward = q.dot(back);
+    dist = Math.max(dist, toward + Math.abs(q.dot(right)) / tanH,
+                          toward + Math.abs(q.dot(up)) / tanV);
+  }
+  if (dist > controls.maxDistance) {         // OrbitControls would pull it back in
+    camera.far = dist * 2; camera.updateProjectionMatrix();
+    controls.maxDistance = camera.far * 0.85;
+  }
+  flyTo(target.clone().add(back.multiplyScalar(dist)), target);
+}
+
+/* a short eased flight of the design camera (the sketch camera has its own in
+   sketch3d.js); navigation is off while it runs, a view button or the pick's
+   end stops it where it is */
+let viewTween = null;
+function flyTo(pos, target, ms = 350) {
+  viewTween = { t0: performance.now(), ms, p0: camera.position.clone(), p1: pos,
+                q0: controls.target.clone(), q1: target };
+  controls.enabled = false;
+  requestAnimationFrame(stepViewTween);
+}
+function stepViewTween(now) {
+  const t = viewTween;
+  if (!t) return;
+  const k = Math.min(Math.max((now - t.t0) / t.ms, 0), 1);
+  const e = k < 0.5 ? 2 * k * k : 1 - 2 * (1 - k) * (1 - k);   // easeInOut
+  camera.position.lerpVectors(t.p0, t.p1, e);
+  controls.target.lerpVectors(t.q0, t.q1, e);
+  bus.emit('view-changed');
+  if (k < 1) requestAnimationFrame(stepViewTween);
+  else endViewTween();
+}
+function endViewTween() {
+  if (!viewTween) return;
+  viewTween = null;
+  controls.enabled = true;
 }
 
 function makeLabelSprite(text, color) {
@@ -960,11 +1037,15 @@ function clearOriginPlanes() {
 
 /* ---------------- construction planes (offset_plane features) ----------------
    Drawn from the document (R1: `plane_frame` is the server's frame at the
-   feature's offset), always on screen like Fusion's construction planes, and
-   pickable as a sketch plane beside the origin quads (userData.planeId is the
-   pick). Each quad is centred on the model's fit centre PROJECTED into its
-   plane — the same rule as the origin quads — so it sits under the part and
-   not off at the frame's origin. */
+   feature's offset) and pickable as a sketch plane beside the origin quads
+   (userData.planeId is the pick). Each quad is centred on the model's fit
+   centre PROJECTED into its plane — the same rule as the origin quads — so it
+   sits under the part and not off at the frame's origin.
+   On screen ONLY while a plane pick waits for its click (user, 2026-09-24:
+   "after finishing the sketch the plane should not be visible in the
+   background — it is there in the tree"). They used to stay up for good and
+   pile up behind the part; the tree row is the plane now, and selecting it
+   glows the quad (showFeatureOverlay). */
 function drawConstructionPlanes(doc) {
   clearConstructionPlanes();
   planesDoc = doc;
@@ -993,9 +1074,13 @@ function drawConstructionPlanes(doc) {
     const label = makeLabelSprite(f.id, 0xd9a441);
     label.position.copy(at).add(X.clone().multiplyScalar(s * 0.72))
                            .add(Y.clone().multiplyScalar(s * 0.72));
-    scene.add(mesh); scene.add(edges); scene.add(label);
+    for (const o of [mesh, edges, label]) { o.visible = !!planePickCb; scene.add(o); }
     constrPlanes.push({ id: f.id, mesh, edges, label, at, Z });
   }
+}
+
+function showConstructionPlanes(on) {
+  for (const p of constrPlanes) p.mesh.visible = p.edges.visible = p.label.visible = on;
 }
 
 function clearConstructionPlanes() {
@@ -2162,11 +2247,13 @@ function arrowRelease() {
    perpendicular. It used to be the degenerate one, back when the camera was
    Y-up — that is exactly what its old z*0.001 nudge was patching. */
 const TOP_TILT = 2 * Math.PI / 180;
+const ISO_DIR = [0.7, -0.7, 0.55];         // home: from the part toward the camera
 
 export function setView(dir) {
+  endViewTween();                          // a view button beats a flight in progress
   const d = fitRadius * 2.4, c = fitCenter;
   const views = {
-    iso:   [c.x + d * 0.7, c.y - d * 0.7, c.z + d * 0.55],
+    iso:   [c.x + d * ISO_DIR[0], c.y + d * ISO_DIR[1], c.z + d * ISO_DIR[2]],
     top:   [c.x, c.y - d * Math.sin(TOP_TILT), c.z + d * Math.cos(TOP_TILT)],
     front: [c.x, c.y - d, c.z],
   };
@@ -2359,32 +2446,31 @@ async function loadModel(job, force) {
     addSketches(m.sketches);
     addBodies(m.bodies);          // sets mesh + MODEL for the result body
     const fit = job.fit;                   // a caller may have asked meanwhile
-    if (!bodyObjs.length) {
-      if (fit && sketchObjs.length) fitToObjects(sketchObjs);
-      return;
-    }
     // frame on EVERY body, not just the result — a second body off to the side
-    // must be in view, otherwise it looks like it never got made
-    const all = [...bodyMeshes(), ...sketchObjs];
+    // must be in view, otherwise it looks like it never got made. The fit is
+    // THIS document's even when it has no body: an empty design is the origin.
+    // A design with only sketches, or none, used to keep the LAST design's
+    // centre and size, so Create Sketch drew its plane squares where that
+    // part had been (2026-09-24).
     const box = new THREE.Box3();
-    for (const o of all) box.expandByObject(o);
-    if (!box.isEmpty()) {
-      const sphere = box.getBoundingSphere(new THREE.Sphere());
-      fitRadius = sphere.radius || 100;
-      fitCenter.copy(sphere.center);
-      updateGroundGrid();               // the plate grows with the model
-      // the origin quads are placed and sized from this fit: while a pick shows
-      // them (the sketch tool's, Mirror's) they follow the body, or a plate that
-      // doubled across a plane sits over quads built for half of it (P4 review)
-      if (originPlanes.length) buildOriginPlanes();
-      if (constrPlanes.length) drawConstructionPlanes(planesDoc);
-    }
+    for (const o of [...bodyMeshes(), ...sketchObjs]) box.expandByObject(o);
+    const sphere = box.isEmpty() ? new THREE.Sphere(new THREE.Vector3(), 100)
+                                 : box.getBoundingSphere(new THREE.Sphere());
+    fitRadius = sphere.radius || 100;
+    fitCenter.copy(sphere.center);
+    updateGroundGrid();                 // the plate grows with the model
+    // the origin quads are placed and sized from this fit: while a pick shows
+    // them (the sketch tool's, Mirror's) they follow the body, or a plate that
+    // doubled across a plane sits over quads built for half of it (P4 review)
+    if (originPlanes.length) buildOriginPlanes();
+    if (constrPlanes.length) drawConstructionPlanes(planesDoc);
     if (fit) {
       camera.near = fitRadius / 100; camera.far = fitRadius * 100;
       controls.maxDistance = camera.far * 0.85;
       controls.minDistance = zoomFloor();      // scales with the model
       camera.updateProjectionMatrix(); setView('iso');
     }
+    if (planePickCb) framePlanePick();  // an open pick's view follows its quads
   } catch (e) { /* no model yet */ }
   finally { if (force) clearBusy(); }
 }
@@ -2392,20 +2478,6 @@ async function loadModel(job, force) {
 export function clearMesh() {
   disposeModel(); MODEL = null; S.selected = null; clearHighlight();
   drawnVersion = null;            // the scene no longer matches any document
-}
-
-function fitToObjects(objs) {
-  const box = new THREE.Box3();
-  for (const o of objs) box.expandByObject(o);
-  if (box.isEmpty()) return;
-  const sphere = box.getBoundingSphere(new THREE.Sphere());
-  fitRadius = sphere.radius || 100;
-  fitCenter.copy(sphere.center);
-  updateGroundGrid();                   // the plate grows with the model
-  camera.near = fitRadius / 100; camera.far = fitRadius * 100;
-  controls.maxDistance = camera.far * 0.85;
-  controls.minDistance = zoomFloor();
-  camera.updateProjectionMatrix(); setView('iso');
 }
 
 /* ---------------- feature overlay (tree row click) ---------------- */
