@@ -396,10 +396,7 @@ export async function openSketchOnFace(faceInfo, offset = 0) {
   updateHint();
   draw();
   loadModelSnaps('XY', 0, data.frame);   // model corners/centres on THIS face
-  bus.emit('msg', 'bot', `Sketching on a face of "${owner}"` +
-    (offset ? `, offset ${offset} mm` : '') + ' — the grey dashed ' +
-    'outline is that surface. Draw your profile, Finish Sketch, then ' +
-    'Create → Extrude to raise a boss or cut a pocket.');
+  // no chat line saying how to sketch (user, 2026-09-24)
 }
 bus.on('sketch-on-face', info => openSketchOnFace(info));
 
@@ -2223,9 +2220,8 @@ async function create() {
         (doc.error || f.problems.join('; ')));
     } else {
       // Fusion: finishing a sketch does NOT auto-anything — no popup box. The
-      // sketch shows in the viewport; use Create → Extrude/Revolve when ready.
-      bus.emit('msg', 'bot', `Sketch "${id}" created. Use Create → Extrude or ` +
-        `Revolve to turn it into a solid.`);
+      // sketch shows in the viewport; no how-to follows (user, 2026-09-24).
+      bus.emit('msg', 'bot', `Sketch "${id}" created.`);
     }
   }
 }
