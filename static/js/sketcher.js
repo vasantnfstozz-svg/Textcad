@@ -1784,35 +1784,18 @@ function draw3D() {
     if (bb && bb.w > 0) for (const s of scaleGizmoShapes(bb)) shapes.push(s);
   }
 
-  const dR = Math.max(snapTol3d * 0.35, 0.6);
+  // Sized on SCREEN: snapTol3d is 12 px in plane mm. A floor in mm made every
+  // marker grow as you zoomed in (a 0.6 mm dot is 30 px at 50 px/mm).
+  const dR = snapTol3d * 0.35;
   const dots = clicks.map(c => ({ x: c.x, y: c.y, r: dR, color: 0x4da3ff }));
   // resize handles of the SELECTED shape — grab one and pull (step 8)
   if (!tool && selEnt >= 0 && skEnts[selEnt])
     for (const h of entityHandles(skEnts[selEnt]))
       dots.push({ x: h.x, y: h.y, r: dR * 0.85, color: 0x4da3ff, ring: true });
-  // Mark every model snap target so it is VISIBLE before you hover it. Without
-  // these, a box's corners in plan view are invisible points you have to hunt
-  // for — "we need something for selecting to those edges" was exactly this.
-  for (const m of modelSnaps)
-    dots.push({ x: m.x, y: m.y,
-                r: m.kind === 'design_center' ? dR : dR * 0.75,
-                color: 0x8a97a8,                   // centres read as a ring
-                ring: m.kind === 'center' || m.kind === 'design_center' });
-  // face sketches: hole centres of the picked surface are snap targets too —
-  // mark them so they are visible BEFORE you hover (same S5 honesty rule).
-  // Same rule as collectSnapPoints: the model's EXACT arc centre wins over
-  // the ring centroid — never draw two "centres" 0.3mm apart.
-  if (faceRef) for (const h of faceRef.holes || []) {
-    const c = ringCentroid(h);
-    if (c && !modelSnaps.some(m => m.kind === 'center'
-                                && Math.hypot(m.x - c.x, m.y - c.y) < 0.5))
-      dots.push({ x: c.x, y: c.y, r: dR * 0.75, color: 0x8a97a8, ring: true });
-  }
-  // the centre of the sketch in progress, findable BEFORE you hover it
-  {
-    const sc = collectSnapPoints().find(p => p.label === 'sketch centre');
-    if (sc) dots.push({ x: sc.x, y: sc.y, r: dR, color: 0x8a97a8, ring: true });
-  }
+  // The model's snap targets (corners, edge midpoints, centres) and the
+  // sketch's own centre are NOT drawn (user, 2026-09-24). A face with curved,
+  // many-piece edges carried a dot every few mm and the screen filled with
+  // them. They still snap; the orange cross marks the one about to be taken.
   if (tool === 'trim' && trimPieces && trimHover >= 0) {
     const piece = trimPieces[trimHover];        // the doomed segment, in red
     shapes.push({ pts: piece.pts, closed: false, color: 0xff3333 });
@@ -1833,12 +1816,12 @@ function draw3D() {
   renderSketch3D({
     shapes, dots,
     cross: activeSnap
-      ? { x: activeSnap.x, y: activeSnap.y, size: Math.max(snapTol3d * 0.5, 1) }
+      ? { x: activeSnap.x, y: activeSnap.y, size: snapTol3d * 0.5 }
       : null,
     // the grid pick box shows ONLY while a draw tool is armed and no geometry
     // snap outranks it — every cell corner reads as a start point (Fusion)
     mark: tool && tool !== 'trim' && gridMark && !activeSnap
-      ? { x: gridMark.x, y: gridMark.y, size: Math.max(snapTol3d * 0.4, 0.8) }
+      ? { x: gridMark.x, y: gridMark.y, size: snapTol3d * 0.4 }
       : null,
     guide: axisLock ? { axis: axisLock.axis, ref: axisLock.ref } : null,
   });
