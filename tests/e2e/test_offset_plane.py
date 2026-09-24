@@ -265,6 +265,108 @@ def test_the_plane_is_on_screen_only_while_a_pick_waits_for_it(plate):
     assert page.errors == []
 
 
+SQUARES = "() => window.__vp.originPlaneInfo().length"
+
+
+def test_a_sketch_opened_another_way_ends_the_waiting_pick(plate):
+    """Review of 1294f7a (F1): Create Sketch's pick waits, and the plane is
+    taken from its tree ROW instead (select, Create Sketch again: the way to a
+    plane the viewport cannot click). The sketch opened with the pick still
+    armed, so its hint, the three origin squares and the plane itself stayed on
+    screen behind the sketch, and the pick outlived Cancel."""
+    page = plate
+    shown = "() => window.__vp.constructionPlaneInfo().map(p => p.visible)"
+    page.evaluate(ADD_PLANE, ["lid", {"plane": "XY", "offset": 20}, []])
+    page.wait_for_function("() => window.__vp.constructionPlaneInfo().length === 1", timeout=15000)
+    page.evaluate(CREATE_SKETCH)
+    page.wait_for_function(PICK_ARMED, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    page.locator("#tree .nrow", has=page.locator(".nname", has_text="lid")).locator(".nname").click()
+    page.wait_for_function(
+        "async () => (await import('/static/js/state.js')).S.selected === 'lid'", timeout=5000)
+    page.evaluate(CREATE_SKETCH)
+    page.wait_for_function(IS_ACTIVE, timeout=15000)
+    assert page.evaluate(PICK_ARMED) is False, "the pick's hint is not over the sketch"
+    assert page.evaluate(SQUARES) == 0, "...nor its origin squares"
+    assert page.evaluate(shown) == [False], "...nor the plane, behind the sketch drawn on it"
+    page.evaluate("async () => (await import('/static/js/sketcher.js')).cancelSketch()")
+    page.wait_for_function(NOT_ACTIVE, timeout=15000)
+    assert page.evaluate(PICK_ARMED) is False and page.evaluate(SQUARES) == 0, \
+        "no pick is left waiting once the sketch is gone"
+    assert page.errors == []
+
+
+def test_moving_a_plane_while_the_pick_waits_ends_the_pick(plate):
+    """(F1) The plane's ✎ opens the Offset Plane step while Create Sketch's
+    pick waits. The pick stayed armed under the step's lock: a click on an
+    origin square opened a SKETCH under the open step (two commands at once),
+    and finishing that sketch closed the step without a word."""
+    page = plate
+    page.evaluate(ADD_PLANE, ["lid", {"plane": "XY", "offset": 20}, []])
+    page.wait_for_function("() => window.__vp.constructionPlaneInfo().length === 1", timeout=15000)
+    page.evaluate(CREATE_SKETCH)
+    page.wait_for_function(PICK_ARMED, timeout=15000)
+    page.wait_for_function(TWEEN_DONE, timeout=15000)
+    # (-50, 40) lies on the XY square the pick shows, off the 60 x 40 plate
+    xy = next(q for q in page.evaluate("window.__vp.originPlaneInfo()") if q["plane"] == "XY")
+    assert 50 < xy["size"] / 2 and xy["position"][:2] == [0, 0], xy
+    page.evaluate(EDIT, "lid")
+    page.wait_for_function(STAGE_OPEN, timeout=15000)
+    assert page.evaluate(PICK_ARMED) is False, "the step replaced the pick"
+    assert page.evaluate(SQUARES) == 0
+    page.wait_for_timeout(300)                # the panel took its column: the view held its reach
+    pt = page.evaluate("window.__vp.worldToScreen([-50, 40, 0])")
+    rect = page.evaluate("document.querySelector('#viewer canvas').getBoundingClientRect().toJSON()")
+    assert 0 < pt["cx"] < rect["width"] and 0 < pt["cy"] < rect["height"], (pt, rect)
+    assert page.evaluate("([x, y]) => window.__vp.edgeHitReport(x, y).face",
+                         [pt["cx"], pt["cy"]]) is None, "the click is off the body"
+    page.mouse.click(pt["x"], pt["y"])
+    page.wait_for_timeout(800)
+    assert page.evaluate(IS_ACTIVE) is False, "no sketch opened under the open step"
+    assert page.evaluate(STAGE_OPEN) and page.evaluate(MODAL) == "Offset Plane"
+    page.click("#plCancel")
+    page.wait_for_function(STAGE_SHUT, timeout=15000)
+    assert page.errors == []
+
+
+GLOW = "() => window.__vp.overlayInfo()"
+GLOW_AT = "(z) => { const g = window.__vp.overlayInfo(); return !!g && Math.abs(g.position[2] - z) < 1e-6; }"
+SETTLE = "async () => { await (await import('/static/js/viewport.js')).loadMesh(); }"
+
+
+def test_a_selected_plane_still_glows_after_it_is_moved(plate):
+    """(F2) The plane is hidden outside a pick, so its selected row's GLOW is
+    the only place it shows. OK selects the new plane and it glows; moving it
+    with ✎ reloads the model, and the reload wiped the glow with the row still
+    selected: the plane was shown nowhere at all. So did any reload of the
+    model already on screen."""
+    page = plate
+    page.evaluate(OPEN)
+    page.wait_for_function(PICK_ARMED, timeout=15000)
+    page.evaluate(STAGE, ["plane", "XY"])
+    page.wait_for_function(STAGE_OPEN, timeout=15000)
+    _type(page, "20")
+    _ok(page)
+    assert page.evaluate(SELECTED) == "plane1"
+    page.wait_for_function(GLOW_AT, arg=20, timeout=10000)
+    page.evaluate(EDIT, "plane1")
+    page.wait_for_function(STAGE_OPEN, timeout=15000)
+    _type(page, "35")
+    _ok(page)
+    page.wait_for_function("() => Math.abs(window.__vp.constructionPlaneInfo()[0].position[2] - 35) < 1e-6",
+                           timeout=15000)
+    assert page.evaluate(SELECTED) == "plane1", "the row is still the selection"
+    page.wait_for_function(GLOW_AT, arg=35, timeout=10000)
+    page.wait_for_timeout(1000)               # the reload the move started lands meanwhile
+    glow = page.evaluate(GLOW)
+    assert glow and glow["position"][2] == pytest.approx(35, abs=1e-6), \
+        f"the selected plane must glow where it now is: {glow}"
+    page.evaluate(SETTLE)                     # a reload of the model already on screen
+    glow = page.evaluate(GLOW)
+    assert glow and glow["position"][2] == pytest.approx(35, abs=1e-6), glow
+    assert page.errors == []
+
+
 def test_editing_the_plane_moves_it_and_every_sketch_on_it(plate):
     page = plate
     page.evaluate(ADD_PLANE, ["lid", {"plane": "XY", "offset": 20}, []])

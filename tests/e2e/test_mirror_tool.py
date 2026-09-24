@@ -258,6 +258,41 @@ def test_a_curved_face_is_refused_by_the_viewport_before_the_server(page, fresh_
     assert page.errors == []
 
 
+def test_a_hidden_offset_plane_does_not_take_the_origin_squares_hover(page, fresh_doc, server):
+    """Review of 1294f7a (F3): offset planes are hidden outside Create Sketch's
+    pick, but a raycast does not look at `visible`. Under Mirror's session pick
+    the hover lit the HIDDEN plane in front of the XY square, so the square a
+    click would pick never lit. Seen from the top, (10, 46) is on the XY square,
+    off the 80 x 80 plate's +y side, and under a plane 30 mm up."""
+    setup(page)
+    page.evaluate("""async () => {
+      const { postJSON } = await import('/static/js/api.js');
+      await postJSON('/api/feature/add', { id: 'lid', op: 'offset_plane',
+        params: { plane: 'XY', offset: 30 }, inputs: [] }, 'add');
+    }""")
+    page.wait_for_function("() => window.__vp.constructionPlaneInfo().length === 1", timeout=15000)
+    assert page.evaluate("() => window.__vp.constructionPlaneInfo()[0].visible") is False
+    open_on_row(page, "hole1")
+    page.evaluate("async () => (await import('/static/js/viewport.js')).setView('top')")
+    page.wait_for_timeout(300)
+    sp = page.evaluate(TO_SCREEN, [10.0, 46.0, 0.0])
+    rect = page.evaluate("document.querySelector('#viewer canvas').getBoundingClientRect().toJSON()")
+    assert rect["left"] < sp["x"] < rect["right"] and rect["top"] < sp["y"] < rect["bottom"], (sp, rect)
+    under = {q["id"]: q["hits"] for q in page.evaluate("([x, y]) => window.__vp.planeQuadsAt(x, y)",
+                                                        [sp["x"], sp["y"]])}
+    assert under == {"XY": 1, "XZ": 0, "YZ": 0, "lid": 1}, f"the hidden plane lies in front: {under}"
+    assert page.evaluate("([x, y]) => window.__vp.edgeHitReport(x, y).face",
+                         [sp["x"] - rect["left"], sp["y"] - rect["top"]]) is None, "off the body"
+    page.mouse.move(sp["x"], sp["y"])
+    assert page.evaluate("document.querySelector('#viewer canvas').style.cursor") == "pointer", \
+        "the plane hover ran"
+    lit = {q["plane"]: q["opacity"] for q in page.evaluate("window.__vp.originPlaneInfo()")}
+    assert lit == {"XY": pytest.approx(0.4), "XZ": pytest.approx(0.16), "YZ": pytest.approx(0.16)}, lit
+    page.click("#mrCancel")
+    page.wait_for_selector("#mrDialog", state="hidden")
+    assert page.errors == []
+
+
 def test_the_plane_box_chooses_a_mid_plane(page, fresh_doc, server):
     setup(page)
     open_on_row(page, "hole1")

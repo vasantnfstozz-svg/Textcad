@@ -17,7 +17,7 @@ import { bus } from './bus.js';
 import { postJSON, planRequest } from './api.js';
 import { modalGuard } from './dialogs.js';
 import { pickedBody } from './tool.js';
-import { loadMesh, modelExtent } from './viewport.js';
+import { loadMesh, modelExtent, cancelPlanePick } from './viewport.js';
 import { enterSketch3D, exitSketch3D, renderSketch3D,
          planeToScreen, gridStep } from './sketch3d.js';
 import { SETTINGS, unitLabel, fmtLen, toMm } from './settings.js';
@@ -183,6 +183,11 @@ function nextName() {
 let navTipShown = false;      // the orbit tip goes to chat once per page load
 
 function enterMode() {
+  // a Create Sketch pick still waiting ends HERE, whichever way the sketch came
+  // (a plane's row, a face's button): it used to stay armed under the sketch,
+  // its hint, squares and planes on screen behind it (review of 1294f7a). First,
+  // so its camera flight stops before the sketch camera starts its own.
+  cancelPlanePick();
   sketchActive = true;
   if (!navTipShown) {
     navTipShown = true;

@@ -29,7 +29,7 @@ import { planRequest, postJSON } from './api.js';
 import { modalGuard } from './dialogs.js';
 import { g, mm, setLen, say, pickedBody } from './tool.js';
 import { beginExtrudeArrow, endExtrudeArrow, setExtrudeArrowAmount,
-         beginPlaneGhost, setPlaneGhost, endPlaneGhost, beginPlanePick,
+         beginPlaneGhost, setPlaneGhost, endPlaneGhost, beginPlanePick, cancelPlanePick,
          retakeSectionHandles } from './viewport.js';
 import { fetchFaceOutline } from './sketcher.js';
 
@@ -124,6 +124,9 @@ export async function editOffsetPlane(f) {
 
 function open(o) {
   if (stage) close();                       // a pick while a step is open replaces it
+  // ...and the step replaces a Create Sketch pick still waiting (the row's ✎):
+  // armed under the step's lock, its next click opened a sketch there
+  cancelPlanePick();
   stage = o;
   S.modalTool = NAME; S.modalToolPanel = PANEL;
   g(PANEL).firstElementChild.textContent =

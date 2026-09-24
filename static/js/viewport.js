@@ -284,7 +284,10 @@ export function initViewport() {
        must lie IN the plane it names (normal component 0) */
     originPlaneInfo: () => originPlanes.filter(o => o.userData.plane).map(o => ({
       plane: o.userData.plane, position: o.position.toArray(),
-      size: o.geometry.parameters.width })),
+      size: o.geometry.parameters.width, opacity: o.material.opacity })),
+    /* the tree row's glow as drawn (a plane's is its quad's frame), or null */
+    overlayInfo: () => hlMesh ? {
+      position: new THREE.Vector3().setFromMatrixPosition(hlMesh.matrix).toArray() } : null,
     /* the ghost plane of the Offset Plane step */
     planeGhostInfo,
     /* the document's construction planes as drawn */
@@ -923,15 +926,20 @@ function framePlanePick() {
   const tanH = tanV * camera.aspect;
   // each point fits when |sideways| <= depth * tan(half-view); depth is the
   // distance minus how far the point stands out toward the camera
-  let dist = 0;
+  let dist = 0, rear = 0;                    // rear: how far a point sits BEHIND the target
   for (const p of pts) {
     const q = p.sub(target);
     const toward = q.dot(back);
+    rear = Math.max(rear, -toward);
     dist = Math.max(dist, toward + Math.abs(q.dot(right)) / tanH,
                           toward + Math.abs(q.dot(up)) / tanV);
   }
-  if (dist > controls.maxDistance) {         // OrbitControls would pull it back in
-    camera.far = dist * 2; camera.updateProjectionMatrix();
+  // OrbitControls would pull the camera back in past maxDistance, and the far
+  // plane must reach the corner furthest BACK, `rear` beyond the target: a fit
+  // leaves far at 100 x its radius, and a 3 mm sketch's squares came up with
+  // their far corners cut off (review of 1294f7a)
+  if (dist > controls.maxDistance || dist + rear > camera.far) {
+    camera.far = Math.max(dist * 2, (dist + rear) * 1.25); camera.updateProjectionMatrix();
     controls.maxDistance = camera.far * 0.85;
   }
   flyTo(target.clone().add(back.multiplyScalar(dist)), target);
@@ -1077,6 +1085,15 @@ function drawConstructionPlanes(doc) {
     for (const o of [mesh, edges, label]) { o.visible = !!planePickCb; scene.add(o); }
     constrPlanes.push({ id: f.id, mesh, edges, label, at, Z });
   }
+  glowSelectedPlane();                           // on the quad just drawn
+}
+
+/* A selected plane's row IS the plane on screen (it is hidden outside a pick),
+   so its glow comes back after whatever clears the highlight. The reload that
+   follows moving the plane wiped it with the row still selected, and the plane
+   was shown nowhere (review of 1294f7a). */
+function glowSelectedPlane() {
+  if (S.selected && constrPlanes.some(p => p.id === S.selected)) showFeatureOverlay(S.selected);
 }
 
 function showConstructionPlanes(on) {
@@ -1141,7 +1158,9 @@ const pickableQuads = () => [...originPlanes.filter(o => o.userData.plane),
 
 function planePickHover(e) {
   raycaster.setFromCamera(ndcFrom(e), camera);
-  const quads = pickableQuads();
+  // only what is ON SCREEN: a raycast ignores `visible`, and under Mirror's pick
+  // the hidden offset planes took the hover from the square behind them
+  const quads = pickableQuads().filter(q => q.visible);
   for (const q of quads) q.material.opacity = q.userData.base;
   renderer.domElement.style.cursor = 'pointer';
   const fHit = raycaster.intersectObjects(bodyMeshes(), false)[0];
@@ -2420,6 +2439,7 @@ export function loadMesh(fit = false, force = false) {
   }
   if (!force && version && version === drawnVersion && bodyObjs.length) {
     clearHighlight(); clearPick();         // already on screen: nothing to fetch
+    glowSelectedPlane();
     if (fit) { camera.updateProjectionMatrix(); setView('iso'); }
     return Promise.resolve();
   }
@@ -2496,8 +2516,10 @@ export function clearHighlight() {
   overlaySeq++;
   if (!hlMesh) return;
   scene.remove(hlMesh);
-  for (const o of (hlMesh.isGroup ? hlMesh.children : [hlMesh]))
+  for (const o of (hlMesh.isGroup ? hlMesh.children : [hlMesh])) {
     if (o.geometry) o.geometry.dispose();
+    if (o.material) o.material.dispose();    // one is made per glow, never shared
+  }
   hlMesh = null;
 }
 

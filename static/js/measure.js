@@ -20,7 +20,7 @@ import { SETTINGS, fmtLen, toMm } from './settings.js';
 import { showDimension, clearDimension, loadMesh,
          showSelectionOverlay, clearSelectionOverlay,
          setPickHighlightEnabled, setDimProbe, clearDimProbe,
-         setDimProbeFrozen }
+         setDimProbeFrozen, cancelPlanePick }
   from './viewport.js';
 
 // the two selections, in click order
@@ -63,6 +63,9 @@ function label(sel) {
 export function isMeasuring() { return S.modalTool === 'Measure'; }
 
 export function openMeasure() {
+  // a Create Sketch pick still waiting would take Measure's first click (and
+  // refuse to open a sketch under Measure's lock): Measure replaces it
+  cancelPlanePick();
   A = null; B = null;
   // select-then-command (rule 2): a face already picked in the viewport IS the
   // first selection — retyping a click the user already made is the kind of

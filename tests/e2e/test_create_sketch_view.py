@@ -149,3 +149,65 @@ def test_an_empty_design_after_a_far_part_picks_at_the_origin(page, fresh_doc):
     assert pose["target"] == pytest.approx([0, 0, 0], abs=1e-6)
     _close_pick(page)
     assert page.errors == []
+
+
+# how deep the squares' furthest corner sits along the view, against the far plane
+DEPTHS = """() => {
+  const vp = window.__vp, cam = vp.camera, t = vp.getControls().target;
+  const V3 = cam.position.constructor;
+  const view = new V3().subVectors(t, cam.position).normalize();
+  const SPAN = { XY: [0, 1], XZ: [0, 2], YZ: [1, 2] };
+  let deepest = 0;
+  for (const q of vp.originPlaneInfo()) {
+    const [a, b] = SPAN[q.plane], h = q.size / 2;
+    for (const sa of [-h, h]) for (const sb of [-h, h]) {
+      const c = [...q.position]; c[a] += sa; c[b] += sb;
+      deepest = Math.max(deepest, new V3(...c).sub(cam.position).dot(view));
+    }
+  }
+  return { deepest, dist: cam.position.distanceTo(t), far: cam.far };
+}"""
+
+
+def test_the_far_plane_reaches_the_squares_furthest_back(plate):
+    """Review of 1294f7a (F4): the pick pushed the far clip plane out only when
+    the camera's DISTANCE passed the zoom limit (0.85 of the far plane), but the
+    squares' far corners stand up to 0.4 of that distance further back. A fit
+    leaves far = 100 x the fit radius, so a sketch whose fit radius is near 2 mm
+    (a 3 mm circle) opened the pick with those corners cut off. The pick view is
+    the same for every part that small, so the far plane is set here to a value
+    inside that gap, the way such a fit leaves it."""
+    page = plate
+    _open_pick(page)
+    m = page.evaluate(DEPTHS)
+    _close_pick(page)
+    assert m["deepest"] > m["dist"] / 0.85 * 1.02, f"no gap to test in: {m}"
+    far = (m["dist"] / 0.85 + m["deepest"]) / 2
+    page.evaluate("""(far) => { const vp = window.__vp;
+      vp.camera.far = far; vp.camera.updateProjectionMatrix();
+      vp.getControls().maxDistance = far * 0.85; }""", far)
+    _open_pick(page)
+    m2 = page.evaluate(DEPTHS)
+    assert m2["deepest"] == pytest.approx(m["deepest"], rel=1e-6), "the same fixed view"
+    assert m2["far"] > m2["deepest"], f"the squares' far corners are clipped: {m2}"
+    _close_pick(page)
+    assert page.errors == []
+
+
+def test_measure_opened_while_the_pick_waits_takes_the_next_click(plate):
+    """Review of 1294f7a (F1): Measure opened while Create Sketch's pick waited.
+    The pick stayed armed under Measure's lock and took the first click: a click
+    on the top face went to the pick, which refused to open a sketch under
+    Measure, and Measure never saw it."""
+    page = plate
+    _open_pick(page)
+    page.evaluate("async () => (await import('/static/js/measure.js')).openMeasure()")
+    page.wait_for_selector("#measureDialog", state="visible", timeout=15000)
+    assert page.evaluate(PICK_OVER), "Measure replaced the pick"
+    top = page.evaluate("(w) => window.__vp.worldToScreen(w)", [5, 3, 10])
+    page.mouse.click(top["x"], top["y"])
+    page.wait_for_function("() => !document.getElementById('meSelA').classList.contains('empty')",
+                           timeout=15000)
+    assert page.evaluate("document.getElementById('meSelA').textContent").startswith("Face")
+    page.evaluate("async () => (await import('/static/js/measure.js')).cancelMeasure()")
+    assert page.errors == []
