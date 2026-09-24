@@ -74,9 +74,11 @@ def test_every_body_is_pickable_and_reports_its_own_id(page, fresh_doc):
           return vp.pickAtWorld(top.center);
         }""", target)
         assert hit and hit["body"] == target, (target, hit)
+        # the box names the face and its size, never the body (2026-09-24)
         panel = page.evaluate(
             "document.getElementById('pickInfo').innerText")
-        assert target in panel, panel
+        assert panel.startswith("Face ") and "size:" in panel, panel
+        assert "area" not in panel and "center" not in panel, panel
     assert page.errors == []
 
 

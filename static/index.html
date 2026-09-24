@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>TextCAD Studio</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="/static/css/studio.css?v=49">
+<link rel="stylesheet" href="/static/css/studio.css?v=50">
 </head>
 <body>
 
@@ -69,16 +69,12 @@
     <div id="placeHint" style="display:none"></div>
     <div id="placePopup" style="display:none"></div>
     <!-- sketch mode v2: the viewport IS the sketch editor (Fusion-style) -->
+    <!-- no click/mouse instructions (user, 2026-09-24): sk3dHelp holds only the
+         path tool's Line/Arc switch and the edge-on warning -->
     <div id="sk3dBar" style="display:none">
       <span id="sk3dHelp"></span>
-      <span class="sk3dnav" title="the model stays live while you sketch">
-        <b>left</b> draw <span class="sk3dsep">·</span>
-        <b>RIGHT-drag</b> or <b>shift+left</b> pan <span class="sk3dsep">·</span>
-        <b>middle</b> orbit <span class="sk3dsep">·</span>
-        <b>wheel</b> zoom</span>
       <span class="sk3dmeta"><span id="sk3dCoords">x 0, y 0</span> ·
-        <span id="sk3dGrid">grid 10 mm</span> ·
-        Esc cancel · Del delete</span>
+        <span id="sk3dGrid">grid 10 mm</span></span>
     </div>
     <div id="skDimEdit3d" style="display:none"></div>
     <div id="skDimDraw" style="display:none"></div>
@@ -516,16 +512,10 @@
 </main>
 
 <!-- ============ status bar ============ -->
+<!-- Only the bug button and the build stamp (user, 2026-09-24: "we only need
+     report bugs and the version number"). The design name, feature count,
+     volume, rebuild time and unit chip that lived here are gone. -->
 <div id="statusbar">
-  <span id="sDoc">—</span>
-  <span id="sFeatures"></span>
-  <span id="sVolume"></span>
-  <span id="sRebuild"></span>
-  <!-- WHICH UNIT the numbers on this screen are in. TextCAD models in
-       millimetres and nothing on the screen said so (BACKLOG). settings.js
-       fills it in and keeps it in step with Settings ▸ Length unit. -->
-  <span id="sUnit" title="TextCAD models in millimetres"></span>
-  <span style="margin-left:auto">verified pipeline: engine · inspector · blocks</span>
   <!-- Which build this TAB is actually running. A tab left open across a
        code change keeps its old JS in memory no matter what the server
        sends, and "did you reload?" is otherwise unanswerable. -->
@@ -651,6 +641,6 @@
     "three/addons/": "/static/vendor/three/0.160.0/addons/"
 } }
 </script>
-<script type="module" src="/static/js/main.js?v=238"></script>
+<script type="module" src="/static/js/main.js?v=239"></script>
 </body>
 </html>

@@ -140,19 +140,8 @@ export function renderDoc(doc) {
   S.lastDoc = doc;
   arcKindsFor(doc.name);
   document.getElementById('docTitle').innerHTML = `<b>${doc.name}</b>`;
-  document.getElementById('sDoc').innerHTML = `<b>${doc.name}</b>`;
   document.getElementById('featCount').textContent =
     doc.features.length ? doc.features.length + ' features' : '';
-  document.getElementById('sFeatures').textContent =
-    doc.features.length + ' features';
-  // the RESULT body's volume, as the document works it out — not "the last
-  // non-suppressed row", which is a sketch on a design that ends with one
-  // (the readout went blank) and a stray tool body on one that ends with
-  // that (it reported the tool's volume as the part's). R1.
-  document.getElementById('sVolume').textContent =
-    doc.result_volume != null ? 'volume ' + fmtVol(doc.result_volume) : '';
-  document.getElementById('sRebuild').textContent =
-    doc.rebuild_ms != null ? 'rebuild ' + doc.rebuild_ms + ' ms' : '';
 
   const badge = document.getElementById('verifyBadge');
   const nWarn = (doc.warnings || []).length;

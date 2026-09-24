@@ -2971,12 +2971,7 @@ function selectProfile(sketchId, meshObj) {
       polygonOffset: true, polygonOffsetFactor: -4 }));
   pickHl.renderOrder = 999;
   scene.add(pickHl);
-  showPick(`<b>Sketch profile</b> — ${sketchId}`,
-    [['feature', sketchId]]);
-  const note = document.createElement('div');
-  note.style.cssText = 'margin-top:7px;color:var(--dim);font-size:11px;line-height:1.4';
-  note.textContent = 'Press Extrude to pull this profile.';
-  document.getElementById('pickInfo').appendChild(note);
+  showPick(`<b>Sketch profile</b> — ${sketchId}`, []);
 }
 
 /* The triangles of ONE face, as its own geometry. Factored out of selectFace so
@@ -3062,14 +3057,11 @@ function selectFace(fid, entry = null, hitPoint = null) {
       dia.push(['also ⌀', circ.slice(1, -1)
         .map(r => (r * 2).toFixed(1)).join(', ') + ' mm']);
   }
-  showPick(`<b>Face ${fid}</b> — ${isFlat && info.type !== 'PLANE' ? info.type + ' (flat)' : info.type}`,
-    [// which BODY this face belongs to — but ONLY when several are on screen
-     // and the answer is not obvious; with one body it is noise (user request
-     // 2026-08-31: "we dont need to mentions body")
-     info.body && bodyObjs.length > 1 ? ['body', info.body] : null,
-     ...dia,
-     ['area', (info.area ?? '?') + ' mm²'],
-     info.center ? ['center', info.center.join(', ')] : null]);
+  // THE FACE AND ITS SIZE, nothing else (user, 2026-09-24: "we just need face
+  // and size"). The surface type, body, area and centre rows are gone; area
+  // stays only as the size of a face that has no other dimension to show.
+  showPick(`<b>Face ${fid}</b>`,
+    dia.length ? dia : [['area', (info.area ?? '?') + ' mm²']]);
   // ask WHO MADE THIS FACE (provenance.js listens) — a face pick is how the
   // user navigates an AI-authored tree they did not build themselves
   bus.emit('face-picked', {
@@ -3087,12 +3079,6 @@ function selectFace(fid, entry = null, hitPoint = null) {
       'font:inherit;font-weight:700';
     btn.onclick = () => bus.emit('sketch-on-face', info);
     document.getElementById('pickInfo').appendChild(btn);
-  } else if (info.center) {
-    const note = document.createElement('div');
-    note.style.cssText = 'margin-top:7px;color:var(--dim);font-size:11px;line-height:1.4';
-    note.textContent = `Sketching needs a FLAT face — this one is ${info.type}. ` +
-      'For a slot/pocket here: sketch on a plane at the right offset, extrude, then Cut.';
-    document.getElementById('pickInfo').appendChild(note);
   }
 }
 
@@ -3119,14 +3105,10 @@ function selectEdge(eid, bodyId = null) {
   scene.add(pickHl);
   bus.emit('pick', { kind: 'edge', id: eid, body: src ? src.id : null, info: e });
   // a round edge reads out as a DIAMETER, because that is how a machinist
-  // reads a bore — the radius/arc_center ride along in the mesh payload
-  const dia = e.radius != null
-    ? [['diameter', `⌀${(e.radius * 2).toFixed(2)} mm`],
-       ['radius', e.radius.toFixed(2) + ' mm']]
-    : [];
-  showPick(`<b>Edge ${eid}</b> — ${e.type}`,
-    [src && bodyObjs.length > 1 ? ['body', src.id] : null,
-     ...dia,
+  // reads a bore — the radius/arc_center ride along in the mesh payload.
+  // The edge and its size only, like a face (2026-09-24).
+  showPick(`<b>Edge ${eid}</b>`,
+    [e.radius != null ? ['⌀', (e.radius * 2).toFixed(2) + ' mm'] : null,
      ['length', e.length + ' mm']]);
 }
 

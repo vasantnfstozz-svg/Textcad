@@ -202,23 +202,29 @@ def test_shift_left_pans_in_both_tabs_and_never_draws(page):
     assert page.errors == []
 
 
-def test_sketch_mode_shows_the_navigation_legend(page):
-    """The legend was grey 11px text between the coordinates and the Esc/Del
-    keys and went unread — users left-dragged and gave up. It is its own chip
-    now, and entering sketch mode also says it once in chat."""
-    nav = page.locator("#sk3dBar .sk3dnav")
-    assert not nav.is_visible()
+def test_sketch_mode_shows_no_click_instructions(page):
+    """User, 2026-09-24: "we do not need the instructions to click mouse and
+    pick shapes". Sketch mode used to show a mouse legend, a "Pick a shape,
+    then click to draw" hint and a chat tip; none of the three may come back.
+    The bar keeps the cursor readout and the path tool's Line/Arc switch."""
+    chat_before = page.locator("#chatLog").inner_text()
     page.evaluate("""async () => {
       const sk = await import('/static/js/sketcher.js');
       sk.openSketchEditor('XY');
     }""")
     page.wait_for_timeout(1100)
-    assert nav.is_visible()
-    text = " ".join(nav.inner_text().split())
-    assert "RIGHT-drag" in text and "pan" in text, text
-    assert "middle" in text and "orbit" in text, text
-    chat = page.locator("#chatLog").inner_text()
-    assert "RIGHT-drag pans" in chat, chat[-200:]
+    assert page.locator("#sk3dBar").is_visible()
+    assert page.locator("#sk3dBar .sk3dnav").count() == 0
+    assert page.text_content("#sk3dHelp").strip() == ""
+    assert page.locator("#sk3dCoords").is_visible()
+    assert page.locator("#chatLog").inner_text() == chat_before
+    page.evaluate("""async () => {
+      const sk = await import('/static/js/sketcher.js');
+      sk.setSketchTool('path');
+    }""")
+    page.wait_for_timeout(200)
+    help_text = " ".join(page.text_content("#sk3dHelp").split())
+    assert help_text == "— Line◠ Arc", help_text
     assert page.errors == []
 
 

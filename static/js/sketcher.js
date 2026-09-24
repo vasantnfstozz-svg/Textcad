@@ -180,7 +180,6 @@ function nextName() {
    viewport IS the sketch (rule 9) — tools sit in the contextual green ribbon,
    a floating hint bar + dim labels overlay the 3D view, the camera turns to
    the sketch plane but stays free to orbit, and every body stays visible. */
-let navTipShown = false;      // the orbit tip goes to chat once per page load
 
 function enterMode() {
   // a Create Sketch pick still waiting ends HERE, whichever way the sketch came
@@ -189,12 +188,6 @@ function enterMode() {
   // so its camera flight stops before the sketch camera starts its own.
   cancelPlanePick();
   sketchActive = true;
-  if (!navTipShown) {
-    navTipShown = true;
-    bus.emit('msg', 'bot', 'Sketch mode: left-drag draws · RIGHT-drag pans '
-      + '(shift+left too) · middle-drag orbits (the model stays live — you '
-      + 'never leave 3D) · wheel zooms · Look At re-faces the plane.');
-  }
   enterSketch3D(skOnFace ? skOnFace.frame : skFrame,
                 { gridMm: SETTINGS.gridMm, focus: pendingFocus || undefined });
   pendingFocus = null;
@@ -1607,6 +1600,10 @@ function assignModes() {
   });
 }
 
+/* The bar under a sketch says NOTHING about how to click (user, 2026-09-24:
+   "we do not need the instructions to click mouse and pick shapes"). It holds
+   only what cannot be seen on screen: the path tool's Line/Arc switch, and the
+   warning that drawing is off because the view is edge-on to the plane. */
 function updateHint() {
   const el = document.getElementById('sk3dHelp');
   if (edgeOnView) {
@@ -1614,56 +1611,20 @@ function updateHint() {
       + 'or press Look At, to keep drawing';
     return;
   }
-  if (isPathTool()) {
-    const openTool = tool === 'openpath';
-    const msg = !pathStart
-      ? (openTool ? 'Path: click the START point — on the profile you will sweep'
-                  : 'Click the START point of your profile')
-      : pendingVia ? 'Arc: now click the END point'
-      : segMode === 'arc' ? 'Arc: click a point the arc passes THROUGH'
-      : openTool ? 'Click the next point · double-click to END the open path'
-      : 'Click the next point · click the start (or double-click) to close';
-    el.innerHTML = '';
-    const mk = (label, mode) => {
-      const b = document.createElement('button');
-      b.textContent = label;
-      b.style.cssText = 'margin-right:6px;padding:1px 10px;border-radius:5px;' +
-        'font:inherit;font-size:11.5px;cursor:pointer;border:1px solid ' +
-        (segMode === mode ? 'var(--accent)' : 'var(--line)') + ';background:' +
-        (segMode === mode ? 'var(--accent2)' : 'var(--panel2)') +
-        ';color:' + (segMode === mode ? 'var(--accent)' : 'var(--text)');
-      b.onclick = () => { segMode = mode; pendingVia = null; updateHint(); };
-      return b;
-    };
-    el.append(mk('— Line', 'line'), mk('◠ Arc', 'arc'),
-              document.createTextNode(' ' + msg));
-    return;
-  }
-  if (tool === 'trim') {
-    el.textContent = trimPieces === null && skEnts.length
-      ? 'Trim: finding crossings…'
-      : trimHover >= 0 && trimPieces?.[trimHover]?.whole
-        ? 'Trim: this shape crosses nothing — a click deletes the WHOLE shape'
-        : 'Trim: hover a segment between crossings (turns red), click to ' +
-          'remove it · outer boundaries are protected';
-    return;
-  }
-  if (!tool) el.textContent =
-    'Pick a shape, then click to draw — clicks snap to centers/corners of ' +
-    'existing shapes · drag shapes to move · wheel zooms';
-  else if (tool === 'polygon') el.textContent = clicks.length
-    ? 'Click the next corner · double-click (or click the first point) to close'
-    : 'Polygon: click each corner, double-click to close';
-  else if (tool === 'text') el.textContent = clicks.length
-    ? 'Type the word and its height in the box · Enter places it · click again to move the point'
-    : 'Text: click where the word\'s CENTRE goes';
-  else el.textContent = clicks.length
-    ? 'Now click to set the size'
-    : ({ circle: 'Circle: click the CENTER point',
-         rectangle: 'Rectangle: click the FIRST corner',
-         ellipse: 'Ellipse: click the center',
-         slot: 'Slot: click the start center',
-         regular_polygon: 'N-gon: click the center' }[tool] || 'Click to place');
+  el.textContent = '';
+  if (!isPathTool()) return;
+  const mk = (label, mode) => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    b.style.cssText = 'margin-right:6px;padding:1px 10px;border-radius:5px;' +
+      'font:inherit;font-size:11.5px;cursor:pointer;border:1px solid ' +
+      (segMode === mode ? 'var(--accent)' : 'var(--line)') + ';background:' +
+      (segMode === mode ? 'var(--accent2)' : 'var(--panel2)') +
+      ';color:' + (segMode === mode ? 'var(--accent)' : 'var(--text)');
+    b.onclick = () => { segMode = mode; pendingVia = null; updateHint(); };
+    return b;
+  };
+  el.append(mk('— Line', 'line'), mk('◠ Arc', 'arc'));
 }
 
 /* ---------------- rendering ---------------- */

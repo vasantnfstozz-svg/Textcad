@@ -57,7 +57,7 @@ SECTION = "async () => (await import('/static/js/viewport.js')).sectionInfo()"
 LENGTH_BOXES = ["exDist", "exDist2", "flValue", "chValue", "hoDia", "hoDepth",
                 "hoCbDia", "hoCbDepth", "hoCsDia", "shThickness",
                 "mvX", "mvY", "mvZ", "rpDist", "rpDist2",
-                "swDist", "scOffset", "meInput"]
+                "swDist", "scOffset", "meInput", "plOffset"]
 
 
 def choose_unit(page, unit):
@@ -67,7 +67,7 @@ def choose_unit(page, unit):
     page.select_option("#setUnit", unit)
     page.click("#setApply")
     page.wait_for_function(
-        f"() => document.getElementById('sUnit').textContent === '{unit}'",
+        f"() => document.querySelector('[data-unit]').textContent === '{unit}'",
         timeout=10000)
 
 

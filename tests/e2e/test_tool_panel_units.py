@@ -133,7 +133,8 @@ def choose_inches(page):
     page.select_option("#setUnit", "in")
     page.click("#setApply")
     page.wait_for_function(
-        "() => document.getElementById('sUnit').textContent === 'in'", timeout=10000)
+        "() => document.querySelector('[data-unit]').textContent === 'in'",
+        timeout=10000)
 
 
 def tool_button(page, tab, title):
