@@ -137,6 +137,11 @@ were each learned from a correction — do not regress them.
    it is there in the tree"); the tree row is the plane, and selecting it glows
    the quad. Locked in by tests/e2e/test_create_sketch_view.py and
    test_offset_plane.py::test_the_plane_is_on_screen_only_while_a_pick_waits_for_it.
+   **Whatever takes over ENDS a waiting pick** (review of 1294f7a): sketch mode
+   (`sketcher.enterMode`), the Offset Plane step (`sketchplane.open`) and
+   Measure call `cancelPlanePick`, a tool session calls `endPending`. A pick
+   left armed kept its squares and planes over the sketch and took the next
+   click under another command's lock. A NEW step or mode must do the same.
 
 ## Gizmo/drag mechanics (hard-won, in viewport.js)
 
