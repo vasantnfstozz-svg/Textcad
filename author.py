@@ -23,6 +23,7 @@ import json
 import re
 import time
 
+import judge
 from document import Document, CREATORS, MODIFIERS, REQUIRED, op_params
 
 
@@ -252,8 +253,12 @@ YOU WORK ONE STEP PER REPLY, exactly like a person using the CAD tools: add
 ONE feature, see what it built, add the next. Respond with ONLY a JSON
 object, no prose, no markdown — one of these four:
 
-{{"name": "short-part-name", "add": {{"id": "unique_name", "op": "<op>", "params": {{...}}, "inputs": ["upstream_id", ...]}}}}
-    adds one feature to the tree ("name" is read on your first reply only);
+{{"name": "short-part-name", "plan": ["...", "..."], "add": {{"id": "unique_name", "op": "<op>", "params": {{...}}, "inputs": ["upstream_id", ...]}}}}
+    adds one feature to the tree ("name" and "plan" are read on your first
+    reply only — "plan" lists the 3-10 must-have ELEMENTS of the request in
+    plain words WITHOUT sizes or numbers, one per entry, each one something
+    a later step builds, e.g. ["back shell", "camera opening on the back",
+    "charging-port opening"]; "done" is checked against that list);
 {{"edit": {{"feature_id": "an_id_in_the_tree", "param": "radius", "value": 12}}}}
     changes ONE parameter of a feature already in the tree — never rebuild
     from scratch what one number can fix;
@@ -777,6 +782,20 @@ def _to_document(data: dict) -> Document:
 
 MAX_STEPS = 40          # bounds the cost of a model that never says done
 MAX_FAILS = 3           # refusals in a row before the loop gives up
+
+# THE CHECKLIST. The model's first reply carries a "plan": the must-have
+# elements of the request in words. When it says "done", the judge (judge.py,
+# a small local yes/no model — never the kernel) is asked, per element, "is
+# this in the design?" against a one-line-per-feature summary of the tree.
+# An element it cannot find refuses "done" — at most CHECKLIST_CAP times per
+# job, and NEVER as a counted failure: a judge is a guess with a probability,
+# and a guess may not cost the user a verified design (three counted
+# refusals give the job up and studio restores the snapshot). Past the cap,
+# done is accepted and the unconfirmed elements are reported. No judge
+# running -> no checklist -> done as before (judge.py fails open).
+CHECKLIST_CAP = 2
+MISSING_BELOW = 0.5     # P(yes) under this = "not found"
+PLAN_MAX = 10
 # ...and a clock for the CHAT JOB, which studio passes in. Steps are not the
 # only way a job runs long, and an "add" job makes its tab READ-ONLY while it
 # runs (studio._one_writer_per_tab): a model that is merely slow locks the
@@ -800,6 +819,88 @@ def _restore(doc: Document, data: dict) -> bool:
 def _bodies(doc: Document) -> str:
     ids = doc.leaf_solid_ids()
     return ", ".join(ids) if ids else "none yet"
+
+
+def _plan_items(raw) -> list[str]:
+    """The model's "plan" as clean short strings (at most PLAN_MAX)."""
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for item in raw:
+        if isinstance(item, str):
+            s = " ".join(item.split())[:80].strip(" .;:")
+            if s and s.lower() not in (o.lower() for o in out):
+                out.append(s)
+    return out[:PLAN_MAX]
+
+
+def _feature_words(f) -> str:
+    """One line of words about a feature, for a reader that sees only text."""
+    p = f.params or {}
+    bits = [f"{f.id}: {f.op}"]
+    if f.op in ("sketch", "sketch_on_face"):
+        where = p.get("face") if f.op == "sketch_on_face" else p.get("plane")
+        if isinstance(where, dict):
+            where = where.get("face") or where.get("name") or "face"
+        # sizes ride along: a plan item that names one ("USB-C opening
+        # 10x3 mm") read 0.37 against a summary without them and 0.97 with
+        # (measured 2026-09-29 through the real judge)
+        kinds: dict[str, int] = {}
+        for e in p.get("entities") or []:
+            k = e.get("kind", "entity") if isinstance(e, dict) else "entity"
+            if isinstance(e, dict):
+                if k == "rectangle" and "w" in e and "h" in e:
+                    k = f"rectangle {e['w']:g}×{e['h']:g}"
+                elif k == "circle" and "r" in e:
+                    k = f"circle r{e['r']:g}"
+                elif k == "slot" and "length" in e:
+                    k = f"slot {e['length']:g} long"
+            kinds[k] = kinds.get(k, 0) + 1
+        drawn = ", ".join(f"{n} {k}" for k, n in kinds.items()) or "empty"
+        bits.append(f"on {where}" if where else "")
+        if p.get("offset"):
+            bits.append(f"offset {p['offset']}")
+        bits.append(drawn)
+    else:
+        nums = [f"{k} {v}" for k, v in p.items()
+                if isinstance(v, (int, float)) and not isinstance(v, bool)][:4]
+        words = [f"{k} {v}" for k, v in p.items() if isinstance(v, str)][:2]
+        bits += nums + words
+    if f.inputs:
+        bits.append("of " + ", ".join(f.inputs))
+    if f.suppressed:
+        bits.append("(switched off)")
+    return " — ".join(b for b in bits if b)
+
+
+def _tree_words(request: str, doc: Document) -> str:
+    """The design as text a small judge can read: the request, then one
+    line per feature in build order. Fitted to the judge's window by
+    dropping detail before dropping features."""
+    head = "REQUEST: " + " ".join(request.split())[:300] + "\nDESIGN, in build order:\n"
+    budget = judge.STATE_CHARS - len(head)
+    for detail in (True, False):
+        lines = [(_feature_words(f) if detail else f"{f.id}: {f.op}")
+                 for f in doc.features]
+        body = "\n".join("- " + ln for ln in lines)
+        if len(body) <= budget:
+            return head + body
+    return (head + body)[:judge.STATE_CHARS]
+
+
+def _checklist_missing(request: str, doc: Document, plan: list[str]) -> list[str]:
+    """Plan elements the judge does NOT find in the design. [] when there
+    is no judge to ask (fail open) — a missing judge is not a missing part."""
+    if not plan or not doc.features:
+        return []
+    qs = {f"p{i}": ("Does the design contain this element (exact sizes do "
+                    f"not matter): {item}?")
+          for i, item in enumerate(plan)}
+    got = judge.yes_no(_tree_words(request, doc), qs)
+    if not got:
+        return []
+    return [item for i, item in enumerate(plan)
+            if f"p{i}" in got and got[f"p{i}"] < MISSING_BELOW]
 
 
 def _built(doc: Document, f) -> str:
@@ -1054,6 +1155,9 @@ def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
     transcript: list[str] = []
     fails = 0
     pending_name = None       # the model's name, held until a step LANDS
+    plan: list[str] = []      # the model's must-have list, read once
+    first = True              # ...on its first reply, whatever the tree
+    checks = 0                # checklist refusals so far (<= CHECKLIST_CAP)
 
     def say(kind, text, fid=None):
         transcript.append(text)
@@ -1073,7 +1177,8 @@ def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
         return False, transcript
 
     deadline = None if max_seconds is None else time.monotonic() + max_seconds
-    for _ in range(max_steps):
+    for step_no in range(max_steps):
+        steps_left = max_steps - step_no - 1     # after this one
         if deadline is not None and time.monotonic() >= deadline:
             say("gave_up", f'GAVE UP: {max_seconds:g} seconds without "done"; '
                            f'{len(doc.features)} verified feature(s) stand.')
@@ -1081,6 +1186,7 @@ def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
         raw = model.generate(messages)
         messages.append({"role": "assistant", "content": raw})
         step = None
+        soft = False          # a checklist refusal is not a counted failure
         try:
             step = _parse(raw)
             if not isinstance(step, dict):
@@ -1096,13 +1202,34 @@ def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
             naming = not doc.features
             if naming and isinstance(step.get("name"), str):
                 pending_name = step["name"].strip()[:60] or pending_name
-            if guard is not None:
+            if first:
+                plan, first = _plan_items(step.get("plan")), False
+            # THE CHECKLIST (see CHECKLIST_CAP): "done" is first read against
+            # the plan by the judge, before the kernel is asked anything.
+            # ...and only while at least two steps remain to act on it: a
+            # refusal the model has no room to answer would just spend the
+            # last steps (the smoke job of 2026-09-29 gave up at step 40
+            # with a checklist refusal as its second-to-last line).
+            unconfirmed = (_checklist_missing(request, doc, plan)
+                           if step.get("done") and plan and steps_left >= 2
+                           else [])
+            if unconfirmed and checks < CHECKLIST_CAP:
+                checks += 1
+                soft = True
+                ok, text, fid = False, (
+                    "REFUSED done (checklist): not found in the design — "
+                    + "; ".join(unconfirmed) + ". Add each one as its own "
+                    "step (or edit what stands), then say done again."), None
+            elif guard is not None:
                 with guard():
                     ok, text, fid = _apply_step(doc, step, protected,
                                                 keep_spec, authored, baseline)
             else:
                 ok, text, fid = _apply_step(doc, step, protected, keep_spec,
                                             authored, baseline)
+            if ok and step.get("done") and unconfirmed:
+                text += (" Checklist could not confirm: "
+                         + "; ".join(unconfirmed) + ".")
             if ok and naming and pending_name:
                 doc.name = pending_name
         if ok and step.get("done"):
@@ -1113,14 +1240,18 @@ def author_steps(doc: Document, request: str, model, on_step=None, guard=None,
             say(next(k for k in ("add", "edit", "remove") if k in step), text, fid)
             messages.append({"role": "user", "content": text + " Next step?"})
             continue
-        fails += 1
+        if not soft:
+            fails += 1
         say("refused", text, fid)
         if fails >= max_fails:
             say("gave_up", f"GAVE UP after {fails} refused steps in a row; "
                            f"{len(doc.features)} verified feature(s) stand.")
             return False, transcript
-        messages.append({"role": "user", "content":
-                         text + " Send the corrected step (JSON only)."})
+        # "corrected step" after a checklist refusal drew prose twice in the
+        # 2026-09-29 smoke job (nothing was wrong with the last step)
+        messages.append({"role": "user", "content": text + (
+            " Send the step that adds it (JSON only)." if soft
+            else " Send the corrected step (JSON only).")})
     say("gave_up", f'GAVE UP: {max_steps} steps without "done".')
     return False, transcript
 
