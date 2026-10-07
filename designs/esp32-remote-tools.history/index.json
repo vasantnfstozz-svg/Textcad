@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "design_id": "d_faa003f2e3ce",
+  "name": "esp32-remote-tools",
+  "current": "v1",
+  "starred": null,
+  "versions": [
+    {
+      "id": "v1",
+      "parent": null,
+      "created": "2026-09-24T11:46:48+00:00",
+      "label": "sketch_on_face added; extrude added; cut added +28 more",
+      "source": "manual",
+      "hash": "sha1:7e84f983a4e170c773ed648b94e0a5c8ced01dff",
+      "features": 68,
+      "spec": {
+        "features": 68,
+        "ok": true,
+        "volume": 107733.91
+      },
+      "commit": null,
+      "rebuildable": true,
+      "author": "you"
+    }
+  ]
+}

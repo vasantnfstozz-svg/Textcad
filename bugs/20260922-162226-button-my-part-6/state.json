@@ -1,0 +1,697 @@
+{
+ "note": "for this design i changed plane from first sketch to upper one, then i made a another sketch in different height, then i used loft to connect both sketch it came perfectly, but when i deleted loft in the feature tree, other sketch is also getting deletdd, the behaviour is not predictable, other sketch or extrude also getting deleted when i am doing some changews int the tree,",
+ "when": "2026-09-22 16:22:26",
+ "ui_build": "ui v232",
+ "source": null,
+ "undo_depth": 25,
+ "screenshot_skipped": null,
+ "doc": {
+  "name": "my-part-6",
+  "ok": true,
+  "rebuild_ms": 1,
+  "dirty": true,
+  "can_undo": true,
+  "can_redo": false,
+  "rollback": null,
+  "geom_version": "1cecf0b4d63880fe6b3bbf229bc61e449a13062b",
+  "result_pieces": null,
+  "result_volume": null,
+  "bodies": 0,
+  "spec": {},
+  "spec_problems": [],
+  "spec_checked": true,
+  "warnings": [],
+  "parameters": [],
+  "tabs": [
+   {
+    "id": "t1",
+    "name": "esp32-remote",
+    "ok": true,
+    "active": false,
+    "dirty": true
+   },
+   {
+    "id": "t10",
+    "name": "my-part-6",
+    "ok": true,
+    "active": true,
+    "dirty": true
+   }
+  ],
+  "active_tab": "t10",
+  "recovery": null,
+  "arrival": null,
+  "features": [
+   {
+    "id": "sketch1",
+    "op": "sketch",
+    "params": {
+     "plane": "XY",
+     "offset": 0,
+     "entities": [
+      {
+       "kind": "circle",
+       "mode": "add",
+       "x": 0,
+       "y": 0,
+       "r": 39.05124837953328
+      }
+     ]
+    },
+    "inputs": [],
+    "status": "ok",
+    "problems": [],
+    "volume": null,
+    "suppressed": false,
+    "pieces": null,
+    "notes": [],
+    "path_sketch": false,
+    "plane_frame": null,
+    "resolved": {}
+   },
+   {
+    "id": "extrude1",
+    "op": "extrude",
+    "params": {
+     "amount": 11.39,
+     "both": false,
+     "amount2": 0,
+     "taper": 0,
+     "flip": false,
+     "through": false
+    },
+    "inputs": [
+     "sketch1"
+    ],
+    "status": "ok",
+    "problems": [
+     "(suppressed)"
+    ],
+    "volume": null,
+    "suppressed": true,
+    "pieces": null,
+    "notes": [],
+    "path_sketch": false,
+    "plane_frame": null,
+    "resolved": {}
+   },
+   {
+    "id": "plane1",
+    "op": "offset_plane",
+    "params": {
+     "plane": "XY",
+     "offset": 113.4
+    },
+    "inputs": [],
+    "status": "ok",
+    "problems": [
+     "(suppressed)"
+    ],
+    "volume": null,
+    "suppressed": true,
+    "pieces": null,
+    "notes": [],
+    "path_sketch": false,
+    "plane_frame": null,
+    "resolved": {}
+   },
+   {
+    "id": "sketch2",
+    "op": "sketch",
+    "params": {
+     "plane": "plane1",
+     "offset": 0,
+     "entities": [
+      {
+       "kind": "rectangle",
+       "mode": "add",
+       "x": 30,
+       "y": -25,
+       "w": 60,
+       "h": 50,
+       "rotation": 0
+      }
+     ]
+    },
+    "inputs": [],
+    "status": "ok",
+    "problems": [
+     "(suppressed)"
+    ],
+    "volume": null,
+    "suppressed": true,
+    "pieces": null,
+    "notes": [],
+    "path_sketch": false,
+    "plane_frame": null,
+    "resolved": {}
+   },
+   {
+    "id": "loft1",
+    "op": "loft",
+    "params": {
+     "ruled": false
+    },
+    "inputs": [
+     "sketch1",
+     "sketch2"
+    ],
+    "status": "ok",
+    "problems": [
+     "(suppressed)"
+    ],
+    "volume": null,
+    "suppressed": true,
+    "pieces": null,
+    "notes": [],
+    "path_sketch": false,
+    "plane_frame": null,
+    "resolved": {}
+   }
+  ]
+ },
+ "requests": [
+  {
+   "t": "2026-09-22T14:13:15.383Z",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": "{\"tool\":\"extrude\",\"sketch_id\":\"sketch3\"}",
+   "status": 200,
+   "ms": 47
+  },
+  {
+   "t": "2026-09-22T14:13:36.214Z",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": "{\"tool\":\"revolve\",\"sketch_id\":\"sketch3\"}",
+   "status": 200,
+   "ms": 83
+  },
+  {
+   "t": "2026-09-22T14:13:39.641Z",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": "{\"id\":\"revolve1\",\"op\":\"revolve\",\"params\":{\"axis\":[[-5,-5],[-5,25]],\"angle\":78,\"angle2\":0,\"both\":false},\"inputs\":[\"sketch3\"]}",
+   "status": 200,
+   "ms": 41
+  },
+  {
+   "t": "2026-09-22T14:13:43.392Z",
+   "method": "POST",
+   "url": "/api/face-feature",
+   "body": "{\"body\":\"revolve1\",\"face\":4,\"center\":[-2.4,-132.57,10],\"area\":750,\"point\":[-3.5065620232075787,-137.77393596497703,5.749572104635007]}",
+   "status": 200,
+   "ms": 34
+  },
+  {
+   "t": "2026-09-22T14:13:44.800Z",
+   "method": "POST",
+   "url": "/api/face-feature",
+   "body": "{\"body\":\"loft1\",\"face\":2,\"center\":[0,0,50.6],\"area\":1021.02,\"point\":[-2.2075893121723027,-7.952890543132536,50.599998474121094]}",
+   "status": 200,
+   "ms": 29
+  },
+  {
+   "t": "2026-09-22T14:13:54.018Z",
+   "method": "POST",
+   "url": "/api/face-feature",
+   "body": "{\"body\":\"revolve1\",\"face\":4,\"center\":[-2.4,-132.57,10],\"area\":750,\"point\":[-2.727676046145632,-134.1095687714062,7.964256061572982]}",
+   "status": 200,
+   "ms": 40
+  },
+  {
+   "t": "2026-09-22T14:13:58.580Z",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": "{\"feature_id\":\"revolve1\"}",
+   "status": 200,
+   "ms": 40
+  },
+  {
+   "t": "2026-09-22T14:14:03.782Z",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": "{\"feature_id\":\"revolve1\",\"restore\":true}",
+   "status": 200,
+   "ms": 29
+  },
+  {
+   "t": "2026-09-22T14:14:06.979Z",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": "{\"feature_id\":\"revolve1\"}",
+   "status": 200,
+   "ms": 28
+  },
+  {
+   "t": "2026-09-22T14:14:09.012Z",
+   "method": "POST",
+   "url": "/api/feature/remove",
+   "body": "{\"feature_id\":\"revolve1\",\"dry_run\":true}",
+   "status": 200,
+   "ms": 28
+  },
+  {
+   "t": "2026-09-22T14:14:12.341Z",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": "{\"feature_id\":\"revolve1\",\"restore\":true}",
+   "status": 200,
+   "ms": 38
+  },
+  {
+   "t": "2026-09-22T14:14:49.031Z",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": "{\"tool\":\"sketch\",\"plane\":\"YZ\",\"offset\":0}",
+   "status": 200,
+   "ms": 23
+  },
+  {
+   "t": "2026-09-22T14:14:54.348Z",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": "{\"id\":\"plane3\",\"op\":\"offset_plane\",\"params\":{\"plane\":\"YZ\",\"offset\":321},\"inputs\":[]}",
+   "status": 200,
+   "ms": 30
+  },
+  {
+   "t": "2026-09-22T14:15:02.517Z",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": "{\"id\":\"plate1\",\"op\":\"plate\",\"params\":{\"width\":40,\"depth\":40,\"thickness\":10},\"inputs\":[]}",
+   "status": 200,
+   "ms": 77
+  },
+  {
+   "t": "2026-09-22T14:15:02.600Z",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": "{\"id\":\"plate1_at\",\"op\":\"move\",\"params\":{\"x\":411.05,\"y\":-180.83,\"z\":0},\"inputs\":[\"plate1\"]}",
+   "status": 200,
+   "ms": 216
+  },
+  {
+   "t": "2026-09-22T14:15:16.273Z",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": "{\"feature_id\":\"plate1_at\"}",
+   "status": 200,
+   "ms": 29
+  },
+  {
+   "t": "2026-09-22T14:15:18.661Z",
+   "method": "POST",
+   "url": "/api/feature/remove",
+   "body": "{\"feature_id\":\"plate1_at\",\"dry_run\":true}",
+   "status": 200,
+   "ms": 47
+  },
+  {
+   "t": "2026-09-22T14:15:20.067Z",
+   "method": "POST",
+   "url": "/api/feature/remove",
+   "body": "{\"feature_id\":\"plate1_at\"}",
+   "status": 200,
+   "ms": 49
+  },
+  {
+   "t": "2026-09-22T14:18:17.533Z",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": "{\"feature_id\":\"plate1\"}",
+   "status": 200,
+   "ms": 29
+  },
+  {
+   "t": "2026-09-22T14:18:18.219Z",
+   "method": "POST",
+   "url": "/api/feature/remove",
+   "body": "{\"feature_id\":\"plate1\",\"dry_run\":true}",
+   "status": 200,
+   "ms": 30
+  },
+  {
+   "t": "2026-09-22T14:18:18.254Z",
+   "method": "POST",
+   "url": "/api/feature/remove",
+   "body": "{\"feature_id\":\"plate1\"}",
+   "status": 200,
+   "ms": 35
+  },
+  {
+   "t": "2026-09-22T14:18:20.195Z",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": "{\"feature_id\":\"extrude1\",\"restore\":true}",
+   "status": 200,
+   "ms": 25
+  },
+  {
+   "t": "2026-09-22T14:18:27.239Z",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": "{\"tool\":\"sketch\",\"plane\":\"XY\",\"offset\":0}",
+   "status": 200,
+   "ms": 23
+  },
+  {
+   "t": "2026-09-22T14:18:31.050Z",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": "{\"id\":\"plane1\",\"op\":\"offset_plane\",\"params\":{\"plane\":\"XY\",\"offset\":113.4},\"inputs\":[]}",
+   "status": 200,
+   "ms": 23
+  },
+  {
+   "t": "2026-09-22T14:18:33.209Z",
+   "method": "POST",
+   "url": "/api/sketch/snap",
+   "body": "{\"plane\":\"XY\",\"offset\":0,\"frame\":{\"origin\":[0,0,50.6],\"x_dir\":[1,0,0],\"y_dir\":[0,1,0],\"z_dir\":[0,0,1]}}",
+   "status": 200,
+   "ms": 33
+  },
+  {
+   "t": "2026-09-22T14:18:41.619Z",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": "{\"id\":\"sketch2\",\"op\":\"sketch\",\"params\":{\"plane\":\"plane1\",\"offset\":0,\"entities\":[{\"kind\":\"rectangle\",\"mode\":\"add\",\"x\":30,\"y\":-25,\"w\":60,\"h\":50,\"rotation\":0}]},\"inputs\":[]}",
+   "status": 200,
+   "ms": 24
+  },
+  {
+   "t": "2026-09-22T14:18:46.558Z",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": "{\"feature_id\":\"extrude1\"}",
+   "status": 200,
+   "ms": 53
+  },
+  {
+   "t": "2026-09-22T14:18:48.749Z",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": "{\"feature_id\":\"plane1\",\"restore\":true}",
+   "status": 200,
+   "ms": 23
+  },
+  {
+   "t": "2026-09-22T14:18:56.339Z",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": "{\"tool\":\"loft\",\"sketch_id\":\"sketch2\",\"sketch_ids\":[\"sketch2\"]}",
+   "status": 200,
+   "ms": 56
+  },
+  {
+   "t": "2026-09-22T14:18:57.586Z",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": "{\"tool\":\"loft\",\"sketch_id\":\"sketch2\",\"sketch_ids\":[\"sketch2\",\"sketch1\"]}",
+   "status": 200,
+   "ms": 137
+  },
+  {
+   "t": "2026-09-22T14:18:57.724Z",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": "{\"id\":\"loft1\",\"op\":\"loft\",\"params\":{\"ruled\":false},\"inputs\":[\"sketch2\",\"sketch1\"]}",
+   "status": 200,
+   "ms": 99
+  },
+  {
+   "t": "2026-09-22T14:18:57.825Z",
+   "method": "POST",
+   "url": "/api/feature/params",
+   "body": "{\"feature_id\":\"loft1\",\"params\":{\"ruled\":false}}",
+   "status": 200,
+   "ms": 28
+  },
+  {
+   "t": "2026-09-22T14:19:30.877Z",
+   "method": "POST",
+   "url": "/api/feature/remove",
+   "body": "{\"feature_id\":\"loft1\",\"mode\":\"strict\"}",
+   "status": 200,
+   "ms": 38
+  },
+  {
+   "t": "2026-09-22T14:19:33.046Z",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": "{\"feature_id\":\"sketch2\"}",
+   "status": 200,
+   "ms": 41
+  },
+  {
+   "t": "2026-09-22T14:19:37.148Z",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": "{\"feature_id\":\"sketch2\",\"restore\":true}",
+   "status": 200,
+   "ms": 36
+  },
+  {
+   "t": "2026-09-22T14:19:44.783Z",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": "{\"tool\":\"loft\",\"sketch_id\":\"sketch1\",\"sketch_ids\":[\"sketch1\"]}",
+   "status": 200,
+   "ms": 95
+  },
+  {
+   "t": "2026-09-22T14:19:46.089Z",
+   "method": "POST",
+   "url": "/api/tool/plan",
+   "body": "{\"tool\":\"loft\",\"sketch_id\":\"sketch1\",\"sketch_ids\":[\"sketch1\",\"sketch2\"]}",
+   "status": 200,
+   "ms": 175
+  },
+  {
+   "t": "2026-09-22T14:19:46.268Z",
+   "method": "POST",
+   "url": "/api/feature/add",
+   "body": "{\"id\":\"loft1\",\"op\":\"loft\",\"params\":{\"ruled\":false},\"inputs\":[\"sketch1\",\"sketch2\"]}",
+   "status": 200,
+   "ms": 175
+  },
+  {
+   "t": "2026-09-22T14:19:46.446Z",
+   "method": "POST",
+   "url": "/api/feature/params",
+   "body": "{\"feature_id\":\"loft1\",\"params\":{\"ruled\":false}}",
+   "status": 200,
+   "ms": 83
+  },
+  {
+   "t": "2026-09-22T14:19:50.079Z",
+   "method": "POST",
+   "url": "/api/feature/strike",
+   "body": "{\"feature_id\":\"loft1\"}",
+   "status": 200,
+   "ms": 49
+  }
+ ],
+ "console": [
+  {
+   "t": "2026-09-22T14:06:21.940Z",
+   "kind": "chat",
+   "text": "Sketch \"sketch30\" created. Use Create \u2192 Extrude or Revolve to turn it into a solid."
+  },
+  {
+   "t": "2026-09-22T14:07:02.105Z",
+   "kind": "chat",
+   "text": "Struck out \"sketch30\" \u2014 the geometry is removed, the row stays. \u21a9 on the row brings it back."
+  },
+  {
+   "t": "2026-09-22T14:11:07.232Z",
+   "kind": "chat",
+   "text": "Opened \"my-part-6\" in a new tab \u2014 the previous design is still open. Describe a part, or build with the Create / Sketch tabs."
+  },
+  {
+   "t": "2026-09-22T14:11:17.452Z",
+   "kind": "chat",
+   "text": "Sketch \"sketch1\" created. Use Create \u2192 Extrude or Revolve to turn it into a solid."
+  },
+  {
+   "t": "2026-09-22T14:11:22.137Z",
+   "kind": "chat",
+   "text": "Extrude created \u2014 editable in the feature tree."
+  },
+  {
+   "t": "2026-09-22T14:11:39.079Z",
+   "kind": "chat",
+   "text": "Offset plane \"plane1\" placed 50.6 mm from the XY plane. Press Create Sketch to draw on it now, or click the plane in the viewport any time."
+  },
+  {
+   "t": "2026-09-22T14:11:55.658Z",
+   "kind": "chat",
+   "text": "Sketching on the offset plane \"plane1\"."
+  },
+  {
+   "t": "2026-09-22T14:12:03.004Z",
+   "kind": "chat",
+   "text": "Sketch \"sketch2\" created. Use Create \u2192 Extrude or Revolve to turn it into a solid."
+  },
+  {
+   "t": "2026-09-22T14:12:09.089Z",
+   "kind": "chat",
+   "text": "Struck out \"extrude1\" (with plane1, sketch2) \u2014 the geometry is removed, the row stays. \u21a9 on the row brings it back."
+  },
+  {
+   "t": "2026-09-22T14:12:12.865Z",
+   "kind": "chat",
+   "text": "Restored \"sketch2\" (with plane1) \u2014 the geometry is back."
+  },
+  {
+   "t": "2026-09-22T14:12:19.749Z",
+   "kind": "chat",
+   "text": "Loft: click a sketch profile in the viewport \u2014 your pick, nothing is chosen for you. Esc cancels."
+  },
+  {
+   "t": "2026-09-22T14:12:25.669Z",
+   "kind": "chat",
+   "text": "Loft created \u2014 editable in the feature tree."
+  },
+  {
+   "t": "2026-09-22T14:12:41.891Z",
+   "kind": "chat",
+   "text": "Offset plane \"plane2\" placed 144.8 mm from the XZ plane. Press Create Sketch to draw on it now, or click the plane in the viewport any time."
+  },
+  {
+   "t": "2026-09-22T14:12:50.613Z",
+   "kind": "chat",
+   "text": "Sketching on the offset plane \"plane2\"."
+  },
+  {
+   "t": "2026-09-22T14:12:58.712Z",
+   "kind": "chat",
+   "text": "Sketch \"sketch3\" created. Use Create \u2192 Extrude or Revolve to turn it into a solid."
+  },
+  {
+   "t": "2026-09-22T14:13:08.614Z",
+   "kind": "chat",
+   "text": "Extrude: click a sketch profile or a flat face in the viewport \u2014 your pick, nothing is chosen for you. Esc cancels."
+  },
+  {
+   "t": "2026-09-22T14:13:09.564Z",
+   "kind": "chat",
+   "text": "\u26a0 Extrude cannot start: sketch: plane must be \"XY\", \"XZ\" or \"YZ\"."
+  },
+  {
+   "t": "2026-09-22T14:13:15.432Z",
+   "kind": "chat",
+   "text": "\u26a0 Extrude cannot start: sketch: plane must be \"XY\", \"XZ\" or \"YZ\"."
+  },
+  {
+   "t": "2026-09-22T14:13:41.548Z",
+   "kind": "chat",
+   "text": "Revolve created \u2014 editable in the feature tree."
+  },
+  {
+   "t": "2026-09-22T14:13:58.640Z",
+   "kind": "chat",
+   "text": "Struck out \"revolve1\" (with plane1, sketch2, loft1, plane2, sketch3) \u2014 the geometry is removed, the row stays. \u21a9 on the row brings it back."
+  },
+  {
+   "t": "2026-09-22T14:14:03.828Z",
+   "kind": "chat",
+   "text": "Restored \"revolve1\" (with plane1, sketch2, loft1, plane2, sketch3) \u2014 the geometry is back."
+  },
+  {
+   "t": "2026-09-22T14:14:07.015Z",
+   "kind": "chat",
+   "text": "Struck out \"revolve1\" (with plane1, sketch2, loft1, plane2, sketch3) \u2014 the geometry is removed, the row stays. \u21a9 on the row brings it back."
+  },
+  {
+   "t": "2026-09-22T14:14:12.404Z",
+   "kind": "chat",
+   "text": "Restored \"revolve1\" (with plane1, sketch2, loft1, plane2, sketch3) \u2014 the geometry is back."
+  },
+  {
+   "t": "2026-09-22T14:14:54.394Z",
+   "kind": "chat",
+   "text": "Offset plane \"plane3\" placed 321 mm from the YZ plane. Press Create Sketch to draw on it now, or click the plane in the viewport any time."
+  },
+  {
+   "t": "2026-09-22T14:15:16.316Z",
+   "kind": "chat",
+   "text": "Struck out \"plate1_at\" (with plane1, sketch2, loft1, plane2, sketch3, revolve1, plane3) \u2014 the geometry is removed, the row stays. \u21a9 on the row brings it back."
+  },
+  {
+   "t": "2026-09-22T14:15:20.126Z",
+   "kind": "chat",
+   "text": "\ud83d\uddd1 Deleted 'plate1_at', and 7 dependent features that cannot be kept without it (plane1, sketch2, loft1, plane2, sketch3, revolve1 and 1 more). 8 features removed, 3 left. Undo (Ctrl+Z) puts it back."
+  },
+  {
+   "t": "2026-09-22T14:18:17.566Z",
+   "kind": "chat",
+   "text": "Struck out \"plate1\" \u2014 the geometry is removed, the row stays. \u21a9 on the row brings it back."
+  },
+  {
+   "t": "2026-09-22T14:18:20.225Z",
+   "kind": "chat",
+   "text": "Restored \"extrude1\" \u2014 the geometry is back."
+  },
+  {
+   "t": "2026-09-22T14:18:31.078Z",
+   "kind": "chat",
+   "text": "Offset plane \"plane1\" placed 113.4 mm from the XY plane. Press Create Sketch to draw on it now, or click the plane in the viewport any time."
+  },
+  {
+   "t": "2026-09-22T14:18:33.211Z",
+   "kind": "chat",
+   "text": "Sketching on the offset plane \"plane1\"."
+  },
+  {
+   "t": "2026-09-22T14:18:41.646Z",
+   "kind": "chat",
+   "text": "Sketch \"sketch2\" created. Use Create \u2192 Extrude or Revolve to turn it into a solid."
+  },
+  {
+   "t": "2026-09-22T14:18:46.617Z",
+   "kind": "chat",
+   "text": "Struck out \"extrude1\" (with plane1, sketch2) \u2014 the geometry is removed, the row stays. \u21a9 on the row brings it back."
+  },
+  {
+   "t": "2026-09-22T14:18:48.776Z",
+   "kind": "chat",
+   "text": "Restored \"plane1\" (with sketch2) \u2014 the geometry is back."
+  },
+  {
+   "t": "2026-09-22T14:18:55.050Z",
+   "kind": "chat",
+   "text": "Loft: click a sketch profile in the viewport \u2014 your pick, nothing is chosen for you. Esc cancels."
+  },
+  {
+   "t": "2026-09-22T14:19:29.020Z",
+   "kind": "chat",
+   "text": "\u26a0 Finish the Loft first \u2014 press OK or Cancel in its panel (flashing on the right)."
+  },
+  {
+   "t": "2026-09-22T14:19:33.104Z",
+   "kind": "chat",
+   "text": "Struck out \"sketch2\" (with plane1) \u2014 the geometry is removed, the row stays. \u21a9 on the row brings it back."
+  },
+  {
+   "t": "2026-09-22T14:19:37.192Z",
+   "kind": "chat",
+   "text": "Restored \"sketch2\" (with plane1) \u2014 the geometry is back."
+  },
+  {
+   "t": "2026-09-22T14:19:43.997Z",
+   "kind": "chat",
+   "text": "Loft: click a sketch profile in the viewport \u2014 your pick, nothing is chosen for you. Esc cancels."
+  },
+  {
+   "t": "2026-09-22T14:19:48.131Z",
+   "kind": "chat",
+   "text": "Loft created \u2014 editable in the feature tree."
+  },
+  {
+   "t": "2026-09-22T14:19:50.143Z",
+   "kind": "chat",
+   "text": "Struck out \"loft1\" (with plane1, sketch2) \u2014 the geometry is removed, the row stays. \u21a9 on the row brings it back."
+  }
+ ]
+}

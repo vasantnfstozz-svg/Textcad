@@ -1,0 +1,580 @@
+{
+ "autonomiq-panel": {
+  "n": 35,
+  "secs": 6.55,
+  "vols": [
+   [
+    "autonomiq_panel",
+    151296.3732
+   ]
+  ],
+  "warn": []
+ },
+ "autonomiq-sat-panel": {
+  "n": 97,
+  "secs": 18.85,
+  "vols": [
+   [
+    "autonomiq_sat_panel",
+    178251.9943
+   ]
+  ],
+  "warn": []
+ },
+ "autonomiq-sat-panel-v1": {
+  "n": 46,
+  "secs": 5.073,
+  "vols": [
+   [
+    "autonomiq_sat_panel",
+    185998.4415
+   ]
+  ],
+  "warn": [
+   "'corner_dimples_all' (fuse) leaves the part in 4 separate pieces (its input was 2) \u2014 something in it no longer touches the rest. Not an error if you meant it; a detached boss or a cut right through usually is not."
+  ]
+ },
+ "bit-tray": {
+  "n": 47,
+  "secs": 1.669,
+  "vols": [
+   [
+    "edge_round",
+    105578.1815
+   ]
+  ],
+  "warn": []
+ },
+ "bottle_cap_28mm": {
+  "n": 5,
+  "secs": 1.209,
+  "vols": [
+   [
+    "cap",
+    12619.0166
+   ]
+  ],
+  "warn": []
+ },
+ "cam-cover-lower": {
+  "n": 29,
+  "secs": 1.971,
+  "vols": [
+   [
+    "cam_cover_lower",
+    73433.8005
+   ]
+  ],
+  "warn": []
+ },
+ "cam-cover-plaque": {
+  "n": 82,
+  "secs": 14.234,
+  "vols": [
+   [
+    "cam_cover_plaque",
+    218987.7247
+   ]
+  ],
+  "warn": []
+ },
+ "cam-cover-upper": {
+  "n": 30,
+  "secs": 5.037,
+  "vols": [
+   [
+    "cam_cover_upper",
+    203385.4523
+   ]
+  ],
+  "warn": []
+ },
+ "esp32-remote": {
+  "n": 81,
+  "secs": 7.625,
+  "vols": [
+   [
+    "esp32_remote",
+    107484.7823
+   ],
+   [
+    "extrude1",
+    249.1236
+   ]
+  ],
+  "warn": [
+   "'esp32_remote' and 'extrude1' are separate bodies \u2014 normal while modeling. Use Extrude's Join/Cut (or a fuse/cut feature) to combine them, or remove 'esp32_remote' if it was unintended."
+  ]
+ },
+ "esp32-remote-live-t2": {
+  "n": 73,
+  "secs": 3.386,
+  "vols": [
+   [
+    "esp32_remote",
+    107720.4017
+   ]
+  ],
+  "warn": []
+ },
+ "esp32-remote-live-t3": {
+  "n": 73,
+  "secs": 3.664,
+  "vols": [
+   [
+    "esp32_remote",
+    107726.3231
+   ]
+  ],
+  "warn": [
+   "Extended 'esp_pillar_trim_tool' to cut all the way through \u2014 at that distance the tool stopped inside the material and left loose pieces. 'through' is now ticked on it, so the distance no longer changes anything: to raise or lower this, edit the OFFSET on 'esp_pillar_trim_sketch'. Untick 'through' for the old behaviour."
+  ]
+ },
+ "fan-disk": {
+  "n": 7,
+  "secs": 1.457,
+  "vols": [
+   [
+    "fan_disk",
+    34649.2732
+   ]
+  ],
+  "warn": []
+ },
+ "flange-100": {
+  "n": 3,
+  "secs": 0.119,
+  "vols": [
+   [
+    "bolts",
+    68455.3039
+   ]
+  ],
+  "warn": []
+ },
+ "gear-case": {
+  "n": 14,
+  "secs": 0.412,
+  "vols": [
+   [
+    "clamp_pedestal_cut",
+    69538.4447
+   ]
+  ],
+  "warn": []
+ },
+ "hex-nut-M16": {
+  "n": 2,
+  "secs": 0.057,
+  "vols": [
+   [
+    "thread_bore",
+    3870.9931
+   ]
+  ],
+  "warn": []
+ },
+ "hole-box": {
+  "n": 12,
+  "secs": 0.421,
+  "vols": [
+   [
+    "wall_holes_short_cut",
+    79560.2327
+   ]
+  ],
+  "warn": []
+ },
+ "isogrid-panel": {
+  "n": 37,
+  "secs": 2.83,
+  "vols": [
+   [
+    "isogrid_panel",
+    170657.0038
+   ]
+  ],
+  "warn": []
+ },
+ "mcp-flange": {
+  "n": 3,
+  "secs": 0.042,
+  "vols": [
+   [
+    "bolts",
+    68455.3039
+   ]
+  ],
+  "warn": []
+ },
+ "mcp-live-washer": {
+  "n": 2,
+  "secs": 0.017,
+  "vols": [
+   [
+    "hole",
+    3769.9112
+   ]
+  ],
+  "warn": []
+ },
+ "my-part": {
+  "n": 2,
+  "secs": 0.172,
+  "vols": [
+   [
+    "extrude1",
+    157135.0
+   ]
+  ],
+  "warn": []
+ },
+ "my-part-2": {
+  "n": 5,
+  "secs": 0.086,
+  "vols": [
+   [
+    "extrude2_join1",
+    59280.748
+   ],
+   [
+    "extrude3",
+    1297968.0776
+   ]
+  ],
+  "warn": [
+   "'extrude1': the walls meet 26.70 mm in at -31.3 deg, before the 94.12 mm asked - the solid ends at the tip (Fusion does the same); a gentler angle makes it taller",
+   "'extrude2_join1' and 'extrude3' are separate bodies \u2014 normal while modeling. Use Extrude's Join/Cut (or a fuse/cut feature) to combine them, or remove 'extrude2_join1' if it was unintended."
+  ]
+ },
+ "my-part-3": {
+  "n": 10,
+  "secs": 0.104,
+  "vols": [
+   [
+    "extrude5_join1",
+    1251332.3916
+   ]
+  ],
+  "warn": [
+   "'extrude1': the walls meet 40.48 mm in at -48 deg, before the 63.65 mm asked - the solid ends at the tip (Fusion does the same); a gentler angle makes it taller"
+  ]
+ },
+ "my-part-4": {
+  "n": 1,
+  "secs": 0.001,
+  "vols": [],
+  "warn": []
+ },
+ "my-part-5": {
+  "n": 24,
+  "secs": 0.406,
+  "vols": [
+   [
+    "extrude3",
+    1052.5326
+   ],
+   [
+    "extrude4",
+    309.9827
+   ],
+   [
+    "extrude11_join1",
+    413262.8748
+   ]
+  ],
+  "warn": [
+   "'extrude3' and 'extrude11_join1' are separate bodies \u2014 normal while modeling. Use Extrude's Join/Cut (or a fuse/cut feature) to combine them, or remove 'extrude3' if it was unintended.",
+   "'extrude4' and 'extrude11_join1' are separate bodies \u2014 normal while modeling. Use Extrude's Join/Cut (or a fuse/cut feature) to combine them, or remove 'extrude4' if it was unintended."
+  ]
+ },
+ "my-part-8": {
+  "n": 27,
+  "secs": 0.86,
+  "vols": [
+   [
+    "extrude4",
+    2076.9791
+   ],
+   [
+    "hole2",
+    482708.7977
+   ]
+  ],
+  "warn": [
+   "'extrude4' and 'hole2' are separate bodies \u2014 normal while modeling. Use Extrude's Join/Cut (or a fuse/cut feature) to combine them, or remove 'extrude4' if it was unintended."
+  ]
+ },
+ "my-part-9": {
+  "n": 30,
+  "secs": 0.431,
+  "vols": [
+   [
+    "extrude7_join1",
+    382050.9169
+   ]
+  ],
+  "warn": []
+ },
+ "oneplus_7_pro_case": {
+  "n": 22,
+  "secs": 0.312,
+  "vols": [
+   [
+    "final_case",
+    45333.388
+   ]
+  ],
+  "warn": []
+ },
+ "planetary-assembly": {
+  "n": 64,
+  "secs": 6.975,
+  "vols": [
+   [
+    "assembly",
+    201626.3408
+   ]
+  ],
+  "warn": []
+ },
+ "planetary-base": {
+  "n": 7,
+  "secs": 0.073,
+  "vols": [
+   [
+    "ring_tap_holes",
+    109574.3417
+   ]
+  ],
+  "warn": []
+ },
+ "planetary-carrier": {
+  "n": 8,
+  "secs": 0.139,
+  "vols": [
+   [
+    "carrier",
+    27751.5657
+   ]
+  ],
+  "warn": []
+ },
+ "planetary-gear": {
+  "n": 7,
+  "secs": 0.325,
+  "vols": [
+   [
+    "gear",
+    4264.7183
+   ]
+  ],
+  "warn": []
+ },
+ "planetary-ring": {
+  "n": 10,
+  "secs": 1.666,
+  "vols": [
+   [
+    "ring_gear",
+    42308.7942
+   ]
+  ],
+  "warn": []
+ },
+ "planetary-spacer": {
+  "n": 3,
+  "secs": 0.019,
+  "vols": [
+   [
+    "spacer",
+    978.9203
+   ]
+  ],
+  "warn": []
+ },
+ "popup-test-washer": {
+  "n": 2,
+  "secs": 0.018,
+  "vols": [
+   [
+    "hole",
+    7555.5303
+   ]
+  ],
+  "warn": []
+ },
+ "pump-cover": {
+  "n": 14,
+  "secs": 0.12,
+  "vols": [
+   [
+    "cover",
+    39486.4884
+   ]
+  ],
+  "warn": []
+ },
+ "pump-gasket": {
+  "n": 8,
+  "secs": 0.13,
+  "vols": [
+   [
+    "gasket",
+    3370.8026
+   ]
+  ],
+  "warn": []
+ },
+ "pump-housing": {
+  "n": 21,
+  "secs": 0.295,
+  "vols": [
+   [
+    "housing",
+    73114.0657
+   ]
+  ],
+  "warn": []
+ },
+ "pump-impeller": {
+  "n": 10,
+  "secs": 0.538,
+  "vols": [
+   [
+    "impeller",
+    8645.0865
+   ]
+  ],
+  "warn": []
+ },
+ "rocky-balboa": {
+  "n": 5,
+  "secs": 15.734,
+  "vols": [
+   [
+    "keychain",
+    15770.5363
+   ]
+  ],
+  "warn": []
+ },
+ "rocky-keychain": {
+  "n": 8,
+  "secs": 2.733,
+  "vols": [
+   [
+    "keychain",
+    12275.2792
+   ]
+  ],
+  "warn": []
+ },
+ "rocky-keychain-2": {
+  "n": 5,
+  "secs": 4.395,
+  "vols": [
+   [
+    "keychain",
+    10979.8096
+   ]
+  ],
+  "warn": []
+ },
+ "rocky-keychain-3": {
+  "n": 5,
+  "secs": 5.477,
+  "vols": [
+   [
+    "keychain",
+    13834.6071
+   ]
+  ],
+  "warn": []
+ },
+ "sat-side-panel": {
+  "n": 41,
+  "secs": 9.187,
+  "vols": [
+   [
+    "sat_panel",
+    172924.1381
+   ]
+  ],
+  "warn": [
+   "'corner_dimples_all' (fuse) leaves the part in 4 separate pieces (its input was 2) \u2014 something in it no longer touches the rest. Not an error if you meant it; a detached boss or a cut right through usually is not."
+  ]
+ },
+ "spiderman-logo": {
+  "n": 14,
+  "secs": 1.726,
+  "vols": [
+   [
+    "fuse_all",
+    26707.1754
+   ]
+  ],
+  "warn": []
+ },
+ "t-washer": {
+  "n": 2,
+  "secs": 0.008,
+  "vols": [
+   [
+    "h",
+    3769.9112
+   ]
+  ],
+  "warn": []
+ },
+ "thread-case": {
+  "n": 48,
+  "secs": 0.918,
+  "vols": [
+   [
+    "cs_m4_cut",
+    171206.7259
+   ]
+  ],
+  "warn": []
+ },
+ "untitled": {
+  "n": 1,
+  "secs": 0.022,
+  "vols": [],
+  "warn": []
+ },
+ "water_bottle_750ml": {
+  "n": 1,
+  "secs": 0.042,
+  "vols": [
+   [
+    "bottle_body",
+    75062.4293
+   ]
+  ],
+  "warn": []
+ },
+ "wing-rib": {
+  "n": 11,
+  "secs": 0.301,
+  "vols": [
+   [
+    "wing_rib",
+    23787.796
+   ]
+  ],
+  "warn": []
+ },
+ "x-frame": {
+  "n": 19,
+  "secs": 2.422,
+  "vols": [
+   [
+    "x_frame",
+    116961.1838
+   ]
+  ],
+  "warn": []
+ }
+}

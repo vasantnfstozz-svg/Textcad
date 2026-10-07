@@ -1,0 +1,84 @@
+{
+ "name": "my-part-6",
+ "spec": {},
+ "features": [
+  {
+   "id": "sketch1",
+   "op": "sketch",
+   "params": {
+    "plane": "XY",
+    "offset": 0,
+    "entities": [
+     {
+      "kind": "circle",
+      "mode": "add",
+      "x": 0,
+      "y": 0,
+      "r": 39.05124837953328
+     }
+    ]
+   },
+   "inputs": [],
+   "suppressed": false
+  },
+  {
+   "id": "extrude1",
+   "op": "extrude",
+   "params": {
+    "amount": 11.39,
+    "both": false,
+    "amount2": 0,
+    "taper": 0,
+    "flip": false,
+    "through": false
+   },
+   "inputs": [
+    "sketch1"
+   ],
+   "suppressed": true
+  },
+  {
+   "id": "plane1",
+   "op": "offset_plane",
+   "params": {
+    "plane": "XY",
+    "offset": 113.4
+   },
+   "inputs": [],
+   "suppressed": true
+  },
+  {
+   "id": "sketch2",
+   "op": "sketch",
+   "params": {
+    "plane": "plane1",
+    "offset": 0,
+    "entities": [
+     {
+      "kind": "rectangle",
+      "mode": "add",
+      "x": 30,
+      "y": -25,
+      "w": 60,
+      "h": 50,
+      "rotation": 0
+     }
+    ]
+   },
+   "inputs": [],
+   "suppressed": true
+  },
+  {
+   "id": "loft1",
+   "op": "loft",
+   "params": {
+    "ruled": false
+   },
+   "inputs": [
+    "sketch1",
+    "sketch2"
+   ],
+   "suppressed": true
+  }
+ ]
+}

@@ -1,0 +1,303 @@
+{
+ "autonomiq-panel": {
+  "errors": {},
+  "volumes": {
+   "autonomiq_panel": 151296.3732
+  }
+ },
+ "autonomiq-sat-panel": {
+  "errors": {},
+  "volumes": {
+   "autonomiq_sat_panel": 178251.9943
+  }
+ },
+ "autonomiq-sat-panel-v1": {
+  "errors": {},
+  "volumes": {
+   "autonomiq_sat_panel": 185998.4415
+  }
+ },
+ "bit-tray": {
+  "errors": {},
+  "volumes": {
+   "edge_round": 105578.1815
+  }
+ },
+ "bottle_cap_28mm": {
+  "errors": {},
+  "volumes": {
+   "cap": 12619.0166
+  }
+ },
+ "cam-cover-lower": {
+  "errors": {},
+  "volumes": {
+   "cam_cover_lower": 73433.8005
+  }
+ },
+ "cam-cover-plaque": {
+  "errors": {},
+  "volumes": {
+   "cam_cover_plaque": 218987.7247
+  }
+ },
+ "cam-cover-upper": {
+  "errors": {},
+  "volumes": {
+   "cam_cover_upper": 203385.4523
+  }
+ },
+ "esp32-remote": {
+  "errors": {},
+  "volumes": {
+   "esp32_remote": 107484.7823
+  }
+ },
+ "esp32-remote-live-t2": {
+  "errors": {},
+  "volumes": {
+   "esp32_remote": 107720.4017
+  }
+ },
+ "esp32-remote-live-t3": {
+  "errors": {},
+  "volumes": {
+   "esp32_remote": 107726.3231
+  }
+ },
+ "fan-disk": {
+  "errors": {},
+  "volumes": {
+   "fan_disk": 34649.2732
+  }
+ },
+ "flange-100": {
+  "errors": {},
+  "volumes": {
+   "bolts": 68455.3039
+  }
+ },
+ "gear-case": {
+  "errors": {},
+  "volumes": {
+   "clamp_pedestal_cut": 69538.4447
+  }
+ },
+ "hex-nut-M16": {
+  "errors": {},
+  "volumes": {
+   "thread_bore": 3870.9931
+  }
+ },
+ "hole-box": {
+  "errors": {},
+  "volumes": {
+   "wall_holes_short_cut": 79560.2327
+  }
+ },
+ "isogrid-panel": {
+  "errors": {},
+  "volumes": {
+   "isogrid_panel": 170657.0038
+  }
+ },
+ "mcp-flange": {
+  "errors": {},
+  "volumes": {
+   "bolts": 68455.3039
+  }
+ },
+ "mcp-live-washer": {
+  "errors": {},
+  "volumes": {
+   "hole": 3769.9112
+  }
+ },
+ "my-part": {
+  "errors": {},
+  "volumes": {
+   "extrude1": 157135.0
+  }
+ },
+ "my-part-2": {
+  "errors": {},
+  "volumes": {
+   "extrude2_join1": 59280.748,
+   "extrude3": 1297968.0776
+  }
+ },
+ "my-part-3": {
+  "errors": {},
+  "volumes": {
+   "extrude5_join1": 1251332.3916
+  }
+ },
+ "my-part-4": {
+  "errors": {},
+  "volumes": {}
+ },
+ "my-part-5": {
+  "errors": {},
+  "volumes": {
+   "extrude11_join1": 413262.8748,
+   "extrude3": 1052.5326,
+   "extrude4": 309.9827
+  }
+ },
+ "my-part-8": {
+  "errors": {},
+  "volumes": {
+   "extrude4": 2076.9791,
+   "hole2": 482708.7977
+  }
+ },
+ "my-part-9": {
+  "errors": {},
+  "volumes": {
+   "extrude7_join1": 382050.9169
+  }
+ },
+ "oneplus_7_pro_case": {
+  "errors": {},
+  "volumes": {
+   "final_case": 45333.388
+  }
+ },
+ "planetary-assembly": {
+  "errors": {},
+  "volumes": {
+   "assembly": 201626.3408
+  }
+ },
+ "planetary-base": {
+  "errors": {},
+  "volumes": {
+   "ring_tap_holes": 109574.3417
+  }
+ },
+ "planetary-carrier": {
+  "errors": {},
+  "volumes": {
+   "carrier": 27751.5657
+  }
+ },
+ "planetary-gear": {
+  "errors": {},
+  "volumes": {
+   "gear": 4264.7183
+  }
+ },
+ "planetary-ring": {
+  "errors": {},
+  "volumes": {
+   "ring_gear": 42308.7942
+  }
+ },
+ "planetary-spacer": {
+  "errors": {},
+  "volumes": {
+   "spacer": 978.9203
+  }
+ },
+ "popup-test-washer": {
+  "errors": {},
+  "volumes": {
+   "hole": 7555.5303
+  }
+ },
+ "pump-cover": {
+  "errors": {},
+  "volumes": {
+   "cover": 39486.4884
+  }
+ },
+ "pump-gasket": {
+  "errors": {},
+  "volumes": {
+   "gasket": 3370.8026
+  }
+ },
+ "pump-housing": {
+  "errors": {},
+  "volumes": {
+   "housing": 73114.0657
+  }
+ },
+ "pump-impeller": {
+  "errors": {},
+  "volumes": {
+   "impeller": 8645.0865
+  }
+ },
+ "rocky-balboa": {
+  "errors": {},
+  "volumes": {
+   "keychain": 15770.5363
+  }
+ },
+ "rocky-keychain": {
+  "errors": {},
+  "volumes": {
+   "keychain": 12275.2792
+  }
+ },
+ "rocky-keychain-2": {
+  "errors": {},
+  "volumes": {
+   "keychain": 10979.8096
+  }
+ },
+ "rocky-keychain-3": {
+  "errors": {},
+  "volumes": {
+   "keychain": 13834.6071
+  }
+ },
+ "sat-side-panel": {
+  "errors": {},
+  "volumes": {
+   "sat_panel": 172924.1381
+  }
+ },
+ "spiderman-logo": {
+  "errors": {},
+  "volumes": {
+   "fuse_all": 26707.1754
+  }
+ },
+ "t-washer": {
+  "errors": {},
+  "volumes": {
+   "h": 3769.9112
+  }
+ },
+ "thread-case": {
+  "errors": {},
+  "volumes": {
+   "cs_m4_cut": 171206.7259
+  }
+ },
+ "untitled": {
+  "errors": {},
+  "volumes": {}
+ },
+ "water_bottle_750ml": {
+  "errors": {},
+  "volumes": {
+   "bottle_body": 75062.4293
+  }
+ },
+ "wing-rib": {
+  "errors": {},
+  "volumes": {
+   "wing_rib": 23787.796
+  }
+ },
+ "x-frame": {
+  "errors": {},
+  "volumes": {
+   "x_frame": 116961.1838
+  }
+ }
+}
+[memcap] exit 0 (0x00000000); 168s; peak job memory 0.86 GB (cap 6.0 GB)
